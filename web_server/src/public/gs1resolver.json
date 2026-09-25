@@ -1,23 +1,16 @@
 {
   "_id": "gs1resolver.json",
-  "name": "GS1 Resolver Community Edition v3.0",
+  "name": "GS1 Resolver Community Edition",
   "resolverRoot": "https://id.mydomain.org",
   "termsOfUse": "https://www.gs1.org/standards/resolver/terms-of-use",
   "supportedLinkType": [
     {
-      "namespace": "http://gs1.org/voc/",
+      "namespace": "https://ref.gs1.org/voc/",
       "prefix": "gs1:"
-    },
-    {
-      "namespace": "http://schema.org/",
-      "prefix": "schema:"
     }
   ],
   "supportedPrimaryKeys": [
     "all"
-  ],
-  "supportedContextValuesEnumerated": [
-    "dscsaSaleableReturn"
   ],
   "supportedContextValuesExternal": [
     {
@@ -25,17 +18,11 @@
       "url": "https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes"
     }
   ],
-  "linkTypeDefaultCanBeAll": true,
+  "linkTypeDefaultCanBeLinkset": false,
   "contact": {
-    "fn": "My Organisation",
-    "hasAddress": {
-      "streetAddress": "My Street Address",
-      "locality": "My Locality (Town or City)",
-      "country-name": "My Country",
-      "postal-code": "My Postal Code"
-    },
-    "hasTelephone": "tel:+00 00000 000000"
+    "fn": "My Organisation"
   },
+  "jsonLdContextLocation": "https://ref.gs1.org/standards/resolver/linkset-context",
   "supportsLanguageVariants": true,
   "supportsSemanticInterpretation": true,
   "validatesAIcombinations": true,
@@ -197,7 +184,7 @@
         "curie": "gs1:support",
         "url": "https://gs1.org/voc/support"
       },
-      "traceability": {
+      "gs1:traceability": {
         "title": "Traceability information",
         "description": "A link to traceability information (includes track and trace).  Traceability information may be provided for consumption by humans or computers. If the target is an EPCIS repository, use gs1:epcis instead.",
         "url": "https://gs1.org/voc/traceability"
@@ -263,7 +250,7 @@
         "curie": "gs1:userAgreement",
         "url": "https://gs1.org/voc/userAgreement"
       },
-      "statisticInfo": {
+      "gs1:statisticInfo": {
         "title": "Statistics",
         "description": "A link to information about statistics regarding an organisation, location, or other entity.",
         "url": "https://gs1.org/voc/statisticInfo"

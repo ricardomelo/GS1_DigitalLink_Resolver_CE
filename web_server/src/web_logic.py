@@ -383,7 +383,7 @@ def _author_link_header_with_pointer_to_linkset(linkset: list[dict[str, Any]]) -
     :return: The Link header with a pointer to the linkset.
     """
     identifiers = linkset[0].get("anchor")
-    return f'<https://{os.getenv("FQDN", "set-domain-name-in-env-variable-FQDN.com")}{identifiers}?linkType=linkset>; rel="application/linkset"; type="application/linkset"; title="Linkset for {identifiers}"'
+    return f'<https://{os.getenv("FQDN", "set-domain-name-in-env-variable-FQDN.com")}{identifiers}?linkType=linkset>; rel="linkset"; type="application/linkset+json"; title="Linkset for {identifiers}"'
 
 
 
@@ -548,38 +548,123 @@ def _replace_linkset_template_variables(linkset: list[dict[str, Any]], template_
         return {"response_status": 500, "error": f"Unexpected error - {str(e)}"}
 
 
+
+# ---------------------------------------------------------------------------------------------------------------
+# Helpers for the qualifier hierarchy, linkType normalisation and linkset anchors.
+# ---------------------------------------------------------------------------------------------------------------
+_GS1_VOC_PREFIXES = ('https://gs1.org/voc/', 'http://gs1.org/voc/',
+                     'https://ref.gs1.org/voc/', 'http://ref.gs1.org/voc/', 'gs1:')
+
+# Canonical order of qualifiers in a GS1 Digital Link path (CPV, batch/lot, serial; anything else last)
+_QUALIFIER_ORDER = ['22', '10', '21', '235', '254', '7040']
+
+
+def normalise_linktype(linktype: str | None) -> str | None:
+    """
+    Accepts a link type in any of the forms seen in practice and returns the bare vocabulary term:
+    'instructions', 'gs1:instructions', 'https://gs1.org/voc/instructions' and 'https://ref.gs1.org/voc/instructions'.
+    The keywords 'linkset' and 'all' are handled before this function (unprefixed, as on the GS1 Global resolver).
+    """
+    if linktype is None:
+        return None
+    value = linktype.strip()
+    for prefix in _GS1_VOC_PREFIXES:
+        if value.lower().startswith(prefix):
+            return value[len(prefix):]
+    return value
+
+
+def _parse_qualifier_path(qualifier_path: str | None) -> list[dict[str, str]]:
+    if not qualifier_path:
+        return []
+    parts = [p for p in qualifier_path.strip('/').split('/') if p != '']
+    return [{parts[i]: parts[i + 1]} for i in range(0, len(parts) - 1, 2)]
+
+
+def _entry_applies(path_qualifiers: list[dict[str, str]], doc_qualifiers: list[dict[str, str]]) -> tuple[bool, list[dict[str, str]]]:
+    """
+    A document entry applies to the request when ALL of its qualifiers are present in the path (template
+    variables such as {0} match any value of the same AI). The GTIN entry (no qualifiers) therefore applies to
+    any batch/serial, and a batch entry to any serial within that batch: this is the "walk up the tree"
+    described in sections 2.5.9 and 2.5.10 of the GS1-Conformant Resolver Standard.
+    """
+    path_map = {k: v for q in path_qualifiers for k, v in q.items()}
+    template_variables = []
+    for doc_qualifier in doc_qualifiers:
+        for key, value in doc_qualifier.items():
+            if key not in path_map:
+                return False, []
+            if isinstance(value, str) and value.startswith('{') and value.endswith('}'):
+                template_variables.append({'template_variable': value, 'value': path_map[key]})
+            elif value != path_map[key]:
+                return False, []
+    return True, template_variables
+
+
+def _qualifier_path_from(doc_qualifiers: list[dict[str, str]], template_variables: list[dict[str, str]]) -> str:
+    values = {t['template_variable']: t['value'] for t in template_variables}
+    pairs = []
+    for q in doc_qualifiers:
+        for k, v in q.items():
+            pairs.append((k, values.get(v, v)))
+    pairs.sort(key=lambda kv: _QUALIFIER_ORDER.index(kv[0]) if kv[0] in _QUALIFIER_ORDER else len(_QUALIFIER_ORDER))
+    return ''.join(f'/{k}/{v}' for k, v in pairs)
+
+
+def _find_linktype_key(linkset_item: dict[str, Any], short_linktype: str) -> str | None:
+    """Finds the link type key in the linkset case-insensitively (defaultlink == defaultLink)."""
+    wanted = f'https://gs1.org/voc/{short_linktype}'.lower()
+    for key in linkset_item:
+        if key.lower() == wanted:
+            return key
+    return None
+
+
+def _public_link(link: dict[str, Any]) -> dict[str, Any]:
+    """Drops null values (e.g. type=None), which make the linkset fail the official schema."""
+    return {k: v for k, v in link.items() if v is not None and not (k == 'hreflang' and v == [])}
+
+
 def _handle_link_type(linktype: str | None, default_linktype: str, linkset: list[dict[str, Any]], accept_language_list: list[str], context: str | None, media_types_list: list[str] | None,
                       linkset_requested: bool = False) -> dict[str, Any]:
     try:
         if linkset_requested or linktype in ['all', 'linkset']:
             return {"response_status": 200, "data": linkset}
 
+        item = linkset[0]
         if linktype is None:
-            default_full_linktype = f'https://gs1.org/voc/{default_linktype.replace("gs1:", "")}'
-            wanted_linktype_entry = linkset[0][default_full_linktype]
+            key = _find_linktype_key(item, normalise_linktype(default_linktype) or '')
+            if key is None:
+                # The entry has no links of the GTIN's default type: use the entry's own defaultLink,
+                # recovering the full link (with fwqs, language, etc.) by its href.
+                default_link = item.get('https://gs1.org/voc/defaultLink')
+                if isinstance(default_link, list):
+                    default_link = default_link[0] if default_link else None
+                if not default_link:
+                    return {"response_status": 404, "error": "No default link at this level"}
+                for k, v in item.items():
+                    if k.startswith('https://gs1.org/voc/') and isinstance(v, list):
+                        for link in v:
+                            if isinstance(link, dict) and link.get('href') == default_link.get('href') and 'type' in link:
+                                return {"response_status": 307, "data": link}
+                return {"response_status": 307, "data": default_link}
         else:
-            wanted_linktype_entry = linkset[0][f'https://gs1.org/voc/{linktype.replace("gs1:", "")}']
+            key = _find_linktype_key(item, normalise_linktype(linktype))
+            if key is None:
+                return {"response_status": 404, "error": f"Linktype not found in linkset: {linktype}"}
+
+        wanted_linktype_entry = item[key]
+        if isinstance(wanted_linktype_entry, dict):   # defaultLink is stored as a single object
+            wanted_linktype_entry = [wanted_linktype_entry]
 
         wanted_linktype_docs_list = _get_appropriate_linktype_docs_list(
-            wanted_linktype_entry,
-            accept_language_list,
-            context,
-            media_types_list) if isinstance(wanted_linktype_entry, list) else wanted_linktype_entry
+            wanted_linktype_entry, accept_language_list, context, media_types_list)
 
         if not wanted_linktype_docs_list:
-            response_status, data, error_msg = 404, None, f"No linkset found for linktype: {wanted_linktype_entry}"
-        else:
-            if len(wanted_linktype_docs_list) == 1:
-                response_status, data, error_msg = 307, wanted_linktype_docs_list[0], None
-            else:
-                response_status, data, error_msg = 300, wanted_linktype_docs_list, None
-
-        return {"response_status": response_status, "data": data, "error": error_msg} if error_msg else {
-            "response_status": response_status, "data": data}
-
-    except KeyError as e:
-        logger.debug('handle_link_type - Linktype not found: %s', e)
-        return {"response_status": 404, "error": f"Linktype not found in linkset. Details: {str(e)}"}
+            return {"response_status": 404, "error": f"No link found for linktype: {linktype}"}
+        if len(wanted_linktype_docs_list) == 1:
+            return {"response_status": 307, "data": wanted_linktype_docs_list[0]}
+        return {"response_status": 300, "data": wanted_linktype_docs_list}
 
     except TypeError as e:
         logger.warning('handle_link_type TypeError: %s', e)
@@ -589,6 +674,7 @@ def _handle_link_type(linktype: str | None, default_linktype: str, linkset: list
     except Exception as e:
         logger.error('handle_link_type error: %s', e)
         return {"response_status": 500, "error": f"Unexpected error occurred. Details: {str(e)}"}
+
 
 
 def get_compressed_link(uncompressed_link: str) -> dict[str, Any]:
@@ -615,197 +701,127 @@ def _clean_q_values_from_header_entries(header_values_list: list[str]) -> list[s
     return [entry.split(';')[0] for entry in header_values_list]
 
 
-def format_linkset_for_external_use(response_data: dict[str, Any], identifiers: str) -> dict[str, Any]:
+def format_linkset_for_external_use(response_data: dict[str, Any], identifiers: str, as_json_ld: bool = False) -> dict[str, Any]:
+    """
+    Builds the linkset for the client.
+    - Default: plain RFC 9264 ({"linkset": [...]}) that validates against https://ref.gs1.org/standards/resolver/linkset-schema;
+      the JSON-LD context is referenced in the Link header.
+    - as_json_ld=True (Accept: application/ld+json): same content with the @context embedded (section 2.10).
+    """
+    fqdn = os.getenv('FQDN', 'replace_with_environment_variable_FQDN_see_README.com')
+    linkset = []
+    for item in response_data['data']:
+        out = {}
+        for key, value in item.items():
+            if key.startswith('_'):
+                continue
+            if key == 'anchor':
+                out['anchor'] = value if str(value).startswith('http') else f"https://{fqdn}{value}"
+            elif key in ('itemDescription', 'description'):
+                if value:
+                    out[key] = value
+            elif key.startswith('https://gs1.org/voc/') or key.startswith('http'):
+                links = value if isinstance(value, list) else [value]
+                clean = []
+                for link in links:
+                    if not isinstance(link, dict):
+                        continue
+                    link = _public_link(link)
+                    if 'hreflang' in link:
+                        link['hreflang'] = [h for h in link['hreflang'] if h != 'und']
+                        if not link['hreflang']:
+                            del link['hreflang']
+                    clean.append(link)
+                if clean:
+                    out[key] = clean
+        linkset.append(out)
+
+    if not as_json_ld:
+        return {"linkset": linkset}
+
     ai_code = identifiers.split('/')[1]
     ai_value = identifiers.split('/')[2]
-
     response_linkset = {
         "@context": {
             "schema": "https://schema.org/",
-            "gs1": "http://gs1.org/voc/",
-            "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+            "gs1": "https://gs1.org/voc/",
             "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
-            "owl": "http://www.w3.org/2002/07/owl#",
             "dcterms": "http://purl.org/dc/terms/",
-            "xsd": "http://www.w3.org/2001/XMLSchema#",
-            "skos": "http://www.w3.org/2004/02/skos/core#",
-            "gs1:value": {
-                "@type": "xsd:float"
-            },
-            "@protected": True,
             "href": "@id",
-            "hreflang": {
-                "@id": "dcterms:language",
-                "@container": "@set"
-            },
-            "title": {
-                "@id": "dcterms:title"
-            },
-            "title*": {
-                "@id": "dcterms:title",
-                "@container": "@set"
-            },
-            "type": {
-                "@id": "dcterms:format"
-            },
-            "modified": {
-                "@id": "dcterms:modified"
-            },
-            "itemDescription": {
-                "@id": "rdfs:comment"
-            },
+            "hreflang": {"@id": "dcterms:language", "@container": "@set"},
+            "title": {"@id": "dcterms:title"},
+            "type": {"@id": "dcterms:format"},
+            "itemDescription": {"@id": "rdfs:comment"},
             "linkset": "@nest"
         },
-        "@id": f"/{ai_code}/{ai_value}",
-        "@type": [
-            "rdfs:Class",
-            "owl:Class",
-            "gs1:Product",
-            "schema:Product"
-        ],
+        "@id": f"https://{fqdn}/{ai_code}/{ai_value}",
         "gs1:elementStrings": f"({ai_code}){ai_value}",
+        "linkset": linkset,
     }
-
-    if ai_code == '01':
-        response_linkset['@context']['gs1:gtin'] = ai_value
-        response_linkset['@context']['schema:gtin'] = ai_value
-
-    #  add the linkset to the response
-    response_linkset['linkset'] = response_data['data']
-
-    # adjust the anchor value to include the fully qualified domain name 'FQDN' (specified in Dockerfile but can be
-    # moved to other environment variable lists depending on your installation needs)
-    response_linkset['linkset'][0]['anchor'] = f"https://{os.getenv('FQDN', 'replace_with_environment_variable_FQDN_see_README.com')}{response_linkset['linkset'][0]['anchor']}"
-
-    # Iterate through the linkset and remove "und" from hreflang lists, Although 'und' (for 'undefined') is a valid
-    # value for the 'hreflang' attribute for internal processing, it is not allowed in the linkset response.
-    for link in response_linkset['linkset']:
-        # Recursively check keys in the link objects
-        for key, value in link.items():
-            if isinstance(value, list):  # Check if the value is a list
-                for entry in value:
-                    if isinstance(entry, dict) and 'hreflang' in entry:  # Check for `hreflang` in a dictionary entry
-                        if 'und' in entry['hreflang']:
-                            entry['hreflang'].remove('und')  # Remove "und" if it exists
-                        # check if the list is now empty and remove the key if it is
-                        if not entry['hreflang']:
-                            del entry['hreflang']
-
-
-    # Internally, default_link does not have to be an array for ease of processing, but for external use, it must be
-    # an array (list). Standards conformant!
-    default_link = response_linkset['linkset'][0].get('https://gs1.org/voc/defaultLink')
-    if default_link is not None and not isinstance(default_link, list):
-        response_linkset['linkset'][0]['https://gs1.org/voc/defaultLink'] = [default_link]
-
-
     return response_linkset
 
 
-def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None = '/', linktype: str | None = None, accept_language_list: list[str] | None = None, context: str | None = None,
-                  media_types_list: list[str] | None = None, linkset_requested: bool = False) -> tuple[dict[str, Any], str | None] | dict[str, Any]:
-    """
-    Reads a document from the data source and returns the most appropriate link data based on the linktype, accept_language_list, context, and media_types_list.
-    If the linkset_requested is True, the entire linkset for the entry is returned.
 
-    :param gs1dl_identifier: Identifier portion of the digital link.
-    :param doc_id: Unique document ID used to fetch the document from the database.
-    :param qualifier_path: Qualifier path portion of the digital link. Defaults to "/".
-    :param linktype: Type of link in linktype document.
-    :param accept_language_list: List of acceptable languages which influences the selection of the linktype document.
-    :param context: Context information passed in from the caller.
-    :param media_types_list: List of acceptable media links which influences the selection of the linktype document.
-    :param linkset_requested: if true, the entire linkset for the entry is returned
-    :return: Two elements: A response dictionary which includes the response status and either the link data or error message (all of which will be showin the body of the response
-                           A string to be placed into the 'Link' header of the response.
+def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None = '/', linktype: str | None = None, accept_language_list: list[str] | None = None, context: str | None = None,
+                  media_types_list: list[str] | None = None, linkset_requested: bool = False) -> tuple[dict[str, Any], str | None]:
+    """
+    Resolves the request by walking the GTIN hierarchy (GS1-Conformant Resolver Standard 2.5.9/2.5.10):
+    entries that apply to the requested path are evaluated from the most specific (e.g. batch/lot) to the
+    least specific (GTIN). Redirection: the first level holding the requested link wins; if none does,
+    404 (section 2.6.2). Linkset: gathers the links of every applicable level, each with its own anchor.
+    Always returns the tuple (response, Link header).
     """
     try:
-        # Validate the digital link and fetch the associated document.
         doc_data = _validate_and_fetch_document(gs1dl_identifier, qualifier_path, doc_id)
-
-        # If the digital link syntax is invalid, or a database errors / document not found occurs
-        # then return the error response which is stored in doc_data.
         if doc_data['response_status'] != 200:
             return doc_data, None
 
-        else:
-            database_doc = doc_data['data']
+        database_doc = doc_data['data']
+        accept_language_list = _clean_q_values_from_header_entries(accept_language_list or ['und'])
+        media_types_list = _clean_q_values_from_header_entries(media_types_list) if media_types_list else []
+        default_linktype = database_doc.get('defaultLinktype', '')
+        path_qualifiers = _parse_qualifier_path(qualifier_path)
 
-            accept_language_list = _clean_q_values_from_header_entries(accept_language_list)
-            media_types_list = _clean_q_values_from_header_entries(media_types_list)
+        applicable = []
+        for entry in database_doc['data']:
+            doc_qualifiers = entry.get('qualifiers') or []
+            applies, template_variables = _entry_applies(path_qualifiers, doc_qualifiers)
+            if not applies:
+                continue
+            if template_variables:
+                entry['linkset'] = _replace_linkset_template_variables(entry['linkset'], template_variables)
+            entry['_qualifier_path'] = _qualifier_path_from(doc_qualifiers, template_variables)
+            entry['_specificity'] = len(doc_qualifiers)
+            applicable.append(entry)
 
-            # If qualifier_path is NoneType or '/', we look for an instance in database_doc
-            # where there are no qualifiers.
-            if qualifier_path is None or qualifier_path == '/':
-                for entry in database_doc['data']:
-                    if len(entry['qualifiers']) == 0:
-                        logger.debug('read_document: No qualifiers found in the document')
-                        return _handle_link_type(linktype,
-                                                 database_doc['defaultLinktype'],
-                                                 entry['linkset'],
-                                                 accept_language_list,
-                                                 context,
-                                                 media_types_list,
-                                                 linkset_requested
-                                                 ), _author_link_header_with_pointer_to_linkset(entry['linkset'])
+        if not applicable:
+            return {"response_status": 404, "error": f"No links found for {gs1dl_identifier}{qualifier_path or ''}"}, None
 
-            # If we are here then there are qualifiers to process.
-            # Iterate through each data item in the document.
-            response_links_list = []
-            link_header_list = []
-            for entry in database_doc['data']:
-                # Iterate through each data item in the document and check if any qualifiers
-                # in the data item match the qualifier path.
-                yes_qualifiers_match, template_variables_list = _do_qualifiers_match(qualifier_path,
-                                                                                     entry['qualifiers'])
+        applicable.sort(key=lambda e: e['_specificity'], reverse=True)
+        pointer = _author_link_header_with_pointer_to_linkset(
+            [{"anchor": gs1dl_identifier + (qualifier_path or '').rstrip('/')}])
 
-                # If qualifiers match, replace template variables and process the linkset.
-                # For linkset requests, also include entries with no qualifiers (GTIN-only entries).
-                if yes_qualifiers_match or (linkset_requested and len(entry['qualifiers']) == 0):
-                    if template_variables_list and len(template_variables_list) > 0:
-                        entry['linkset'] = _replace_linkset_template_variables(entry['linkset'],
-                                                                               template_variables_list)
+        if linkset_requested:
+            merged = []
+            for entry in applicable:
+                for item in entry['linkset']:
+                    item = dict(item)
+                    item['anchor'] = gs1dl_identifier + entry['_qualifier_path']
+                    merged.append(item)
+            return {"response_status": 200, "data": merged}, pointer
 
-                    # Use handle_link_type to either return the appropriate linktype document
-                    # or proceed to the next data item.
-                    response_links_list.append(_handle_link_type(linktype,
-                                                                 database_doc['defaultLinktype'],
-                                                                 entry['linkset'],
-                                                                 accept_language_list,
-                                                                 context,
-                                                                 media_types_list,
-                                                                 linkset_requested
-                                                                 ))
-                    link_header_list.append(_author_link_header_with_pointer_to_linkset(entry['linkset']))
+        last_result = None
+        for entry in applicable:
+            result = _handle_link_type(linktype, default_linktype, entry['linkset'],
+                                       accept_language_list, context, media_types_list)
+            if result['response_status'] in (300, 307):
+                return result, pointer
+            if result['response_status'] >= 500:
+                return result, None
+            last_result = result
 
-
-            if not response_links_list:
-                # If execution arrives here, a necessary linkset was not found, return a 404 Not Found.
-                return {"response_status": 404, "error": f"No linkset found for linktype: {linktype}"}
-
-            # If a single valid response is prepared, return it.
-            if len(response_links_list) == 1 and response_links_list[0]['response_status'] == 307:
-                return response_links_list[0], link_header_list[0]
-
-            # If multiple valid responses are prepared, return a 300 response with the linkset data.
-            if len(response_links_list) == 1 and response_links_list[0]['response_status'] == 300:
-                return response_links_list[0], link_header_list[0]
-
-            # For linkset requests, merge all linksets into a single array
-            # This handles both single and multiple entries
-            if linkset_requested and len(response_links_list) > 0:
-                merged_linkset = []
-                for response in response_links_list:
-                    if response['response_status'] == 200 and 'data' in response:
-                        # response['data'] is the linkset array, extend it to merged_linkset
-                        merged_linkset.extend(response['data'])
-                return {"response_status": 200, "data": merged_linkset}, ','.join(link_header_list)
-
-            # If multiple valid responses are prepared, return a 200 response with the linkset data.
-            return {"response_status": 200, "data": response_links_list}, ','.join(link_header_list)
+        return last_result or {"response_status": 404, "error": "No link found"}, None
 
     except Exception as e:
-        # Log the exception and return a server error response.
         logger.error('read_document: Internal Server Error', exc_info=True)
-
-        return {"response_status": 500, "error": "Internal Server Error: " + str(e)}
+        return {"response_status": 500, "error": "Internal Server Error: " + str(e)}, None

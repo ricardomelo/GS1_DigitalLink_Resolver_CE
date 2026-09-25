@@ -69,6 +69,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     @app.after_request
     def add_headers(response: Response) -> Response:
         response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+        response.headers['Access-Control-Expose-Headers'] = 'Link, Location'
         return response
 
     return app

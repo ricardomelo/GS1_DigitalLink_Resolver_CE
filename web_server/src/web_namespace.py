@@ -8,6 +8,7 @@ from flask import request, abort, Response, send_from_directory, jsonify, make_r
 from flask_restx import Namespace, Resource
 
 import web_logic
+import web_pages
 
 web_namespace = Namespace('', description='Resolver web operations')
 static_folder_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'public')
@@ -122,7 +123,7 @@ class DocOperationsIdentifiersOnly(Resource):
         try:
             # Ensure that a Resolver Description File is returned
             if anchor_ai_code == '.well-known' and anchor_ai == 'gs1resolver':
-                return send_from_directory(static_folder_path, 'gs1resolver.json')
+                return _resolver_description()
 
             anchor_ai = _confirm_gtin_14(anchor_ai, anchor_ai_code)
             identifiers = f'/{anchor_ai_code}/{anchor_ai}'
@@ -171,6 +172,7 @@ class DocOperationsResource(Resource):
             identifiers = f'/{anchor_ai_code}/{anchor_ai}'
             doc_id = f'{anchor_ai_code}_{anchor_ai}'
 
+            extra_segments = (extra_segments or '').strip('/')
             if extra_segments:
                 qualifier_path = f'/{extra_segments}'
             else:
@@ -209,6 +211,42 @@ class DocOperationsResource(Resource):
 # as well obtain the three contexts that are used in the web_logic.py file. Note that the decision to
 # return a linkset rather than attempt a 307 redirect is made here by setting the linkset_requested variable
 # should the 'Accept' header contain 'application/linkset+json' or 'application/json'
+def _resolver_description() -> Response:
+    """
+    Resolver Description File (GS1-Conformant Resolver standard, section 3).
+    public/gs1resolver.json holds everything that does not depend on the installation; the resolver
+    root and the operator's contact details come from the environment (FQDN and RESOLVER_*, see
+    .env.example), so the same image serves any domain without editing the file.
+    """
+    with open(os.path.join(static_folder_path, 'gs1resolver.json'), encoding='utf-8') as fh:
+        description = json.load(fh)
+
+    fqdn = os.getenv('FQDN', '').strip()
+    if fqdn:
+        description['resolverRoot'] = f'https://{fqdn}'
+
+    org_name = os.getenv('RESOLVER_ORG_NAME', '').strip()
+    if org_name:
+        address = {key: os.getenv(var, '').strip() for key, var in (
+            ('streetAddress', 'RESOLVER_CONTACT_STREET'),
+            ('locality', 'RESOLVER_CONTACT_LOCALITY'),
+            ('region', 'RESOLVER_CONTACT_REGION'),
+            ('postal-code', 'RESOLVER_CONTACT_POSTCODE'),
+            ('country-name', 'RESOLVER_CONTACT_COUNTRY'))}
+        contact: dict[str, Any] = {'fn': org_name}
+        address = {key: value for key, value in address.items() if value}
+        if address:
+            contact['hasAddress'] = address
+        telephone = os.getenv('RESOLVER_CONTACT_TELEPHONE', '').strip()
+        if telephone:
+            contact['hasTelephone'] = telephone if telephone.startswith('tel:') else 'tel:' + telephone.replace(' ', '-')
+        description['contact'] = contact
+
+    response = make_response(json.dumps(description, ensure_ascii=False, indent=2))
+    response.headers['Content-Type'] = 'application/json; charset=utf-8'
+    return response
+
+
 def _get_request_parameters() -> tuple[list[str], str | None, str | None, list[str] | None, bool]:
     query_strings = request.args
 
@@ -226,12 +264,15 @@ def _get_request_parameters() -> tuple[list[str], str | None, str | None, list[s
     accept_language_list = request.headers.get('Accept-Language', 'und').split(',')
 
     # do we have an 'accept' header?
+    linktype_is_linkset = linktype is not None and linktype.strip() in ('all', 'linkset')
     if request.headers.get('Accept'):
         media_types_list = request.headers['Accept'].split(',')
-        linkset_requested = 'application/linkset+json' in media_types_list or 'application/json' in media_types_list or linktype == 'all' or linktype == 'linkset'
+        accept = request.headers['Accept']
+        linkset_requested = ('application/linkset+json' in accept or 'application/json' in accept
+                             or 'application/ld+json' in accept or linktype_is_linkset)
     else:
         media_types_list = None
-        linkset_requested = False
+        linkset_requested = linktype_is_linkset
 
     return accept_language_list, context, linktype, media_types_list, linkset_requested
 
@@ -256,11 +297,22 @@ _ALLOWED_CONTENT_TYPES = frozenset([
 ])
 
 
+JSON_LD_CONTEXT = 'https://ref.gs1.org/standards/resolver/linkset-context'
+
+
+def _wants_html() -> bool:
+    """A browser asking for a page (explicit text/html and no JSON type). curl and apps keep receiving JSON."""
+    accept = request.headers.get('Accept', '')
+    return 'text/html' in accept and not any(t in accept for t in ('json',))
+
+
+def _append_query(href: str, query_strings: str) -> str:
+    return href + ('&' if '?' in href else '?') + query_strings
+
+
 def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None = None, compress: str | None = None, query_strings: str = '') -> Response | tuple[Any, int]:
     accept_language_list, context, linktype, media_types_list, linkset_requested = _get_request_parameters()
 
-    # if compress is present and set to true, we return the compressed version of a
-    # compressed GS1 Digital Link
     if compress:
         uncompressed_link = identifiers
         if qualifier_path:
@@ -269,71 +321,72 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
         response_data = web_logic.get_compressed_link(uncompressed_link)
         return response_data, 200
 
-    # ... otherwise we search for and process the requested document as normal:
-    response_data, link_header = web_logic.read_document(identifiers,
-                                            doc_id,
-                                            qualifier_path,
-                                            linktype,
-                                            accept_language_list,
-                                            context,
-                                            media_types_list,
-                                            linkset_requested)
+    response_data, link_header = web_logic.read_document(identifiers, doc_id, qualifier_path, linktype,
+                                                         accept_language_list, context, media_types_list,
+                                                         linkset_requested)
+    status = response_data['response_status']
 
+    # ---------------------------------------------------------------- erros (400/404/500)
+    if status >= 400:
+        if _wants_html():
+            available = None
+            if status == 404 and linktype:
+                # Section 2.6.2: on a 404 for a missing linkType the resolver MAY list the links that are available.
+                ls_data, _ = web_logic.read_document(identifiers, doc_id, qualifier_path, None,
+                                                     accept_language_list, context, None, True)
+                if ls_data['response_status'] == 200:
+                    available = web_logic.format_linkset_for_external_use(ls_data, identifiers)['linkset']
+            html = web_pages.render_error(status, identifiers, qualifier_path, linktype, available)
+            return Response(html, status=status, mimetype='text/html')
+        return response_data, status
 
-    # if the response status is 400 or greater, we need to return the response_data and the response status
-    if response_data['response_status'] >= 400:
-        return response_data, response_data['response_status']
+    link_values = []
+    if link_header:
+        link_values.append(link_header)
+    link_values.append(f'<{JSON_LD_CONTEXT}>; rel="http://www.w3.org/ns/json-ld#context"; type="application/ld+json"')
+    link_header = ', '.join(link_values)
 
-
-    # The final link header entry should be to the JSON-LD context source as requested by the GS1 Resolver
-    # Standard document. This is a mandatory requirement.
-    link_header += ',<http://www.w3.org/ns/json-ld#context;type=application/ld+json>; rel=http://www.w3.org/ns/json-ld#context; type="text/html"'
-
-    # if the linkset is requested, we need to format thw response to include json-ld
-    # and add our document to a 'linkset' property.
+    # ---------------------------------------------------------------- linkset
     if linkset_requested:
-        # We need to include JSON-LD to add context to the response
-        response_linkset = web_logic.format_linkset_for_external_use(response_data, identifiers)
-
-        response = Response(
-            response=json.dumps(response_linkset),  # Set response data
-            status=response_data['response_status'],  # Set status code
-        )
-
-    else: # linkset was not requested
-        response = Response(
-            response=json.dumps(response_data),  # Set response data
-            status=response_data['response_status'],  # Set status code
-        )
-
-
-    # add the link header, ensuring will survive over an HTTP 1.0 or 1.1 which allows latin-1 characters only.
-    if link_header is not None:
-        try:
-            response.headers['Link'] = link_header.encode('latin-1').decode('ascii')
-        except UnicodeEncodeError:
-            response.headers['Link'] = link_header.encode('unicode_escape').decode('ascii')
-
-    # If the Accept header contains a known JSON content type, reflect it as the Content-Type.
-    # Only allow known safe values to prevent header injection.
-    accept_header = request.headers.get('Accept', '')
-    logger.debug('Accept header: %s', accept_header)
-    for allowed_type in _ALLOWED_CONTENT_TYPES:
-        if allowed_type in accept_header:
-            response.headers['Content-Type'] = allowed_type
-            return response
-
-
-    # If response_data['status'] is 307, we need to return a redirect response
-    if response_data['response_status'] == 307:
-        response.headers['Location'] = response_data['data']['href']
-        # if we have any query_strings then we need to append them to response.headers['Location']:
-        if query_strings:
-            response.headers['Location'] += '?' + query_strings
-
+        accept = request.headers.get('Accept', '')
+        if _wants_html():
+            linkset = web_logic.format_linkset_for_external_use(response_data, identifiers)['linkset']
+            response = Response(web_pages.render_linkset(identifiers, qualifier_path, linkset),
+                                status=200, mimetype='text/html')
+        else:
+            as_json_ld = 'application/ld+json' in accept
+            body = web_logic.format_linkset_for_external_use(response_data, identifiers, as_json_ld=as_json_ld)
+            if as_json_ld:
+                content_type = 'application/ld+json'
+            elif 'application/json' in accept and 'application/linkset+json' not in accept:
+                content_type = 'application/json'
+            else:
+                content_type = 'application/linkset+json'
+            response = Response(json.dumps(body, ensure_ascii=False), status=200, content_type=content_type)
+        response.headers['Link'] = _latin1(link_header)
         return response
 
-    elif response_data['response_status'] == 300:
+    # ---------------------------------------------------------------- redirecionamento
+    if status == 307:
+        target = response_data['data']
+        response = Response(status=307)
+        location = target['href']
+        # Section 2.12: by default the whole query string is passed on; a link can switch this off with
+        # "fwqs": false (an attribute defined in GS1's official linkset schema).
+        if query_strings and target.get('fwqs', True) is not False:
+            location = _append_query(location, query_strings)
+        response.headers['Location'] = location
+        response.headers['Link'] = _latin1(link_header)
+        return response
+
+    if status == 300:
         return {'linkset': response_data['data']}, 300
 
-    return response
+    return response_data, status
+
+
+def _latin1(value: str) -> str:
+    try:
+        return value.encode('latin-1').decode('ascii')
+    except UnicodeError:
+        return value.encode('unicode_escape').decode('ascii')

@@ -174,13 +174,16 @@ def _convert_mongo_linkset_to_v3(mongo_linkset_format: dict[str, Any]) -> list[d
                                 'linktype': linktype,
                                 'href': link['href'],
                                 'title': link['title'],
-                                'type': link['type'],
-                                'hreflang': link['hreflang'],
+                                'type': link.get('type'),
+                                'hreflang': link.get('hreflang'),
                             }
 
                             # context is optional
                             if context is not None and context != []:
                                 output_link['context'] = context
+
+                            if link.get('fwqs') is False:
+                                output_link['fwqs'] = False
 
                             output_item['links'].append(output_link)
 
@@ -245,6 +248,10 @@ def _author_db_linkset_document(data_entry_format: dict[str, Any]) -> dict[str, 
             }
             if "context" in link:
                 linkset_entry["context"] = link["context"]
+            # "fwqs" (forward query strings) is defined in GS1's official linkset schema.
+            # It is stored only when switched off; when absent the query string is passed on (section 2.12 default).
+            if link.get("fwqs") is False:
+                linkset_entry["fwqs"] = False
 
             linkset_obj[linktype].append(linkset_entry)
 

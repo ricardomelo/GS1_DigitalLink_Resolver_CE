@@ -75,7 +75,7 @@ Rules worth knowing:
   in `.env`.
 - Requires Docker Compose 2.24 or later (`env_file` with `required`).
 
-## Quick start (development)
+## Quick start (development machine)
 
 ```bash
 git clone <this repository> && cd GS1_DigitalLink_Resolver_CE
@@ -86,7 +86,66 @@ docker compose up -d --build
 Then open http://localhost:8080/ (home page) and http://localhost:8080/portal/ (sign in as `admin` /
 `change-me-please`, then change the password under Options).
 
-A server installation (TLS, domain, secrets, backup) will be covered by the installation script.
+## Installation on a server (Ubuntu)
+
+`scripts/install.sh` installs or updates a complete resolver on Ubuntu Server 22.04 or 24.04.
+
+**Before you start**
+
+- A DNS record for the resolver's domain (e.g. `id.example.org`) pointing to the server.
+- Ports 80 and 443 reachable from the Internet (for Let's Encrypt and for users), or a certificate
+  of your own, or a load balancer / proxy that terminates TLS.
+- A user with `sudo`, and `git` (present on Ubuntu Server images).
+
+**Run it**
+
+```bash
+git clone https://github.com/<account>/GS1_DigitalLink_Resolver_CE.git
+cd GS1_DigitalLink_Resolver_CE
+sudo scripts/install.sh
+```
+
+The installer asks for:
+
+| Question | Notes |
+|---|---|
+| Domain name | Without `https://`; becomes `FQDN` |
+| HTTPS mode | `letsencrypt` (nginx on the server + free certificate, renewed automatically), `certificate` (nginx with a certificate you provide), `external` (TLS elsewhere; port 8080 published on the address you choose) |
+| E-mail / certificate files | For Let's Encrypt notices, or the PEM files of your certificate |
+| Operator | Organisation name (required), website, address and telephone (optional); published in `/.well-known/gs1resolver` and on the resolver's pages |
+| First portal user | Name and password; leave the password empty to have one generated and shown once at the end |
+| Daily backup | Cron at 02:30 running `scripts/resolver-backup.sh` |
+| Docker user | Account allowed to run `docker` without `sudo` (defaults to the one that ran `sudo`) |
+
+Then, after a summary and a confirmation, it:
+
+1. installs Docker Engine with the Compose plugin from Docker's official repository when Docker or a
+   recent enough Compose (2.24+) is missing (replacing Ubuntu's `docker.io` packages if present, after
+   asking), and nginx and Certbot when the server terminates TLS;
+2. generates the MongoDB password and the API token (`openssl rand -hex`) and writes `.env` with mode
+   600, owned by the user who ran `sudo`;
+3. builds and starts the services and waits until the resolver and the portal answer; once the first
+   portal user exists, its password is removed from `.env`;
+4. writes the nginx site `/etc/nginx/sites-available/gs1resolver` (reverse proxy to `127.0.0.1:8080`),
+   opens ports 80/443 in ufw if ufw is active, and runs Certbot (`--redirect`);
+5. installs `/etc/cron.d/resolver-backup` and checks `https://FQDN/` and `/.well-known/gs1resolver`.
+
+Everything goes to `/var/log/gs1-resolver-install.log` (never the passwords). If a step fails, the
+installer shows the end of the log; fix the cause and run it again.
+
+**Running it again** is how you change settings or repair an installation: current values are offered
+as defaults, secrets are kept, existing portal users and data are untouched, an nginx site that already
+has a certificate for the domain is kept, the previous `.env` is saved as `.env.bak-<date>` (mode 600),
+and settings the installer does not manage are carried over. A `.env` written by hand is understood,
+including a percent-encoded `MONGO_URI`.
+
+**Unattended use:** `sudo -E scripts/install.sh --non-interactive` takes every answer from environment
+variables with the names listed in the table of the Configuration section, plus `TLS_MODE`,
+`CERTBOT_EMAIL`, `TLS_CERT_FILE`, `TLS_KEY_FILE`, `INSTALL_BACKUP_CRON` and `INSTALL_DOCKER_GROUP_USER`
+(see `scripts/install.sh --help`).
+
+**What it does not do (yet):** rotate existing secrets, move an installation to another domain's
+certificate automatically, or configure off-server copies of the backups.
 
 ## Portal users
 

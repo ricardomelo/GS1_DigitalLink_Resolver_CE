@@ -2,6 +2,18 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Installer
+- `scripts/install.sh`: interactive (or `--non-interactive`) installation and update on Ubuntu Server
+  22.04 / 24.04 — Docker Engine + Compose from Docker's repository, generated secrets in `.env` (600),
+  host nginx with Let's Encrypt, an existing certificate or an external proxy, health wait, first portal
+  user with its password removed from `.env` afterwards, daily backup cron, final checks. Idempotent:
+  secrets, users, data and a certified nginx site are kept on re-runs; unmanaged `.env` settings are
+  carried over.
+- `scripts/templates/`: host nginx site templates (HTTP for Certbot, HTTPS with own certificate).
+- `dev-tests/install/test_install.sh`: 47 checks in seven scenarios with stand-ins for system commands,
+  real `docker compose config` and real `nginx -t`.
+
+
 Work moved from a patch + package into commits on a fork of the official repository, in preparation
 for contributing upstream.
 

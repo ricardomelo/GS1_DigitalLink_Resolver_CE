@@ -4,9 +4,12 @@ services:
     container_name: database-server
     restart: always
     env_file:
-      - .env.example
+      - path: .env.example
+        required: true
+      - path: .env          # installation values; overrides .env.example (never committed)
+        required: false
     ports:
-      - "27017:27017"
+      - "${DATABASE_BIND_ADDRESS:-0.0.0.0}:27017:27017"
     volumes:
       - resolver-database-volume:/data/db
     networks:
@@ -16,7 +19,10 @@ services:
     build: './data_entry_server'
     container_name: data-entry-server
     env_file:
-      - .env.example
+      - path: .env.example
+        required: true
+      - path: .env          # installation values; overrides .env.example (never committed)
+        required: false
     depends_on:
       - database-service
     restart: always
@@ -26,8 +32,11 @@ services:
   web-service:
     build: './web_server'
     container_name: resolver-web-server
-    environment:
-      - MONGO_URI=${MONGO_URI}
+    env_file:
+      - path: .env.example
+        required: true
+      - path: .env          # installation values; overrides .env.example (never committed)
+        required: false
     depends_on:
       - database-service
     restart: always
@@ -42,7 +51,7 @@ services:
       - data-entry-service
     restart: always
     ports:
-      - "8080:80"
+      - "${PROXY_BIND_ADDRESS:-0.0.0.0}:8080:80"
     networks:
       - resolver-internal-network
 

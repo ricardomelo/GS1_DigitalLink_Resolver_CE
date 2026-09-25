@@ -7,4 +7,8 @@ build_sync_server/node_modules/
 
 # Environment variables — contains secrets; never commit
 .env
+.env.*
+!.env.example
+# Local Docker Compose customisation (read automatically when present)
+docker-compose.override.yml
 __pycache__/

@@ -11,7 +11,9 @@ class APITestCase(unittest.TestCase):
         self.headers = {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer secret'
+            # Same token as the data entry service: SESSION_TOKEN from the environment, else the
+            # development default of .env.example
+            'Authorization': f"Bearer {os.environ.get('SESSION_TOKEN', 'secret')}"
         }
         self.data_entries = []
 

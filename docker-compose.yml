@@ -69,10 +69,19 @@ services:
   frontend-proxy-service:
     build: './frontend_proxy_server'
     container_name: frontend-proxy-server
+    # nginx resolves the upstream names once, at start-up. When Compose recreates one of these
+    # services it can come back with a new IP address, and the proxy would answer 502 until it is
+    # restarted; "restart: true" makes Compose restart the proxy whenever it updates a dependency.
     depends_on:
-      - web-service
-      - data-entry-service
-      - portal-service
+      web-service:
+        condition: service_started
+        restart: true
+      data-entry-service:
+        condition: service_started
+        restart: true
+      portal-service:
+        condition: service_started
+        restart: true
     restart: always
     ports:
       - "${PROXY_BIND_ADDRESS:-0.0.0.0}:8080:80"

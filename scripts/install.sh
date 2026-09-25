@@ -48,6 +48,7 @@ NGINX_ENABLED="${INSTALL_NGINX_ENABLED:-/etc/nginx/sites-enabled}"
 CRON_FILE="${INSTALL_CRON_FILE:-/etc/cron.d/resolver-backup}"
 SITE_NAME="gs1resolver"
 HEALTH_TIMEOUT="${INSTALL_HEALTH_TIMEOUT:-240}"
+PROXY_RESTART_AFTER="${INSTALL_PROXY_RESTART_AFTER:-30}"
 
 NON_INTERACTIVE=0
 ASSUME_YES=0
@@ -259,7 +260,7 @@ write_env() {
   if [[ -f $ENV_FILE ]]; then
     local backup
     backup="$ENV_FILE.bak-$(date +%Y%m%d%H%M%S)"
-    cp "$ENV_FILE" "$backup" && chmod 600 "$backup"
+    cp "$ENV_FILE" "$backup" && chmod 600 "$backup" && chown --reference="$ENV_FILE" "$backup"
   fi
   owner=${SUDO_USER:-root}
   chown "$owner": "$tmp"
@@ -586,10 +587,17 @@ start_services() {
   info "Building and starting the services (the first build takes a few minutes)…"
   run compose up -d --build --remove-orphans
   info "Waiting for the resolver and the portal to answer…"
-  local waited=0 answer=""
+  local waited=0 answer="" proxy_restarted=0
   until answer=$(curl -fsS --max-time 5 "http://127.0.0.1:$PROXY_PORT/portal/healthz" 2>/dev/null) \
         && [[ $answer == *'"portal":"ok"'* && $answer == *'"resolver":"ok"'* ]]; do
     (( waited >= HEALTH_TIMEOUT )) && die "The services did not become healthy in ${HEALTH_TIMEOUT}s. See: docker compose logs"
+    if (( waited >= PROXY_RESTART_AFTER && ! proxy_restarted )); then
+      # A proxy that kept running while the services behind it were recreated still points to their
+      # old addresses (502). Restarting it makes nginx look the names up again.
+      info "Restarting the front-end proxy so that it finds the recreated services…"
+      run compose restart frontend-proxy-service || true
+      proxy_restarted=1
+    fi
     sleep 5; waited=$(( waited + 5 ))
   done
   ok "Services running"

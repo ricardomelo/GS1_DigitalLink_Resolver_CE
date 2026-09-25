@@ -2,6 +2,15 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Fixes found on the first real run of the installer
+- The front-end proxy answered 502 after Compose recreated the services behind it (nginx resolves
+  `web-service`, `data-entry-service` and `portal-service` once, at start-up, and the recreated
+  containers came back with new addresses). `docker-compose.yml` now declares those dependencies with
+  `restart: true`, so Compose restarts the proxy whenever it updates one of them; the installer also
+  restarts the proxy once if the health check still fails after 30 s. The same problem affects the
+  official repository whenever `web-service` or `data-entry-service` is recreated alone.
+- The installer's `.env.bak-<date>` now keeps the owner of `.env` (it was root-only).
+
 ### Installer
 - `scripts/install.sh`: interactive (or `--non-interactive`) installation and update on Ubuntu Server
   22.04 / 24.04 — Docker Engine + Compose from Docker's repository, generated secrets in `.env` (600),
@@ -10,7 +19,7 @@
   secrets, users, data and a certified nginx site are kept on re-runs; unmanaged `.env` settings are
   carried over.
 - `scripts/templates/`: host nginx site templates (HTTP for Certbot, HTTPS with own certificate).
-- `dev-tests/install/test_install.sh`: 47 checks in seven scenarios with stand-ins for system commands,
+- `dev-tests/install/test_install.sh`: 50 checks in eight scenarios with stand-ins for system commands,
   real `docker compose config` and real `nginx -t`.
 
 

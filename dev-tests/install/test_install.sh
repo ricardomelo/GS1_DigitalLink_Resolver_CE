@@ -67,7 +67,7 @@ EOF
 #!/bin/bash
 args="$*"
 case $args in
-  *healthz*) echo '{"portal":"ok","resolver":"ok"}' ;;
+  *healthz*) [[ -e STATE/proxy-stale ]] && exit 22; echo '{"portal":"ok","resolver":"ok"}' ;;
   *http_code*) printf 200 ;;
   *gs1resolver*) echo '{"resolverRoot": "https://x"}' ;;
   *) exit 22 ;;
@@ -89,12 +89,14 @@ if [[ \$1 == compose ]]; then
     config) exec $COMPOSE_BIN config "\${@:2}" ;;
     up) touch $s/volume-resolver-database-volume $s/volume-resolver-portal-config; echo up >> $s/compose-up ;;
     exec) echo 1 ;;          # number of portal users
+    restart) echo "restart \$*" >> $s/calls; rm -f $s/proxy-stale ;;
     *) ;;
   esac
   exit 0
 fi
 exit 0
 EOF
+  sed -i "s|STATE|$s|g" "$b/curl"
   chmod +x "$b"/*
 }
 
@@ -104,7 +106,7 @@ run_installer() {   # extra environment as arguments; answers (if any) on stdin
   env -i PATH="$SB/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME=/root TERM=dumb \
     INSTALL_LOG_FILE="$SB/state/install.log" INSTALL_NGINX_AVAILABLE="$SB/nginx/sites-available" \
     INSTALL_NGINX_ENABLED="$SB/nginx/sites-enabled" INSTALL_CRON_FILE="$SB/state/cron" \
-    INSTALL_HEALTH_TIMEOUT=10 INSTALL_DOCKER_GROUP_USER= "$@" \
+    INSTALL_HEALTH_TIMEOUT=30 INSTALL_PROXY_RESTART_AFTER=5 INSTALL_DOCKER_GROUP_USER= "$@" \
     bash "$SB/repo/scripts/install.sh" ${INSTALLER_ARGS:---non-interactive} > "$SB/state/out" 2>&1
 }
 
@@ -229,6 +231,17 @@ check "G: nothing written" "[[ ! -e $SB/repo/.env ]]"
 new_sandbox
 run_installer FQDN=id.example.org RESOLVER_ORG_NAME="O'Brien" CERTBOT_EMAIL=a@b.org; rc=$?
 check "G: single quote refused" "[[ $rc != 0 ]] && grep -q 'Single quotes' $SB/state/out"
+
+# ------------------------------------------------------------------------------ H. stale proxy
+echo "--- H. proxy still pointing at the old containers (502) after the services were recreated"
+new_sandbox
+printf "FQDN='id.example.org'\nRESOLVER_ORG_NAME='Org'\nCERTBOT_EMAIL='a@b.org'\n" > "$SB/repo/.env"
+chown nobody: "$SB/repo/.env"
+touch "$SB/state/proxy-stale" "$SB/state/volume-resolver-portal-config"
+run_installer SUDO_USER=nobody; rc=$?
+check "H: exit status 0" "[[ $rc == 0 ]]"
+check "H: proxy restarted once" "[[ \$(grep -c 'compose restart frontend-proxy-service' $SB/state/calls) == 1 ]]"
+check "H: .env and its backup keep the sudo user as owner" "[[ \$(stat -c %U $SB/repo/.env) == nobody && \$(stat -c %U \$(ls $SB/repo/.env.bak-* | head -n 1)) == nobody ]]"
 
 echo
 echo "$PASS passed, $FAIL failed"

@@ -43,12 +43,36 @@ services:
     networks:
       - resolver-internal-network
 
+  portal-service:
+    # Link management portal for non-technical users (served at /portal/ by the proxy)
+    build: './portal'
+    container_name: resolver-portal
+    env_file:
+      - path: .env.example
+        required: true
+      - path: .env          # installation values; overrides .env.example (never committed)
+        required: false
+    environment:
+      DATA_ENTRY_URL: http://data-entry-service:3000/api
+      # The portal talks to the data entry API only; it is not given the MongoDB credentials.
+      MONGO_URI: ""
+      MONGO_INITDB_ROOT_USERNAME: ""
+      MONGO_INITDB_ROOT_PASSWORD: ""
+    volumes:
+      - resolver-portal-config:/app/config
+    depends_on:
+      - data-entry-service
+    restart: always
+    networks:
+      - resolver-internal-network
+
   frontend-proxy-service:
     build: './frontend_proxy_server'
     container_name: frontend-proxy-server
     depends_on:
       - web-service
       - data-entry-service
+      - portal-service
     restart: always
     ports:
       - "${PROXY_BIND_ADDRESS:-0.0.0.0}:8080:80"
@@ -58,6 +82,7 @@ services:
 
 volumes:
   resolver-database-volume: {}
+  resolver-portal-config: {}
 
 networks:
   resolver-internal-network:

@@ -1,0 +1,6 @@
+flask>=3.1,<4
+requests>=2.32,<3
+gunicorn>=23,<24
+segno>=1.6,<2
+fonttools>=4.50,<5
+pillow>=10.4,<13

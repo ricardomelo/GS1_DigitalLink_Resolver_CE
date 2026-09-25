@@ -12,3 +12,5 @@ build_sync_server/node_modules/
 # Local Docker Compose customisation (read automatically when present)
 docker-compose.override.yml
 __pycache__/
+# Portal user store and session key, if /app/config is ever bind-mounted here instead of the volume
+portal/config/

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GS1 Resolver Community Edition</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="./">
+        <img src="gs1-logo.png" alt="GS1" width="54" height="44">
+        <span class="product">GS1 Resolver Community Edition</span>
+      </a>
+      <div class="header-tools">
+        <label class="locale-picker">
+          <span class="visually-hidden" data-i18n="header.language"></span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.9 6h-3a15.7 15.7 0 0 0-1.4-3.6A8 8 0 0 1 18.9 8ZM12 4c.8 1.2 1.5 2.5 1.9 4h-3.8c.4-1.5 1.1-2.8 1.9-4ZM4.3 14a8.2 8.2 0 0 1 0-4h3.4a16.5 16.5 0 0 0 0 4H4.3Zm.8 2h3c.3 1.3.8 2.5 1.4 3.6A8 8 0 0 1 5.1 16ZM8.1 8h-3a8 8 0 0 1 4.4-3.6C8.9 5.5 8.4 6.7 8.1 8ZM12 20c-.8-1.2-1.5-2.5-1.9-4h3.8c-.4 1.5-1.1 2.8-1.9 4Zm2.3-6H9.7a14.7 14.7 0 0 1 0-4h4.6a14.7 14.7 0 0 1 0 4Zm.3 5.6c.6-1.1 1.1-2.3 1.4-3.6h3a8 8 0 0 1-4.4 3.6Zm1.7-5.6a16.5 16.5 0 0 0 0-4h3.4a8.2 8.2 0 0 1 0 4h-3.4Z"/></svg>
+          <select id="locale"></select>
+        </label>
+        <div class="user-menu" id="user-menu">
+          <button type="button" class="user-button" id="user-button" aria-haspopup="menu" aria-expanded="false"
+                  aria-controls="user-menu-panel" data-i18n-attr="aria-label:menu.account;title:menu.account">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-4.2 0-8 2.2-8 5.2V21h16v-1.8c0-3-3.8-5.2-8-5.2Z"/></svg>
+          </button>
+          <div class="menu" id="user-menu-panel">
+            <div class="menu-panel" role="menu">
+              <div class="menu-user"><small data-i18n="menu.signedInAs"></small><strong id="user-name"></strong></div>
+              <button type="button" class="menu-item" role="menuitem" id="menu-options">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19.4 13a7.7 7.7 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.5 7.5 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.5 7.5 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.7 7.7 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 21h4l.4-2.9c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5L19.4 13ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z" transform="translate(-1 0)"/></svg>
+                <span data-i18n="menu.options"></span>
+              </button>
+              <button type="button" class="menu-item logout" role="menuitem" id="menu-logout">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M10 3H4v18h6v-2H6V5h4V3Zm5.6 4.6L14.2 9l2 2H9v2h7.2l-2 2 1.4 1.4L20 12l-4.4-4.4Z"/></svg>
+                <span data-i18n="menu.logout"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="hero-inner">
+      <h1 data-i18n="intro.title"></h1>
+      <p data-i18n="intro.lede"></p>
+    </div>
+  </section>
+
+  <main class="layout">
+    <form id="form" class="sheet" novalidate>
+      <!-- Step 1 -->
+      <section class="step" aria-labelledby="step1">
+        <span class="step-n" aria-hidden="true">1</span>
+        <h2 id="step1" data-i18n="step1.title"></h2>
+
+        <label for="gtin" data-i18n="gtin.label"></label>
+        <input id="gtin" name="gtin" class="code" inputmode="numeric" autocomplete="off"
+               maxlength="18" data-i18n-attr="placeholder:gtin.placeholder" aria-describedby="gtin-msg">
+        <p class="field-msg" id="gtin-msg" aria-live="polite" data-i18n="gtin.hint"></p>
+
+        <fieldset class="scope">
+          <legend data-i18n="scope.legend"></legend>
+          <label class="choice"><input type="radio" name="scope" value="product" checked> <span data-i18n="scope.product"></span></label>
+          <label class="choice"><input type="radio" name="scope" value="lot"> <span data-i18n="scope.lot"></span></label>
+        </fieldset>
+
+        <div id="lot-wrap" hidden>
+          <label for="lot" data-i18n="lot.label"></label>
+          <input id="lot" name="lot" class="code" maxlength="20" autocomplete="off"
+                 data-i18n-attr="placeholder:lot.placeholder" aria-describedby="lot-msg">
+          <p class="field-msg" id="lot-msg" data-i18n="lot.hint"></p>
+        </div>
+
+        <button type="button" id="open" class="btn btn-secondary" disabled data-i18n="open.button"></button>
+        <p class="field-msg" id="open-msg" aria-live="polite"></p>
+      </section>
+
+      <fieldset id="editor" class="edit" disabled>
+        <!-- Step 2 -->
+        <section class="step" aria-labelledby="step2">
+          <span class="step-n" aria-hidden="true">2</span>
+          <h2 id="step2" data-i18n="step2.title"></h2>
+          <label for="description" data-i18n="description.label"></label>
+          <input id="description" name="description" maxlength="200" data-i18n-attr="placeholder:description.placeholder">
+        </section>
+
+        <!-- Step 3 -->
+        <section class="step" aria-labelledby="step3">
+          <span class="step-n" aria-hidden="true">3</span>
+          <h2 id="step3" data-i18n="step3.title"></h2>
+          <p class="hint" data-i18n="links.hint"></p>
+
+          <ol id="links" class="links"></ol>
+          <button type="button" id="add" class="btn btn-ghost" data-i18n="links.add"></button>
+          <p class="field-msg" id="default-msg" aria-live="polite"></p>
+        </section>
+
+        <div class="actions">
+          <button type="submit" id="save" class="btn btn-primary" data-i18n="save.button"></button>
+          <button type="button" id="delete" class="btn btn-danger" hidden data-i18n="delete.button"></button>
+        </div>
+      </fieldset>
+
+      <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+    </form>
+
+    <aside class="label-panel" data-i18n-attr="aria-label:preview.aria">
+      <div class="label">
+        <div class="qr" id="qr"><span data-i18n="preview.qrPlaceholder"></span></div>
+        <fieldset class="label-options">
+          <legend class="visually-hidden" data-i18n="label.options"></legend>
+          <label class="choice"><input type="checkbox" id="opt-hri" checked> <span data-i18n="label.hri"></span></label>
+          <label class="choice"><input type="checkbox" id="opt-brand"> <span data-i18n="label.brand"></span></label>
+          <p class="option-hint" data-i18n="label.brandHint"></p>
+        </fieldset>
+        <a class="dl code" id="dl" target="_blank" rel="noopener" data-i18n-attr="aria-label:preview.dlAria"></a>
+        <dl class="legend">
+          <div><dt><span class="sw sw-host"></span><span data-i18n="legend.host"></span></dt><dd data-i18n="legend.hostHelp"></dd></div>
+          <div><dt><span class="sw sw-key"></span><span data-i18n="legend.key"></span></dt><dd data-i18n="legend.keyHelp"></dd></div>
+          <div id="legend-lot" hidden><dt><span class="sw sw-qual"></span><span data-i18n="legend.lot"></span></dt><dd data-i18n="legend.lotHelp"></dd></div>
+        </dl>
+        <p class="state" id="state" data-i18n="state.draft"></p>
+        <div class="label-actions">
+          <a id="test" class="btn btn-secondary" target="_blank" rel="noopener" aria-disabled="true" data-i18n="preview.test"></a>
+          <button type="button" id="copy" class="btn btn-ghost" disabled data-i18n="preview.copy"></button>
+          <div class="dl-pair">
+            <a id="download-png" class="btn btn-ghost" aria-disabled="true" data-i18n="preview.png"></a>
+            <a id="download-svg" class="btn btn-ghost" aria-disabled="true" data-i18n="preview.svg"></a>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+
+  <dialog id="options-dialog" aria-labelledby="options-title">
+    <div class="dialog-head">
+      <h2 id="options-title" data-i18n="options.title"></h2>
+      <button type="button" class="dialog-close" id="options-close" data-i18n-attr="aria-label:options.close">×</button>
+    </div>
+    <form class="dialog-body" id="password-form" novalidate>
+      <h3 data-i18n="password.title"></h3>
+      <input type="text" name="username" id="password-username" autocomplete="username" hidden>
+      <label for="current-password" data-i18n="password.current"></label>
+      <input id="current-password" type="password" autocomplete="current-password" required>
+      <label for="new-password" data-i18n="password.new"></label>
+      <input id="new-password" type="password" autocomplete="new-password" required aria-describedby="new-password-hint">
+      <p class="field-msg" id="new-password-hint" data-i18n="password.hint" data-i18n-params='{"min":12}'></p>
+      <label for="confirm-password" data-i18n="password.confirm"></label>
+      <input id="confirm-password" type="password" autocomplete="new-password" required>
+      <div id="password-status" class="status" role="status" aria-live="polite" hidden></div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="password-cancel" data-i18n="options.cancel"></button>
+        <button type="submit" class="btn btn-primary" id="password-save" data-i18n="password.save"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <template id="link-row">
+    <li class="link-row">
+      <p class="row-badge"><span data-i18n="link.defaultBadge"></span> <span class="code">gs1:defaultLink</span></p>
+      <div class="row-grid">
+        <div class="f-type">
+          <label data-i18n="link.type"></label>
+          <select class="link-type"></select>
+        </div>
+        <div class="f-language">
+          <label data-i18n="link.language"></label>
+          <select class="language"></select>
+        </div>
+        <div class="f-url">
+          <label data-i18n="link.url"></label>
+          <input class="url" type="url" inputmode="url" data-i18n-attr="placeholder:link.urlPlaceholder">
+        </div>
+        <div class="f-title">
+          <label><span data-i18n="link.title"></span> <span class="opt" data-i18n="link.optional"></span></label>
+          <input class="title" maxlength="120">
+        </div>
+      </div>
+      <p class="row-help"></p>
+      <label class="choice fwqs"><input type="checkbox" class="forward" checked>
+        <span><span data-i18n="link.forward"></span>
+          <span class="opt" data-i18n="link.forwardHint"></span></span></label>
+      <div class="row-actions">
+        <button type="button" class="make-default" data-i18n="link.makeDefault"></button>
+        <button type="button" class="remove" data-i18n="link.remove" data-i18n-attr="aria-label:link.removeAria"></button>
+      </div>
+    </li>
+  </template>
+
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

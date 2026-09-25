@@ -1,6 +1,13 @@
 # Important notice and disclaimer
 This freely licensed open source software is not maintained by GS1. Issues raised here may be answered by the community but will not be handled by GS1 itself. Users of this software should not assume that it conforms fully to the published [GS1-Conformant resolver standard](https://ref.gs1.org/standards/resolver/).
 
+## Extensions in this branch
+
+This branch adds a link management portal for non-technical users (`/portal/`), a home page, GS1-Conformant
+Resolver fixes with HTML pages for browsers, a configurable resolver description file, a layered
+`.env.example` / `.env` configuration and a daily backup script. See
+[Documentation/extensions/README.md](Documentation/extensions/README.md).
+
 ## 📢 Welcome to GS1 Resolver Community Edition Version 3.0.0
 
 GS1 Resolver is a free and open-source web-server application that allows you to resolve GS1 identifiers to their corresponding web resources.

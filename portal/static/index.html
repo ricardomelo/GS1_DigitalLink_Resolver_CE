@@ -107,8 +107,12 @@
           <p class="hint" data-i18n="links.hint"></p>
 
           <ol id="links" class="links"></ol>
-          <button type="button" id="add" class="btn btn-ghost" data-i18n="links.add"></button>
+          <div class="links-actions">
+            <button type="button" id="add" class="btn btn-ghost" data-i18n="links.add"></button>
+            <button type="button" id="check-links" class="btn btn-ghost" data-i18n="links.check"></button>
+          </div>
           <p class="field-msg" id="default-msg" aria-live="polite"></p>
+          <p class="field-msg" id="links-check-msg" aria-live="polite"></p>
         </section>
 
         <div class="actions">
@@ -166,8 +170,15 @@
         <button type="button" class="btn btn-ghost" id="records-export-xlsx" data-i18n="records.exportXlsx"></button>
         <button type="button" class="btn btn-ghost" id="records-export-csv" data-i18n="records.exportCsv"></button>
         <button type="button" class="btn btn-secondary" id="records-import" data-i18n="records.import"></button>
+        <button type="button" class="btn btn-ghost" id="records-check" data-i18n="records.check"></button>
       </div>
       <p class="field-msg" id="records-count" aria-live="polite"></p>
+      <div class="records-check">
+        <p class="field-msg" id="records-check-msg" aria-live="polite"></p>
+        <label class="choice" id="records-problems-wrap" hidden>
+          <input type="checkbox" id="records-problems"> <span data-i18n="records.problemsOnly"></span>
+        </label>
+      </div>
       <div class="table-wrap">
         <table class="records-table">
           <thead>
@@ -219,10 +230,13 @@
       <p class="hint" data-i18n="import.intro"></p>
       <label for="import-file" data-i18n="import.file"></label>
       <input type="file" id="import-file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <label class="choice import-check"><input type="checkbox" id="import-checklinks"> <span data-i18n="import.checkLinks"></span></label>
       <div id="import-status" class="status" role="status" aria-live="polite" hidden></div>
       <div id="import-report" hidden>
         <p class="import-summary" id="import-summary"></p>
         <ul class="import-errors" id="import-errors"></ul>
+        <p class="field-msg" id="import-links-msg" aria-live="polite"></p>
+        <ul class="import-warnings" id="import-warnings"></ul>
         <div class="table-wrap import-table-wrap">
           <table class="records-table import-table">
             <thead>
@@ -267,6 +281,7 @@
         </div>
       </div>
       <p class="row-help"></p>
+      <p class="row-check" hidden></p>
       <label class="choice fwqs"><input type="checkbox" class="forward" checked>
         <span><span data-i18n="link.forward"></span>
           <span class="opt" data-i18n="link.forwardHint"></span></span></label>

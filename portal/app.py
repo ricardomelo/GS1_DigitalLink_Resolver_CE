@@ -28,6 +28,7 @@ import base64
 import uuid
 
 import label
+import linkcheck
 import meta
 import sheet
 import users
@@ -685,7 +686,7 @@ def import_preview():
     for line in summary_with_links():
         existing.setdefault(line["anchor"].split("/")[2], []).append(line)
 
-    report, plan, file_defaults = [], [], {}
+    report, plan, file_defaults, to_check = [], [], {}, []
     rows_with_errors = {e["row"] for e in errors}
     for record in parsed:
         item = {"rows": record["rows"], "gtin": record["gtin"], "lot": record["lot"] or None,
@@ -763,6 +764,7 @@ def import_preview():
         if item["action"] in ("create", "update"):
             # products before their batches, so a new GTIN is created with its product-level record
             plan.append({"gtin": gtin14, "lot": lot, "doc": doc, "rows": record["rows"]})
+            to_check.extend({"row": link["row"], "url": link["url"]} for link in record["links"])
         report.append(item)
 
     plan.sort(key=lambda p: (p["gtin"], p["lot"] is not None))
@@ -773,7 +775,7 @@ def import_preview():
     counts = {action: sum(1 for i in report if i["action"] == action)
               for action in ("create", "update", "unchanged", "error")}
     errors.sort(key=lambda e: e["row"])
-    return jsonify({"token": token, "records": report, "errors": errors, "counts": counts})
+    return jsonify({"token": token, "records": report, "errors": errors, "counts": counts, "links": to_check})
 
 
 def _run_import(token: str, user: str) -> None:
@@ -821,6 +823,98 @@ def import_status():
         raise ValidationError("import.expired")
     return jsonify({"state": job["state"], "done": job["done"], "total": job["total"],
                     "results": job["results"] if job["state"] == "finished" else []})
+
+
+# --------------------------------------------------------------------------- link checker
+LINK_JOBS: dict[str, dict] = {}
+LINK_JOBS_LOCK = threading.Lock()
+LAST_FULL_CHECK: dict = {}             # result of the latest "check every record", shown in the list
+MAX_CHECK_URLS = 5000
+
+
+@app.post("/portal/api/links/check")
+@require_login
+def check_links():
+    """Checks the few targets of one record (editor); answers when all are done."""
+    urls = [u for u in (request.get_json(silent=True) or {}).get("urls") or [] if isinstance(u, str)][:MAX_LINKS]
+    results = linkcheck.check_many(urls)
+    return jsonify({"results": [results[u] for u in dict.fromkeys(urls) if u in results]})
+
+
+def _run_link_job(token: str) -> None:
+    job = LINK_JOBS[token]
+
+    def progress(done, total):
+        job["done"], job["total"] = done, total
+
+    results = linkcheck.check_many(list(job["urls"]), progress)
+    problems = {u: r for u, r in results.items() if not r["ok"]}
+    if job["scope"] == "all":
+        by_record = {}
+        for url, result in problems.items():
+            for key in job["urls"][url]:
+                by_record.setdefault(key, []).append(result)
+        job["records"] = by_record
+        LAST_FULL_CHECK.clear()
+        LAST_FULL_CHECK.update(checkedAt=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                               records=by_record, urls=len(results), user=job["user"])
+        audit.info("user=%s action=linkcheck urls=%d problems=%d", job["user"], len(results), len(problems))
+    job["problems"] = list(problems.values())
+    job["state"] = "finished"
+    job["created"] = time.time()
+
+
+@app.post("/portal/api/links/jobs")
+@require_login
+def start_link_job():
+    """Checks many targets in the background: every record's ("scope": "all") or a list of URLs
+    (spreadsheet import preview). Poll /links/jobs/<token>."""
+    data = request.get_json(silent=True) or {}
+    now = time.time()
+    with LINK_JOBS_LOCK:
+        for old in [t for t, j in LINK_JOBS.items() if now - j["created"] > IMPORT_TTL]:
+            LINK_JOBS.pop(old, None)
+    if data.get("scope") == "all":
+        urls: dict[str, list[str]] = {}
+        for line in summary_with_links():
+            entry = describe_entry(line)
+            if entry["kind"] == "other":
+                continue
+            key = f'{line["anchor"].split("/")[2]}|{entry.get("value") or ""}'
+            for link in line.get("links") or []:
+                urls.setdefault(link.get("href"), []).append(key)
+        scope = "all"
+    else:
+        urls = {u: [] for u in data.get("urls") or [] if isinstance(u, str) and u}
+        scope = "list"
+    if len(urls) > MAX_CHECK_URLS:
+        raise ValidationError("linkcheck.tooMany", max=MAX_CHECK_URLS)
+    token = uuid.uuid4().hex
+    with LINK_JOBS_LOCK:
+        LINK_JOBS[token] = {"user": g.user, "created": now, "state": "running", "scope": scope,
+                            "urls": urls, "done": 0, "total": len(urls)}
+    threading.Thread(target=_run_link_job, args=(token,), daemon=True).start()
+    return jsonify({"token": token, "total": len(urls)}), 202
+
+
+@app.get("/portal/api/links/jobs/<token>")
+@require_login
+def link_job_status(token):
+    job = LINK_JOBS.get(token)
+    if not job or job["user"] != g.user:
+        raise ValidationError("linkcheck.expired")
+    out = {"state": job["state"], "done": job["done"], "total": job["total"]}
+    if job["state"] == "finished":
+        out["problems"] = job["problems"]
+        if job["scope"] == "all":
+            out.update(LAST_FULL_CHECK)
+    return jsonify(out)
+
+
+@app.get("/portal/api/links/last")
+@require_login
+def last_link_check():
+    return jsonify(LAST_FULL_CHECK)
 
 
 @app.get("/portal/api/qrcode")

@@ -2,6 +2,17 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: link checker
+- Editor: targets checked after each save and on demand (*Check targets*); a note under each target.
+- Record list: *Check links* checks every target in the background with progress, marks records with
+  problems, filter *Only with problems*; the latest result is shown when the list opens.
+- Import preview: optional check of the addresses of the records to be written (warnings only).
+- `portal/linkcheck.py`: HEAD (GET fallback), redirects followed one by one to detect HTTPS → HTTP,
+  401/403/429 reported as "blocked", 8 s timeout, 10-minute cache, 8 parallel checks; private, loopback,
+  link-local and other non-global addresses refused at every hop (no probing of the internal network).
+- Tests: `dev-tests/portal/test_linkcheck.py` (local HTTP server); editor, list and import checks in the
+  portal end-to-end test (network replaced by a stand-in).
+
 ### Fixes from the first real import (records created by other tools)
 - Link languages: any well-formed BCP 47 tag is accepted and normalised (`en-us` → `en-US`), in the
   editor and in imports; before, only the eight languages of the editor's menu were, so records created

@@ -215,6 +215,30 @@ made each change, and writes one audit line (`action=import created=… updated=
 Limits: 700 KB per file and 5 000 rows (split larger files). The default link type is shared by all the
 records of a GTIN, so an import cannot change it while the GTIN has other records.
 
+## Link checker
+
+The portal checks whether the target addresses answer, from the server (which therefore needs outbound
+HTTPS access to the Internet):
+
+- **Editor** — after each save, and with *Check targets* at any time, every target gets a note: answered
+  normally, or the problem. A problem never stops a save.
+- **Record list** — *Check links* checks every target of every record in the background (with a
+  progress counter), marks the records with problems (⚠ and the count; hovering lists the addresses)
+  and offers *Only with problems*. The latest result is kept until the portal restarts and is shown
+  again when the list opens; opening a marked record checks its targets in the editor.
+- **Spreadsheet import** — the optional *Also check that the addresses answer* lists the rows whose
+  addresses have problems; they do not stop the import.
+
+What is reported: HTTP errors (404, 500, …), no answer (unknown domain, site down, more than 8 s),
+a redirect from HTTPS to plain HTTP, more than 5 redirects. 401, 403 and 429 are reported as "the site
+refused the automated check": many sites block robots while the page works for people. Each address is
+checked with HEAD (GET if the server refuses HEAD, without reading the body), and results are cached for
+10 minutes.
+
+Only public addresses are contacted: host names that resolve to private, loopback, link-local or other
+non-global addresses (the Docker network, the cloud metadata service) are refused at every redirect, so
+the checker cannot be used to probe the server's own network.
+
 ## Sign-in, sessions and passwords
 
 - `/portal/login` is a sign-in page (no more browser pop-up). A successful sign-in sets a session cookie

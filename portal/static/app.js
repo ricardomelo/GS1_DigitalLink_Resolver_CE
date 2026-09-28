@@ -257,6 +257,7 @@ async function loadRecords() {
     records.all = data.records || [];
     records.loaded = true;
     fillUserFilter();
+    try { showLinkCheck(await api("GET", "links/last")); } catch { /* optional */ }
     renderRecords();
     $("#records-search").focus();
   } catch (e) {
@@ -300,8 +301,10 @@ function renderRecords() {
   if (!records.loaded) return;
   const words = fold($("#records-search").value).split(/\s+/).filter(Boolean);
   const user = $("#records-user").value;
+  const problemsOnly = $("#records-problems").checked;
   const shown = records.all
     .filter(r => !user || r.updatedBy === user)
+    .filter(r => !problemsOnly || problemsOf(r).length > 0)
     .filter(r => {
       if (!words.length) return true;
       const haystack = fold([r.gtin, r.gtin.replace(/^0+/, ""), r.description, r.lot, r.qualifiers].join(" "));
@@ -336,7 +339,16 @@ function renderRecords() {
     cell("records.col.product", name);
     cell("records.col.gtin", r.gtin, "code");
     cell("records.col.scope", scopeText(r));
-    cell("records.col.links", String(r.links), "num");
+    const linksCell = cell("records.col.links", String(r.links), "num");
+    const problems = problemsOf(r);
+    if (problems.length) {
+      const warn = document.createElement("span");
+      warn.className = "link-warn";
+      warn.textContent = "⚠ " + problems.length;
+      warn.title = problems.map(p => `${p.url} — ${problemText(p)}`).join("\n");
+      warn.setAttribute("aria-label", t("records.problemBadge", { count: problems.length }));
+      linksCell.append(warn);
+    }
     const changed = changedText(r);
     if (changed) {
       const box = document.createElement("span");
@@ -359,7 +371,7 @@ function renderRecords() {
 }
 
 /* Opens a record of the list in the editor. */
-function openFromList(r) {
+async function openFromList(r) {
   history.pushState(null, "", location.pathname + location.search);
   applyView();
   $("#gtin").value = r.gtin;
@@ -368,7 +380,91 @@ function openFromList(r) {
   $("#lot").value = r.lot || "";
   onIdentityChange();
   window.scrollTo(0, 0);
-  openRecord();
+  await openRecord();
+  if (problemsOf(r).length) checkLinks();
+}
+
+/* ------------------------------------------------------------------ link checker */
+const linkCheck = { last: null, polling: null };
+
+function problemText(result) {
+  return t(result.problem, result.params || {});
+}
+
+function problemsOf(r) {
+  return linkCheck.last?.records?.[`${r.gtin}|${r.lot || ""}`] || [];
+}
+
+/* Editor: checks the targets currently in the form and writes the result under each one. */
+async function checkLinks() {
+  const rows = [...document.querySelectorAll("#links .link-row")];
+  const urls = rows.map(li => $(".url", li).value.trim()).filter(Boolean);
+  const msg = $("#links-check-msg");
+  if (!urls.length) return;
+  const button = $("#check-links");
+  button.disabled = true;
+  msg.className = "field-msg";
+  I18N.set(msg, "links.checking");
+  rows.forEach(li => { $(".row-check", li).hidden = true; });
+  try {
+    const { results } = await api("POST", "links/check", { urls });
+    const byUrl = Object.fromEntries(results.map(r => [r.url, r]));
+    let problems = 0;
+    rows.forEach(li => {
+      const result = byUrl[$(".url", li).value.trim()];
+      const box = $(".row-check", li);
+      if (!result) return;
+      box.hidden = false;
+      box.className = "row-check " + (result.ok ? "is-ok" : "is-warn");
+      box.textContent = result.ok ? t("links.rowOk", { status: result.status }) : "⚠ " + problemText(result);
+      problems += result.ok ? 0 : 1;
+    });
+    msg.className = "field-msg" + (problems ? " warn-text" : " is-ok");
+    I18N.set(msg, problems ? "links.checkProblems" : "links.checkOk", { count: problems });
+  } catch (e) {
+    I18N.set(msg, e.code, e.params);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function showLinkCheck(last) {
+  linkCheck.last = last && last.checkedAt ? last : null;
+  const msg = $("#records-check-msg");
+  $("#records-problems-wrap").hidden = !linkCheck.last;
+  if (!linkCheck.last) { I18N.set(msg, null); return; }
+  const date = new Intl.DateTimeFormat(I18N.locale, { dateStyle: "short", timeStyle: "short" })
+    .format(new Date(linkCheck.last.checkedAt));
+  msg.className = "field-msg" + (Object.keys(linkCheck.last.records).length ? " warn-text" : " is-ok");
+  I18N.set(msg, "records.checked", { date, count: Object.keys(linkCheck.last.records).length });
+}
+
+/* Background job shared by the record list (every record) and the import preview (a list of URLs). */
+async function runLinkJob(body, onProgress) {
+  const job = await api("POST", "links/jobs", body);
+  onProgress(0, job.total);
+  for (;;) {
+    await new Promise(resolve => setTimeout(resolve, 800));
+    const status = await api("GET", "links/jobs/" + job.token);
+    if (status.state === "finished") return status;
+    onProgress(status.done, status.total);
+  }
+}
+
+async function checkAllLinks() {
+  const button = $("#records-check");
+  const msg = $("#records-check-msg");
+  button.disabled = true;
+  msg.className = "field-msg";
+  try {
+    const status = await runLinkJob({ scope: "all" }, (done, total) => I18N.set(msg, "records.checking", { done, total }));
+    showLinkCheck(status);
+    renderRecords();
+  } catch (e) {
+    I18N.set(msg, e.code, e.params);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 /* ------------------------------------------------------------------ spreadsheets: export and import */
@@ -437,6 +533,28 @@ function importErrorText(error) {
   return `${t("import.row", { row: error.row })} ${t(key, params)}`;
 }
 
+async function checkImportLinks(links) {
+  const msg = $("#import-links-msg");
+  const list = $("#import-warnings");
+  list.replaceChildren();
+  msg.className = "field-msg";
+  try {
+    const status = await runLinkJob({ urls: links.map(l => l.url) },
+      (done, total) => I18N.set(msg, "import.linksChecking", { done, total }));
+    const bad = Object.fromEntries(status.problems.map(p => [p.url, p]));
+    const items = links.filter(l => bad[l.url]).map(l => {
+      const li = document.createElement("li");
+      li.textContent = `${t("import.row", { row: l.row })} ${l.url} — ${problemText(bad[l.url])}`;
+      return li;
+    });
+    list.replaceChildren(...items);
+    msg.className = "field-msg" + (items.length ? " warn-text" : " is-ok");
+    I18N.set(msg, items.length ? "import.linksProblems" : "import.linksOk", { count: items.length });
+  } catch (e) {
+    I18N.set(msg, e.code, e.params);
+  }
+}
+
 function openImport() {
   clearInterval(importState.polling);
   Object.assign(importState, { token: null, polling: null, imported: false });
@@ -444,6 +562,8 @@ function openImport() {
   $("#import-file").disabled = false;
   $("#import-report").hidden = true;
   $("#import-summary").hidden = false;
+  $("#import-warnings").replaceChildren();
+  I18N.set($("#import-links-msg"), null);
   importStatus(null, null);
   const apply = $("#import-apply");
   apply.disabled = true;
@@ -490,6 +610,7 @@ async function previewImport() {
     });
     importState.token = report.token;
     renderImportReport(report);
+    if ($("#import-checklinks").checked && report.links.length) checkImportLinks(report.links);
   } catch (e) {
     importStatus("error", e.code, e.params);
   }
@@ -716,6 +837,7 @@ async function save(event) {
     $("#delete").hidden = false;
     setPublished(true);
     showStatus("ok", result.code);
+    checkLinks();                       // warns about targets that do not answer; never blocks the save
   } catch (e) {
     showStatus("error", e.code, e.params);
   } finally {
@@ -877,6 +999,9 @@ async function init() {
   });
 
   $("#records-search").addEventListener("input", renderRecords);
+  $("#records-problems").addEventListener("change", renderRecords);
+  $("#records-check").addEventListener("click", checkAllLinks);
+  $("#check-links").addEventListener("click", checkLinks);
   $("#records-export-xlsx").addEventListener("click", () => exportSheet("xlsx"));
   $("#records-export-csv").addEventListener("click", () => exportSheet("csv"));
   $("#records-import").addEventListener("click", openImport);

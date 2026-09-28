@@ -31,6 +31,17 @@ import mock_data_entry  # noqa: E402
 import users  # noqa: E402
 users.set_password("tester", "a-long-test-password")
 import app as portal  # noqa: E402
+import linkcheck  # noqa: E402
+
+
+def fake_check(url):
+    """Stand-in for the network: addresses containing "missing" answer 404, the others 200."""
+    bad = "missing" in url
+    return {"url": url, "ok": not bad, "problem": "linkcheck.httpError" if bad else None,
+            "status": 404 if bad else 200, "finalUrl": url, "params": {"status": 404} if bad else {}}
+
+
+linkcheck.check_url = fake_check
 
 for application, port in [(mock_data_entry.app, DATA_ENTRY_PORT), (portal.app, PORT)]:
     threading.Thread(target=make_server("127.0.0.1", port, application, threaded=True).serve_forever, daemon=True).start()
@@ -180,6 +191,35 @@ with sync_playwright() as p:
     check("import stored product and batch with the default first", len(stored) == 2
           and stored[0]["defaultLinktype"] == "gs1:pip" and stored[0]["links"][0]["href"] == "https://www.example.org/new"
           and stored[0]["links"][0]["hreflang"] == ["pt", "en"], stored)
+
+    # Link checker: editor, every record, import preview
+    mock_data_entry.upsert({"anchor": "/01/09506000134369", "itemDescription": "Risotto", "defaultLinktype": "gs1:pip",
+                            "links": [{"linktype": "gs1:pip", "href": "https://example.org/missing",
+                                       "title": "Manual", "hreflang": ["en"]}]})
+    page.click("#records-check"); page.wait_for_timeout(2500)
+    check("check every record: summary line", "Records with problems: 1" in page.inner_text("#records-check-msg"),
+          page.inner_text("#records-check-msg"))
+    risotto = page.query_selector("#records-body tr:has-text('Risotto')")
+    check("check every record: warning on the record", risotto and risotto.query_selector(".link-warn") is not None
+          and "example.org/missing" in risotto.query_selector(".link-warn").get_attribute("title"))
+    page.check("#records-problems"); page.wait_for_timeout(100)
+    check("filter: only records with problems", len(page.query_selector_all("#records-body tr")) == 1)
+    page.click("#records-body a:has-text('Risotto')"); page.wait_for_timeout(1500)
+    notes = [el.inner_text() for el in page.query_selector_all("#links .row-check") if el.is_visible()]
+    check("opening a record with problems checks its targets", any("error 404" in n for n in notes)
+          and "Targets with problems: 1" in page.inner_text("#links-check-msg"), (notes, page.inner_text("#links-check-msg")))
+    page.goto(BASE + "#records"); page.wait_for_timeout(700)
+    check("last check shown again after reloading", "Records with problems: 1" in page.inner_text("#records-check-msg"))
+
+    page.click("#records-import"); page.wait_for_timeout(200)
+    page.check("#import-checklinks")
+    extra = os.path.join(CONFIG, "check.csv")
+    with open(extra, "w", encoding="utf-8") as fh:
+        fh.write("gtin;description;linkType;url\n07898357410039;New;gs1:pip;https://example.org/missing-page\n")
+    page.set_input_files("#import-file", extra); page.wait_for_timeout(2500)
+    check("import preview: optional address check", "Row 2: https://example.org/missing-page" in page.inner_text("#import-warnings")
+          and page.is_enabled("#import-apply"), page.inner_text("#import-warnings"))
+    page.click("#import-cancel")
 
     page.hover("#user-button"); page.wait_for_timeout(200)
     check("user menu on hover", page.is_visible("#menu-logout"))

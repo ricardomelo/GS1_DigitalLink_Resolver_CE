@@ -125,6 +125,17 @@ a { color: var(--link); }
 .records-table .changed small { display: block; color: var(--muted); }
 .records-empty { color: var(--muted); padding: 1.5rem 0 .5rem; margin: 0; }
 .records-sheet { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 0 1rem; }
+.records-check { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1.25rem; }
+.records-check .field-msg { margin: 0; }
+.records-check .choice { margin: 0; font-size: .875rem; }
+.links-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.row-check { margin: .5rem 0 0; font-size: .875rem; }
+.row-check.is-ok { color: var(--ok); }
+.row-check.is-warn, .field-msg.warn-text, .warn-text { color: #9A5B00; }
+.link-warn { display: inline-block; margin-left: .4rem; padding: .05rem .45rem; border-radius: 999px;
+  background: #FFF3DC; color: #9A5B00; font-size: .75rem; font-weight: 600; white-space: nowrap; cursor: help; }
+.import-check { margin-top: .75rem; font-size: .875rem; }
+.import-warnings { margin: 0 0 1rem; padding-left: 1.2rem; color: #9A5B00; font-size: .875rem; max-height: 8rem; overflow-y: auto; }
 .records-sheet .btn { min-height: 2.25rem; padding: .35rem 1rem; font-size: .875rem; }
 
 /* ---------------------------------------------------------------- spreadsheet import */

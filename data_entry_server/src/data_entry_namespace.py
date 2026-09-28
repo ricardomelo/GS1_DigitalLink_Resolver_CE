@@ -100,7 +100,10 @@ class NewDocOperations(TokenResource):
             abort(500, description="Error creating document:" + str(e))
 
 
+# Every protected resource declares the BearerAuth scheme so that Swagger UI's "Authorize" value is
+# sent with its requests (without it the page calls these endpoints without the token and gets 401).
 @data_entry_namespace.route('/summary')
+@data_entry_namespace.doc(security='BearerAuth', responses={401: 'Missing Authorization Header', 403: 'Token is invalid.'})
 class DocSummary(TokenResource):
     @data_entry_namespace.doc(description="One line per record (anchor + qualifiers) with its item description, "
                                           "default link type and number of links")
@@ -121,10 +124,19 @@ class DocSummary(TokenResource):
 
 
 @data_entry_namespace.route('/index')
-class DocOperationsAll(Resource):
+@data_entry_namespace.doc(security='BearerAuth', responses={401: 'Missing Authorization Header', 403: 'Token is invalid.'})
+class DocOperationsAll(TokenResource):
     @data_entry_namespace.doc(description="Get the index for all documents in the database")
     def get(self) -> tuple[dict[str, Any], int] | Response:
         try:
+            # The index lists every registered identifier: without a token anyone could enumerate
+            # the whole catalogue, so it is protected like the other data entry operations.
+            token_result = self.is_auth_token_ok()
+            if not token_result['result'] and token_result['message'] == "Missing Authorization Header":
+                return token_result['message'], 401
+            elif not token_result['result']:
+                return token_result['message'], 403
+
             response_data = data_entry_logic.read_index()
             return response_data, response_data['response_status']
 
@@ -134,6 +146,7 @@ class DocOperationsAll(Resource):
 
 
 @data_entry_namespace.route('/<anchor_ai_code>/<anchor_ai>')
+@data_entry_namespace.doc(security='BearerAuth')
 class DocOperations(TokenResource):
     @data_entry_namespace.doc(description="Retrieve a document using its anchor")
     def get(self, anchor_ai_code: str, anchor_ai: str) -> tuple[Any, int] | Response:
@@ -206,6 +219,7 @@ class DocOperations(TokenResource):
 
 
 @data_entry_namespace.route('/<anchor_ai_code>/<anchor_ai>/<path:extra_segments>')
+@data_entry_namespace.doc(security='BearerAuth')
 class DocOperationsQualified(TokenResource):
     @data_entry_namespace.doc(description="Retrieve a document using its anchor")
     def get(self, anchor_ai_code: str, anchor_ai: str, extra_segments: str) -> tuple[Any, int] | Response:

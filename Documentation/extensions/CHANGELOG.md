@@ -2,6 +2,16 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Data entry API: consistent token protection
+- `GET /api/index` now requires the bearer token like every other data entry operation (401 without
+  it, 403 with a wrong one). It was public and listed every registered identifier, so anyone could
+  enumerate the catalogue. Clients that call it must send `Authorization: Bearer <SESSION_TOKEN>`.
+- The Swagger description declares the `BearerAuth` scheme on every protected operation. Before, only
+  `POST /new` did, so the "Authorize" button of `/api/docs` sent the token with that operation alone
+  and "Try it out" on GET/PUT/DELETE returned 401. `/api/heartbeat` stays public.
+- `dev-tests/resolver/test_data_entry_api.py`: token checks on every operation and the Swagger
+  declarations (fails on the official code on exactly these points).
+
 ### Portal: record list
 - New view "Registered records" (`/portal/#records`, from the user menu or the link under the title):
   every product and batch on the resolver with description, GTIN, scope, number of links and last

@@ -352,6 +352,10 @@ To offer more link types, add a row to `LINK_TYPES` in `portal/gs1.py` and its l
 
 ## Hardening
 
+- Every data entry operation except `/api/heartbeat` requires the bearer token, including `/api/index`
+  and `/api/summary`. In `/api/docs`, click **Authorize** and enter `Bearer <SESSION_TOKEN>`; the value
+  stays only in that browser tab (nothing is stored) and is sent with every protected operation.
+
 - Behind a TLS reverse proxy on the same host set `PROXY_BIND_ADDRESS=127.0.0.1` and
   `DATABASE_BIND_ADDRESS=127.0.0.1` in `.env`: plain HTTP (port 8080) and MongoDB (27017) then stay off the
   network. Docker publishes ports past the host firewall (ufw/iptables), so this setting matters.

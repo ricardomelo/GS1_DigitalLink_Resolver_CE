@@ -72,10 +72,10 @@ check("unknown format", error_code(lambda: sheet.read_table("a.pdf", b"%PDF")) =
 check("broken XLSX", error_code(lambda: sheet.read_table("a.xlsx", b"PK\x03\x04broken")) == "import.unreadable")
 
 # Export → XLSX → import round trip
-records = [{"key": "01", "value": "07898357410015", "lot": None, "description": "Café torrado", "defaultLinkType": "gs1:pip",
+records = [{"key": "01", "value": "07898357410015", "qualifiers": [], "description": "Café torrado", "defaultLinkType": "gs1:pip",
             "links": [{"linktype": "gs1:instructions", "href": "https://x.org/m.pdf", "hreflang": ["pt", "en"], "fwqs": False},
                       {"linktype": "gs1:pip", "href": "https://x.org/cafe", "hreflang": ["pt"], "title": "Café"}]}]
-labels = {"headers": {"key": "Chave (AI)", "value": "Identificador", "lot": "Lote", "description": "Descrição", "linkType": "Tipo de link", "url": "URL",
+labels = {"headers": {"key": "Chave (AI)", "value": "Identificador", "qualifiers": "Qualificadores", "lot": "Lote", "description": "Descrição", "linkType": "Tipo de link", "url": "URL",
                       "language": "Idioma", "title": "Título", "default": "Principal", "forward": "Repassar parâmetros"},
           "yes": "sim", "no": "não", "sheets": {"links": "Links", "linkTypes": "Tipos de link", "languages": "Idiomas"}}
 rows = sheet.export_rows(records)
@@ -83,7 +83,7 @@ check("export: default link first and marked", rows[0][4] == "gs1:pip" and rows[
 data = sheet.write_xlsx([list(r) for r in rows], labels, [("gs1:pip", "Página do produto", "…")], [("pt", "português")])
 book = load_workbook(io.BytesIO(data))
 links = book["Links"]
-check("XLSX: localised headers and sheets", [c.value for c in links[1]][:4] == ["Chave (AI)", "Identificador", "Lote", "Descrição"]
+check("XLSX: localised headers and sheets", [c.value for c in links[1]][:4] == ["Chave (AI)", "Identificador", "Qualificadores", "Descrição"]
       and book.sheetnames == ["Links", "Tipos de link", "Idiomas"], book.sheetnames)
 check("XLSX: key and identifier stored as text with leading zeros", links["A2"].value == "01" and links["B2"].value == "07898357410015"
       and links["B2"].number_format == "@")
@@ -105,8 +105,16 @@ check("malformed tags refused", not any(gs1.normalise_language(t) for t in ["", 
 rows = sheet.read_table("x.csv", "GTIN;Descrição;Tipo de link;URL;Idioma\r\n7898357410015;A;gs1:pip;https://x.org;en-US, vi\r\n".encode())
 records, _ = sheet.parse_rows(rows, PT)
 check("language case kept from the file", records[0]["links"][0]["hreflang"] == ["en-US", "vi"], records[0]["links"][0])
-check("template and unusual lots are not editable",
-      gs1.is_editable_lot("L2026A") and not gs1.is_editable_lot("{lotnumber}") and not gs1.is_editable_lot("A/B"))
+check("template and unusual lots are not valid qualifiers",
+      gs1.is_valid_qualifier_set("01", [("10", "L2026A")]) and not gs1.is_valid_qualifier_set("01", [("10", "{lotnumber}")])
+      and not gs1.is_valid_qualifier_set("01", [("10", "A/B")]))
+rows = sheet.read_table("x.csv", "GTIN;Qualificadores;Lote;Descrição;Tipo de link;URL\r\n7898357410015;(21)S1;L1;Café;gs1:pip;https://x.org\r\n7898357410015;/10/L1/21/S1;;Café;gs1:pip;https://y.org\r\n".encode())
+records, errors = sheet.parse_rows(rows, {**PT, "qualifiers": ["Qualificadores"]})
+check("qualifiers column (element strings or path) and the old lot column form one record",
+      not errors and len(records) == 1 and records[0]["qualifiers"] == [("10", "L1"), ("21", "S1")], (records, errors))
+rows = sheet.read_table("x.csv", "GTIN;Qualificadores;Descrição;Tipo de link;URL\r\n7898357410015;10/L1/21;Café;gs1:pip;https://x.org\r\n".encode())
+_, errors = sheet.parse_rows(rows, {**PT, "qualifiers": ["Qualificadores"]})
+check("malformed qualifiers reported", errors and errors[0]["code"] == "qualifier.format", errors)
 
 # Other primary keys and spreadsheets made before them
 rows = sheet.read_table("x.csv", "Chave (AI);Identificador;Descrição;Tipo de link;URL\r\n(00);095060001343520000;Palete;gs1:pip;https://x.org\r\n414;9506000134376;Loja;gs1:pip;https://y.org\r\n;7898357410015;Café;gs1:pip;https://z.org\r\n".encode())

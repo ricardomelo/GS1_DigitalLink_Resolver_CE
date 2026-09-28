@@ -90,7 +90,7 @@ with sync_playwright() as p:
     page.select_option("#locale", "en-GB")
     check("English wording", page.inner_text("#test") == "Try now" and page.inner_text("#copy") == "Copy link address")
 
-    page.check('input[value="lot"]'); page.fill("#lot", "L2026A"); page.check("#opt-brand"); page.wait_for_timeout(700)
+    page.fill("#q-10", "L2026A"); page.check("#opt-brand"); page.wait_for_timeout(700)
     for fmt in ["png", "svg"]:
         response = ctx.request.get(f"http://127.0.0.1:{PORT}" + page.get_attribute(f"#download-{fmt}", "href"))
         check(f"{fmt} download", response.status == 200 and "_gs1." in (response.headers.get("content-disposition") or ""))
@@ -122,8 +122,8 @@ with sync_playwright() as p:
     page.fill("#records-search", ""); page.select_option("#records-user", "tester"); page.wait_for_timeout(100)
     check("filter by user", len(page.query_selector_all("#records-body tr")) == 1)
     page.select_option("#records-user", "")
-    check("records with other qualifiers are not editable here",
-          page.query_selector("#records-body tr:has-text('SER1') a") is None)
+    check("serial-number records are listed and editable",
+          page.query_selector("#records-body tr:has-text('Serial SER1') a") is not None)
     page.click("#records-body a:has-text('Test 01')"); page.wait_for_timeout(700)
     check("opening from the list loads the record in the editor",
           page.is_visible("#editor-view") and page.input_value("#key-value") == "07898357410015"
@@ -150,9 +150,10 @@ with sync_playwright() as p:
     links_sheet = book.worksheets[0]
     header = [c.value for c in links_sheet[1]]
     exported = [[c.value for c in row] for row in links_sheet.iter_rows(min_row=2)]
-    check("export: English headers and reference sheets", header[:4] == ["Key (AI)", "Identifier", "Batch/lot", "Description"]
+    check("export: English headers and reference sheets", header[:4] == ["Key (AI)", "Identifier", "Qualifiers", "Description"]
           and book.sheetnames == ["Links", "Link types", "Keys", "Languages"], (header, book.sheetnames))
-    check("export: one row per link of the editable records", len(exported) == 5
+    check("export: one row per link of the editable records", len(exported) == 6
+          and any(r[2] == "(21)SER1" for r in exported)
           and all(r[0] == "01" and r[1] in ("07898357410015", "09506000134352", "09506000134369") for r in exported), exported)
     check("export: languages outside the menu kept", {"en-US", "vi"} <= {r[6] for r in exported}, exported)
     with page.expect_download() as info:
@@ -163,21 +164,21 @@ with sync_playwright() as p:
         if row[1].value == "07898357410015":
             row[3].value = "Test 01 (updated)"                      # update: new description
     links_sheet.append(["01", "07898357410022", "", "Imported product", "gs1:pip", "www.example.org/new", "pt, en", "", "yes", "yes"])
-    links_sheet.append(["01", "07898357410022", "L9", "Imported product", "gs1:pip", "https://example.org/l9", "pt", "", "", ""])
+    links_sheet.append(["01", "07898357410022", "(10)L9", "Imported product", "gs1:pip", "https://example.org/l9", "pt", "", "", ""])
     links_sheet.append(["01", "07898357410039", "", "Broken", "gs1:pip", "ftp://example.org", "pt", "", "", ""])
     links_sheet.append(["01", "07898357410039", "", "Broken", "gs1:pip", "https://example.org/b", "portuguese", "", "", ""])
-    links_sheet.append(["01", "09506000134352", "{lotnumber}", "Açaí orgânico", "gs1:pip", "https://example.org/t", "pt", "", "", ""])
+    links_sheet.append(["01", "09506000134352", "(10){lotnumber}", "Açaí orgânico", "gs1:pip", "https://example.org/t", "pt", "", "", ""])
     edited = os.path.join(CONFIG, "edited.xlsx")
     book.save(edited)
 
     page.click("#records-import"); page.wait_for_timeout(200)
     page.set_input_files("#import-file", edited); page.wait_for_timeout(1200)
     summary = page.inner_text("#import-summary")
-    check("import preview counts", summary == "New: 2 · Changed: 1 · Unchanged: 2 · With errors: 2", summary)
+    check("import preview counts", summary == "New: 2 · Changed: 1 · Unchanged: 3 · With errors: 2", summary)
     errors_text = page.inner_text("#import-errors")
-    check("import preview explains every wrong row at once", "Row 9:" in errors_text and "ftp://example.org" in errors_text
-          and "Row 10:" in errors_text and "portuguese" in errors_text
-          and "Row 11: the batch/lot “{lotnumber}” cannot be managed" in errors_text, errors_text)
+    check("import preview explains every wrong row at once", "Row 10:" in errors_text and "ftp://example.org" in errors_text
+          and "Row 11:" in errors_text and "portuguese" in errors_text
+          and "Row 12: the batch/lot “{lotnumber}” cannot be managed" in errors_text, errors_text)
     check("nothing written before confirming", "07898357410022" not in json.dumps(list(mock_data_entry.DB)))
     check("apply button counts valid changes", page.inner_text("#import-apply") == "Import records (3)")
     page.click("#import-apply"); page.wait_for_timeout(2500)
@@ -223,10 +224,10 @@ with sync_playwright() as p:
 
     # Other primary identification keys (GS1 Digital Link URI Syntax 4.3)
     page.goto(BASE); page.wait_for_timeout(700)
-    check("every key of section 4.3 offered (415 excepted)", len(page.query_selector_all("#key-type option")) == 15)
+    check("every key of section 4.3 offered", len(page.query_selector_all("#key-type option")) == 16)
     page.select_option("#key-type", "414"); page.wait_for_timeout(100)
-    check("GLN: its own label, no batch option", page.inner_text("#key-label") == "GLN number"
-          and not page.is_visible("#scope-fieldset"))
+    check("GLN: its own label and qualifiers (254, 7040)", page.inner_text("#key-label") == "GLN number"
+          and [el.get_attribute("data-ai") for el in page.query_selector_all("#qualifiers .qual-field")] == ["254", "7040"])
     page.fill("#key-value", "9506000134377"); page.wait_for_timeout(100)
     check("GLN check digit feedback", "should be 6" in page.inner_text("#key-msg"), page.inner_text("#key-msg"))
     page.select_option("#key-type", "8013"); page.fill("#key-value", "1987654Ad4X4bL5ttr2310c2X"); page.wait_for_timeout(100)
@@ -250,6 +251,44 @@ with sync_playwright() as p:
     row.query_selector("a").click(); page.wait_for_timeout(800)
     check("SSCC opens in the editor", page.input_value("#key-type") == "00"
           and page.input_value("#description") == "Pallet 1")
+
+    # Key qualifiers (URI Syntax 4.4, 4.6, 4.9)
+    page.goto(BASE); page.wait_for_timeout(700)
+    check("GTIN qualifiers in path order", [el.get_attribute("data-ai") for el in page.query_selector_all("#qualifiers .qual-field")]
+          == ["22", "10", "21", "235"])
+    page.fill("#key-value", "09506000134352")
+    page.fill("#q-21", "S1"); page.fill("#q-10", "L1"); page.fill("#q-22", "V1"); page.wait_for_timeout(300)
+    check("preview path follows 4.9 order", "/01/09506000134352/22/V1/10/L1/21/S1" in page.inner_text("#dl"), page.inner_text("#dl"))
+    page.fill("#q-235", "TPX1"); page.wait_for_timeout(100)
+    check("UPUI (235) cannot be combined with 22/10/21", "does not allow this combination" in page.inner_text("#qual-msg")
+          and page.is_disabled("#open"), page.inner_text("#qual-msg"))
+    page.fill("#q-235", ""); page.wait_for_timeout(100)
+    page.click("#open"); page.wait_for_timeout(600)
+    page.fill("#description", "Variant batch serial")
+    page.fill(".link-row .url", "https://example.org/serial"); page.click("#description")
+    page.click("#save"); page.wait_for_timeout(800)
+    stored = [e for e in mock_data_entry.v3("01_09506000134352") if e.get("qualifiers") and len(e["qualifiers"]) == 3]
+    check("qualified record stored with its qualifiers in order", stored and stored[0]["qualifiers"] == [{"22": "V1"}, {"10": "L1"}, {"21": "S1"}],
+          stored)
+    response = ctx.request.get(f"http://127.0.0.1:{PORT}" + page.get_attribute("#download-png", "href"))
+    decoded = cv2.QRCodeDetector().detectAndDecode(cv2.imdecode(np.frombuffer(response.body(), np.uint8), 1))[0]
+    check("QR code with every qualifier", decoded.endswith("/01/09506000134352/22/V1/10/L1/21/S1"), decoded)
+
+    page.select_option("#key-type", "415"); page.fill("#key-value", "9506000134376"); page.wait_for_timeout(200)
+    check("415 requires 8020", "requires the qualifier (8020)" in page.inner_text("#qual-msg") and page.is_disabled("#open")
+          and "required" in page.inner_text("#qualifiers"), page.inner_text("#qual-msg"))
+    page.fill("#q-8020", "INV-2026-1"); page.wait_for_timeout(200)
+    check("415 + 8020 accepted", page.is_enabled("#open") and "/415/9506000134376/8020/INV-2026-1" in page.inner_text("#dl"))
+    page.select_option("#key-type", "8010"); page.fill("#key-value", "9506000ABC-1"); page.fill("#q-8011", "0123"); page.wait_for_timeout(200)
+    check("CPID serial without leading zero", "(8011) is not in an accepted format" in page.inner_text("#qual-msg"), page.inner_text("#qual-msg"))
+
+    page.goto(BASE + "#records"); page.wait_for_timeout(700)
+    row = page.query_selector("#records-body tr:has-text('Variant batch serial')")
+    check("qualified record in the list", row is not None and "Variant V1 · Batch L1 · Serial S1" in row.inner_text(),
+          row.inner_text() if row else None)
+    row.query_selector("a").click(); page.wait_for_timeout(800)
+    check("qualified record opens with its qualifiers", page.input_value("#q-22") == "V1" and page.input_value("#q-10") == "L1"
+          and page.input_value("#q-21") == "S1" and page.input_value("#description") == "Variant batch serial")
 
     page.hover("#user-button"); page.wait_for_timeout(200)
     check("user menu on hover", page.is_visible("#menu-logout"))

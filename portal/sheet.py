@@ -4,10 +4,11 @@ Spreadsheets for bulk import and export of records (CSV and XLSX).
 Layout: one row per link. Rows with the same key, identifier and batch/lot form one record, exactly as
 the editor would save it:
 
-    Key | Identifier | Batch/lot | Description | Link type | URL | Language | Title | Default | Forward q.s.
+    Key | Identifier | Qualifiers | Description | Link type | URL | Language | Title | Default | Forward q.s.
 
-"Key" is the AI of the primary identification key (01, 00, 414, …); empty means 01, so spreadsheets
-made before other keys existed, with a "GTIN" column and no "Key" column, still import unchanged.
+"Key" is the AI of the primary identification key (01, 00, 414, …); empty means 01. "Qualifiers" holds
+the key qualifiers as element strings, "(22)V1(10)L1(21)S1", or as a path, "/10/L1". Spreadsheets
+made before, with a "GTIN" and a "Batch/lot" column, still import unchanged.
 
 The module is language-neutral: header labels, sheet names and reference texts come from the
 browser (portal/static/i18n.js), which sends them with each request. Headers are recognised by their
@@ -27,9 +28,10 @@ import gs1
 from gs1 import ValidationError
 
 # canonical key, column width in the XLSX export
-COLUMNS = [("key", 8), ("value", 22), ("lot", 14), ("description", 36), ("linkType", 24), ("url", 48),
+COLUMNS = [("key", 8), ("value", 22), ("qualifiers", 24), ("description", 36), ("linkType", 24), ("url", 48),
            ("language", 10), ("title", 30), ("default", 10), ("forward", 12)]
-KEYS = [key for key, _ in COLUMNS]
+EXPORTED = [key for key, _ in COLUMNS]
+KEYS = EXPORTED + ["lot"]                      # "lot": accepted on import (older spreadsheets), not exported
 REQUIRED = {"value", "description", "linkType", "url"}
 # Headers accepted for a column besides its key and the labels sent by the browser
 BUILT_IN_ALIASES = {"value": ["gtin"], "key": ["ai"]}
@@ -155,11 +157,20 @@ def parse_rows(rows: list[list[str]], aliases: dict[str, list[str]], yes=(), no=
         if re.fullmatch(r"\d+([.,]\d+)?[eE]\+?\d+", value_raw):
             errors.append({"row": number, "code": "import.gtinScientific", "params": {"value": value_raw}})
             continue
+        try:
+            qualifiers = gs1.parse_qualifier_text(cell(row, "qualifiers"))
+        except ValidationError as exc:
+            errors.append({"row": number, "code": exc.code, "params": {"value": cell(row, "qualifiers")}})
+            continue
+        if cell(row, "lot"):
+            qualifiers.append(("10", cell(row, "lot")))
+        qualifiers = sorted(qualifiers, key=lambda kv: gs1.QUALIFIER_ORDER.index(kv[0])
+                            if kv[0] in gs1.QUALIFIER_ORDER else 99)
         # GTINs are grouped without separators and leading zeros (8, 12, 13 and 14 digits are the same key)
         grouped = re.sub(r"[\s.\-]", "", value_raw).lstrip("0") if ai == "01" else value_raw.strip()
-        key = (ai, grouped, cell(row, "lot"))
+        key = (ai, grouped, tuple(qualifiers))
         if key not in records:
-            records[key] = {"rows": [], "key": ai, "value": value_raw, "lot": cell(row, "lot"),
+            records[key] = {"rows": [], "key": ai, "value": value_raw, "qualifiers": qualifiers,
                             "description": "", "descriptions": set(), "links": []}
             order.append(key)
         record = records[key]
@@ -197,7 +208,7 @@ def parse_rows(rows: list[list[str]], aliases: dict[str, list[str]], yes=(), no=
 
 # ------------------------------------------------------------------------------------------ writing
 def export_rows(records: list[dict]) -> list[list[str]]:
-    """records: [{"key", "value", "lot", "description", "defaultLinkType", "links": [v3 links]}]"""
+    """records: [{"key", "value", "qualifiers": [[AI, value]], "description", "defaultLinkType", "links"}]"""
     rows = []
     for record in records:
         default = record.get("defaultLinkType")
@@ -206,7 +217,8 @@ def export_rows(records: list[dict]) -> list[list[str]]:
         for link in links:
             is_default = link.get("linktype") == default and not default_marked
             default_marked = default_marked or is_default
-            rows.append([record["key"], record["value"], record.get("lot") or "", record.get("description") or "",
+            qualifiers = "".join(f"({q}){v}" for q, v in record.get("qualifiers") or [])
+            rows.append([record["key"], record["value"], qualifiers, record.get("description") or "",
                          link.get("linktype") or "", link.get("href") or "",
                          ", ".join(link.get("hreflang") or []), link.get("title") or "",
                          "yes" if is_default else "", "no" if link.get("fwqs") is False else "yes"])
@@ -223,7 +235,7 @@ def _localise_flags(rows, yes_word, no_word):
 def write_csv(rows: list[list[str]], labels: dict) -> bytes:
     out = io.StringIO()
     writer = csv.writer(out, delimiter=";", lineterminator="\r\n")
-    writer.writerow([labels.get("headers", {}).get(key, key) for key in KEYS])
+    writer.writerow([labels.get("headers", {}).get(key, key) for key in EXPORTED])
     writer.writerows(_localise_flags(rows, labels.get("yes", "yes"), labels.get("no", "no")))
     return ("\ufeff" + out.getvalue()).encode("utf-8")      # BOM: Excel opens UTF-8 correctly
 
@@ -238,7 +250,7 @@ def write_xlsx(rows: list[list[str]], labels: dict, link_types: list[tuple[str, 
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = (sheets.get("links") or "Links")[:31]
-    sheet.append([headers.get(key, key) for key in KEYS])
+    sheet.append([headers.get(key, key) for key in EXPORTED])
     for row in _localise_flags(rows, labels.get("yes", "yes"), labels.get("no", "no")):
         sheet.append(row)
     for index, (_, width) in enumerate(COLUMNS, start=1):
@@ -250,7 +262,7 @@ def write_xlsx(rows: list[list[str]], labels: dict, link_types: list[tuple[str, 
         for cell in sheet[letter][1:]:                       # Excel keeps the leading zeros
             cell.number_format = "@"
     sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = f"A1:{get_column_letter(len(KEYS))}{max(1, sheet.max_row)}"
+    sheet.auto_filter.ref = f"A1:{get_column_letter(len(EXPORTED))}{max(1, sheet.max_row)}"
 
     reference = workbook.create_sheet((sheets.get("linkTypes") or "Link types")[:31])
     reference.append([labels.get("codeHeader", "Code"), labels.get("nameHeader", "Name"),

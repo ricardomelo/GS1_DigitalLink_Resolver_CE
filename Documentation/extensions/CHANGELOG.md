@@ -2,6 +2,24 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: key qualifiers (URI Syntax 1.7, sections 4.4, 4.6, 4.9)
+- Every key qualifier: 22, 10, 21 (GTIN; 10 and 21 for ITIP), 235 (UPUI), 8011 (CPID), 254 and 7040
+  (GLN 414: FID), 8020 (required for 415, now supported), 7040 (417: EOID; 8004: MID), 8019 (GSRN).
+  `gs1.KEY_SHAPES` describes which qualifiers go together, in path order, and which are required;
+  formats of section 4.6. ITIP is offered without 22: the GS1 Syntax Engine refuses 22 without 01.
+- Editor: one field per qualifier of the chosen key (optional/required, format note), live checks of
+  formats and combinations; preview, QR code and HRI with every qualifier.
+- Records carry a qualifier set instead of a batch: API `qualifiers` ({"10": "L1"} or "/10/L1/21/S1";
+  `lot` still accepted); record metadata keys unchanged for batches; list, search, link checker and
+  deletion work with any qualifier set.
+- Spreadsheets: *Qualifiers* column ("(22)V1(10)L1(21)S1" or "/10/L1"); the older *Batch/lot* column
+  still imports.
+- Resolver: canonical qualifier order includes 8011, 8020 and 8019; HTML pages label records of any key.
+- Tests: qualifier cases compared with the GS1 Syntax Engine (`test_keys.py`); walk-up through
+  variant + batch and resolution of qualified records of every key (`test_resolver.py`); qualifiers in
+  the portal end-to-end test (order, UPUI exclusion, 415 + 8020, CPID serial format) and the spreadsheet
+  test.
+
 ### Portal: every primary identification key (URI Syntax 1.7, section 4.3)
 - Editor, record list, spreadsheets, labels and link checker work with GTIN, ITIP, GMN, CPID, GLN (414,
   417), GSRN (8017, 8018), GCN, SSCC, GDTI, GINC, GSIN, GRAI and GIAI; step 1 has an identifier type

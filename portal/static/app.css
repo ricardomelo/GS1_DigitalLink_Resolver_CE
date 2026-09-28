@@ -351,3 +351,11 @@ dialog::backdrop { background: rgba(0, 30, 74, .45); }
   .row-grid { grid-template-columns: 1fr; grid-template-areas: "type" "language" "url" "title"; }
   .locale-picker svg { display: none; }
 }
+
+/* ---------------------------------------------------------------- key qualifiers */
+.qualifiers { border: 0; padding: 0; margin: 0 0 1rem; }
+.qualifiers legend { font-weight: 600; margin-bottom: .25rem; }
+.qual-field { margin-top: .75rem; }
+.qual-field input { max-width: 30ch; }
+.qual-field .optional { color: var(--muted); font-weight: 400; font-size: .8125rem; }
+.qual-field .qual-help { margin: .25rem 0 0; font-size: .8125rem; color: var(--muted); }

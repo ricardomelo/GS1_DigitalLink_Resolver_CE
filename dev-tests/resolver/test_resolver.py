@@ -221,11 +221,42 @@ for ai, value in KEY_EXAMPLES.items():
           r.status_code == 307 and r.headers.get("Location") == f"https://example.org/key/{ai}", (r.status_code, r.headers.get("Location")))
     r = get(anchor + "?linkType=linkset", "application/linkset+json")
     check(f"linkset for {anchor}", r.status_code == 200 and anchor in r.get_data(as_text=True), r.status_code)
+# ---------------------------------------------------------------- key qualifiers (sections 4.4 and 4.9)
+def link(href):
+    return [{"linktype": "gs1:pip", "href": href, "title": "t", "type": "text/html", "hreflang": ["en"]}]
+
+
+Q = "/01/09506000999982"       # a GTIN with a record per level: product, variant, variant + batch
+author({"anchor": Q, "itemDescription": "Cascade", "defaultLinktype": "gs1:pip", "links": link("https://example.org/product")})
+author({"anchor": Q, "qualifiers": [{"22": "V1"}], "itemDescription": "Cascade", "defaultLinktype": "gs1:pip",
+        "links": link("https://example.org/variant")})
+author({"anchor": Q, "qualifiers": [{"22": "V1"}, {"10": "L1"}], "itemDescription": "Cascade", "defaultLinktype": "gs1:pip",
+        "links": link("https://example.org/variant-batch")})
+for path, target in [(Q + "/22/V1/10/L1/21/S1", "variant-batch"), (Q + "/22/V1/10/L2", "variant"),
+                     (Q + "/22/V2/10/L1", "product"), (Q + "/22/V1", "variant"), (Q + "/10/L1", "product")]:
+    r = get(path)
+    check(f"walk-up {path} → {target}", r.status_code == 307 and r.headers.get("Location") == f"https://example.org/{target}",
+          (r.status_code, r.headers.get("Location")))
+QUALIFIED = [("/415/9506000134376", [{"8020": "INV-1"}]), ("/414/9506000134376", [{"254": "EXT1"}]),
+             ("/417/9506000134376", [{"7040": "1ABC"}]), ("/8004/9506000ABC123", [{"7040": "1ABC"}]),
+             ("/8018/950600013437612342", [{"8019": "123"}]), ("/8010/9506000ABC-1", [{"8011": "123"}]),
+             ("/01/09506000999999", [{"235": "TPX123"}])]
+for anchor, qualifiers in QUALIFIED:
+    author({"anchor": anchor, "qualifiers": qualifiers, "itemDescription": "q", "defaultLinktype": "gs1:pip",
+            "links": link("https://example.org/q" + anchor.replace("/", "-"))})
+    path = anchor + "".join(f"/{k}/{v}" for q in qualifiers for k, v in q.items())
+    r = get(path)
+    check(f"resolves {path}" + (" (real syntax engine)" if ENGINE else ""),
+          r.status_code == 307 and r.headers.get("Location") == "https://example.org/q" + anchor.replace("/", "-"),
+          (r.status_code, r.headers.get("Location")))
+
 if ENGINE:
     r = get("/00/095060001343520001")
     check("wrong SSCC check digit refused by the syntax engine", r.status_code == 400, r.status_code)
     r = get("/415/9506000134376")
     check("415 without its required 8020 refused by the syntax engine", r.status_code == 400, r.status_code)
+    r = get("/01/09506000999999/235/TPX123/10/L1")
+    check("UPUI combined with a batch refused by the syntax engine", r.status_code == 400, r.status_code)
 else:
     print("SKIP real syntax engine checks (set GS1_SYNTAX_ENGINE, see dev-tests/portal/test_keys.py)")
 

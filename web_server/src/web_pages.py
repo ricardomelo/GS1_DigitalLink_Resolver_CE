@@ -213,15 +213,19 @@ def _label(locale: str, term: str) -> str:
 
 
 def _level_label(locale: str, anchor: str) -> str:
-    parts = anchor.split('/01/', 1)[-1].split('/')
-    pairs = dict(zip(parts[1::2], parts[2::2]))
+    # /AI/value followed by the key qualifiers, e.g. /01/…/10/L1/21/S1 or /414/…/254/1
+    parts = anchor.strip('/').split('/')
+    ai = parts[0] if parts else ''
+    pairs = dict(zip(parts[2::2], parts[3::2]))
     if '21' in pairs:
         return _t(locale, 'level.serial', value=pairs['21'])
     if '10' in pairs:
         return _t(locale, 'level.lot', value=pairs['10'])
     if '22' in pairs:
         return _t(locale, 'level.variant', value=pairs['22'])
-    return _t(locale, 'level.product')
+    if pairs:
+        return ' '.join(f'({k}) {v}' for k, v in pairs.items())
+    return _t(locale, 'level.product') if ai == '01' else f'({ai}) {parts[1] if len(parts) > 1 else ""}'
 
 
 def _levels(locale: str, linkset: list[dict]) -> list[dict]:

@@ -19,11 +19,12 @@ META_FILE = os.environ.get("PORTAL_META_FILE",
                            os.path.join(os.environ.get("PORTAL_CONFIG_DIR", "/app/config"), "records-meta.json"))
 
 
-def key(anchor: str, lot: str | None) -> str:
+def key(anchor: str, qpath: str = "") -> str:
     """"09506000134352" for /01/… (the format used before other keys existed), "414/9506000134376"
-    for the other primary keys; "/10/<lot>" appended for a batch."""
+    for the other primary keys; the qualifier path appended ("/10/L1/21/S1") for qualified records,
+    so a batch keeps its earlier key "<GTIN-14>/10/<lot>"."""
     base = anchor[4:] if anchor.startswith("/01/") else anchor.lstrip("/")
-    return f"{base}/10/{lot}" if lot else base
+    return base + (qpath or "")
 
 
 def load() -> dict[str, dict]:
@@ -57,11 +58,11 @@ def _now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def touch(anchor: str, lot: str | None, user: str) -> None:
+def touch(anchor: str, qpath: str, user: str) -> None:
     """Records a creation or a change by `user` now."""
     with _locked():
         data = load()
-        k = key(anchor, lot)
+        k = key(anchor, qpath)
         now = _now()
         entry = data.get(k) or {"createdAt": now, "createdBy": user}
         entry.update(updatedAt=now, updatedBy=user)
@@ -69,8 +70,8 @@ def touch(anchor: str, lot: str | None, user: str) -> None:
         _write(data)
 
 
-def remove(anchor: str, lot: str | None) -> None:
+def remove(anchor: str, qpath: str) -> None:
     with _locked():
         data = load()
-        if data.pop(key(anchor, lot), None) is not None:
+        if data.pop(key(anchor, qpath), None) is not None:
             _write(data)

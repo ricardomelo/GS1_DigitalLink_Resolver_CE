@@ -92,7 +92,6 @@ _MIME_BY_EXTENSION = {
 }
 
 # Conservative subset of GS1 AI encodable character set 82 for batch/lot numbers.
-_LOT_PATTERN = re.compile(r"^[A-Za-z0-9._\-]{1,20}$")
 
 
 def gtin_check_digit(body: str) -> int:
@@ -118,23 +117,6 @@ def normalise_gtin(raw: str) -> str:
     return digits.zfill(14)
 
 
-def normalise_lot(raw: str | None) -> str | None:
-    lot = (raw or "").strip()
-    if not lot:
-        return None
-    if not _LOT_PATTERN.match(lot):
-        raise ValidationError("lot.invalid")
-    return lot
-
-
-def is_editable_lot(value) -> bool:
-    """A batch/lot the portal can edit: excludes templates such as "{lotnumber}" and values outside
-    the portal's character subset, which other tools may have stored."""
-    return isinstance(value, str) and bool(_LOT_PATTERN.match(value))
-
-
-def qualifiers_for(lot: str | None) -> list[dict[str, str]]:
-    return [{"10": lot}] if lot else []
 
 
 # --------------------------------------------------------------------------- primary identification keys
@@ -143,8 +125,7 @@ def qualifiers_for(lot: str | None) -> list[dict[str, str]]:
 # uses to validate every request): check digits, GMN check-character pair, GS1 Company Prefix at the
 # start of alphanumeric keys, ITIP piece/total, GRAI filler zero.
 #
-# AI 415 (GLN of the invoicing party) is not offered yet: its Digital Link path requires the key
-# qualifier 8020 (payment reference), which comes with the key qualifiers.
+# Key qualifiers (section 4.4) and the paths of section 4.9 are described by KEY_SHAPES below.
 #
 # Alphanumeric values use a conservative subset of the 82-character set: letters, digits, full stop and
 # hyphen. "_" is excluded because the data entry service turns "/" into "_" in document ids, and the
@@ -257,24 +238,133 @@ def _gtin(value: str) -> str:
     return normalise_gtin(value)
 
 
-# code: (short name, validator, key qualifiers the portal manages for it)
-PRIMARY_KEYS: dict[str, tuple[str, object, tuple[str, ...]]] = {
-    "01": ("GTIN", _gtin, ("10",)),
-    "8006": ("ITIP", _itip, ()),
-    "8013": ("GMN", _gmn, ()),
-    "8010": ("CPID", _cpid, ()),
-    "414": ("GLN", _numeric_key(13), ()),
-    "417": ("Party GLN", _numeric_key(13), ()),
-    "8017": ("GSRNP", _numeric_key(18), ()),
-    "8018": ("GSRN", _numeric_key(18), ()),
-    "255": ("GCN", _gcn, ()),
-    "00": ("SSCC", _numeric_key(18), ()),
-    "253": ("GDTI", _with_serial(13, 17), ()),
-    "401": ("GINC", _alnum_key(30), ()),
-    "402": ("GSIN", _numeric_key(17), ()),
-    "8003": ("GRAI", _with_serial(13, 16, filler="0"), ()),
-    "8004": ("GIAI", _alnum_key(30), ()),
+# code: (short name, validator)
+PRIMARY_KEYS: dict[str, tuple[str, object]] = {
+    "01": ("GTIN", _gtin),
+    "8006": ("ITIP", _itip),
+    "8013": ("GMN", _gmn),
+    "8010": ("CPID", _cpid),
+    "414": ("GLN", _numeric_key(13)),
+    "415": ("Pay-to GLN", _numeric_key(13)),
+    "417": ("Party GLN", _numeric_key(13)),
+    "8017": ("GSRNP", _numeric_key(18)),
+    "8018": ("GSRN", _numeric_key(18)),
+    "255": ("GCN", _gcn),
+    "00": ("SSCC", _numeric_key(18)),
+    "253": ("GDTI", _with_serial(13, 17)),
+    "401": ("GINC", _alnum_key(30)),
+    "402": ("GSIN", _numeric_key(17)),
+    "8003": ("GRAI", _with_serial(13, 16, filler="0")),
+    "8004": ("GIAI", _alnum_key(30)),
 }
+
+# --------------------------------------------------------------------------- key qualifiers
+# Section 4.4 (which AIs), 4.6 (formats) and 4.9 (path order). Each key has one or more "shapes": the
+# qualifiers allowed together, in path order, and whether each is required. A record uses exactly one
+# shape. Compound paths of 4.9 are shapes with a required qualifier: UPUI = 01 + 235, EOID = 417 + 7040,
+# FID = 414 + 7040, MID = 8004 + 7040; 415 always needs 8020.
+#
+# ITIP (8006) is offered with 10 and 21 only: the grammar of 4.9 also allows 22, but the GS1 Barcode
+# Syntax Engine the resolver uses refuses 22 without 01 (GS1 General Specifications association rule),
+# so such a record could never be resolved.
+KEY_SHAPES: dict[str, list[list[tuple[str, bool]]]] = {
+    "01": [[("22", False), ("10", False), ("21", False)], [("235", True)]],
+    "8006": [[("10", False), ("21", False)]],
+    "8010": [[("8011", False)]],
+    "414": [[("254", False)], [("7040", True)]],
+    "415": [[("8020", True)]],
+    "417": [[], [("7040", True)]],
+    "8017": [[("8019", False)]],
+    "8018": [[("8019", False)]],
+    "8004": [[], [("7040", True)]],
+}
+QUALIFIER_ORDER = ["22", "10", "21", "235", "8011", "254", "7040", "8020", "8019"]
+
+_QCHARS = r"[A-Za-z0-9._\-]"
+QUALIFIER_FORMATS: dict[str, tuple[str, re.Pattern]] = {
+    # AI: (name, pattern) — alphanumerics limited to letters, digits, ".", "_" and "-"
+    "22": ("CPV", re.compile(rf"^{_QCHARS}{{1,20}}$")),
+    "10": ("LOT", re.compile(rf"^{_QCHARS}{{1,20}}$")),
+    "21": ("SER", re.compile(rf"^{_QCHARS}{{1,20}}$")),
+    "235": ("TPX", re.compile(rf"^{_QCHARS}{{1,28}}$")),
+    "8011": ("CPID SERIAL", re.compile(r"^[1-9]\d{0,11}$")),          # no leading zero
+    "254": ("GLN EXTENSION", re.compile(rf"^{_QCHARS}{{1,20}}$")),
+    "7040": ("UIC EXT", re.compile(r"^\d[A-Za-z0-9._\-]{2}[A-Za-z0-9_\-]$")),   # last: importer index
+    "8020": ("REF NO", re.compile(rf"^{_QCHARS}{{1,25}}$")),
+    "8019": ("SRIN", re.compile(r"^\d{1,10}$")),
+}
+
+
+def key_qualifiers(ai: str) -> list[str]:
+    """Every qualifier AI the key accepts, in path order."""
+    seen = {q for shape in KEY_SHAPES.get(ai, [[]]) for q, _ in shape}
+    return [q for q in QUALIFIER_ORDER if q in seen]
+
+
+def normalise_qualifiers(ai: str, raw) -> list[tuple[str, str]]:
+    """Validates the qualifiers of a record ({"10": "L1", …} or [("10", "L1"), …]) and returns them as
+    (AI, value) pairs in path order. Empty values are ignored."""
+    items = raw.items() if isinstance(raw, dict) else (raw or [])
+    given: dict[str, str] = {}
+    for q, value in items:
+        q, value = str(q).strip("() "), str(value or "").strip()
+        if not value:
+            continue
+        if q not in QUALIFIER_FORMATS or q not in key_qualifiers(ai):
+            raise ValidationError("qualifier.notAllowed", ai=q, key=ai)
+        if not QUALIFIER_FORMATS[q][1].match(value):
+            raise ValidationError("qualifier.invalid", ai=q)
+        given[q] = value
+    shapes = KEY_SHAPES.get(ai, [[]])
+    for shape in shapes:
+        allowed = {q for q, _ in shape}
+        required = {q for q, needed in shape if needed}
+        if set(given) <= allowed and required <= set(given):
+            return [(q, given[q]) for q, _ in shape if q in given]
+    missing = [q for shape in shapes for q, needed in shape if needed and set(given) <= {x for x, _ in shape}]
+    if missing:
+        raise ValidationError("qualifier.required", ai=missing[0], key=ai)
+    raise ValidationError("qualifier.combination", key=ai, given=" + ".join(sorted(given, key=QUALIFIER_ORDER.index)))
+
+
+def is_valid_qualifier_set(ai: str, pairs) -> bool:
+    try:
+        normalise_qualifiers(ai, pairs)
+        return True
+    except ValidationError:
+        return False
+
+
+def qualifier_list(pairs: list[tuple[str, str]]) -> list[dict[str, str]]:
+    """The data entry format: [{"10": "L1"}, {"21": "S1"}]."""
+    return [{q: v} for q, v in pairs]
+
+
+def qualifier_path(pairs: list[tuple[str, str]], encode: bool = True) -> str:
+    """"/10/L1/21/S1" (values percent-encoded for URIs unless encode=False)."""
+    return "".join(f"/{q}/{quote(v, safe='') if encode else v}" for q, v in pairs)
+
+
+def parse_qualifier_text(text: str) -> list[tuple[str, str]]:
+    """Qualifiers written as element strings "(10)L1(21)S1" or as a path "/10/L1/21/S1"."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    if text.startswith("("):
+        pairs = re.findall(r"\((\d{2,4})\)([^()]*)", text)
+        if "".join(f"({q}){v}" for q, v in pairs) != text.replace(" ", "") and not pairs:
+            raise ValidationError("qualifier.format")
+        return [(q, v.strip()) for q, v in pairs]
+    parts = [p for p in text.strip("/").split("/")]
+    if len(parts) % 2:
+        raise ValidationError("qualifier.format")
+    return [(parts[i], parts[i + 1]) for i in range(0, len(parts), 2)]
+
+
+def pairs_from(qualifiers) -> list[tuple[str, str]]:
+    """(AI, value) pairs from the data entry format, in path order (unknown AIs last)."""
+    pairs = [(k, v) for item in qualifiers or [] for k, v in item.items()]
+    return sorted(pairs, key=lambda kv: QUALIFIER_ORDER.index(kv[0]) if kv[0] in QUALIFIER_ORDER else 99)
 
 
 def normalise_key(ai: str, raw) -> str:
@@ -301,24 +391,14 @@ def split_anchor(anchor: str) -> tuple[str, str] | None:
     return None
 
 
-def allows_lot(ai: str) -> bool:
-    return "10" in PRIMARY_KEYS.get(ai, ("", None, ()))[2]
+def digital_link(base_url: str, anchor: str, pairs: list[tuple[str, str]] = ()) -> str:
+    return f"{base_url}{anchor}{qualifier_path(list(pairs))}"
 
 
-def digital_link(base_url: str, anchor: str, lot: str | None) -> str:
-    uri = f"{base_url}{anchor}"
-    if lot:
-        uri += f"/10/{quote(lot, safe='')}"
-    return uri
-
-
-def hri_lines(anchor: str, lot: str | None) -> list[str]:
-    """Human readable interpretation of the element strings, one per line: (01)… and (10)…"""
+def hri_lines(anchor: str, pairs: list[tuple[str, str]] = ()) -> list[str]:
+    """Human readable interpretation of the element strings, one per line: (01)…, (10)…, (21)…"""
     ai, value = anchor.strip("/").split("/", 1)
-    lines = [f"({ai}){value}"]
-    if lot:
-        lines.append(f"(10){lot}")
-    return lines
+    return [f"({ai}){value}"] + [f"({q}){v}" for q, v in pairs]
 
 
 def normalise_url(raw: str, position: int) -> str:

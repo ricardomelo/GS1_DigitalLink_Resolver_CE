@@ -171,7 +171,7 @@ The portal manages every primary identification key of the GS1 Digital Link URI 
 | 8006 | ITIP | GTIN (14) + piece number (2) + total pieces (2); piece 01 … total |
 | 8013 | GMN | up to 25 characters, GS1 Company Prefix first, check-character pair last |
 | 8010 | CPID | up to 30 characters: digits, capital letters, hyphen; GS1 Company Prefix first |
-| 414 / 417 | GLN (physical location / party) | 13 digits, check digit |
+| 414 / 415 / 417 | GLN (physical location / invoicing party / party) | 13 digits, check digit |
 | 8017 / 8018 | GSRN (provider / recipient) | 18 digits, check digit |
 | 255 | GCN | 13 digits with check digit + up to 12 serial digits |
 | 00 | SSCC | 18 digits, check digit |
@@ -187,17 +187,40 @@ The portal manages every primary identification key of the GS1 Digital Link URI 
 - Alphanumeric values use letters, digits, full stop and hyphen only: stricter than the standard's
   82-character set, because the data entry service turns "/" into "_" in document ids and other symbols
   would need percent-encoding.
-- Batch/lot (AI 10) is available for GTINs, as before; the other key qualifiers (section 4.4) come next.
-- **AI 415** (GLN of the invoicing party) is not offered yet: its path requires the key qualifier
-  8020 (payment reference). The compound paths of section 4.9 (UPUI, EOID, FID, MID) likewise depend
-  on key qualifiers.
-- Spreadsheets have a *Key (AI)* column (`01`, `00`, `414`, …; empty means `01`) and an *Identifier*
-  column; files exported before, with a *GTIN* column, still import.
+- Spreadsheets have a *Key (AI)* column (`01`, `00`, `414`, …; empty means `01`), an *Identifier* column
+  and a *Qualifiers* column; files exported before, with *GTIN* and *Batch/lot* columns, still import.
+
+### Key qualifiers
+
+Step 1 shows one field per key qualifier the chosen key accepts (sections 4.4 and 4.9), in path order.
+Empty fields mean "every unit"; a record is one combination of key and qualifiers.
+
+| Key | Qualifiers (path order) | Notes |
+|---|---|---|
+| GTIN (01) | 22 consumer product variant → 10 batch/lot → 21 serial | all optional |
+| GTIN (01) | 235 third-party controlled serialised extension | UPUI; alone, not with 22/10/21 |
+| ITIP (8006) | 10 batch/lot → 21 serial | 22 is in the grammar of 4.9, but the GS1 Syntax Engine (and so the resolver) refuses it without 01 |
+| CPID (8010) | 8011 CPID serial | 1-12 digits, no leading zero |
+| GLN (414) | 254 GLN extension, **or** 7040 UIC with extension | 7040: FID |
+| GLN (415) | 8020 payment reference | **required** |
+| Party GLN (417) | 7040 UIC with extension | EOID |
+| GSRN (8017, 8018) | 8019 service relation instance | 1-10 digits |
+| GIAI (8004) | 7040 UIC with extension | MID |
+
+Formats follow section 4.6 (7040: one digit, two characters and an importer index; 8011 and 8019 digits
+only). Alphanumeric values use letters, digits, ".", "_" and "-". Combinations the standard does not
+allow (e.g. 235 with a batch) are refused with a message; the portal's rules are compared case by case
+with the GS1 Syntax Engine in `dev-tests/portal/test_keys.py`.
+
+Resolution walks up from the most specific record: serial → variant + batch → variant → key, e.g. a
+request for `/01/…/22/V1/10/L2` uses the V1 record when there is none for batch L2. Registering every
+serial number is rarely needed: register the batch or the product and let the walk-up serve the serials;
+use a serial record for a single item (e.g. a recall).
 
 ## Record list
 
 The portal's user menu (and the link under the page title) opens **Registered records**
-(`/portal/#records`): every record on the resolver (any primary key, and batches of GTINs), most recently changed first, with
+(`/portal/#records`): every record on the resolver (any primary key and qualifiers), most recently changed first, with
 description, GTIN, scope (every unit or batch), number of links and the last change made through the
 portal (date and user).
 

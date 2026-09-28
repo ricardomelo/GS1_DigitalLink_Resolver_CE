@@ -104,7 +104,7 @@ def _test_gs1_digital_link_syntax(url: str) -> bool:
         # Add the identifier
         ai_data_string = f"({url_parts[1]}){url_parts[2]}"
 
-        # Add the qualifiers (up to three - CPV, LOT and SERIAL for GTINs, or GLNX for GLNs)
+        # Add the key qualifiers (e.g. CPV, lot and serial for GTINs, GLN extension, CPID serial)
         if len(url_parts) > 3:
             for i in range(3, len(url_parts), 2):
                 ai_data_string += f"({url_parts[i]}){url_parts[i + 1]}"
@@ -555,8 +555,8 @@ def _replace_linkset_template_variables(linkset: list[dict[str, Any]], template_
 _GS1_VOC_PREFIXES = ('https://gs1.org/voc/', 'http://gs1.org/voc/',
                      'https://ref.gs1.org/voc/', 'http://ref.gs1.org/voc/', 'gs1:')
 
-# Canonical order of qualifiers in a GS1 Digital Link path (CPV, batch/lot, serial; anything else last)
-_QUALIFIER_ORDER = ['22', '10', '21', '235', '254', '7040']
+# Canonical order of key qualifiers in a GS1 Digital Link path (URI Syntax 1.7, section 4.9); anything else last
+_QUALIFIER_ORDER = ['22', '10', '21', '235', '8011', '254', '7040', '8020', '8019']
 
 
 def normalise_linktype(linktype: str | None) -> str | None:

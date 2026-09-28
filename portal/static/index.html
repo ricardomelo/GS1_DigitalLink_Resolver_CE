@@ -77,18 +77,14 @@
                maxlength="18" data-i18n-attr="placeholder:gtin.placeholder" aria-describedby="key-msg">
         <p class="field-msg" id="key-msg" aria-live="polite" data-i18n="gtin.hint"></p>
 
-        <fieldset class="scope" id="scope-fieldset">
-          <legend data-i18n="scope.legend"></legend>
-          <label class="choice"><input type="radio" name="scope" value="product" checked> <span data-i18n="scope.product"></span></label>
-          <label class="choice"><input type="radio" name="scope" value="lot"> <span data-i18n="scope.lot"></span></label>
+        <!-- Key qualifiers (URI Syntax 1.7, sections 4.4, 4.6, 4.9): one field per qualifier the chosen key
+             accepts, in path order; built by app.js from the configuration. -->
+        <fieldset class="qualifiers" id="qualifiers-fieldset" hidden>
+          <legend data-i18n="qual.legend"></legend>
+          <p class="hint" data-i18n="qual.hint"></p>
+          <div id="qualifiers"></div>
+          <p class="field-msg" id="qual-msg" aria-live="polite"></p>
         </fieldset>
-
-        <div id="lot-wrap" hidden>
-          <label for="lot" data-i18n="lot.label"></label>
-          <input id="lot" name="lot" class="code" maxlength="20" autocomplete="off"
-                 data-i18n-attr="placeholder:lot.placeholder" aria-describedby="lot-msg">
-          <p class="field-msg" id="lot-msg" data-i18n="lot.hint"></p>
-        </div>
 
         <button type="button" id="open" class="btn btn-secondary" disabled data-i18n="open.button"></button>
         <p class="field-msg" id="open-msg" aria-live="polite"></p>
@@ -140,7 +136,7 @@
         <dl class="legend">
           <div><dt><span class="sw sw-host"></span><span data-i18n="legend.host"></span></dt><dd data-i18n="legend.hostHelp"></dd></div>
           <div><dt><span class="sw sw-key"></span><span id="legend-key" data-i18n="legend.key" data-i18n-params='{"ai":"01","name":"GTIN"}'></span></dt><dd data-i18n="legend.keyHelp"></dd></div>
-          <div id="legend-lot" hidden><dt><span class="sw sw-qual"></span><span data-i18n="legend.lot"></span></dt><dd data-i18n="legend.lotHelp"></dd></div>
+          <div id="legend-lot" hidden><dt><span class="sw sw-qual"></span><span data-i18n="legend.qual"></span></dt><dd data-i18n="legend.qualHelp"></dd></div>
         </dl>
         <p class="state" id="state" data-i18n="state.draft"></p>
         <div class="label-actions">

@@ -104,10 +104,6 @@ function currentKey() {
   return $("#key-type").value || "01";
 }
 
-function keyAllowsLot(ai) {
-  return (CONFIG?.keys || []).some(k => k.code === ai && k.qualifiers.includes("10"));
-}
-
 /* The identifier typed in step 1: { ok, ai, value } or the reason it is not valid yet. */
 function readKey() {
   const ai = currentKey();
@@ -162,17 +158,101 @@ function readKey() {
   return { ok: true, ai, value, key: "key.valid" };
 }
 
-function readLot() {
-  if (!keyAllowsLot(currentKey()) || !$('input[name="scope"][value="lot"]').checked) return { ok: true, lot: null };
-  const lot = $("#lot").value.trim();
-  if (!lot) return { ok: false, key: "lot.required" };
-  if (!/^[A-Za-z0-9._\-]{1,20}$/.test(lot)) return { ok: false, error: true, key: "lot.invalid" };
-  return { ok: true, lot };
+/* ------------------------------------------------------------------ key qualifiers
+   URI Syntax 1.7, sections 4.4 (which AIs), 4.6 (formats) and 4.9 (order). The shapes (the qualifiers
+   allowed together, and which are required) come from the server configuration (gs1.KEY_SHAPES). */
+const QUAL_ORDER = ["22", "10", "21", "235", "8011", "254", "7040", "8020", "8019"];
+const QCHARS = "[A-Za-z0-9._\\-]";
+const QUAL_FORMATS = {
+  "22": [new RegExp(`^${QCHARS}{1,20}$`), 20], "10": [new RegExp(`^${QCHARS}{1,20}$`), 20],
+  "21": [new RegExp(`^${QCHARS}{1,20}$`), 20], "235": [new RegExp(`^${QCHARS}{1,28}$`), 28],
+  "8011": [/^[1-9]\d{0,11}$/, 12], "254": [new RegExp(`^${QCHARS}{1,20}$`), 20],
+  "7040": [/^\d[A-Za-z0-9._\-]{2}[A-Za-z0-9_\-]$/, 4], "8020": [new RegExp(`^${QCHARS}{1,25}$`), 25],
+  "8019": [/^\d{1,10}$/, 10],
+};
+
+function keyConfig(ai) {
+  return (CONFIG?.keys || []).find(k => k.code === ai) || { qualifiers: [], shapes: [[]] };
 }
 
-function query(g, l) {
+/* Required in every shape of the key (e.g. 8020 for AI 415): shown as required. A qualifier required
+   only in an alternative shape (235 for UPUI, 7040 for FID/EOID/MID) is optional for the key. */
+function alwaysRequired(ai, q) {
+  return keyConfig(ai).shapes.every(shape => shape.some(x => x.ai === q && x.required));
+}
+
+function buildQualifierFields() {
+  const ai = currentKey();
+  const box = $("#qualifiers");
+  const qualifiers = keyConfig(ai).qualifiers;
+  box.replaceChildren(...qualifiers.map(q => {
+    const field = document.createElement("div");
+    field.className = "qual-field";
+    field.dataset.ai = q;
+    const label = document.createElement("label");
+    label.htmlFor = "q-" + q;
+    const name = document.createElement("span");
+    I18N.set(name, `qual.${q}.label`);
+    const note = document.createElement("span");
+    note.className = "optional";
+    I18N.set(note, alwaysRequired(ai, q) ? "qual.required" : "qual.optional");
+    label.append(name, " ", note);
+    const input = document.createElement("input");
+    input.id = "q-" + q;
+    input.className = "code";
+    input.autocomplete = "off";
+    input.maxLength = QUAL_FORMATS[q][1];
+    input.inputMode = ["8011", "8019"].includes(q) ? "numeric" : "text";
+    input.addEventListener("input", onIdentityChange);
+    input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); openRecord(); } });
+    const help = document.createElement("p");
+    help.className = "qual-help";
+    I18N.set(help, `qual.${q}.hint`);
+    field.append(label, input, help);
+    return field;
+  }));
+  $("#qualifiers-fieldset").hidden = qualifiers.length === 0;
+}
+
+/* The qualifiers typed in step 1: { ok, pairs: [[AI, value], …] in path order } or the problem. */
+function readQualifiers() {
+  const ai = currentKey();
+  const given = {};
+  for (const field of document.querySelectorAll("#qualifiers .qual-field")) {
+    const q = field.dataset.ai;
+    const value = $("input", field).value.trim();
+    if (!value) continue;
+    if (!QUAL_FORMATS[q][0].test(value)) return { ok: false, error: true, key: "qualifier.invalid", params: { ai: q } };
+    given[q] = value;
+  }
+  const names = Object.keys(given);
+  for (const shape of keyConfig(ai).shapes) {
+    const allowed = shape.map(x => x.ai);
+    const required = shape.filter(x => x.required).map(x => x.ai);
+    if (names.every(q => allowed.includes(q)) && required.every(q => q in given)) {
+      return { ok: true, pairs: allowed.filter(q => q in given).map(q => [q, given[q]]) };
+    }
+  }
+  const missing = keyConfig(ai).shapes.flatMap(shape => names.every(q => shape.some(x => x.ai === q))
+    ? shape.filter(x => x.required && !(x.ai in given)).map(x => x.ai) : []);
+  if (missing.length) return { ok: false, key: "qualifier.required", params: { ai: missing[0] } };
+  const order = q => QUAL_ORDER.indexOf(q);
+  return { ok: false, error: true, key: "qualifier.combination",
+           params: { given: names.sort((a, b) => order(a) - order(b)).map(q => `(${q})`).join(" + ") } };
+}
+
+function qualifierPath(pairs) {
+  return pairs.map(([q, v]) => `/${q}/${encodeURIComponent(v)}`).join("");
+}
+
+/* "Batch L1 · Serial S1" */
+function qualText(pairs) {
+  return (pairs || []).map(([q, v]) => t(`qual.${q}.item`, { value: v })).join(" · ");
+}
+
+function query(g, qual) {
   const params = new URLSearchParams({ key: g.ai, value: g.value });
-  if (l.lot) params.set("lot", l.lot);
+  if (qual.pairs?.length) params.set("qualifiers", qual.pairs.map(([q, v]) => `/${q}/${v}`).join(""));
   return params.toString();
 }
 
@@ -181,10 +261,10 @@ let qrTimer = null;
 
 function renderPreview() {
   const g = readKey();
-  const l = readLot();
+  const l = readQualifiers();
   const host = CONFIG ? CONFIG.resolver : "";
   const shown = g.ok ? g.value : "______________";
-  const lot = l.lot || null;
+  const pairs = l.ok ? l.pairs : [];
 
   const dl = $("#dl");
   dl.replaceChildren();
@@ -197,11 +277,11 @@ function renderPreview() {
   segment("seg-host", host);
   segment("seg-key", `/${g.ai}/${shown}`);
   I18N.set($("#legend-key"), "legend.key", { ai: g.ai, name: t(`key.${g.ai}.short`) });
-  if (lot) segment("seg-qual", `/10/${encodeURIComponent(lot)}`);
-  $("#legend-lot").hidden = !lot;
+  pairs.forEach(([q, v]) => segment("seg-qual", `/${q}/${encodeURIComponent(v)}`));
+  $("#legend-lot").hidden = pairs.length === 0;
 
   const ready = g.ok && l.ok;
-  const uri = ready ? `${host}/${g.ai}/${g.value}` + (lot ? `/10/${encodeURIComponent(lot)}` : "") : "";
+  const uri = ready ? `${host}/${g.ai}/${g.value}` + qualifierPath(pairs) : "";
   toggleLink($("#test"), ready ? uri : null);
   const labelQuery = `${query(g, l)}&${labelOptionsQuery()}`;
   toggleLink($("#download-png"), ready ? `${BASE}api/qrcode?${labelQuery}&format=png` : null);
@@ -265,12 +345,7 @@ function onKeyTypeChange() {
   input.inputMode = numeric ? "numeric" : "text";
   // room for the spaces and hyphens people type between digit groups
   input.maxLength = ai === "01" ? 20 : numeric ? 34 : 40;
-  const lots = keyAllowsLot(ai);
-  $("#scope-fieldset").hidden = !lots;
-  if (!lots) {
-    $('input[name="scope"][value="product"]').checked = true;
-    $("#lot-wrap").hidden = true;
-  }
+  buildQualifierFields();
   onIdentityChange();
 }
 
@@ -288,13 +363,13 @@ function fillKeyTypes() {
 
 function onIdentityChange() {
   const g = readKey();
-  const l = readLot();
+  const l = readQualifiers();
   const gtinMsg = $("#key-msg");
   I18N.set(gtinMsg, g.key, g.params);
   gtinMsg.className = "field-msg" + (g.error ? " is-error" : g.ok ? " is-ok" : "");
-  const lotMsg = $("#lot-msg");
-  I18N.set(lotMsg, l.error ? l.key : "lot.hint");
-  lotMsg.className = "field-msg" + (l.error ? " is-error" : "");
+  const qualMsg = $("#qual-msg");
+  I18N.set(qualMsg, l.ok ? null : l.key, l.params);
+  qualMsg.className = "field-msg" + (l.error ? " is-error" : "");
 
   $("#open").disabled = !(CONFIG && g.ok && l.ok);
   const key = g.ok && l.ok ? query(g, l) : null;
@@ -321,7 +396,7 @@ function setOpenMessage(key, params, otherEntries = []) {
 }
 
 async function openRecord() {
-  const g = readKey(), l = readLot();
+  const g = readKey(), l = readQualifiers();
   if (!CONFIG || !g.ok || !l.ok) return;
   const button = $("#open");
   button.disabled = true;
@@ -414,12 +489,10 @@ function keyText(ai, value) {
 }
 
 function scopeText(r) {
-  if (r.kind === "lot") return t("records.scope.lot", { value: r.lot });
+  if (r.kind === "qualified") return qualText(r.qualifiers);
   if (r.kind !== "other" && r.key !== "01") return t("records.scope.key", { name: t(`key.${r.key}.short`) });
   if (r.kind === "other") {
-    let value = r.qualifiers;
-    try { value = Object.entries(JSON.parse(r.qualifiers)).map(([ai, v]) => `(${ai}) ${v}`).join(" "); } catch { /* as sent */ }
-    return t("records.scope.other", { value });
+    return t("records.scope.other", { value: r.other });
   }
   return t("records.scope.product");
 }
@@ -441,12 +514,12 @@ function renderRecords() {
     .filter(r => {
       if (!words.length) return true;
       const haystack = fold([r.value, r.value.replace(/^0+/, ""), r.key, t(`key.${r.key}.short`), r.description,
-                             r.lot, r.qualifiers].join(" "));
+                             (r.qualifiers || []).map(p => p[1]).join(" "), qualText(r.qualifiers), r.other].join(" "));
       return words.every(w => haystack.includes(w));
     })
     // Most recently changed first; records without portal history after, by GTIN.
     .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "") || a.anchor.localeCompare(b.anchor)
-                    || (a.lot || "").localeCompare(b.lot || ""));
+                    || (a.qpath || "").localeCompare(b.qpath || ""));
 
   const rows = shown.map(r => {
     const tr = document.createElement("tr");
@@ -511,9 +584,7 @@ async function openFromList(r) {
   $("#key-type").value = r.key;
   onKeyTypeChange();
   $("#key-value").value = r.value;
-  $(`input[name="scope"][value="${r.kind === "lot" ? "lot" : "product"}"]`).checked = true;
-  $("#lot-wrap").hidden = r.kind !== "lot";
-  $("#lot").value = r.lot || "";
+  (r.qualifiers || []).forEach(([q, v]) => { const input = $("#q-" + q); if (input) input.value = v; });
   onIdentityChange();
   window.scrollTo(0, 0);
   await openRecord();
@@ -528,7 +599,7 @@ function problemText(result) {
 }
 
 function problemsOf(r) {
-  return linkCheck.last?.records?.[`${r.anchor}|${r.lot || ""}`] || [];
+  return linkCheck.last?.records?.[`${r.anchor}|${r.qpath || ""}`] || [];
 }
 
 /* Editor: checks the targets currently in the form and writes the result under each one. */
@@ -604,7 +675,7 @@ async function checkAllLinks() {
 }
 
 /* ------------------------------------------------------------------ spreadsheets: export and import */
-const SHEET_COLUMNS = ["key", "value", "lot", "description", "linkType", "url", "language", "title", "default", "forward"];
+const SHEET_COLUMNS = ["key", "value", "qualifiers", "description", "linkType", "url", "language", "title", "default", "forward"];
 const MAX_IMPORT_BYTES = 700 * 1024;
 const importState = { token: null, polling: null, imported: false };
 
@@ -618,6 +689,7 @@ function sheetLabels() {
   const keys = {};
   (CONFIG?.keys || []).forEach(({ code }) => { keys[code] = t(`key.${code}.name`); });
   aliases.value.push(...I18N.every("sheet.col.gtin"));         // spreadsheets made before other keys existed
+  aliases.lot = I18N.every("sheet.col.lot");                   // and before the qualifiers column
   const languages = {};
   (CONFIG?.languages || []).forEach(code => { languages[code] = I18N.languageName(code); });
   return {
@@ -728,7 +800,7 @@ function readAsBase64(file) {
 }
 
 function scopeOf(item) {
-  if (item.lot) return t("records.scope.lot", { value: item.lot });
+  if (item.qualifiers?.length) return qualText(item.qualifiers);
   return item.key && item.key !== "01" ? t("records.scope.key", { name: t(`key.${item.key}.short`) }) : t("records.scope.product");
 }
 
@@ -946,11 +1018,11 @@ function refreshDefault() {
 }
 
 function collect() {
-  const g = readKey(), l = readLot();
+  const g = readKey(), l = readQualifiers();
   return {
     key: g.ai,
     value: g.value,
-    lot: l.lot,
+    qualifiers: Object.fromEntries(l.pairs || []),
     description: $("#description").value,
     defaultLinkType: $("#links .link-row .link-type").value,
     links: [...document.querySelectorAll("#links .link-row")].map(li => ({
@@ -988,11 +1060,10 @@ async function save(event) {
 }
 
 async function remove() {
-  const g = readKey(), l = readLot();
-  const target = l.lot
-    ? t("delete.targetLot", { lot: l.lot, gtin: g.value })
-    : g.ai === "01" ? t("delete.targetGtin", { gtin: g.value })
-    : t("delete.targetKey", { name: t(`key.${g.ai}.short`), value: g.value });
+  const g = readKey(), l = readQualifiers();
+  const target = l.pairs?.length
+    ? t("delete.targetQualified", { qualifiers: qualText(l.pairs), key: keyText(g.ai, g.value) })
+    : t("delete.targetBase", { key: keyText(g.ai, g.value) });
   if (!confirm(t("delete.confirm", { target }))) return;
   try {
     const result = await api("DELETE", "record?" + query(g, l));
@@ -1123,13 +1194,8 @@ async function init() {
   // Events first: the page responds even before the configuration arrives.
   $("#key-type").addEventListener("change", () => { $("#key-value").value = ""; onKeyTypeChange(); $("#key-value").focus(); });
   $("#key-value").addEventListener("input", onIdentityChange);
-  $("#lot").addEventListener("input", onIdentityChange);
-  document.querySelectorAll('input[name="scope"]').forEach(radio => radio.addEventListener("change", () => {
-    $("#lot-wrap").hidden = !$('input[name="scope"][value="lot"]').checked;
-    onIdentityChange();
-  }));
+
   $("#key-value").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); openRecord(); } });
-  $("#lot").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); openRecord(); } });
   $("#open").addEventListener("click", openRecord);
   $("#add").addEventListener("click", () => $(".url", addRow()).focus());
   $("#form").addEventListener("submit", save);

@@ -76,6 +76,7 @@ def summary():
         for e in v3(did):
             line={"anchor":e["anchor"],"itemDescription":e["itemDescription"],"defaultLinktype":e["defaultLinktype"],"linkCount":len(e["links"])}
             if e.get("qualifiers"): line["qualifiers"]=e["qualifiers"]
+            if request.args.get("links")=="true": line["links"]=e["links"]
             lines.append(line)
     if not lines: return jsonify(response_status=404,error="none"),404
     return jsonify(response_status=200,data=lines)

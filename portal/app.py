@@ -24,8 +24,12 @@ import requests
 from flask import Flask, Response, g, jsonify, redirect, request, send_from_directory, session
 
 import gs1
+import base64
+import uuid
+
 import label
 import meta
+import sheet
 import users
 from gs1 import ValidationError
 
@@ -83,7 +87,7 @@ def _secret_key() -> bytes:
 
 app = Flask(__name__, static_folder=None)
 app.config.update(
-    MAX_CONTENT_LENGTH=256 * 1024,
+    MAX_CONTENT_LENGTH=1024 * 1024,   # spreadsheet imports arrive as base64 in JSON (file ≤ 700 KB)
     SECRET_KEY=_secret_key(),
     SESSION_COOKIE_NAME="gs1resolver_portal",
     SESSION_COOKIE_PATH="/portal",
@@ -483,8 +487,16 @@ def get_record():
 @require_login
 def save_record():
     gtin14, lot, doc = build_document(request.get_json(silent=True) or {})
-    qualifiers = doc.get("qualifiers", [])
     uri = gs1.digital_link(RESOLVER_PUBLIC_URL, gtin14, lot)
+    created = store_record(gtin14, lot, doc)
+    return message("save.created" if created else "save.updated", 201 if created else 200,
+                   digitalLink=uri, created=created)
+
+
+def store_record(gtin14: str, lot: str | None, doc: dict) -> bool:
+    """Creates or replaces one record (GTIN + optional lot) with the safe call sequence.
+    Returns True when the record was created. Used by the editor and by spreadsheet imports."""
+    qualifiers = doc.get("qualifiers", [])
 
     entries, current_default = read_entries(gtin14)
     target = find_entry(entries, qualifiers)
@@ -502,7 +514,7 @@ def save_record():
         audit.info("user=%s action=create anchor=/01/%s lot=%s links=%d",
                    g.user, gtin14, lot or "-", len(doc["links"]))
         record_change(gtin14, lot)
-        return message("save.created", 201, digitalLink=uri, created=True)
+        return True
 
     # Case 2: existing entry → PUT (merge on linktype+hreflang+context), then a partial DELETE of the
     # links the user removed. In this order the product is never left without a target.
@@ -522,7 +534,7 @@ def save_record():
     audit.info("user=%s action=update anchor=/01/%s lot=%s links=%d removed=%d",
                g.user, gtin14, lot or "-", len(doc["links"]), len(removed))
     record_change(gtin14, lot)
-    return message("save.updated", 200, digitalLink=uri, created=False)
+    return False
 
 
 @app.delete("/portal/api/record")
@@ -584,6 +596,210 @@ def list_records():
             "createdAt": info.get("createdAt"), "createdBy": info.get("createdBy"),
         })
     return jsonify({"records": records})
+
+
+# --------------------------------------------------------------------------- spreadsheets
+def summary_with_links() -> list[dict]:
+    status, body = resolver("GET", "/summary?links=true")
+    if status == 404:
+        return []
+    if status != 200 or not isinstance(body, dict):
+        raise UpstreamError("upstream.readFailed", 502, body)
+    return [line for line in body.get("data") or [] if (line.get("anchor") or "").startswith("/01/")]
+
+
+@app.post("/portal/api/export")
+@require_login
+def export_records():
+    """Every record the portal can edit, one row per link, as XLSX or CSV. The browser sends the
+    header labels and reference texts in the user's language."""
+    data = request.get_json(silent=True) or {}
+    labels = data.get("labels") or {}
+    records = []
+    for line in summary_with_links():
+        entry = describe_entry(line)
+        if entry["kind"] == "other":
+            continue
+        records.append({"gtin": line["anchor"].split("/")[2], "lot": entry.get("value"),
+                        "description": line.get("itemDescription") or "",
+                        "defaultLinkType": line.get("defaultLinktype"), "links": line.get("links") or []})
+    rows = sheet.export_rows(records)
+    stamp = time.strftime("%Y%m%d-%H%M")
+    audit.info("user=%s action=export format=%s records=%d rows=%d", g.user, data.get("format"), len(records), len(rows))
+    if data.get("format") == "csv":
+        body, mime, ext = sheet.write_csv(rows, labels), "text/csv; charset=utf-8", "csv"
+    else:
+        names = labels.get("linkTypes") or {}
+        link_types = [(code, *(names.get(code) or [title, ""])[:2]) for code, _, title in gs1.LINK_TYPES]
+        languages = [(code, (labels.get("languages") or {}).get(code, code)) for code in gs1.LANGUAGES]
+        body = sheet.write_xlsx(rows, labels, link_types, languages)
+        mime, ext = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
+    return Response(body, mimetype=mime, headers={
+        "Content-Disposition": f'attachment; filename="resolver-links-{stamp}.{ext}"'})
+
+
+IMPORTS: dict[str, dict] = {}          # token → prepared import (single worker: memory is shared)
+IMPORTS_LOCK = threading.Lock()
+IMPORT_TTL = 30 * 60
+
+
+def _forget_old_imports() -> None:
+    now = time.time()
+    with IMPORTS_LOCK:
+        for token in [t for t, job in IMPORTS.items() if now - job["created"] > IMPORT_TTL]:
+            IMPORTS.pop(token, None)
+
+
+def _row_of(record: dict, position) -> int:
+    try:
+        return record["links"][int(position) - 1]["row"]
+    except (KeyError, IndexError, TypeError, ValueError):
+        return record["rows"][0]
+
+
+def _same_record(target: dict, doc: dict) -> bool:
+    def links(items):
+        return sorted((l.get("linktype"), l.get("href"), l.get("title") or "", tuple(sorted(l.get("hreflang") or [])),
+                       l.get("fwqs", True) is not False, tuple(sorted(l.get("context") or []))) for l in items)
+    return ((target.get("itemDescription") or "") == doc["itemDescription"]
+            and target.get("defaultLinktype") == doc["defaultLinktype"]
+            and links(target.get("links") or []) == links(doc["links"]))
+
+
+@app.post("/portal/api/import/preview")
+@require_login
+def import_preview():
+    """Reads a spreadsheet, validates every record with the editor's rules and compares it with the
+    resolver. Nothing is written; the valid records are kept for /import/apply under a token."""
+    _forget_old_imports()
+    data = request.get_json(silent=True) or {}
+    try:
+        content = base64.b64decode(data.get("content") or "", validate=True)
+    except ValueError as exc:
+        raise ValidationError("import.unreadable") from exc
+    labels = data.get("labels") or {}
+    rows = sheet.read_table(data.get("filename") or "", content)
+    parsed, errors = sheet.parse_rows(rows, labels.get("aliases") or {}, labels.get("yes") or [], labels.get("no") or [])
+
+    existing: dict[str, list[dict]] = {}
+    for line in summary_with_links():
+        existing.setdefault(line["anchor"].split("/")[2], []).append(line)
+
+    report, plan, file_defaults = [], [], {}
+    rows_with_errors = {e["row"] for e in errors}
+    for record in parsed:
+        item = {"rows": record["rows"], "gtin": record["gtin"], "lot": record["lot"] or None,
+                "description": record["description"], "links": len(record["links"])}
+        if rows_with_errors.intersection(record["rows"]):
+            item["action"] = "error"
+            report.append(item)
+            continue
+        defaults = [l for l in record["links"] if l["default"]]
+        if len(defaults) > 1:
+            errors.append({"row": defaults[1]["row"], "code": "import.defaultMany",
+                           "params": {"rows": ", ".join(str(l["row"]) for l in defaults)}})
+            item["action"] = "error"
+            report.append(item)
+            continue
+        ordered = defaults + [l for l in record["links"] if not l["default"]]
+        try:
+            gtin14, lot, doc = build_document({
+                "gtin": record["gtin"], "lot": record["lot"], "description": record["description"],
+                "defaultLinkType": ordered[0]["linkType"] if ordered else None,
+                "links": [{"linkType": l["linkType"], "url": l["url"], "hreflang": l["hreflang"],
+                           "title": l["title"], "forwardQueryString": l["forward"]} for l in ordered]})
+        except ValidationError as exc:
+            params = dict(exc.params)
+            row = _row_of({"links": ordered, "rows": record["rows"]}, params.get("position"))
+            for name in ("first", "second"):
+                if name in params:
+                    params[name] = _row_of({"links": ordered, "rows": record["rows"]}, params[name])
+            errors.append({"row": row, "code": exc.code, "params": params})
+            item["action"] = "error"
+            report.append(item)
+            continue
+
+        item.update(gtin=gtin14, lot=lot)
+        entries = existing.get(gtin14, [])
+        target = find_entry(entries, doc.get("qualifiers", []))
+        others = [e for e in entries if e is not target]
+        first = file_defaults.setdefault(gtin14, (doc["defaultLinktype"], record["rows"][0]))
+        if first[0] != doc["defaultLinktype"]:
+            errors.append({"row": record["rows"][0], "code": "import.defaultConflict",
+                           "params": {"linkType": first[0], "row": first[1]}})
+            item["action"] = "error"
+        elif others and others[0].get("defaultLinktype") != doc["defaultLinktype"]:
+            errors.append({"row": record["rows"][0], "code": "default.sharedMismatch",
+                           "params": {"linkType": others[0].get("defaultLinktype"),
+                                      "entries": [describe_entry(e) for e in others]}})
+            item["action"] = "error"
+        elif target is None:
+            item["action"] = "create"
+        elif _same_record(target, doc):
+            item["action"] = "unchanged"
+        else:
+            item["action"] = "update"
+        if item["action"] in ("create", "update"):
+            # products before their batches, so a new GTIN is created with its product-level record
+            plan.append({"gtin": gtin14, "lot": lot, "doc": doc, "rows": record["rows"]})
+        report.append(item)
+
+    plan.sort(key=lambda p: (p["gtin"], p["lot"] is not None))
+    token = uuid.uuid4().hex
+    with IMPORTS_LOCK:
+        IMPORTS[token] = {"user": g.user, "created": time.time(), "plan": plan, "state": "ready",
+                          "done": 0, "total": len(plan), "results": []}
+    counts = {action: sum(1 for i in report if i["action"] == action)
+              for action in ("create", "update", "unchanged", "error")}
+    errors.sort(key=lambda e: e["row"])
+    return jsonify({"token": token, "records": report, "errors": errors, "counts": counts})
+
+
+def _run_import(token: str, user: str) -> None:
+    job = IMPORTS[token]
+    with app.test_request_context():
+        g.user = user                                   # store_record logs and records who changed it
+        created = updated = failed = 0
+        for item in job["plan"]:
+            result = {"gtin": item["gtin"], "lot": item["lot"], "rows": item["rows"],
+                      "description": item["doc"]["itemDescription"]}
+            try:
+                result["action"] = "created" if store_record(item["gtin"], item["lot"], item["doc"]) else "updated"
+                created += result["action"] == "created"
+                updated += result["action"] == "updated"
+            except (ValidationError, UpstreamError) as exc:
+                result.update(action="failed", code=exc.code, params=exc.params)
+                failed += 1
+            job["results"].append(result)
+            job["done"] += 1
+        audit.info("user=%s action=import created=%d updated=%d failed=%d", user, created, updated, failed)
+    job["state"] = "finished"
+    job["created"] = time.time()                       # keep the result for IMPORT_TTL from now
+
+
+@app.post("/portal/api/import/apply")
+@require_login
+def import_apply():
+    token = (request.get_json(silent=True) or {}).get("token", "")
+    with IMPORTS_LOCK:
+        job = IMPORTS.get(token)
+        if not job or job["user"] != g.user:
+            raise ValidationError("import.expired")
+        if job["state"] != "ready":
+            raise ValidationError("import.alreadyApplied")
+        job["state"] = "running"
+    threading.Thread(target=_run_import, args=(token, g.user), daemon=True).start()
+    return jsonify({"token": token, "total": job["total"]}), 202
+
+
+@app.get("/portal/api/import/status")
+@require_login
+def import_status():
+    job = IMPORTS.get(request.args.get("token", ""))
+    if not job or job["user"] != g.user:
+        raise ValidationError("import.expired")
+    return jsonify({"state": job["state"], "done": job["done"], "total": job["total"],
+                    "results": job["results"] if job["state"] == "finished" else []})
 
 
 @app.get("/portal/api/qrcode")

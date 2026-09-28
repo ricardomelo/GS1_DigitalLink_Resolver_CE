@@ -482,11 +482,12 @@ def read_document(document_id: str) -> dict[str, Any]:
         return {"response_status": 500, "error": "Internal Server Error"}
 
 
-def read_summary() -> dict[str, Any]:
+def read_summary(include_links: bool = False) -> dict[str, Any]:
     """
     One line per entry (anchor + qualifier set) of every document: anchor, qualifiers, item
-    description, default link type and number of links. Lets a client list and search all records
-    with a single request instead of reading every document.
+    description, default link type and number of links (and the links themselves when
+    include_links is set). Lets a client list, search or export all records with a single request
+    instead of reading every document.
     """
     try:
         result = data_entry_db.read_all_documents()
@@ -504,6 +505,8 @@ def read_summary() -> dict[str, Any]:
                 }
                 if entry.get('qualifiers'):
                     line['qualifiers'] = entry['qualifiers']
+                if include_links:
+                    line['links'] = entry.get('links') or []
                 summary.append(line)
         summary.sort(key=lambda line: (line['anchor'] or '', json.dumps(line.get('qualifiers', []))))
         return {"response_status": 200, "data": summary}

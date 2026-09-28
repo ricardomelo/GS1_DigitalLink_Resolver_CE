@@ -12,6 +12,7 @@ import tempfile
 import threading
 
 import cv2
+from openpyxl import load_workbook
 import numpy as np
 from playwright.sync_api import sync_playwright
 from werkzeug.serving import make_server
@@ -119,6 +120,55 @@ with sync_playwright() as p:
     page.go_back(); page.wait_for_timeout(500)
     page.go_forward(); page.wait_for_timeout(300)
     check("browser history moves between list and editor", page.is_visible("#editor-view"))
+
+    # Spreadsheet export → edit → import
+    page.goto(BASE + "#records"); page.wait_for_timeout(700)
+    with page.expect_download() as info:
+        page.click("#records-export-xlsx")
+    downloaded = os.path.join(CONFIG, info.value.suggested_filename)
+    info.value.save_as(downloaded)
+    check("export: XLSX file name", downloaded.endswith(".xlsx"), downloaded)
+    book = load_workbook(downloaded)
+    links_sheet = book.worksheets[0]
+    header = [c.value for c in links_sheet[1]]
+    exported = [[c.value for c in row] for row in links_sheet.iter_rows(min_row=2)]
+    check("export: English headers and reference sheets", header[:4] == ["GTIN", "Batch/lot", "Description", "Link type"]
+          and book.sheetnames == ["Links", "Link types", "Languages"], (header, book.sheetnames))
+    check("export: one row per link of the editable records", len(exported) == 3
+          and all(r[0] in ("07898357410015", "09506000134352") for r in exported), exported)
+    with page.expect_download() as info:
+        page.click("#records-export-csv")
+    check("export: CSV file", info.value.suggested_filename.endswith(".csv"))
+
+    for row in links_sheet.iter_rows(min_row=2):
+        if row[0].value == "07898357410015":
+            row[2].value = "Test 01 (updated)"                      # update: new description
+    links_sheet.append(["07898357410022", "", "Imported product", "gs1:pip", "www.example.org/new", "pt, en", "", "yes", "yes"])
+    links_sheet.append(["07898357410022", "L9", "Imported product", "gs1:pip", "https://example.org/l9", "pt", "", "", ""])
+    links_sheet.append(["07898357410039", "", "Broken", "gs1:pip", "ftp://example.org", "pt", "", "", ""])
+    edited = os.path.join(CONFIG, "edited.xlsx")
+    book.save(edited)
+
+    page.click("#records-import"); page.wait_for_timeout(200)
+    page.set_input_files("#import-file", edited); page.wait_for_timeout(1200)
+    summary = page.inner_text("#import-summary")
+    check("import preview counts", summary == "New: 2 · Changed: 1 · Unchanged: 1 · With errors: 1", summary)
+    errors_text = page.inner_text("#import-errors")
+    check("import preview explains the error with its row", "Row 7:" in errors_text and "ftp://example.org" in errors_text,
+          errors_text)
+    check("nothing written before confirming", "07898357410022" not in json.dumps(list(mock_data_entry.DB)))
+    check("apply button counts valid changes", page.inner_text("#import-apply") == "Import records (3)")
+    page.click("#import-apply"); page.wait_for_timeout(2500)
+    check("import finished", "Import finished. Created: 2 · Updated: 1 · Failed: 0" in page.inner_text("#import-status"),
+          page.inner_text("#import-status"))
+    page.click("#import-cancel"); page.wait_for_timeout(800)
+    listed = page.inner_text("#records-body")
+    check("imported records listed with their author", "Imported product" in listed and "Test 01 (updated)" in listed
+          and listed.count("tester") >= 3, listed)
+    stored = mock_data_entry.v3("01_07898357410022")
+    check("import stored product and batch with the default first", len(stored) == 2
+          and stored[0]["defaultLinktype"] == "gs1:pip" and stored[0]["links"][0]["href"] == "https://www.example.org/new"
+          and stored[0]["links"][0]["hreflang"] == ["pt", "en"], stored)
 
     page.hover("#user-button"); page.wait_for_timeout(200)
     check("user menu on hover", page.is_visible("#menu-logout"))

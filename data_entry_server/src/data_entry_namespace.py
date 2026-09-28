@@ -106,7 +106,8 @@ class NewDocOperations(TokenResource):
 @data_entry_namespace.doc(security='BearerAuth', responses={401: 'Missing Authorization Header', 403: 'Token is invalid.'})
 class DocSummary(TokenResource):
     @data_entry_namespace.doc(description="One line per record (anchor + qualifiers) with its item description, "
-                                          "default link type and number of links")
+                                          "default link type and number of links; ?links=true adds the links",
+                              params={'links': 'true to include each record\'s links'})
     def get(self) -> tuple[Any, int] | Response:
         try:
             token_result = self.is_auth_token_ok()
@@ -115,7 +116,8 @@ class DocSummary(TokenResource):
             elif not token_result['result']:
                 return token_result['message'], 403
 
-            response_data = data_entry_logic.read_summary()
+            include_links = request.args.get('links', '').lower() in ('1', 'true', 'yes')
+            response_data = data_entry_logic.read_summary(include_links)
             return response_data, response_data['response_status']
 
         except Exception as e:

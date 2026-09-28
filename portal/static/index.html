@@ -162,6 +162,11 @@
         </div>
         <a href="#" class="btn btn-primary" id="records-new" data-i18n="records.new"></a>
       </div>
+      <div class="records-sheet">
+        <button type="button" class="btn btn-ghost" id="records-export-xlsx" data-i18n="records.exportXlsx"></button>
+        <button type="button" class="btn btn-ghost" id="records-export-csv" data-i18n="records.exportCsv"></button>
+        <button type="button" class="btn btn-secondary" id="records-import" data-i18n="records.import"></button>
+      </div>
       <p class="field-msg" id="records-count" aria-live="polite"></p>
       <div class="table-wrap">
         <table class="records-table">
@@ -203,6 +208,41 @@
         <button type="submit" class="btn btn-primary" id="password-save" data-i18n="password.save"></button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="import-dialog" class="import-dialog" aria-labelledby="import-title">
+    <div class="dialog-head">
+      <h2 id="import-title" data-i18n="import.title"></h2>
+      <button type="button" class="dialog-close" id="import-close" data-i18n-attr="aria-label:options.close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p class="hint" data-i18n="import.intro"></p>
+      <label for="import-file" data-i18n="import.file"></label>
+      <input type="file" id="import-file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <div id="import-status" class="status" role="status" aria-live="polite" hidden></div>
+      <div id="import-report" hidden>
+        <p class="import-summary" id="import-summary"></p>
+        <ul class="import-errors" id="import-errors"></ul>
+        <div class="table-wrap import-table-wrap">
+          <table class="records-table import-table">
+            <thead>
+              <tr>
+                <th scope="col" data-i18n="import.col.rows"></th>
+                <th scope="col" data-i18n="records.col.gtin"></th>
+                <th scope="col" data-i18n="records.col.scope"></th>
+                <th scope="col" data-i18n="records.col.product"></th>
+                <th scope="col" data-i18n="import.col.result"></th>
+              </tr>
+            </thead>
+            <tbody id="import-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="import-cancel" data-i18n="options.cancel"></button>
+        <button type="button" class="btn btn-primary" id="import-apply" disabled data-i18n="import.apply" data-i18n-params='{"count":0}'></button>
+      </div>
+    </div>
   </dialog>
 
   <template id="link-row">

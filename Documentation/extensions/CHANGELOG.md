@@ -2,6 +2,18 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: spreadsheet import and export
+- Export of every editable record as XLSX (links sheet with the headers in the user's language, GTIN as
+  text, plus link type and language reference sheets) or CSV (`;`, UTF-8 with BOM).
+- Import of XLSX or CSV in two steps: a preview that validates every record with the editor's rules and
+  classifies it as new, changed, unchanged or with errors (row numbers and reasons), then, after
+  confirmation, a background import with progress. Records not in the file are never deleted.
+- Data entry API: `GET /api/summary?links=true` includes each record's links (one request for exports
+  and previews).
+- `portal/sheet.py` (openpyxl); portal request limit 1 MB (proxy `client_max_body_size 1m` on `/portal/`).
+- Tests: `dev-tests/portal/test_sheet.py` (parsing, Excel quirks, round trips); export → edit → import in
+  the portal end-to-end test.
+
 ### Data entry API: consistent token protection
 - `GET /api/index` now requires the bearer token like every other data entry operation (401 without
   it, 403 with a wrong one). It was public and listed every registered identifier, so anyone could

@@ -178,6 +178,39 @@ portal's own `records-meta.json` in the `resolver-portal-config` volume, which r
 last changed each record through the portal. Changes made through the API directly show "no history".
 The whole list is sent to the browser, which is comfortable up to a few thousand records.
 
+## Spreadsheet import and export
+
+In **Registered records**, *Export spreadsheet (Excel)* and *Export CSV* download every record the
+portal can edit, and *Import spreadsheet* reads one back.
+
+**Layout** — one row per target (link); rows with the same GTIN and batch/lot form one record:
+
+| GTIN | Batch/lot | Description | Link type | URL | Language | Title | Default | Forward query string |
+|---|---|---|---|---|---|---|---|---|
+| 07898357410015 | | Coffee 500 g | gs1:pip | https://… | pt, en | | yes | yes |
+| 07898357410015 | | Coffee 500 g | gs1:instructions | https://…/manual.pdf | pt | Manual | | no |
+
+- Headers are written in the user's language and recognised in any of the portal's languages (or as the
+  keys `gtin`, `lot`, `description`, `linkType`, `url`, `language`, `title`, `default`, `forward`).
+  Only GTIN, Description, Link type and URL are required.
+- The XLSX file has two more sheets listing the link type codes and the language codes. GTINs are
+  written as text, so Excel keeps the leading zeros. The CSV uses `;` and UTF-8 with BOM, as Excel
+  expects in Brazil; imports also accept `,` and Windows-1252.
+- Link types may omit `gs1:`; addresses without `https://` get it, as in the editor; several languages
+  go in one cell separated by commas; *Default* marks the target that opens first (the first row if
+  none is marked); *Forward query string* is yes unless it says no.
+
+**Import** is in two steps. The portal first checks the whole file with the editor's own rules and shows,
+record by record, what will be **new**, **changed**, **unchanged** or **with errors** (with the file's row
+number and the reason, e.g. a GTIN that Excel turned into scientific notation). Nothing is written until
+*Import records* is confirmed; records with errors are skipped. Each record in the file replaces the
+record on the resolver entirely, as a save in the editor does; records that are not in the file are not
+touched (import never deletes). The import runs in the background with a progress counter, records who
+made each change, and writes one audit line (`action=import created=… updated=… failed=…`).
+
+Limits: 700 KB per file and 5 000 rows (split larger files). The default link type is shared by all the
+records of a GTIN, so an import cannot change it while the GTIN has other records.
+
 ## Sign-in, sessions and passwords
 
 - `/portal/login` is a sign-in page (no more browser pop-up). A successful sign-in sets a session cookie

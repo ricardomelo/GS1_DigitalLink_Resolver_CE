@@ -371,6 +371,206 @@ function openFromList(r) {
   openRecord();
 }
 
+/* ------------------------------------------------------------------ spreadsheets: export and import */
+const SHEET_COLUMNS = ["gtin", "lot", "description", "linkType", "url", "language", "title", "default", "forward"];
+const MAX_IMPORT_BYTES = 700 * 1024;
+const importState = { token: null, polling: null, imported: false };
+
+/* Texts the server writes into the file (it is language-neutral): headers in the current language,
+   and, for imports, every accepted spelling of each header and of yes/no. */
+function sheetLabels() {
+  const headers = {}, aliases = {};
+  SHEET_COLUMNS.forEach(c => { headers[c] = t("sheet.col." + c); aliases[c] = I18N.every("sheet.col." + c); });
+  const linkTypes = {};
+  (CONFIG?.linkTypes || []).forEach(({ code }) => { linkTypes[code] = I18N.linkType(code); });
+  const languages = {};
+  (CONFIG?.languages || []).forEach(code => { languages[code] = I18N.languageName(code); });
+  return {
+    headers, aliases, linkTypes, languages,
+    yes: t("sheet.yes"), no: t("sheet.no"),
+    yesWords: I18N.every("sheet.yes"), noWords: I18N.every("sheet.no"),
+    sheets: { links: t("sheet.links"), linkTypes: t("sheet.linkTypes"), languages: t("sheet.languages") },
+    codeHeader: t("sheet.code"), nameHeader: t("sheet.name"), descriptionHeader: t("sheet.description"),
+  };
+}
+
+async function exportSheet(format) {
+  const button = $(format === "csv" ? "#records-export-csv" : "#records-export-xlsx");
+  button.disabled = true;
+  try {
+    const res = await fetch(BASE + "api/export", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ format, labels: sheetLabels() }),
+    });
+    if (!res.ok) {
+      let data = null;
+      try { data = await res.json(); } catch { /* not JSON */ }
+      throw new ApiError(data?.code || "error.unexpected", data?.params || { status: res.status });
+    }
+    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || `resolver-links.${format}`;
+    const url = URL.createObjectURL(await res.blob());
+    const a = Object.assign(document.createElement("a"), { href: url, download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (e) {
+    I18N.set($("#records-count"), e.code, e.params);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function importStatus(kind, key, params) {
+  const box = $("#import-status");
+  box.hidden = !key;
+  box.className = "status" + (kind ? " is-" + kind : "");
+  if (key) I18N.set(box, key, params);
+}
+
+/* An error line of the import report: "Row 7: missing or unknown link type…". The import-specific
+   wording is used when there is one; otherwise the editor's message. */
+function importErrorText(error) {
+  const params = { ...error.params };
+  if (Array.isArray(params.columns)) params.columns = params.columns.map(c => t("sheet.col." + c)).join(", ");
+  const key = I18N.has("import.err." + error.code) ? "import.err." + error.code : error.code;
+  return `${t("import.row", { row: error.row })} ${t(key, params)}`;
+}
+
+function openImport() {
+  clearInterval(importState.polling);
+  Object.assign(importState, { token: null, polling: null, imported: false });
+  $("#import-file").value = "";
+  $("#import-file").disabled = false;
+  $("#import-report").hidden = true;
+  $("#import-summary").hidden = false;
+  importStatus(null, null);
+  const apply = $("#import-apply");
+  apply.disabled = true;
+  apply.hidden = false;
+  I18N.set(apply, "import.apply", { count: 0 });
+  I18N.set($("#import-cancel"), "options.cancel");
+  $("#import-dialog").showModal();
+}
+
+function closeImport() {
+  clearInterval(importState.polling);
+  $("#import-dialog").close();
+  if (importState.imported) loadRecords();
+}
+
+function readAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(new ApiError("import.unreadable"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function scopeOf(item) {
+  return item.lot ? t("records.scope.lot", { value: item.lot }) : t("records.scope.product");
+}
+
+async function previewImport() {
+  const file = $("#import-file").files[0];
+  $("#import-report").hidden = true;
+  $("#import-apply").disabled = true;
+  if (!file) return;
+  if (file.size > MAX_IMPORT_BYTES) {
+    importStatus("error", "import.tooBig", { max: MAX_IMPORT_BYTES / 1024 });
+    return;
+  }
+  importStatus(null, "import.checking");
+  try {
+    const labels = sheetLabels();
+    const report = await api("POST", "import/preview", {
+      filename: file.name, content: await readAsBase64(file),
+      labels: { aliases: labels.aliases, yes: labels.yesWords, no: labels.noWords },
+    });
+    importState.token = report.token;
+    renderImportReport(report);
+  } catch (e) {
+    importStatus("error", e.code, e.params);
+  }
+}
+
+function renderImportReport(report) {
+  const c = report.counts;
+  importStatus(c.error ? "error" : null, c.error ? "import.errorsSkipped" : null);
+  I18N.set($("#import-summary"), "import.summary", c);
+  $("#import-errors").replaceChildren(...report.errors.map(error => {
+    const li = document.createElement("li");
+    li.textContent = importErrorText(error);
+    return li;
+  }));
+  $("#import-body").replaceChildren(...report.records.map(item => importRow(item.rows, item.gtin, scopeOf(item),
+    item.description, item.action)));
+  $("#import-report").hidden = false;
+  const count = c.create + c.update;
+  const apply = $("#import-apply");
+  I18N.set(apply, "import.apply", { count });
+  apply.disabled = count === 0;
+}
+
+function importRow(rows, gtin, scope, description, action) {
+  const tr = document.createElement("tr");
+  const badge = document.createElement("span");
+  badge.className = "badge badge-" + action;
+  I18N.set(badge, "import.action." + action);
+  [rows.length > 1 ? `${rows[0]}–${rows.at(-1)}` : String(rows[0]), gtin, scope, description || "", badge]
+    .forEach((content, i) => {
+      const td = document.createElement("td");
+      if (i === 1) td.className = "code";
+      if (content instanceof Node) td.append(content); else td.textContent = content;
+      tr.append(td);
+    });
+  return tr;
+}
+
+async function applyImport() {
+  if (!importState.token) return;
+  const apply = $("#import-apply");
+  apply.disabled = true;
+  $("#import-file").disabled = true;
+  try {
+    const started = await api("POST", "import/apply", { token: importState.token });
+    importStatus(null, "import.running", { done: 0, total: started.total });
+    importState.polling = setInterval(pollImport, 700);
+  } catch (e) {
+    importStatus("error", e.code, e.params);
+  }
+}
+
+async function pollImport() {
+  let status;
+  try {
+    status = await api("GET", "import/status?token=" + encodeURIComponent(importState.token));
+  } catch (e) {
+    clearInterval(importState.polling);
+    importStatus("error", e.code, e.params);
+    return;
+  }
+  if (status.state !== "finished") {
+    importStatus(null, "import.running", { done: status.done, total: status.total });
+    return;
+  }
+  clearInterval(importState.polling);
+  importState.imported = true;
+  const count = action => status.results.filter(r => r.action === action).length;
+  const failed = count("failed");
+  importStatus(failed ? "error" : "ok", "import.done", { created: count("created"), updated: count("updated"), failed });
+  $("#import-errors").replaceChildren(...status.results.filter(r => r.action === "failed").map(r => {
+    const li = document.createElement("li");
+    li.textContent = importErrorText({ row: r.rows[0], code: r.code, params: r.params || {} });
+    return li;
+  }));
+  $("#import-body").replaceChildren(...status.results.map(r => importRow(r.rows, r.gtin,
+    scopeOf(r), r.description, r.action)));
+  $("#import-summary").hidden = true;          // the preview counts no longer apply
+  $("#import-apply").hidden = true;
+  I18N.set($("#import-cancel"), "import.close");
+}
+
 /* ------------------------------------------------------------------ step 3: targets */
 function fillTypeSelect(select, value) {
   const groups = new Map();
@@ -676,6 +876,14 @@ async function init() {
   });
 
   $("#records-search").addEventListener("input", renderRecords);
+  $("#records-export-xlsx").addEventListener("click", () => exportSheet("xlsx"));
+  $("#records-export-csv").addEventListener("click", () => exportSheet("csv"));
+  $("#records-import").addEventListener("click", openImport);
+  $("#import-file").addEventListener("change", previewImport);
+  $("#import-apply").addEventListener("click", applyImport);
+  $("#import-cancel").addEventListener("click", closeImport);
+  $("#import-close").addEventListener("click", closeImport);
+  $("#import-dialog").addEventListener("cancel", e => { e.preventDefault(); closeImport(); });
   $("#records-user").addEventListener("change", renderRecords);
   $("#records-new").addEventListener("click", e => {
     e.preventDefault();

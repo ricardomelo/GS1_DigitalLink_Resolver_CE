@@ -171,6 +171,9 @@ check("summary: one line per entry", summary.get("response_status") == 200 and l
 check("summary: fields", all({"anchor", "itemDescription", "defaultLinktype", "linkCount"} <= set(l) for l in lines), lines[:1])
 check("summary: batch entry keeps its qualifiers", bool(batch_line) and batch_line[0]["qualifiers"] == [{"10": "123"}], batch_line[:1])
 check("summary: sorted by anchor", [l["anchor"] for l in lines] == sorted(l["anchor"] for l in lines))
+with_links = data_entry.read_summary(True).get("data") or []
+check("summary with links: every link included", all(len(l.get("links") or []) == l["linkCount"] for l in with_links)
+      and "links" not in lines[0], with_links[:1])
 
 # ---------------------------------------------------------------- resolver description file
 for var in ("RESOLVER_ORG_NAME", "RESOLVER_CONTACT_STREET", "RESOLVER_CONTACT_LOCALITY", "RESOLVER_CONTACT_REGION",

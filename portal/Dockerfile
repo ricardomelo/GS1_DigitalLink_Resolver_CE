@@ -6,7 +6,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py gs1.py label.py users.py meta.py create_user.py ./
+COPY app.py gs1.py label.py users.py meta.py sheet.py create_user.py ./
 COPY assets ./assets
 COPY static ./static
 

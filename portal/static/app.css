@@ -124,6 +124,23 @@ a { color: var(--link); }
 .records-table .muted { color: var(--muted); }
 .records-table .changed small { display: block; color: var(--muted); }
 .records-empty { color: var(--muted); padding: 1.5rem 0 .5rem; margin: 0; }
+.records-sheet { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 0 1rem; }
+.records-sheet .btn { min-height: 2.25rem; padding: .35rem 1rem; font-size: .875rem; }
+
+/* ---------------------------------------------------------------- spreadsheet import */
+.import-dialog { width: min(56rem, calc(100vw - 2rem)); }
+.import-dialog input[type="file"] { margin-top: .35rem; width: 100%; }
+.import-summary { font-weight: 600; color: var(--gs1-blue); margin: 1.25rem 0 .5rem; }
+.import-errors { margin: 0 0 1rem; padding-left: 1.2rem; color: var(--err); font-size: .875rem; max-height: 10rem; overflow-y: auto; }
+.import-errors li { margin: .15rem 0; }
+.import-table-wrap { max-height: 18rem; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; }
+.import-table { font-size: .875rem; }
+.import-table th { position: sticky; top: 0; background: var(--panel); }
+.badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+.badge-create, .badge-created { background: #E7F4EC; color: var(--ok); }
+.badge-update, .badge-updated { background: #E6F0FA; color: var(--gs1-blue); }
+.badge-unchanged { background: var(--page); color: var(--muted); }
+.badge-error, .badge-failed { background: #FDECEA; color: var(--err); }
 @media (max-width: 720px) {
   /* one card per record */
   .records-table thead { display: none; }

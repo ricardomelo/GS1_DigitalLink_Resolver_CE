@@ -391,6 +391,7 @@ function sheetLabels() {
     yesWords: I18N.every("sheet.yes"), noWords: I18N.every("sheet.no"),
     sheets: { links: t("sheet.links"), linkTypes: t("sheet.linkTypes"), languages: t("sheet.languages") },
     codeHeader: t("sheet.code"), nameHeader: t("sheet.name"), descriptionHeader: t("sheet.description"),
+    languagesNote: t("sheet.languagesNote"),
   };
 }
 

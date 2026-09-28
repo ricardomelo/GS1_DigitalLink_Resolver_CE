@@ -59,9 +59,29 @@ LINK_TYPES = [
 LINK_TYPE_CODES = {code for code, _, _ in LINK_TYPES}
 LINK_TYPE_DEFAULT_TITLES = {code: title for code, _, title in LINK_TYPES}
 
-# BCP 47 language tags offered for link targets (names are rendered by the browser).
+# BCP 47 language tags offered in the editor's menu (names are rendered by the browser). Any other
+# well-formed tag (pt-BR, en-US, vi, …) is accepted too: records created with other tools use them.
 LANGUAGES = ["pt", "en", "es", "fr", "de", "it", "zh", "ja"]
 LANGUAGE_CODES = set(LANGUAGES)
+# language [-script] [-region] [-variants], or "und" (undetermined)
+_LANGUAGE_TAG = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z]{4})?(-(?:[A-Za-z]{2}|\d{3}))?(-(?:[A-Za-z0-9]{5,8}|\d[A-Za-z0-9]{3}))*$")
+
+
+def normalise_language(tag: str) -> str | None:
+    """Well-formed BCP 47 tag in canonical case ("pt-br" → "pt-BR"), or None."""
+    tag = (tag or "").strip().replace("_", "-")
+    if not _LANGUAGE_TAG.match(tag):
+        return None
+    parts = tag.split("-")
+    out = [parts[0].lower()]
+    for part in parts[1:]:
+        if len(part) == 4 and part.isalpha():
+            out.append(part.title())          # script: Latn
+        elif len(part) == 2 and part.isalpha():
+            out.append(part.upper())          # region: BR
+        else:
+            out.append(part.lower())
+    return "-".join(out)
 
 MAX_DESCRIPTION = 200
 
@@ -105,6 +125,12 @@ def normalise_lot(raw: str | None) -> str | None:
     if not _LOT_PATTERN.match(lot):
         raise ValidationError("lot.invalid")
     return lot
+
+
+def is_editable_lot(value) -> bool:
+    """A batch/lot the portal can edit: excludes templates such as "{lotnumber}" and values outside
+    the portal's character subset, which other tools may have stored."""
+    return isinstance(value, str) and bool(_LOT_PATTERN.match(value))
 
 
 def qualifiers_for(lot: str | None) -> list[dict[str, str]]:

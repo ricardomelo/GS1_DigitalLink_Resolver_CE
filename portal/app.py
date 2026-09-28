@@ -270,7 +270,7 @@ def find_entry(entries: list[dict], qualifiers: list) -> dict | None:
 def describe_entry(entry: dict) -> dict:
     """Language-neutral description of an entry, e.g. {"kind": "lot", "value": "L1"}."""
     q = {k: v for item in entry.get("qualifiers") or [] for k, v in item.items()}
-    if "10" in q:
+    if set(q) == {"10"} and gs1.is_editable_lot(q["10"]):
         return {"kind": "lot", "value": q["10"]}
     return {"kind": "product"} if not q else {"kind": "other", "value": json.dumps(q)}
 
@@ -313,8 +313,8 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
         if link_type not in gs1.LINK_TYPE_CODES:
             raise ValidationError("link.typeRequired", position=position)
         href = gs1.normalise_url(row.get("url"), position)
-        hreflang = [h for h in (row.get("hreflang") or []) if isinstance(h, str) and h]
-        if not hreflang or any(h not in gs1.LANGUAGE_CODES and h != "und" for h in hreflang):
+        hreflang = [gs1.normalise_language(h) for h in (row.get("hreflang") or []) if isinstance(h, str) and h]
+        if not hreflang or not all(hreflang):
             raise ValidationError("link.languageRequired", position=position)
         link = {
             "linktype": link_type,
@@ -698,6 +698,27 @@ def import_preview():
         if len(defaults) > 1:
             errors.append({"row": defaults[1]["row"], "code": "import.defaultMany",
                            "params": {"rows": ", ".join(str(l["row"]) for l in defaults)}})
+            item["action"] = "error"
+            report.append(item)
+            continue
+        # Row by row first, so that every wrong row is reported at once (the editor's rules below
+        # stop at the first problem of a record).
+        row_errors = []
+        if record["lot"] and not gs1.is_editable_lot(record["lot"]):
+            row_errors.append({"row": record["rows"][0], "code": "import.lotNotEditable", "params": {"value": record["lot"]}})
+        for link in record["links"]:
+            if link["linkType"] not in gs1.LINK_TYPE_CODES:
+                row_errors.append({"row": link["row"], "code": "link.typeRequired", "params": {"value": link["linkType"]}})
+            try:
+                gs1.normalise_url(link["url"], 0)
+            except ValidationError as exc:
+                row_errors.append({"row": link["row"], "code": exc.code, "params": {"url": link["url"]}})
+            wrong = [tag for tag in link["hreflang"] if not gs1.normalise_language(tag)]
+            if wrong:
+                row_errors.append({"row": link["row"], "code": "link.languageRequired",
+                                   "params": {"value": ", ".join(wrong)}})
+        if row_errors:
+            errors.extend(row_errors)
             item["action"] = "error"
             report.append(item)
             continue

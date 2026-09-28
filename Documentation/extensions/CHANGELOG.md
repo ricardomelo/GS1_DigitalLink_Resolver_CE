@@ -2,6 +2,16 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Fixes from the first real import (records created by other tools)
+- Link languages: any well-formed BCP 47 tag is accepted and normalised (`en-us` → `en-US`), in the
+  editor and in imports; before, only the eight languages of the editor's menu were, so records created
+  through the API (e.g. `vi`, `en-US`, `en-GB`) could be exported but neither re-imported nor saved.
+- Batch/lot values the portal cannot manage (templates such as `{lotnumber}`, characters outside its
+  subset) make a record "other": listed, not opened, not exported; an import that contains one explains
+  it instead of reporting an invalid lot.
+- The import preview reports every wrong row of a record (link type, URL, language) at once, instead of
+  the first problem only.
+
 ### Portal: spreadsheet import and export
 - Export of every editable record as XLSX (links sheet with the headers in the user's language, GTIN as
   text, plus link type and language reference sheets) or CSV (`;`, UTF-8 with BOM).

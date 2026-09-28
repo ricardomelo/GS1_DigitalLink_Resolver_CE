@@ -121,8 +121,15 @@ with sync_playwright() as p:
     page.go_forward(); page.wait_for_timeout(300)
     check("browser history moves between list and editor", page.is_visible("#editor-view"))
 
-    # Spreadsheet export → edit → import
+    # Spreadsheet export → edit → import. Records made by other tools: a template lot (not editable,
+    # not exported) and languages outside the editor's menu (exported and re-imported unchanged).
+    mock_data_entry.upsert({**other, "qualifiers": [{"10": "{lotnumber}"}]})
+    mock_data_entry.upsert({"anchor": "/01/09506000134369", "itemDescription": "Risotto", "defaultLinktype": "gs1:pip",
+                            "links": [{"linktype": "gs1:pip", "href": "https://example.org/r", "title": "R", "hreflang": ["en-US"]},
+                                      {"linktype": "gs1:pip", "href": "https://example.org/r/vi", "title": "R", "hreflang": ["vi"]}]})
     page.goto(BASE + "#records"); page.wait_for_timeout(700)
+    check("template lot listed as another kind of record",
+          "{lotnumber}" in page.inner_text("#records-body") and page.query_selector("#records-body tr:has-text('{lotnumber}') a") is None)
     with page.expect_download() as info:
         page.click("#records-export-xlsx")
     downloaded = os.path.join(CONFIG, info.value.suggested_filename)
@@ -134,8 +141,9 @@ with sync_playwright() as p:
     exported = [[c.value for c in row] for row in links_sheet.iter_rows(min_row=2)]
     check("export: English headers and reference sheets", header[:4] == ["GTIN", "Batch/lot", "Description", "Link type"]
           and book.sheetnames == ["Links", "Link types", "Languages"], (header, book.sheetnames))
-    check("export: one row per link of the editable records", len(exported) == 3
-          and all(r[0] in ("07898357410015", "09506000134352") for r in exported), exported)
+    check("export: one row per link of the editable records", len(exported) == 5
+          and all(r[0] in ("07898357410015", "09506000134352", "09506000134369") for r in exported), exported)
+    check("export: languages outside the menu kept", {"en-US", "vi"} <= {r[5] for r in exported}, exported)
     with page.expect_download() as info:
         page.click("#records-export-csv")
     check("export: CSV file", info.value.suggested_filename.endswith(".csv"))
@@ -146,16 +154,19 @@ with sync_playwright() as p:
     links_sheet.append(["07898357410022", "", "Imported product", "gs1:pip", "www.example.org/new", "pt, en", "", "yes", "yes"])
     links_sheet.append(["07898357410022", "L9", "Imported product", "gs1:pip", "https://example.org/l9", "pt", "", "", ""])
     links_sheet.append(["07898357410039", "", "Broken", "gs1:pip", "ftp://example.org", "pt", "", "", ""])
+    links_sheet.append(["07898357410039", "", "Broken", "gs1:pip", "https://example.org/b", "portuguese", "", "", ""])
+    links_sheet.append(["09506000134352", "{lotnumber}", "Açaí orgânico", "gs1:pip", "https://example.org/t", "pt", "", "", ""])
     edited = os.path.join(CONFIG, "edited.xlsx")
     book.save(edited)
 
     page.click("#records-import"); page.wait_for_timeout(200)
     page.set_input_files("#import-file", edited); page.wait_for_timeout(1200)
     summary = page.inner_text("#import-summary")
-    check("import preview counts", summary == "New: 2 · Changed: 1 · Unchanged: 1 · With errors: 1", summary)
+    check("import preview counts", summary == "New: 2 · Changed: 1 · Unchanged: 2 · With errors: 2", summary)
     errors_text = page.inner_text("#import-errors")
-    check("import preview explains the error with its row", "Row 7:" in errors_text and "ftp://example.org" in errors_text,
-          errors_text)
+    check("import preview explains every wrong row at once", "Row 9:" in errors_text and "ftp://example.org" in errors_text
+          and "Row 10:" in errors_text and "portuguese" in errors_text
+          and "Row 11: the batch/lot “{lotnumber}” cannot be managed" in errors_text, errors_text)
     check("nothing written before confirming", "07898357410022" not in json.dumps(list(mock_data_entry.DB)))
     check("apply button counts valid changes", page.inner_text("#import-apply") == "Import records (3)")
     page.click("#import-apply"); page.wait_for_timeout(2500)

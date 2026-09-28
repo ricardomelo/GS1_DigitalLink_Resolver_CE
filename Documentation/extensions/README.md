@@ -199,6 +199,10 @@ portal can edit, and *Import spreadsheet* reads one back.
 - Link types may omit `gs1:`; addresses without `https://` get it, as in the editor; several languages
   go in one cell separated by commas; *Default* marks the target that opens first (the first row if
   none is marked); *Forward query string* is yes unless it says no.
+- Languages: any well-formed BCP 47 tag (`pt`, `pt-BR`, `en-US`, `vi`, `und`, …), written in canonical
+  case. The editor's menu offers the common ones and keeps any other tag a record already has.
+- Records created by other tools with qualifiers the portal does not manage (serial numbers, lot
+  templates such as `{lotnumber}`) are listed but neither exported nor imported.
 
 **Import** is in two steps. The portal first checks the whole file with the editor's own rules and shows,
 record by record, what will be **new**, **changed**, **unchanged** or **with errors** (with the file's row

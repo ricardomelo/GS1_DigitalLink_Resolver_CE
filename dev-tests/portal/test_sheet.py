@@ -95,5 +95,17 @@ check("CSV export: BOM, ';' and localised yes/no", csv_bytes.startswith(b"\xef\x
 back, errors = sheet.parse_rows(sheet.read_table("x.csv", csv_bytes), PT, ["sim"], ["não"])
 check("CSV round trip", not errors and back[0]["links"][1]["forward"] is False, (back, errors))
 
+# Language tags and lots stored by other tools
+import gs1  # noqa: E402
+check("BCP 47 tags accepted in canonical case",
+      [gs1.normalise_language(t) for t in ["pt", "pt-br", "en_US", "vi", "und", "zh-hant-tw", "es-419"]]
+      == ["pt", "pt-BR", "en-US", "vi", "und", "zh-Hant-TW", "es-419"])
+check("malformed tags refused", not any(gs1.normalise_language(t) for t in ["", "portuguese", "p", "en-", "en-US-x"]))
+rows = sheet.read_table("x.csv", "GTIN;Descrição;Tipo de link;URL;Idioma\r\n7898357410015;A;gs1:pip;https://x.org;en-US, vi\r\n".encode())
+records, _ = sheet.parse_rows(rows, PT)
+check("language case kept from the file", records[0]["links"][0]["hreflang"] == ["en-US", "vi"], records[0]["links"][0])
+check("template and unusual lots are not editable",
+      gs1.is_editable_lot("L2026A") and not gs1.is_editable_lot("{lotnumber}") and not gs1.is_editable_lot("A/B"))
+
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

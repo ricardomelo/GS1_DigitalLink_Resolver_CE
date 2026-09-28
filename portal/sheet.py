@@ -167,7 +167,7 @@ def parse_rows(rows: list[list[str]], aliases: dict[str, list[str]], yes=(), no=
                            "params": {"value": cell(row, "default") if default is None else cell(row, "forward")}})
             default = bool(default)
             forward = True if forward is None else forward
-        language = [code.strip().lower() for code in re.split(r"[,;/\s]+", cell(row, "language")) if code.strip()]
+        language = [code.strip() for code in re.split(r"[,;/\s]+", cell(row, "language")) if code.strip()]
         link_type = cell(row, "linkType")
         if link_type and ":" not in link_type:
             link_type = "gs1:" + link_type                     # "pip" → "gs1:pip"
@@ -257,6 +257,9 @@ def write_xlsx(rows: list[list[str]], labels: dict, link_types: list[tuple[str, 
     codes.append([labels.get("codeHeader", "Code"), labels.get("nameHeader", "Name")])
     for row in languages:
         codes.append(list(row))
+    if labels.get("languagesNote"):
+        codes.append([])
+        codes.append([labels["languagesNote"]])
     for letter, width in (("A", 10), ("B", 30)):
         codes.column_dimensions[letter].width = width
         codes[f"{letter}1"].font, codes[f"{letter}1"].fill = bold, fill

@@ -19,8 +19,7 @@ adds what an organisation needs to run one for its members:
 - a **home page**, a **configurable resolver description file**, **security hardening**;
 - an **interactive installer for Ubuntu**, a **daily backup** and **development tests** for everything.
 
-The changes are meant to be offered back to the official project (see
-[Contributing upstream](#contributing-upstream)).
+The changes are meant to be offered back to the official project.
 
 <p align="center">
   <img src="Documentation/images/home.png" alt="Home page of the resolver" width="820">
@@ -43,8 +42,7 @@ The changes are meant to be offered back to the official project (see
 11. [Operation](#operation)
 12. [Development and tests](#development-and-tests)
 13. [Repository layout](#repository-layout)
-14. [Contributing upstream](#contributing-upstream)
-15. [Licence and credits](#licence-and-credits)
+14. [Licence and credits](#licence-and-credits)
 
 ---
 
@@ -411,22 +409,6 @@ dev-tests/                      development tests (see above)
 Documentation/                  extensions/ (detailed documentation, changelog), images/, upstream-README.md
 tests/, useful_external_python_scripts/   official tests and conversion scripts
 ```
-
-## Contributing upstream
-
-The work is organised so that it can be proposed to
-[gs1/GS1_DigitalLink_Resolver_CE](https://github.com/gs1/GS1_DigitalLink_Resolver_CE) in small, independent
-pull requests, each discussed first in an issue:
-
-1. layered `.env.example` / `.env` configuration and the proxy restart on recreated services;
-2. data entry API: token on `/api/index`, Swagger security declarations, `GET /api/summary`;
-3. resolver conformance fixes (walk-up, 404 rules, linkType forms, linkset, `fwqs`);
-4. HTML pages for browsers and the configurable description file;
-5. the link management portal (keys, qualifiers, spreadsheets, link checker);
-6. the home page;
-7. the installer, backup and documentation.
-
-Security-relevant findings are reported to the maintainers privately before any pull request.
 
 ## Licence and credits
 

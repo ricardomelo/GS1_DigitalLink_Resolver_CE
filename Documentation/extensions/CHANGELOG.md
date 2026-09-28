@@ -6,7 +6,7 @@
 - New top-level README for the fork: the original project, what the fork adds, architecture (Mermaid),
   the portal with screenshots, GS1 Digital Link coverage, API reference (resolver, data entry, portal),
   system requirements, installation with the Ubuntu script and by hand, configuration, operation,
-  tests, repository layout, plan for contributing upstream. The official README is kept unchanged in
+  tests, repository layout, licence and credits. The official README is kept unchanged in
   `Documentation/upstream-README.md`; screenshots in `Documentation/images/` come from
   `dev-tests/docs/screenshots.py`.
 

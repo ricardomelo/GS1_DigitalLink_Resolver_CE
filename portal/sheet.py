@@ -1,10 +1,13 @@
 """
 Spreadsheets for bulk import and export of records (CSV and XLSX).
 
-Layout: one row per link. Rows with the same GTIN and batch/lot form one record, exactly as the
-editor would save it:
+Layout: one row per link. Rows with the same key, identifier and batch/lot form one record, exactly as
+the editor would save it:
 
-    GTIN | Batch/lot | Description | Link type | URL | Language | Title | Default | Forward query string
+    Key | Identifier | Batch/lot | Description | Link type | URL | Language | Title | Default | Forward q.s.
+
+"Key" is the AI of the primary identification key (01, 00, 414, …); empty means 01, so spreadsheets
+made before other keys existed, with a "GTIN" column and no "Key" column, still import unchanged.
 
 The module is language-neutral: header labels, sheet names and reference texts come from the
 browser (portal/static/i18n.js), which sends them with each request. Headers are recognised by their
@@ -24,10 +27,12 @@ import gs1
 from gs1 import ValidationError
 
 # canonical key, column width in the XLSX export
-COLUMNS = [("gtin", 17), ("lot", 14), ("description", 36), ("linkType", 24), ("url", 48),
+COLUMNS = [("key", 8), ("value", 22), ("lot", 14), ("description", 36), ("linkType", 24), ("url", 48),
            ("language", 10), ("title", 30), ("default", 10), ("forward", 12)]
 KEYS = [key for key, _ in COLUMNS]
-REQUIRED = {"gtin", "description", "linkType", "url"}
+REQUIRED = {"value", "description", "linkType", "url"}
+# Headers accepted for a column besides its key and the labels sent by the browser
+BUILT_IN_ALIASES = {"value": ["gtin"], "key": ["ai"]}
 
 MAX_ROWS = 5000
 MAX_FILE_BYTES = 700 * 1024
@@ -96,7 +101,8 @@ def _read_csv(data: bytes) -> list[list[str]]:
 
 def map_header(header: list[str], aliases: dict[str, list[str]]) -> dict[str, int]:
     """Column index of each known key, recognising the canonical key or any alias."""
-    names = {key: {fold(key)} | {fold(a) for a in aliases.get(key, [])} for key in KEYS}
+    names = {key: {fold(key)} | {fold(a) for a in aliases.get(key, []) + BUILT_IN_ALIASES.get(key, [])}
+             for key in KEYS}
     columns = {}
     for index, cell in enumerate(header):
         folded = fold(cell)
@@ -144,13 +150,16 @@ def parse_rows(rows: list[list[str]], aliases: dict[str, list[str]], yes=(), no=
     for number, row in enumerate(data, start=2):
         if not any(c.strip() for c in row):
             continue
-        gtin_raw = cell(row, "gtin")
-        if re.fullmatch(r"\d+([.,]\d+)?[eE]\+?\d+", gtin_raw):
-            errors.append({"row": number, "code": "import.gtinScientific", "params": {"value": gtin_raw}})
+        value_raw = cell(row, "value")
+        ai = re.sub(r"[()\s]", "", cell(row, "key")) or "01"          # "(01)" or " 01 " → "01"
+        if re.fullmatch(r"\d+([.,]\d+)?[eE]\+?\d+", value_raw):
+            errors.append({"row": number, "code": "import.gtinScientific", "params": {"value": value_raw}})
             continue
-        key = (re.sub(r"[\s.\-]", "", gtin_raw).lstrip("0"), cell(row, "lot"))
+        # GTINs are grouped without separators and leading zeros (8, 12, 13 and 14 digits are the same key)
+        grouped = re.sub(r"[\s.\-]", "", value_raw).lstrip("0") if ai == "01" else value_raw.strip()
+        key = (ai, grouped, cell(row, "lot"))
         if key not in records:
-            records[key] = {"rows": [], "gtin": gtin_raw, "lot": cell(row, "lot"),
+            records[key] = {"rows": [], "key": ai, "value": value_raw, "lot": cell(row, "lot"),
                             "description": "", "descriptions": set(), "links": []}
             order.append(key)
         record = records[key]
@@ -188,7 +197,7 @@ def parse_rows(rows: list[list[str]], aliases: dict[str, list[str]], yes=(), no=
 
 # ------------------------------------------------------------------------------------------ writing
 def export_rows(records: list[dict]) -> list[list[str]]:
-    """records: [{"gtin", "lot", "description", "defaultLinkType", "links": [v3 links]}]"""
+    """records: [{"key", "value", "lot", "description", "defaultLinkType", "links": [v3 links]}]"""
     rows = []
     for record in records:
         default = record.get("defaultLinkType")
@@ -197,7 +206,7 @@ def export_rows(records: list[dict]) -> list[list[str]]:
         for link in links:
             is_default = link.get("linktype") == default and not default_marked
             default_marked = default_marked or is_default
-            rows.append([record["gtin"], record.get("lot") or "", record.get("description") or "",
+            rows.append([record["key"], record["value"], record.get("lot") or "", record.get("description") or "",
                          link.get("linktype") or "", link.get("href") or "",
                          ", ".join(link.get("hreflang") or []), link.get("title") or "",
                          "yes" if is_default else "", "no" if link.get("fwqs") is False else "yes"])
@@ -206,8 +215,8 @@ def export_rows(records: list[dict]) -> list[list[str]]:
 
 def _localise_flags(rows, yes_word, no_word):
     for row in rows:
-        row[7] = yes_word if row[7] == "yes" else ""
-        row[8] = yes_word if row[8] == "yes" else no_word
+        row[8] = yes_word if row[8] == "yes" else ""
+        row[9] = yes_word if row[9] == "yes" else no_word
     return rows
 
 
@@ -220,7 +229,7 @@ def write_csv(rows: list[list[str]], labels: dict) -> bytes:
 
 
 def write_xlsx(rows: list[list[str]], labels: dict, link_types: list[tuple[str, str, str]],
-               languages: list[tuple[str, str]]) -> bytes:
+               languages: list[tuple[str, str]], keys: list[tuple[str, str]] = ()) -> bytes:
     headers = labels.get("headers", {})
     sheets = labels.get("sheets", {})
     bold = Font(bold=True, color="FFFFFF")
@@ -237,10 +246,9 @@ def write_xlsx(rows: list[list[str]], labels: dict, link_types: list[tuple[str, 
         sheet.column_dimensions[letter].width = width
         head = sheet[f"{letter}1"]
         head.font, head.fill, head.alignment = bold, fill, Alignment(vertical="center")
-    for cell in sheet["A"][1:]:
-        cell.number_format = "@"                             # GTIN as text: keeps leading zeros
-    for cell in sheet["B"][1:]:
-        cell.number_format = "@"
+    for letter in ("A", "B", "C"):                           # key, identifier and lot as text:
+        for cell in sheet[letter][1:]:                       # Excel keeps the leading zeros
+            cell.number_format = "@"
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = f"A1:{get_column_letter(len(KEYS))}{max(1, sheet.max_row)}"
 
@@ -252,6 +260,17 @@ def write_xlsx(rows: list[list[str]], labels: dict, link_types: list[tuple[str, 
     for letter, width in (("A", 28), ("B", 34), ("C", 80)):
         reference.column_dimensions[letter].width = width
         reference[f"{letter}1"].font, reference[f"{letter}1"].fill = bold, fill
+
+    if keys:
+        key_sheet = workbook.create_sheet((sheets.get("keys") or "Keys")[:31])
+        key_sheet.append([labels.get("codeHeader", "Code"), labels.get("nameHeader", "Name")])
+        for row in keys:
+            key_sheet.append(list(row))
+        for letter, width in (("A", 10), ("B", 60)):
+            key_sheet.column_dimensions[letter].width = width
+            key_sheet[f"{letter}1"].font, key_sheet[f"{letter}1"].fill = bold, fill
+        for cell in key_sheet["A"][1:]:
+            cell.number_format = "@"
 
     codes = workbook.create_sheet((sheets.get("languages") or "Languages")[:31])
     codes.append([labels.get("codeHeader", "Code"), labels.get("nameHeader", "Name")])

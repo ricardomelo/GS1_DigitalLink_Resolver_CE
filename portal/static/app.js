@@ -53,23 +53,117 @@ function checkDigit(body) {
   return (10 - (sum % 10)) % 10;
 }
 
-function readGtin() {
-  const digits = $("#gtin").value.replace(/[\s.\-]/g, "");
-  if (!digits) return { ok: false, key: "gtin.hint" };
-  if (!/^\d+$/.test(digits)) return { ok: false, error: true, key: "gtin.digitsOnly" };
-  if (![8, 12, 13, 14].includes(digits.length)) {
-    return { ok: false, key: "gtin.typedLength", params: { length: digits.length } };
+/* ------------------------------------------------------------------ primary identification keys
+   GS1 Digital Link URI Syntax 1.7, section 4.3. The same rules as portal/gs1.py (which the server
+   applies again): live feedback while typing. */
+const CSET82 = "!\"%&'()*+,-./0123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz";
+const CSET32 = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+const PRIMES = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97];
+const NUMERIC_KEYS = { "414": 13, "417": 13, "8017": 18, "8018": 18, "00": 18, "402": 17 };
+const ALNUM = /^[A-Za-z0-9.\-]+$/;
+
+function gmnPair(body) {
+  let sum = 0;
+  [...body].forEach((c, i) => { sum += CSET82.indexOf(c) * PRIMES[body.length - 1 - i]; });
+  sum %= 1021;
+  return CSET32[sum >> 5] + CSET32[sum & 31];
+}
+
+const fail = (key, params) => ({ ok: false, error: true, key, params });
+
+function checkNumeric(value, length) {
+  if (!/^\d+$/.test(value)) return fail("key.digitsOnly");
+  if (value.length !== length) return { ok: false, key: "key.length", params: { expected: length, length: value.length } };
+  const expected = checkDigit(value.slice(0, -1));
+  return Number(value.at(-1)) === expected ? null : fail("key.checkDigit", { expected });
+}
+
+function checkAlnum(value, max, pattern = ALNUM, code = "key.chars") {
+  if (value.length > max) return fail("key.tooLong", { max });
+  if (!pattern.test(value)) return fail(code);
+  if (value.length < 4 || !/^\d{4}/.test(value)) return fail("key.companyPrefix");
+  return null;
+}
+
+function checkWithSerial(value, serialMax, filler = "") {
+  let body = value;
+  if (filler) {
+    if (!value.startsWith(filler)) return fail("key.graiZero");
+    body = value.slice(filler.length);
   }
-  const expected = checkDigit(digits.slice(0, -1));
-  if (Number(digits.at(-1)) !== expected) {
-    return { ok: false, error: true, key: "gtin.checkDigit", params: { expected } };
+  const base = body.slice(0, 13), serial = body.slice(13);
+  if (base.length < 13 || !/^\d+$/.test(base)) return { ok: false, key: "key.baseDigits", params: { length: 13 } };
+  const expected = checkDigit(base.slice(0, -1));
+  if (Number(base.at(-1)) !== expected) return fail("key.checkDigit", { expected });
+  if (serial.length > serialMax) return fail("key.serialTooLong", { max: serialMax });
+  if (serial && !ALNUM.test(serial)) return fail("key.chars");
+  return null;
+}
+
+function currentKey() {
+  return $("#key-type").value || "01";
+}
+
+function keyAllowsLot(ai) {
+  return (CONFIG?.keys || []).some(k => k.code === ai && k.qualifiers.includes("10"));
+}
+
+/* The identifier typed in step 1: { ok, ai, value } or the reason it is not valid yet. */
+function readKey() {
+  const ai = currentKey();
+  const raw = $("#key-value").value.replace(/\s/g, "");
+  if (ai === "01") {
+    const digits = raw.replace(/[.\-]/g, "");
+    if (!digits) return { ok: false, ai, key: "gtin.hint" };
+    if (!/^\d+$/.test(digits)) return { ok: false, ai, error: true, key: "gtin.digitsOnly" };
+    if (![8, 12, 13, 14].includes(digits.length)) {
+      return { ok: false, ai, key: "gtin.typedLength", params: { length: digits.length } };
+    }
+    const expected = checkDigit(digits.slice(0, -1));
+    if (Number(digits.at(-1)) !== expected) {
+      return { ok: false, ai, error: true, key: "gtin.checkDigit", params: { expected } };
+    }
+    if (digits.length === 13 && digits[0] === "2") return { ok: false, ai, error: true, key: "gtin.restricted" };
+    return { ok: true, ai, value: digits.padStart(14, "0"), key: "gtin.valid" };
   }
-  if (digits.length === 13 && digits[0] === "2") return { ok: false, error: true, key: "gtin.restricted" };
-  return { ok: true, gtin14: digits.padStart(14, "0"), key: "gtin.valid" };
+  if (!raw) return { ok: false, ai, key: `key.${ai}.hint` };
+  const value = ai in NUMERIC_KEYS || ["8006", "255"].includes(ai) ? raw.replace(/[.\-]/g, "") : raw;
+  let problem = null;
+  if (ai in NUMERIC_KEYS) problem = checkNumeric(value, NUMERIC_KEYS[ai]);
+  else if (ai === "8006") {
+    if (!/^\d+$/.test(value)) problem = fail("key.digitsOnly");
+    else if (value.length !== 18) problem = { ok: false, key: "key.length", params: { expected: 18, length: value.length } };
+    else {
+      const expected = checkDigit(value.slice(0, 13));
+      if (Number(value[13]) !== expected) problem = fail("key.checkDigit", { expected });
+      else {
+        const piece = Number(value.slice(14, 16)), total = Number(value.slice(16, 18));
+        if (!piece || !total || piece > total) problem = fail("key.itipPiece");
+      }
+    }
+  } else if (ai === "8013") {
+    problem = checkAlnum(value, 25);
+    if (!problem && (value.length < 3 || value.slice(-2) !== gmnPair(value.slice(0, -2)))) {
+      problem = fail("key.gmnPair", { expected: value.length < 3 ? "" : gmnPair(value.slice(0, -2)) });
+    }
+  } else if (ai === "8010") problem = checkAlnum(value, 30, /^[0-9A-Z\-]+$/, "key.cpidChars");
+  else if (ai === "401" || ai === "8004") problem = checkAlnum(value, 30);
+  else if (ai === "255") {
+    if (!/^\d+$/.test(value)) problem = fail("key.digitsOnly");
+    else if (value.length < 13 || value.length > 25) {
+      problem = { ok: false, key: "key.lengthRange", params: { min: 13, max: 25, length: value.length } };
+    } else {
+      const expected = checkDigit(value.slice(0, 12));
+      if (Number(value[12]) !== expected) problem = fail("key.checkDigit", { expected });
+    }
+  } else if (ai === "253") problem = checkWithSerial(value, 17);
+  else if (ai === "8003") problem = checkWithSerial(value, 16, "0");
+  if (problem) return { ...problem, ai };
+  return { ok: true, ai, value, key: "key.valid" };
 }
 
 function readLot() {
-  if (!$('input[name="scope"][value="lot"]').checked) return { ok: true, lot: null };
+  if (!keyAllowsLot(currentKey()) || !$('input[name="scope"][value="lot"]').checked) return { ok: true, lot: null };
   const lot = $("#lot").value.trim();
   if (!lot) return { ok: false, key: "lot.required" };
   if (!/^[A-Za-z0-9._\-]{1,20}$/.test(lot)) return { ok: false, error: true, key: "lot.invalid" };
@@ -77,7 +171,7 @@ function readLot() {
 }
 
 function query(g, l) {
-  const params = new URLSearchParams({ gtin: g.gtin14 });
+  const params = new URLSearchParams({ key: g.ai, value: g.value });
   if (l.lot) params.set("lot", l.lot);
   return params.toString();
 }
@@ -86,10 +180,10 @@ function query(g, l) {
 let qrTimer = null;
 
 function renderPreview() {
-  const g = readGtin();
+  const g = readKey();
   const l = readLot();
   const host = CONFIG ? CONFIG.resolver : "";
-  const gtin = g.ok ? g.gtin14 : "______________";
+  const shown = g.ok ? g.value : "______________";
   const lot = l.lot || null;
 
   const dl = $("#dl");
@@ -101,12 +195,13 @@ function renderPreview() {
     dl.append(span);
   };
   segment("seg-host", host);
-  segment("seg-key", `/01/${gtin}`);
+  segment("seg-key", `/${g.ai}/${shown}`);
+  I18N.set($("#legend-key"), "legend.key", { ai: g.ai, name: t(`key.${g.ai}.short`) });
   if (lot) segment("seg-qual", `/10/${encodeURIComponent(lot)}`);
   $("#legend-lot").hidden = !lot;
 
   const ready = g.ok && l.ok;
-  const uri = ready ? `${host}/01/${g.gtin14}` + (lot ? `/10/${encodeURIComponent(lot)}` : "") : "";
+  const uri = ready ? `${host}/${g.ai}/${g.value}` + (lot ? `/10/${encodeURIComponent(lot)}` : "") : "";
   toggleLink($("#test"), ready ? uri : null);
   const labelQuery = `${query(g, l)}&${labelOptionsQuery()}`;
   toggleLink($("#download-png"), ready ? `${BASE}api/qrcode?${labelQuery}&format=png` : null);
@@ -159,10 +254,42 @@ function toggleLink(a, href) {
 }
 
 /* ------------------------------------------------------------------ step 1: identify the product */
+/* Key type changed: label, hint, keyboard and the batch option follow the key. */
+function onKeyTypeChange() {
+  const ai = currentKey();
+  const input = $("#key-value");
+  I18N.set($("#key-label"), ai === "01" ? "gtin.label" : `key.${ai}.label`);
+  input.setAttribute("data-i18n-attr", `placeholder:${ai === "01" ? "gtin.placeholder" : `key.${ai}.placeholder`}`);
+  input.placeholder = t(ai === "01" ? "gtin.placeholder" : `key.${ai}.placeholder`);
+  const numeric = ai === "01" || ai in NUMERIC_KEYS || ["8006", "255"].includes(ai);
+  input.inputMode = numeric ? "numeric" : "text";
+  // room for the spaces and hyphens people type between digit groups
+  input.maxLength = ai === "01" ? 20 : numeric ? 34 : 40;
+  const lots = keyAllowsLot(ai);
+  $("#scope-fieldset").hidden = !lots;
+  if (!lots) {
+    $('input[name="scope"][value="product"]').checked = true;
+    $("#lot-wrap").hidden = true;
+  }
+  onIdentityChange();
+}
+
+function fillKeyTypes() {
+  const select = $("#key-type");
+  const current = select.value || "01";
+  select.replaceChildren(...(CONFIG?.keys || [{ code: "01" }]).map(k => {
+    const option = new Option("", k.code);
+    option.dataset.i18n = `key.${k.code}.name`;
+    option.textContent = t(`key.${k.code}.name`);
+    return option;
+  }));
+  select.value = current;
+}
+
 function onIdentityChange() {
-  const g = readGtin();
+  const g = readKey();
   const l = readLot();
-  const gtinMsg = $("#gtin-msg");
+  const gtinMsg = $("#key-msg");
   I18N.set(gtinMsg, g.key, g.params);
   gtinMsg.className = "field-msg" + (g.error ? " is-error" : g.ok ? " is-ok" : "");
   const lotMsg = $("#lot-msg");
@@ -194,7 +321,7 @@ function setOpenMessage(key, params, otherEntries = []) {
 }
 
 async function openRecord() {
-  const g = readGtin(), l = readLot();
+  const g = readKey(), l = readLot();
   if (!CONFIG || !g.ok || !l.ok) return;
   const button = $("#open");
   button.disabled = true;
@@ -281,8 +408,14 @@ function fold(text) {
   return String(text || "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 }
 
+/* "(01) 07898357410015": the AI in brackets, as in the human readable interpretation. */
+function keyText(ai, value) {
+  return `(${ai}) ${value}`;
+}
+
 function scopeText(r) {
   if (r.kind === "lot") return t("records.scope.lot", { value: r.lot });
+  if (r.kind !== "other" && r.key !== "01") return t("records.scope.key", { name: t(`key.${r.key}.short`) });
   if (r.kind === "other") {
     let value = r.qualifiers;
     try { value = Object.entries(JSON.parse(r.qualifiers)).map(([ai, v]) => `(${ai}) ${v}`).join(" "); } catch { /* as sent */ }
@@ -307,11 +440,12 @@ function renderRecords() {
     .filter(r => !problemsOnly || problemsOf(r).length > 0)
     .filter(r => {
       if (!words.length) return true;
-      const haystack = fold([r.gtin, r.gtin.replace(/^0+/, ""), r.description, r.lot, r.qualifiers].join(" "));
+      const haystack = fold([r.value, r.value.replace(/^0+/, ""), r.key, t(`key.${r.key}.short`), r.description,
+                             r.lot, r.qualifiers].join(" "));
       return words.every(w => haystack.includes(w));
     })
     // Most recently changed first; records without portal history after, by GTIN.
-    .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "") || a.gtin.localeCompare(b.gtin)
+    .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "") || a.anchor.localeCompare(b.anchor)
                     || (a.lot || "").localeCompare(b.lot || ""));
 
   const rows = shown.map(r => {
@@ -328,7 +462,7 @@ function renderRecords() {
     if (r.kind === "other") {
       // Created by another tool with qualifiers the portal does not edit (e.g. serial numbers).
       name = document.createElement("span");
-      name.textContent = r.description || r.gtin;
+      name.textContent = r.description || r.value;
       name.title = t("records.otherHint");
     } else {
       name = document.createElement("a");
@@ -337,7 +471,7 @@ function renderRecords() {
       name.addEventListener("click", e => { e.preventDefault(); openFromList(r); });
     }
     cell("records.col.product", name);
-    cell("records.col.gtin", r.gtin, "code");
+    cell("records.col.key", keyText(r.key, r.value), "code");
     cell("records.col.scope", scopeText(r));
     const linksCell = cell("records.col.links", String(r.links), "num");
     const problems = problemsOf(r);
@@ -374,7 +508,9 @@ function renderRecords() {
 async function openFromList(r) {
   history.pushState(null, "", location.pathname + location.search);
   applyView();
-  $("#gtin").value = r.gtin;
+  $("#key-type").value = r.key;
+  onKeyTypeChange();
+  $("#key-value").value = r.value;
   $(`input[name="scope"][value="${r.kind === "lot" ? "lot" : "product"}"]`).checked = true;
   $("#lot-wrap").hidden = r.kind !== "lot";
   $("#lot").value = r.lot || "";
@@ -392,7 +528,7 @@ function problemText(result) {
 }
 
 function problemsOf(r) {
-  return linkCheck.last?.records?.[`${r.gtin}|${r.lot || ""}`] || [];
+  return linkCheck.last?.records?.[`${r.anchor}|${r.lot || ""}`] || [];
 }
 
 /* Editor: checks the targets currently in the form and writes the result under each one. */
@@ -468,7 +604,7 @@ async function checkAllLinks() {
 }
 
 /* ------------------------------------------------------------------ spreadsheets: export and import */
-const SHEET_COLUMNS = ["gtin", "lot", "description", "linkType", "url", "language", "title", "default", "forward"];
+const SHEET_COLUMNS = ["key", "value", "lot", "description", "linkType", "url", "language", "title", "default", "forward"];
 const MAX_IMPORT_BYTES = 700 * 1024;
 const importState = { token: null, polling: null, imported: false };
 
@@ -479,13 +615,16 @@ function sheetLabels() {
   SHEET_COLUMNS.forEach(c => { headers[c] = t("sheet.col." + c); aliases[c] = I18N.every("sheet.col." + c); });
   const linkTypes = {};
   (CONFIG?.linkTypes || []).forEach(({ code }) => { linkTypes[code] = I18N.linkType(code); });
+  const keys = {};
+  (CONFIG?.keys || []).forEach(({ code }) => { keys[code] = t(`key.${code}.name`); });
+  aliases.value.push(...I18N.every("sheet.col.gtin"));         // spreadsheets made before other keys existed
   const languages = {};
   (CONFIG?.languages || []).forEach(code => { languages[code] = I18N.languageName(code); });
   return {
-    headers, aliases, linkTypes, languages,
+    headers, aliases, linkTypes, languages, keys,
     yes: t("sheet.yes"), no: t("sheet.no"),
     yesWords: I18N.every("sheet.yes"), noWords: I18N.every("sheet.no"),
-    sheets: { links: t("sheet.links"), linkTypes: t("sheet.linkTypes"), languages: t("sheet.languages") },
+    sheets: { links: t("sheet.links"), linkTypes: t("sheet.linkTypes"), languages: t("sheet.languages"), keys: t("sheet.keys") },
     codeHeader: t("sheet.code"), nameHeader: t("sheet.name"), descriptionHeader: t("sheet.description"),
     languagesNote: t("sheet.languagesNote"),
   };
@@ -589,7 +728,8 @@ function readAsBase64(file) {
 }
 
 function scopeOf(item) {
-  return item.lot ? t("records.scope.lot", { value: item.lot }) : t("records.scope.product");
+  if (item.lot) return t("records.scope.lot", { value: item.lot });
+  return item.key && item.key !== "01" ? t("records.scope.key", { name: t(`key.${item.key}.short`) }) : t("records.scope.product");
 }
 
 async function previewImport() {
@@ -625,7 +765,7 @@ function renderImportReport(report) {
     li.textContent = importErrorText(error);
     return li;
   }));
-  $("#import-body").replaceChildren(...report.records.map(item => importRow(item.rows, item.gtin, scopeOf(item),
+  $("#import-body").replaceChildren(...report.records.map(item => importRow(item.rows, keyText(item.key || "01", item.value), scopeOf(item),
     item.description, item.action)));
   $("#import-report").hidden = false;
   const count = c.create + c.update;
@@ -686,7 +826,7 @@ async function pollImport() {
     li.textContent = importErrorText({ row: r.rows[0], code: r.code, params: r.params || {} });
     return li;
   }));
-  $("#import-body").replaceChildren(...status.results.map(r => importRow(r.rows, r.gtin,
+  $("#import-body").replaceChildren(...status.results.map(r => importRow(r.rows, keyText(r.key, r.value),
     scopeOf(r), r.description, r.action)));
   $("#import-summary").hidden = true;          // the preview counts no longer apply
   $("#import-apply").hidden = true;
@@ -806,9 +946,10 @@ function refreshDefault() {
 }
 
 function collect() {
-  const g = readGtin(), l = readLot();
+  const g = readKey(), l = readLot();
   return {
-    gtin: g.gtin14,
+    key: g.ai,
+    value: g.value,
     lot: l.lot,
     description: $("#description").value,
     defaultLinkType: $("#links .link-row .link-type").value,
@@ -847,10 +988,11 @@ async function save(event) {
 }
 
 async function remove() {
-  const g = readGtin(), l = readLot();
+  const g = readKey(), l = readLot();
   const target = l.lot
-    ? t("delete.targetLot", { lot: l.lot, gtin: g.gtin14 })
-    : t("delete.targetGtin", { gtin: g.gtin14 });
+    ? t("delete.targetLot", { lot: l.lot, gtin: g.value })
+    : g.ai === "01" ? t("delete.targetGtin", { gtin: g.value })
+    : t("delete.targetKey", { name: t(`key.${g.ai}.short`), value: g.value });
   if (!confirm(t("delete.confirm", { target }))) return;
   try {
     const result = await api("DELETE", "record?" + query(g, l));
@@ -979,13 +1121,14 @@ async function init() {
   setupLabelOptions();
 
   // Events first: the page responds even before the configuration arrives.
-  $("#gtin").addEventListener("input", onIdentityChange);
+  $("#key-type").addEventListener("change", () => { $("#key-value").value = ""; onKeyTypeChange(); $("#key-value").focus(); });
+  $("#key-value").addEventListener("input", onIdentityChange);
   $("#lot").addEventListener("input", onIdentityChange);
   document.querySelectorAll('input[name="scope"]').forEach(radio => radio.addEventListener("change", () => {
     $("#lot-wrap").hidden = !$('input[name="scope"][value="lot"]').checked;
     onIdentityChange();
   }));
-  $("#gtin").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); openRecord(); } });
+  $("#key-value").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); openRecord(); } });
   $("#lot").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); openRecord(); } });
   $("#open").addEventListener("click", openRecord);
   $("#add").addEventListener("click", () => $(".url", addRow()).focus());
@@ -1015,7 +1158,7 @@ async function init() {
     e.preventDefault();
     history.pushState(null, "", location.pathname + location.search);
     applyView();
-    $("#gtin").focus();
+    $("#key-value").focus();
   });
   window.addEventListener("hashchange", applyView);
   document.addEventListener("localechange", renderRecords);   // dates and scope texts follow the language
@@ -1027,6 +1170,8 @@ async function init() {
     showStatus("error", "error.config", { detail: t(e.code, e.params) });
     return;
   }
+  fillKeyTypes();
+  onKeyTypeChange();
   $("#user-name").textContent = CONFIG.user;
   $("#password-username").value = CONFIG.user;   // lets password managers pair the new password with the account
   onIdentityChange();

@@ -203,7 +203,8 @@ input, select {
 }
 input::placeholder { color: #8A97A8; }
 .code { font-family: var(--mono); letter-spacing: .04em; }
-#gtin { font-size: 1.3rem; max-width: 19ch; }
+#key-value { font-size: 1.3rem; max-width: 34ch; }
+.key-type { max-width: 34rem; margin-bottom: 1rem; }
 #lot { max-width: 22ch; }
 input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible {
   outline: 3px solid var(--focus); outline-offset: 2px;

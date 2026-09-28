@@ -17,7 +17,7 @@ import sheet  # noqa: E402
 from gs1 import ValidationError  # noqa: E402
 
 failures = []
-PT = {"gtin": ["GTIN"], "lot": ["Lote", "Batch/lot"], "description": ["Descrição", "Description"],
+PT = {"key": ["Chave (AI)", "Key (AI)"], "value": ["Identificador", "Identifier"], "lot": ["Lote", "Batch/lot"], "description": ["Descrição", "Description"],
       "linkType": ["Tipo de link", "Link type"], "url": ["URL"], "language": ["Idioma", "Language"],
       "title": ["Título", "Title"], "default": ["Principal", "Default"],
       "forward": ["Repassar parâmetros", "Forward query string"]}
@@ -72,20 +72,21 @@ check("unknown format", error_code(lambda: sheet.read_table("a.pdf", b"%PDF")) =
 check("broken XLSX", error_code(lambda: sheet.read_table("a.xlsx", b"PK\x03\x04broken")) == "import.unreadable")
 
 # Export → XLSX → import round trip
-records = [{"gtin": "07898357410015", "lot": None, "description": "Café torrado", "defaultLinkType": "gs1:pip",
+records = [{"key": "01", "value": "07898357410015", "lot": None, "description": "Café torrado", "defaultLinkType": "gs1:pip",
             "links": [{"linktype": "gs1:instructions", "href": "https://x.org/m.pdf", "hreflang": ["pt", "en"], "fwqs": False},
                       {"linktype": "gs1:pip", "href": "https://x.org/cafe", "hreflang": ["pt"], "title": "Café"}]}]
-labels = {"headers": {"gtin": "GTIN", "lot": "Lote", "description": "Descrição", "linkType": "Tipo de link", "url": "URL",
+labels = {"headers": {"key": "Chave (AI)", "value": "Identificador", "lot": "Lote", "description": "Descrição", "linkType": "Tipo de link", "url": "URL",
                       "language": "Idioma", "title": "Título", "default": "Principal", "forward": "Repassar parâmetros"},
           "yes": "sim", "no": "não", "sheets": {"links": "Links", "linkTypes": "Tipos de link", "languages": "Idiomas"}}
 rows = sheet.export_rows(records)
-check("export: default link first and marked", rows[0][3] == "gs1:pip" and rows[0][7] == "yes" and rows[1][7] == "")
+check("export: default link first and marked", rows[0][4] == "gs1:pip" and rows[0][8] == "yes" and rows[1][8] == "")
 data = sheet.write_xlsx([list(r) for r in rows], labels, [("gs1:pip", "Página do produto", "…")], [("pt", "português")])
 book = load_workbook(io.BytesIO(data))
 links = book["Links"]
-check("XLSX: localised headers and sheets", [c.value for c in links[1]][:4] == ["GTIN", "Lote", "Descrição", "Tipo de link"]
+check("XLSX: localised headers and sheets", [c.value for c in links[1]][:4] == ["Chave (AI)", "Identificador", "Lote", "Descrição"]
       and book.sheetnames == ["Links", "Tipos de link", "Idiomas"], book.sheetnames)
-check("XLSX: GTIN stored as text with leading zero", links["A2"].value == "07898357410015" and links["A2"].number_format == "@")
+check("XLSX: key and identifier stored as text with leading zeros", links["A2"].value == "01" and links["B2"].value == "07898357410015"
+      and links["B2"].number_format == "@")
 back, errors = sheet.parse_rows(sheet.read_table("x.xlsx", data), PT)
 check("XLSX round trip", not errors and len(back) == 1 and back[0]["links"][0]["default"]
       and back[0]["links"][1]["forward"] is False and back[0]["links"][1]["hreflang"] == ["pt", "en"], (back, errors))
@@ -106,6 +107,19 @@ records, _ = sheet.parse_rows(rows, PT)
 check("language case kept from the file", records[0]["links"][0]["hreflang"] == ["en-US", "vi"], records[0]["links"][0])
 check("template and unusual lots are not editable",
       gs1.is_editable_lot("L2026A") and not gs1.is_editable_lot("{lotnumber}") and not gs1.is_editable_lot("A/B"))
+
+# Other primary keys and spreadsheets made before them
+rows = sheet.read_table("x.csv", "Chave (AI);Identificador;Descrição;Tipo de link;URL\r\n(00);095060001343520000;Palete;gs1:pip;https://x.org\r\n414;9506000134376;Loja;gs1:pip;https://y.org\r\n;7898357410015;Café;gs1:pip;https://z.org\r\n".encode())
+records, errors = sheet.parse_rows(rows, PT)
+check("key column: AI with or without brackets, empty means GTIN",
+      [(r["key"], r["value"]) for r in records] == [("00", "095060001343520000"), ("414", "9506000134376"), ("01", "7898357410015")], records)
+rows = sheet.read_table("x.csv", "GTIN;Descrição;Tipo de link;URL\r\n7898357410015;Café;gs1:pip;https://z.org\r\n".encode())
+records, errors = sheet.parse_rows(rows, PT)
+check("old spreadsheets with a GTIN column still import", not errors and records[0]["key"] == "01"
+      and records[0]["value"] == "7898357410015", (records, errors))
+rows = sheet.read_table("x.csv", "Chave (AI);Identificador;Descrição;Tipo de link;URL\r\n8004;9506000A;A;gs1:pip;https://x.org\r\n8004;9506000a;B;gs1:pip;https://y.org\r\n".encode())
+records, _ = sheet.parse_rows(rows, PT)
+check("alphanumeric keys are not merged by case or zeros", len(records) == 2)
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

@@ -2,7 +2,7 @@
 Link management portal for GS1 Resolver CE.
 
 Backend-for-frontend: the browser never sees SESSION_TOKEN or the Resolver CE v3 payload.
-It sends a simple JSON document (GTIN, batch/lot, description, link targets) and this service:
+It sends a simple JSON document (primary key, batch/lot, description, link targets) and this service:
   1. validates it against GS1 rules;
   2. reads the current state from the resolver (GET);
   3. chooses the safe sequence of calls (POST /new, PUT, partial DELETE);
@@ -249,9 +249,9 @@ def resolver(method: str, path: str, payload=None) -> tuple[int, object]:
     return r.status_code, body
 
 
-def read_entries(gtin14: str) -> tuple[list[dict], str | None]:
-    """Every v3 entry for the GTIN (one per qualifier set) and the shared default link type."""
-    status, body = resolver("GET", f"/01/{gtin14}")
+def read_entries(anchor: str) -> tuple[list[dict], str | None]:
+    """Every v3 entry for the primary key (one per qualifier set) and the shared default link type."""
+    status, body = resolver("GET", anchor)
     if status == 404:
         return [], None
     if status != 200 or not isinstance(body, dict):
@@ -271,20 +271,21 @@ def find_entry(entries: list[dict], qualifiers: list) -> dict | None:
 def describe_entry(entry: dict) -> dict:
     """Language-neutral description of an entry, e.g. {"kind": "lot", "value": "L1"}."""
     q = {k: v for item in entry.get("qualifiers") or [] for k, v in item.items()}
-    if set(q) == {"10"} and gs1.is_editable_lot(q["10"]):
+    key = gs1.split_anchor(entry.get("anchor") or "")
+    if set(q) == {"10"} and gs1.is_editable_lot(q["10"]) and key and gs1.allows_lot(key[0]):
         return {"kind": "lot", "value": q["10"]}
     return {"kind": "product"} if not q else {"kind": "other", "value": json.dumps(q)}
 
 
-def record_change(gtin14: str, lot: str | None, removed: bool = False) -> None:
+def record_change(anchor: str, lot: str | None, removed: bool = False) -> None:
     """Keeps the "last change" metadata; never makes a save fail."""
     try:
         if removed:
-            meta.remove(gtin14, lot)
+            meta.remove(anchor, lot)
         else:
-            meta.touch(gtin14, lot, g.user)
+            meta.touch(anchor, lot, g.user)
     except OSError as exc:
-        log.warning("Record metadata not updated for %s: %s", meta.key(gtin14, lot), exc)
+        log.warning("Record metadata not updated for %s: %s", meta.key(anchor, lot), exc)
 
 
 def is_success(status: int, body) -> bool:
@@ -292,9 +293,18 @@ def is_success(status: int, body) -> bool:
 
 
 # --------------------------------------------------------------------------- form → Resolver CE v3
+def request_key(source) -> str:
+    """The anchor (/AI/value) named by a request: key + value, or gtin (older clients)."""
+    ai = str(source.get("key") or "01")
+    value = source.get("value") if source.get("value") is not None else source.get("gtin", "")
+    return gs1.anchor_for(ai, gs1.normalise_key(ai, value))
+
+
 def build_document(data: dict) -> tuple[str, str | None, dict]:
-    gtin14 = gs1.normalise_gtin(str(data.get("gtin", "")))
+    anchor = request_key(data)
     lot = gs1.normalise_lot(data.get("lot"))
+    if lot and not gs1.allows_lot(gs1.split_anchor(anchor)[0]):
+        raise ValidationError("lot.notAllowed")
 
     description = (data.get("description") or "").strip()
     if not description:
@@ -336,16 +346,16 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
         seen[key] = position
         links.append(link)
 
-    # The first link is the default (gs1:defaultLink); its type becomes the GTIN's defaultLinktype.
+    # The first link is the default (gs1:defaultLink); its type becomes the key's defaultLinktype.
     default = data.get("defaultLinkType") or links[0]["linktype"]
     if default not in {l["linktype"] for l in links}:
         raise ValidationError("default.required")
 
-    doc = {"anchor": f"/01/{gtin14}", "itemDescription": description,
+    doc = {"anchor": anchor, "itemDescription": description,
            "defaultLinktype": default, "links": links}
     if lot:
         doc["qualifiers"] = gs1.qualifiers_for(lot)
-    return gtin14, lot, doc
+    return anchor, lot, doc
 
 
 # --------------------------------------------------------------------------- pages and assets
@@ -450,6 +460,8 @@ def config():
         user=g.user,
         resolver=RESOLVER_PUBLIC_URL,
         linkTypes=[{"code": code, "group": group} for code, group, _ in gs1.LINK_TYPES],
+        keys=[{"code": ai, "name": name, "qualifiers": list(qualifiers)}
+              for ai, (name, _, qualifiers) in gs1.PRIMARY_KEYS.items()],
         languages=gs1.LANGUAGES,
     )
 
@@ -457,18 +469,19 @@ def config():
 @app.get("/portal/api/record")
 @require_login
 def get_record():
-    gtin14 = gs1.normalise_gtin(request.args.get("gtin", ""))
+    anchor = request_key(request.args)
     lot = gs1.normalise_lot(request.args.get("lot"))
-    entries, default = read_entries(gtin14)
+    entries, default = read_entries(anchor)
     target = find_entry(entries, gs1.qualifiers_for(lot))
     others = [describe_entry(e) for e in entries if e is not target]
+    ai, value = gs1.split_anchor(anchor)
 
     result = {
-        "gtin": gtin14, "lot": lot,
-        "digitalLink": gs1.digital_link(RESOLVER_PUBLIC_URL, gtin14, lot),
+        "key": ai, "value": value, "anchor": anchor, "lot": lot,
+        "digitalLink": gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, lot),
         "exists": target is not None,
         "otherEntries": others,
-        # With other entries on the same GTIN the default link type is shared and cannot change here.
+        # With other entries on the same key the default link type is shared and cannot change here.
         "sharedDefaultLinkType": default if others else None,
         "defaultLinkType": default,
         "description": "", "links": [],
@@ -487,19 +500,19 @@ def get_record():
 @app.post("/portal/api/record")
 @require_login
 def save_record():
-    gtin14, lot, doc = build_document(request.get_json(silent=True) or {})
-    uri = gs1.digital_link(RESOLVER_PUBLIC_URL, gtin14, lot)
-    created = store_record(gtin14, lot, doc)
+    anchor, lot, doc = build_document(request.get_json(silent=True) or {})
+    uri = gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, lot)
+    created = store_record(anchor, lot, doc)
     return message("save.created" if created else "save.updated", 201 if created else 200,
                    digitalLink=uri, created=created)
 
 
-def store_record(gtin14: str, lot: str | None, doc: dict) -> bool:
-    """Creates or replaces one record (GTIN + optional lot) with the safe call sequence.
+def store_record(anchor: str, lot: str | None, doc: dict) -> bool:
+    """Creates or replaces one record (primary key + optional lot) with the safe call sequence.
     Returns True when the record was created. Used by the editor and by spreadsheet imports."""
     qualifiers = doc.get("qualifiers", [])
 
-    entries, current_default = read_entries(gtin14)
+    entries, current_default = read_entries(anchor)
     target = find_entry(entries, qualifiers)
     others = [e for e in entries if e is not target]
 
@@ -507,19 +520,19 @@ def store_record(gtin14: str, lot: str | None, doc: dict) -> bool:
         raise ValidationError("default.sharedMismatch", linkType=current_default,
                               entries=[describe_entry(e) for e in others])
 
-    # Case 1: new GTIN, or new batch/lot on an existing GTIN → POST /new (upsert appends the entry)
+    # Case 1: new key, or new batch/lot on an existing GTIN → POST /new (upsert appends the entry)
     if target is None:
         status, body = resolver("POST", "/new", doc)
         if not is_success(status, body):
             raise UpstreamError("upstream.createRejected", 502, body)
-        audit.info("user=%s action=create anchor=/01/%s lot=%s links=%d",
-                   g.user, gtin14, lot or "-", len(doc["links"]))
-        record_change(gtin14, lot)
+        audit.info("user=%s action=create anchor=%s lot=%s links=%d",
+                   g.user, anchor, lot or "-", len(doc["links"]))
+        record_change(anchor, lot)
         return True
 
     # Case 2: existing entry → PUT (merge on linktype+hreflang+context), then a partial DELETE of the
     # links the user removed. In this order the product is never left without a target.
-    status, body = resolver("PUT", f"/01/{gtin14}", doc)
+    status, body = resolver("PUT", anchor, doc)
     if not is_success(status, body):
         raise UpstreamError("upstream.updateRejected", 502, body)
 
@@ -528,28 +541,28 @@ def store_record(gtin14: str, lot: str | None, doc: dict) -> bool:
                 "context": l.get("context") or []}
                for l in target.get("links", []) if gs1.link_key(l) not in new_keys]
     if removed:
-        status, body = resolver("DELETE", f"/01/{gtin14}", {"qualifiers": qualifiers, "links": removed})
+        status, body = resolver("DELETE", anchor, {"qualifiers": qualifiers, "links": removed})
         if not is_success(status, body):
             raise UpstreamError("upstream.partialUpdate", 502, body, count=len(removed))
 
-    audit.info("user=%s action=update anchor=/01/%s lot=%s links=%d removed=%d",
-               g.user, gtin14, lot or "-", len(doc["links"]), len(removed))
-    record_change(gtin14, lot)
+    audit.info("user=%s action=update anchor=%s lot=%s links=%d removed=%d",
+               g.user, anchor, lot or "-", len(doc["links"]), len(removed))
+    record_change(anchor, lot)
     return False
 
 
 @app.delete("/portal/api/record")
 @require_login
 def delete_record():
-    gtin14 = gs1.normalise_gtin(request.args.get("gtin", ""))
+    anchor = request_key(request.args)
     lot = gs1.normalise_lot(request.args.get("lot"))
-    entries, _ = read_entries(gtin14)
+    entries, _ = read_entries(anchor)
     target = find_entry(entries, gs1.qualifiers_for(lot))
     if target is None:
         raise ValidationError("record.notFound")
     others = [e for e in entries if e is not target]
 
-    status, body = resolver("DELETE", f"/01/{gtin14}")
+    status, body = resolver("DELETE", anchor)
     if not is_success(status, body):
         raise UpstreamError("upstream.deleteFailed", 502, body)
     if others:
@@ -560,15 +573,15 @@ def delete_record():
             resolver("POST", "/new", entries)
             raise UpstreamError("upstream.deleteRestored", 502, body)
 
-    audit.info("user=%s action=delete anchor=/01/%s lot=%s", g.user, gtin14, lot or "-")
-    record_change(gtin14, lot, removed=True)
+    audit.info("user=%s action=delete anchor=%s lot=%s", g.user, anchor, lot or "-")
+    record_change(anchor, lot, removed=True)
     return message("delete.done")
 
 
 @app.get("/portal/api/records")
 @require_login
 def list_records():
-    """Every record on the resolver (one per GTIN + qualifier set), with the portal's metadata.
+    """Every record on the resolver (one per primary key + qualifier set), with the portal's metadata.
     Searching and filtering happen in the browser; the list is small enough to send whole."""
     status, body = resolver("GET", "/summary")
     if status == 404:
@@ -581,14 +594,14 @@ def list_records():
     records = []
     for line in lines:
         anchor = line.get("anchor") or ""
-        if not anchor.startswith("/01/"):
-            continue                      # the portal manages GTINs only
-        gtin14 = anchor.split("/")[2]
+        key = gs1.split_anchor(anchor)
+        if not key:
+            continue                      # keys the portal does not manage (e.g. 415, which needs 8020)
         entry = describe_entry(line)
         lot = entry.get("value") if entry["kind"] == "lot" else None
-        info = known.get(meta.key(gtin14, lot), {}) if entry["kind"] != "other" else {}
+        info = known.get(meta.key(anchor, lot), {}) if entry["kind"] != "other" else {}
         records.append({
-            "gtin": gtin14, "kind": entry["kind"], "lot": lot,
+            "key": key[0], "value": key[1], "anchor": anchor, "kind": entry["kind"], "lot": lot,
             "qualifiers": entry.get("value") if entry["kind"] == "other" else None,
             "description": line.get("itemDescription") or "",
             "defaultLinkType": line.get("defaultLinktype"),
@@ -606,7 +619,7 @@ def summary_with_links() -> list[dict]:
         return []
     if status != 200 or not isinstance(body, dict):
         raise UpstreamError("upstream.readFailed", 502, body)
-    return [line for line in body.get("data") or [] if (line.get("anchor") or "").startswith("/01/")]
+    return [line for line in body.get("data") or [] if gs1.split_anchor(line.get("anchor") or "")]
 
 
 @app.post("/portal/api/export")
@@ -621,7 +634,8 @@ def export_records():
         entry = describe_entry(line)
         if entry["kind"] == "other":
             continue
-        records.append({"gtin": line["anchor"].split("/")[2], "lot": entry.get("value"),
+        ai, value = gs1.split_anchor(line["anchor"])
+        records.append({"key": ai, "value": value, "lot": entry.get("value"),
                         "description": line.get("itemDescription") or "",
                         "defaultLinkType": line.get("defaultLinktype"), "links": line.get("links") or []})
     rows = sheet.export_rows(records)
@@ -633,7 +647,9 @@ def export_records():
         names = labels.get("linkTypes") or {}
         link_types = [(code, *(names.get(code) or [title, ""])[:2]) for code, _, title in gs1.LINK_TYPES]
         languages = [(code, (labels.get("languages") or {}).get(code, code)) for code in gs1.LANGUAGES]
-        body = sheet.write_xlsx(rows, labels, link_types, languages)
+        key_names = labels.get("keys") or {}
+        keys = [(ai, key_names.get(ai, name)) for ai, (name, _, _) in gs1.PRIMARY_KEYS.items()]
+        body = sheet.write_xlsx(rows, labels, link_types, languages, keys)
         mime, ext = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
     return Response(body, mimetype=mime, headers={
         "Content-Disposition": f'attachment; filename="resolver-links-{stamp}.{ext}"'})
@@ -684,12 +700,12 @@ def import_preview():
 
     existing: dict[str, list[dict]] = {}
     for line in summary_with_links():
-        existing.setdefault(line["anchor"].split("/")[2], []).append(line)
+        existing.setdefault(line["anchor"], []).append(line)
 
     report, plan, file_defaults, to_check = [], [], {}, []
     rows_with_errors = {e["row"] for e in errors}
     for record in parsed:
-        item = {"rows": record["rows"], "gtin": record["gtin"], "lot": record["lot"] or None,
+        item = {"rows": record["rows"], "key": record["key"] or "01", "value": record["value"], "lot": record["lot"] or None,
                 "description": record["description"], "links": len(record["links"])}
         if rows_with_errors.intersection(record["rows"]):
             item["action"] = "error"
@@ -725,8 +741,9 @@ def import_preview():
             continue
         ordered = defaults + [l for l in record["links"] if not l["default"]]
         try:
-            gtin14, lot, doc = build_document({
-                "gtin": record["gtin"], "lot": record["lot"], "description": record["description"],
+            anchor, lot, doc = build_document({
+                "key": record["key"] or "01", "value": record["value"], "lot": record["lot"],
+                "description": record["description"],
                 "defaultLinkType": ordered[0]["linkType"] if ordered else None,
                 "links": [{"linkType": l["linkType"], "url": l["url"], "hreflang": l["hreflang"],
                            "title": l["title"], "forwardQueryString": l["forward"]} for l in ordered]})
@@ -741,11 +758,11 @@ def import_preview():
             report.append(item)
             continue
 
-        item.update(gtin=gtin14, lot=lot)
-        entries = existing.get(gtin14, [])
+        item.update(key=gs1.split_anchor(anchor)[0], value=gs1.split_anchor(anchor)[1], lot=lot)
+        entries = existing.get(anchor, [])
         target = find_entry(entries, doc.get("qualifiers", []))
         others = [e for e in entries if e is not target]
-        first = file_defaults.setdefault(gtin14, (doc["defaultLinktype"], record["rows"][0]))
+        first = file_defaults.setdefault(anchor, (doc["defaultLinktype"], record["rows"][0]))
         if first[0] != doc["defaultLinktype"]:
             errors.append({"row": record["rows"][0], "code": "import.defaultConflict",
                            "params": {"linkType": first[0], "row": first[1]}})
@@ -763,11 +780,11 @@ def import_preview():
             item["action"] = "update"
         if item["action"] in ("create", "update"):
             # products before their batches, so a new GTIN is created with its product-level record
-            plan.append({"gtin": gtin14, "lot": lot, "doc": doc, "rows": record["rows"]})
+            plan.append({"anchor": anchor, "lot": lot, "doc": doc, "rows": record["rows"]})
             to_check.extend({"row": link["row"], "url": link["url"]} for link in record["links"])
         report.append(item)
 
-    plan.sort(key=lambda p: (p["gtin"], p["lot"] is not None))
+    plan.sort(key=lambda p: (p["anchor"], p["lot"] is not None))
     token = uuid.uuid4().hex
     with IMPORTS_LOCK:
         IMPORTS[token] = {"user": g.user, "created": time.time(), "plan": plan, "state": "ready",
@@ -784,10 +801,11 @@ def _run_import(token: str, user: str) -> None:
         g.user = user                                   # store_record logs and records who changed it
         created = updated = failed = 0
         for item in job["plan"]:
-            result = {"gtin": item["gtin"], "lot": item["lot"], "rows": item["rows"],
+            ai, value = gs1.split_anchor(item["anchor"])
+            result = {"key": ai, "value": value, "lot": item["lot"], "rows": item["rows"],
                       "description": item["doc"]["itemDescription"]}
             try:
-                result["action"] = "created" if store_record(item["gtin"], item["lot"], item["doc"]) else "updated"
+                result["action"] = "created" if store_record(item["anchor"], item["lot"], item["doc"]) else "updated"
                 created += result["action"] == "created"
                 updated += result["action"] == "updated"
             except (ValidationError, UpstreamError) as exc:
@@ -880,7 +898,7 @@ def start_link_job():
             entry = describe_entry(line)
             if entry["kind"] == "other":
                 continue
-            key = f'{line["anchor"].split("/")[2]}|{entry.get("value") or ""}'
+            key = f'{line["anchor"]}|{entry.get("value") or ""}'
             for link in line.get("links") or []:
                 urls.setdefault(link.get("href"), []).append(key)
         scope = "all"
@@ -922,15 +940,16 @@ def last_link_check():
 def qrcode():
     """QR code label. format=png|svg downloads it; without format it is the inline SVG preview.
     hri=0 omits the human readable interpretation; brand=1 adds the GS1® branding (pilot)."""
-    gtin14 = gs1.normalise_gtin(request.args.get("gtin", ""))
+    anchor = request_key(request.args)
     lot = gs1.normalise_lot(request.args.get("lot"))
     options = label.LabelOptions(
-        uri=gs1.digital_link(RESOLVER_PUBLIC_URL, gtin14, lot),
-        hri_lines=tuple(gs1.hri_lines(gtin14, lot)),
+        uri=gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, lot),
+        hri_lines=tuple(gs1.hri_lines(anchor, lot)),
         branded=request.args.get("brand") == "1",
         show_hri=request.args.get("hri", "1") != "0",
     )
-    filename = f"qrcode_{gtin14}{'_' + lot if lot else ''}{'_gs1' if options.branded else ''}"
+    ai, value = gs1.split_anchor(anchor)
+    filename = f"qrcode_{ai}_{value}{'_' + lot if lot else ''}{'_gs1' if options.branded else ''}"
     download_format = request.args.get("format")
     if download_format == "png":
         return Response(label.render_png(options), mimetype="image/png",

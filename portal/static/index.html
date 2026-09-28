@@ -69,12 +69,15 @@
         <span class="step-n" aria-hidden="true">1</span>
         <h2 id="step1" data-i18n="step1.title"></h2>
 
-        <label for="gtin" data-i18n="gtin.label"></label>
-        <input id="gtin" name="gtin" class="code" inputmode="numeric" autocomplete="off"
-               maxlength="18" data-i18n-attr="placeholder:gtin.placeholder" aria-describedby="gtin-msg">
-        <p class="field-msg" id="gtin-msg" aria-live="polite" data-i18n="gtin.hint"></p>
+        <label for="key-type" data-i18n="key.typeLabel"></label>
+        <select id="key-type" class="key-type"><option value="01">GTIN (01)</option></select>
 
-        <fieldset class="scope">
+        <label for="key-value" id="key-label" data-i18n="gtin.label"></label>
+        <input id="key-value" name="key-value" class="code" inputmode="numeric" autocomplete="off"
+               maxlength="18" data-i18n-attr="placeholder:gtin.placeholder" aria-describedby="key-msg">
+        <p class="field-msg" id="key-msg" aria-live="polite" data-i18n="gtin.hint"></p>
+
+        <fieldset class="scope" id="scope-fieldset">
           <legend data-i18n="scope.legend"></legend>
           <label class="choice"><input type="radio" name="scope" value="product" checked> <span data-i18n="scope.product"></span></label>
           <label class="choice"><input type="radio" name="scope" value="lot"> <span data-i18n="scope.lot"></span></label>
@@ -136,7 +139,7 @@
         <a class="dl code" id="dl" target="_blank" rel="noopener" data-i18n-attr="aria-label:preview.dlAria"></a>
         <dl class="legend">
           <div><dt><span class="sw sw-host"></span><span data-i18n="legend.host"></span></dt><dd data-i18n="legend.hostHelp"></dd></div>
-          <div><dt><span class="sw sw-key"></span><span data-i18n="legend.key"></span></dt><dd data-i18n="legend.keyHelp"></dd></div>
+          <div><dt><span class="sw sw-key"></span><span id="legend-key" data-i18n="legend.key" data-i18n-params='{"ai":"01","name":"GTIN"}'></span></dt><dd data-i18n="legend.keyHelp"></dd></div>
           <div id="legend-lot" hidden><dt><span class="sw sw-qual"></span><span data-i18n="legend.lot"></span></dt><dd data-i18n="legend.lotHelp"></dd></div>
         </dl>
         <p class="state" id="state" data-i18n="state.draft"></p>
@@ -184,7 +187,7 @@
           <thead>
             <tr>
               <th scope="col" data-i18n="records.col.product"></th>
-              <th scope="col" data-i18n="records.col.gtin"></th>
+              <th scope="col" data-i18n="records.col.key"></th>
               <th scope="col" data-i18n="records.col.scope"></th>
               <th scope="col" class="num" data-i18n="records.col.links"></th>
               <th scope="col" data-i18n="records.col.changed"></th>
@@ -242,7 +245,7 @@
             <thead>
               <tr>
                 <th scope="col" data-i18n="import.col.rows"></th>
-                <th scope="col" data-i18n="records.col.gtin"></th>
+                <th scope="col" data-i18n="records.col.key"></th>
                 <th scope="col" data-i18n="records.col.scope"></th>
                 <th scope="col" data-i18n="records.col.product"></th>
                 <th scope="col" data-i18n="import.col.result"></th>

@@ -2,6 +2,23 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: every primary identification key (URI Syntax 1.7, section 4.3)
+- Editor, record list, spreadsheets, labels and link checker work with GTIN, ITIP, GMN, CPID, GLN (414,
+  417), GSRN (8017, 8018), GCN, SSCC, GDTI, GINC, GSIN, GRAI and GIAI; step 1 has an identifier type
+  selector with the label, hint, keyboard and live checks of each key. AI 415 waits for its required
+  key qualifier 8020.
+- `portal/gs1.py`: registry of primary keys with the Syntax Engine's rules (check digits, GMN
+  check-character pair, GS1 Company Prefix, ITIP piece/total, GRAI filler zero); records addressed by
+  anchor (`/AI/value`); API accepts `key` + `value` (and `gtin` from older clients).
+- Record metadata keys unchanged for GTINs (`<GTIN-14>`, `<GTIN-14>/10/<lot>`); `<AI>/<value>` for the
+  others.
+- Spreadsheets: *Key (AI)* and *Identifier* columns plus a *Keys* reference sheet; older files with a
+  *GTIN* column import unchanged.
+- Wording made key-neutral where it is shown for every key (description, previews, messages).
+- Tests: `dev-tests/portal/test_keys.py` (every key, compared with the GS1 Barcode Syntax Engine when
+  `GS1_SYNTAX_ENGINE` is set); the resolver test authors and resolves one record per key (with the real
+  engine when available); SSCC and GLN in the portal end-to-end test; key columns in the spreadsheet test.
+
 ### Portal: link checker
 - Editor: targets checked after each save and on demand (*Check targets*); a note under each target.
 - Record list: *Check links* checks every target in the background with progress, marks records with

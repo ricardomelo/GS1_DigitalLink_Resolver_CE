@@ -137,16 +137,185 @@ def qualifiers_for(lot: str | None) -> list[dict[str, str]]:
     return [{"10": lot}] if lot else []
 
 
-def digital_link(base_url: str, gtin14: str, lot: str | None) -> str:
-    uri = f"{base_url}/01/{gtin14}"
+# --------------------------------------------------------------------------- primary identification keys
+# GS1 Digital Link URI Syntax 1.7, section 4.3, with the value formats of section 4.5 and the checks of
+# the GS1 General Specifications as applied by the GS1 Barcode Syntax Engine (the library the resolver
+# uses to validate every request): check digits, GMN check-character pair, GS1 Company Prefix at the
+# start of alphanumeric keys, ITIP piece/total, GRAI filler zero.
+#
+# AI 415 (GLN of the invoicing party) is not offered yet: its Digital Link path requires the key
+# qualifier 8020 (payment reference), which comes with the key qualifiers.
+#
+# Alphanumeric values use a conservative subset of the 82-character set: letters, digits, full stop and
+# hyphen. "_" is excluded because the data entry service turns "/" into "_" in document ids, and the
+# other symbols would need percent-encoding in the URI.
+
+_CSET82 = "!\"%&'()*+,-./0123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz"
+_CSET32 = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+_PRIMES = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97]
+_ALNUM = re.compile(r"^[A-Za-z0-9.\-]+$")
+_CPID_CHARS = re.compile(r"^[0-9A-Z\-]+$")
+
+
+def gmn_check_pair(body: str) -> str:
+    """GS1 check-character pair for a Global Model Number (GS1 General Specifications 7.9.6)."""
+    total = sum(_CSET82.index(c) * _PRIMES[len(body) - 1 - i] for i, c in enumerate(body)) % 1021
+    return _CSET32[total >> 5] + _CSET32[total & 31]
+
+
+def _digits(value: str, length: int) -> None:
+    if not value.isdigit():
+        raise ValidationError("key.digitsOnly")
+    if len(value) != length:
+        raise ValidationError("key.length", expected=length, length=len(value))
+
+
+def _check_digit(digits: str) -> None:
+    expected = gtin_check_digit(digits[:-1])
+    if int(digits[-1]) != expected:
+        raise ValidationError("key.checkDigit", expected=expected)
+
+
+def _alnum(value: str, maximum: int, pattern=_ALNUM, code="key.chars") -> None:
+    if len(value) > maximum:
+        raise ValidationError("key.tooLong", max=maximum)
+    if not pattern.match(value):
+        raise ValidationError(code)
+    if not value[:4].isdigit() or len(value) < 4:
+        raise ValidationError("key.companyPrefix")      # must start with a GS1 Company Prefix
+
+
+def _numeric_key(length: int):
+    def check(value: str) -> str:
+        _digits(value, length)
+        _check_digit(value)
+        return value
+    return check
+
+
+def _itip(value: str) -> str:
+    _digits(value, 18)
+    _check_digit(value[:14])
+    piece, total = int(value[14:16]), int(value[16:18])
+    if piece == 0 or total == 0 or piece > total:
+        raise ValidationError("key.itipPiece")
+    return value
+
+
+def _gmn(value: str) -> str:
+    _alnum(value, 25)
+    if len(value) < 3:
+        raise ValidationError("key.gmnPair", expected="")
+    expected = gmn_check_pair(value[:-2])
+    if value[-2:] != expected:
+        raise ValidationError("key.gmnPair", expected=expected)
+    return value
+
+
+def _cpid(value: str) -> str:
+    _alnum(value, 30, _CPID_CHARS, "key.cpidChars")
+    return value
+
+
+def _gcn(value: str) -> str:
+    if not value.isdigit():
+        raise ValidationError("key.digitsOnly")
+    if not 13 <= len(value) <= 25:
+        raise ValidationError("key.lengthRange", min=13, max=25, length=len(value))
+    _check_digit(value[:13])
+    return value
+
+
+def _with_serial(prefix_length: int, serial_max: int, filler: str = ""):
+    """13 digits with a check digit, then an optional serial (GDTI, GRAI)."""
+    def check(value: str) -> str:
+        body = value
+        if filler:
+            if not value.startswith(filler):
+                raise ValidationError("key.graiZero")
+            body = value[len(filler):]
+        base, serial = body[:prefix_length], body[prefix_length:]
+        if len(base) < prefix_length or not base.isdigit():
+            raise ValidationError("key.baseDigits", length=prefix_length)
+        _check_digit(base)
+        if len(serial) > serial_max:
+            raise ValidationError("key.serialTooLong", max=serial_max)
+        if serial and not _ALNUM.match(serial):
+            raise ValidationError("key.chars")
+        return value
+    return check
+
+
+def _alnum_key(maximum: int):
+    def check(value: str) -> str:
+        _alnum(value, maximum)
+        return value
+    return check
+
+
+def _gtin(value: str) -> str:
+    return normalise_gtin(value)
+
+
+# code: (short name, validator, key qualifiers the portal manages for it)
+PRIMARY_KEYS: dict[str, tuple[str, object, tuple[str, ...]]] = {
+    "01": ("GTIN", _gtin, ("10",)),
+    "8006": ("ITIP", _itip, ()),
+    "8013": ("GMN", _gmn, ()),
+    "8010": ("CPID", _cpid, ()),
+    "414": ("GLN", _numeric_key(13), ()),
+    "417": ("Party GLN", _numeric_key(13), ()),
+    "8017": ("GSRNP", _numeric_key(18), ()),
+    "8018": ("GSRN", _numeric_key(18), ()),
+    "255": ("GCN", _gcn, ()),
+    "00": ("SSCC", _numeric_key(18), ()),
+    "253": ("GDTI", _with_serial(13, 17), ()),
+    "401": ("GINC", _alnum_key(30), ()),
+    "402": ("GSIN", _numeric_key(17), ()),
+    "8003": ("GRAI", _with_serial(13, 16, filler="0"), ()),
+    "8004": ("GIAI", _alnum_key(30), ()),
+}
+
+
+def normalise_key(ai: str, raw) -> str:
+    """Validates the value of a primary identification key and returns it as it appears in the URI."""
+    if ai not in PRIMARY_KEYS:
+        raise ValidationError("key.unsupported", key=str(ai))
+    value = re.sub(r"\s", "", str(raw or ""))
+    if not value:
+        raise ValidationError("gtin.required" if ai == "01" else "key.required")
+    if ai in ("01", "414", "417", "8017", "8018", "00", "402", "8006", "255"):
+        value = value.replace(".", "").replace("-", "")     # separators people type in numbers
+    return PRIMARY_KEYS[ai][1](value)
+
+
+def anchor_for(ai: str, value: str) -> str:
+    return f"/{ai}/{value}"
+
+
+def split_anchor(anchor: str) -> tuple[str, str] | None:
+    """("01", "0950…") for a supported primary key, otherwise None."""
+    parts = (anchor or "").split("/")
+    if len(parts) == 3 and parts[0] == "" and parts[1] in PRIMARY_KEYS and parts[2]:
+        return parts[1], parts[2]
+    return None
+
+
+def allows_lot(ai: str) -> bool:
+    return "10" in PRIMARY_KEYS.get(ai, ("", None, ()))[2]
+
+
+def digital_link(base_url: str, anchor: str, lot: str | None) -> str:
+    uri = f"{base_url}{anchor}"
     if lot:
         uri += f"/10/{quote(lot, safe='')}"
     return uri
 
 
-def hri_lines(gtin14: str, lot: str | None) -> list[str]:
+def hri_lines(anchor: str, lot: str | None) -> list[str]:
     """Human readable interpretation of the element strings, one per line: (01)… and (10)…"""
-    lines = [f"(01){gtin14}"]
+    ai, value = anchor.strip("/").split("/", 1)
+    lines = [f"({ai}){value}"]
     if lot:
         lines.append(f"(10){lot}")
     return lines

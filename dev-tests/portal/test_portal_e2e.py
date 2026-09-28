@@ -69,9 +69,9 @@ with sync_playwright() as p:
     page.fill("#password", "a-long-test-password"); page.click("#login-submit"); page.wait_for_timeout(800)
     check("signed in", page.url.endswith("/portal/"), page.url)
 
-    page.fill("#gtin", "7898357410016"); page.wait_for_timeout(100)
-    check("check digit feedback", "should be 5" in page.inner_text("#gtin-msg"), page.inner_text("#gtin-msg"))
-    page.fill("#gtin", "7898357410015"); page.wait_for_timeout(200); page.click("#open"); page.wait_for_timeout(500)
+    page.fill("#key-value", "7898357410016"); page.wait_for_timeout(100)
+    check("check digit feedback", "should be 5" in page.inner_text("#key-msg"), page.inner_text("#key-msg"))
+    page.fill("#key-value", "7898357410015"); page.wait_for_timeout(200); page.click("#open"); page.wait_for_timeout(500)
     page.fill("#description", "Test 01")
     page.fill(".link-row .url", "www.codigo2d.com.br"); page.click("#description")
     page.click("#add"); rows = page.query_selector_all(".link-row")
@@ -126,8 +126,8 @@ with sync_playwright() as p:
           page.query_selector("#records-body tr:has-text('SER1') a") is None)
     page.click("#records-body a:has-text('Test 01')"); page.wait_for_timeout(700)
     check("opening from the list loads the record in the editor",
-          page.is_visible("#editor-view") and page.input_value("#gtin") == "07898357410015"
-          and page.input_value("#description") == "Test 01", page.input_value("#gtin"))
+          page.is_visible("#editor-view") and page.input_value("#key-value") == "07898357410015"
+          and page.input_value("#description") == "Test 01", page.input_value("#key-value"))
     page.go_back(); page.wait_for_timeout(500)
     page.go_forward(); page.wait_for_timeout(300)
     check("browser history moves between list and editor", page.is_visible("#editor-view"))
@@ -150,23 +150,23 @@ with sync_playwright() as p:
     links_sheet = book.worksheets[0]
     header = [c.value for c in links_sheet[1]]
     exported = [[c.value for c in row] for row in links_sheet.iter_rows(min_row=2)]
-    check("export: English headers and reference sheets", header[:4] == ["GTIN", "Batch/lot", "Description", "Link type"]
-          and book.sheetnames == ["Links", "Link types", "Languages"], (header, book.sheetnames))
+    check("export: English headers and reference sheets", header[:4] == ["Key (AI)", "Identifier", "Batch/lot", "Description"]
+          and book.sheetnames == ["Links", "Link types", "Keys", "Languages"], (header, book.sheetnames))
     check("export: one row per link of the editable records", len(exported) == 5
-          and all(r[0] in ("07898357410015", "09506000134352", "09506000134369") for r in exported), exported)
-    check("export: languages outside the menu kept", {"en-US", "vi"} <= {r[5] for r in exported}, exported)
+          and all(r[0] == "01" and r[1] in ("07898357410015", "09506000134352", "09506000134369") for r in exported), exported)
+    check("export: languages outside the menu kept", {"en-US", "vi"} <= {r[6] for r in exported}, exported)
     with page.expect_download() as info:
         page.click("#records-export-csv")
     check("export: CSV file", info.value.suggested_filename.endswith(".csv"))
 
     for row in links_sheet.iter_rows(min_row=2):
-        if row[0].value == "07898357410015":
-            row[2].value = "Test 01 (updated)"                      # update: new description
-    links_sheet.append(["07898357410022", "", "Imported product", "gs1:pip", "www.example.org/new", "pt, en", "", "yes", "yes"])
-    links_sheet.append(["07898357410022", "L9", "Imported product", "gs1:pip", "https://example.org/l9", "pt", "", "", ""])
-    links_sheet.append(["07898357410039", "", "Broken", "gs1:pip", "ftp://example.org", "pt", "", "", ""])
-    links_sheet.append(["07898357410039", "", "Broken", "gs1:pip", "https://example.org/b", "portuguese", "", "", ""])
-    links_sheet.append(["09506000134352", "{lotnumber}", "Açaí orgânico", "gs1:pip", "https://example.org/t", "pt", "", "", ""])
+        if row[1].value == "07898357410015":
+            row[3].value = "Test 01 (updated)"                      # update: new description
+    links_sheet.append(["01", "07898357410022", "", "Imported product", "gs1:pip", "www.example.org/new", "pt, en", "", "yes", "yes"])
+    links_sheet.append(["01", "07898357410022", "L9", "Imported product", "gs1:pip", "https://example.org/l9", "pt", "", "", ""])
+    links_sheet.append(["01", "07898357410039", "", "Broken", "gs1:pip", "ftp://example.org", "pt", "", "", ""])
+    links_sheet.append(["01", "07898357410039", "", "Broken", "gs1:pip", "https://example.org/b", "portuguese", "", "", ""])
+    links_sheet.append(["01", "09506000134352", "{lotnumber}", "Açaí orgânico", "gs1:pip", "https://example.org/t", "pt", "", "", ""])
     edited = os.path.join(CONFIG, "edited.xlsx")
     book.save(edited)
 
@@ -220,6 +220,36 @@ with sync_playwright() as p:
     check("import preview: optional address check", "Row 2: https://example.org/missing-page" in page.inner_text("#import-warnings")
           and page.is_enabled("#import-apply"), page.inner_text("#import-warnings"))
     page.click("#import-cancel")
+
+    # Other primary identification keys (GS1 Digital Link URI Syntax 4.3)
+    page.goto(BASE); page.wait_for_timeout(700)
+    check("every key of section 4.3 offered (415 excepted)", len(page.query_selector_all("#key-type option")) == 15)
+    page.select_option("#key-type", "414"); page.wait_for_timeout(100)
+    check("GLN: its own label, no batch option", page.inner_text("#key-label") == "GLN number"
+          and not page.is_visible("#scope-fieldset"))
+    page.fill("#key-value", "9506000134377"); page.wait_for_timeout(100)
+    check("GLN check digit feedback", "should be 6" in page.inner_text("#key-msg"), page.inner_text("#key-msg"))
+    page.select_option("#key-type", "8013"); page.fill("#key-value", "1987654Ad4X4bL5ttr2310c2X"); page.wait_for_timeout(100)
+    check("GMN check-character pair feedback", "should be 2K" in page.inner_text("#key-msg"), page.inner_text("#key-msg"))
+    page.select_option("#key-type", "00"); page.fill("#key-value", "0 9506 0001 3435 2000 0"); page.wait_for_timeout(300)
+    check("SSCC accepted, preview uses /00/", page.inner_text("#key-msg") == "Valid identifier."
+          and "/00/095060001343520000" in page.inner_text("#dl"), (page.inner_text("#key-msg"), page.inner_text("#dl")))
+    page.click("#open"); page.wait_for_timeout(600)
+    page.fill("#description", "Pallet 1")
+    page.fill(".link-row .url", "https://example.org/pallet"); page.click("#description")
+    page.click("#save"); page.wait_for_timeout(800)
+    check("SSCC record created", "Record created" in page.inner_text("#status") and "00_095060001343520000" in mock_data_entry.DB,
+          page.inner_text("#status"))
+    response = ctx.request.get(f"http://127.0.0.1:{PORT}" + page.get_attribute("#download-png", "href"))
+    decoded = cv2.QRCodeDetector().detectAndDecode(cv2.imdecode(np.frombuffer(response.body(), np.uint8), 1))[0]
+    check("SSCC QR code", decoded.endswith("/00/095060001343520000"), decoded)
+    page.goto(BASE + "#records"); page.wait_for_timeout(700)
+    row = page.query_selector("#records-body tr:has-text('095060001343520000')")
+    check("SSCC in the record list", row is not None and "(00) 095060001343520000" in row.inner_text()
+          and "The whole SSCC" in row.inner_text(), row.inner_text() if row else None)
+    row.query_selector("a").click(); page.wait_for_timeout(800)
+    check("SSCC opens in the editor", page.input_value("#key-type") == "00"
+          and page.input_value("#description") == "Pallet 1")
 
     page.hover("#user-button"); page.wait_for_timeout(200)
     check("user menu on hover", page.is_visible("#menu-logout"))

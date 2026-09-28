@@ -59,6 +59,18 @@ os.environ.setdefault("FQDN", "id.example.org")
 os.environ.setdefault("MONGO_URI", "mongodb://unused")
 import web_logic  # noqa: E402
 web_logic._call_gs1_toolkit = lambda s: True
+ENGINE = os.environ.get("GS1_SYNTAX_ENGINE")        # optional: the real GS1 Barcode Syntax Engine
+
+
+def engine_check(ai_data_string):
+    """What the resolver's toolkit call does in production: accept or refuse the element string."""
+    script = os.path.join(ENGINE, "_resolver_check.mjs")
+    if not os.path.exists(script):
+        with open(script, "w") as fh:
+            fh.write('import {GS1encoder} from "gs1encoder"; const g = new GS1encoder(); await g.init();'
+                     'try { g.aiDataStr = process.argv[2]; g.getDLuri(null); } catch (e) { g.free(); process.exit(1); } g.free();')
+    import subprocess
+    return subprocess.run(["node", script, ai_data_string], cwd=ENGINE, capture_output=True).returncode == 0
 from __init__ import create_app  # noqa: E402
 
 client = create_app().test_client()
@@ -191,6 +203,31 @@ check("description: contact from RESOLVER_*",
       d.get("contact") == {"fn": "Example Org", "hasAddress": {"locality": "São Paulo", "country-name": "Brazil"},
                            "hasTelephone": "tel:+55-11-0000-0000"}, d.get("contact"))
 check("description: other properties kept", d.get("supportedPrimaryKeys") == ["all"] and "activeLinkTypes" in d)
+
+# ---------------------------------------------------------------- every primary key (URI Syntax 1.7, section 4.3)
+KEY_EXAMPLES = {"01": "09506000999999", "8006": "095060001343520102", "8013": "1987654Ad4X4bL5ttr2310c2K",
+                "8010": "9506000ABC-1", "414": "9506000134376", "417": "9506000134376", "8017": "950600013437612342",
+                "8018": "950600013437612342", "255": "95060001343761234", "00": "095060001343520000",
+                "253": "9506000134376ABC", "401": "9506000ABC", "402": "95060001343760123",
+                "8003": "09506000134352ABC", "8004": "9506000ABC123"}
+if ENGINE:
+    web_logic._call_gs1_toolkit = engine_check
+for ai, value in KEY_EXAMPLES.items():
+    anchor = f"/{ai}/{value}"
+    author({"anchor": anchor, "itemDescription": f"Key {ai}", "defaultLinktype": "gs1:pip", "links": [
+        {"linktype": "gs1:pip", "href": f"https://example.org/key/{ai}", "title": "t", "type": "text/html", "hreflang": ["en"]}]})
+    r = get(anchor)
+    check(f"resolves {anchor}" + (" (real syntax engine)" if ENGINE else ""),
+          r.status_code == 307 and r.headers.get("Location") == f"https://example.org/key/{ai}", (r.status_code, r.headers.get("Location")))
+    r = get(anchor + "?linkType=linkset", "application/linkset+json")
+    check(f"linkset for {anchor}", r.status_code == 200 and anchor in r.get_data(as_text=True), r.status_code)
+if ENGINE:
+    r = get("/00/095060001343520001")
+    check("wrong SSCC check digit refused by the syntax engine", r.status_code == 400, r.status_code)
+    r = get("/415/9506000134376")
+    check("415 without its required 8020 refused by the syntax engine", r.status_code == 400, r.status_code)
+else:
+    print("SKIP real syntax engine checks (set GS1_SYNTAX_ENGINE, see dev-tests/portal/test_keys.py)")
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

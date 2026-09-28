@@ -160,10 +160,44 @@ docker compose exec portal-service python create_user.py maria --remove   # remo
 The user store (`users.json`, password hashes) and the session key (`secret.key`) live in the named
 volume `resolver-portal-config`, which the image initialises with the right owner.
 
+## Primary identification keys
+
+The portal manages every primary identification key of the GS1 Digital Link URI Syntax 1.7
+(section 4.3), chosen in step 1 of the editor:
+
+| AI | Key | Value (as in the URI) |
+|---|---|---|
+| 01 | GTIN | 8, 12, 13 or 14 digits (stored as 14), check digit |
+| 8006 | ITIP | GTIN (14) + piece number (2) + total pieces (2); piece 01 … total |
+| 8013 | GMN | up to 25 characters, GS1 Company Prefix first, check-character pair last |
+| 8010 | CPID | up to 30 characters: digits, capital letters, hyphen; GS1 Company Prefix first |
+| 414 / 417 | GLN (physical location / party) | 13 digits, check digit |
+| 8017 / 8018 | GSRN (provider / recipient) | 18 digits, check digit |
+| 255 | GCN | 13 digits with check digit + up to 12 serial digits |
+| 00 | SSCC | 18 digits, check digit |
+| 253 | GDTI | 13 digits with check digit + up to 17 serial characters |
+| 401 | GINC | up to 30 characters, GS1 Company Prefix first |
+| 402 | GSIN | 17 digits, check digit |
+| 8003 | GRAI | 0 + 13 digits with check digit + up to 16 serial characters |
+| 8004 | GIAI | up to 30 characters, GS1 Company Prefix first |
+
+- The checks are those of the GS1 Barcode Syntax Engine, the library the resolver uses to accept every
+  request (check digits, GMN check-character pair, GS1 Company Prefix, ITIP piece/total, GRAI filler
+  zero); `dev-tests/portal/test_keys.py` compares the portal with it case by case.
+- Alphanumeric values use letters, digits, full stop and hyphen only: stricter than the standard's
+  82-character set, because the data entry service turns "/" into "_" in document ids and other symbols
+  would need percent-encoding.
+- Batch/lot (AI 10) is available for GTINs, as before; the other key qualifiers (section 4.4) come next.
+- **AI 415** (GLN of the invoicing party) is not offered yet: its path requires the key qualifier
+  8020 (payment reference). The compound paths of section 4.9 (UPUI, EOID, FID, MID) likewise depend
+  on key qualifiers.
+- Spreadsheets have a *Key (AI)* column (`01`, `00`, `414`, …; empty means `01`) and an *Identifier*
+  column; files exported before, with a *GTIN* column, still import.
+
 ## Record list
 
 The portal's user menu (and the link under the page title) opens **Registered records**
-(`/portal/#records`): every product and batch on the resolver, most recently changed first, with
+(`/portal/#records`): every record on the resolver (any primary key, and batches of GTINs), most recently changed first, with
 description, GTIN, scope (every unit or batch), number of links and the last change made through the
 portal (date and user).
 
@@ -234,6 +268,11 @@ a redirect from HTTPS to plain HTTP, more than 5 redirects. 401, 403 and 429 are
 refused the automated check": many sites block robots while the page works for people. Each address is
 checked with HEAD (GET if the server refuses HEAD, without reading the body), and results are cached for
 10 minutes.
+
+**Limit: "soft 404".** Some sites answer "200 OK" with an empty or generic page for addresses that do
+not exist (the site of GS1 Brasil does, for example). The checker relies on the status the site sends,
+so such addresses pass as valid; open them with *Try now* after registering. Guessing from the page
+content would raise false alarms on legitimate pages.
 
 Only public addresses are contacted: host names that resolve to private, loopback, link-local or other
 non-global addresses (the Docker network, the cloud metadata service) are refused at every redirect, so

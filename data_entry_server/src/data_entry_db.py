@@ -116,6 +116,17 @@ def read_index() -> dict[str, Any]:
         return {"response_status": 500, "error": "Database error: " + str(e)}
 
 
+# Read every document (used for the summary of all records)
+def read_all_documents() -> dict[str, Any]:
+    try:
+        resolver_coll = _get_collection()
+        return {"response_status": 200, "data": list(resolver_coll.find({}))}
+
+    except errors.PyMongoError as e:
+        logger.error("Database error in read_all_documents: %s", e)
+        return {"response_status": 500, "error": "Database error: " + str(e)}
+
+
 # Update an existing document in the 'gs1resolver' collection
 def update_document(data: dict[str, Any]) -> dict[str, Any]:
     try:

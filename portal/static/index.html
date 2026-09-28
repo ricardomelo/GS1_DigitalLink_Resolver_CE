@@ -35,6 +35,10 @@
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 3 2 11.5h3V21h5.5v-6h3v6H19v-9.5h3L12 3Z"/></svg>
                 <span data-i18n="menu.home"></span>
               </a>
+              <a class="menu-item" role="menuitem" href="#records" id="menu-records">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 5h2v2H4V5Zm4 0h12v2H8V5Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Z"/></svg>
+                <span data-i18n="menu.records"></span>
+              </a>
               <button type="button" class="menu-item" role="menuitem" id="menu-options">
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19.4 13a7.7 7.7 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.5 7.5 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.5 7.5 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.7 7.7 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 21h4l.4-2.9c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5L19.4 13ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z" transform="translate(-1 0)"/></svg>
                 <span data-i18n="menu.options"></span>
@@ -52,12 +56,13 @@
 
   <section class="hero">
     <div class="hero-inner">
-      <h1 data-i18n="intro.title"></h1>
-      <p data-i18n="intro.lede"></p>
+      <h1 id="hero-title" data-i18n="intro.title"></h1>
+      <p id="hero-lede" data-i18n="intro.lede"></p>
+      <p class="hero-nav"><a id="hero-link" href="#records" data-i18n="records.link"></a></p>
     </div>
   </section>
 
-  <main class="layout">
+  <main class="layout" id="editor-view">
     <form id="form" class="sheet" novalidate>
       <!-- Step 1 -->
       <section class="step" aria-labelledby="step1">
@@ -141,6 +146,39 @@
         </div>
       </div>
     </aside>
+  </main>
+
+  <!-- Record list: every product and batch on the resolver, searchable; opens a record in the editor -->
+  <main class="records-main" id="records-view" hidden>
+    <section class="sheet">
+      <div class="records-toolbar">
+        <div class="records-search">
+          <label for="records-search" class="visually-hidden" data-i18n="records.search"></label>
+          <input id="records-search" type="search" autocomplete="off" data-i18n-attr="placeholder:records.searchPlaceholder">
+        </div>
+        <div class="records-filter">
+          <label for="records-user" data-i18n="records.changedBy"></label>
+          <select id="records-user"></select>
+        </div>
+        <a href="#" class="btn btn-primary" id="records-new" data-i18n="records.new"></a>
+      </div>
+      <p class="field-msg" id="records-count" aria-live="polite"></p>
+      <div class="table-wrap">
+        <table class="records-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="records.col.product"></th>
+              <th scope="col" data-i18n="records.col.gtin"></th>
+              <th scope="col" data-i18n="records.col.scope"></th>
+              <th scope="col" class="num" data-i18n="records.col.links"></th>
+              <th scope="col" data-i18n="records.col.changed"></th>
+            </tr>
+          </thead>
+          <tbody id="records-body"></tbody>
+        </table>
+      </div>
+      <p class="records-empty" id="records-empty" hidden></p>
+    </section>
   </main>
 
 

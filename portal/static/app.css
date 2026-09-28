@@ -94,6 +94,47 @@ a { color: var(--link); }
 .hero h1 { font-size: clamp(1.75rem, 3.4vw, 2.5rem); font-weight: 400; line-height: 1.12; margin: 0 0 .75rem; max-width: 22ch; }
 .hero p { margin: 0; max-width: 42rem; font-size: 1.0625rem; line-height: 1.55; color: #DCE6F2; }
 
+.hero-nav { margin: 1rem 0 0 !important; }
+.hero-nav a { color: #fff; font-weight: 600; text-underline-offset: 3px; }
+.hero-nav a:hover { color: #DCE6F2; }
+
+/* ---------------------------------------------------------------- record list */
+.records-main {
+  max-width: 76rem; margin: -3.5rem auto 0; position: relative;
+  padding: 0 clamp(1rem, 4vw, 2rem) 4rem;
+}
+.records-toolbar { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: end; margin-bottom: .75rem; }
+.records-search { flex: 1 1 18rem; }
+.records-search input { width: 100%; }
+.records-filter { display: flex; flex-direction: column; gap: .25rem; }
+.records-filter label { margin: 0; font-size: .875rem; }
+.records-toolbar .btn { margin-left: auto; }
+.table-wrap { overflow-x: auto; }
+.records-table { width: 100%; border-collapse: collapse; font-size: .9375rem; }
+.records-table th {
+  text-align: left; font-weight: 600; color: var(--muted); font-size: .8125rem;
+  padding: .6rem .75rem; border-bottom: 2px solid var(--line); white-space: nowrap;
+}
+.records-table td { padding: .7rem .75rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.records-table tbody tr:hover { background: var(--page); }
+.records-table .num { text-align: right; }
+.records-table td.code { font-family: var(--mono); white-space: nowrap; }
+.records-table a { color: var(--gs1-blue); font-weight: 600; text-decoration: none; }
+.records-table a:hover, .records-table a:focus-visible { text-decoration: underline; }
+.records-table .muted { color: var(--muted); }
+.records-table .changed small { display: block; color: var(--muted); }
+.records-empty { color: var(--muted); padding: 1.5rem 0 .5rem; margin: 0; }
+@media (max-width: 720px) {
+  /* one card per record */
+  .records-table thead { display: none; }
+  .records-table, .records-table tbody, .records-table tr, .records-table td { display: block; width: 100%; }
+  .records-table tr { border-bottom: 1px solid var(--line); padding: .6rem 0; }
+  .records-table td { border: 0; padding: .1rem 0; }
+  .records-table td.num { text-align: left; }
+  .records-table td[data-label]::before { content: attr(data-label) ": "; color: var(--muted); font-size: .8125rem; }
+  .records-toolbar .btn { margin-left: 0; }
+}
+
 /* ---------------------------------------------------------------- layout */
 .layout {
   max-width: 76rem; margin: -3.5rem auto 0; position: relative;

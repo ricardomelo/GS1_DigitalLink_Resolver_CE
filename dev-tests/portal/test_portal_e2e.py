@@ -89,6 +89,37 @@ with sync_playwright() as p:
         else:
             check("SVG sized in mm with branding", b'mm"' in response.body() and b"<g fill" in response.body())
 
+    # Record list: one record made in the portal (with history) and two made elsewhere
+    other = {"anchor": "/01/09506000134352", "itemDescription": "Açaí orgânico", "defaultLinktype": "gs1:pip",
+             "links": [{"linktype": "gs1:pip", "href": "https://example.org/acai", "title": "Açaí", "hreflang": ["pt"]}]}
+    mock_data_entry.upsert(other)
+    mock_data_entry.upsert({**other, "qualifiers": [{"21": "SER1"}]})
+    page.click("#user-button"); page.click("#menu-records"); page.wait_for_timeout(700)
+    rows = page.query_selector_all("#records-body tr")
+    check("record list shown from the user menu", page.is_visible("#records-view") and not page.is_visible("#editor-view"))
+    check("record list: every entry", len(rows) == 3, len(rows))
+    check("record list: portal change first, with user", "Test 01" in rows[0].inner_text() and "tester" in rows[0].inner_text(),
+          rows[0].inner_text())
+    check("record list: no history for records made elsewhere", "no history" in rows[1].inner_text(), rows[1].inner_text())
+    page.fill("#records-search", "acai"); page.wait_for_timeout(100)
+    check("search ignores accents and case", len(page.query_selector_all("#records-body tr")) == 2)
+    page.fill("#records-search", "9506000134352 ser1"); page.wait_for_timeout(100)
+    check("search by GTIN without leading zero and qualifier", len(page.query_selector_all("#records-body tr")) == 1)
+    page.fill("#records-search", "zzz"); page.wait_for_timeout(100)
+    check("no match message", page.inner_text("#records-empty") == "No record matches the search.")
+    page.fill("#records-search", ""); page.select_option("#records-user", "tester"); page.wait_for_timeout(100)
+    check("filter by user", len(page.query_selector_all("#records-body tr")) == 1)
+    page.select_option("#records-user", "")
+    check("records with other qualifiers are not editable here",
+          page.query_selector("#records-body tr:has-text('SER1') a") is None)
+    page.click("#records-body a:has-text('Test 01')"); page.wait_for_timeout(700)
+    check("opening from the list loads the record in the editor",
+          page.is_visible("#editor-view") and page.input_value("#gtin") == "07898357410015"
+          and page.input_value("#description") == "Test 01", page.input_value("#gtin"))
+    page.go_back(); page.wait_for_timeout(500)
+    page.go_forward(); page.wait_for_timeout(300)
+    check("browser history moves between list and editor", page.is_visible("#editor-view"))
+
     page.hover("#user-button"); page.wait_for_timeout(200)
     check("user menu on hover", page.is_visible("#menu-logout"))
     check("logo and menu link to the resolver home page",

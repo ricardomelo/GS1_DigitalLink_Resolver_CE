@@ -25,6 +25,7 @@ from flask import Flask, Response, g, jsonify, redirect, request, send_from_dire
 
 import gs1
 import label
+import meta
 import users
 from gs1 import ValidationError
 
@@ -270,6 +271,17 @@ def describe_entry(entry: dict) -> dict:
     return {"kind": "product"} if not q else {"kind": "other", "value": json.dumps(q)}
 
 
+def record_change(gtin14: str, lot: str | None, removed: bool = False) -> None:
+    """Keeps the "last change" metadata; never makes a save fail."""
+    try:
+        if removed:
+            meta.remove(gtin14, lot)
+        else:
+            meta.touch(gtin14, lot, g.user)
+    except OSError as exc:
+        log.warning("Record metadata not updated for %s: %s", meta.key(gtin14, lot), exc)
+
+
 def is_success(status: int, body) -> bool:
     return status in (200, 201) and not (isinstance(body, dict) and body.get("error"))
 
@@ -489,6 +501,7 @@ def save_record():
             raise UpstreamError("upstream.createRejected", 502, body)
         audit.info("user=%s action=create anchor=/01/%s lot=%s links=%d",
                    g.user, gtin14, lot or "-", len(doc["links"]))
+        record_change(gtin14, lot)
         return message("save.created", 201, digitalLink=uri, created=True)
 
     # Case 2: existing entry → PUT (merge on linktype+hreflang+context), then a partial DELETE of the
@@ -508,6 +521,7 @@ def save_record():
 
     audit.info("user=%s action=update anchor=/01/%s lot=%s links=%d removed=%d",
                g.user, gtin14, lot or "-", len(doc["links"]), len(removed))
+    record_change(gtin14, lot)
     return message("save.updated", 200, digitalLink=uri, created=False)
 
 
@@ -534,7 +548,42 @@ def delete_record():
             raise UpstreamError("upstream.deleteRestored", 502, body)
 
     audit.info("user=%s action=delete anchor=/01/%s lot=%s", g.user, gtin14, lot or "-")
+    record_change(gtin14, lot, removed=True)
     return message("delete.done")
+
+
+@app.get("/portal/api/records")
+@require_login
+def list_records():
+    """Every record on the resolver (one per GTIN + qualifier set), with the portal's metadata.
+    Searching and filtering happen in the browser; the list is small enough to send whole."""
+    status, body = resolver("GET", "/summary")
+    if status == 404:
+        lines = []
+    elif status != 200 or not isinstance(body, dict):
+        raise UpstreamError("upstream.readFailed", 502, body)
+    else:
+        lines = body.get("data") or []
+    known = meta.load()
+    records = []
+    for line in lines:
+        anchor = line.get("anchor") or ""
+        if not anchor.startswith("/01/"):
+            continue                      # the portal manages GTINs only
+        gtin14 = anchor.split("/")[2]
+        entry = describe_entry(line)
+        lot = entry.get("value") if entry["kind"] == "lot" else None
+        info = known.get(meta.key(gtin14, lot), {}) if entry["kind"] != "other" else {}
+        records.append({
+            "gtin": gtin14, "kind": entry["kind"], "lot": lot,
+            "qualifiers": entry.get("value") if entry["kind"] == "other" else None,
+            "description": line.get("itemDescription") or "",
+            "defaultLinkType": line.get("defaultLinktype"),
+            "links": line.get("linkCount", 0),
+            "updatedAt": info.get("updatedAt"), "updatedBy": info.get("updatedBy"),
+            "createdAt": info.get("createdAt"), "createdBy": info.get("createdBy"),
+        })
+    return jsonify({"records": records})
 
 
 @app.get("/portal/api/qrcode")

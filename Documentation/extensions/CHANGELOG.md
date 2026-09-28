@@ -2,6 +2,18 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: record list
+- New view "Registered records" (`/portal/#records`, from the user menu or the link under the title):
+  every product and batch on the resolver with description, GTIN, scope, number of links and last
+  change (date and user); search by GTIN (with or without leading zeros), description or batch,
+  ignoring case and accents; filter by who changed it; most recent first; opens a record in the editor;
+  cards on narrow screens; browser back/forward move between list and editor.
+- Data entry API: new `GET /api/summary` (bearer token) returning one line per record, so the list
+  needs one request instead of one per GTIN.
+- Portal metadata `records-meta.json` (in the portal's configuration volume, included in the daily
+  backup): who created and last changed each record through the portal, and when. Records created or
+  changed elsewhere show "no history".
+
 ### Navigation
 - The GS1 logo on the portal (sign-in and main page) and on the resolver's HTML pages now links to the
   home page `/`, with a translated tooltip; the portal's user menu has a "Home page" item. Links are

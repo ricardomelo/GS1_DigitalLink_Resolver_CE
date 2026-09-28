@@ -68,5 +68,16 @@ def doc(c,v):
         assert e["links"], "empty linkset would crash"
         return jsonify(response_status=200)
     del DB[did]; return jsonify(response_status=200)
+@app.get("/api/summary")
+def summary():
+    if not auth(): return "no",403
+    lines=[]
+    for did in sorted(DB):
+        for e in v3(did):
+            line={"anchor":e["anchor"],"itemDescription":e["itemDescription"],"defaultLinktype":e["defaultLinktype"],"linkCount":len(e["links"])}
+            if e.get("qualifiers"): line["qualifiers"]=e["qualifiers"]
+            lines.append(line)
+    if not lines: return jsonify(response_status=404,error="none"),404
+    return jsonify(response_status=200,data=lines)
 @app.get("/api/heartbeat")
 def hb(): return {"response_message":"ok"}

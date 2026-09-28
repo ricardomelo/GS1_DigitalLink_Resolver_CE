@@ -162,6 +162,16 @@ for link_type in ["gs1:hasRetailers", "gs1:pip", "gs1:recipeInfo", "gs1:sustaina
         check(f"upstream {link_type} {language}", r.status_code == 307 and f"test_lt={link_type}" in location
               and f"test_lang={language}" in location, location)
 
+# ---------------------------------------------------------------- data entry summary
+data_entry.data_entry_db.read_all_documents = lambda: {"response_status": 200, "data": [copy.deepcopy(d) for d in DB.values()]}
+summary = data_entry.read_summary()
+lines = summary.get("data") or []
+batch_line = [l for l in lines if l.get("qualifiers")]
+check("summary: one line per entry", summary.get("response_status") == 200 and len(lines) == sum(len(d["data"]) for d in DB.values()), summary)
+check("summary: fields", all({"anchor", "itemDescription", "defaultLinktype", "linkCount"} <= set(l) for l in lines), lines[:1])
+check("summary: batch entry keeps its qualifiers", bool(batch_line) and batch_line[0]["qualifiers"] == [{"10": "123"}], batch_line[:1])
+check("summary: sorted by anchor", [l["anchor"] for l in lines] == sorted(l["anchor"] for l in lines))
+
 # ---------------------------------------------------------------- resolver description file
 for var in ("RESOLVER_ORG_NAME", "RESOLVER_CONTACT_STREET", "RESOLVER_CONTACT_LOCALITY", "RESOLVER_CONTACT_REGION",
             "RESOLVER_CONTACT_POSTCODE", "RESOLVER_CONTACT_COUNTRY", "RESOLVER_CONTACT_TELEPHONE"):

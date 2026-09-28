@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import subprocess
@@ -478,6 +479,37 @@ def read_document(document_id: str) -> dict[str, Any]:
         return result
 
     except Exception as e:
+        return {"response_status": 500, "error": "Internal Server Error"}
+
+
+def read_summary() -> dict[str, Any]:
+    """
+    One line per entry (anchor + qualifier set) of every document: anchor, qualifiers, item
+    description, default link type and number of links. Lets a client list and search all records
+    with a single request instead of reading every document.
+    """
+    try:
+        result = data_entry_db.read_all_documents()
+        if result['response_status'] != 200:
+            return result
+
+        summary = []
+        for document in result['data']:
+            for entry in _convert_mongo_linkset_to_v3(document) or []:
+                line = {
+                    'anchor': entry.get('anchor'),
+                    'itemDescription': entry.get('itemDescription', ''),
+                    'defaultLinktype': entry.get('defaultLinktype'),
+                    'linkCount': len(entry.get('links') or []),
+                }
+                if entry.get('qualifiers'):
+                    line['qualifiers'] = entry['qualifiers']
+                summary.append(line)
+        summary.sort(key=lambda line: (line['anchor'] or '', json.dumps(line.get('qualifiers', []))))
+        return {"response_status": 200, "data": summary}
+
+    except Exception as e:
+        logger.warning('Error building the summary: %s', e)
         return {"response_status": 500, "error": "Internal Server Error"}
 
 

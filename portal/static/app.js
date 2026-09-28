@@ -229,6 +229,148 @@ function setPublished(published) {
   el.classList.toggle("is-live", published);
 }
 
+/* ------------------------------------------------------------------ record list (#records) */
+const records = { all: [], loaded: false };
+
+function isRecordsView() { return location.hash === "#records"; }
+
+/* Shows the editor or the record list, following the address (#records), so the browser's
+   back button and bookmarks work. */
+function applyView() {
+  const list = isRecordsView();
+  $("#editor-view").hidden = list;
+  $("#records-view").hidden = !list;
+  I18N.set($("#hero-title"), list ? "records.title" : "intro.title");
+  I18N.set($("#hero-lede"), list ? "records.lede" : "intro.lede");
+  const link = $("#hero-link");
+  link.href = list ? "#" : "#records";
+  I18N.set(link, list ? "records.back" : "records.link");
+  if (list) loadRecords();
+}
+
+async function loadRecords() {
+  I18N.set($("#records-count"), "records.loading");
+  $("#records-body").replaceChildren();
+  $("#records-empty").hidden = true;
+  try {
+    const data = await api("GET", "records");
+    records.all = data.records || [];
+    records.loaded = true;
+    fillUserFilter();
+    renderRecords();
+    $("#records-search").focus();
+  } catch (e) {
+    I18N.set($("#records-count"), e.code, e.params);
+  }
+}
+
+function fillUserFilter() {
+  const select = $("#records-user");
+  const current = select.value;
+  const names = [...new Set(records.all.map(r => r.updatedBy).filter(Boolean))].sort();
+  const any = new Option("", "");
+  any.dataset.i18n = "records.anyone";
+  any.textContent = t("records.anyone");
+  select.replaceChildren(any, ...names.map(n => new Option(n, n)));
+  select.value = names.includes(current) ? current : "";
+}
+
+/* Case- and accent-insensitive text for searching ("Açaí" matches "acai"). */
+function fold(text) {
+  return String(text || "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+}
+
+function scopeText(r) {
+  if (r.kind === "lot") return t("records.scope.lot", { value: r.lot });
+  if (r.kind === "other") {
+    let value = r.qualifiers;
+    try { value = Object.entries(JSON.parse(r.qualifiers)).map(([ai, v]) => `(${ai}) ${v}`).join(" "); } catch { /* as sent */ }
+    return t("records.scope.other", { value });
+  }
+  return t("records.scope.product");
+}
+
+function changedText(r) {
+  if (!r.updatedAt) return null;
+  const when = new Date(r.updatedAt);
+  return new Intl.DateTimeFormat(I18N.locale, { dateStyle: "short", timeStyle: "short" }).format(when);
+}
+
+function renderRecords() {
+  if (!records.loaded) return;
+  const words = fold($("#records-search").value).split(/\s+/).filter(Boolean);
+  const user = $("#records-user").value;
+  const shown = records.all
+    .filter(r => !user || r.updatedBy === user)
+    .filter(r => {
+      if (!words.length) return true;
+      const haystack = fold([r.gtin, r.gtin.replace(/^0+/, ""), r.description, r.lot, r.qualifiers].join(" "));
+      return words.every(w => haystack.includes(w));
+    })
+    // Most recently changed first; records without portal history after, by GTIN.
+    .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "") || a.gtin.localeCompare(b.gtin)
+                    || (a.lot || "").localeCompare(b.lot || ""));
+
+  const rows = shown.map(r => {
+    const tr = document.createElement("tr");
+    const cell = (label, content, cls) => {
+      const td = document.createElement("td");
+      td.dataset.label = t(label);
+      if (cls) td.className = cls;
+      if (content instanceof Node) td.append(content); else td.textContent = content;
+      tr.append(td);
+      return td;
+    };
+    let name;
+    if (r.kind === "other") {
+      // Created by another tool with qualifiers the portal does not edit (e.g. serial numbers).
+      name = document.createElement("span");
+      name.textContent = r.description || r.gtin;
+      name.title = t("records.otherHint");
+    } else {
+      name = document.createElement("a");
+      name.href = "#";
+      name.textContent = r.description || t("records.noDescription");
+      name.addEventListener("click", e => { e.preventDefault(); openFromList(r); });
+    }
+    cell("records.col.product", name);
+    cell("records.col.gtin", r.gtin, "code");
+    cell("records.col.scope", scopeText(r));
+    cell("records.col.links", String(r.links), "num");
+    const changed = changedText(r);
+    if (changed) {
+      const box = document.createElement("span");
+      box.append(changed);
+      const who = document.createElement("small");
+      who.textContent = r.updatedBy;
+      box.append(who);
+      cell("records.col.changed", box, "changed");
+    } else {
+      cell("records.col.changed", t("records.noHistory"), "muted");
+    }
+    return tr;
+  });
+  $("#records-body").replaceChildren(...rows);
+
+  const empty = $("#records-empty");
+  empty.hidden = shown.length > 0;
+  if (!shown.length) I18N.set(empty, records.all.length ? "records.noMatch" : "records.none");
+  I18N.set($("#records-count"), "records.count", { shown: shown.length, total: records.all.length });
+}
+
+/* Opens a record of the list in the editor. */
+function openFromList(r) {
+  history.pushState(null, "", location.pathname + location.search);
+  applyView();
+  $("#gtin").value = r.gtin;
+  $(`input[name="scope"][value="${r.kind === "lot" ? "lot" : "product"}"]`).checked = true;
+  $("#lot-wrap").hidden = r.kind !== "lot";
+  $("#lot").value = r.lot || "";
+  onIdentityChange();
+  window.scrollTo(0, 0);
+  openRecord();
+}
+
 /* ------------------------------------------------------------------ step 3: targets */
 function fillTypeSelect(select, value) {
   const groups = new Map();
@@ -436,6 +578,7 @@ function setupUserMenu() {
   });
   document.addEventListener("click", e => { if (!menu.contains(e.target)) close(false); });
   $("#menu-options").addEventListener("click", () => { close(false); openOptions(); });
+  $("#menu-records").addEventListener("click", () => close(false));   // the link itself changes the view
   $("#menu-logout").addEventListener("click", signOut);
 }
 
@@ -531,6 +674,18 @@ async function init() {
     I18N.set(button, "preview.copied");
     setTimeout(() => I18N.set(button, "preview.copy"), 1800);
   });
+
+  $("#records-search").addEventListener("input", renderRecords);
+  $("#records-user").addEventListener("change", renderRecords);
+  $("#records-new").addEventListener("click", e => {
+    e.preventDefault();
+    history.pushState(null, "", location.pathname + location.search);
+    applyView();
+    $("#gtin").focus();
+  });
+  window.addEventListener("hashchange", applyView);
+  document.addEventListener("localechange", renderRecords);   // dates and scope texts follow the language
+  applyView();
 
   try {
     CONFIG = await api("GET", "config");

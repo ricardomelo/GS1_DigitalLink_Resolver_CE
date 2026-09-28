@@ -160,6 +160,24 @@ docker compose exec portal-service python create_user.py maria --remove   # remo
 The user store (`users.json`, password hashes) and the session key (`secret.key`) live in the named
 volume `resolver-portal-config`, which the image initialises with the right owner.
 
+## Record list
+
+The portal's user menu (and the link under the page title) opens **Registered records**
+(`/portal/#records`): every product and batch on the resolver, most recently changed first, with
+description, GTIN, scope (every unit or batch), number of links and the last change made through the
+portal (date and user).
+
+- Search by GTIN (leading zeros optional), description or batch; several words narrow the result;
+  case and accents are ignored. Filter by the user who made the last change.
+- Selecting a record opens it in the editor; the browser's back button returns to the list.
+- Records with qualifiers the portal does not edit (serial numbers, variants), created by other
+  tools, are listed but not opened.
+
+Data comes from the data entry API's `GET /api/summary` (one request for all records) and from the
+portal's own `records-meta.json` in the `resolver-portal-config` volume, which records who created and
+last changed each record through the portal. Changes made through the API directly show "no history".
+The whole list is sent to the browser, which is comfortable up to a few thousand records.
+
 ## Sign-in, sessions and passwords
 
 - `/portal/login` is a sign-in page (no more browser pop-up). A successful sign-in sets a session cookie

@@ -100,6 +100,26 @@ class NewDocOperations(TokenResource):
             abort(500, description="Error creating document:" + str(e))
 
 
+@data_entry_namespace.route('/summary')
+class DocSummary(TokenResource):
+    @data_entry_namespace.doc(description="One line per record (anchor + qualifiers) with its item description, "
+                                          "default link type and number of links")
+    def get(self) -> tuple[Any, int] | Response:
+        try:
+            token_result = self.is_auth_token_ok()
+            if not token_result['result'] and token_result['message'] == "Missing Authorization Header":
+                return token_result['message'], 401
+            elif not token_result['result']:
+                return token_result['message'], 403
+
+            response_data = data_entry_logic.read_summary()
+            return response_data, response_data['response_status']
+
+        except Exception as e:
+            logger.warning('Error getting the summary %s', e)
+            abort(500, description="Error getting the summary")
+
+
 @data_entry_namespace.route('/index')
 class DocOperationsAll(Resource):
     @data_entry_namespace.doc(description="Get the index for all documents in the database")

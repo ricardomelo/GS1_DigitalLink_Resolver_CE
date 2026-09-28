@@ -136,6 +136,8 @@ for language, cookie, expected in cases:
           and "GS1 Resolver Community Edition" in html and 'id="lang"' in html, r.status_code)
 r = get(G + "?linkType=linkset", "text/html")
 check("HTML linkset page", r.status_code == 200 and r.content_type.startswith("text/html"))
+html = r.get_data(as_text=True)
+check("HTML pages: logo links to the home page", '<a class="brand" href="/" title="Página inicial do Resolver">' in html)
 check("CORS exposes Link", "Link" in (get(G).headers.get("Access-Control-Expose-Headers") or ""))
 
 # ---------------------------------------------------------------- upstream regression expectations (tests/setup_test.py)

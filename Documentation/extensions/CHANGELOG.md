@@ -2,6 +2,11 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Navigation
+- The GS1 logo on the portal (sign-in and main page) and on the resolver's HTML pages now links to the
+  home page `/`, with a translated tooltip; the portal's user menu has a "Home page" item. Links are
+  root-relative, so they work on any domain.
+
 ### Fixes found on the first real run of the installer
 - The front-end proxy answered 502 after Compose recreated the services behind it (nginx resolves
   `web-service`, `data-entry-service` and `portal-service` once, at start-up, and the recreated

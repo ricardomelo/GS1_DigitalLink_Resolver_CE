@@ -190,6 +190,9 @@ volume `resolver-portal-config`, which the image initialises with the right owne
 | GS1 Global | https://www.gs1.org/ |
 | Source code (GitHub) | https://github.com/gs1/GS1_DigitalLink_Resolver_CE |
 
+**Way back.** The GS1 logo on the portal and on the resolver's pages, and the portal's user menu ("Home
+page"), lead back to `/`.
+
 **Domain independent.** Links to this installation are root-relative (`/portal/`, `/api/docs`,
 `/.well-known/gs1resolver`), the resolver root shown in the example link is read from the address bar,
 and the operator's name in the footer comes from `contact.fn` in the resolver description file. Nothing

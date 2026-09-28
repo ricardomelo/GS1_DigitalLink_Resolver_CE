@@ -83,6 +83,7 @@ a { color: var(--link); }
 .menu-item {
   display: flex; align-items: center; gap: .6rem; width: 100%; text-align: left;
   padding: .6rem 1rem; border: 0; background: none; font: 500 .9375rem var(--sans); color: var(--gs1-blue); cursor: pointer;
+  text-decoration: none;   /* the "Home page" item is a link */
 }
 .menu-item:hover, .menu-item:focus-visible { background: var(--page); }
 .menu-item.logout { color: var(--action); }

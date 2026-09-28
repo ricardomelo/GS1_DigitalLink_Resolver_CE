@@ -91,6 +91,9 @@ with sync_playwright() as p:
 
     page.hover("#user-button"); page.wait_for_timeout(200)
     check("user menu on hover", page.is_visible("#menu-logout"))
+    check("logo and menu link to the resolver home page",
+          page.get_attribute("a.brand", "href") == "/" and page.get_attribute("#menu-home", "href") == "/"
+          and page.inner_text("#menu-home").strip() in ("Home page", "Página inicial"), page.inner_text("#menu-home"))
     page.click("#user-button"); page.click("#menu-options")
     page.fill("#current-password", "a-long-test-password"); page.fill("#new-password", "another-long-password")
     page.fill("#confirm-password", "another-long-password"); page.click("#password-save"); page.wait_for_timeout(600)

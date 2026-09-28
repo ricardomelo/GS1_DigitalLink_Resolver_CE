@@ -13,7 +13,7 @@
 <body>
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="./">
+      <a class="brand" href="/" data-i18n-attr="title:header.home">
         <img src="gs1-logo.png" alt="GS1" width="54" height="44">
         <span class="product">GS1 Resolver Community Edition</span>
       </a>
@@ -31,6 +31,10 @@
           <div class="menu" id="user-menu-panel">
             <div class="menu-panel" role="menu">
               <div class="menu-user"><small data-i18n="menu.signedInAs"></small><strong id="user-name"></strong></div>
+              <a class="menu-item" role="menuitem" href="/" id="menu-home">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 3 2 11.5h3V21h5.5v-6h3v6H19v-9.5h3L12 3Z"/></svg>
+                <span data-i18n="menu.home"></span>
+              </a>
               <button type="button" class="menu-item" role="menuitem" id="menu-options">
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19.4 13a7.7 7.7 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.5 7.5 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.5 7.5 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.7 7.7 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 21h4l.4-2.9c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5L19.4 13ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z" transform="translate(-1 0)"/></svg>
                 <span data-i18n="menu.options"></span>

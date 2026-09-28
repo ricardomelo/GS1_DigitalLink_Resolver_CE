@@ -50,6 +50,7 @@ TEXT = {
         'status': 'Código da resposta: {status}',
         'footer': 'Serviço GS1 Digital Link operado por',
         'language': 'Idioma',
+        'home': 'Página inicial do Resolver',
     },
     'en-GB': {
         'linkset.title': 'Available information',
@@ -66,6 +67,7 @@ TEXT = {
         'status': 'Response code: {status}',
         'footer': 'GS1 Digital Link service operated by',
         'language': 'Language',
+        'home': 'Resolver home page',
     },
 }
 
@@ -141,7 +143,7 @@ footer{max-width:60rem;margin:0 auto;padding:0 clamp(1rem,4vw,2rem) 2rem;font-si
 @media (max-width:560px){.brand span{font-size:.8125rem;padding-left:.75rem}.brand img{height:2.25rem}.lang svg{display:none}}
 </style></head><body>
 <header><div class="bar">
-  <span class="brand">{% if logo %}<img src="{{ logo }}" alt="GS1" width="54" height="44">{% endif %}<span>{{ product }}</span></span>
+  <a class="brand" href="/" title="{{ home_label }}">{% if logo %}<img src="{{ logo }}" alt="GS1" width="54" height="44">{% endif %}<span>{{ product }}</span></a>
   <label class="lang"><span class="vh">{{ language_label }}</span>
     <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.9 6h-3a15.7 15.7 0 0 0-1.4-3.6A8 8 0 0 1 18.9 8ZM12 4c.8 1.2 1.5 2.5 1.9 4h-3.8c.4-1.5 1.1-2.8 1.9-4ZM4.3 14a8.2 8.2 0 0 1 0-4h3.4a16.5 16.5 0 0 0 0 4H4.3Zm.8 2h3c.3 1.3.8 2.5 1.4 3.6A8 8 0 0 1 5.1 16ZM8.1 8h-3a8 8 0 0 1 4.4-3.6C8.9 5.5 8.4 6.7 8.1 8ZM12 20c-.8-1.2-1.5-2.5-1.9-4h3.8c-.4 1.5-1.1 2.8-1.9 4Zm2.3-6H9.7a14.7 14.7 0 0 1 0-4h4.6a14.7 14.7 0 0 1 0 4Zm.3 5.6c.6-1.1 1.1-2.3 1.4-3.6h3a8 8 0 0 1-4.4 3.6Zm1.7-5.6a16.5 16.5 0 0 0 0-4h3.4a8.2 8.2 0 0 1 0 4h-3.4Z"/></svg>
     <select id="lang">{% for code, name in locales.items() %}<option value="{{ code }}"{% if code == locale %} selected{% endif %}>{{ name }}</option>{% endfor %}</select>
@@ -255,7 +257,8 @@ def _hri(identifiers: str, qualifier_path: str | None) -> str:
 def _page(locale: str, title: str, body: str) -> str:
     return render_template_string(_BASE, locale=locale, title=title, product=PRODUCT_NAME, logo=LOGO_DATA_URI,
                                   org=ORG_NAME, org_url=ORG_URL, footer=_t(locale, 'footer'),
-                                  language_label=_t(locale, 'language'), locales=SUPPORTED_LOCALES,
+                                  language_label=_t(locale, 'language'), home_label=_t(locale, 'home'),
+                                  locales=SUPPORTED_LOCALES,
                                   cookie=LOCALE_COOKIE, body=body)
 
 

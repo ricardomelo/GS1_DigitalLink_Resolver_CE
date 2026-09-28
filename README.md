@@ -1,162 +1,440 @@
-# Important notice and disclaimer
-This freely licensed open source software is not maintained by GS1. Issues raised here may be answered by the community but will not be handled by GS1 itself. Users of this software should not assume that it conforms fully to the published [GS1-Conformant resolver standard](https://ref.gs1.org/standards/resolver/).
+# GS1 Digital Link Resolver CE — GS1 Brasil extensions
 
-## Extensions in this branch
+> **Important notice and disclaimer (from the official project).** This freely licensed open source
+> software is not maintained by GS1. Issues raised here may be answered by the community but will not be
+> handled by GS1 itself. Users of this software should not assume that it conforms fully to the published
+> [GS1-Conformant Resolver standard](https://ref.gs1.org/standards/resolver/).
 
-This branch adds a link management portal for non-technical users (`/portal/`), a home page, GS1-Conformant
-Resolver fixes with HTML pages for browsers, a configurable resolver description file, a layered
-`.env.example` / `.env` configuration and a daily backup script. See
-[Documentation/extensions/README.md](Documentation/extensions/README.md).
+This repository is a fork of the official
+[**GS1 Resolver Community Edition v3**](https://github.com/gs1/GS1_DigitalLink_Resolver_CE) (based on commit
+[`bf885fd`](https://github.com/gs1/GS1_DigitalLink_Resolver_CE/commit/bf885fdf4888f0395229478bf6b50342c1f761a8))
+maintained by GS1 Brasil on branch `gs1br/develop`. It keeps the official resolver and data entry API and
+adds what an organisation needs to run one for its members:
 
-## 📢 Welcome to GS1 Resolver Community Edition Version 3.0.0
+- a **link management portal** for non-technical users, in Brazilian Portuguese and British English;
+- every **primary identification key and key qualifier** of the
+  [GS1 Digital Link URI Syntax 1.7](https://ref.gs1.org/standards/digital-link/uri-syntax/);
+- **conformance fixes** to the resolver ([GS1-Conformant Resolver 1.2.1](https://ref.gs1.org/standards/resolver/))
+  and HTML pages for people who open a link in a browser;
+- a **home page**, a **configurable resolver description file**, **security hardening**;
+- an **interactive installer for Ubuntu**, a **daily backup** and **development tests** for everything.
 
-GS1 Resolver is a free and open-source web-server application that allows you to resolve GS1 identifiers to their corresponding web resources.
+The changes are meant to be offered back to the official project (see
+[Contributing upstream](#contributing-upstream)).
 
-This is really useful for products, services, and other entities that have a GS1 identifier stored in a GS1 Digital Link QR Code.
+<p align="center">
+  <img src="Documentation/images/home.png" alt="Home page of the resolver" width="820">
+</p>
 
-In simple terms, a consumer scans the GS1 Digital Link QR Code on your product, and GS1 Resolver will redirect them to the correct page on your website,
-all without having to change your existing web applications or databases. You simply add the GS1 identifier and the corresponding target URL to the Resolver database.
+---
 
-Even more useful is the fact that the same consumer could scan the QR Code before they purchase the product to check for nutritional red flags, and
-after they have purchased the product to look at recipes! GS1 Resolver signposts people to the appropriate information based on <i>why</i> they scanned
-the QR Code.
+## Contents
 
-It means that that consumers, supply chain workers and others can see contextually important information about a product that is
-relevant to their needs. One QR Code, infinite possibilities!
+1. [The original project](#the-original-project)
+2. [What this fork adds](#what-this-fork-adds)
+3. [Architecture](#architecture)
+4. [The link management portal](#the-link-management-portal)
+5. [GS1 Digital Link coverage](#gs1-digital-link-coverage)
+6. [API reference](#api-reference)
+7. [System requirements](#system-requirements)
+8. [Installation with the Ubuntu script](#installation-with-the-ubuntu-script)
+9. [Manual installation](#manual-installation)
+10. [Configuration](#configuration)
+11. [Operation](#operation)
+12. [Development and tests](#development-and-tests)
+13. [Repository layout](#repository-layout)
+14. [Contributing upstream](#contributing-upstream)
+15. [Licence and credits](#licence-and-credits)
 
-This software is developed by the GS1 Resolver Community and aims to be fully conformant with the GS1 Digital Link standard.
+---
 
-### <i>From the official 'GS1-Conformant Resolver Standard' document (link further down this README):
+## The original project
 
-A GS1-Conformant Resolver connects a GS1-identified object or entity to one or more online
-resources that are directly related to it. The object or entity may be identified at any level of
-granularity, and the resources may be either human- or machine-readable. Examples include
-product information pages, instruction manuals, patient leaflets and clinical data, product data,
-service APIs, marketing experiences and more. By adhering to a common protocol based on existing
-GS1 identifiers and existing Web technologies, each GS1-Conformant Resolver is part of a coherent,
-yet distributed, network of links to information resources.</i>
+GS1 Resolver Community Edition is a free, open-source web application, developed by the GS1 Resolver
+Community, that resolves GS1 identifiers carried in GS1 Digital Link URIs (typically in QR codes) to the web
+resources registered for them: product pages, instructions, patient leaflets, recipes, traceability data and
+more — the right one for *why* the code was scanned.
 
-### 🚀 What's new in this version?
-1. **Completely revised and simplified architecture** for better performance and scalability.
-2. **Improved support for GS1 Digital Link and GS1 Web URI** according to the standard published at https://ref.gs1.org/standards/resolver/
-1. **Multiple Links**: Serve multiple links from a single context, a notable improvement over the previous single-link limitation. This is particularly useful if your product has multiple certificates or related documents.
-2. **Simplified Data Input**: The data input methods have been revamped for user-friendliness. The complex structures of versions 1 and 2 are now obsolete, paving the way for straightforward data entry.
-3. **Separate GTIN Qualifiers**: GTIN qualifiers are now independent, free from a fixed 'qualifier path', offering enhanced flexibility.
-4. **Unified Database**: Streamline your infrastructure as maintaining both SQL *and* Document databases is no longer necessary—only the Document database is required.
-5. **Embrace the Pythonic Way with Python 3.10**: The evolution of the Resolver CE is taking a leap forward in code readability with Python. After discussions and feedback from the dev community implementing Resolver 2.x, we've shed the many layers of Node JavaScript source files in favor of Python's elegant simplicity and fewer script files. Resolver CE v3.0 is written in Python 3.10, adopting a 'pythonic' style of coding that is much easier to read and adjust as required. This isn't just a change; it's an upgrade to high-performance processing that is easier to read, comprehend and adjust.
-6. **Introduction of compression for GS1 Digital Link URls**: The Resolver CE v3.0 now supports the compression of GS1 Digital Link URLs. This feature is particularly useful when you have a long URL that you want to compress to a shorter one. The compressed URL can be used in place of the original URL, and the Resolver CE v3.0 will automatically decompress it when resolving the GS1 identifier.
+Version 3 is written in Python and runs as a Docker composition of four services: a **data entry service**
+(REST API with a bearer token), a **web (resolving) service**, a **MongoDB** document database and a
+**front-end proxy** (nginx). It stores links in the IETF Linkset format and serves multiple links per
+identifier, key qualifiers, content negotiation by language and media type, and compressed Digital Links.
 
-### Updates March 2026
+The original README is kept, unchanged, in [Documentation/upstream-README.md](Documentation/upstream-README.md);
+the official Postman collection is at
+[documenter.getpostman.com/view/10078469/2sA3JKeNb2](https://documenter.getpostman.com/view/10078469/2sA3JKeNb2).
 
-#### API Improvements
-* **PUT route rewritten** – now performs an idempotent merge-update instead of deleting and recreating the document. Existing fields not in the payload are preserved; links are matched by `(linktype, hreflang, context)` and merged or added accordingly. Returns `404` if the document does not exist.
-* **Partial DELETE** – the `DELETE` endpoint now accepts an optional JSON body containing specific links to remove (matched by `linktype`, `hreflang`, and `context`). If no body is provided, the entire document is deleted as before.
-* **Batch POST fix** – the `/new` endpoint no longer deletes existing documents before re-creating them, preventing data loss during batch uploads (resolves [#121](https://github.com/gs1/GS1_DigitalLink_Resolver_CE/issues/121)).
+## What this fork adds
 
-#### Security & Performance
-* **Credential externalisation** – all hard-coded MongoDB credentials and session tokens have been moved to a project-wide `.env` file (with a committed `.env.example` template). Docker Compose references these via `${VAR}` substitution.
-* **Subprocess input validation** – both `data_entry_server` and `web_server` now validate GS1 AI data strings against a safe character pattern before passing them to Node.js subprocesses, with a 10-second timeout to prevent hangs.
-* **Constant-time token comparison** – bearer token authentication now uses `hmac.compare_digest()` to prevent timing side-channel attacks.
-* **Removed information disclosure** – startup database test writes and `server_info()` calls removed from both services.
-* **Header injection prevention** – the web server's `Accept` → `Content-Type` reflection is now restricted to an allowlist of safe MIME types.
-* **Logging migration** – all `print()` / `traceback` calls replaced with structured `logging` throughout both services.
-* **Code quality** – removed unused imports, fixed duplicate class names, corrected decorator references, and fixed typos in function names.
+| Area | Addition |
+|---|---|
+| **Portal** (`/portal/`) | Sign-in with per-user passwords; editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; per-link query-string forwarding; QR code labels (PNG/SVG) following *QR Codes powered by GS1*; record list with search; spreadsheet import/export (XLSX, CSV) with preview; link checker; change history (who/when) |
+| **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, validated as the GS1 Barcode Syntax Engine does |
+| **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, `fwqs` per link, HTML pages in pt-BR / en-GB for browsers |
+| **Data entry API** | `GET /api/summary` (all records in one request); `GET /api/index` now requires the token; Swagger "Authorize" works on every protected operation |
+| **Configuration** | `.env.example` defaults + optional `.env` for every service; description file (`/.well-known/gs1resolver`) built from the configuration; bind addresses for the published ports |
+| **Home page** (`/`) | Menu to the portal, the API documentation, the GS1 Digital Link standard, gs1.org and this code; domain independent |
+| **Operations** | Interactive installer for Ubuntu 22.04 / 24.04; daily backup of the database and the portal's configuration; Compose restarts the proxy when a service behind it is recreated |
+| **Quality** | Development tests for the resolver, the data entry API, the portal (unit and browser end-to-end), the home page, the installer and the link checker; comparison with the GS1 Syntax Engine |
 
-#### Infrastructure
-* **Docker base images updated** – both services now use Python 3.12-slim-bookworm and Node.js 24.
-* **Dependency refresh** – `requirements.txt` updated for both services with current package versions.
+The full change log is in [Documentation/extensions/CHANGELOG.md](Documentation/extensions/CHANGELOG.md) and
+the detailed documentation in [Documentation/extensions/README.md](Documentation/extensions/README.md).
 
-#### Developer Experience
-* **PEP 484 type annotations** – all Python functions across both `data_entry_server` (38 functions, 8 files) and `web_server` (53 functions, 6 files) now have full parameter and return type hints using Python 3.12 native syntax.
-* **Expanded test suite** – `tests/setup_test.py` now includes a full PUT update walkthrough (add link, update link, 404 test) and a partial DELETE walkthrough with commentary to help new users learn the API by example.
-* **Copilot instructions** – added `.github/copilot-instructions.md` to provide AI assistants with project context.
+## Architecture
 
-
-### 📚 Simplified Architecture
-The new architecture is based on a microservices approach. In this solution the data entry service with its API can be separated from the Front-end resolving web service.
-The main components, each architected as separate container images, are:
-1. **Data Entry Service**: This service is responsible for storing and managing the GS1 identifiers and their corresponding web resources.
-2. **Front-end Web Service**: This service is responsible for resolving GS1 identifiers to their corresponding web resources, and redirecting web clients as needed
-3. **Single Document Database** : This database is used to store the GS1 identifiers and their corresponding web resources in an IETF LinkSet format.
-4. **Frontend Proxy Server**: This server is responsible for routing the incoming requests to the appropriate service when used together in a Docker composition or Kubernetes cluster.
-
-<img alt="GS1 Resolver CE v3.0 Architecture.jpg" src="GS1%20Resolver%20CE%20v3.0%20Architecture.jpg" title="The simplified GS1 Resolver Community Edition version 3 architecture diagram"/>
-
-
-Indeed, part of the innovative design is to make it possible to run Resolver CE v3.0 with just two containers:
-1. Data Entry service running on your internal network
-2. Resolving (web) service on the internet surface at id.<yourdomainname.com>
-
-We can certainly foresee both these containers running as Azure Container Functions or similar inexpensive services on other cloud platforms.
-
-**What about MongoDB?**
-You could use a Mongo-cloud based solution such as MongoDB Atlas or Cosmos DB with Mongo APi connector. You then supply the connection string as an environment variable to data entry and web containers.
-
-**What about the Proxy server?**
-This container is just there to route incoming requests to data-entry and resolving (web) containers via a single endpoint through Docker or Kubernetes. Most of you have your own "front-door" routing services to your network applications, so you would just use that with appropriate rules.
-
-<hr>
-
-### What has been simplified compared to previous versions?
-
-#### Two containers are dropped:
-1. No relational database so the v1.x/v2.x SQL Server is dropped
-2. No separate GS1 Digital Toolkit service - now integrated into data entry and web services
-#### No more 'accounts'
-1. Originally resolver v1/v2 of needed to be self-standing with independent logins. No more!
-2. There is an authentication key that can be set as a secret and provided by the calling client when acting on the Resolver CE data entry API. Alternatively, you can easily replace our simple 'Bearer' authentication with your own authentication mechanism. You would likely run the data entry service on your internal network and accessed by your existing applications, with only the Resolving web server facing the internet - although they are both accessible via the provided proxy server 'out of the box'.
-
-<hr>
-
-### 📦 Installation
-The GS1 Resolver Community Edition is available as a Docker composition. Make sure you have Docker Desktop running, then you can run the software using the following command from the root directory of the project:
-```bash
-docker compose up -d --build
-```
-This command will download the base container images from Docker Hub, build the necessary images, and start the services.
-Importantly this will run whether you are using x64 (Intel / AMD) or ARM based hardware such as Apple Silicon and Raspberry Pi.
-
-The service will then be available at http://localhost:8080
-
-The API is available with Open API (Swagger) documentation at http://localhost:8080
-
-### Postman documentation for the API can be found at: https://documenter.getpostman.com/view/10078469/2sA3JKeNb2
-
-## What should I do next?
-1. **Try it out**: To do this, use the 'setup_test.py' script in the tests folder to add some test data to the database and test Resolver. Indeed, we recommend you read through - then step through - the heavily documented test suite which will give you examples of creating / reading / deleting entries using the API, and observing behaviour through the Resolver front-end service.
-2. **Put it to use**: You can now start using Resolver CE v3.0 in your projects. You'll be joining at least three GS1 Member Organisations who are already using Resolver CE v3.0 in various scenarios, and we are looking forward to hearing about your experiences.
-3. **Review the new data entry format** in the /tests folder which gives examples of the new format for data entry - although you will be pleased to know that the API will accept v2.x format data as well.
-3. **Look at the convertor scripts** in the useful_external_python_scripts folder. These scripts are useful for converting data between the previous versions of Resolver CE and the new format.
-4. **Try out the API yourself**: The API is available with Open API (Swagger) documentation at http://localhost:8080 and, for Postman fans (complete with example data) at https://documenter.getpostman.com/view/10078469/2sA3JKeNb2
-5. **Provide feedback**: We are looking for feedback from users to help us improve the software. Please provide feedback by creating an issue on the GitHub repository.
-
-## Can I put this GS1 Resolver live?
-YES! We recommend that you test the software thoroughly before putting it live. We are looking for feedback from users to help us improve the software. Please provide feedback by creating an issue on the GitHub repository.
-Your code review to ensure security and GDPR compliance will also be a key consideration.
-The only thing left is to decide on a Fully Qualified Domain Name (FQDN) for your Resolver service (we recommend a FQDN starting 'id' - e.g. 'https://id.mycompany.org' so it can sit alongside, but not disturb, your other web services) and set up the appropriate DNS records to point to your server.
-Before you spin up the service, make sure you set environment variable 'FQDN' (currently in web_server/Dockerfile) to your chosen name.
-You should also fill in your organisation contact information in web_server/src/public/gs1resolver.json which will be published as part
-of the GS1 Resolver standard from https://your-fully-qualified-doman-name/.well-knowsn/gs1resolver
-
-<hr>
-
-## How do I backup the database?
-The database is stored in a Docker volume within the composition. To back up the database to a backup archive file on your host computer, you can use the following command which uses 'docker compose exec' to run the 'mongodump' command within the 'database-service' container (some computers hosting docker may have 'docker-compose' rather than 'docker compose'):
-```bash
- docker compose exec -T database-service mongodump --host localhost:27017 --username gs1resolver --password gs1resolver --archive=- --gzip > mongobackup.tar.gz
-```
-... and to restore the database from a backup archive file on your host computer, you can use the following command:
-```bash
-docker compose exec -T database-service mongorestore --host localhost:27017 --username gs1resolver --password gs1resolver --archive=- --gzip < mongobackup.tar.gz
+```mermaid
+flowchart LR
+    client["Scanner / browser"] -->|HTTPS| edge["Host nginx + Certbot<br/>(TLS, port 443)"]
+    edge -->|"127.0.0.1:8080"| proxy["frontend-proxy-service<br/>nginx"]
+    proxy -->|"/  and  /home/"| home["Home page<br/>(static, in the proxy image)"]
+    proxy -->|"/{AI}/{value}…"| web["web-service<br/>resolver"]
+    proxy -->|"/api"| de["data-entry-service<br/>REST API + Swagger"]
+    proxy -->|"/portal/"| portal["portal-service<br/>link management portal"]
+    portal -->|"bearer token"| de
+    web --> db[("MongoDB<br/>database-service")]
+    de --> db
+    portal -.->|"users, history"| vol[("volume<br/>resolver-portal-config")]
 ```
 
-## Looking for version Resolver CE v2.6?
-We've stopped development and maintenance on version 2.6, but you can still find the code in the 'v2.6' branch of this repository:<br>
-https://github.com/gs1/GS1_DigitalLink_Resolver_CE/tree/v2.6
+| Service | Container | Role | Published |
+|---|---|---|---|
+| `frontend-proxy-service` | `frontend-proxy-server` | Routes `/`, `/api`, `/portal/` and every Digital Link; serves the home page | `${PROXY_BIND_ADDRESS}:8080` |
+| `web-service` | `resolver-web-server` | Resolves GS1 Digital Links (redirects, linksets, HTML pages) | internal |
+| `data-entry-service` | `data-entry-server` | REST API to create, read, update and delete records | internal (via `/api`) |
+| `portal-service` | `resolver-portal` | Link management portal (Flask + static front end) | internal (via `/portal/`) |
+| `database-service` | `database-server` | MongoDB | `${DATABASE_BIND_ADDRESS}:27017` |
 
-We recommend that you upgrade to version 3.0 to take advantage of the new features, simplified services and many improvements.
+The portal is a back end between the browser and the data entry API: the API token never reaches the
+browser, and the portal reads before writing to use the API's operations safely (POST appends, PUT merges,
+DELETE removes links, the default link type is shared by all records of a key).
 
-## Settling in with Resolver CE v3.0?
-It's now time to point your code branch back to the 'master' branch to keep up with the latest updates and improvements. We are looking forward to your feedback and contributions to the project.
+## The link management portal
 
+<p align="center">
+  <img src="Documentation/images/portal-editor.png" alt="Portal editor with a GTIN, its qualifiers, targets and QR code" width="640">
+</p>
 
+**Editor** — three steps:
+
+1. **What the code identifies:** identifier type (GTIN, SSCC, GLN, GIAI…), value and key qualifiers
+   (variant, batch, serial…). Check digits, the GMN check-character pair, the GS1 Company Prefix and the
+   allowed combinations are checked as you type.
+2. **Description** of the item.
+3. **Targets:** one row per web address, with its GS1 link type (e.g. `gs1:pip`, `gs1:epil`,
+   `gs1:recallStatus`), language (any BCP 47 tag) and title. The first target is the default link
+   (`gs1:defaultLink`); each target can forward the scan's query string or not.
+
+The preview shows the Digital Link with its parts coloured, the **QR code label** (download as PNG or SVG,
+X-dimension 0.495 mm, 4X quiet zone, human-readable interpretation, optional GS1® branding) and buttons to
+try or copy the link. After each save the targets are checked (see below).
+
+<p align="center">
+  <img src="Documentation/images/portal-records.png" alt="Record list with search, spreadsheet buttons and link check result" width="820">
+</p>
+
+**Record list** (`/portal/#records`) — every record on the resolver with identifier, qualifiers, number of
+links and last change (date and user); search by identifier (leading zeros optional), description or
+qualifier, ignoring case and accents; filter by who changed it; open a record in the editor.
+
+**Spreadsheets** — export every record as XLSX (with reference sheets for link types, keys and languages)
+or CSV; import in two steps: a preview validates every row with the editor's rules and shows what will be
+new, changed, unchanged or wrong (with the row and the reason), and nothing is written until you confirm.
+Records not in the file are never deleted.
+
+<p align="center">
+  <img src="Documentation/images/portal-import.png" alt="Spreadsheet import preview" width="720">
+</p>
+
+**Link checker** — after each save, on demand in the editor, for every record in the background (with a
+filter for records with problems) and, optionally, in the import preview. It reports HTTP errors, addresses
+that do not answer, redirects from HTTPS to HTTP and endless redirects; sites that refuse robots (401, 403,
+429) are reported as such. Only public addresses are contacted, so the portal cannot be used to probe the
+server's own network. Sites that answer "200" for missing pages ("soft 404") cannot be detected.
+
+**Users and sessions** — per-user passwords (salted scrypt hashes), the first user created by the installer or from
+`PORTAL_ADMIN_USERNAME` / `PORTAL_ADMIN_PASSWORD`, more users with `create_user.py`, password change in the
+user menu, sign-in lockout after repeated failures, 8-hour sliding sessions, audit lines in the log for
+every change. The interface follows the browser's language (pt-BR or en-GB) and can be switched at any time.
+
+## GS1 Digital Link coverage
+
+**Primary identification keys** (URI Syntax 1.7, §4.3):
+
+| AI | Key | AI | Key |
+|---|---|---|---|
+| 01 | GTIN | 8017 / 8018 | GSRN (provider / recipient) |
+| 8006 | ITIP | 255 | GCN |
+| 8013 | GMN | 00 | SSCC |
+| 8010 | CPID | 253 | GDTI |
+| 414 | GLN (physical location) | 401 | GINC |
+| 415 | GLN (invoicing party) | 402 | GSIN |
+| 417 | GLN (party) | 8003 / 8004 | GRAI / GIAI |
+
+**Key qualifiers** (§4.4, formats of §4.6, path order and compound paths of §4.9):
+
+| Key | Qualifiers, in path order |
+|---|---|
+| GTIN (01) | 22 variant → 10 batch/lot → 21 serial, **or** 235 (UPUI) |
+| ITIP (8006) | 10 batch/lot → 21 serial |
+| CPID (8010) | 8011 CPID serial |
+| GLN (414) | 254 GLN extension, **or** 7040 (FID) |
+| GLN (415) | 8020 payment reference (**required**) |
+| GLN (417), GIAI (8004) | 7040 (EOID, MID) |
+| GSRN (8017, 8018) | 8019 service relation instance |
+
+Validation matches the [GS1 Barcode Syntax Engine](https://github.com/gs1/gs1-syntax-engine), which the
+resolver uses to accept every request (the development tests compare both case by case). Two deliberate
+limits: alphanumeric values use letters, digits, `.`, `-` (and `_` in qualifiers) only, because the data
+entry service maps `/` to `_` in document ids and other symbols would need percent-encoding; and ITIP is
+offered without 22, which the Syntax Engine refuses without a GTIN.
+
+## API reference
+
+### Resolver (public)
+
+| Request | Result |
+|---|---|
+| `GET /{AI}/{value}[/{qualifier AI}/{value}…]` | `307` redirect to the default link; walks up the qualifiers (serial → batch → variant → key) when a level has no record |
+| `…?linkType=gs1:pip` (also `pip`, `https://gs1.org/voc/pip`, `defaultLink`) | Redirect to that link type; `404` if the record has none |
+| `…?linkType=linkset` or `Accept: application/linkset+json` | Linkset (RFC 9264, valid against GS1's linkset schema); `application/ld+json` for JSON-LD |
+| `Accept-Language`, `Accept`, `context` | Choose between links of the same type by language, media type or context |
+| Browser (`Accept: text/html`) on an error | HTML page (not found, information not available with the available links, invalid code), pt-BR / en-GB |
+| `GET /.well-known/gs1resolver` | Resolver description file; `resolverRoot` and `contact` from the configuration |
+| `GET /` | Home page |
+
+The query string of the scan is passed on to the target unless the link has `"fwqs": false`.
+
+### Data entry API (`/api`, bearer token)
+
+Every operation except `/api/heartbeat` requires `Authorization: Bearer <SESSION_TOKEN>`. Interactive
+documentation: `https://<FQDN>/api/docs` (**Authorize** with `Bearer <token>`).
+
+| Operation | Origin | Purpose |
+|---|---|---|
+| `POST /api/new` | official | Create records; appends to an existing document (v3 format, list accepted, v2 converted) |
+| `GET /api/{AI}/{value}` | official | Read every record (entry) of a key |
+| `GET /api/{AI}/{value}/{qualifiers…}` | official | Read the entry of a qualifier set |
+| `PUT /api/{AI}/{value}` | official | Merge-update an entry (links matched by type, language and context) |
+| `DELETE /api/{AI}/{value}` | official | Delete the document, or only the links sent in the body |
+| `GET /api/index` | official, **now protected** | Identifiers of every document |
+| `GET /api/summary[?links=true]` | **new** | One line per record: anchor, qualifiers, description, default link type, number of links (and the links) |
+| `GET /api/heartbeat` | official | Liveness (public) |
+
+```bash
+TOKEN=…   # SESSION_TOKEN from .env
+curl -s -X POST https://id.example.org/api/new -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{
+  "anchor": "/01/09506000134352", "qualifiers": [{"10": "L2026A"}], "itemDescription": "Organic açaí 500 g",
+  "defaultLinktype": "gs1:pip",
+  "links": [{"linktype": "gs1:pip", "href": "https://brand.example/acai", "title": "Product information", "hreflang": ["en"]}]
+}'
+curl -s -H "Authorization: Bearer $TOKEN" "https://id.example.org/api/summary?links=true"
+curl -sI https://id.example.org/01/09506000134352/10/L2026A        # 307 → https://brand.example/acai
+```
+
+### Portal API (`/portal/api`, session cookie)
+
+Used by the portal's own pages; listed for integrators and reviewers. Writes require a same-origin request
+with a JSON body; messages are returned as language-neutral codes translated by the browser.
+
+| Operation | Purpose |
+|---|---|
+| `POST /login`, `POST /logout`, `POST /password` | Sign in, sign out, change password |
+| `GET /config` | Resolver address, link types, languages, keys and their qualifier shapes |
+| `GET /record?key=&value=&qualifiers=` | Read one record (and the other records of the key) |
+| `POST /record` | Create or replace one record (`key`, `value`, `qualifiers`, `description`, `links`) |
+| `DELETE /record?key=&value=&qualifiers=` | Delete one record, keeping the others of the key |
+| `GET /records` | Every record with its change history |
+| `POST /export` | XLSX or CSV of every record |
+| `POST /import/preview`, `POST /import/apply`, `GET /import/status` | Spreadsheet import: check, confirm, progress |
+| `POST /links/check`, `POST /links/jobs`, `GET /links/jobs/{token}`, `GET /links/last` | Link checker |
+| `GET /qrcode?key=&value=&qualifiers=&format=png\|svg` | QR code label |
+| `GET /portal/healthz` | Health of the portal and of its access to the API |
+
+## System requirements
+
+| | Requirement |
+|---|---|
+| **Operating system** | Ubuntu Server 22.04 or 24.04 LTS for the installer; any Linux (x86-64 or ARM64) with Docker for a manual installation |
+| **Software** | Docker Engine with the Compose plugin **2.24 or later** (the installer installs both); nginx and Certbot when the server terminates TLS; `git` |
+| **Hardware** (guidance) | 2 vCPU, 2 GB RAM (4 GB recommended), 10 GB free disk for images, database and backups |
+| **Network** | A DNS name (e.g. `id.example.org`) pointing to the server; ports 80 and 443 reachable (or a load balancer/proxy that terminates TLS); outbound HTTPS for building the images (Docker Hub, PyPI, npm, NodeSource) and for the link checker |
+| **Portal users** | A current browser (Chrome, Edge, Firefox, Safari) |
+| **Development** (optional) | Python 3.12, nginx, Playwright with Chromium; Node.js for the comparison with the GS1 Syntax Engine |
+
+## Installation with the Ubuntu script
+
+On a server with a DNS name pointing to it:
+
+```bash
+git clone https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE.git
+cd GS1_DigitalLink_Resolver_CE
+git switch gs1br/develop            # if it is not the default branch
+sudo scripts/install.sh
+```
+
+The script asks, validating each answer:
+
+| Question | Notes |
+|---|---|
+| Domain name | Without `https://` |
+| HTTPS mode | `letsencrypt` (nginx + free certificate, renewed automatically), `certificate` (your PEM files), `external` (TLS on a load balancer or another proxy) |
+| E-mail / certificate files | Let's Encrypt notices, or the paths of your certificate and key |
+| Operator | Organisation name (required), website, address, telephone — published in `/.well-known/gs1resolver` |
+| First portal user | Name and password; leave the password empty to have one generated and shown once |
+| Daily backup, docker user | Cron at 02:30; the account allowed to run `docker` without `sudo` |
+
+After a summary and your confirmation it installs Docker and nginx/Certbot if needed, **generates the
+MongoDB password and the API token**, writes `.env` (mode 600), builds and starts the services, waits until
+they answer, removes the first user's password from `.env`, configures nginx and the certificate, schedules
+the backup and checks the public address. The log is `/var/log/gs1-resolver-install.log` (never the
+passwords).
+
+**Running it again** is how settings change or an installation is repaired: current values are offered as
+defaults, secrets, users and data are kept, a site that already has a certificate is kept, the previous
+`.env` is saved as `.env.bak-<date>`. For automation:
+
+```bash
+sudo FQDN=id.example.org TLS_MODE=letsencrypt CERTBOT_EMAIL=ops@example.org \
+     RESOLVER_ORG_NAME="Example Org" PORTAL_ADMIN_USERNAME=admin \
+     scripts/install.sh --non-interactive
+```
+
+## Manual installation
+
+1. **Docker.** Install Docker Engine and the Compose plugin (≥ 2.24) following
+   [docs.docker.com/engine/install](https://docs.docker.com/engine/install/).
+2. **Code.** Clone this repository and switch to `gs1br/develop`.
+3. **Configuration.** Create `.env` next to `docker-compose.yml` (values here replace `.env.example`):
+
+   ```bash
+   PASS=$(openssl rand -hex 24); TOKEN=$(openssl rand -hex 32)
+   cat > .env <<EOF
+   MONGO_INITDB_ROOT_USERNAME='gs1resolver'
+   MONGO_INITDB_ROOT_PASSWORD='$PASS'
+   MONGO_URI='mongodb://gs1resolver:$PASS@database-service:27017'
+   SESSION_TOKEN='$TOKEN'
+   FQDN='id.example.org'
+   RESOLVER_ORG_NAME='Example Org'
+   PORTAL_ADMIN_USERNAME='admin'
+   PORTAL_ADMIN_PASSWORD='choose-a-long-password'
+   PROXY_BIND_ADDRESS='127.0.0.1'
+   DATABASE_BIND_ADDRESS='127.0.0.1'
+   EOF
+   chmod 600 .env
+   ```
+
+4. **Start.** `docker compose up -d --build`, then check `curl -s http://127.0.0.1:8080/portal/healthz`
+   (`{"portal":"ok","resolver":"ok"}`).
+5. **HTTPS.** Put a TLS reverse proxy in front of `127.0.0.1:8080`. With nginx: copy
+   `scripts/templates/nginx-site-http.conf` to `/etc/nginx/sites-available/gs1resolver`, replace `@FQDN@`
+   and `@PROXY_PORT@` (8080), enable it, then `sudo certbot --nginx -d id.example.org --redirect`.
+6. **First user.** Sign in at `https://id.example.org/portal/` with `PORTAL_ADMIN_*`, change the password
+   under Options, then clear `PORTAL_ADMIN_PASSWORD` in `.env`. Or create users with
+   `docker compose exec portal-service python create_user.py <name>`.
+7. **Backup.** `sed "s|REPOSITORY|$PWD|" scripts/resolver-backup.cron | sudo tee /etc/cron.d/resolver-backup`.
+
+For a **development machine** no `.env` is needed: `docker compose up -d --build` runs with the defaults of
+`.env.example` (token `secret`, as in the official project). Add `RESOLVER_PUBLIC_URL=http://localhost:8080`
+to `.env` to use the portal over plain HTTP, then open http://localhost:8080/.
+
+## Configuration
+
+Every service reads `.env.example` (committed development defaults) and then `.env` (installation values,
+never committed).
+
+| Variable | Purpose |
+|---|---|
+| `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD` | MongoDB root user (applied when the database volume is created) |
+| `MONGO_URI` | Connection string of the web and data entry services |
+| `SESSION_TOKEN` | Bearer token of the data entry API (also used by the portal) |
+| `FQDN` | Domain of the resolver; the resolver root is `https://FQDN` |
+| `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | Operator in the description file and on the resolver's pages |
+| `RESOLVER_PUBLIC_URL` | Portal's public address when it is not `https://FQDN` (e.g. development) |
+| `PORTAL_ADMIN_USERNAME`, `PORTAL_ADMIN_PASSWORD` | First portal user, created only while there are none |
+| `PORTAL_SESSION_HOURS`, `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE` | Optional portal settings |
+| `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Host addresses of ports 8080 and 27017 (read by Compose from `.env` only) |
+
+## Operation
+
+```bash
+git pull && docker compose up -d --build                         # update
+docker compose exec portal-service python create_user.py maria   # add or reset a portal user
+docker compose logs -f portal-service | grep portal.audit        # who changed what
+sudo scripts/resolver-backup.sh                                  # backup now (database + portal users)
+```
+
+Backups go to `/var/backups/resolver` (14 days). Restore the database with
+`mongorestore … --archive --gzip --drop` through `docker compose exec -T database-service`, and the portal's
+configuration by extracting its archive into `/app/config` of `portal-service`; the exact commands are in
+[Documentation/extensions/README.md](Documentation/extensions/README.md#daily-backup). Keep copies on
+another machine.
+
+## Development and tests
+
+The tests in [`dev-tests/`](dev-tests/README.md) run without Docker or MongoDB:
+
+| Test | Covers |
+|---|---|
+| `resolver/test_resolver.py` | Resolver behaviour, walk-up, linksets, HTML pages, description file, every key and qualified record |
+| `resolver/test_data_entry_api.py` | Token protection of every data entry operation and the Swagger declarations |
+| `portal/test_keys.py` | Every primary key and qualifier combination, compared with the GS1 Syntax Engine |
+| `portal/test_portal_e2e.py` | The portal in Chromium: editor, keys, qualifiers, labels, list, spreadsheets, link checker, users |
+| `portal/test_sheet.py`, `test_linkcheck.py`, `test_portal_config.py` | Spreadsheets, link checker, start-up configuration |
+| `home/test_home.py` | Home page through the real nginx configuration |
+| `install/test_install.sh` | Installer in eight scenarios, with the real `docker compose config` and `nginx -t` |
+
+```bash
+pip install -r web_server/src/requirements.txt -r portal/requirements.txt jsonschema playwright opencv-python-headless
+playwright install chromium
+python dev-tests/resolver/test_resolver.py
+# optional, compares with the GS1 Syntax Engine used by the resolver:
+mkdir -p /tmp/se && (cd /tmp/se && npm init -y && npm pkg set type=module && npm install gs1encoder)
+GS1_SYNTAX_ENGINE=/tmp/se python dev-tests/portal/test_keys.py
+```
+
+The official integration test `tests/setup_test.py` needs the running stack and reads the token from
+`SESSION_TOKEN`. The screenshots of this README are produced by `dev-tests/docs/screenshots.py`.
+
+## Repository layout
+
+```
+.env.example                    configuration defaults (committed); .env holds installation values
+docker-compose.yml              the five services
+data_entry_server/              data entry API (official, with /summary and token on /index)
+web_server/                     resolver (official, with conformance fixes and HTML pages)
+database_server/                MongoDB image (official)
+frontend_proxy_server/          nginx: routes, home page (home/), portal
+portal/                         link management portal: app.py, gs1.py (keys, qualifiers), label.py,
+                                sheet.py, linkcheck.py, users.py, meta.py, static/ (HTML, CSS, JS, i18n)
+scripts/                        install.sh, templates/ (nginx), resolver-backup.sh and its cron entry
+dev-tests/                      development tests (see above)
+Documentation/                  extensions/ (detailed documentation, changelog), images/, upstream-README.md
+tests/, useful_external_python_scripts/   official tests and conversion scripts
+```
+
+## Contributing upstream
+
+The work is organised so that it can be proposed to
+[gs1/GS1_DigitalLink_Resolver_CE](https://github.com/gs1/GS1_DigitalLink_Resolver_CE) in small, independent
+pull requests, each discussed first in an issue:
+
+1. layered `.env.example` / `.env` configuration and the proxy restart on recreated services;
+2. data entry API: token on `/api/index`, Swagger security declarations, `GET /api/summary`;
+3. resolver conformance fixes (walk-up, 404 rules, linkType forms, linkset, `fwqs`);
+4. HTML pages for browsers and the configurable description file;
+5. the link management portal (keys, qualifiers, spreadsheets, link checker);
+6. the home page;
+7. the installer, backup and documentation.
+
+Security-relevant findings are reported to the maintainers privately before any pull request.
+
+## Licence and credits
+
+Licensed under the [Apache License 2.0](LICENSE), like the official project.
+
+- **GS1 Resolver Community Edition** — the GS1 Resolver Community (original design and code by Nick
+  Lansley and contributors).
+- **GS1 Barcode Syntax Engine** — GS1 AISBL (Terry Burton), used by the resolver to validate every request.
+- **Extensions in this fork** — GS1 Brasil.
+
+GS1, the GS1 logo and GS1 Digital Link are trademarks of GS1 AISBL.

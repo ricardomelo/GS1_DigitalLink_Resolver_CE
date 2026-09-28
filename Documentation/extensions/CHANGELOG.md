@@ -2,6 +2,14 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Documentation
+- New top-level README for the fork: the original project, what the fork adds, architecture (Mermaid),
+  the portal with screenshots, GS1 Digital Link coverage, API reference (resolver, data entry, portal),
+  system requirements, installation with the Ubuntu script and by hand, configuration, operation,
+  tests, repository layout, plan for contributing upstream. The official README is kept unchanged in
+  `Documentation/upstream-README.md`; screenshots in `Documentation/images/` come from
+  `dev-tests/docs/screenshots.py`.
+
 ### Portal: key qualifiers (URI Syntax 1.7, sections 4.4, 4.6, 4.9)
 - Every key qualifier: 22, 10, 21 (GTIN; 10 and 21 for ITIP), 235 (UPUI), 8011 (CPID), 254 and 7040
   (GLN 414: FID), 8020 (required for 415, now supported), 7040 (417: EOID; 8004: MID), 8019 (GSRN).

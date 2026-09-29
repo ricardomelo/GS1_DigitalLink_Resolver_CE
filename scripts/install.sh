@@ -122,16 +122,17 @@ ask_password() {
   local var=$1 question=$2 first second
   if (( NON_INTERACTIVE )); then
     if [[ -n ${!var-} ]]; then
-      valid_password "${!var}" || die "$var must have at least $MIN_PASSWORD_LENGTH characters."
+      valid_password "${!var}" || die "$var: invalid password (see the message above)."
     fi
     return
   fi
   while true; do
-    read -r -s -p "    $question (Enter to generate one): " first || die "No answer (end of input)."
+    # IFS= keeps spaces at the start and the end of a password
+    IFS= read -r -s -p "    $question (Enter to generate one): " first || die "No answer (end of input)."
     printf '\n'
     if [[ -z $first ]]; then printf -v "$var" '%s' ""; return; fi
     valid_password "$first" || continue
-    read -r -s -p "    Type it again: " second || die "No answer (end of input)."
+    IFS= read -r -s -p "    Type it again: " second || die "No answer (end of input)."
     printf '\n'
     if [[ $first == "$second" ]]; then printf -v "$var" '%s' "$first"; return; fi
     warn "The two entries differ."
@@ -170,8 +171,11 @@ valid_optional_url() {
 valid_username() {
   [[ $1 =~ ^[A-Za-z0-9._-]{3,64}$ ]] || { warn "3–64 characters: letters, digits, dot, underscore or hyphen."; return 1; }
 }
+# Any other character is fine: values are single-quoted in .env, where Compose takes $, \, " and spaces
+# literally; a single quote would end the value and a line break would end the line.
 valid_password() {
   (( ${#1} >= MIN_PASSWORD_LENGTH )) || { warn "At least $MIN_PASSWORD_LENGTH characters."; return 1; }
+  safe_text "$1"
 }
 valid_tls_mode() {
   [[ $1 == letsencrypt || $1 == certificate || $1 == external ]] || { warn "Choose letsencrypt, certificate or external."; return 1; }
@@ -268,7 +272,8 @@ write_env() {
   mv "$tmp" "$ENV_FILE"
 }
 
-# Replaces the value of one variable in .env (used to clear the first-user password).
+# Replaces the value of one variable in .env (used to clear the first-user password). awk -v reads
+# backslash escapes in the value: use it for values without backslashes and single quotes only.
 set_env_value() {
   local key=$1 value=$2 tmp
   tmp=$(mktemp "$REPO_DIR/.env.tmp.XXXXXX")

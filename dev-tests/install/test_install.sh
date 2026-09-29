@@ -212,7 +212,7 @@ answers=$(printf '%s\n' \
   "not a domain" "id.example.org" \
   "" "ops@example.org" \
   "Example Org" "ftp://bad" "https://www.example.org" "" "Rio de Janeiro" "RJ" "" "Brazil" "" \
-  "maria" "short" "correct horse battery" "correct horse battery" \
+  "maria" "short" "it's a long password" "correct horse battery" "correct horse battery" \
   "" "" "y")
 INSTALLER_ARGS=" " run_installer <<< "$answers"; rc=$?
 check "F: exit status 0" "[[ $rc == 0 ]]"
@@ -221,6 +221,7 @@ check "F: invalid URL rejected" "grep -q 'Enter a URL starting with https://' $S
 check "F: default HTTPS mode taken" "[[ \$(envval TLS_MODE) == letsencrypt ]]"
 check "F: short password rejected; typed user used" "grep -q 'At least 12 characters' $SB/state/out && [[ \$(envval PORTAL_ADMIN_USERNAME) == maria ]]"
 check "F: typed password not printed" "! grep -q 'correct horse' $SB/state/out"
+check "F: password with a single quote rejected, then another accepted" "grep -q 'Single quotes' $SB/state/out && [[ \$(envval PORTAL_ADMIN_USERNAME) == maria ]]"
 
 # ------------------------------------------------------------------------------ G. refusals
 echo "--- G. invalid non-interactive input"
@@ -231,6 +232,10 @@ check "G: nothing written" "[[ ! -e $SB/repo/.env ]]"
 new_sandbox
 run_installer FQDN=id.example.org RESOLVER_ORG_NAME="O'Brien" CERTBOT_EMAIL=a@b.org; rc=$?
 check "G: single quote refused" "[[ $rc != 0 ]] && grep -q 'Single quotes' $SB/state/out"
+new_sandbox
+run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org PORTAL_ADMIN_PASSWORD="it's a long password"; rc=$?
+check "G: password with a single quote refused" "[[ $rc != 0 ]] && grep -q 'Single quotes' $SB/state/out && grep -q 'PORTAL_ADMIN_PASSWORD: invalid password' $SB/state/out"
+check "G: nothing written for the refused password" "[[ ! -e $SB/repo/.env ]]"
 
 # ------------------------------------------------------------------------------ H. stale proxy
 echo "--- H. proxy still pointing at the old containers (502) after the services were recreated"

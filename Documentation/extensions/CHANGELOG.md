@@ -2,6 +2,12 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Installer: passwords with special characters
+- A first-user password with a single quote is refused (it ended the single-quoted value in `.env`); any
+  other character, `$`, `\`, `"` and spaces included, is kept literally. Passwords typed interactively
+  keep leading and trailing spaces (`IFS= read`).
+- Tests: single-quoted password refused interactively and non-interactively in `test_install.sh`.
+
 ### Portal: special characters
 - Keys, qualifiers, language tags and user prefixes accept ASCII digits only: full-width, Arabic-Indic and
   other scripts' digits were accepted and stored, and a superscript `²` in a numeric key failed with an

@@ -514,6 +514,7 @@ It follows the symbol and text dimensions of the *QR Codes powered by GS1 design
 | query string always passed on, with a second `?` if the target already had one | passed on by default; `fwqs: false` on a target switches it off; joined with `&` | 2.12, item 19; `fwqs` attribute of the linkset schema |
 | browsers get raw JSON on errors | HTML page in the gs1.org style (logo, pt-BR/en-GB language menu) with the same HTTP status; a 404 for a linkType lists the available links | 2.6.2 (MAY list other links) |
 | `?linkType=linkset` in a browser → JSON | HTML page listing the links per level (product/batch) | 2.10 |
+| — | on the HTML pages only `http`/`https` targets are links; others (`javascript:`, `data:`, stored through the API, which takes any href) are listed without a link, so they cannot run in the resolver's origin | — |
 
 An unknown linkType **still** returns 404: the standard requires it (2.6.2, item 18). Up to GS1 Digital
 Link 1.1 the resolver redirected to the default target; that is no longer permitted. Apps and scripts that

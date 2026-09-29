@@ -6,6 +6,9 @@
 - The HTML linkset page named every level "(domain) 01" instead of "Product (every unit)", "Batch/lot …":
   linkset anchors are absolute URIs and the level name read the whole URI as a path. Test added in
   `dev-tests/resolver/test_resolver.py`.
+- Only `http` and `https` targets are links on the HTML linkset and 404 pages; a `javascript:` or
+  `data:` href stored through the data entry API (which accepts any href) is listed without a link, so it
+  cannot run in the resolver's origin when clicked. Tests added in `dev-tests/resolver/test_resolver.py`.
 
 ### Installer: passwords with special characters
 - A first-user password with a single quote is refused (it ended the single-quoted value in `.env`); any

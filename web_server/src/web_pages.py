@@ -135,8 +135,9 @@ p{margin:.5rem 0}.muted{color:var(--muted);font-size:.875rem}
 .code{font-family:ui-monospace,Consolas,monospace;background:var(--page);border-radius:4px;padding:.2rem .45rem;word-break:break-all;display:inline-block}
 h2{font-size:.8125rem;font-weight:600;margin:1.75rem 0 .5rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 ul{list-style:none;padding:0;margin:0}
-li a{display:block;padding:.85rem 1rem;margin:.5rem 0;border:1px solid var(--line);border-left:4px solid var(--blue);
+li a,li .unlinked{display:block;padding:.85rem 1rem;margin:.5rem 0;border:1px solid var(--line);border-left:4px solid var(--blue);
 border-radius:4px;text-decoration:none;color:var(--ink);background:#FAFCFE}
+li .unlinked{border-left-color:var(--line)}
 li a:hover{background:var(--page);border-left-color:var(--action)}li strong{display:block;color:var(--blue);font-weight:600}
 li small{color:var(--muted)}
 footer{max-width:60rem;margin:0 auto;padding:0 clamp(1rem,4vw,2rem) 2rem;font-size:.8125rem;color:var(--muted)}
@@ -169,8 +170,8 @@ _LINKS = """
   <h2>{{ level.label }}</h2>
   {% if level.description %}<p>{{ level.description }}</p>{% endif %}
   <ul>{% for l in level.links %}
-    <li><a href="{{ l.href }}" rel="noopener"><strong>{{ l.title }}</strong>
-      <small>{{ l.label }}{% if l.lang %} · {{ l.lang }}{% endif %}</small></a></li>
+    <li>{% if l.href %}<a href="{{ l.href }}" rel="noopener">{% else %}<span class="unlinked">{% endif %}<strong>{{ l.title }}</strong>
+      <small>{{ l.label }}{% if l.lang %} · {{ l.lang }}{% endif %}</small>{% if l.href %}</a>{% else %}</span>{% endif %}</li>
   {% endfor %}</ul>
 {% endfor %}
 """
@@ -230,6 +231,14 @@ def _level_label(locale: str, anchor: str) -> str:
     return _t(locale, 'level.product') if ai == '01' else f'({ai}) {parts[1] if len(parts) > 1 else ""}'
 
 
+def _web_address(href) -> str | None:
+    """The target as a clickable address, or None when it is not http(s). The data entry API stores any
+    href it is given, and a javascript: or data: address would run in the resolver's own origin when
+    clicked; such targets are listed without a link. Redirects are unaffected (browsers refuse them)."""
+    href = str(href or '').strip()
+    return href if urlparse(href).scheme.lower() in ('http', 'https') else None
+
+
 def _levels(locale: str, linkset: list[dict]) -> list[dict]:
     levels = []
     for item in linkset:
@@ -244,7 +253,7 @@ def _levels(locale: str, linkset: list[dict]) -> list[dict]:
                     continue
                 seen.add(identity)
                 links.append({
-                    'href': link.get('href'), 'title': link.get('title') or term,
+                    'href': _web_address(link.get('href')), 'title': link.get('title') or term,
                     'label': f"{_label(locale, term)} (gs1:{term})",
                     'lang': ', '.join(link.get('hreflang') or []),
                 })

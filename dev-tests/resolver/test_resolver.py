@@ -153,6 +153,20 @@ check("HTML linkset page: levels named from the absolute anchors", "<h2>Produto 
       and "id.example.org" not in html.split("<h2>", 1)[1].split("</h2>", 1)[0], html[html.find("<h2>"):][:200])
 r = get(G + "/10/123?linkType=linkset", "text/html")
 check("HTML linkset page: batch level named", "<h2>Lote 123</h2>" in r.get_data(as_text=True))
+# Targets that are not web addresses (stored through the API, which takes any href) are listed, not linked
+UNSAFE = "/01/07890000000772"
+author({"anchor": UNSAFE, "itemDescription": "Unsafe targets", "defaultLinktype": "gs1:pip", "links": [
+    {"linktype": "gs1:pip", "href": "https://example.org/ok", "title": "Web page", "type": "text/html", "hreflang": ["en"]},
+    {"linktype": "gs1:epil", "href": "javascript:alert(document.cookie)", "title": "Script", "type": "text/html", "hreflang": ["en"]},
+    {"linktype": "gs1:smpc", "href": " JavaScript:alert(1)", "title": "Script 2", "type": "text/html", "hreflang": ["en"]},
+    {"linktype": "gs1:faqs", "href": "data:text/html,<script>alert(1)</script>", "title": "Data", "type": "text/html", "hreflang": ["en"]}]})
+unsafe_html = get(UNSAFE + "?linkType=linkset", "text/html").get_data(as_text=True)
+check("HTML linkset page: https target linked", 'href="https://example.org/ok"' in unsafe_html)
+check("HTML linkset page: javascript: and data: targets listed without a link",
+      "javascript:" not in unsafe_html.lower().split("<script>")[0] and "data:text/html" not in unsafe_html
+      and unsafe_html.count('class="unlinked"') == 3 and "Script 2" in unsafe_html, unsafe_html[unsafe_html.find("<h2>"):][:900])
+unsafe_404 = get(UNSAFE + "?linkType=gs1:recallStatus", "text/html").get_data(as_text=True)
+check("HTML 404 page lists the same targets without links", 'class="unlinked"' in unsafe_404 and "javascript:alert" not in unsafe_404)
 check("HTML pages: logo links to the home page", '<a class="brand" href="/" title="Página inicial do Resolver">' in html)
 check("CORS exposes Link", "Link" in (get(G).headers.get("Access-Control-Expose-Headers") or ""))
 

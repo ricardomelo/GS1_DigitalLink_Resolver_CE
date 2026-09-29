@@ -90,7 +90,7 @@ def _secret_key() -> bytes:
 
 app = Flask(__name__, static_folder=None)
 app.config.update(
-    MAX_CONTENT_LENGTH=1024 * 1024,   # spreadsheet imports arrive as base64 in JSON (file ≤ 700 KB)
+    MAX_CONTENT_LENGTH=1024 * 1024,   # spreadsheet imports arrive as base64 in JSON (sheet.FORMATS: ≤ 700 KB)
     SECRET_KEY=_secret_key(),
     SESSION_COOKIE_NAME="gs1resolver_portal",
     SESSION_COOKIE_PATH="/portal",
@@ -544,6 +544,7 @@ def config():
                "shapes": [[{"ai": q, "required": req} for q, req in shape] for shape in gs1.KEY_SHAPES.get(ai, [[]])]}
               for ai, (name, _) in gs1.PRIMARY_KEYS.items()],
         languages=gs1.LANGUAGES,
+        importLimits=sheet.limits(),
     )
 
 

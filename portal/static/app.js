@@ -940,7 +940,6 @@ async function checkAllLinks() {
 
 /* ------------------------------------------------------------------ spreadsheets: export and import */
 const SHEET_COLUMNS = ["key", "value", "qualifiers", "description", "linkType", "url", "language", "title", "default", "forward"];
-const MAX_IMPORT_BYTES = 700 * 1024;
 const importState = { token: null, polling: null, imported: false };
 
 /* Texts the server writes into the file (it is language-neutral): headers in the current language,
@@ -1035,6 +1034,7 @@ function openImport() {
   Object.assign(importState, { token: null, polling: null, imported: false });
   $("#import-file").value = "";
   $("#import-file").disabled = false;
+  renderImportLimits();
   $("#import-report").hidden = true;
   $("#import-summary").hidden = false;
   $("#import-warnings").replaceChildren();
@@ -1052,6 +1052,24 @@ function closeImport() {
   clearInterval(importState.polling);
   $("#import-dialog").close();
   if (importState.imported) loadRecords();
+}
+
+/* Import limits per accepted format come from the server (sheet.FORMATS), so the dialog, the check
+   below and the server never disagree. */
+function importLimitFor(filename) {
+  const name = String(filename || "").toLowerCase();
+  return (CONFIG.importLimits || []).find(l => l.extensions.some(ext => name.endsWith(ext)));
+}
+
+function renderImportLimits() {
+  const list = $("#import-limits");
+  list.replaceChildren(...(CONFIG.importLimits || []).map(limit => {
+    const li = document.createElement("li");
+    I18N.set(li, "import.limit." + limit.format, { maxRows: limit.maxRows, maxKB: limit.maxKB });
+    return li;
+  }));
+  $("#import-file").accept = [...(CONFIG.importLimits || []).flatMap(l => l.extensions),
+    "text/csv", "text/plain", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].join(",");
 }
 
 function readAsBase64(file) {
@@ -1073,8 +1091,9 @@ async function previewImport() {
   $("#import-report").hidden = true;
   $("#import-apply").disabled = true;
   if (!file) return;
-  if (file.size > MAX_IMPORT_BYTES) {
-    importStatus("error", "import.tooBig", { max: MAX_IMPORT_BYTES / 1024 });
+  const limit = importLimitFor(file.name);
+  if (limit && file.size > limit.maxKB * 1024) {
+    importStatus("error", "import.tooBig", { max: limit.maxKB });
     return;
   }
   importStatus(null, "import.checking");

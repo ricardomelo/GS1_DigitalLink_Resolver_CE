@@ -2,6 +2,18 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: import limits per format
+- Limits per accepted format in `sheet.FORMATS` (`xlsx`: `.xlsx`; `csv`: `.csv`, `.txt`): 5 000 data rows
+  and 700 KB each, sent to the browser in `GET /portal/api/config` (`importLimits`), listed in the import
+  dialog in the user's language and checked by the browser for the file's format before sending. Error
+  messages name the limit of the format. The file picker also offers `.txt`, which the server already read.
+- A CSV cell above 128 KB (the `csv` module's field limit) is reported as an unreadable file instead of
+  failing with an internal error.
+- README: title "GS1 Digital Link Resolver CE — Expansion Pack"; table of import limits with measured
+  sizes (5 000 rows: 200–290 KB in XLSX, 900–1 800 KB in CSV).
+- Tests: limits per format in `test_sheet.py`; limits in the dialog (both languages) and a refused file
+  in the portal end-to-end test.
+
 ### Portal: adjustments
 - GS1® branding of the QR code label removed (option, artwork files and `brand` parameter); labels keep
   the dimensions of the *QR Codes powered by GS1* guidelines and the optional HRI. Label files are named

@@ -332,7 +332,9 @@
     <div class="dialog-body">
       <p class="hint" data-i18n="import.intro"></p>
       <label for="import-file" data-i18n="import.file"></label>
-      <input type="file" id="import-file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <input type="file" id="import-file" accept=".xlsx,.csv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-describedby="import-limits-title">
+      <p class="import-limits-title" id="import-limits-title" data-i18n="import.limits"></p>
+      <ul class="import-limits" id="import-limits"></ul>
       <label class="choice import-check"><input type="checkbox" id="import-checklinks"> <span data-i18n="import.checkLinks"></span></label>
       <div id="import-status" class="status" role="status" aria-live="polite" hidden></div>
       <div id="import-report" hidden>

@@ -36,8 +36,19 @@ REQUIRED = {"value", "description", "linkType", "url"}
 # Headers accepted for a column besides its key and the labels sent by the browser
 BUILT_IN_ALIASES = {"value": ["gtin"], "key": ["ai"]}
 
-MAX_ROWS = 5000
-MAX_FILE_BYTES = 700 * 1024
+# Import limits per accepted format. The file travels base64-encoded in a JSON request, and both the
+# portal (MAX_CONTENT_LENGTH) and the proxy (client_max_body_size) accept 1 MB per request, so no file
+# may exceed about 700 KB whatever its format. An XLSX file is compressed: 5 000 rows usually take
+# 150-300 KB, so its row limit is reached first. A CSV file is plain text: long URLs and descriptions
+# can reach 700 KB before 5 000 rows. The limits are shown in the import dialog (GET /portal/api/config)
+# and in the README; change them here only.
+FORMATS = {
+    # format: (file name extensions, maximum data rows, maximum size in KB)
+    "xlsx": ((".xlsx",), 5000, 700),
+    "csv": ((".csv", ".txt"), 5000, 700),
+}
+MAX_ROWS = max(rows for _, rows, _ in FORMATS.values())
+MAX_FILE_BYTES = max(kb for _, _, kb in FORMATS.values()) * 1024
 
 _YES = {"1", "true", "yes", "y", "x", "sim", "s", "verdadeiro", "v"}
 _NO = {"", "0", "false", "no", "n", "nao", "falso", "f"}
@@ -47,6 +58,29 @@ class SheetError(ValidationError):
     """A problem with the file as a whole (format, header, size)."""
 
 
+class Table(list):
+    """The rows of a spreadsheet, every cell as text, and the format they were read from."""
+
+    def __init__(self, rows, file_format: str | None = None):
+        super().__init__(rows)
+        self.format = file_format
+
+
+def limits() -> list[dict]:
+    """The import limits of every accepted format, as sent to the browser."""
+    return [{"format": name, "extensions": list(extensions), "maxRows": rows, "maxKB": kb}
+            for name, (extensions, rows, kb) in FORMATS.items()]
+
+
+def detect_format(filename: str, data: bytes) -> str:
+    name = (filename or "").lower()
+    if data[:2] == b"PK" or name.endswith(FORMATS["xlsx"][0]):
+        return "xlsx"
+    if name.endswith(FORMATS["csv"][0]) or not name:
+        return "csv"
+    raise SheetError("import.format")
+
+
 def fold(text) -> str:
     """Lower case, no accents, no spaces or punctuation: "Tipo de link" → "tipodelink"."""
     text = unicodedata.normalize("NFD", str(text or "")).encode("ascii", "ignore").decode()
@@ -54,16 +88,13 @@ def fold(text) -> str:
 
 
 # ------------------------------------------------------------------------------------------ reading
-def read_table(filename: str, data: bytes) -> list[list[str]]:
+def read_table(filename: str, data: bytes) -> Table:
     """Returns the rows of the first sheet (XLSX) or of the CSV file, every cell as text."""
-    if len(data) > MAX_FILE_BYTES:
-        raise SheetError("import.tooBig", max=MAX_FILE_BYTES // 1024)
-    name = (filename or "").lower()
-    if name.endswith(".xlsx") or data[:2] == b"PK":
-        return _read_xlsx(data)
-    if name.endswith((".csv", ".txt")) or not name:
-        return _read_csv(data)
-    raise SheetError("import.format")
+    file_format = detect_format(filename, data)
+    _, _, max_kb = FORMATS[file_format]
+    if len(data) > max_kb * 1024:
+        raise SheetError("import.tooBig", max=max_kb, format=file_format)
+    return Table(_read_xlsx(data) if file_format == "xlsx" else _read_csv(data), file_format)
 
 
 def _cell_text(value) -> str:
@@ -98,7 +129,10 @@ def _read_csv(data: bytes) -> list[list[str]]:
         raise SheetError("import.unreadable")
     first = text.split("\n", 1)[0]
     delimiter = max([";", ",", "\t"], key=first.count)   # ";" is Excel's separator in pt-BR
-    return [[cell.strip() for cell in row] for row in csv.reader(io.StringIO(text), delimiter=delimiter)]
+    try:
+        return [[cell.strip() for cell in row] for row in csv.reader(io.StringIO(text), delimiter=delimiter)]
+    except csv.Error as exc:           # e.g. a cell above the csv module's 128 KB field limit
+        raise SheetError("import.unreadable") from exc
 
 
 def map_header(header: list[str], aliases: dict[str, list[str]]) -> dict[str, int]:
@@ -128,12 +162,16 @@ def yes_no(value: str, default: bool, extra_yes=(), extra_no=()) -> bool | None:
 
 def parse_rows(rows: list[list[str]], aliases: dict[str, list[str]], yes=(), no=()):
     """
+    The row limit is the one of the format the rows were read from (read_table), MAX_ROWS otherwise.
+
     Groups the data rows into records. Returns (records, errors):
       records: [{"rows": [row numbers], "gtin": raw, "lot": raw, "description": str,
                  "links": [{"row", "linkType", "url", "hreflang", "title", "default", "forward"}]}]
       errors:  [{"row", "code", "params"}]  for rows that cannot be read at all
     Validation of the resulting records is left to the editor's own rules (app.build_document).
     """
+    file_format = getattr(rows, "format", None)
+    max_rows = FORMATS[file_format][1] if file_format in FORMATS else MAX_ROWS
     rows = [r for r in rows]
     while rows and not any(rows[0]):
         rows.pop(0)
@@ -141,8 +179,8 @@ def parse_rows(rows: list[list[str]], aliases: dict[str, list[str]], yes=(), no=
         raise SheetError("import.empty")
     columns = map_header(rows[0], aliases)
     data = rows[1:]
-    if sum(1 for r in data if any(r)) > MAX_ROWS:
-        raise SheetError("import.tooManyRows", max=MAX_ROWS)
+    if sum(1 for r in data if any(r)) > max_rows:
+        raise SheetError("import.tooManyRows", max=max_rows, format=file_format or "")
 
     def cell(row, key):
         index = columns.get(key)

@@ -138,7 +138,17 @@ qualifier, ignoring case and accents; filter by who changed it; open a record in
 **Spreadsheets** — export every record as XLSX (with reference sheets for link types, keys and languages)
 or CSV; import in two steps: a preview validates every row with the editor's rules and shows what will be
 new, changed, unchanged or wrong (with the row and the reason), and nothing is written until you confirm.
-Records not in the file are never deleted.
+Records not in the file are never deleted. Limits per imported file (also shown in the import dialog):
+
+| Format | Files accepted | Data rows (header not counted) | Size |
+|---|---|---|---|
+| Excel | `.xlsx` (first sheet) | up to 5 000 | up to 700 KB |
+| CSV or text | `.csv`, `.txt` | up to 5 000 | up to 700 KB |
+
+Whichever limit is reached first applies. 5 000 rows take about 200–300 KB in XLSX, so the row limit
+counts there; in CSV each row takes about 180–370 bytes, so 700 KB is usually reached first, at about
+2 000–3 900 rows. Use XLSX or split the file for larger batches. The size limit follows from the portal's
+1 MB request limit (the file travels base64-encoded); the values are set in `FORMATS` in `portal/sheet.py`.
 
 <p align="center">
   <img src="Documentation/images/portal-import.png" alt="Spreadsheet import preview" width="720">

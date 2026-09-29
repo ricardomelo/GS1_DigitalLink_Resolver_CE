@@ -69,7 +69,44 @@ check("missing required columns", error_code(lambda: sheet.parse_rows([["GTIN", 
 check("empty file", error_code(lambda: sheet.parse_rows([[""], []], PT)) == "import.empty")
 check("file too big", error_code(lambda: sheet.read_table("a.csv", b"x" * (sheet.MAX_FILE_BYTES + 1))) == "import.tooBig")
 check("unknown format", error_code(lambda: sheet.read_table("a.pdf", b"%PDF")) == "import.format")
+check("CSV cell above the csv module's field limit reported, not a crash",
+      error_code(lambda: sheet.read_table("a.csv", b"a;b\r\n" + b"x" * 200_000)) == "import.unreadable")
 check("broken XLSX", error_code(lambda: sheet.read_table("a.xlsx", b"PK\x03\x04broken")) == "import.unreadable")
+
+# Limits per format (sheet.FORMATS), as sent to the browser
+limits = {l["format"]: l for l in sheet.limits()}
+check("limits listed for every accepted format", set(limits) == {"xlsx", "csv"}
+      and limits["csv"]["extensions"] == [".csv", ".txt"] and all(l["maxRows"] > 0 and l["maxKB"] > 0 for l in limits.values()),
+      limits)
+check("formats detected by name and content", [sheet.detect_format(n, d) for n, d in
+      [("a.xlsx", b""), ("a.bin", b"PK\x03\x04"), ("a.CSV", b"x"), ("a.txt", b"x"), ("", b"x")]] == ["xlsx", "xlsx", "csv", "csv", "csv"])
+
+
+def exc_of(callable_):
+    try:
+        callable_()
+    except ValidationError as exc:
+        return exc
+    return None
+
+
+for fmt, name in (("csv", "a.csv"), ("xlsx", "a.xlsx")):
+    kb = limits[fmt]["maxKB"]
+    prefix = b"PK" if fmt == "xlsx" else b""
+    exc = exc_of(lambda: sheet.read_table(name, prefix + b"x" * (kb * 1024 - len(prefix))))
+    check(f"{fmt}: file at the size limit is read (not refused for size)", exc is None or exc.code != "import.tooBig", exc and exc.code)
+    exc = exc_of(lambda: sheet.read_table(name, prefix + b"x" * (kb * 1024 + 1)))
+    check(f"{fmt}: file above {kb} KB refused with the format's limit", exc and exc.code == "import.tooBig"
+          and exc.params == {"max": kb, "format": fmt}, exc and (exc.code, exc.params))
+    header = ["GTIN", "Descrição", "Tipo de link", "URL"]
+    body = [["7898357410015", "A", "gs1:pip", "https://x.org"]]
+    at_limit = sheet.Table([header] + body * limits[fmt]["maxRows"], fmt)
+    check(f"{fmt}: {limits[fmt]['maxRows']} data rows accepted", error_code(lambda: sheet.parse_rows(at_limit, PT)) is None)
+    over = sheet.Table([header] + body * (limits[fmt]["maxRows"] + 1), fmt)
+    exc = exc_of(lambda: sheet.parse_rows(over, PT))
+    check(f"{fmt}: one row more refused with the format's limit", exc and exc.code == "import.tooManyRows"
+          and exc.params == {"max": limits[fmt]["maxRows"], "format": fmt}, exc and (exc.code, exc.params))
+check("read_table reports the format of the rows", sheet.read_table("x.csv", b"a;b\r\n").format == "csv")
 
 # Export → XLSX → import round trip
 records = [{"key": "01", "value": "07898357410015", "qualifiers": [], "description": "Café torrado", "defaultLinkType": "gs1:pip",

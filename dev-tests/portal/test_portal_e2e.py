@@ -175,6 +175,20 @@ with sync_playwright() as p:
     book.save(edited)
 
     page.click("#records-import"); page.wait_for_timeout(200)
+    limits_text = page.inner_text("#import-limits")
+    check("import dialog shows the limits of every format", "Excel (.xlsx): up to 5,000 data rows and 700 KB" in limits_text
+          and "CSV or text (.csv, .txt): up to 5,000 data rows and 700 KB" in limits_text, limits_text)
+    page.select_option("#locale", "pt-BR"); page.wait_for_timeout(200)
+    limits_text = page.inner_text("#import-limits")
+    check("limits follow the language", "Excel (.xlsx): até 5.000 linhas de dados e 700 KB" in limits_text, limits_text)
+    page.select_option("#locale", "en-GB"); page.wait_for_timeout(200)
+    check("file picker offers .txt", ".txt" in page.get_attribute("#import-file", "accept"))
+    big = os.path.join(CONFIG, "big.csv")
+    with open(big, "wb") as fh:
+        fh.write(b"x" * (700 * 1024 + 1))
+    page.set_input_files("#import-file", big); page.wait_for_timeout(400)
+    check("CSV above its size limit refused in the browser", "larger than 700 KB, the limit for its format"
+          in page.inner_text("#import-status"), page.inner_text("#import-status"))
     page.set_input_files("#import-file", edited); page.wait_for_timeout(1200)
     summary = page.inner_text("#import-summary")
     check("import preview counts", summary == "New: 2 · Changed: 1 · Unchanged: 3 · With errors: 2", summary)

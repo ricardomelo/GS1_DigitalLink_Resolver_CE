@@ -294,8 +294,23 @@ record on the resolver entirely, as a save in the editor does; records that are 
 touched (import never deletes). The import runs in the background with a progress counter, records who
 made each change, and writes one audit line (`action=import created=… updated=… failed=…`).
 
-Limits: 700 KB per file and 5 000 rows (split larger files). The default link type is shared by all the
-records of a GTIN, so an import cannot change it while the GTIN has other records.
+**Limits per file** — set in `FORMATS` in `portal/sheet.py`, sent to the browser in `GET /portal/api/config`
+(`importLimits`), shown in the import dialog and checked by the browser before sending and again by the
+server:
+
+| Format | Extensions | Data rows (header not counted) | Size |
+|---|---|---|---|
+| `xlsx` | `.xlsx` (first sheet only) | 5 000 | 700 KB |
+| `csv` | `.csv`, `.txt` | 5 000 | 700 KB |
+
+The file is sent base64-encoded inside a JSON request, which the portal (`MAX_CONTENT_LENGTH`) and the proxy
+(`client_max_body_size 1m` on `/portal/`, and on the host nginx site written by the installer) limit to
+1 MB; 700 KB of file becomes about 935 KB. Measured with exported files: 5 000 rows take 200–290 KB in
+XLSX (compressed, repeated texts stored once) but 900–1 800 KB in CSV, so a CSV reaches 700 KB at about
+2 000–3 900 rows. Raising the size limit needs the three request limits raised together.
+
+The default link type is shared by all the records of a key, so an import cannot change it while the key
+has other records.
 
 ## Link checker
 

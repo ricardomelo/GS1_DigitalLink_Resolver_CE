@@ -181,7 +181,10 @@ const I18N = (() => {
       "sheet.languagesNote": "Outros códigos de idioma BCP 47 também são aceitos, por exemplo pt-BR, en-US ou vi. Use und para idioma indeterminado.",
       "import.title": "Importar planilha",
       "import.intro": "Use o formato da planilha exportada: uma linha por destino; as linhas com a mesma chave, o mesmo identificador e os mesmos qualificadores formam um cadastro, e a coluna Principal indica o destino que abre primeiro. Cadastros que já existem são substituídos pelo conteúdo da planilha; os que não estão nela não mudam. Nada é gravado antes da sua confirmação.",
-      "import.file": "Arquivo (Excel .xlsx ou CSV)",
+      "import.file": "Arquivo (Excel .xlsx, CSV ou texto .txt)",
+      "import.limits": "Limites por arquivo (arquivos maiores devem ser divididos em partes):",
+      "import.limit.xlsx": "Excel (.xlsx): até {maxRows} linhas de dados e {maxKB} KB",
+      "import.limit.csv": "CSV ou texto (.csv, .txt): até {maxRows} linhas de dados e {maxKB} KB",
       "import.checking": "Verificando a planilha…",
       "import.summary": "Novos: {create} · Alterados: {update} · Sem mudança: {unchanged} · Com erro: {error}",
       "import.col.rows": "Linhas",
@@ -199,12 +202,12 @@ const I18N = (() => {
       "import.running": "Importando… {done} de {total}",
       "import.done": "Importação concluída. Criados: {created} · Alterados: {updated} · Com falha: {failed}",
       "import.close": "Fechar",
-      "import.tooBig": "O arquivo passa de {max} KB. Divida a planilha em partes menores.",
-      "import.format": "Formato não reconhecido. Use uma planilha do Excel (.xlsx) ou um arquivo CSV.",
+      "import.tooBig": "O arquivo passa de {max} KB, o limite para esse formato. Divida a planilha em partes menores.",
+      "import.format": "Formato não reconhecido. Use uma planilha do Excel (.xlsx) ou um arquivo CSV ou texto (.csv, .txt).",
       "import.unreadable": "Não foi possível ler o arquivo. Salve-o de novo como .xlsx ou CSV e tente outra vez.",
       "import.empty": "A planilha está vazia.",
       "import.missingColumns": "Faltam colunas obrigatórias na primeira linha: {columns}. Use a planilha exportada como modelo.",
-      "import.tooManyRows": "A planilha tem mais de {max} linhas. Divida-a em partes menores.",
+      "import.tooManyRows": "A planilha tem mais de {max} linhas de dados, o limite para esse formato. Divida-a em partes menores.",
       "import.gtinScientific": "o identificador “{value}” foi convertido pelo Excel em notação científica. Formate a coluna Identificador como Texto e digite o código de novo.",
       "import.yesNo": "“{value}” não é um valor aceito nas colunas Principal ou Repassar parâmetros. Use sim ou não.",
       "import.descriptionConflict": "as linhas {rows} são do mesmo cadastro, mas têm descrições diferentes.",
@@ -695,7 +698,10 @@ const I18N = (() => {
       "sheet.languagesNote": "Other BCP 47 language codes are accepted too, e.g. pt-BR, en-US or vi. Use und for an undetermined language.",
       "import.title": "Import spreadsheet",
       "import.intro": "Use the layout of the exported spreadsheet: one row per target; rows with the same key, identifier and qualifiers form one record, and the Default column marks the target that opens first. Existing records are replaced by the spreadsheet's content; records not in it do not change. Nothing is saved before you confirm.",
-      "import.file": "File (Excel .xlsx or CSV)",
+      "import.file": "File (Excel .xlsx, CSV or .txt text)",
+      "import.limits": "Limits per file (split larger files into parts):",
+      "import.limit.xlsx": "Excel (.xlsx): up to {maxRows} data rows and {maxKB} KB",
+      "import.limit.csv": "CSV or text (.csv, .txt): up to {maxRows} data rows and {maxKB} KB",
       "import.checking": "Checking the spreadsheet…",
       "import.summary": "New: {create} · Changed: {update} · Unchanged: {unchanged} · With errors: {error}",
       "import.col.rows": "Rows",
@@ -713,12 +719,12 @@ const I18N = (() => {
       "import.running": "Importing… {done} of {total}",
       "import.done": "Import finished. Created: {created} · Updated: {updated} · Failed: {failed}",
       "import.close": "Close",
-      "import.tooBig": "The file is larger than {max} KB. Split the spreadsheet into smaller parts.",
-      "import.format": "Format not recognised. Use an Excel spreadsheet (.xlsx) or a CSV file.",
+      "import.tooBig": "The file is larger than {max} KB, the limit for its format. Split the spreadsheet into smaller parts.",
+      "import.format": "Format not recognised. Use an Excel spreadsheet (.xlsx) or a CSV or text file (.csv, .txt).",
       "import.unreadable": "The file could not be read. Save it again as .xlsx or CSV and retry.",
       "import.empty": "The spreadsheet is empty.",
       "import.missingColumns": "Required columns are missing from the first row: {columns}. Use the exported spreadsheet as a template.",
-      "import.tooManyRows": "The spreadsheet has more than {max} rows. Split it into smaller parts.",
+      "import.tooManyRows": "The spreadsheet has more than {max} data rows, the limit for its format. Split it into smaller parts.",
       "import.gtinScientific": "Excel turned the identifier “{value}” into scientific notation. Format the Identifier column as Text and type the code again.",
       "import.yesNo": "“{value}” is not accepted in the Default or Forward query string columns. Use yes or no.",
       "import.descriptionConflict": "rows {rows} belong to the same record but have different descriptions.",
@@ -1134,6 +1140,10 @@ const I18N = (() => {
      on every render, so a message stays correct after the language changes. */
   function resolveParams(params) {
     const out = { ...params };
+    // Limits are written with the locale's digit grouping: 5.000 (pt-BR), 5,000 (en-GB)
+    for (const name of ["max", "maxRows", "maxKB"]) {
+      if (typeof out[name] === "number") out[name] = new Intl.NumberFormat(locale).format(out[name]);
+    }
     if (typeof out.linkType === "string") out.linkType = linkTypeOption(out.linkType);
     if (Array.isArray(out.entries)) {
       out.entries = out.entries.map(e => t("entry." + e.kind, {

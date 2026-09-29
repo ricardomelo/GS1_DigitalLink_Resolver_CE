@@ -135,6 +135,8 @@ a { color: var(--link); }
 .link-warn { display: inline-block; margin-left: .4rem; padding: .05rem .45rem; border-radius: 999px;
   background: #FFF3DC; color: #9A5B00; font-size: .75rem; font-weight: 600; white-space: nowrap; cursor: help; }
 .import-check { margin-top: .75rem; font-size: .875rem; }
+.import-limits-title { margin: .5rem 0 0; color: var(--muted); font-size: .875rem; }
+.import-limits { margin: .15rem 0 0; padding-left: 1.25rem; color: var(--muted); font-size: .875rem; }
 .import-warnings { margin: 0 0 1rem; padding-left: 1.2rem; color: #9A5B00; font-size: .875rem; max-height: 8rem; overflow-y: auto; }
 .records-sheet .btn { min-height: 2.25rem; padding: .35rem 1rem; font-size: .875rem; }
 

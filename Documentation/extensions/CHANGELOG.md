@@ -2,6 +2,20 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: governance
+- Roles administrator, editor and reader, checked on every call; interface adapted to the role (readers
+  see records read-only).
+- GS1 Company Prefixes per user: records, lists, exports, imports, labels, history and link checks limited
+  to the user's prefixes.
+- User administration screen: create users with a temporary password (changed at the first sign-in),
+  change role and prefixes, reset passwords, disable, enable, remove; last administrator and self-lockout
+  protected. `create_user.py` accepts `--role` and `--prefixes`.
+- History of every record with the content of each version and *Restore this version*.
+- Audit trail (`journal.jsonl`) with filters by user, period and identifier, and CSV export.
+- Existing users (file without roles) become administrators.
+- Tests: `dev-tests/portal/test_governance.py` (35 checks); history, user administration, reader,
+  temporary password and audit trail in the portal end-to-end test.
+
 ### Documentation
 - New top-level README for the fork: the original project, what the fork adds, architecture (Mermaid),
   the portal with screenshots, GS1 Digital Link coverage, API reference (resolver, data entry, portal),

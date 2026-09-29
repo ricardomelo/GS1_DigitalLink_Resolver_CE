@@ -391,6 +391,24 @@ def split_anchor(anchor: str) -> tuple[str, str] | None:
     return None
 
 
+def company_part(anchor: str) -> str:
+    """The part of a key value where the GS1 Company Prefix starts: after the indicator digit of a
+    GTIN-14 or ITIP, the extension digit of an SSCC and the filler zero of a GRAI."""
+    key = split_anchor(anchor)
+    if not key:
+        return ""
+    ai, value = key
+    return value[1:] if ai in ("01", "8006", "00", "8003") else value
+
+
+def within_prefixes(anchor: str, prefixes) -> bool:
+    """True when no prefixes are set or the key belongs to one of them."""
+    if not prefixes:
+        return True
+    part = company_part(anchor)
+    return any(part.startswith(p) for p in prefixes)
+
+
 def digital_link(base_url: str, anchor: str, pairs: list[tuple[str, str]] = ()) -> str:
     return f"{base_url}{anchor}{qualifier_path(list(pairs))}"
 

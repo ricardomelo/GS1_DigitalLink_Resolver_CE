@@ -290,6 +290,50 @@ with sync_playwright() as p:
     check("qualified record opens with its qualifiers", page.input_value("#q-22") == "V1" and page.input_value("#q-10") == "L1"
           and page.input_value("#q-21") == "S1" and page.input_value("#description") == "Variant batch serial")
 
+    # Governance: history of a record, user administration, reader, temporary password, audit trail
+    page.goto(BASE); page.wait_for_timeout(700)
+    page.select_option("#key-type", "00"); page.fill("#key-value", "095060001343520000"); page.wait_for_timeout(200)
+    page.click("#open"); page.wait_for_timeout(700)
+    page.fill("#description", "Pallet 1 (second version)"); page.click("#save"); page.wait_for_timeout(800)
+    page.click("#history-toggle"); page.wait_for_timeout(700)
+    items = page.query_selector_all("#history-list li")
+    check("history panel lists the versions", len(items) == 2 and "Record changed" in items[0].inner_text()
+          and "Record created" in items[1].inner_text(), [i.inner_text() for i in items])
+    items[1].query_selector("button").click(); page.wait_for_timeout(300)
+    check("restore brings the earlier version into the form", page.input_value("#description") == "Pallet 1"
+          and "Check it and click Save links" in page.inner_text("#status"), page.inner_text("#status"))
+
+    page.click("#user-button"); page.click("#menu-users"); page.wait_for_timeout(700)
+    check("administrator: users view", page.is_visible("#users-view") and "tester" in page.inner_text("#users-body"))
+    page.fill("#new-user-name", "reader1"); page.select_option("#new-user-role", "reader")
+    page.fill("#new-user-prefixes", "9506000"); page.click("#users-create button[type=submit]"); page.wait_for_timeout(700)
+    temp = page.inner_text("#temp-password-value")
+    check("new user: temporary password shown once", len(temp) == 16 and "reader1" in page.inner_text("#users-body"), temp)
+
+    reader_ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900})
+    reader = reader_ctx.new_page()
+    reader.goto(BASE); reader.fill("#username", "reader1"); reader.fill("#password", temp)
+    reader.click("#login-submit"); reader.wait_for_timeout(1000)
+    check("temporary password: the new-password dialog opens", reader.is_visible("#options-dialog")
+          and reader.is_visible("#must-change-note"))
+    reader.fill("#current-password", temp); reader.fill("#new-password", "reader1-own-password")
+    reader.fill("#confirm-password", "reader1-own-password"); reader.click("#password-save"); reader.wait_for_timeout(700)
+    reader.click("#password-cancel"); reader.wait_for_timeout(200)
+    reader.select_option("#key-type", "00"); reader.fill("#key-value", "095060001343520000"); reader.wait_for_timeout(200)
+    reader.click("#open"); reader.wait_for_timeout(800)
+    check("reader: record opens read-only", reader.input_value("#description") == "Pallet 1 (second version)"
+          and reader.is_disabled("#description") and not reader.is_visible("#save") and reader.is_visible("#read-only-note"))
+    check("reader: no administration menu", not reader.is_visible("#menu-users"))
+    reader.goto(BASE + "#records"); reader.wait_for_timeout(800)
+    rows = reader.inner_text("#records-body")
+    check("reader: only records of the prefix 9506000", "095060001343520000" in rows and "07898357410015" not in rows, rows)
+    reader_ctx.close()
+
+    page.click("#user-button"); page.click("#menu-audit"); page.wait_for_timeout(900)
+    audit_text = page.inner_text("#audit-body")
+    check("audit trail view", "User created" in audit_text and "reader1" in audit_text and "Password changed" in audit_text,
+          audit_text[:300])
+
     page.hover("#user-button"); page.wait_for_timeout(200)
     check("user menu on hover", page.is_visible("#menu-logout"))
     check("logo and menu link to the resolver home page",

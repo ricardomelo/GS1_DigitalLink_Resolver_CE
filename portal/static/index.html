@@ -39,6 +39,14 @@
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 5h2v2H4V5Zm4 0h12v2H8V5Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Z"/></svg>
                 <span data-i18n="menu.records"></span>
               </a>
+              <a class="menu-item needs-admin" role="menuitem" href="#users" id="menu-users">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-7 1.7-7 4.5V20h14v-2.5C16 14.7 12.3 13 9 13Zm7.5-2a3.5 3.5 0 1 0-1-6.9 5.9 5.9 0 0 1 0 6.8c.3.1.6.1 1 .1Zm1.4 2.2A5.6 5.6 0 0 1 20 17.5V20h2v-2.5c0-2-1.8-3.5-4.1-4.3Z"/></svg>
+                <span data-i18n="menu.users"></span>
+              </a>
+              <a class="menu-item needs-admin" role="menuitem" href="#audit" id="menu-audit">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 2.1 5l-1.4 1.4A9 9 0 1 0 13 3Zm-1 5v5l4.3 2.5.7-1.2-3.5-2.1V8H12Z"/></svg>
+                <span data-i18n="menu.audit"></span>
+              </a>
               <button type="button" class="menu-item" role="menuitem" id="menu-options">
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19.4 13a7.7 7.7 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.5 7.5 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.5 7.5 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.7 7.7 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 21h4l.4-2.9c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5L19.4 13ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z" transform="translate(-1 0)"/></svg>
                 <span data-i18n="menu.options"></span>
@@ -107,17 +115,27 @@
 
           <ol id="links" class="links"></ol>
           <div class="links-actions">
-            <button type="button" id="add" class="btn btn-ghost" data-i18n="links.add"></button>
-            <button type="button" id="check-links" class="btn btn-ghost" data-i18n="links.check"></button>
+            <button type="button" id="add" class="btn btn-ghost needs-editor" data-i18n="links.add"></button>
+            <button type="button" id="check-links" class="btn btn-ghost needs-editor" data-i18n="links.check"></button>
           </div>
           <p class="field-msg" id="default-msg" aria-live="polite"></p>
           <p class="field-msg" id="links-check-msg" aria-live="polite"></p>
         </section>
 
         <div class="actions">
-          <button type="submit" id="save" class="btn btn-primary" data-i18n="save.button"></button>
-          <button type="button" id="delete" class="btn btn-danger" hidden data-i18n="delete.button"></button>
+          <button type="submit" id="save" class="btn btn-primary needs-editor" data-i18n="save.button"></button>
+          <button type="button" id="delete" class="btn btn-danger needs-editor" hidden data-i18n="delete.button"></button>
+          <button type="button" id="history-toggle" class="btn btn-ghost" hidden aria-expanded="false"
+                  aria-controls="history-panel" data-i18n="history.button"></button>
         </div>
+        <p class="field-msg read-only-note" id="read-only-note" hidden data-i18n="access.readOnly"></p>
+
+        <!-- Versions of this record (journal), newest first; an editor can bring one back into the form -->
+        <section class="history-panel" id="history-panel" hidden aria-labelledby="history-title">
+          <h3 id="history-title" data-i18n="history.title"></h3>
+          <p class="field-msg" id="history-msg" aria-live="polite"></p>
+          <ol class="history-list" id="history-list"></ol>
+        </section>
       </fieldset>
 
       <div id="status" class="status" role="status" aria-live="polite" hidden></div>
@@ -168,8 +186,8 @@
       <div class="records-sheet">
         <button type="button" class="btn btn-ghost" id="records-export-xlsx" data-i18n="records.exportXlsx"></button>
         <button type="button" class="btn btn-ghost" id="records-export-csv" data-i18n="records.exportCsv"></button>
-        <button type="button" class="btn btn-secondary" id="records-import" data-i18n="records.import"></button>
-        <button type="button" class="btn btn-ghost" id="records-check" data-i18n="records.check"></button>
+        <button type="button" class="btn btn-secondary needs-editor" id="records-import" data-i18n="records.import"></button>
+        <button type="button" class="btn btn-ghost needs-editor" id="records-check" data-i18n="records.check"></button>
       </div>
       <p class="field-msg" id="records-count" aria-live="polite"></p>
       <div class="records-check">
@@ -203,6 +221,7 @@
       <button type="button" class="dialog-close" id="options-close" data-i18n-attr="aria-label:options.close">×</button>
     </div>
     <form class="dialog-body" id="password-form" novalidate>
+      <div class="status is-error" id="must-change-note" hidden data-i18n="password.mustChangeNote"></div>
       <h3 data-i18n="password.title"></h3>
       <input type="text" name="username" id="password-username" autocomplete="username" hidden>
       <label for="current-password" data-i18n="password.current"></label>
@@ -219,6 +238,93 @@
       </div>
     </form>
   </dialog>
+
+  <!-- User administration (administrators) -->
+  <main class="records-main" id="users-view" hidden>
+    <section class="sheet">
+      <h2 data-i18n="users.createTitle"></h2>
+      <form class="users-create" id="users-create" novalidate>
+        <div>
+          <label for="new-user-name" data-i18n="users.name"></label>
+          <input id="new-user-name" autocomplete="off" maxlength="64">
+        </div>
+        <div>
+          <label for="new-user-role" data-i18n="users.role"></label>
+          <select id="new-user-role"></select>
+        </div>
+        <div class="users-prefixes">
+          <label for="new-user-prefixes" data-i18n="users.prefixes"></label>
+          <input id="new-user-prefixes" autocomplete="off" data-i18n-attr="placeholder:users.prefixesPlaceholder">
+        </div>
+        <button type="submit" class="btn btn-primary" data-i18n="users.create"></button>
+      </form>
+      <p class="field-msg" data-i18n="users.prefixesHint"></p>
+      <div class="status" id="users-status" role="status" aria-live="polite" hidden></div>
+      <div class="temp-password" id="temp-password" hidden>
+        <p id="temp-password-text"></p>
+        <code class="code" id="temp-password-value"></code>
+        <button type="button" class="btn btn-ghost" id="temp-password-copy" data-i18n="users.copy"></button>
+      </div>
+
+      <h2 data-i18n="users.listTitle"></h2>
+      <div class="table-wrap">
+        <table class="records-table users-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="users.name"></th>
+              <th scope="col" data-i18n="users.role"></th>
+              <th scope="col" data-i18n="users.prefixes"></th>
+              <th scope="col" data-i18n="users.state"></th>
+              <th scope="col" data-i18n="users.lastLogin"></th>
+              <th scope="col" data-i18n="users.actions"></th>
+            </tr>
+          </thead>
+          <tbody id="users-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Audit trail (administrators) -->
+  <main class="records-main" id="audit-view" hidden>
+    <section class="sheet">
+      <form class="audit-filters" id="audit-filters" novalidate>
+        <div>
+          <label for="audit-user" data-i18n="audit.user"></label>
+          <select id="audit-user"></select>
+        </div>
+        <div>
+          <label for="audit-from" data-i18n="audit.from"></label>
+          <input type="date" id="audit-from">
+        </div>
+        <div>
+          <label for="audit-to" data-i18n="audit.to"></label>
+          <input type="date" id="audit-to">
+        </div>
+        <div class="audit-text">
+          <label for="audit-q" data-i18n="audit.text"></label>
+          <input id="audit-q" autocomplete="off" data-i18n-attr="placeholder:audit.textPlaceholder">
+        </div>
+        <button type="submit" class="btn btn-primary" data-i18n="audit.filter"></button>
+        <button type="button" class="btn btn-ghost" id="audit-csv" data-i18n="audit.csv"></button>
+      </form>
+      <p class="field-msg" id="audit-count" aria-live="polite"></p>
+      <div class="table-wrap">
+        <table class="records-table audit-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="audit.when"></th>
+              <th scope="col" data-i18n="audit.user"></th>
+              <th scope="col" data-i18n="audit.action"></th>
+              <th scope="col" data-i18n="audit.record"></th>
+              <th scope="col" data-i18n="audit.detail"></th>
+            </tr>
+          </thead>
+          <tbody id="audit-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
 
   <dialog id="import-dialog" class="import-dialog" aria-labelledby="import-title">
     <div class="dialog-head">

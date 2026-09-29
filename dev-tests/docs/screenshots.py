@@ -85,7 +85,7 @@ def save(page, name, clip=None, full=False):
 os.makedirs(OUT, exist_ok=True)
 with sync_playwright() as p:
     browser = p.chromium.launch()
-    ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900})
+    ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 1100})
     page = ctx.new_page()
     page.goto(BASE); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(800)
@@ -115,6 +115,14 @@ with sync_playwright() as p:
     page.click("#records-import"); page.wait_for_timeout(200)
     page.set_input_files("#import-file", upload); page.wait_for_timeout(1500)
     save(page, "portal-import.png")
+    page.click("#import-cancel")
+    # User administration
+    users.create("ana", "ana-temporary-pw1", "editor", ["9506000"], must_change=False)
+    users.create("rui", "rui-temporary-pw1", "reader", ["7891234"])
+    page.goto(BASE + "#users"); page.wait_for_timeout(900)
+    page.fill("#new-user-name", "joana"); page.select_option("#new-user-role", "editor"); page.fill("#new-user-prefixes", "7895678")
+    page.click("#users-create button[type=submit]"); page.wait_for_timeout(800)
+    save(page, "portal-users.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1100})
     browser.close()
 
 # Home page, through the real nginx configuration (as in dev-tests/home/test_home.py)

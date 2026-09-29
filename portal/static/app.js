@@ -415,6 +415,10 @@ async function openRecord() {
 
     setOpenMessage(record.exists ? "open.found" : "open.new", {}, record.otherEntries);
     $("#delete").hidden = !record.exists;
+    $("#history-toggle").hidden = false;
+    $("#history-panel").hidden = true;
+    $("#history-toggle").setAttribute("aria-expanded", "false");
+    lockForReader();
     setPublished(record.exists);
     $("#editor").disabled = false;
     $("#description").focus();
@@ -436,18 +440,279 @@ const records = { all: [], loaded: false };
 
 function isRecordsView() { return location.hash === "#records"; }
 
-/* Shows the editor or the record list, following the address (#records), so the browser's
-   back button and bookmarks work. */
+const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit" };
+
+/* Shows the editor, the record list, the user administration or the audit trail, following the
+   address (#records, #users, #audit), so the browser's back button and bookmarks work. */
 function applyView() {
-  const list = isRecordsView();
-  $("#editor-view").hidden = list;
-  $("#records-view").hidden = !list;
-  I18N.set($("#hero-title"), list ? "records.title" : "intro.title");
-  I18N.set($("#hero-lede"), list ? "records.lede" : "intro.lede");
+  let view = VIEWS[location.hash] || "editor";
+  if ((view === "users" || view === "audit") && CONFIG && CONFIG.role !== "admin") view = "editor";
+  $("#editor-view").hidden = view !== "editor";
+  $("#records-view").hidden = view !== "records";
+  $("#users-view").hidden = view !== "users";
+  $("#audit-view").hidden = view !== "audit";
+  const titles = { editor: "intro", records: "records", users: "users", audit: "audit" };
+  I18N.set($("#hero-title"), `${titles[view]}.title`);
+  I18N.set($("#hero-lede"), `${titles[view]}.lede`);
   const link = $("#hero-link");
-  link.href = list ? "#" : "#records";
-  I18N.set(link, list ? "records.back" : "records.link");
-  if (list) loadRecords();
+  link.href = view === "editor" ? "#records" : "#";
+  I18N.set(link, view === "editor" ? "records.link" : "records.back");
+  if (view === "records") loadRecords();
+  if (view === "users" && CONFIG) loadUsers();
+  if (view === "audit" && CONFIG) loadAudit();
+}
+
+/* ------------------------------------------------------------------ roles */
+const isReader = () => CONFIG?.role === "reader";
+
+/* Readers see records but cannot change them: fields are read-only and the write buttons hidden
+   (body[data-role] in the style sheet). The server refuses writes anyway. */
+function lockForReader() {
+  if (!isReader()) return;
+  document.querySelectorAll("#description, #links input, #links select, #links button")
+    .forEach(el => { el.disabled = true; });
+  $("#read-only-note").hidden = false;
+}
+
+/* ------------------------------------------------------------------ history of a record */
+function formatWhen(iso) {
+  return iso ? new Intl.DateTimeFormat(I18N.locale, { dateStyle: "short", timeStyle: "short" }).format(new Date(iso)) : "—";
+}
+
+async function toggleHistory() {
+  const panel = $("#history-panel");
+  const button = $("#history-toggle");
+  const open = panel.hidden;
+  panel.hidden = !open;
+  button.setAttribute("aria-expanded", String(open));
+  if (open) await loadHistory();
+}
+
+async function loadHistory() {
+  const g = readKey(), q = readQualifiers();
+  const list = $("#history-list");
+  list.replaceChildren();
+  I18N.set($("#history-msg"), "history.loading");
+  try {
+    const { versions } = await api("GET", "history?" + query(g, q));
+    I18N.set($("#history-msg"), versions.length ? null : "history.none");
+    list.replaceChildren(...versions.map((v, i) => {
+      const li = document.createElement("li");
+      const when = document.createElement("span"); when.className = "when"; when.textContent = formatWhen(v.at);
+      const what = document.createElement("span"); I18N.set(what, "audit.action." + v.action);
+      const who = document.createElement("span"); who.className = "who"; who.textContent = v.user;
+      li.append(when, what, who);
+      if (v.doc && v.action !== "delete" && i > 0 && !isReader()) {
+        const restore = document.createElement("button");
+        restore.type = "button"; restore.className = "btn btn-ghost";
+        I18N.set(restore, "history.restore");
+        restore.addEventListener("click", () => restoreVersion(v));
+        li.append(restore);
+      } else if (v.doc && v.action === "delete" && !isReader()) {
+        const restore = document.createElement("button");
+        restore.type = "button"; restore.className = "btn btn-ghost";
+        I18N.set(restore, "history.restore");
+        restore.addEventListener("click", () => restoreVersion(v));
+        li.append(restore);
+      }
+      return li;
+    }));
+  } catch (e) {
+    I18N.set($("#history-msg"), e.code, e.params);
+  }
+}
+
+/* Brings a previous version into the form; nothing is saved until "Save links". */
+function restoreVersion(version) {
+  const doc = version.doc;
+  $("#description").value = doc.itemDescription || "";
+  $("#links").replaceChildren();
+  const links = [...(doc.links || [])].sort((a, b) => (a.linktype !== doc.defaultLinktype) - (b.linktype !== doc.defaultLinktype));
+  links.forEach(l => addRow({ linkType: l.linktype, url: l.href, title: l.title || "", hreflang: l.hreflang || ["pt"],
+                              context: l.context || [], forwardQueryString: l.fwqs !== false }));
+  refreshDefault();
+  showStatus("ok", "history.restored", { when: formatWhen(version.at), user: version.user });
+  $("#description").focus();
+}
+
+/* ------------------------------------------------------------------ user administration */
+function prefixesFrom(text) {
+  return String(text || "").split(/[\s,;]+/).map(p => p.trim()).filter(Boolean);
+}
+
+function usersStatus(kind, key, params) {
+  const box = $("#users-status");
+  box.hidden = !key;
+  box.className = "status" + (kind ? " is-" + kind : "");
+  if (key) I18N.set(box, key, params);
+}
+
+function showTemporaryPassword(key, user, password) {
+  I18N.set($("#temp-password-text"), key, { user });
+  $("#temp-password-value").textContent = password;
+  $("#temp-password").hidden = false;
+}
+
+function roleSelect(value) {
+  const select = document.createElement("select");
+  ["reader", "editor", "admin"].forEach(role => {
+    const option = new Option("", role);
+    option.dataset.i18n = "role." + role;
+    option.textContent = t("role." + role);
+    select.add(option);
+  });
+  select.value = value;
+  return select;
+}
+
+async function loadUsers() {
+  const roleBox = $("#new-user-role");
+  if (!roleBox.options.length) {
+    const template = roleSelect("editor");
+    roleBox.replaceChildren(...template.options);
+    roleBox.value = "editor";
+  }
+  try {
+    const { users } = await api("GET", "users");
+    $("#users-body").replaceChildren(...users.map(userRow));
+  } catch (e) {
+    usersStatus("error", e.code, e.params);
+  }
+}
+
+function userRow(u) {
+  const tr = document.createElement("tr");
+  if (u.disabled) tr.className = "is-disabled";
+  const cell = (label, content) => {
+    const td = document.createElement("td");
+    td.dataset.label = t(label);
+    if (content instanceof Node) td.append(content); else td.textContent = content;
+    tr.append(td);
+    return td;
+  };
+  cell("users.name", u.username + (u.username === CONFIG.user ? " " + t("users.you") : ""));
+  const role = roleSelect(u.role);
+  role.setAttribute("aria-label", t("users.role"));
+  cell("users.role", role);
+  const prefixes = document.createElement("input");
+  prefixes.value = u.prefixes.join(", ");
+  prefixes.setAttribute("aria-label", t("users.prefixes"));
+  prefixes.placeholder = t("users.allPrefixes");
+  cell("users.prefixes", prefixes);
+  cell("users.state", t(u.disabled ? "users.disabled" : u.mustChange ? "users.mustChange" : "users.active"));
+  cell("users.lastLogin", formatWhen(u.lastLogin));
+  const actions = document.createElement("div");
+  actions.className = "user-actions";
+  const button = (key, handler, cls = "btn-ghost") => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn " + cls;
+    I18N.set(b, key);
+    b.addEventListener("click", handler);
+    actions.append(b);
+  };
+  button("users.save", () => saveUser(u.username, { role: role.value, prefixes: prefixesFrom(prefixes.value) }), "btn-secondary");
+  if (u.username !== CONFIG.user) {                // your own password: user menu → Options
+    button("users.resetPassword", () => resetUser(u.username));
+    button(u.disabled ? "users.enable" : "users.disable", () => saveUser(u.username, { disabled: !u.disabled }));
+    button("users.remove", () => removeUser(u.username), "btn-danger-ghost");
+  }
+  cell("users.actions", actions);
+  return tr;
+}
+
+async function createUser(event) {
+  event.preventDefault();
+  $("#temp-password").hidden = true;
+  try {
+    const result = await api("POST", "users", {
+      username: $("#new-user-name").value.trim(), role: $("#new-user-role").value,
+      prefixes: prefixesFrom($("#new-user-prefixes").value),
+    });
+    usersStatus("ok", "users.created", result.params);
+    showTemporaryPassword("users.tempPasswordNew", result.params.user, result.password);
+    $("#users-create").reset();
+    $("#new-user-role").value = "editor";
+    loadUsers();
+  } catch (e) {
+    usersStatus("error", e.code, e.params);
+  }
+}
+
+async function saveUser(username, changes) {
+  try {
+    const result = await api("PUT", "users/" + encodeURIComponent(username), changes);
+    usersStatus("ok", result.code, result.params);
+    loadUsers();
+  } catch (e) {
+    usersStatus("error", e.code, e.params);
+  }
+}
+
+async function resetUser(username) {
+  if (!confirm(t("users.confirmReset", { user: username }))) return;
+  try {
+    const result = await api("POST", `users/${encodeURIComponent(username)}/reset`, {});
+    usersStatus("ok", result.code, result.params);
+    showTemporaryPassword("users.tempPasswordReset", username, result.password);
+    loadUsers();
+  } catch (e) {
+    usersStatus("error", e.code, e.params);
+  }
+}
+
+async function removeUser(username) {
+  if (!confirm(t("users.confirmRemove", { user: username }))) return;
+  try {
+    const result = await api("DELETE", "users/" + encodeURIComponent(username));
+    usersStatus("ok", result.code, result.params);
+    loadUsers();
+  } catch (e) {
+    usersStatus("error", e.code, e.params);
+  }
+}
+
+/* ------------------------------------------------------------------ audit trail */
+function auditQuery() {
+  const params = new URLSearchParams();
+  [["user", "#audit-user"], ["from", "#audit-from"], ["to", "#audit-to"], ["q", "#audit-q"]]
+    .forEach(([name, sel]) => { if ($(sel).value) params.set(name, $(sel).value); });
+  return params.toString();
+}
+
+async function loadAudit(event) {
+  if (event) event.preventDefault();
+  const select = $("#audit-user");
+  if (!select.options.length) {
+    const any = new Option("", ""); any.dataset.i18n = "records.anyone"; any.textContent = t("records.anyone");
+    select.add(any);
+    try {
+      const { users } = await api("GET", "users");
+      users.forEach(u => select.add(new Option(u.username, u.username)));
+    } catch { /* the filter still works by typing */ }
+  }
+  I18N.set($("#audit-count"), "records.loading");
+  try {
+    const { events } = await api("GET", "audit?" + auditQuery());
+    $("#audit-body").replaceChildren(...events.map(e => {
+      const tr = document.createElement("tr");
+      const values = [formatWhen(e.at), e.user, t("audit.action." + e.action),
+                      e.anchor ? e.anchor + (e.qpath || "") : "", e.detail || ""];
+      values.forEach((v, i) => {
+        const td = document.createElement("td");
+        if (i === 3) td.className = "code";
+        td.textContent = v;
+        tr.append(td);
+      });
+      return tr;
+    }));
+    I18N.set($("#audit-count"), "audit.count", { count: events.length });
+  } catch (e) {
+    I18N.set($("#audit-count"), e.code, e.params);
+  }
+}
+
+function downloadAudit() {
+  location.href = BASE + "api/audit.csv?" + auditQuery();
 }
 
 async function loadRecords() {
@@ -1114,7 +1379,7 @@ function setupUserMenu() {
   });
   document.addEventListener("click", e => { if (!menu.contains(e.target)) close(false); });
   $("#menu-options").addEventListener("click", () => { close(false); openOptions(); });
-  $("#menu-records").addEventListener("click", () => close(false));   // the link itself changes the view
+  ["#menu-records", "#menu-users", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", () => close(false)));
   $("#menu-logout").addEventListener("click", signOut);
 }
 
@@ -1124,9 +1389,10 @@ async function signOut() {
 }
 
 /* ------------------------------------------------------------------ options: change password */
-function openOptions() {
+function openOptions(mustChange = false) {
   const form = $("#password-form");
   form.reset();
+  $("#must-change-note").hidden = !mustChange;
   $("#password-status").hidden = true;
   I18N.set($("#password-cancel"), "options.cancel");
   $("#options-dialog").showModal();
@@ -1153,6 +1419,10 @@ async function changePassword(event) {
     const result = await api("POST", "password", { currentPassword: current, newPassword: next });
     $("#password-form").reset();
     passwordStatus("ok", result.code);
+    if (CONFIG?.mustChange) {                   // temporary password replaced: the portal is now usable
+      CONFIG.mustChange = false;
+      $("#must-change-note").hidden = true;
+    }
     I18N.set($("#password-cancel"), "options.close");
   } catch (e) {
     passwordStatus("error", e.code, e.params);
@@ -1208,6 +1478,11 @@ async function init() {
   });
 
   $("#records-search").addEventListener("input", renderRecords);
+  $("#history-toggle").addEventListener("click", toggleHistory);
+  $("#users-create").addEventListener("submit", createUser);
+  $("#temp-password-copy").addEventListener("click", () => navigator.clipboard?.writeText($("#temp-password-value").textContent));
+  $("#audit-filters").addEventListener("submit", loadAudit);
+  $("#audit-csv").addEventListener("click", downloadAudit);
   $("#records-problems").addEventListener("change", renderRecords);
   $("#records-check").addEventListener("click", checkAllLinks);
   $("#check-links").addEventListener("click", checkLinks);
@@ -1236,8 +1511,11 @@ async function init() {
     showStatus("error", "error.config", { detail: t(e.code, e.params) });
     return;
   }
+  document.body.dataset.role = CONFIG.role;
   fillKeyTypes();
   onKeyTypeChange();
+  applyView();                                   // administrator views need the role
+  if (CONFIG.mustChange) openOptions(true);
   $("#user-name").textContent = CONFIG.user;
   $("#password-username").value = CONFIG.user;   // lets password managers pair the new password with the account
   onIdentityChange();

@@ -11,12 +11,16 @@ It sends a simple JSON document (primary key, key qualifiers, description, link 
 Responses carry message *codes* (e.g. "save.updated", "gtin.checkDigit") instead of sentences;
 the front end renders them in the user's language from static/i18n.js.
 """
+import base64
+import csv
+import io
 import json
 import logging
 import os
 import secrets
 import threading
 import time
+import uuid
 from datetime import timedelta
 from functools import wraps
 
@@ -24,9 +28,7 @@ import requests
 from flask import Flask, Response, g, jsonify, redirect, request, send_from_directory, session
 
 import gs1
-import base64
-import uuid
-
+import journal
 import label
 import linkcheck
 import meta
@@ -187,8 +189,14 @@ def current_user() -> str | None:
     return None
 
 
+# Calls allowed while the account must set a new password (temporary password)
+MUST_CHANGE_ALLOWED = ("/portal/api/config", "/portal/api/password", "/portal/api/logout")
+
+
 def require_login(view):
-    """Session login. API calls get 401 with a message code; pages are redirected to the login page."""
+    """Session login. API calls get 401 with a message code; pages are redirected to the login page.
+    Sets g.user, g.role and g.prefixes from the account, re-read on every request, so role and prefix
+    changes apply at once."""
     @wraps(view)
     def wrapper(*args, **kwargs):
         username = current_user()
@@ -196,9 +204,49 @@ def require_login(view):
             if request.path.startswith("/portal/api/"):
                 return message("auth.required", 401)
             return redirect("/portal/login?reason=expired" if session.get("was_logged_in") else "/portal/login")
-        g.user = username
+        account = users.get(username) or {}
+        g.user, g.role, g.prefixes = username, account.get("role", "reader"), account.get("prefixes", [])
+        g.must_change = bool(account.get("mustChange"))
+        if g.must_change and request.path.startswith("/portal/api/") and request.path not in MUST_CHANGE_ALLOWED:
+            return message("password.mustChange", 403)
         return view(*args, **kwargs)
     return wrapper
+
+
+def role_required(role: str):
+    """Allows the view for this role and the ones above it (reader < editor < admin)."""
+    minimum = users.ROLES.index(role)
+
+    def decorator(view):
+        @wraps(view)
+        def wrapper(*args, **kwargs):
+            if users.ROLES.index(g.role) < minimum:
+                return message("access.role", 403, params={"role": role})
+            return view(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+class AccessDenied(Exception):
+    """The record belongs to a GS1 Company Prefix outside the user's."""
+
+
+def allowed(anchor: str) -> bool:
+    return gs1.within_prefixes(anchor, getattr(g, "prefixes", None))
+
+
+def check_access(anchor: str) -> None:
+    if not allowed(anchor):
+        raise AccessDenied(anchor)
+
+
+def log_event(action: str, **fields) -> None:
+    """Journal entry (history and audit); a failure is logged, never shown to the user."""
+    try:
+        user = fields.pop("user", None) or getattr(g, "user", None) or "-"
+        journal.append(action, user, **fields)
+    except OSError as exc:
+        log.warning("Journal not written (%s): %s", action, exc)
 
 
 @app.before_request
@@ -223,6 +271,16 @@ def security_headers(resp):
 
 @app.errorhandler(ValidationError)
 def on_validation_error(err):
+    return message(err.code, 422, params=err.params)
+
+
+@app.errorhandler(AccessDenied)
+def on_access_denied(err):
+    return message("access.prefix", 403)
+
+
+@app.errorhandler(users.UserError)
+def on_user_error(err):
     return message(err.code, 422, params=err.params)
 
 
@@ -284,16 +342,17 @@ def describe_entry(entry: dict) -> dict:
     return {"kind": "other", "value": "".join(f"({q}){v}" for q, v in pairs)}
 
 
-def record_change(anchor: str, pairs: list, removed: bool = False) -> None:
-    """Keeps the "last change" metadata; never makes a save fail."""
+def record_change(anchor: str, pairs: list, doc: dict | None, action: str) -> None:
+    """Keeps the "last change" metadata and the record's history; never makes a save fail."""
     qpath = gs1.qualifier_path(pairs, encode=False)
     try:
-        if removed:
+        if action == "delete":
             meta.remove(anchor, qpath)
         else:
             meta.touch(anchor, qpath, g.user)
     except OSError as exc:
         log.warning("Record metadata not updated for %s: %s", meta.key(anchor, qpath), exc)
+    log_event(action, anchor=anchor, qpath=qpath, doc=doc)
 
 
 def is_success(status: int, body) -> bool:
@@ -414,6 +473,7 @@ def login():
     if not username or not users.verify(username, password):
         throttle.fail(*keys)
         audit.info("user=%s action=login-failed addr=%s", username or "-", client_address())
+        log_event("login-failed", user=username or "-", detail=client_address())
         time.sleep(0.5)
         return message("auth.invalid", 401)
     throttle.clear(*keys)
@@ -421,7 +481,9 @@ def login():
     session.permanent = True
     session.update(user=username, fp=users.fingerprint(username), was_logged_in=True)
     audit.info("user=%s action=login addr=%s", username, client_address())
-    return message("auth.welcome", 200, user=username)
+    users.touch_login(username)
+    log_event("login", user=username, detail=client_address())
+    return message("auth.welcome", 200, user=username, mustChange=bool((users.get(username) or {}).get("mustChange")))
 
 
 @app.post("/portal/api/logout")
@@ -430,6 +492,7 @@ def logout():
     session.clear()
     if username:
         audit.info("user=%s action=logout", username)
+        log_event("logout", user=username)
     return message("auth.loggedOut")
 
 
@@ -450,12 +513,13 @@ def change_password():
     if new == current:
         raise ValidationError("password.sameAsCurrent")
     try:
-        users.set_password(g.user, new)
+        users.set_password(g.user, new, must_change=False)
     except users.StoreNotWritable as exc:
         log.error("Password change failed: %s", exc)
         return message("password.storeReadOnly", 500)
     session["fp"] = users.fingerprint(g.user)   # keeps this session; every other session is signed out
     audit.info("user=%s action=password-change", g.user)
+    log_event("password-change")
     return message("password.changed")
 
 
@@ -473,7 +537,7 @@ def healthz():
 @require_login
 def config():
     return jsonify(
-        user=g.user,
+        user=g.user, role=g.role, prefixes=g.prefixes, mustChange=g.must_change,
         resolver=RESOLVER_PUBLIC_URL,
         linkTypes=[{"code": code, "group": group} for code, group, _ in gs1.LINK_TYPES],
         keys=[{"code": ai, "name": name, "qualifiers": gs1.key_qualifiers(ai),
@@ -487,6 +551,7 @@ def config():
 @require_login
 def get_record():
     anchor = request_key(request.args)
+    check_access(anchor)
     pairs = request_qualifiers(request.args, anchor)
     entries, default = read_entries(anchor)
     target = find_entry(entries, gs1.qualifier_list(pairs))
@@ -516,8 +581,10 @@ def get_record():
 
 @app.post("/portal/api/record")
 @require_login
+@role_required("editor")
 def save_record():
     anchor, pairs, doc = build_document(request.get_json(silent=True) or {})
+    check_access(anchor)
     uri = gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, pairs)
     created = store_record(anchor, pairs, doc)
     return message("save.created" if created else "save.updated", 201 if created else 200,
@@ -544,7 +611,7 @@ def store_record(anchor: str, pairs: list, doc: dict) -> bool:
             raise UpstreamError("upstream.createRejected", 502, body)
         audit.info("user=%s action=create anchor=%s%s links=%d",
                    g.user, anchor, gs1.qualifier_path(pairs), len(doc["links"]))
-        record_change(anchor, pairs)
+        record_change(anchor, pairs, doc, "create")
         return True
 
     # Case 2: existing entry → PUT (merge on linktype+hreflang+context), then a partial DELETE of the
@@ -564,14 +631,16 @@ def store_record(anchor: str, pairs: list, doc: dict) -> bool:
 
     audit.info("user=%s action=update anchor=%s%s links=%d removed=%d",
                g.user, anchor, gs1.qualifier_path(pairs), len(doc["links"]), len(removed))
-    record_change(anchor, pairs)
+    record_change(anchor, pairs, doc, "update")
     return False
 
 
 @app.delete("/portal/api/record")
 @require_login
+@role_required("editor")
 def delete_record():
     anchor = request_key(request.args)
+    check_access(anchor)
     pairs = request_qualifiers(request.args, anchor)
     entries, _ = read_entries(anchor)
     target = find_entry(entries, gs1.qualifier_list(pairs))
@@ -591,7 +660,7 @@ def delete_record():
             raise UpstreamError("upstream.deleteRestored", 502, body)
 
     audit.info("user=%s action=delete anchor=%s%s", g.user, anchor, gs1.qualifier_path(pairs))
-    record_change(anchor, pairs, removed=True)
+    record_change(anchor, pairs, target, "delete")
     return message("delete.done")
 
 
@@ -612,8 +681,8 @@ def list_records():
     for line in lines:
         anchor = line.get("anchor") or ""
         key = gs1.split_anchor(anchor)
-        if not key:
-            continue                      # keys the portal does not manage (e.g. 415, which needs 8020)
+        if not key or not allowed(anchor):
+            continue                      # keys the portal does not manage, or outside the user's prefixes
         entry = describe_entry(line)
         qpath = entry.get("path", "")
         info = known.get(meta.key(anchor, qpath), {}) if entry["kind"] != "other" else {}
@@ -650,7 +719,7 @@ def export_records():
     records = []
     for line in summary_with_links():
         entry = describe_entry(line)
-        if entry["kind"] == "other":
+        if entry["kind"] == "other" or not allowed(line["anchor"]):
             continue
         ai, value = gs1.split_anchor(line["anchor"])
         records.append({"key": ai, "value": value, "qualifiers": entry.get("qualifiers", []),
@@ -659,6 +728,7 @@ def export_records():
     rows = sheet.export_rows(records)
     stamp = time.strftime("%Y%m%d-%H%M")
     audit.info("user=%s action=export format=%s records=%d rows=%d", g.user, data.get("format"), len(records), len(rows))
+    log_event("export", detail=f'{data.get("format")} records={len(records)}')
     if data.get("format") == "csv":
         body, mime, ext = sheet.write_csv(rows, labels), "text/csv; charset=utf-8", "csv"
     else:
@@ -703,6 +773,7 @@ def _same_record(target: dict, doc: dict) -> bool:
 
 @app.post("/portal/api/import/preview")
 @require_login
+@role_required("editor")
 def import_preview():
     """Reads a spreadsheet, validates every record with the editor's rules and compares it with the
     resolver. Nothing is written; the valid records are kept for /import/apply under a token."""
@@ -781,6 +852,11 @@ def import_preview():
 
         item.update(key=gs1.split_anchor(anchor)[0], value=gs1.split_anchor(anchor)[1],
                     qualifiers=[list(p) for p in pairs])
+        if not allowed(anchor):
+            errors.append({"row": record["rows"][0], "code": "access.prefixRow", "params": {"value": item["value"]}})
+            item["action"] = "error"
+            report.append(item)
+            continue
         entries = existing.get(anchor, [])
         target = find_entry(entries, doc.get("qualifiers", []))
         others = [e for e in entries if e is not target]
@@ -821,6 +897,7 @@ def _run_import(token: str, user: str) -> None:
     job = IMPORTS[token]
     with app.test_request_context():
         g.user = user                                   # store_record logs and records who changed it
+        g.prefixes = (users.get(user) or {}).get("prefixes", [])
         created = updated = failed = 0
         for item in job["plan"]:
             ai, value = gs1.split_anchor(item["anchor"])
@@ -836,12 +913,14 @@ def _run_import(token: str, user: str) -> None:
             job["results"].append(result)
             job["done"] += 1
         audit.info("user=%s action=import created=%d updated=%d failed=%d", user, created, updated, failed)
+        log_event("import", detail=f"created={created} updated={updated} failed={failed}")
     job["state"] = "finished"
     job["created"] = time.time()                       # keep the result for IMPORT_TTL from now
 
 
 @app.post("/portal/api/import/apply")
 @require_login
+@role_required("editor")
 def import_apply():
     token = (request.get_json(silent=True) or {}).get("token", "")
     with IMPORTS_LOCK:
@@ -857,6 +936,7 @@ def import_apply():
 
 @app.get("/portal/api/import/status")
 @require_login
+@role_required("editor")
 def import_status():
     job = IMPORTS.get(request.args.get("token", ""))
     if not job or job["user"] != g.user:
@@ -874,6 +954,7 @@ MAX_CHECK_URLS = 5000
 
 @app.post("/portal/api/links/check")
 @require_login
+@role_required("editor")
 def check_links():
     """Checks the few targets of one record (editor); answers when all are done."""
     urls = [u for u in (request.get_json(silent=True) or {}).get("urls") or [] if isinstance(u, str)][:MAX_LINKS]
@@ -906,6 +987,7 @@ def _run_link_job(token: str) -> None:
 
 @app.post("/portal/api/links/jobs")
 @require_login
+@role_required("editor")
 def start_link_job():
     """Checks many targets in the background: every record's ("scope": "all") or a list of URLs
     (spreadsheet import preview). Poll /links/jobs/<token>."""
@@ -918,7 +1000,7 @@ def start_link_job():
         urls: dict[str, list[str]] = {}
         for line in summary_with_links():
             entry = describe_entry(line)
-            if entry["kind"] == "other":
+            if entry["kind"] == "other" or not allowed(line["anchor"]):
                 continue
             key = f'{line["anchor"]}|{entry.get("path", "")}'
             for link in line.get("links") or []:
@@ -939,6 +1021,7 @@ def start_link_job():
 
 @app.get("/portal/api/links/jobs/<token>")
 @require_login
+@role_required("editor")
 def link_job_status(token):
     job = LINK_JOBS.get(token)
     if not job or job["user"] != g.user:
@@ -948,13 +1031,125 @@ def link_job_status(token):
         out["problems"] = job["problems"]
         if job["scope"] == "all":
             out.update(LAST_FULL_CHECK)
+            out["records"] = job.get("records", {})
     return jsonify(out)
 
 
 @app.get("/portal/api/links/last")
 @require_login
 def last_link_check():
-    return jsonify(LAST_FULL_CHECK)
+    if not LAST_FULL_CHECK:
+        return jsonify({})
+    records = {k: v for k, v in LAST_FULL_CHECK.get("records", {}).items() if allowed(k.split("|")[0])}
+    return jsonify({**LAST_FULL_CHECK, "records": records})
+
+
+# --------------------------------------------------------------------------- governance
+def temporary_password() -> str:
+    """16 characters, easy to type from a message: no look-alike characters."""
+    alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(16))
+
+
+@app.get("/portal/api/users")
+@require_login
+@role_required("admin")
+def list_users():
+    return jsonify({"users": [users.public(name, account) for name, account in sorted(users.load().items())],
+                    "roles": list(users.ROLES)})
+
+
+@app.post("/portal/api/users")
+@require_login
+@role_required("admin")
+def create_user():
+    data = request.get_json(silent=True) or {}
+    username = str(data.get("username", "")).strip()
+    password = temporary_password()
+    users.create(username, password, str(data.get("role", "")), data.get("prefixes") or [])
+    audit.info("user=%s action=user-create target=%s role=%s", g.user, username, data.get("role"))
+    log_event("user-create", detail=f'{username} role={data.get("role")} prefixes={",".join(data.get("prefixes") or [])}')
+    return message("users.created", 201, params={"user": username}, password=password)
+
+
+@app.put("/portal/api/users/<username>")
+@require_login
+@role_required("admin")
+def update_user(username):
+    data = request.get_json(silent=True) or {}
+    if username == g.user and (data.get("disabled") or data.get("role") not in (None, "admin")):
+        raise users.UserError("users.notSelf")          # an administrator cannot lock himself out
+    account = users.update(username, role=data.get("role"), prefixes=data.get("prefixes"),
+                           disabled=data.get("disabled"))
+    audit.info("user=%s action=user-update target=%s", g.user, username)
+    log_event("user-update", detail=f'{username} role={account["role"]} disabled={account["disabled"]} '
+                                    f'prefixes={",".join(account["prefixes"])}')
+    return message("users.updated", 200, params={"user": username})
+
+
+@app.post("/portal/api/users/<username>/reset")
+@require_login
+@role_required("admin")
+def reset_user(username):
+    if not users.get(username):
+        raise users.UserError("users.unknown", user=username)
+    password = temporary_password()
+    users.set_password(username, password, must_change=True)
+    audit.info("user=%s action=user-reset target=%s", g.user, username)
+    log_event("user-reset", detail=username)
+    return message("users.reset", 200, params={"user": username}, password=password)
+
+
+@app.delete("/portal/api/users/<username>")
+@require_login
+@role_required("admin")
+def remove_user(username):
+    if username == g.user:
+        raise users.UserError("users.notSelf")
+    users.remove(username)
+    audit.info("user=%s action=user-remove target=%s", g.user, username)
+    log_event("user-remove", detail=username)
+    return message("users.removed", 200, params={"user": username})
+
+
+@app.get("/portal/api/history")
+@require_login
+def record_history():
+    """The latest versions of one record, with their content, for the editor's History panel."""
+    anchor = request_key(request.args)
+    check_access(anchor)
+    pairs = request_qualifiers(request.args, anchor)
+    versions = journal.for_record(anchor, gs1.qualifier_path(pairs, encode=False))
+    return jsonify({"versions": versions})
+
+
+def _audit_events():
+    args = request.args
+    return journal.search(user=args.get("user") or None, since=args.get("from") or None,
+                          until=args.get("to") or None, text=args.get("q") or None,
+                          allowed=allowed, limit=min(int(args.get("limit", 500) or 500), 5000))
+
+
+@app.get("/portal/api/audit")
+@require_login
+@role_required("admin")
+def audit_trail():
+    return jsonify({"events": _audit_events()})
+
+
+@app.get("/portal/api/audit.csv")
+@require_login
+@role_required("admin")
+def audit_csv():
+    out = io.StringIO()
+    writer = csv.writer(out, delimiter=";", lineterminator="\r\n")
+    writer.writerow(["at", "user", "action", "anchor", "qualifiers", "detail"])
+    for event in _audit_events():
+        writer.writerow([event.get("at"), event.get("user"), event.get("action"), event.get("anchor", ""),
+                         event.get("qpath", ""), event.get("detail", "")])
+    stamp = time.strftime("%Y%m%d-%H%M")
+    return Response(("\ufeff" + out.getvalue()).encode("utf-8"), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="portal-audit-{stamp}.csv"'})
 
 
 @app.get("/portal/api/qrcode")
@@ -963,6 +1158,7 @@ def qrcode():
     """QR code label. format=png|svg downloads it; without format it is the inline SVG preview.
     hri=0 omits the human readable interpretation; brand=1 adds the GS1® branding (pilot)."""
     anchor = request_key(request.args)
+    check_access(anchor)
     pairs = request_qualifiers(request.args, anchor)
     options = label.LabelOptions(
         uri=gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, pairs),

@@ -359,3 +359,35 @@ dialog::backdrop { background: rgba(0, 30, 74, .45); }
 .qual-field input { max-width: 30ch; }
 .qual-field .optional { color: var(--muted); font-weight: 400; font-size: .8125rem; }
 .qual-field .qual-help { margin: .25rem 0 0; font-size: .8125rem; color: var(--muted); }
+
+/* ---------------------------------------------------------------- roles and governance */
+body[data-role="reader"] .needs-editor { display: none !important; }
+body:not([data-role="admin"]) .needs-admin { display: none !important; }
+.read-only-note { margin-top: .75rem; }
+.history-panel { margin-top: 1.5rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+.history-panel h3 { margin: 0 0 .5rem; font-size: 1rem; color: var(--gs1-blue); }
+.history-list { list-style: none; margin: 0; padding: 0; }
+.history-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; padding: .6rem 0;
+  border-bottom: 1px solid var(--line); font-size: .9375rem; }
+.history-list .when { font-weight: 600; min-width: 11rem; }
+.history-list .who { color: var(--muted); }
+.history-list .btn { margin-left: auto; min-height: 2rem; padding: .25rem .9rem; font-size: .8125rem; }
+.users-create, .audit-filters { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: end; margin-bottom: .5rem; }
+.users-create > div, .audit-filters > div { display: flex; flex-direction: column; gap: .25rem; }
+.users-create label, .audit-filters label { margin: 0; font-size: .875rem; }
+.users-prefixes, .audit-text { flex: 1 1 14rem; }
+.users-prefixes input, .audit-text input { width: 100%; }
+.sheet h2 { margin-top: 1.5rem; }
+.sheet h2:first-child { margin-top: 0; }
+.temp-password { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin: 1rem 0;
+  padding: .9rem 1rem; border: 1px solid var(--gs1-orange); border-radius: 4px; background: #FFF6EC; }
+.temp-password p { margin: 0; flex-basis: 100%; }
+.temp-password code { font-size: 1.1rem; letter-spacing: .05em; }
+.users-table select, .users-table input { min-height: 2.25rem; padding: .25rem .5rem; font-size: .875rem; }
+.users-table select { min-width: 9.5rem; }
+.users-table .user-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.users-table .user-actions .btn { min-height: 2rem; padding: .25rem .7rem; font-size: .8125rem; }
+.users-table tr.is-disabled td:not(:last-child) { opacity: .55; }
+.audit-table td { font-size: .875rem; }
+.btn-danger-ghost { background: #fff; border-color: var(--line); color: var(--action); }
+.btn-danger-ghost:hover { border-color: var(--action); }

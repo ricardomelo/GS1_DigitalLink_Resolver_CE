@@ -217,6 +217,31 @@ request for `/01/…/22/V1/10/L2` uses the V1 record when there is none for batc
 serial number is rarely needed: register the batch or the product and let the walk-up serve the serials;
 use a serial record for a single item (e.g. a recall).
 
+## Governance
+
+Roles (checked by the server on every call; the interface hides what a role cannot do):
+
+| Role | May |
+|---|---|
+| admin | everything, user administration, audit trail |
+| editor | create, change, delete records; import; link checks |
+| reader | consult, list, export, labels |
+
+- `users.json` holds, per user: password hash, role, GS1 Company Prefixes, disabled, must-change flag,
+  creation and last sign-in. Files from before roles (`{"name": "<hash>"}`) are read as administrators and
+  converted on the next write.
+- GS1 Company Prefixes (4-12 digits) limit a user to identifiers whose company part starts with one of
+  them (`gs1.company_part`: after the indicator digit of GTIN-14 and ITIP, the extension digit of SSCC and
+  the filler zero of GRAI). Records, lists, exports, imports, labels, history and link checks are filtered
+  or refused (`access.prefix`).
+- Temporary passwords (16 characters without look-alikes) are shown once; the account can only call
+  `/config`, `/password` and `/logout` until it sets its own password.
+- A password reset, disabling or removal ends the user's open sessions (session fingerprint).
+- `journal.jsonl` (portal configuration volume, mode 600) records every event: `login`, `login-failed`,
+  `logout`, `password-change`, `create`, `update`, `delete` (with the record's content), `import`,
+  `export`, `user-create`, `user-update`, `user-reset`, `user-remove`. The editor's History panel shows
+  the last 20 versions of a record; the audit trail shows events without record contents.
+
 ## Record list
 
 The portal's user menu (and the link under the page title) opens **Registered records**

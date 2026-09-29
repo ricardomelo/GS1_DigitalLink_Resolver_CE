@@ -66,7 +66,8 @@ the official Postman collection is at
 
 | Area | Addition |
 |---|---|
-| **Portal** (`/portal/`) | Sign-in with per-user passwords; editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; per-link query-string forwarding; QR code labels (PNG/SVG) following *QR Codes powered by GS1*; record list with search; spreadsheet import/export (XLSX, CSV) with preview; link checker; change history (who/when) |
+| **Portal** (`/portal/`) | Sign-in with per-user passwords; editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; per-link query-string forwarding; QR code labels (PNG/SVG) following *QR Codes powered by GS1*; record list with search; spreadsheet import/export (XLSX, CSV) with preview; link checker |
+| **Governance** | Roles (administrator, editor, reader); access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords; history of every record with restore; audit trail with filters and CSV export |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, validated as the GS1 Barcode Syntax Engine does |
 | **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, `fwqs` per link, HTML pages in pt-BR / en-GB for browsers |
 | **Data entry API** | `GET /api/summary` (all records in one request); `GET /api/index` now requires the token; Swagger "Authorize" works on every protected operation |
@@ -149,10 +150,39 @@ that do not answer, redirects from HTTPS to HTTP and endless redirects; sites th
 429) are reported as such. Only public addresses are contacted, so the portal cannot be used to probe the
 server's own network. Sites that answer "200" for missing pages ("soft 404") cannot be detected.
 
-**Users and sessions** — per-user passwords (salted scrypt hashes), the first user created by the installer or from
-`PORTAL_ADMIN_USERNAME` / `PORTAL_ADMIN_PASSWORD`, more users with `create_user.py`, password change in the
-user menu, sign-in lockout after repeated failures, 8-hour sliding sessions, audit lines in the log for
-every change. The interface follows the browser's language (pt-BR or en-GB) and can be switched at any time.
+**Users and sessions** — per-user passwords (salted scrypt hashes), sign-in lockout after repeated
+failures, 8-hour sliding sessions. The interface follows the browser's language (pt-BR or en-GB) and can be
+switched at any time.
+
+### Governance
+
+| Role | May |
+|---|---|
+| **Administrator** | everything, including user administration and the audit trail |
+| **Editor** | create, change and delete records, import spreadsheets, check links |
+| **Reader** | consult records and the list, export spreadsheets, download labels |
+
+- **GS1 Company Prefixes per user** — a user limited to one or more prefixes only sees and changes
+  identifiers of those prefixes (the prefix is looked for after the indicator digit of a GTIN-14, the
+  extension digit of an SSCC and the filler zero of a GRAI); without prefixes, every identifier.
+- **Users screen** (administrators, user menu → *Users*): create users with a **temporary password** shown
+  once and changed at the first sign-in; change role and prefixes; reset a password (which ends the user's
+  open sessions); disable, enable or remove. The last active administrator cannot be removed or demoted,
+  and nobody can lock themselves out.
+- **History** of every record (editor → *History*): who changed it, when and how, with the full content
+  of each version; *Restore this version* brings an earlier version (or a deleted record) back into the
+  form for review before saving.
+- **Audit trail** (administrators, user menu → *Audit trail*): sign-ins, refused sign-ins, record
+  changes, imports, exports and user administration, filtered by user, period and identifier, with CSV
+  export.
+
+Users, history and audit trail live in the portal's configuration volume, which the daily backup includes.
+Users created before roles existed become administrators. The command line tool accepts roles too:
+`docker compose exec portal-service python create_user.py maria --role editor --prefixes 7891234`.
+
+<p align="center">
+  <img src="Documentation/images/portal-users.png" alt="User administration with roles, prefixes and a temporary password" width="720">
+</p>
 
 ## GS1 Digital Link coverage
 
@@ -232,7 +262,8 @@ curl -sI https://id.example.org/01/09506000134352/10/L2026A        # 307 → htt
 ### Portal API (`/portal/api`, session cookie)
 
 Used by the portal's own pages; listed for integrators and reviewers. Writes require a same-origin request
-with a JSON body; messages are returned as language-neutral codes translated by the browser.
+with a JSON body; messages are returned as language-neutral codes translated by the browser. Every call
+checks the user's role and GS1 Company Prefixes.
 
 | Operation | Purpose |
 |---|---|
@@ -246,6 +277,9 @@ with a JSON body; messages are returned as language-neutral codes translated by 
 | `POST /import/preview`, `POST /import/apply`, `GET /import/status` | Spreadsheet import: check, confirm, progress |
 | `POST /links/check`, `POST /links/jobs`, `GET /links/jobs/{token}`, `GET /links/last` | Link checker |
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg` | QR code label |
+| `GET /history?key=&value=&qualifiers=` | Versions of a record (with content) |
+| `GET /users`, `POST /users`, `PUT /users/{name}`, `POST /users/{name}/reset`, `DELETE /users/{name}` | User administration (administrators) |
+| `GET /audit`, `GET /audit.csv` (`user`, `from`, `to`, `q`) | Audit trail (administrators) |
 | `GET /portal/healthz` | Health of the portal and of its access to the API |
 
 ## System requirements
@@ -356,8 +390,9 @@ never committed).
 
 ```bash
 git pull && docker compose up -d --build                         # update
-docker compose exec portal-service python create_user.py maria   # add or reset a portal user
-docker compose logs -f portal-service | grep portal.audit        # who changed what
+docker compose exec portal-service python create_user.py maria --role editor   # add or reset a user
+# who changed what: user menu → Audit trail (administrators), or the container log:
+docker compose logs -f portal-service | grep portal.audit
 sudo scripts/resolver-backup.sh                                  # backup now (database + portal users)
 ```
 
@@ -377,6 +412,7 @@ The tests in [`dev-tests/`](dev-tests/README.md) run without Docker or MongoDB:
 | `resolver/test_data_entry_api.py` | Token protection of every data entry operation and the Swagger declarations |
 | `portal/test_keys.py` | Every primary key and qualifier combination, compared with the GS1 Syntax Engine |
 | `portal/test_portal_e2e.py` | The portal in Chromium: editor, keys, qualifiers, labels, list, spreadsheets, link checker, users |
+| `portal/test_governance.py` | Roles, prefixes, user administration, temporary passwords, history, audit trail |
 | `portal/test_sheet.py`, `test_linkcheck.py`, `test_portal_config.py` | Spreadsheets, link checker, start-up configuration |
 | `home/test_home.py` | Home page through the real nginx configuration |
 | `install/test_install.sh` | Installer in eight scenarios, with the real `docker compose config` and `nginx -t` |
@@ -403,7 +439,8 @@ web_server/                     resolver (official, with conformance fixes and H
 database_server/                MongoDB image (official)
 frontend_proxy_server/          nginx: routes, home page (home/), portal
 portal/                         link management portal: app.py, gs1.py (keys, qualifiers), label.py,
-                                sheet.py, linkcheck.py, users.py, meta.py, static/ (HTML, CSS, JS, i18n)
+                                sheet.py, linkcheck.py, users.py (roles), journal.py (history, audit),
+                                meta.py, static/ (HTML, CSS, JS, i18n)
 scripts/                        install.sh, templates/ (nginx), resolver-backup.sh and its cron entry
 dev-tests/                      development tests (see above)
 Documentation/                  extensions/ (detailed documentation, changelog), images/, upstream-README.md

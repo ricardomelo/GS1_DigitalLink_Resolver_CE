@@ -20,6 +20,8 @@ import jsonschema
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.environ.get("RESOLVER_REPO", os.path.join(HERE, "..", ".."))
 SCHEMA = json.load(open(os.path.join(HERE, "linkset-schema.json")))   # https://ref.gs1.org/standards/resolver/linkset-schema
+# https://ref.gs1.org/standards/resolver/description-file-schema (version 1.2.0)
+DESCRIPTION_SCHEMA = json.load(open(os.path.join(HERE, "description-file-schema.json")))
 
 # ---------------------------------------------------------------- stubs and authoring
 fake_mongo = types.ModuleType("mongo_db_init")
@@ -56,6 +58,7 @@ def read_document(anchor):
 web_db.read_document = read_document
 sys.modules["web_db"] = web_db
 os.environ.setdefault("FQDN", "id.example.org")
+os.environ["RESOLVER_ORG_NAME"] = "Example Org"      # an operator is configured from start-up (see "without operator footer")
 os.environ.setdefault("MONGO_URI", "mongodb://unused")
 import web_logic  # noqa: E402
 web_logic._call_gs1_toolkit = lambda s: True
@@ -206,7 +209,7 @@ check("summary with links: every link included", all(len(l.get("links") or []) =
       and "links" not in lines[0], with_links[:1])
 
 # ---------------------------------------------------------------- resolver description file
-for var in ("RESOLVER_ORG_NAME", "RESOLVER_CONTACT_STREET", "RESOLVER_CONTACT_LOCALITY", "RESOLVER_CONTACT_REGION",
+for var in ("RESOLVER_ORG_NAME", "RESOLVER_ORG_URL", "RESOLVER_CONTACT_STREET", "RESOLVER_CONTACT_LOCALITY", "RESOLVER_CONTACT_REGION",
             "RESOLVER_CONTACT_POSTCODE", "RESOLVER_CONTACT_COUNTRY", "RESOLVER_CONTACT_TELEPHONE"):
     os.environ.pop(var, None)
 r = client.get("/api/.well-known/gs1resolver")
@@ -221,6 +224,26 @@ check("description: contact from RESOLVER_*",
       d.get("contact") == {"fn": "Example Org", "hasAddress": {"locality": "São Paulo", "country-name": "Brazil"},
                            "hasTelephone": "tel:+55-11-0000-0000"}, d.get("contact"))
 check("description: other properties kept", d.get("supportedPrimaryKeys") == ["all"] and "activeLinkTypes" in d)
+os.environ["RESOLVER_ORG_URL"] = "https://www.example.org"
+d = client.get("/api/.well-known/gs1resolver").get_json()
+check("description: operator's web address as vCard hasURL", d.get("contact", {}).get("hasURL") == "https://www.example.org",
+      d.get("contact"))
+try:
+    jsonschema.validate(d, DESCRIPTION_SCHEMA)
+    valid = True
+except jsonschema.ValidationError as exc:
+    valid = exc.message
+check("description: validates against the official description file schema", valid is True, valid)
+
+# The resolver's pages do not name the operator, even when one is configured: a sentence such as
+# "GS1 Digital Link service operated by …" would associate every installation with GS1.
+for path, accept in [(G + "?linkType=linkset", "text/html"), (G + "?linkType=gs1:recallStatus", "text/html"),
+                     ("/01/07891234567895", "text/html")]:
+    for language in ("pt-BR", "en-GB"):
+        page_html = get(path, accept, language).get_data(as_text=True)
+        check(f"HTML page without operator footer {path} {language}",
+              "<footer" not in page_html and "Example Org" not in page_html and "operado por" not in page_html
+              and "operated by" not in page_html, page_html[-400:])
 
 # ---------------------------------------------------------------- every primary key (URI Syntax 1.7, section 4.3)
 KEY_EXAMPLES = {"01": "09506000999999", "8006": "095060001343520102", "8013": "1987654Ad4X4bL5ttr2310c2K",

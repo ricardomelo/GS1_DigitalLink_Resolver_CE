@@ -19,6 +19,8 @@ repository root.
 | `install/test_install.sh` | The **installer** in eight scenarios (fresh Let's Encrypt, re-run, hand-written `.env` on an existing installation, own certificate, external proxy, interactive answers with invalid input, refusals, proxy left pointing at recreated services) with stand-ins for apt-get, systemctl, docker, certbot and curl; the written `.env` is checked with the real `docker compose config` and the nginx site with the real `nginx -t`. | Linux, root, nginx, openssl and a Docker Compose v2 binary (`COMPOSE_BIN`, default `/tmp/docker-compose`), then `sudo dev-tests/install/test_install.sh` |
 
 `resolver/linkset-schema.json` is a copy of https://ref.gs1.org/standards/resolver/linkset-schema.
+`resolver/description-file-schema.json` is a copy of https://ref.gs1.org/standards/resolver/description-file-schema
+(version 1.2.0).
 
 The upstream integration test `tests/setup_test.py` needs the full stack running (`docker compose up -d`)
 and reads the API token from `SESSION_TOKEN` (default `secret`, as in `.env.example`).

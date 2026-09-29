@@ -2,6 +2,18 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Resolver: no operator footer
+- The HTML pages (linkset, not found, information not available, invalid code) no longer end with
+  "GS1 Digital Link service operated by …": the sentence would associate every installation of this
+  software with GS1. The operator stays in the resolver description file and on the home page.
+- `RESOLVER_ORG_URL`, used only by that footer, is published as `contact.hasURL` (vCard) in
+  `/.well-known/gs1resolver`, which still validates against the official description file schema.
+- Tests: no footer on any page in either language with an operator configured; `hasURL`; the
+  description file validated against a copy of the official schema
+  (`dev-tests/resolver/description-file-schema.json`, version 1.2.0).
+- README: "Extensions in this fork" line removed from the credits; the link checker's "soft 404" example
+  no longer names an organisation.
+
 ### Documentation: every key and qualifier
 - `Documentation/extensions/README.md` no longer describes the portal as GTIN-only: the API behaviours
   the portal works around, the record list (search by key name and qualifier value, link problems filter,

@@ -59,7 +59,7 @@ Every service loads `.env.example` and then `.env` if it exists; a value in `.en
 | `MONGO_URI` | web, data entry | matches the above | same credentials as above |
 | `SESSION_TOKEN` | data entry API, portal | `secret` | long random value |
 | `FQDN` | web (linksets, description file), portal | `localhost` | the resolver's domain |
-| `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | description file `contact`, footer of the resolver pages | `My Organisation` | the operator |
+| `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | description file `contact` (`fn`, `hasURL`, `hasAddress`, `hasTelephone`) and the home page footer; the resolver's pages carry no operator footer | `My Organisation` | the operator |
 | `RESOLVER_PUBLIC_URL` | portal (printed links, Origin check, cookie flag) | empty → `https://FQDN` | usually empty |
 | `PORTAL_ADMIN_USERNAME`, `PORTAL_ADMIN_PASSWORD` | portal, first user only | `admin` / `change-me-please` | chosen at installation |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Docker Compose (**only from `.env`**) | `0.0.0.0` | `127.0.0.1` behind a TLS proxy |
@@ -368,7 +368,7 @@ checked with HEAD (GET if the server refuses HEAD, without reading the body), an
 10 minutes.
 
 **Limit: "soft 404".** Some sites answer "200 OK" with an empty or generic page for addresses that do
-not exist (the site of GS1 Brasil does, for example). The checker relies on the status the site sends,
+not exist (some organisations' sites do). The checker relies on the status the site sends,
 so such addresses pass as valid; open them with *Try now* after registering. Guessing from the page
 content would raise false alarms on legitimate pages.
 

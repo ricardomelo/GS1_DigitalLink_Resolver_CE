@@ -150,6 +150,10 @@ counts there; in CSV each row takes about 180–370 bytes, so 700 KB is usually 
 2 000–3 900 rows. Use XLSX or split the file for larger batches. The size limit follows from the portal's
 1 MB request limit (the file travels base64-encoded); the values are set in `FORMATS` in `portal/sheet.py`.
 
+CSV and text files may be separated by `;`, `,` or tab and encoded in UTF-8, UTF-16 or Windows-1252. How
+the portal treats accents, invisible characters, line breaks and formulas is described in
+[Special characters](Documentation/extensions/README.md#special-characters).
+
 <p align="center">
   <img src="Documentation/images/portal-import.png" alt="Spreadsheet import preview" width="720">
 </p>
@@ -423,7 +427,7 @@ The tests in [`dev-tests/`](dev-tests/README.md) run without Docker or MongoDB:
 | `portal/test_keys.py` | Every primary key and qualifier combination, compared with the GS1 Syntax Engine |
 | `portal/test_portal_e2e.py` | The portal in Chromium: editor, keys, qualifiers, labels, list, spreadsheets, link checker, users |
 | `portal/test_governance.py` | Roles, prefixes, user administration, temporary passwords, history, audit trail |
-| `portal/test_sheet.py`, `test_linkcheck.py`, `test_portal_config.py` | Spreadsheets, link checker, start-up configuration |
+| `portal/test_sheet.py`, `test_special_chars.py`, `test_linkcheck.py`, `test_portal_config.py` | Spreadsheets, special characters, link checker, start-up configuration |
 | `home/test_home.py` | Home page through the real nginx configuration |
 | `install/test_install.sh` | Installer in eight scenarios, with the real `docker compose config` and `nginx -t` |
 

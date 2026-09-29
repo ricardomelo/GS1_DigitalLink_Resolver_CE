@@ -381,7 +381,7 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
     anchor = request_key(data)
     pairs = request_qualifiers(data, anchor)
 
-    description = (data.get("description") or "").strip()
+    description = gs1.clean_text(data.get("description"))
     if not description:
         raise ValidationError("description.required")
     if len(description) > gs1.MAX_DESCRIPTION:
@@ -405,7 +405,7 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
         link = {
             "linktype": link_type,
             "href": href,
-            "title": (row.get("title") or "").strip()[:120] or gs1.LINK_TYPE_DEFAULT_TITLES[link_type],
+            "title": gs1.clean_text(row.get("title"))[:120] or gs1.LINK_TYPE_DEFAULT_TITLES[link_type],
             "type": gs1.guess_media_type(href),
             "hreflang": hreflang,
             # fwqs = "forward query strings", an attribute of the official GS1 linkset schema.
@@ -461,6 +461,16 @@ def assets(name):
     return Response(status=404)
 
 
+def shown_username(typed: str) -> str:
+    """A user name typed at a failed sign-in, as written to the log and the audit trail: anyone can type
+    it, so line breaks and other unprintable characters (which could forge log lines) become "?" and it
+    is cut at the longest valid user name."""
+    if not typed:
+        return "-"
+    text = "".join(c if c.isprintable() else "?" for c in typed)
+    return text if len(text) <= 64 else text[:64] + "…"
+
+
 @app.post("/portal/api/login")
 def login():
     data = request.get_json(silent=True) or {}
@@ -472,8 +482,9 @@ def login():
         return message("auth.locked", 429, params={"minutes": -(-wait // 60)})
     if not username or not users.verify(username, password):
         throttle.fail(*keys)
-        audit.info("user=%s action=login-failed addr=%s", username or "-", client_address())
-        log_event("login-failed", user=username or "-", detail=client_address())
+        typed = shown_username(username)
+        audit.info("user=%s action=login-failed addr=%s", typed, client_address())
+        log_event("login-failed", user=typed, detail=client_address())
         time.sleep(0.5)
         return message("auth.invalid", 401)
     throttle.clear(*keys)
@@ -1145,9 +1156,8 @@ def audit_csv():
     out = io.StringIO()
     writer = csv.writer(out, delimiter=";", lineterminator="\r\n")
     writer.writerow(["at", "user", "action", "anchor", "qualifiers", "detail"])
-    for event in _audit_events():
-        writer.writerow([event.get("at"), event.get("user"), event.get("action"), event.get("anchor", ""),
-                         event.get("qpath", ""), event.get("detail", "")])
+    for event in _audit_events():                  # user names of failed sign-ins are typed by anyone
+        writer.writerow([sheet.protect(event.get(k, "")) for k in ("at", "user", "action", "anchor", "qpath", "detail")])
     stamp = time.strftime("%Y%m%d-%H%M")
     return Response(("\ufeff" + out.getvalue()).encode("utf-8"), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="portal-audit-{stamp}.csv"'})

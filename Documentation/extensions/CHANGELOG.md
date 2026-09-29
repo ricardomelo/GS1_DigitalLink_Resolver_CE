@@ -2,6 +2,26 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: special characters
+- Keys, qualifiers, language tags and user prefixes accept ASCII digits only: full-width, Arabic-Indic and
+  other scripts' digits were accepted and stored, and a superscript `²` in a numeric key failed with an
+  internal error (HTTP 500).
+- Invisible characters from copied text (zero-width space and joiners, word joiner, BOM, soft hyphen,
+  direction marks) are removed from keys and qualifiers, in the editor and on the server.
+- Descriptions and titles stored in Unicode normal form C, with line breaks, tabs and control characters
+  as one space.
+- Target addresses with spaces, line breaks, tabs, invisible characters or a backslash are refused with
+  their own message (`link.urlChars`); a line break made the resolver answer 500 for that link type.
+- XLSX exports write every text as text: a description starting with `=` was written as a formula and
+  came back empty on import. CSV exports (records and audit trail) prefix cells starting with `=`, `+`,
+  `-`, `@`, tab or carriage return with an apostrophe; imports remove it.
+- CSV and text imports read UTF-16 with BOM (Excel's "Unicode text").
+- User names typed at failed sign-ins: unprintable characters written as `?` and cut at 64 characters in
+  the log and the audit trail.
+- Documentation: section "Special characters" in `Documentation/extensions/README.md`.
+- Tests: `dev-tests/portal/test_special_chars.py` (57 checks); invisible and full-width digits in the
+  portal end-to-end test.
+
 ### Portal: import limits per format
 - Limits per accepted format in `sheet.FORMATS` (`xlsx`: `.xlsx`; `csv`: `.csv`, `.txt`): 5 000 data rows
   and 700 KB each, sent to the browser in `GET /portal/api/config` (`importLimits`), listed in the import

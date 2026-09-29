@@ -277,7 +277,8 @@ portal can edit, and *Import spreadsheet* reads one back.
   Only GTIN, Description, Link type and URL are required.
 - The XLSX file has two more sheets listing the link type codes and the language codes. GTINs are
   written as text, so Excel keeps the leading zeros. The CSV uses `;` and UTF-8 with BOM, as Excel
-  expects in Brazil; imports also accept `,` and Windows-1252.
+  expects in Brazil; imports also accept `,` or tab as separator and Windows-1252 or UTF-16 (Excel's
+  "Unicode text", `.txt`) as encoding.
 - Link types may omit `gs1:`; addresses without `https://` get it, as in the editor; several languages
   go in one cell separated by commas; *Default* marks the target that opens first (the first row if
   none is marked); *Forward query string* is yes unless it says no.
@@ -311,6 +312,27 @@ XLSX (compressed, repeated texts stored once) but 900–1 800 KB in CSV, so a CS
 
 The default link type is shared by all the records of a key, so an import cannot change it while the key
 has other records.
+
+## Special characters
+
+What the portal does with characters outside plain letters and digits, and why:
+
+| Where | Rule |
+|---|---|
+| Keys and qualifiers | ASCII only, as GS1 defines them. Digits of other scripts (full-width `７`, Arabic-Indic `٧`, superscript `²`) are refused: Python's `isdigit()` and `\d` accept them, which let them be stored or, for `²`, fail with an internal error. Alphanumeric values use letters, digits, `.`, `-` (and `_` in qualifiers), as decided in [Primary identification keys](#primary-identification-keys). |
+| Keys and qualifiers | Invisible characters that come with copied text are removed before the checks: zero-width space and joiners, word joiner, byte order mark, soft hyphen, direction marks. Spaces are removed from keys (people type `7 898357 41001 5`), not from qualifiers. Same rule in the browser and the server (`INVISIBLE` in `app.js`, `gs1.without_invisible`). |
+| Descriptions and titles | Any character, emoji included, stored in Unicode normal form C (text typed on macOS or read from some files arrives decomposed: `e` + combining accent) with line breaks, tabs and other control characters turned into one space (`gs1.clean_text`). Excel's Alt+Enter line breaks therefore become spaces. |
+| Target addresses | Spaces, line breaks, tabs, invisible characters and backslashes are refused (`link.urlChars`): they are never part of a correctly copied address, a line break made the resolver answer 500 when redirecting, and a backslash is read differently by browsers and servers. Accented paths and internationalised domain names are kept as typed: the resolver sends them percent-encoded and in Punycode in `Location` (e.g. `https://açúcar.com.br/` → `https://xn--acar-0oa8i.com.br/`). |
+| Language tags | ASCII only (`re.ASCII`). |
+| Spreadsheet export | XLSX cells are always text, never formulas. CSV cells starting with `=`, `+`, `-`, `@`, tab or carriage return get a leading apostrophe, so Excel and LibreOffice do not run them as formulas ("CSV injection"); imports remove that apostrophe, so a round trip returns the same text. The audit trail CSV is protected the same way. |
+| Spreadsheet import | UTF-8 (with or without BOM), UTF-16 with BOM and Windows-1252; a cell above 128 KB is reported as an unreadable file. |
+| Sign-in | A user name typed at a failed sign-in (anyone can type it) is written to the log and the audit trail with unprintable characters as `?` and cut at 64 characters, so it cannot forge log lines. |
+| Pages | The portal writes text with `textContent` only and the resolver's pages are Jinja templates with escaping, so `<`, `>`, `&` and quotes in descriptions and titles are shown, never interpreted. |
+
+Records created through the API by other tools can hold qualifier values the portal refuses (a lot
+`A/B`, a template `{lotnumber}`); the portal lists them but does not edit, export or import them. A `/`
+inside a value cannot be resolved (the resolver splits the path at every `/`, encoded or not; this comes
+from the official project).
 
 ## Link checker
 

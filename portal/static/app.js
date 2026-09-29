@@ -105,9 +105,13 @@ function currentKey() {
 }
 
 /* The identifier typed in step 1: { ok, ai, value } or the reason it is not valid yet. */
+/* Invisible characters that come with copied text (zero-width space, word joiner, byte order mark, soft
+   hyphen, direction marks); removed from identifiers, as the server does (gs1.without_invisible). */
+const INVISIBLE = /[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/g;
+
 function readKey() {
   const ai = currentKey();
-  const raw = $("#key-value").value.replace(/\s/g, "");
+  const raw = $("#key-value").value.replace(INVISIBLE, "").replace(/\s/g, "");
   if (ai === "01") {
     const digits = raw.replace(/[.\-]/g, "");
     if (!digits) return { ok: false, ai, key: "gtin.hint" };
@@ -220,7 +224,7 @@ function readQualifiers() {
   const given = {};
   for (const field of document.querySelectorAll("#qualifiers .qual-field")) {
     const q = field.dataset.ai;
-    const value = $("input", field).value.trim();
+    const value = $("input", field).value.replace(INVISIBLE, "").trim();
     if (!value) continue;
     if (!QUAL_FORMATS[q][0].test(value)) return { ok: false, error: true, key: "qualifier.invalid", params: { ai: q } };
     given[q] = value;

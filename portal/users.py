@@ -29,7 +29,7 @@ USERS_FILE = os.environ.get("PORTAL_USERS_FILE", "/app/config/users.json")
 MIN_PASSWORD_LENGTH = 12
 ROLES = ("reader", "editor", "admin")
 USERNAME = re.compile(r"^[A-Za-z0-9._@\-]{3,64}$")
-PREFIX = re.compile(r"^\d{4,12}$")
+PREFIX = re.compile(r"^\d{4,12}$", re.ASCII)   # ASCII digits only: \d alone would accept "７"
 # Hash of a random password, checked when the username does not exist so that response
 # times do not reveal which usernames are valid.
 _DUMMY_HASH = generate_password_hash(os.urandom(16).hex())

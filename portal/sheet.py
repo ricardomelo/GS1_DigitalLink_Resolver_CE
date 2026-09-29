@@ -50,6 +50,12 @@ FORMATS = {
 MAX_ROWS = max(rows for _, rows, _ in FORMATS.values())
 MAX_FILE_BYTES = max(kb for _, _, kb in FORMATS.values()) * 1024
 
+# Spreadsheet programs run a cell that starts with one of these as a formula when they open a CSV file
+# ("CSV injection"): a description such as =HYPERLINK(…) would become a live link or worse. Exported CSV
+# cells that start with one of them get a leading apostrophe, which Excel and LibreOffice take as "text"
+# and do not show; imports remove it again. XLSX cells are written as text and need no apostrophe.
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
 _YES = {"1", "true", "yes", "y", "x", "sim", "s", "verdadeiro", "v"}
 _NO = {"", "0", "false", "no", "n", "nao", "falso", "f"}
 
@@ -81,6 +87,17 @@ def detect_format(filename: str, data: bytes) -> str:
     raise SheetError("import.format")
 
 
+def protect(value) -> str:
+    """A CSV cell that spreadsheet programs will not run as a formula."""
+    text = "" if value is None else str(value)
+    return "'" + text if text.startswith(FORMULA_START) else text
+
+
+def unprotect(text: str) -> str:
+    """Undoes protect() on import."""
+    return text[1:] if text.startswith("'") and text[1:].startswith(FORMULA_START) else text
+
+
 def fold(text) -> str:
     """Lower case, no accents, no spaces or punctuation: "Tipo de link" → "tipodelink"."""
     text = unicodedata.normalize("NFD", str(text or "")).encode("ascii", "ignore").decode()
@@ -104,7 +121,7 @@ def _cell_text(value) -> str:
         return "1" if value else "0"
     if isinstance(value, float) and value.is_integer():
         return str(int(value))          # a GTIN typed as a number: 7898357410015.0 → "7898357410015"
-    return str(value).strip()
+    return unprotect(str(value).strip())
 
 
 def _read_xlsx(data: bytes) -> list[list[str]]:
@@ -119,7 +136,10 @@ def _read_xlsx(data: bytes) -> list[list[str]]:
 
 
 def _read_csv(data: bytes) -> list[list[str]]:
-    for encoding in ("utf-8-sig", "cp1252"):     # Excel in Brazil saves "CSV" as Windows-1252
+    # UTF-16 with its byte order mark is Excel's "Unicode text" (.txt, tab-separated); UTF-8 with or
+    # without BOM is "CSV UTF-8"; Excel in Brazil saves plain "CSV" as Windows-1252.
+    encodings = ("utf-16",) if data[:2] in (b"\xff\xfe", b"\xfe\xff") else ("utf-8-sig", "cp1252")
+    for encoding in encodings:
         try:
             text = data.decode(encoding)
             break
@@ -130,7 +150,7 @@ def _read_csv(data: bytes) -> list[list[str]]:
     first = text.split("\n", 1)[0]
     delimiter = max([";", ",", "\t"], key=first.count)   # ";" is Excel's separator in pt-BR
     try:
-        return [[cell.strip() for cell in row] for row in csv.reader(io.StringIO(text), delimiter=delimiter)]
+        return [[unprotect(cell.strip()) for cell in row] for row in csv.reader(io.StringIO(text), delimiter=delimiter)]
     except csv.Error as exc:           # e.g. a cell above the csv module's 128 KB field limit
         raise SheetError("import.unreadable") from exc
 
@@ -205,7 +225,8 @@ def parse_rows(rows: list[list[str]], aliases: dict[str, list[str]], yes=(), no=
         qualifiers = sorted(qualifiers, key=lambda kv: gs1.QUALIFIER_ORDER.index(kv[0])
                             if kv[0] in gs1.QUALIFIER_ORDER else 99)
         # GTINs are grouped without separators and leading zeros (8, 12, 13 and 14 digits are the same key)
-        grouped = re.sub(r"[\s.\-]", "", value_raw).lstrip("0") if ai == "01" else value_raw.strip()
+        clean = gs1.without_invisible(value_raw)
+        grouped = re.sub(r"[\s.\-]", "", clean).lstrip("0") if ai == "01" else re.sub(r"\s", "", clean)
         key = (ai, grouped, tuple(qualifiers))
         if key not in records:
             records[key] = {"rows": [], "key": ai, "value": value_raw, "qualifiers": qualifiers,
@@ -273,8 +294,9 @@ def _localise_flags(rows, yes_word, no_word):
 def write_csv(rows: list[list[str]], labels: dict) -> bytes:
     out = io.StringIO()
     writer = csv.writer(out, delimiter=";", lineterminator="\r\n")
-    writer.writerow([labels.get("headers", {}).get(key, key) for key in EXPORTED])
-    writer.writerows(_localise_flags(rows, labels.get("yes", "yes"), labels.get("no", "no")))
+    writer.writerow([protect(labels.get("headers", {}).get(key, key)) for key in EXPORTED])
+    writer.writerows([[protect(cell) for cell in row]
+                      for row in _localise_flags(rows, labels.get("yes", "yes"), labels.get("no", "no"))])
     return ("\ufeff" + out.getvalue()).encode("utf-8")      # BOM: Excel opens UTF-8 correctly
 
 
@@ -333,6 +355,11 @@ def write_xlsx(rows: list[list[str]], labels: dict, link_types: list[tuple[str, 
         codes.column_dimensions[letter].width = width
         codes[f"{letter}1"].font, codes[f"{letter}1"].fill = bold, fill
 
+    for worksheet in workbook.worksheets:                # every text as text, never as a formula
+        for line in worksheet.iter_rows():
+            for cell in line:
+                if isinstance(cell.value, str):
+                    cell.data_type = "s"
     out = io.BytesIO()
     workbook.save(out)
     return out.getvalue()

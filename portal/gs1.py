@@ -7,6 +7,7 @@ a sentence. The browser turns the code into text in the user's language (see sta
 so this module stays language-neutral.
 """
 import re
+import unicodedata
 from urllib.parse import quote, urlparse
 
 
@@ -64,12 +65,13 @@ LINK_TYPE_DEFAULT_TITLES = {code: title for code, _, title in LINK_TYPES}
 LANGUAGES = ["pt", "en", "es", "fr", "de", "it", "zh", "ja"]
 LANGUAGE_CODES = set(LANGUAGES)
 # language [-script] [-region] [-variants], or "und" (undetermined)
-_LANGUAGE_TAG = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z]{4})?(-(?:[A-Za-z]{2}|\d{3}))?(-(?:[A-Za-z0-9]{5,8}|\d[A-Za-z0-9]{3}))*$")
+_LANGUAGE_TAG = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z]{4})?(-(?:[A-Za-z]{2}|\d{3}))?(-(?:[A-Za-z0-9]{5,8}|\d[A-Za-z0-9]{3}))*$",
+                           re.ASCII)
 
 
 def normalise_language(tag: str) -> str | None:
     """Well-formed BCP 47 tag in canonical case ("pt-br" → "pt-BR"), or None."""
-    tag = (tag or "").strip().replace("_", "-")
+    tag = without_invisible(tag).strip().replace("_", "-")
     if not _LANGUAGE_TAG.match(tag):
         return None
     parts = tag.split("-")
@@ -91,7 +93,30 @@ _MIME_BY_EXTENSION = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml",
 }
 
-# Conservative subset of GS1 AI encodable character set 82 for batch/lot numbers.
+# --------------------------------------------------------------------------- special characters
+# Identifiers are ASCII: GS1 keys and qualifiers only use digits, letters and a few symbols. Python's
+# str.isdigit() and the regular expression \d also accept other scripts' digits (full-width "７",
+# Arabic-Indic "٧", superscript "²"), which would be stored as they are or fail int(); every check below
+# is therefore ASCII-only. Invisible characters that come with text copied from web pages, PDFs and
+# spreadsheets (zero-width space, word joiner, byte order mark, soft hyphen, direction marks) are removed
+# from identifiers before they are checked. Free text (descriptions, titles) keeps any character but is
+# stored in Unicode normal form C, with control characters and line breaks turned into spaces.
+_INVISIBLE = re.compile("[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]")
+_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+
+
+def without_invisible(text) -> str:
+    return _INVISIBLE.sub("", str(text or ""))
+
+
+def ascii_digits(value: str) -> bool:
+    return value.isascii() and value.isdigit()
+
+
+def clean_text(text) -> str:
+    """Free text as stored: NFC, control characters and line breaks as single spaces, trimmed."""
+    text = _CONTROL.sub(" ", unicodedata.normalize("NFC", str(text or "")))
+    return re.sub(r" {2,}", " ", text).strip()
 
 
 def gtin_check_digit(body: str) -> int:
@@ -102,10 +127,10 @@ def gtin_check_digit(body: str) -> int:
 
 def normalise_gtin(raw: str) -> str:
     """Validates a GTIN-8/12/13/14 and returns it as GTIN-14."""
-    digits = re.sub(r"[\s.\-]", "", raw or "")
+    digits = re.sub(r"[\s.\-]", "", without_invisible(raw))
     if not digits:
         raise ValidationError("gtin.required")
-    if not digits.isdigit():
+    if not ascii_digits(digits):
         raise ValidationError("gtin.digitsOnly")
     if len(digits) not in (8, 12, 13, 14):
         raise ValidationError("gtin.length", length=len(digits))
@@ -145,7 +170,7 @@ def gmn_check_pair(body: str) -> str:
 
 
 def _digits(value: str, length: int) -> None:
-    if not value.isdigit():
+    if not ascii_digits(value):
         raise ValidationError("key.digitsOnly")
     if len(value) != length:
         raise ValidationError("key.length", expected=length, length=len(value))
@@ -162,7 +187,7 @@ def _alnum(value: str, maximum: int, pattern=_ALNUM, code="key.chars") -> None:
         raise ValidationError("key.tooLong", max=maximum)
     if not pattern.match(value):
         raise ValidationError(code)
-    if not value[:4].isdigit() or len(value) < 4:
+    if not ascii_digits(value[:4]) or len(value) < 4:
         raise ValidationError("key.companyPrefix")      # must start with a GS1 Company Prefix
 
 
@@ -199,7 +224,7 @@ def _cpid(value: str) -> str:
 
 
 def _gcn(value: str) -> str:
-    if not value.isdigit():
+    if not ascii_digits(value):
         raise ValidationError("key.digitsOnly")
     if not 13 <= len(value) <= 25:
         raise ValidationError("key.lengthRange", min=13, max=25, length=len(value))
@@ -216,7 +241,7 @@ def _with_serial(prefix_length: int, serial_max: int, filler: str = ""):
                 raise ValidationError("key.graiZero")
             body = value[len(filler):]
         base, serial = body[:prefix_length], body[prefix_length:]
-        if len(base) < prefix_length or not base.isdigit():
+        if len(base) < prefix_length or not ascii_digits(base):
             raise ValidationError("key.baseDigits", length=prefix_length)
         _check_digit(base)
         if len(serial) > serial_max:
@@ -287,11 +312,11 @@ QUALIFIER_FORMATS: dict[str, tuple[str, re.Pattern]] = {
     "10": ("LOT", re.compile(rf"^{_QCHARS}{{1,20}}$")),
     "21": ("SER", re.compile(rf"^{_QCHARS}{{1,20}}$")),
     "235": ("TPX", re.compile(rf"^{_QCHARS}{{1,28}}$")),
-    "8011": ("CPID SERIAL", re.compile(r"^[1-9]\d{0,11}$")),          # no leading zero
+    "8011": ("CPID SERIAL", re.compile(r"^[1-9]\d{0,11}$", re.ASCII)),          # no leading zero
     "254": ("GLN EXTENSION", re.compile(rf"^{_QCHARS}{{1,20}}$")),
-    "7040": ("UIC EXT", re.compile(r"^\d[A-Za-z0-9._\-]{2}[A-Za-z0-9_\-]$")),   # last: importer index
+    "7040": ("UIC EXT", re.compile(r"^\d[A-Za-z0-9._\-]{2}[A-Za-z0-9_\-]$", re.ASCII)),   # last: importer index
     "8020": ("REF NO", re.compile(rf"^{_QCHARS}{{1,25}}$")),
-    "8019": ("SRIN", re.compile(r"^\d{1,10}$")),
+    "8019": ("SRIN", re.compile(r"^\d{1,10}$", re.ASCII)),
 }
 
 
@@ -307,7 +332,7 @@ def normalise_qualifiers(ai: str, raw) -> list[tuple[str, str]]:
     items = raw.items() if isinstance(raw, dict) else (raw or [])
     given: dict[str, str] = {}
     for q, value in items:
-        q, value = str(q).strip("() "), str(value or "").strip()
+        q, value = without_invisible(q).strip("() "), without_invisible(value).strip()
         if not value:
             continue
         if q not in QUALIFIER_FORMATS or q not in key_qualifiers(ai):
@@ -371,7 +396,7 @@ def normalise_key(ai: str, raw) -> str:
     """Validates the value of a primary identification key and returns it as it appears in the URI."""
     if ai not in PRIMARY_KEYS:
         raise ValidationError("key.unsupported", key=str(ai))
-    value = re.sub(r"\s", "", str(raw or ""))
+    value = re.sub(r"\s", "", without_invisible(raw))
     if not value:
         raise ValidationError("gtin.required" if ai == "01" else "key.required")
     if ai in ("01", "414", "417", "8017", "8018", "00", "402", "8006", "255"):
@@ -423,6 +448,12 @@ def normalise_url(raw: str, position: int) -> str:
     url = (raw or "").strip()
     if not url:
         raise ValidationError("link.urlRequired", position=position)
+    # Spaces, line breaks, tabs, invisible characters and backslashes are never part of an address that
+    # was copied correctly; a line break would even make the resolver fail when it sends the redirect.
+    # Other non-ASCII characters (accented paths, internationalised domain names) are kept: the resolver
+    # sends them percent-encoded and in Punycode.
+    if any(c.isspace() or c == "\\" or unicodedata.category(c) in ("Cc", "Cf") for c in url):
+        raise ValidationError("link.urlChars", position=position, url=url.encode("unicode_escape").decode("ascii"))
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.netloc or " " in url:
         raise ValidationError("link.urlInvalid", position=position, url=url)

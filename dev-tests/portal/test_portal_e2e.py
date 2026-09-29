@@ -71,6 +71,11 @@ with sync_playwright() as p:
 
     page.fill("#key-value", "7898357410016"); page.wait_for_timeout(100)
     check("check digit feedback", "should be 5" in page.inner_text("#key-msg"), page.inner_text("#key-msg"))
+    page.fill("#key-value", "\u200b7898357410015\ufeff"); page.wait_for_timeout(100)
+    check("GTIN pasted with invisible characters accepted", "should be" not in page.inner_text("#key-msg")
+          and "digits" not in page.inner_text("#key-msg"), page.inner_text("#key-msg"))
+    page.fill("#key-value", "７８９８３５７４１００１５"); page.wait_for_timeout(100)
+    check("GTIN in full-width digits refused", "digits" in page.inner_text("#key-msg"), page.inner_text("#key-msg"))
     page.fill("#key-value", "7898357410015"); page.wait_for_timeout(200); page.click("#open"); page.wait_for_timeout(500)
     page.fill("#description", "Test 01")
     page.fill(".link-row .url", "www.codigo2d.com.br"); page.click("#description")

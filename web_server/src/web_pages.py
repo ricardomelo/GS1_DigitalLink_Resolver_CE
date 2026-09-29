@@ -14,6 +14,7 @@ Clients asking for JSON keep receiving JSON; nothing here alters machine respons
 """
 import base64
 import os
+from urllib.parse import urlparse
 
 from flask import render_template_string, request
 
@@ -213,8 +214,9 @@ def _label(locale: str, term: str) -> str:
 
 
 def _level_label(locale: str, anchor: str) -> str:
-    # /AI/value followed by the key qualifiers, e.g. /01/…/10/L1/21/S1 or /414/…/254/1
-    parts = anchor.strip('/').split('/')
+    # /AI/value followed by the key qualifiers, e.g. /01/…/10/L1/21/S1 or /414/…/254/1. Linkset anchors
+    # are absolute URIs (https://id.example.org/01/…), so only the path is read.
+    parts = urlparse(anchor).path.strip('/').split('/')
     ai = parts[0] if parts else ''
     pairs = dict(zip(parts[2::2], parts[3::2]))
     if '21' in pairs:

@@ -2,6 +2,11 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Resolver: linkset page
+- The HTML linkset page named every level "(domain) 01" instead of "Product (every unit)", "Batch/lot …":
+  linkset anchors are absolute URIs and the level name read the whole URI as a path. Test added in
+  `dev-tests/resolver/test_resolver.py`.
+
 ### Installer: passwords with special characters
 - A first-user password with a single quote is refused (it ended the single-quoted value in `.env`); any
   other character, `$`, `\`, `"` and spaces included, is kept literally. Passwords typed interactively

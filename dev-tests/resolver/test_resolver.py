@@ -149,6 +149,10 @@ for language, cookie, expected in cases:
 r = get(G + "?linkType=linkset", "text/html")
 check("HTML linkset page", r.status_code == 200 and r.content_type.startswith("text/html"))
 html = r.get_data(as_text=True)
+check("HTML linkset page: levels named from the absolute anchors", "<h2>Produto (todas as unidades)</h2>" in html
+      and "id.example.org" not in html.split("<h2>", 1)[1].split("</h2>", 1)[0], html[html.find("<h2>"):][:200])
+r = get(G + "/10/123?linkType=linkset", "text/html")
+check("HTML linkset page: batch level named", "<h2>Lote 123</h2>" in r.get_data(as_text=True))
 check("HTML pages: logo links to the home page", '<a class="brand" href="/" title="Página inicial do Resolver">' in html)
 check("CORS exposes Link", "Link" in (get(G).headers.get("Access-Control-Expose-Headers") or ""))
 

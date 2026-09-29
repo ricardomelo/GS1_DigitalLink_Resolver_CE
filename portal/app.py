@@ -33,6 +33,7 @@ import label
 import linkcheck
 import meta
 import sheet
+import syntax
 import users
 from gs1 import ValidationError
 
@@ -377,6 +378,24 @@ def request_qualifiers(source, anchor: str) -> list[tuple[str, str]]:
     return gs1.normalise_qualifiers(gs1.split_anchor(anchor)[0], pairs)
 
 
+def request_attributes(source) -> list[tuple[str, str]]:
+    """GS1 Digital Link data attributes named by a request: [{"ai": "17", "value": "261231"}] (JSON) or
+    repeated attr=17:261231 (query string). Only put in the QR code, never stored."""
+    if hasattr(source, "getlist"):
+        items = [item.partition(":")[::2] for item in source.getlist("attr")]
+    else:
+        items = [(str(a.get("ai", "")), str(a.get("value", ""))) for a in source.get("attributes") or []
+                 if isinstance(a, dict)]
+    return [(gs1.without_invisible(ai).strip("() "), gs1.without_invisible(value).strip()) for ai, value in items]
+
+
+def digital_link_for(anchor: str, pairs, attributes) -> tuple[str, list[str]]:
+    """The record's GS1 Digital Link URI, with data attributes (validated by the syntax engine) if any."""
+    if not attributes:
+        return gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, pairs), []
+    return syntax.ENGINE.digital_link(RESOLVER_PUBLIC_URL, anchor, pairs, attributes)
+
+
 def build_document(data: dict) -> tuple[str, str | None, dict]:
     anchor = request_key(data)
     pairs = request_qualifiers(data, anchor)
@@ -556,6 +575,7 @@ def config():
               for ai, (name, _) in gs1.PRIMARY_KEYS.items()],
         languages=gs1.LANGUAGES,
         importLimits=sheet.limits(),
+        dataAttributes=syntax.ENGINE.describe(),
     )
 
 
@@ -1163,6 +1183,19 @@ def audit_csv():
                     headers={"Content-Disposition": f'attachment; filename="portal-audit-{stamp}.csv"'})
 
 
+@app.post("/portal/api/digital-link")
+@require_login
+def digital_link_preview():
+    """The GS1 Digital Link URI the QR code will carry, with data attributes validated by the GS1 Barcode
+    Syntax Engine; the editor calls it while the user types. Nothing is stored."""
+    data = request.get_json(silent=True) or {}
+    anchor = request_key(data)
+    check_access(anchor)
+    pairs = request_qualifiers(data, anchor)
+    uri, attribute_lines = digital_link_for(anchor, pairs, request_attributes(data))
+    return jsonify(uri=uri, hri=gs1.hri_lines(anchor, pairs) + attribute_lines)
+
+
 @app.get("/portal/api/qrcode")
 @require_login
 def qrcode():
@@ -1171,9 +1204,10 @@ def qrcode():
     anchor = request_key(request.args)
     check_access(anchor)
     pairs = request_qualifiers(request.args, anchor)
+    uri, attribute_lines = digital_link_for(anchor, pairs, request_attributes(request.args))
     options = label.LabelOptions(
-        uri=gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, pairs),
-        hri_lines=tuple(gs1.hri_lines(anchor, pairs)),
+        uri=uri,
+        hri_lines=tuple(gs1.hri_lines(anchor, pairs) + attribute_lines),
         show_hri=request.args.get("hri", "1") != "0",
     )
     ai, value = gs1.split_anchor(anchor)

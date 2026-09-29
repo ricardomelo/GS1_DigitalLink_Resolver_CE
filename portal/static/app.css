@@ -294,12 +294,22 @@ a.dl:not([href]) { pointer-events: none; }
 .seg-host { color: var(--muted); }
 .seg-key  { color: var(--gs1-blue); font-weight: 600; }
 .seg-qual { color: var(--action); font-weight: 600; }
+.seg-attr { color: var(--ok); font-weight: 600; }
 .legend { margin: 0 0 1rem; font-size: .8125rem; }
 .legend div { display: flex; flex-wrap: wrap; gap: .1rem .5rem; margin-bottom: .3rem; }
 .legend dt { font-weight: 600; display: flex; align-items: center; gap: .4rem; color: var(--ink); }
 .legend dd { margin: 0; color: var(--muted); }
 .sw { width: .7rem; height: .7rem; border-radius: 2px; display: inline-block; }
-.sw-host { background: var(--muted); } .sw-key { background: var(--gs1-blue); } .sw-qual { background: var(--action); }
+.sw-host { background: var(--muted); } .sw-key { background: var(--gs1-blue); } .sw-qual { background: var(--action); } .sw-attr { background: var(--ok); }
+/* Data attributes editor (below the label options) */
+.attrs { margin: -.5rem 0 1rem; padding: .75rem; border: 1px solid var(--line); border-radius: 4px; background: var(--page); }
+.attrs-note { margin: 0 0 .6rem; font-size: .8125rem; color: var(--muted); }
+.attr-row { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto; gap: .4rem; margin-bottom: .6rem; }
+.attr-row input { min-width: 0; font-size: .875rem; }
+.attr-remove { border: 1px solid var(--field); background: var(--panel); border-radius: 4px; width: 2.25rem; font-size: 1.1rem; line-height: 1; cursor: pointer; color: var(--muted); }
+.attr-remove:hover { color: var(--err); border-color: var(--err); }
+.attr-hint { grid-column: 1 / -1; font-size: .75rem; color: var(--muted); margin-top: -.2rem; }
+.attrs .field-msg { margin: .4rem 0 0; font-size: .8125rem; }
 .state { margin: 0 0 1rem; font-weight: 600; color: var(--muted); }
 .state::before { content: ""; display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; background: var(--line); margin-right: .45rem; }
 .state.is-live { color: var(--ok); } .state.is-live::before { background: var(--ok); }

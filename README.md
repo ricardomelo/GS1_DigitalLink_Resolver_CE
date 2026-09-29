@@ -66,9 +66,10 @@ the official Postman collection is at
 
 | Area | Addition |
 |---|---|
-| **Portal** (`/portal/`) | Sign-in with per-user passwords; editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; per-link query-string forwarding; QR code labels (PNG/SVG) with the dimensions of the *QR Codes powered by GS1* guidelines; record list with search; spreadsheet import/export (XLSX, CSV) with preview; link checker |
+| **Portal** (`/portal/`) | Sign-in with per-user passwords; editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; per-link query-string forwarding; QR code labels (PNG/SVG) with the dimensions of the *QR Codes powered by GS1* guidelines, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search; spreadsheet import/export (XLSX, CSV) with preview; link checker |
 | **Governance** | Roles (administrator, editor, reader); access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords; history of every record with restore; audit trail with filters and CSV export |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, validated as the GS1 Barcode Syntax Engine does |
+| **Data attributes** | Every data attribute of URI Syntax §4.10 in QR codes, validated by the GS1 Barcode Syntax Engine (formats, check digits, dates, code lists and the association rules of the General Specifications); passed on by the resolver to the targets |
 | **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, `fwqs` per link, HTML pages in pt-BR / en-GB for browsers |
 | **Data entry API** | `GET /api/summary` (all records in one request); `GET /api/index` now requires the token; Swagger "Authorize" works on every protected operation |
 | **Configuration** | `.env.example` defaults + optional `.env` for every service; description file (`/.well-known/gs1resolver`) built from the configuration; bind addresses for the published ports |
@@ -126,6 +127,19 @@ DELETE removes links, the default link type is shared by all records of a key).
 The preview shows the Digital Link with its parts coloured, the **QR code label** (download as PNG or SVG,
 X-dimension 0.495 mm, 4X quiet zone, optional human-readable interpretation) and buttons to
 try or copy the link. After each save the targets are checked (see below).
+
+<p align="center">
+  <img src="Documentation/images/portal-attributes.png" alt="QR code panel with an expiry date and a net weight as data attributes" width="300">
+</p>
+
+**Data attributes** — ticking *Include data attributes* below the QR code adds GS1 Digital Link data
+attributes (URI Syntax §4.10) such as expiry date (17), net weight (3103) or price to the QR code:
+`https://id.example.org/01/…/10/B42?17=271231&3103=000500`. Attributes are chosen by number or name from
+the 500-odd AIs the standard allows, with their format explained, and checked as they are typed by the GS1
+Barcode Syntax Engine. They describe the item the code is printed for, so they are **not stored**: they
+go only in the code drawn at that moment and are cleared when another record is opened. The resolver
+passes them on to targets that forward the query string. An attribute can never change the
+identification: batch, serial or variant of a GTIN are qualifiers of their own record, not attributes.
 
 <p align="center">
   <img src="Documentation/images/portal-records.png" alt="Record list with search, spreadsheet buttons and link check result" width="820">
@@ -230,6 +244,12 @@ limits: alphanumeric values use letters, digits, `.`, `-` (and `_` in qualifiers
 entry service maps `/` to `_` in document ids and other symbols would need percent-encoding; and ITIP is
 offered without 22, which the Syntax Engine refuses without a GTIN.
 
+**Data attributes** (§4.10): every AI the GS1 Barcode Syntax Dictionary marks as a GS1 Digital Link data
+attribute, which excludes (8200), (03) and (8014) as the standard does. The portal validates them with the
+GS1 Barcode Syntax Engine itself (release 1.4.1, the one the resolver uses), including the invalid pairs
+and mandatory associations of the GS1 General Specifications §4.13; values of any character of CSET 82
+are percent-encoded as needed. Up to 10 attributes per QR code.
+
 ## API reference
 
 ### Resolver (public)
@@ -282,7 +302,7 @@ checks the user's role and GS1 Company Prefixes.
 | Operation | Purpose |
 |---|---|
 | `POST /login`, `POST /logout`, `POST /password` | Sign in, sign out, change password |
-| `GET /config` | Resolver address, link types, languages, keys and their qualifier shapes |
+| `GET /config` | Resolver address, link types, languages, keys and their qualifier shapes, import limits, data attributes |
 | `GET /record?key=&value=&qualifiers=` | Read one record (and the other records of the key) |
 | `POST /record` | Create or replace one record (`key`, `value`, `qualifiers`, `description`, `links`) |
 | `DELETE /record?key=&value=&qualifiers=` | Delete one record, keeping the others of the key |
@@ -290,7 +310,8 @@ checks the user's role and GS1 Company Prefixes.
 | `POST /export` | XLSX or CSV of every record |
 | `POST /import/preview`, `POST /import/apply`, `GET /import/status` | Spreadsheet import: check, confirm, progress |
 | `POST /links/check`, `POST /links/jobs`, `GET /links/jobs/{token}`, `GET /links/last` | Link checker |
-| `GET /qrcode?key=&value=&qualifiers=&format=png\|svg` | QR code label |
+| `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&attr=AI:value…` | QR code label, optionally with data attributes |
+| `POST /digital-link` | The GS1 Digital Link URI of a record with data attributes (`attributes: [{ai, value}]`), checked by the syntax engine; nothing is stored |
 | `GET /history?key=&value=&qualifiers=` | Versions of a record (with content) |
 | `GET /users`, `POST /users`, `PUT /users/{name}`, `POST /users/{name}/reset`, `DELETE /users/{name}` | User administration (administrators) |
 | `GET /audit`, `GET /audit.csv` (`user`, `from`, `to`, `q`) | Audit trail (administrators) |
@@ -303,9 +324,9 @@ checks the user's role and GS1 Company Prefixes.
 | **Operating system** | Ubuntu Server 22.04 or 24.04 LTS for the installer; any Linux (x86-64 or ARM64) with Docker for a manual installation |
 | **Software** | Docker Engine with the Compose plugin **2.24 or later** (the installer installs both); nginx and Certbot when the server terminates TLS; `git` |
 | **Hardware** (guidance) | 2 vCPU, 2 GB RAM (4 GB recommended), 10 GB free disk for images, database and backups |
-| **Network** | A DNS name (e.g. `id.example.org`) pointing to the server; ports 80 and 443 reachable (or a load balancer/proxy that terminates TLS); outbound HTTPS for building the images (Docker Hub, PyPI, npm, NodeSource) and for the link checker |
+| **Network** | A DNS name (e.g. `id.example.org`) pointing to the server; ports 80 and 443 reachable (or a load balancer/proxy that terminates TLS); outbound HTTPS for building the images (Docker Hub, PyPI, npm, NodeSource, GitHub for the GS1 Barcode Syntax Engine) and for the link checker |
 | **Portal users** | A current browser (Chrome, Edge, Firefox, Safari) |
-| **Development** (optional) | Python 3.12, nginx, Playwright with Chromium; Node.js for the comparison with the GS1 Syntax Engine |
+| **Development** (optional) | Python 3.12, nginx, Playwright with Chromium; a C compiler and `make` for the GS1 Barcode Syntax Engine; Node.js for the comparison with the GS1 Syntax Engine |
 
 ## Installation with the Ubuntu script
 
@@ -427,6 +448,7 @@ The tests in [`dev-tests/`](dev-tests/README.md) run without Docker or MongoDB:
 | `portal/test_keys.py` | Every primary key and qualifier combination, compared with the GS1 Syntax Engine |
 | `portal/test_portal_e2e.py` | The portal in Chromium: editor, keys, qualifiers, labels, list, spreadsheets, link checker, users |
 | `portal/test_governance.py` | Roles, prefixes, user administration, temporary passwords, history, audit trail |
+| `portal/test_data_attributes.py` | Data attributes: syntax engine and dictionary, every refusal, the API and QR codes, the portal without the engine |
 | `portal/test_sheet.py`, `test_special_chars.py`, `test_linkcheck.py`, `test_portal_config.py` | Spreadsheets, special characters, link checker, start-up configuration |
 | `home/test_home.py` | Home page through the real nginx configuration |
 | `install/test_install.sh` | Installer in eight scenarios, with the real `docker compose config` and `nginx -t` |
@@ -435,6 +457,9 @@ The tests in [`dev-tests/`](dev-tests/README.md) run without Docker or MongoDB:
 pip install -r web_server/src/requirements.txt -r portal/requirements.txt jsonschema playwright opencv-python-headless
 playwright install chromium
 python dev-tests/resolver/test_resolver.py
+# GS1 Barcode Syntax Engine for data attributes, as the portal image builds it:
+bash portal/tools/build-syntax-engine.sh /tmp/gs1se
+GS1_SYNTAX_ENGINE_DIR=/tmp/gs1se python dev-tests/portal/test_data_attributes.py
 # optional, compares with the GS1 Syntax Engine used by the resolver:
 mkdir -p /tmp/se && (cd /tmp/se && npm init -y && npm pkg set type=module && npm install gs1encoder)
 GS1_SYNTAX_ENGINE=/tmp/se python dev-tests/portal/test_keys.py
@@ -454,7 +479,8 @@ database_server/                MongoDB image (official)
 frontend_proxy_server/          nginx: routes, home page (home/), portal
 portal/                         link management portal: app.py, gs1.py (keys, qualifiers), label.py,
                                 sheet.py, linkcheck.py, users.py (roles), journal.py (history, audit),
-                                meta.py, static/ (HTML, CSS, JS, i18n)
+                                meta.py, syntax.py (data attributes), static/ (HTML, CSS, JS, i18n),
+                                tools/build-syntax-engine.sh (GS1 Barcode Syntax Engine)
 scripts/                        install.sh, templates/ (nginx), resolver-backup.sh and its cron entry
 dev-tests/                      development tests (see above)
 Documentation/                  extensions/ (detailed documentation, changelog), images/, upstream-README.md
@@ -467,6 +493,8 @@ Licensed under the [Apache License 2.0](LICENSE), like the official project.
 
 - **GS1 Resolver Community Edition** — the GS1 Resolver Community (original design and code by Nick
   Lansley and contributors).
-- **GS1 Barcode Syntax Engine** — GS1 AISBL (Terry Burton), used by the resolver to validate every request.
+- **GS1 Barcode Syntax Engine** and **GS1 Barcode Syntax Dictionary** — GS1 AISBL (Terry Burton), used by the
+  resolver to validate every request and by the portal to validate data attributes (Apache License 2.0,
+  downloaded and built when the images are built).
 
 GS1, the GS1 logo and GS1 Digital Link are trademarks of GS1 AISBL.

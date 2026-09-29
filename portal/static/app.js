@@ -3,6 +3,7 @@
 /* Base path of the portal (e.g. "/portal/"), so it works behind any prefix. */
 const BASE = location.pathname.replace(/[^/]*$/, "");
 const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const { t } = I18N;
 
 let CONFIG = null;
@@ -262,6 +263,7 @@ function query(g, qual) {
 
 /* ------------------------------------------------------------------ label preview */
 let qrTimer = null;
+let previewSeq = 0;
 
 function renderPreview() {
   const g = readKey();
@@ -269,7 +271,41 @@ function renderPreview() {
   const host = CONFIG ? CONFIG.resolver : "";
   const shown = g.ok ? g.value : "______________";
   const pairs = l.ok ? l.pairs : [];
+  const ready = g.ok && l.ok;
+  const attributes = readAttributes();
+  const seq = ++previewSeq;
 
+  drawDigitalLink(host, g, shown, pairs, "");
+  if (!ready || !attributes.length) {
+    I18N.set($("#attr-msg"), null);
+    applyPreview(ready, g, l, ready ? `${host}/${g.ai}/${g.value}` + qualifierPath(pairs) : "", []);
+    return;
+  }
+  // Data attributes are checked by the GS1 Barcode Syntax Engine on the server; until they are valid
+  // nothing can be downloaded, so a code is never produced without the attributes the user asked for.
+  applyPreview(false, g, l, "", attributes, "attrs.checking");
+  clearTimeout(attrTimer);
+  attrTimer = setTimeout(async () => {
+    const body = { key: g.ai, value: g.value, qualifiers: Object.fromEntries(pairs),
+                   attributes: attributes.map(([ai, value]) => ({ ai, value })) };
+    try {
+      const result = await api("POST", "digital-link", body);
+      if (seq !== previewSeq) return;
+      drawDigitalLink(host, g, shown, pairs, result.uri.includes("?") ? result.uri.slice(result.uri.indexOf("?")) : "");
+      I18N.set($("#attr-msg"), "attrs.ok", { count: attributes.length });
+      $("#attr-msg").className = "field-msg is-ok";
+      applyPreview(true, g, l, result.uri, attributes);
+    } catch (e) {
+      if (seq !== previewSeq) return;
+      I18N.set($("#attr-msg"), e.code, e.params);
+      $("#attr-msg").className = "field-msg is-error";
+      applyPreview(false, g, l, "", attributes, "attrs.fixFirst");
+    }
+  }, 300);
+}
+
+/* The GS1 Digital Link in coloured segments: resolver, key, qualifiers, data attributes. */
+function drawDigitalLink(host, g, shown, pairs, queryString) {
   const dl = $("#dl");
   dl.replaceChildren();
   const segment = (cls, text) => {
@@ -283,11 +319,18 @@ function renderPreview() {
   I18N.set($("#legend-key"), "legend.key", { ai: g.ai, name: t(`key.${g.ai}.short`) });
   pairs.forEach(([q, v]) => segment("seg-qual", `/${q}/${encodeURIComponent(v)}`));
   $("#legend-lot").hidden = pairs.length === 0;
+  // "?17=261231&3103=000500": one segment per attribute so long query strings wrap between them
+  queryString.slice(1).split("&").filter(Boolean)
+    .forEach((pair, i) => segment("seg-attr", (i ? "&" : "?") + pair));
+  $("#legend-attr").hidden = !queryString;
+}
 
-  const ready = g.ok && l.ok;
-  const uri = ready ? `${host}/${g.ai}/${g.value}` + qualifierPath(pairs) : "";
+/* Test, copy, downloads and the QR image, for a ready URI (or disabled, with a placeholder message). */
+function applyPreview(ready, g, l, uri, attributes, placeholder = "preview.qrPlaceholder") {
+  const dl = $("#dl");
   toggleLink($("#test"), ready ? uri : null);
-  const labelQuery = `${query(g, l)}&${labelOptionsQuery()}`;
+  const attrQuery = attributes.map(([ai, value]) => "&attr=" + encodeURIComponent(`${ai}:${value}`)).join("");
+  const labelQuery = ready ? `${query(g, l)}&${labelOptionsQuery()}${attrQuery}` : "";
   toggleLink($("#download-png"), ready ? `${BASE}api/qrcode?${labelQuery}&format=png` : null);
   toggleLink($("#download-svg"), ready ? `${BASE}api/qrcode?${labelQuery}&format=svg` : null);
   if (ready) dl.href = uri; else dl.removeAttribute("href");
@@ -299,7 +342,7 @@ function renderPreview() {
     const box = $("#qr");
     if (!ready) {
       const span = document.createElement("span");
-      I18N.set(span, "preview.qrPlaceholder");
+      I18N.set(span, placeholder);
       box.replaceChildren(span);
       return;
     }
@@ -308,6 +351,114 @@ function renderPreview() {
     img.src = `${BASE}api/qrcode?${labelQuery}`;
     img.onload = () => box.replaceChildren(img);
   }, 250);
+}
+
+/* ---------------------------------------------------------------- data attributes
+   GS1 Digital Link data attributes (URI Syntax 1.7, section 4.10): AIs such as expiry date or net weight
+   written in the query string of the QR code. They are not stored on the resolver: they apply only to
+   the code drawn now, and are cleared when another record is opened. The list of AIs, their names and
+   formats come from the GS1 Barcode Syntax Dictionary (GET /portal/api/config, dataAttributes). */
+let attrTimer = null;
+
+function attributeConfig() {
+  return (CONFIG && CONFIG.dataAttributes) || { available: false };
+}
+
+function attributeByCode(code) {
+  return (attributeConfig().ais || []).find(a => a.ai === code);
+}
+
+/* "(17) USE BY or EXPIRY", "17", "(17)" → "17" */
+function attributeCode(text) {
+  const match = String(text || "").trim().match(/^\(?(\d{2,4})\)?/);
+  return match ? match[1] : "";
+}
+
+function readAttributes() {
+  if (!$("#opt-attrs").checked) return [];
+  return $$("#attr-rows .attr-row")
+    .map(row => [attributeCode($(".attr-ai", row).value), $(".attr-value", row).value.trim()])
+    .filter(([ai, value]) => ai || value)
+    .map(([ai, value]) => [ai || "?", value]);
+}
+
+/* Format hint for an AI, from its dictionary components: "6 digits · date YYMMDD" */
+function attributeHint(attribute) {
+  return attribute.components.map(c => {
+    const size = t(`attrs.size.${c.type}.${c.min === c.max ? "fixed" : "var"}`, { n: c.max });
+    const rules = c.linters.filter(l => I18N.has(`attrs.lint.${l}`)).map(l => t(`attrs.lint.${l}`));
+    const text = [size, ...rules].join(" · ");
+    return c.optional ? t("attrs.optional", { text }) : text;
+  }).join(" + ");
+}
+
+function addAttributeRow(ai = "", value = "") {
+  const row = document.createElement("div");
+  row.className = "attr-row";
+  const aiInput = Object.assign(document.createElement("input"), {
+    className: "attr-ai", value: ai, autocomplete: "off", spellcheck: false });
+  aiInput.setAttribute("list", "attr-ais");
+  aiInput.dataset.i18nAttr = "placeholder:attrs.aiPlaceholder;aria-label:attrs.ai";
+  const valueInput = Object.assign(document.createElement("input"), {
+    className: "attr-value code", value, autocomplete: "off", spellcheck: false });
+  valueInput.dataset.i18nAttr = "aria-label:attrs.value";
+  const remove = Object.assign(document.createElement("button"), { type: "button", className: "attr-remove", textContent: "×" });
+  remove.dataset.i18nAttr = "aria-label:attrs.remove;title:attrs.remove";
+  const hint = Object.assign(document.createElement("small"), { className: "attr-hint" });
+  hint.setAttribute("aria-live", "polite");
+
+  const describe = () => {
+    const attribute = attributeByCode(attributeCode(aiInput.value));
+    hint.textContent = attribute ? attributeHint(attribute) : "";
+    const max = attribute ? attribute.components.reduce((n, c) => n + c.max, 0) : 90;
+    valueInput.maxLength = max;
+    valueInput.inputMode = attribute && attribute.components.every(c => c.type === "N") ? "numeric" : "text";
+    // Show the full name once chosen: "17" → "(17) USE BY or EXPIRY"
+    if (attribute && aiInput.value.trim() === attribute.ai) aiInput.value = `(${attribute.ai}) ${attribute.title}`;
+    aiInput.title = attribute ? `(${attribute.ai}) ${attribute.title}` : "";   // the field is narrow
+  };
+  aiInput.addEventListener("change", () => { describe(); renderPreview(); });
+  aiInput.addEventListener("input", renderPreview);
+  valueInput.addEventListener("input", renderPreview);
+  remove.addEventListener("click", () => {
+    row.remove();
+    $("#attr-add").disabled = false;
+    if (!$$("#attr-rows .attr-row").length) addAttributeRow();
+    renderPreview();
+  });
+  row.append(aiInput, valueInput, remove, hint);
+  row.describe = describe;               // re-run when the language changes (format hints are translated)
+  $("#attr-rows").append(row);
+  I18N.apply(row);
+  describe();
+  $("#attr-add").disabled = $$("#attr-rows .attr-row").length >= (attributeConfig().max || 10);
+  return row;
+}
+
+function resetAttributes() {
+  const had = $("#opt-attrs").checked;
+  $("#attr-rows").replaceChildren();
+  $("#opt-attrs").checked = false;
+  $("#attrs").hidden = true;
+  I18N.set($("#attr-msg"), null);
+  if (had) renderPreview();
+}
+
+function setupAttributes() {
+  const config = attributeConfig();
+  $("#opt-attrs-choice").hidden = !config.available;
+  if (!config.available) return;
+  $("#attr-ais").replaceChildren(...config.ais.map(a =>
+    Object.assign(document.createElement("option"), { value: `(${a.ai}) ${a.title}` })));
+  $("#opt-attrs").addEventListener("change", () => {
+    $("#attrs").hidden = !$("#opt-attrs").checked;
+    if ($("#opt-attrs").checked && !$$("#attr-rows .attr-row").length) addAttributeRow().querySelector(".attr-ai").focus();
+    renderPreview();
+  });
+  $("#attr-add").addEventListener("click", () => {
+    addAttributeRow().querySelector(".attr-ai").focus();
+  });
+  document.addEventListener("localechange", () => $$("#attr-rows .attr-row").forEach(row => row.describe()));
 }
 
 /* Label option: human readable interpretation (default on).
@@ -409,6 +560,7 @@ async function openRecord() {
     const record = await api("GET", "record?" + query(g, l));
     state.openKey = query(g, l);
     state.exists = record.exists;
+    resetAttributes();                  // data attributes belong to the code drawn for one item, not the record
     state.sharedDefaultLinkType = record.sharedDefaultLinkType;
     $("#description").value = record.description || "";
     $("#links").replaceChildren();
@@ -1521,6 +1673,7 @@ async function init() {
     e.preventDefault();
     history.pushState(null, "", location.pathname + location.search);
     applyView();
+    resetAttributes();
     $("#key-value").focus();
   });
   window.addEventListener("hashchange", applyView);
@@ -1534,6 +1687,7 @@ async function init() {
     return;
   }
   document.body.dataset.role = CONFIG.role;
+  setupAttributes();
   fillKeyTypes();
   onKeyTypeChange();
   applyView();                                   // administrator views need the role

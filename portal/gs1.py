@@ -444,6 +444,11 @@ def hri_lines(anchor: str, pairs: list[tuple[str, str]] = ()) -> list[str]:
     return [f"({ai}){value}"] + [f"({q}){v}" for q, v in pairs]
 
 
+def element_string(anchor: str, pairs: list[tuple[str, str]] = ()) -> str:
+    """The record as GS1 element strings in bracketed AI syntax: (01)…(10)…"""
+    return "".join(hri_lines(anchor, pairs))
+
+
 def normalise_url(raw: str, position: int) -> str:
     url = (raw or "").strip()
     if not url:

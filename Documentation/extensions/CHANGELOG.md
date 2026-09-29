@@ -2,6 +2,25 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: GS1 Digital Link data attributes
+- QR codes can carry data attributes (URI Syntax 1.7, §4.10) — expiry date, net weight, price and every
+  other AI the standard allows — in the query string of the Digital Link. *Include data attributes*
+  below the QR code opens an editor of up to 10 attributes (AI by number or name with its GS1 data title,
+  value with its format explained); the link preview, QR image, test and copy buttons and downloads use
+  them once they are valid. They are not stored and are cleared when another record is opened.
+- Validation by the GS1 Barcode Syntax Engine itself (formats, check digits, dates, code lists, invalid
+  pairs and mandatory associations of the General Specifications §4.13), release 1.4.1 as used by the
+  resolver: `portal/tools/build-syntax-engine.sh` builds its native library, GS1's Python binding and the
+  Syntax Dictionary in a separate stage of the portal image (`GS1_SYNTAX_ENGINE_DIR`); `portal/syntax.py`
+  runs it in the portal process. Without the engine the option is not offered.
+- A qualifier of the record's key (e.g. batch/lot of a GTIN) is refused as an attribute: it would go in the
+  path and the code would point at another record.
+- API: `POST /portal/api/digital-link`; `GET /portal/api/qrcode` accepts `attr=AI:value`; `GET
+  /portal/api/config` lists the attributes (`dataAttributes`). The label's HRI adds one line per attribute.
+- Tests: `dev-tests/portal/test_data_attributes.py` (42 checks); data attribute steps in the portal
+  end-to-end test; the resolver passes attributes on unchanged (`dev-tests/resolver/test_resolver.py`).
+  Documentation: section "GS1 Digital Link data attributes"; README screenshot `portal-attributes.png`.
+
 ### Home page: operator linked
 - The operator's name in the home page footer links to the operator's website, as on the resolver's
   pages. The home page reads it from the resolver description file, which now publishes

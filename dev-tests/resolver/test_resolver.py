@@ -123,6 +123,22 @@ for path, expected in redirects:
     location = r.headers.get("Location", "")
     check(f"307 {path}", r.status_code == 307 and location.startswith(expected), f"{r.status_code} {location}")
 
+# GS1 Digital Link data attributes (URI Syntax 4.10) in the query string, as the portal puts them in QR
+# codes: passed on to the target unchanged, in order and encoding (Resolver standard 2.12, requirement 19),
+# unless the link has fwqs false. The resolver does not judge them: an invalid date is passed on too.
+data_attributes = [
+    (G + "?17=261231&3103=000500", "https://www.codigo2d.com.br?17=261231&3103=000500"),
+    (G + "/10/123?17=261231", "https://www.example.org?17=261231"),
+    (G + "?linkType=gs1:instructions&17=261231", "https://www.codigo2d.com.br?linkType=gs1%3Ainstructions&17=261231"),
+    (G + "?99=A%28B%29%2FC%26D&17=261231", "https://www.codigo2d.com.br?99=A%28B%29%2FC%26D&17=261231"),
+    (G + "?linkType=pip&17=261231", "https://www.codigo2d.com.br/produto"),               # fwqs false
+    (G + "?17=261399", "https://www.codigo2d.com.br?17=261399"),
+]
+for path, expected in data_attributes:
+    r = get(path)
+    check(f"data attributes passed on: {path}", r.status_code == 307 and r.headers.get("Location") == expected,
+          f"{r.status_code} {r.headers.get('Location')}")
+
 for path in [G + "?linkType=gs1:recallStatus", G + "?linkType=gs1:linkset", G + "/10/123?linkType=recallStatus", "/01/07891234567895"]:
     r = get(path)
     check(f"404 {path}", r.status_code == 404, r.status_code)

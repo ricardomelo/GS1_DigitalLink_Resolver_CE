@@ -114,6 +114,24 @@ with sync_playwright() as p:
     page.click("#check-links"); page.wait_for_timeout(1200)
     save(page, "portal-editor.png", full=True)
 
+    # QR code panel with data attributes (needs the GS1 Barcode Syntax Engine: GS1_SYNTAX_ENGINE_DIR)
+    import syntax  # noqa: PLC0415
+    if syntax.ENGINE.available:
+        page.check("#opt-attrs"); page.wait_for_timeout(150)
+        row = "#attr-rows .attr-row:nth-child(1)"
+        page.fill(f"{row} .attr-ai", "17"); page.press(f"{row} .attr-ai", "Tab"); page.fill(f"{row} .attr-value", "271231")
+        page.click("#attr-add")
+        row = "#attr-rows .attr-row:nth-child(2)"
+        page.fill(f"{row} .attr-ai", "3103"); page.press(f"{row} .attr-ai", "Tab"); page.fill(f"{row} .attr-value", "000500")
+        page.wait_for_timeout(1500)
+        # bounding_box() is relative to the viewport, a full-page clip to the top of the page
+        box = page.locator(".label-panel").bounding_box()
+        scroll_x, scroll_y = page.evaluate("[window.scrollX, window.scrollY]")
+        save(page, "portal-attributes.png", clip={"x": box["x"] + scroll_x - 8, "y": box["y"] + scroll_y - 8,
+                                                  "width": box["width"] + 16, "height": box["height"] + 16}, full=True)
+    else:
+        print("portal-attributes.png not written: GS1 Barcode Syntax Engine not available (GS1_SYNTAX_ENGINE_DIR)")
+
     # Record list after a link check
     page.goto(BASE + "#records"); page.wait_for_timeout(800)
     page.click("#records-check"); page.wait_for_timeout(2500)

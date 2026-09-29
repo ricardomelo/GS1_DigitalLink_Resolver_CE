@@ -494,7 +494,8 @@ document, `{AI}_{value}`, reached at `/api/{AI}/{value}`.
 | Registered records | `GET /portal/api/records` | `GET /api/summary` |
 | Export spreadsheet | `POST /portal/api/export` | `GET /api/summary?links=true` |
 | Import spreadsheet | `POST /portal/api/import/preview`, `…/apply`, `GET …/status` | preview: `GET /api/summary?links=true`; apply: the save sequence above, record by record |
-| QR code label | `GET /portal/api/qrcode?key=…&value=…&qualifiers=…&format=png\|svg&hri=0\|1` | generated locally from `{RESOLVER_PUBLIC_URL}/{AI}/{value}[/{qualifier AI}/{value}…]` (see "QR code label") |
+| QR code label | `GET /portal/api/qrcode?key=…&value=…&qualifiers=…&format=png\|svg&hri=0\|1[&attr=AI:value…]` | generated locally from `{RESOLVER_PUBLIC_URL}/{AI}/{value}[/{qualifier AI}/{value}…][?AI=value…]` (see "QR code label" and "GS1 Digital Link data attributes") |
+| Data attributes (while typing) | `POST /portal/api/digital-link` with `{key, value, qualifiers, attributes: [{ai, value}]}` | — (checked by the GS1 Barcode Syntax Engine in the portal; nothing stored) |
 
 Rules applied before calling the API: key values and qualifiers as in
 [Primary identification keys](#primary-identification-keys) and [Key qualifiers](#key-qualifiers) (check
@@ -520,7 +521,8 @@ It follows the symbol and text dimensions of the *QR Codes powered by GS1 design
 - **Quiet zone:** 4X on all four sides, always blank.
 - **Human readable interpretation** (checkbox, on by default): the element strings below the quiet zone,
   one per line: the key (e.g. `(01)` followed by the GTIN-14, `(414)` followed by the GLN), then each
-  qualifier in path order (e.g. `(10)` followed by the batch/lot, `(21)` followed by the serial), in
+  qualifier in path order (e.g. `(10)` followed by the batch/lot, `(21)` followed by the serial), then
+  each data attribute in the order entered (see below), in
   Liberation Sans (metrically equivalent to Arial). The guidelines require it when the QR code stands alone
   on pack; it may be omitted when the code sits next to the linear barcode that already carries the same
   data, or on a consumer-engagement panel.
@@ -528,6 +530,67 @@ It follows the symbol and text dimensions of the *QR Codes powered by GS1 design
   and is the format to hand to packaging designers. PNG suits documents and quick use.
 - The choice is remembered in the browser. Files are named after the key and qualifiers, e.g.
   `qrcode_01_09506000134352_10_L1.svg`.
+
+## GS1 Digital Link data attributes
+
+Data attributes (URI Syntax 1.7, §4.10) are GS1 Application Identifiers for informative data — expiry
+date (17), net weight (3103), price (3922), ship-to address (4302)… — written as `AI=value` pairs in the
+query string: `https://id.example.org/01/09506000134352/10/B42?17=271231&3103=000500`. They are not part of
+the identifier (§4.10, Resolver standard §2.12).
+
+**What the portal does.** Ticking *Include data attributes* below the QR code opens an editor of up to
+10 attributes: each row takes an AI, chosen by number or name from a searchable list with its GS1 data title
+(e.g. "(17) USE BY or EXPIRY"), and a value, with the expected format explained in the user's language
+(e.g. "6 digits · date YYMMDD (DD = 00: end of month)"). While the user types, `POST /portal/api/digital-link`
+checks the attributes and returns the URI; the coloured link gains a green query-string part, and the QR
+image, the test and copy buttons and the downloads (`GET /portal/api/qrcode?…&attr=17:271231&attr=3103:000500`)
+all use it. While an attribute is wrong the message says why and nothing can be downloaded, so a code is
+never produced without the attributes that were asked for.
+
+**Not stored.** Attributes describe the item a code is printed for (this pack expires on…, weighs…), not
+the record, so they are not written to the resolver, the history or the audit trail. They apply to the
+code drawn at that moment and are cleared when another record is opened or a new one started.
+
+**What the resolver does.** Nothing beyond passing them on: a GS1-Conformant Resolver transmits the whole
+query string to the target (Resolver standard §2.12, requirement 19), here for every target with *Pass the
+request's query parameters* ticked (`fwqs`). It does not judge them; an invalid date reaches the target
+unchanged. `dev-tests/resolver/test_resolver.py` checks this.
+
+**Validation: the GS1 Barcode Syntax Engine itself.** About 500 AIs can be data attributes, each with its
+own format, check digits, date, time and code-list rules (ISO 3166, ISO 4217…), and the GS1 General
+Specifications §4.13 add invalid pairs (e.g. (3102) with (3103)) and mandatory associations (e.g. (17) needs
+one of (01), (02), (03), (255), (8006), (8026); (4321) needs an SSCC). Rather than reproduce all of it, as the portal does for
+keys and qualifiers, `portal/syntax.py` asks the GS1 Barcode Syntax Engine, the reference implementation
+the resolver also uses:
+
+- `portal/tools/build-syntax-engine.sh` downloads a pinned release (1.4.1, the one of the `gs1encoder`
+  package the resolver installs) from GitHub, builds the native library and copies it with GS1's Python
+  binding and the GS1 Barcode Syntax Dictionary of the same release to `/opt/gs1-syntax-engine`. The portal
+  image does this in a separate build stage, so the compiler is not in the image; `GS1_SYNTAX_ENGINE_DIR`
+  points to the directory. Updating the release is a deliberate change: build, run the tests, update the
+  script.
+- The engine runs inside the portal process (a few microseconds per check); one instance is shared by the
+  portal's threads behind a lock.
+- The engine builds the URI (`getDLuri`), so percent-encoding and order follow it; values may use any
+  CSET 82 character, e.g. `(99)A(B)/C&D` → `?99=A%28B%29%2FC%26D`.
+- The dictionary supplies the list offered in the editor (AIs flagged `?`, which excludes (8200), (03) and
+  (8014) as §4.10 requires), their titles and format components, and the qualifiers of each key.
+
+**Checks and messages.** The portal refuses, with its own message in both languages: an AI that is the key
+or one of its qualifiers (it would go in the path and the code would point at another record — for a
+batch, serial or variant, open the record with that qualifier), an AI that is not a data attribute, a
+repeated AI, an empty value, more than 10 attributes. Everything else is the engine's judgement, shown as
+"The GS1 Barcode Syntax Engine refused the attributes: …" followed by the engine's own message (English),
+e.g. *AI (17): The date contains an illegal month of the year* or *Required AIs for AI (17) are not
+satisfied: 01,02,03,255,8006,8026*. As a last guard, the path of the engine's URI must be the record's own.
+
+**Without the engine** (an image built before this feature, or a build without network access to GitHub)
+the portal logs a warning, the option is not shown and QR codes work as before.
+
+**Limits and choices.** At most 10 attributes: each adds data to the QR code, which grows at the fixed
+X-dimension. The editor does not offer date pickers: `yymmd0` dates may end in `00` (end of month), which a
+calendar cannot express, and GS1 users know the AI formats. AI titles are GS1's data titles, which are
+language-neutral on labels.
 
 ## Resolver CE changes
 

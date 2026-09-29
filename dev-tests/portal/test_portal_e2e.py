@@ -32,6 +32,7 @@ import users  # noqa: E402
 users.set_password("tester", "a-long-test-password")
 import app as portal  # noqa: E402
 import linkcheck  # noqa: E402
+import syntax  # noqa: E402,F401 — portal.syntax.ENGINE tells whether data attributes are offered
 
 
 def fake_check(url):
@@ -298,6 +299,52 @@ with sync_playwright() as p:
     response = ctx.request.get(f"http://127.0.0.1:{PORT}" + page.get_attribute("#download-png", "href"))
     decoded = cv2.QRCodeDetector().detectAndDecode(cv2.imdecode(np.frombuffer(response.body(), np.uint8), 1))[0]
     check("QR code with every qualifier", decoded.endswith("/01/09506000134352/22/V1/10/L1/21/S1"), decoded)
+
+    # GS1 Digital Link data attributes (URI Syntax 4.10): only in the QR code, checked by the syntax engine
+    if not portal.syntax.ENGINE.available:
+        check("data attributes not offered without the syntax engine", page.is_hidden("#opt-attrs-choice"))
+    else:
+        check("data attributes offered, editor closed", page.is_visible("#opt-attrs-choice") and page.is_hidden("#attrs"))
+        page.check("#opt-attrs"); page.wait_for_timeout(150)
+        check("ticking opens the editor with one row", page.is_visible("#attrs")
+              and len(page.query_selector_all("#attr-rows .attr-row")) == 1)
+        first = "#attr-rows .attr-row:nth-child(1)"
+        page.fill(f"{first} .attr-ai", "17"); page.press(f"{first} .attr-ai", "Tab")
+        check("AI completed with its GS1 data title", page.input_value(f"{first} .attr-ai") == "(17) USE BY or EXPIRY",
+              page.input_value(f"{first} .attr-ai"))
+        check("format hint from the syntax dictionary", "6 digits · date YYMMDD" in page.inner_text(f"{first} .attr-hint"),
+              page.inner_text(f"{first} .attr-hint"))
+        page.fill(f"{first} .attr-value", "261399"); page.wait_for_timeout(900)
+        check("invalid date refused by the engine", "illegal month" in page.inner_text("#attr-msg"), page.inner_text("#attr-msg"))
+        check("nothing downloadable while attributes are wrong", page.get_attribute("#download-png", "href") is None
+              and page.is_disabled("#copy") and "Correct the attributes" in page.inner_text("#qr"))
+        page.fill(f"{first} .attr-value", "261231"); page.wait_for_timeout(900)
+        check("valid attribute accepted", "1 attribute(s) checked" in page.inner_text("#attr-msg"), page.inner_text("#attr-msg"))
+        check("preview shows the query string", page.inner_text("#dl").endswith("/21/S1?17=261231")
+              and page.is_visible("#legend-attr"), page.inner_text("#dl"))
+        check("test link carries the attribute", page.get_attribute("#test", "href").endswith("/21/S1?17=261231"))
+        response = ctx.request.get(f"http://127.0.0.1:{PORT}" + page.get_attribute("#download-png", "href"))
+        decoded = cv2.QRCodeDetector().detectAndDecode(cv2.imdecode(np.frombuffer(response.body(), np.uint8), 1))[0]
+        check("QR code with a data attribute", decoded == "https://id.example.org/01/09506000134352/22/V1/10/L1/21/S1?17=261231",
+              decoded)
+        page.click("#attr-add"); page.wait_for_timeout(100)
+        second = "#attr-rows .attr-row:nth-child(2)"
+        page.fill(f"{second} .attr-ai", "10"); page.press(f"{second} .attr-ai", "Tab")
+        page.fill(f"{second} .attr-value", "L9"); page.wait_for_timeout(900)
+        check("batch/lot refused as attribute of a GTIN (would change the record)",
+              "(10) is part of the identification" in page.inner_text("#attr-msg"), page.inner_text("#attr-msg"))
+        page.fill(f"{second} .attr-ai", "3103"); page.press(f"{second} .attr-ai", "Tab")
+        page.fill(f"{second} .attr-value", "000500"); page.wait_for_timeout(900)
+        check("second attribute accepted", page.inner_text("#dl").endswith("?17=261231&3103=000500"), page.inner_text("#dl"))
+        page.select_option("#locale", "pt-BR"); page.wait_for_timeout(200)
+        check("format hints follow the language", "data AAMMDD" in page.inner_text(f"{first} .attr-hint"),
+              page.inner_text(f"{first} .attr-hint"))
+        page.select_option("#locale", "en-GB"); page.wait_for_timeout(200)
+        page.click(f"{second} .attr-remove"); page.wait_for_timeout(900)
+        check("removing a row updates the link", page.inner_text("#dl").endswith("?17=261231"), page.inner_text("#dl"))
+        page.click("#open"); page.wait_for_timeout(800)
+        check("attributes cleared when a record is opened", not page.is_checked("#opt-attrs") and page.is_hidden("#attrs")
+              and "?" not in page.inner_text("#dl"), page.inner_text("#dl"))
 
     page.select_option("#key-type", "415"); page.fill("#key-value", "9506000134376"); page.wait_for_timeout(200)
     check("415 requires 8020", "requires the qualifier (8020)" in page.inner_text("#qual-msg") and page.is_disabled("#open")

@@ -147,12 +147,22 @@
         <fieldset class="label-options">
           <legend class="visually-hidden" data-i18n="label.options"></legend>
           <label class="choice"><input type="checkbox" id="opt-hri" checked> <span data-i18n="label.hri"></span></label>
+          <label class="choice" id="opt-attrs-choice" hidden><input type="checkbox" id="opt-attrs" aria-controls="attrs"> <span data-i18n="label.attrs"></span></label>
         </fieldset>
+        <!-- GS1 Digital Link data attributes: only in the QR code drawn now, never stored -->
+        <div class="attrs" id="attrs" hidden>
+          <p class="attrs-note" data-i18n="attrs.note"></p>
+          <datalist id="attr-ais"></datalist>
+          <div id="attr-rows"></div>
+          <button type="button" class="btn btn-ghost" id="attr-add" data-i18n="attrs.add"></button>
+          <p class="field-msg" id="attr-msg" role="status" aria-live="polite"></p>
+        </div>
         <a class="dl code" id="dl" target="_blank" rel="noopener" data-i18n-attr="aria-label:preview.dlAria"></a>
         <dl class="legend">
           <div><dt><span class="sw sw-host"></span><span data-i18n="legend.host"></span></dt><dd data-i18n="legend.hostHelp"></dd></div>
           <div><dt><span class="sw sw-key"></span><span id="legend-key" data-i18n="legend.key" data-i18n-params='{"ai":"01","name":"GTIN"}'></span></dt><dd data-i18n="legend.keyHelp"></dd></div>
           <div id="legend-lot" hidden><dt><span class="sw sw-qual"></span><span data-i18n="legend.qual"></span></dt><dd data-i18n="legend.qualHelp"></dd></div>
+          <div id="legend-attr" hidden><dt><span class="sw sw-attr"></span><span data-i18n="legend.attr"></span></dt><dd data-i18n="legend.attrHelp"></dd></div>
         </dl>
         <p class="state" id="state" data-i18n="state.draft"></p>
         <div class="label-actions">

@@ -2,6 +2,13 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Documentation: every key and qualifier
+- `Documentation/extensions/README.md` no longer describes the portal as GTIN-only: the API behaviours
+  the portal works around, the record list (search by key name and qualifier value, link problems filter,
+  which records are not opened), the spreadsheet layout (Key, Identifier and Qualifiers columns, with an
+  example checked through the import preview), what each action does on the API (`/api/{AI}/{value}`,
+  records, export and import), the QR code HRI (one line per element string) and the linkset page levels.
+
 ### Resolver: linkset page
 - The HTML linkset page named every level "(domain) 01" instead of "Product (every unit)", "Batch/lot …":
   linkset anchors are absolute URIs and the level name read the whole URI as a path. Test added in

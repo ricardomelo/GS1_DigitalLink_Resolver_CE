@@ -801,7 +801,7 @@ function renderRecords() {
     };
     let name;
     if (r.kind === "other") {
-      // Created by another tool with qualifiers the portal does not edit (e.g. serial numbers).
+      // Created by another tool with a qualifier set the portal does not manage (e.g. a lot template such as {lotnumber}).
       name = document.createElement("span");
       name.textContent = r.description || r.value;
       name.title = t("records.otherHint");

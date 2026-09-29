@@ -39,10 +39,10 @@ Resolver CE behaves in ways that a naive form would turn into bad data:
 
 | API behaviour | Consequence | What the portal does |
 |---|---|---|
-| `POST /api/new` on an existing document **appends** links (`extend`) | Saving a form twice duplicates targets | POST only for a new GTIN/batch; edits use `PUT` + partial `DELETE` |
-| `PUT`/`DELETE` with unknown qualifiers fall back to **index 0** | Editing a new batch would change another one | Reads the document first and chooses the right call |
-| `defaultLinktype` is **one per GTIN** (shared by all batches) | Changing it on one batch affects the others | Blocks the change when other records exist and explains why |
-| No route removes a whole **batch entry** | — | Recreates the document without it and restores the original on failure |
+| `POST /api/new` on an existing document **appends** links (`extend`) | Saving a form twice duplicates targets | POST only for a record (key + qualifier set) not yet on the resolver; edits use `PUT` + partial `DELETE` |
+| `PUT`/`DELETE` with unknown qualifiers fall back to **index 0** | Editing a new qualified record (a batch, a serial) would change another record of the same key | Reads the document first and chooses the right call |
+| `defaultLinktype` is **one per key** (shared by every qualifier set of the key's document) | Changing it on one record (e.g. one batch) affects the others | Blocks the change when other records of the key exist and explains why |
+| No route removes a whole **qualifier entry** | — | Recreates the document without it and restores the original on failure |
 | `SESSION_TOKEN` grants full write access | A token in the browser lets anyone change anything | Token only in the container; portal users have their own passwords |
 
 
@@ -245,15 +245,19 @@ Roles (checked by the server on every call; the interface hides what a role cann
 ## Record list
 
 The portal's user menu (and the link under the page title) opens **Registered records**
-(`/portal/#records`): every record on the resolver (any primary key and qualifiers), most recently changed first, with
-description, GTIN, scope (every unit or batch), number of links and the last change made through the
-portal (date and user).
+(`/portal/#records`): every record on the resolver (any primary key and qualifiers), most recently changed
+first, with description, identifier (key and value), scope (every unit of the key, or its qualifiers:
+variant, batch/lot, serial, …), number of links with link-check warnings, and the last change made through
+the portal (date and user).
 
-- Search by GTIN (leading zeros optional), description or batch; several words narrow the result;
-  case and accents are ignored. Filter by the user who made the last change.
+- Search by identifier (a GTIN with or without leading zeros), key name (GTIN, SSCC, GLN, …),
+  description or qualifier value; several words narrow the result; case and accents are ignored. Filter
+  by the user who made the last change, or show only records whose targets had problems in the last link
+  check.
 - Selecting a record opens it in the editor; the browser's back button returns to the list.
-- Records with qualifiers the portal does not edit (serial numbers, variants), created by other
-  tools, are listed but not opened.
+- Records created by other tools with a qualifier set the portal does not manage (a lot template such as
+  `{lotnumber}`, characters outside the portal's rules, a combination section 4.9 does not allow) are
+  listed but not opened.
 
 Data comes from the data entry API's `GET /api/summary` (one request for all records) and from the
 portal's own `records-meta.json` in the `resolver-portal-config` volume, which records who created and
@@ -265,18 +269,27 @@ The whole list is sent to the browser, which is comfortable up to a few thousand
 In **Registered records**, *Export spreadsheet (Excel)* and *Export CSV* download every record the
 portal can edit, and *Import spreadsheet* reads one back.
 
-**Layout** — one row per target (link); rows with the same GTIN and batch/lot form one record:
+**Layout** — one row per target (link); rows with the same key, identifier and qualifiers form one record:
 
-| GTIN | Batch/lot | Description | Link type | URL | Language | Title | Default | Forward query string |
-|---|---|---|---|---|---|---|---|---|
-| 07898357410015 | | Coffee 500 g | gs1:pip | https://… | pt, en | | yes | yes |
-| 07898357410015 | | Coffee 500 g | gs1:instructions | https://…/manual.pdf | pt | Manual | | no |
+| Key (AI) | Identifier | Qualifiers | Description | Link type | URL | Language | Title | Default | Forward query string |
+|---|---|---|---|---|---|---|---|---|---|
+| 01 | 07898357410015 | | Coffee 500 g | gs1:pip | https://… | pt, en | | yes | yes |
+| 01 | 07898357410015 | | Coffee 500 g | gs1:instructions | https://…/manual.pdf | pt | Manual | | no |
+| 01 | 07898357410015 | (10)L2026A | Coffee 500 g, batch L2026A | gs1:pip | https://…/l2026a | pt | | yes | yes |
+| 414 | 7898357400009 | | Main warehouse | gs1:pip | https://… | pt | | yes | yes |
 
+- The default link type is one per key, so every record of `01 07898357410015` (the product and batch
+  L2026A) marks a `gs1:pip` target as *Default*; see the note on the default link type below.
+- *Key (AI)* is the AI of the primary key (`01`, `00`, `414`, `8004`, …, with or without brackets);
+  empty means `01`. *Qualifiers* holds the key qualifiers as element strings, `(22)V1(10)L1(21)S1`, or as
+  a path, `/10/L1/21/S1`; empty means the record of the key itself. Values follow the rules of
+  [Primary identification keys](#primary-identification-keys) and [Key qualifiers](#key-qualifiers).
 - Headers are written in the user's language and recognised in any of the portal's languages (or as the
-  keys `gtin`, `lot`, `description`, `linkType`, `url`, `language`, `title`, `default`, `forward`).
-  Only GTIN, Description, Link type and URL are required.
-- The XLSX file has two more sheets listing the link type codes and the language codes. GTINs are
-  written as text, so Excel keeps the leading zeros. The CSV uses `;` and UTF-8 with BOM, as Excel
+  keys `key`, `value`, `qualifiers`, `description`, `linkType`, `url`, `language`, `title`, `default`,
+  `forward`). Only Identifier, Description, Link type and URL are required. Files exported before other
+  keys existed, with *GTIN* and *Batch/lot* columns (keys `gtin`, `lot`), still import.
+- The XLSX file has three more sheets listing the link type codes, the key codes and the language codes.
+  Key, identifier and qualifiers are written as text, so Excel keeps the leading zeros. The CSV uses `;` and UTF-8 with BOM, as Excel
   expects in Brazil; imports also accept `,` or tab as separator and Windows-1252 or UTF-16 (Excel's
   "Unicode text", `.txt`) as encoding.
 - Link types may omit `gs1:`; addresses without `https://` get it, as in the editor; several languages
@@ -284,8 +297,8 @@ portal can edit, and *Import spreadsheet* reads one back.
   none is marked); *Forward query string* is yes unless it says no.
 - Languages: any well-formed BCP 47 tag (`pt`, `pt-BR`, `en-US`, `vi`, `und`, …), written in canonical
   case. The editor's menu offers the common ones and keeps any other tag a record already has.
-- Records created by other tools with qualifiers the portal does not manage (serial numbers, lot
-  templates such as `{lotnumber}`) are listed but neither exported nor imported.
+- Records created by other tools with a qualifier set the portal does not manage (see
+  [Record list](#record-list)) are listed but neither exported nor imported.
 
 **Import** is in two steps. The portal first checks the whole file with the editor's own rules and shows,
 record by record, what will be **new**, **changed**, **unchanged** or **with errors** (with the file's row
@@ -463,18 +476,31 @@ English (e.g. "Product information page"), whatever the interface language.
 |---|---|---|
 | Sign in / sign out | `POST /portal/api/login`, `POST /portal/api/logout` | — |
 | Change password (Options) | `POST /portal/api/password` | — |
-| Open record | `GET /portal/api/record` | `GET /api/01/{gtin14}` |
-| Save (GTIN or batch without a record) | `POST /portal/api/record` | `POST /api/new` (the first target sets `defaultLinktype`; each target carries `fwqs`) |
-| Save (existing record) | `POST /portal/api/record` | `PUT /api/01/{gtin14}` and, if targets were removed, `DELETE /api/01/{gtin14}` with `{qualifiers, links}` |
-| Delete (only entry for the GTIN) | `DELETE /portal/api/record` | `DELETE /api/01/{gtin14}` |
-| Delete (a batch, or a GTIN that has batches) | `DELETE /portal/api/record` | document `DELETE` + `POST /api/new` with the remaining entries |
-| QR code label | `GET /portal/api/qrcode?format=png\|svg&hri=0\|1` | generated locally from `{RESOLVER_PUBLIC_URL}/01/{gtin14}[/10/{lot}]` (see "QR code label") |
+A record is addressed by its key and qualifiers: `key` (the AI, default `01`), `value` and `qualifiers`
+(`{"10": "L1"}` in JSON, `/10/L1/21/S1` in a query string). On the resolver it is one entry of the key's
+document, `{AI}_{value}`, reached at `/api/{AI}/{value}`.
 
-Rules applied before calling the API: GTIN of 8/12/13/14 digits with a valid check digit, normalised to
-14; GTIN-13 starting with 2 (restricted circulation) rejected; batch/lot of up to 20 characters
-`[A-Za-z0-9._-]`; `https://` URLs; media type inferred from the extension (`.pdf` → `application/pdf`);
-no duplicate resolver key (link type, language, context). Targets with a `context` created by other tools
-are preserved when saving.
+| On screen | Portal API | Resolver calls |
+|---|---|---|
+| Sign in / sign out | `POST /portal/api/login`, `POST /portal/api/logout` | — |
+| Change password (Options) | `POST /portal/api/password` | — |
+| Open record | `GET /portal/api/record?key=…&value=…&qualifiers=…` | `GET /api/{AI}/{value}` (the whole document; the portal picks the entry with the same qualifiers) |
+| Save (record not on the resolver yet: a new key, or a new qualifier set of an existing key) | `POST /portal/api/record` | `POST /api/new` (the first target sets `defaultLinktype`; each target carries `fwqs`) |
+| Save (existing record) | `POST /portal/api/record` | `PUT /api/{AI}/{value}` with `{qualifiers, links, …}` and, if targets were removed, `DELETE /api/{AI}/{value}` with `{qualifiers, links}` |
+| Delete (the only entry of the key) | `DELETE /portal/api/record` | `DELETE /api/{AI}/{value}` |
+| Delete (a qualified record, or a key that has qualified records) | `DELETE /portal/api/record` | document `DELETE` + `POST /api/new` with the remaining entries (the original is restored if that fails) |
+| Registered records | `GET /portal/api/records` | `GET /api/summary` |
+| Export spreadsheet | `POST /portal/api/export` | `GET /api/summary?links=true` |
+| Import spreadsheet | `POST /portal/api/import/preview`, `…/apply`, `GET …/status` | preview: `GET /api/summary?links=true`; apply: the save sequence above, record by record |
+| QR code label | `GET /portal/api/qrcode?key=…&value=…&qualifiers=…&format=png\|svg&hri=0\|1` | generated locally from `{RESOLVER_PUBLIC_URL}/{AI}/{value}[/{qualifier AI}/{value}…]` (see "QR code label") |
+
+Rules applied before calling the API: key values and qualifiers as in
+[Primary identification keys](#primary-identification-keys) and [Key qualifiers](#key-qualifiers) (check
+digits, GMN check-character pair, GS1 Company Prefix, qualifier formats and combinations; a GTIN of
+8/12/13/14 digits is normalised to 14 and a GTIN-13 starting with 2 is refused); descriptions up to 200
+characters and titles up to 120 (see [Special characters](#special-characters)); `https://` URLs; media
+type inferred from the extension (`.pdf` → `application/pdf`); no duplicate resolver key (link type,
+language, context). Targets with a `context` created by other tools are preserved when saving.
 
 On screen: the link type menu shows the code first (`gs1:pip — Product information page`); the first
 target is the default link (`gs1:defaultLink`) and "Make default" moves another one to the top; each target
@@ -491,10 +517,11 @@ It follows the symbol and text dimensions of the *QR Codes powered by GS1 design
   below 100 %: the text is 2.2 mm high at that size and must not fall under the 2 mm minimum.
 - **Quiet zone:** 4X on all four sides, always blank.
 - **Human readable interpretation** (checkbox, on by default): the element strings below the quiet zone,
-  `(01)` followed by the GTIN-14 and, for a batch, `(10)` followed by the batch/lot on a second line, in
+  one per line: the key (e.g. `(01)` followed by the GTIN-14, `(414)` followed by the GLN), then each
+  qualifier in path order (e.g. `(10)` followed by the batch/lot, `(21)` followed by the serial), in
   Liberation Sans (metrically equivalent to Arial). The guidelines require it when the QR code stands alone
-  on pack; it may be omitted when the code sits next to the linear barcode that already carries the GTIN,
-  or on a consumer-engagement panel.
+  on pack; it may be omitted when the code sits next to the linear barcode that already carries the same
+  data, or on a consumer-engagement panel.
 - **SVG** is fully vector: QR modules and HRI glyph outlines, so it opens identically anywhere
   and is the format to hand to packaging designers. PNG suits documents and quick use.
 - The choice is remembered in the browser. Files are named after the key and qualifiers, e.g.
@@ -513,7 +540,7 @@ It follows the symbol and text dimensions of the *QR Codes powered by GS1 design
 | JSON-LD context Link header malformed and hidden from CORS | `<…/linkset-context>; rel="http://www.w3.org/ns/json-ld#context"`, exposed | 2.10, item 13 |
 | query string always passed on, with a second `?` if the target already had one | passed on by default; `fwqs: false` on a target switches it off; joined with `&` | 2.12, item 19; `fwqs` attribute of the linkset schema |
 | browsers get raw JSON on errors | HTML page in the gs1.org style (logo, pt-BR/en-GB language menu) with the same HTTP status; a 404 for a linkType lists the available links | 2.6.2 (MAY list other links) |
-| `?linkType=linkset` in a browser → JSON | HTML page listing the links per level (product/batch) | 2.10 |
+| `?linkType=linkset` in a browser → JSON | HTML page listing the links per level (the key, then each applicable qualified record: variant, batch/lot, serial, …) | 2.10 |
 | — | on the HTML pages only `http`/`https` targets are links; others (`javascript:`, `data:`, stored through the API, which takes any href) are listed without a link, so they cannot run in the resolver's origin | — |
 
 An unknown linkType **still** returns 404: the standard requires it (2.6.2, item 18). Up to GS1 Digital

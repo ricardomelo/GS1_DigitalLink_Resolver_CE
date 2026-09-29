@@ -1156,19 +1156,18 @@ def audit_csv():
 @require_login
 def qrcode():
     """QR code label. format=png|svg downloads it; without format it is the inline SVG preview.
-    hri=0 omits the human readable interpretation; brand=1 adds the GS1® branding (pilot)."""
+    hri=0 omits the human readable interpretation."""
     anchor = request_key(request.args)
     check_access(anchor)
     pairs = request_qualifiers(request.args, anchor)
     options = label.LabelOptions(
         uri=gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, pairs),
         hri_lines=tuple(gs1.hri_lines(anchor, pairs)),
-        branded=request.args.get("brand") == "1",
         show_hri=request.args.get("hri", "1") != "0",
     )
     ai, value = gs1.split_anchor(anchor)
     suffix = "".join(f"_{q}_{v}" for q, v in pairs)
-    filename = f"qrcode_{ai}_{value}{suffix}{'_gs1' if options.branded else ''}"
+    filename = f"qrcode_{ai}_{value}{suffix}"
     download_format = request.args.get("format")
     if download_format == "png":
         return Response(label.render_png(options), mimetype="image/png",

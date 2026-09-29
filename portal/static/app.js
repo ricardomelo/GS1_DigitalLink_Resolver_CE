@@ -306,26 +306,25 @@ function renderPreview() {
   }, 250);
 }
 
-/* Label options: human readable interpretation (default on) and GS1® branding (pilot, default off).
+/* Label option: human readable interpretation (default on).
    The preview image is the exported label itself, so what is shown is what is downloaded. */
 const LABEL_OPTIONS_KEY = "gs1resolver.portal.labelOptions";
 
 function labelOptionsQuery() {
-  return `hri=${$("#opt-hri").checked ? 1 : 0}&brand=${$("#opt-brand").checked ? 1 : 0}`;
+  return `hri=${$("#opt-hri").checked ? 1 : 0}`;
 }
 
 function setupLabelOptions() {
   try {
     const saved = JSON.parse(localStorage.getItem(LABEL_OPTIONS_KEY) || "{}");
     if (typeof saved.hri === "boolean") $("#opt-hri").checked = saved.hri;
-    if (typeof saved.brand === "boolean") $("#opt-brand").checked = saved.brand;
   } catch { /* defaults */ }
-  ["#opt-hri", "#opt-brand"].forEach(sel => $(sel).addEventListener("change", () => {
+  $("#opt-hri").addEventListener("change", () => {
     try {
-      localStorage.setItem(LABEL_OPTIONS_KEY, JSON.stringify({ hri: $("#opt-hri").checked, brand: $("#opt-brand").checked }));
+      localStorage.setItem(LABEL_OPTIONS_KEY, JSON.stringify({ hri: $("#opt-hri").checked }));
     } catch { /* not persisted */ }
     renderPreview();
-  }));
+  });
 }
 
 function toggleLink(a, href) {

@@ -23,5 +23,5 @@ The upstream integration test `tests/setup_test.py` needs the full stack running
 and reads the API token from `SESSION_TOKEN` (default `secret`, as in `.env.example`).
 
 `docs/screenshots.py` is not a test: it produces the screenshots of the top-level README
-(`Documentation/images/*.png`) from the real portal and home page with example data; run it again after
-visual changes (`pip install pillow playwright`, nginx on the PATH for the home page).
+(`Documentation/images/*.png`) from the real portal and home page with example data, hiding the GS1 logo;
+run it again after visual changes (`pip install pillow playwright`).

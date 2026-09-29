@@ -90,16 +90,19 @@ with sync_playwright() as p:
     page.select_option("#locale", "en-GB")
     check("English wording", page.inner_text("#test") == "Try now" and page.inner_text("#copy") == "Copy link address")
 
-    page.fill("#q-10", "L2026A"); page.check("#opt-brand"); page.wait_for_timeout(700)
+    page.fill("#q-10", "L2026A"); page.wait_for_timeout(700)
+    check("no GS1 branding option", page.query_selector("#opt-brand") is None)
     for fmt in ["png", "svg"]:
         response = ctx.request.get(f"http://127.0.0.1:{PORT}" + page.get_attribute(f"#download-{fmt}", "href"))
-        check(f"{fmt} download", response.status == 200 and "_gs1." in (response.headers.get("content-disposition") or ""))
+        check(f"{fmt} download", response.status == 200
+              and "qrcode_01_07898357410015_10_L2026A." in (response.headers.get("content-disposition") or ""),
+              response.headers.get("content-disposition"))
         if fmt == "png":
             image = cv2.imdecode(np.frombuffer(response.body(), np.uint8), 1)
             decoded = cv2.QRCodeDetector().detectAndDecode(image)[0]
             check("PNG decodes", decoded.endswith("/01/07898357410015/10/L2026A"), decoded)
         else:
-            check("SVG sized in mm with branding", b'mm"' in response.body() and b"<g fill" in response.body())
+            check("SVG sized in mm, without branding artwork", b'mm"' in response.body() and b"<g fill" not in response.body())
 
     # Record list: one record made in the portal (with history) and two made elsewhere
     other = {"anchor": "/01/09506000134352", "itemDescription": "Açaí orgânico", "defaultLinktype": "gs1:pip",
@@ -224,7 +227,9 @@ with sync_playwright() as p:
 
     # Other primary identification keys (GS1 Digital Link URI Syntax 4.3)
     page.goto(BASE); page.wait_for_timeout(700)
-    check("every key of section 4.3 offered", len(page.query_selector_all("#key-type option")) == 16)
+    options = [o.inner_text() for o in page.query_selector_all("#key-type option")]
+    check("every key of section 4.3 offered, each with its name", len(options) == 16
+          and "Invoicing party (GLN) (415)" in options and not any(o.startswith("key.") for o in options), options)
     page.select_option("#key-type", "414"); page.wait_for_timeout(100)
     check("GLN: its own label and qualifiers (254, 7040)", page.inner_text("#key-label") == "GLN number"
           and [el.get_attribute("data-ai") for el in page.query_selector_all("#qualifiers .qual-field")] == ["254", "7040"])
@@ -256,6 +261,7 @@ with sync_playwright() as p:
     page.goto(BASE); page.wait_for_timeout(700)
     check("GTIN qualifiers in path order", [el.get_attribute("data-ai") for el in page.query_selector_all("#qualifiers .qual-field")]
           == ["22", "10", "21", "235"])
+    check("235 labelled TPX", "Third-party serialised extension — TPX (235)" in page.inner_text("#qualifiers"))
     page.fill("#key-value", "09506000134352")
     page.fill("#q-21", "S1"); page.fill("#q-10", "L1"); page.fill("#q-22", "V1"); page.wait_for_timeout(300)
     check("preview path follows 4.9 order", "/01/09506000134352/22/V1/10/L1/21/S1" in page.inner_text("#dl"), page.inner_text("#dl"))

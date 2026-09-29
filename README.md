@@ -11,7 +11,7 @@ This repository is a fork of the official
 maintained by GS1 Brasil on branch `gs1br/develop`. It keeps the official resolver and data entry API and
 adds what an organisation needs to run one for its members:
 
-- a **link management portal** for non-technical users, in Brazilian Portuguese and British English;
+- a **link management portal** that simplifies the management of links, in Brazilian Portuguese and British English;
 - every **primary identification key and key qualifier** of the
   [GS1 Digital Link URI Syntax 1.7](https://ref.gs1.org/standards/digital-link/uri-syntax/);
 - **conformance fixes** to the resolver ([GS1-Conformant Resolver 1.2.1](https://ref.gs1.org/standards/resolver/))
@@ -66,7 +66,7 @@ the official Postman collection is at
 
 | Area | Addition |
 |---|---|
-| **Portal** (`/portal/`) | Sign-in with per-user passwords; editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; per-link query-string forwarding; QR code labels (PNG/SVG) following *QR Codes powered by GS1*; record list with search; spreadsheet import/export (XLSX, CSV) with preview; link checker |
+| **Portal** (`/portal/`) | Sign-in with per-user passwords; editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; per-link query-string forwarding; QR code labels (PNG/SVG) with the dimensions of the *QR Codes powered by GS1* guidelines; record list with search; spreadsheet import/export (XLSX, CSV) with preview; link checker |
 | **Governance** | Roles (administrator, editor, reader); access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords; history of every record with restore; audit trail with filters and CSV export |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, validated as the GS1 Barcode Syntax Engine does |
 | **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, `fwqs` per link, HTML pages in pt-BR / en-GB for browsers |
@@ -124,7 +124,7 @@ DELETE removes links, the default link type is shared by all records of a key).
    (`gs1:defaultLink`); each target can forward the scan's query string or not.
 
 The preview shows the Digital Link with its parts coloured, the **QR code label** (download as PNG or SVG,
-X-dimension 0.495 mm, 4X quiet zone, human-readable interpretation, optional GS1® branding) and buttons to
+X-dimension 0.495 mm, 4X quiet zone, optional human-readable interpretation) and buttons to
 try or copy the link. After each save the targets are checked (see below).
 
 <p align="center">

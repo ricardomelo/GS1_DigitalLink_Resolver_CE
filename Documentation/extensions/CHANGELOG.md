@@ -2,6 +2,14 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: adjustments
+- GS1® branding of the QR code label removed (option, artwork files and `brand` parameter); labels keep
+  the dimensions of the *QR Codes powered by GS1* guidelines and the optional HRI. Label files are named
+  after the key and qualifiers.
+- Identifier type menu: name of AI 415 ("Invoicing party (GLN)") and its hints; qualifier 235 labelled
+  TPX (its GS1 data title), UPUI remaining the name of the GTIN + 235 path.
+- README screenshots without the GS1 logo; README wording of the portal's purpose.
+
 ### Portal: governance
 - Roles administrator, editor and reader, checked on every call; interface adapted to the role (readers
   see records read-only).

@@ -2,8 +2,8 @@
 
 This document describes what this branch adds to GS1 Resolver Community Edition v3:
 
-- a **link management portal** (`/portal/`) that lets non-technical users enter a GTIN (optionally a
-  batch/lot), a product name and targets, and publish them without JSON, tokens or link-type codes;
+- a **link management portal** (`/portal/`) that simplifies the management of links: enter an identifier
+  (with its qualifiers), a description and targets, and publish them without JSON, tokens or link-type codes;
 - a **home page** at `/`;
 - **conformance fixes** to the web server (GS1-Conformant Resolver standard 1.2.1) and HTML pages for
   browsers;
@@ -15,7 +15,7 @@ Interfaces are available in Brazilian Portuguese and British English.
 ## Architecture
 
 ```
- Browser (non-technical user)
+ Browser (portal user)
       │ HTTPS  https://<FQDN>/portal/   (sign-in page, session cookie)
       ▼
  host nginx (Certbot, TLS) ──► 127.0.0.1:8080   (PROXY_BIND_ADDRESS=127.0.0.1)
@@ -431,7 +431,7 @@ English (e.g. "Product information page"), whatever the interface language.
 | Save (existing record) | `POST /portal/api/record` | `PUT /api/01/{gtin14}` and, if targets were removed, `DELETE /api/01/{gtin14}` with `{qualifiers, links}` |
 | Delete (only entry for the GTIN) | `DELETE /portal/api/record` | `DELETE /api/01/{gtin14}` |
 | Delete (a batch, or a GTIN that has batches) | `DELETE /portal/api/record` | document `DELETE` + `POST /api/new` with the remaining entries |
-| QR code label | `GET /portal/api/qrcode?format=png\|svg&hri=0\|1&brand=0\|1` | generated locally from `{RESOLVER_PUBLIC_URL}/01/{gtin14}[/10/{lot}]` (see "QR code label") |
+| QR code label | `GET /portal/api/qrcode?format=png\|svg&hri=0\|1` | generated locally from `{RESOLVER_PUBLIC_URL}/01/{gtin14}[/10/{lot}]` (see "QR code label") |
 
 Rules applied before calling the API: GTIN of 8/12/13/14 digits with a valid check digit, normalised to
 14; GTIN-13 starting with 2 (restricted circulation) rejected; batch/lot of up to 20 characters
@@ -447,7 +447,7 @@ PNG or SVG and the address beneath it is a link.
 ## QR code label
 
 The image in the preview panel is the exported label itself, so what is shown is what is downloaded.
-It follows *QR Codes powered by GS1 design guidelines* (GS1 branding pilot, v1.0, May 2024, draft V6):
+It follows the symbol and text dimensions of the *QR Codes powered by GS1 design guidelines* (v1.0, May 2024):
 
 - **Size:** the SVG is sized in millimetres at the 100 % target X-dimension, 0.495 mm per module. The PNG
   uses 12 pixels per module and carries a DPI value (≈ 616) that prints at the same size. Do not print
@@ -458,12 +458,10 @@ It follows *QR Codes powered by GS1 design guidelines* (GS1 branding pilot, v1.0
   Liberation Sans (metrically equivalent to Arial). The guidelines require it when the QR code stands alone
   on pack; it may be omitted when the code sits next to the linear barcode that already carries the GTIN,
   or on a consumer-engagement panel.
-- **GS1® branding** (checkbox, off by default, pilot): the supplied "GS1®" artwork above the top-left
-  corner of the symbol, left-aligned with it and outside the quiet zone, with the same 2.2 mm cap height.
-  The artwork is already outlined, so no font is needed to display or print it.
-- **SVG** is fully vector: QR modules, wordmark and HRI glyph outlines, so it opens identically anywhere
+- **SVG** is fully vector: QR modules and HRI glyph outlines, so it opens identically anywhere
   and is the format to hand to packaging designers. PNG suits documents and quick use.
-- The choices are remembered in the browser. Branded files are named `…_gs1.svg` / `…_gs1.png`.
+- The choice is remembered in the browser. Files are named after the key and qualifiers, e.g.
+  `qrcode_01_09506000134352_10_L1.svg`.
 
 ## Resolver CE changes
 

@@ -1,13 +1,13 @@
 """
 Produces the screenshots used by README.md (Documentation/images/*.png) from the real portal and home
-page, with example data and no network access. Run it again after visual changes.
+page, with example data and no network access. The GS1 logo is hidden in the images (it is a GS1
+trademark and the images illustrate the software, not an endorsement). Run it again after visual changes.
 
   pip install -r portal/requirements.txt playwright pillow && playwright install chromium
-  python dev-tests/docs/screenshots.py            # needs nginx on the PATH for the home page
+  python dev-tests/docs/screenshots.py
 """
+import json
 import os
-import shutil
-import subprocess
 import sys
 import tempfile
 import threading
@@ -43,6 +43,20 @@ for application, port in [(mock_data_entry.app, DATA_ENTRY_PORT), (portal.app, P
     threading.Thread(target=make_server("127.0.0.1", port, application, threaded=True).serve_forever, daemon=True).start()
 BASE = f"http://127.0.0.1:{PORT}/portal/"
 
+# The home page's files, served as the proxy serves them (/, /home/…, /.well-known/gs1resolver)
+from flask import Flask, Response, send_from_directory  # noqa: E402
+HOME_DIR = os.path.join(REPO, "frontend_proxy_server", "home")
+HOME_PORT = 8298
+home_app = Flask("home")
+home_app.add_url_rule("/", "index", lambda: send_from_directory(HOME_DIR, "index.html"))
+home_app.add_url_rule("/home/<path:name>", "asset", lambda name: send_from_directory(HOME_DIR, name))
+home_app.add_url_rule("/.well-known/gs1resolver", "description", lambda: Response(
+    json.dumps({"resolverRoot": "https://id.example.org", "contact": {"fn": "Example Org"}}), mimetype="application/json"))
+threading.Thread(target=make_server("127.0.0.1", HOME_PORT, home_app, threaded=True).serve_forever, daemon=True).start()
+
+# Hides the GS1 logo (header of the portal and of the home page) in every screenshot
+NO_LOGO = ".brand img { display: none !important; } .brand .product { border-left: 0 !important; padding-left: 0 !important; }"
+
 
 def pip(href, lang="en", title="Product information"):
     return {"linktype": "gs1:pip", "href": href, "title": title, "hreflang": [lang]}
@@ -74,6 +88,8 @@ for anchor, qualifiers, description, default, links, user in EXAMPLES:
 
 
 def save(page, name, clip=None, full=False):
+    page.add_style_tag(content=NO_LOGO)
+    page.wait_for_timeout(100)
     path = os.path.join(OUT, name)
     page.screenshot(path=path, clip=clip, full_page=full)
     image = Image.open(path).convert("RGB")
@@ -87,6 +103,7 @@ with sync_playwright() as p:
     browser = p.chromium.launch()
     ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 1100})
     page = ctx.new_page()
+    page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
     page.goto(BASE); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(800)
 
@@ -125,15 +142,10 @@ with sync_playwright() as p:
     save(page, "portal-users.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1100})
     browser.close()
 
-# Home page, through the real nginx configuration (as in dev-tests/home/test_home.py)
-if shutil.which("nginx"):
-    shots = tempfile.mkdtemp()
-    env = dict(os.environ, HOME_TEST_SCREENSHOTS=shots)
-    subprocess.run([sys.executable, os.path.join(REPO, "dev-tests", "home", "test_home.py")], env=env,
-                   capture_output=True, check=False)
-    source = os.path.join(shots, "home-desktop-en.png")
-    if os.path.exists(source):
-        image = Image.open(source).convert("RGB")
-        image = image.crop((0, 0, image.width, min(image.height, 900)))
-        image.quantize(colors=128, method=Image.Quantize.MEDIANCUT).save(os.path.join(OUT, "home.png"), optimize=True)
-        print("wrote Documentation/images/home.png")
+# Home page
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    page = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900}).new_page()
+    page.goto(f"http://127.0.0.1:{HOME_PORT}/"); page.wait_for_timeout(800)
+    save(page, "home.png")
+    browser.close()

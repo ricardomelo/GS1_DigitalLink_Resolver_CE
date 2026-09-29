@@ -1,4 +1,4 @@
-# GS1 Digital Link Resolver CE — GS1 Brasil extensions
+# GS1 Digital Link Resolver CE — Expansion Pack
 
 > **Important notice and disclaimer (from the official project).** This freely licensed open source
 > software is not maintained by GS1. Issues raised here may be answered by the community but will not be
@@ -8,7 +8,7 @@
 This repository is a fork of the official
 [**GS1 Resolver Community Edition v3**](https://github.com/gs1/GS1_DigitalLink_Resolver_CE) (based on commit
 [`bf885fd`](https://github.com/gs1/GS1_DigitalLink_Resolver_CE/commit/bf885fdf4888f0395229478bf6b50342c1f761a8))
-maintained by GS1 Brasil on branch `gs1br/develop`. It keeps the official resolver and data entry API and
+maintained on branch `gs1br/develop`. It keeps the official resolver and data entry API and
 adds what an organisation needs to run one for its members:
 
 - a **link management portal** that simplifies the management of links, in Brazilian Portuguese and British English;

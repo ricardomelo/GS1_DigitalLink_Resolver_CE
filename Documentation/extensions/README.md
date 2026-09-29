@@ -59,7 +59,7 @@ Every service loads `.env.example` and then `.env` if it exists; a value in `.en
 | `MONGO_URI` | web, data entry | matches the above | same credentials as above |
 | `SESSION_TOKEN` | data entry API, portal | `secret` | long random value |
 | `FQDN` | web (linksets, description file), portal | `localhost` | the resolver's domain |
-| `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | description file `contact`, footer of the resolver pages | `My Organisation` | the operator |
+| `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | description file `contact` (`RESOLVER_ORG_URL` as `hasURL`), footer of the home page and of the resolver pages (name linked to `RESOLVER_ORG_URL`) | `My Organisation` | the operator |
 | `RESOLVER_PUBLIC_URL` | portal (printed links, Origin check, cookie flag) | empty → `https://FQDN` | usually empty |
 | `PORTAL_ADMIN_USERNAME`, `PORTAL_ADMIN_PASSWORD` | portal, first user only | `admin` / `change-me-please` | chosen at installation |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Docker Compose (**only from `.env`**) | `0.0.0.0` | `127.0.0.1` behind a TLS proxy |
@@ -411,7 +411,9 @@ page"), lead back to `/`.
 
 **Domain independent.** Links to this installation are root-relative (`/portal/`, `/api/docs`,
 `/.well-known/gs1resolver`), the resolver root shown in the example link is read from the address bar,
-and the operator's name in the footer comes from `contact.fn` in the resolver description file. Nothing
+and the operator's name in the footer comes from `contact.fn` in the resolver description file, linked to
+`contact.hasURL` (`RESOLVER_ORG_URL`) when that is an `http(s)` address, as in the footer of the resolver's
+pages; any other address leaves the name as plain text. Nothing
 in the page names a domain or an organisation, so another installation needs no edits.
 
 **What `/` showed before.** Upstream, the proxy sends `/` to the web server's API root, which is

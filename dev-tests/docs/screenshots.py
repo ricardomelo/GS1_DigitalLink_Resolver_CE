@@ -51,7 +51,7 @@ home_app = Flask("home")
 home_app.add_url_rule("/", "index", lambda: send_from_directory(HOME_DIR, "index.html"))
 home_app.add_url_rule("/home/<path:name>", "asset", lambda name: send_from_directory(HOME_DIR, name))
 home_app.add_url_rule("/.well-known/gs1resolver", "description", lambda: Response(
-    json.dumps({"resolverRoot": "https://id.example.org", "contact": {"fn": "Example Org"}}), mimetype="application/json"))
+    json.dumps({"resolverRoot": "https://id.example.org", "contact": {"fn": "Example Org", "hasURL": "https://www.example.org/"}}), mimetype="application/json"))
 threading.Thread(target=make_server("127.0.0.1", HOME_PORT, home_app, threaded=True).serve_forever, daemon=True).start()
 
 # Hides the GS1 logo (header of the portal and of the home page) in every screenshot

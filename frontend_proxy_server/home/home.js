@@ -160,15 +160,44 @@
 
   /* ---------------------------------------------------------------- operator */
   // The operator's name comes from the resolver description file (contact.fn), which every
-  // GS1-Conformant Resolver publishes. If it cannot be read the footer simply omits it.
+  // GS1-Conformant Resolver publishes, and links to contact.hasURL when that is a web address (the
+  // same RESOLVER_ORG_URL the footer of the resolver's pages uses). If the file cannot be read the
+  // footer simply omits the operator.
+  function webAddress(value) {
+    if (typeof value !== "string") return null;
+    try {
+      const url = new URL(value.trim());
+      return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function showOperator() {
     try {
       const response = await fetch(DESCRIPTION_FILE, { headers: { Accept: "application/json" } });
       if (!response.ok) return;
       const description = await response.json();
-      const name = description && description.contact && description.contact.fn;
+      const contact = (description && description.contact) || {};
+      const name = contact.fn;
       if (typeof name === "string" && name.trim()) {
-        $("#operator-name").textContent = name.trim();
+        const target = $("#operator-name");
+        const href = webAddress(contact.hasURL);
+        if (href) {
+          const link = document.createElement("a");
+          link.className = "ext";
+          link.href = href;
+          link.rel = "noopener";
+          link.textContent = name.trim();
+          const hint = document.createElement("span");
+          hint.className = "visually-hidden";
+          hint.dataset.i18n = "link.external";
+          hint.textContent = t("link.external");
+          link.append(hint);
+          target.replaceChildren(link);
+        } else {
+          target.textContent = name.trim();
+        }
         $("#operator").hidden = false;
       }
     } catch { /* description file unavailable: nothing to show */ }

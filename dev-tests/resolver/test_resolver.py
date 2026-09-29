@@ -209,7 +209,7 @@ check("summary with links: every link included", all(len(l.get("links") or []) =
       and "links" not in lines[0], with_links[:1])
 
 # ---------------------------------------------------------------- resolver description file
-for var in ("RESOLVER_ORG_NAME", "RESOLVER_CONTACT_STREET", "RESOLVER_CONTACT_LOCALITY", "RESOLVER_CONTACT_REGION",
+for var in ("RESOLVER_ORG_NAME", "RESOLVER_ORG_URL", "RESOLVER_CONTACT_STREET", "RESOLVER_CONTACT_LOCALITY", "RESOLVER_CONTACT_REGION",
             "RESOLVER_CONTACT_POSTCODE", "RESOLVER_CONTACT_COUNTRY", "RESOLVER_CONTACT_TELEPHONE"):
     os.environ.pop(var, None)
 r = client.get("/api/.well-known/gs1resolver")
@@ -224,6 +224,10 @@ check("description: contact from RESOLVER_*",
       d.get("contact") == {"fn": "Example Org", "hasAddress": {"locality": "São Paulo", "country-name": "Brazil"},
                            "hasTelephone": "tel:+55-11-0000-0000"}, d.get("contact"))
 check("description: other properties kept", d.get("supportedPrimaryKeys") == ["all"] and "activeLinkTypes" in d)
+os.environ["RESOLVER_ORG_URL"] = "https://www.example.org"
+d = client.get("/api/.well-known/gs1resolver").get_json()
+check("description: operator's web address as vCard hasURL (for the home page link)",
+      d.get("contact", {}).get("hasURL") == "https://www.example.org", d.get("contact"))
 try:
     jsonschema.validate(d, DESCRIPTION_SCHEMA)
     valid = True

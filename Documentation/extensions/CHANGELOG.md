@@ -2,6 +2,15 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Home page: operator linked
+- The operator's name in the home page footer links to the operator's website, as on the resolver's
+  pages. The home page reads it from the resolver description file, which now publishes
+  `RESOLVER_ORG_URL` as `contact.hasURL` (a vCard property; the file still validates against the
+  official schema). Only `http`/`https` addresses become links; the link is marked as external like the
+  other external links of the page.
+- Tests: link, plain text without `hasURL` and with `javascript:` or `ftp:` addresses in
+  `dev-tests/home/test_home.py`; `hasURL` in `dev-tests/resolver/test_resolver.py`.
+
 ### Resolver: description file schema, credits
 - The resolver description file is tested against a copy of the official schema
   (`dev-tests/resolver/description-file-schema.json`, version 1.2.0), and the footer of the resolver's

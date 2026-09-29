@@ -37,7 +37,8 @@ NGINX_CONF = PACKAGE / "frontend_proxy_server" / "nginx.conf"
 HOME_DIR = PACKAGE / "frontend_proxy_server" / "home"
 MOUNT_PATH = "/usr/share/nginx/home"   # where the proxy image keeps the files
 
-DESCRIPTION = {"name": "Test resolver", "resolverRoot": "https://id.example.org", "contact": {"fn": "Example Org"}}
+DESCRIPTION = {"name": "Test resolver", "resolverRoot": "https://id.example.org",
+               "contact": {"fn": "Example Org", "hasURL": "https://www.example.org/"}}
 
 results: list[tuple[bool, str]] = []
 
@@ -200,13 +201,30 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
         check(page.locator("#site-nav a[href='/portal/']").inner_text() == "Cadastro de links", "menu text in Portuguese")
         check(page.locator("#resolver-root-full").inner_text() == f"http://127.0.0.1:{port}",
               "resolver root taken from the address bar")
-        check(page.locator("#operator-name").inner_text() == "Example Org", "operator from the description file")
+        operator_link = page.locator("#operator-name a")
+        check(operator_link.count() == 1 and operator_link.get_attribute("href") == "https://www.example.org/"
+              and operator_link.evaluate("a => a.firstChild.textContent") == "Example Org"
+              and operator_link.locator(".visually-hidden").inner_text() == "(site externo)",
+              "operator from the description file, linked to contact.hasURL as an external link")
         check(page.locator("#nav-toggle").is_hidden() and page.locator("#site-nav").is_visible(),
               "desktop: menu visible, no menu button")
-        check(page.locator("a.ext").count() == 6 and
+        check(page.locator("a.ext").count() == 7 and
               page.locator("a.ext .visually-hidden").first.inner_text() == "(site externo)",
               "external links are marked (icon and accessible text)")
         page.screenshot(path=str(shots / "home-desktop-pt.png"), full_page=True)
+
+        # Without hasURL, or with an address that is not a web address, the name is plain text
+        for url, label in ((None, "no hasURL"), ("javascript:alert(1)", "javascript: address"),
+                           ("ftp://example.org/", "ftp address")):
+            if url is None:
+                DESCRIPTION["contact"].pop("hasURL", None)
+            else:
+                DESCRIPTION["contact"]["hasURL"] = url
+            page.goto(base + "/")
+            page.locator("#operator").wait_for(state="visible")    # no wait_for_function: the page's CSP forbids eval
+            check(page.locator("#operator-name a").count() == 0 and page.locator("#operator-name").inner_text() == "Example Org",
+                  f"operator as plain text ({label})")
+        DESCRIPTION["contact"]["hasURL"] = "https://www.example.org/"
 
         page.select_option("#locale", "en-GB")
         check(page.locator("h1").inner_text() == "GS1 Digital Link resolver", "language menu switches to English live")

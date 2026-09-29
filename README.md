@@ -394,7 +394,7 @@ never committed).
 | `MONGO_URI` | Connection string of the web and data entry services |
 | `SESSION_TOKEN` | Bearer token of the data entry API (also used by the portal) |
 | `FQDN` | Domain of the resolver; the resolver root is `https://FQDN` |
-| `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | Operator in the description file and on the resolver's pages |
+| `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | Operator in the description file (`contact`) and on the home page; the resolver's pages do not name it |
 | `RESOLVER_PUBLIC_URL` | Portal's public address when it is not `https://FQDN` (e.g. development) |
 | `PORTAL_ADMIN_USERNAME`, `PORTAL_ADMIN_PASSWORD` | First portal user, created only while there are none |
 | `PORTAL_SESSION_HOURS`, `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE` | Optional portal settings |
@@ -468,6 +468,5 @@ Licensed under the [Apache License 2.0](LICENSE), like the official project.
 - **GS1 Resolver Community Edition** — the GS1 Resolver Community (original design and code by Nick
   Lansley and contributors).
 - **GS1 Barcode Syntax Engine** — GS1 AISBL (Terry Burton), used by the resolver to validate every request.
-- **Extensions in this fork** — GS1 Brasil.
 
 GS1, the GS1 logo and GS1 Digital Link are trademarks of GS1 AISBL.

@@ -237,9 +237,6 @@ def _resolver_description() -> Response:
         address = {key: value for key, value in address.items() if value}
         if address:
             contact['hasAddress'] = address
-        url = os.getenv('RESOLVER_ORG_URL', '').strip()
-        if url:
-            contact['hasURL'] = url             # vCard property; the schema allows it beside fn, hasAddress…
         telephone = os.getenv('RESOLVER_CONTACT_TELEPHONE', '').strip()
         if telephone:
             contact['hasTelephone'] = telephone if telephone.startswith('tel:') else 'tel:' + telephone.replace(' ', '-')

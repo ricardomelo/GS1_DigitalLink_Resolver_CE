@@ -19,9 +19,9 @@ from urllib.parse import urlparse
 from flask import render_template_string, request
 
 PRODUCT_NAME = os.getenv('RESOLVER_PRODUCT_NAME', 'GS1 Resolver Community Edition')
-# The pages carry no operator footer: a sentence such as "GS1 Digital Link service operated by …" would
-# associate every installation of this software with GS1. The operator is named in the resolver
-# description file (/.well-known/gs1resolver, "contact") and on the home page.
+# Operator shown in the footer (see .env.example); the footer is omitted when no name is set.
+ORG_NAME = os.getenv('RESOLVER_ORG_NAME', '').strip()
+ORG_URL = os.getenv('RESOLVER_ORG_URL', '').strip()
 LOCALE_COOKIE = 'gs1resolver_lang'
 SUPPORTED_LOCALES = {'pt-BR': 'Português (Brasil)', 'en-GB': 'English (UK)'}
 DEFAULT_LOCALE = 'en-GB'
@@ -49,6 +49,7 @@ TEXT = {
         'error.other.title': 'Não foi possível concluir a consulta',
         'error.other.text': 'Tente novamente em alguns instantes.',
         'status': 'Código da resposta: {status}',
+        'footer': 'Serviço GS1 Digital Link operado por',
         'language': 'Idioma',
         'home': 'Página inicial do Resolver',
     },
@@ -65,6 +66,7 @@ TEXT = {
         'error.other.title': 'The request could not be completed',
         'error.other.text': 'Please try again in a moment.',
         'status': 'Response code: {status}',
+        'footer': 'GS1 Digital Link service operated by',
         'language': 'Language',
         'home': 'Resolver home page',
     },
@@ -138,6 +140,7 @@ border-radius:4px;text-decoration:none;color:var(--ink);background:#FAFCFE}
 li .unlinked{border-left-color:var(--line)}
 li a:hover{background:var(--page);border-left-color:var(--action)}li strong{display:block;color:var(--blue);font-weight:600}
 li small{color:var(--muted)}
+footer{max-width:60rem;margin:0 auto;padding:0 clamp(1rem,4vw,2rem) 2rem;font-size:.8125rem;color:var(--muted)}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:560px){.brand span{font-size:.8125rem;padding-left:.75rem}.brand img{height:2.25rem}.lang svg{display:none}}
 </style></head><body>
@@ -150,6 +153,7 @@ li small{color:var(--muted)}
 </div></header>
 <section class="hero"><div><h1>{{ title }}</h1></div></section>
 <main><div class="card">{{ body|safe }}</div></main>
+{% if org %}<footer>{{ footer }} {% if org_url %}<a href="{{ org_url }}">{{ org }}</a>{% else %}{{ org }}{% endif %}.</footer>{% endif %}
 <script>
 /* Language menu: remembers the choice in a cookie (shared with the portal) and re-renders the page.
    A cookie rather than a query parameter keeps the Digital Link URI untouched. */
@@ -267,6 +271,7 @@ def _hri(identifiers: str, qualifier_path: str | None) -> str:
 
 def _page(locale: str, title: str, body: str) -> str:
     return render_template_string(_BASE, locale=locale, title=title, product=PRODUCT_NAME, logo=LOGO_DATA_URI,
+                                  org=ORG_NAME, org_url=ORG_URL, footer=_t(locale, 'footer'),
                                   language_label=_t(locale, 'language'), home_label=_t(locale, 'home'),
                                   locales=SUPPORTED_LOCALES,
                                   cookie=LOCALE_COOKIE, body=body)

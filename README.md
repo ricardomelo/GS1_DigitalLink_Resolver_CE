@@ -394,7 +394,7 @@ never committed).
 | `MONGO_URI` | Connection string of the web and data entry services |
 | `SESSION_TOKEN` | Bearer token of the data entry API (also used by the portal) |
 | `FQDN` | Domain of the resolver; the resolver root is `https://FQDN` |
-| `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | Operator in the description file (`contact`) and on the home page; the resolver's pages do not name it |
+| `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | Operator in the description file and on the resolver's pages |
 | `RESOLVER_PUBLIC_URL` | Portal's public address when it is not `https://FQDN` (e.g. development) |
 | `PORTAL_ADMIN_USERNAME`, `PORTAL_ADMIN_PASSWORD` | First portal user, created only while there are none |
 | `PORTAL_SESSION_HOURS`, `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE` | Optional portal settings |

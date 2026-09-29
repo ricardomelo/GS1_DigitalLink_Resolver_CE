@@ -458,7 +458,7 @@ collect_settings() {
       ask PROXY_BIND_ADDRESS "Address for port $PROXY_PORT" "127.0.0.1" valid_bind_address ;;
   esac
 
-  printf '\n    %sOperator%s %s(published in /.well-known/gs1resolver and on the home page)%s\n' "$C_BOLD" "$C_OFF" "$C_DIM" "$C_OFF"
+  printf '\n    %sOperator%s %s(published in /.well-known/gs1resolver and on the resolver pages)%s\n' "$C_BOLD" "$C_OFF" "$C_DIM" "$C_OFF"
   [[ ${RESOLVER_ORG_NAME-} == "My Organisation" ]] && RESOLVER_ORG_NAME=""
   ask RESOLVER_ORG_NAME "Organisation name" "" valid_required_text
   ask RESOLVER_ORG_URL "Organisation website (optional)" "" valid_optional_url

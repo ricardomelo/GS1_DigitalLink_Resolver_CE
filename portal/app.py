@@ -587,7 +587,18 @@ def get_record():
     pairs = request_qualifiers(request.args, anchor)
     entries, default = read_entries(anchor)
     target = find_entry(entries, gs1.qualifier_list(pairs))
-    others = [describe_entry(e) for e in entries if e is not target]
+    known = meta.load()
+    others = []
+    for entry in entries:
+        if entry is target:
+            continue
+        # What the editor's "other records of this key" list shows: qualifiers, description, number of
+        # targets and the last change made through the portal
+        other = describe_entry(entry)
+        info = (known.get(meta.key(anchor, other.get("path", ""))) or {}) if other["kind"] != "other" else {}
+        other.update(description=entry.get("itemDescription") or "", links=len(entry.get("links") or []),
+                     updatedAt=info.get("updatedAt"), updatedBy=info.get("updatedBy"))
+        others.append(other)
     ai, value = gs1.split_anchor(anchor)
 
     result = {

@@ -298,7 +298,9 @@ function renderPreview() {
       applyPreview(true, g, l, result.uri, attributes);
     } catch (e) {
       if (seq !== previewSeq) return;
-      I18N.set($("#attr-msg"), e.code, e.params);
+      const params = { ...e.params };
+      if (Array.isArray(params.list)) params.list = attributeList(params.list);
+      I18N.set($("#attr-msg"), e.code, params);
       $("#attr-msg").className = "field-msg is-error";
       applyPreview(false, g, l, "", attributes, "attrs.fixFirst");
     }
@@ -315,7 +317,12 @@ function showResolvedAttributes(typed, lines) {
     const [ai, value] = typed[index] || [];
     const changed = match && (match[1] !== ai || match[2] !== value);
     box.hidden = !changed;
-    if (changed) I18N.set(box, "attrs.inUri", { pair: `${match[1]}=${match[2]}` }); else I18N.set(box, null);
+    if (!changed) { I18N.set(box, null); return; }
+    // For a decimal family the fourth digit of the AI in the URI is the number of decimal places used
+    const family = attributeByCode(match[1].slice(0, 3) + "n");
+    const decimals = family && family.family && match[1].length === 4 ? Number(match[1][3]) : null;
+    I18N.set(box, decimals === null ? "attrs.inUri" : decimals === 0 ? "attrs.inUri.noDecimals" : "attrs.inUri.decimals",
+             { pair: `${match[1]}=${match[2]}`, n: decimals });
   });
 }
 
@@ -475,8 +482,19 @@ function attributeCode(text) {
   return match ? match[1].toLowerCase() : "";
 }
 
+/* "(392n) Preço de item de medida variável (PRICE)" in Portuguese; "(392n) PRICE", the GS1 data title, in
+   English. Names of the families serve their members: (3922) is named as (392n). */
 function attributeLabel(attribute) {
-  return `(${attribute.ai}) ${attribute.title}`;
+  const key = `ai.${attribute.ai}`;
+  const familyKey = `ai.${attribute.ai.slice(0, 3)}n`;
+  const name = I18N.has(key) ? t(key) : (attribute.fixedDecimals !== undefined && I18N.has(familyKey) ? t(familyKey) : "");
+  const title = attribute.title || "";
+  return `(${attribute.ai}) ` + (name && title ? `${name} (${title})` : name || title);
+}
+
+/* A list of AIs in a message ("(30) Quantidade variável (VAR. COUNT), (31nn)…"): named when known. */
+function attributeList(codes) {
+  return (codes || []).map(code => { const a = attributeByCode(code); return a ? attributeLabel(a) : `(${code})`; }).join("; ");
 }
 
 function readAttributes() {
@@ -661,6 +679,7 @@ function attributeCombo(onChange) {
     input,
     code: () => selected || attributeCode(input.value),
     set(code) { selected = code; const a = attributeByCode(code); input.value = a ? attributeLabel(a) : code; },
+    refresh() { const a = attributeByCode(selected); if (a && document.activeElement !== input) input.value = attributeLabel(a); },
     focus() { input.focus(); },
   };
 }
@@ -724,7 +743,7 @@ function addAttributeRow(ai = "", value = "") {
   tools.append(up, down, remove);
   row.append(combo.element, tools, valueInput, hint, resolved);
   row.aiCode = () => combo.code();
-  row.describe = describe;               // re-run when the language changes (format hints are translated)
+  row.describe = () => { combo.refresh(); describe(); };   // on a change of language: names and hints
   row.focusAi = () => combo.focus();
   $("#attr-rows").append(row);
   I18N.apply(row);
@@ -847,10 +866,104 @@ function setOpenMessage(key, params, otherEntries = []) {
   const parts = [main];
   if (otherEntries.length) {
     const extra = document.createElement("span");
-    I18N.set(extra, "open.others", { entries: otherEntries });
+    I18N.set(extra, "open.othersCount", { count: otherEntries.length });
     parts.push(" ", extra);
   }
   box.replaceChildren(...parts);
+  renderOthers(otherEntries);
+}
+
+/* ---------------------------------------------------------------- other records of the same key
+   Below "Open record": the other records of the key (the product itself, batches, serials, variants…),
+   with a text search, a filter by key qualifier, five rows in view at a time (the list scrolls) and a
+   button to open each one. Opening asks first when the record being edited has unsaved changes. */
+const othersState = { entries: [] };
+
+function otherApplies(entry) {
+  if (entry.kind === "product") return t("others.product");
+  if (entry.kind === "other") return entry.value;
+  return qualText(entry.qualifiers);
+}
+
+function renderOthers(entries) {
+  othersState.entries = entries || [];
+  const box = $("#others");
+  box.hidden = !othersState.entries.length;
+  if (box.hidden) return;
+  I18N.set($("#others-title"), "others.title", { count: othersState.entries.length, key: t(`key.${readKey().ai}.short`) });
+  // Filter: every key qualifier present in the list
+  const present = [...new Set(othersState.entries.flatMap(e => (e.qualifiers || []).map(([q]) => q)))];
+  const filter = $("#others-filter");
+  const previous = filter.value;
+  filter.replaceChildren(new Option(t("others.filter.all"), ""),
+    ...(othersState.entries.some(e => e.kind === "product") ? [new Option(t("others.filter.product"), "product")] : []),
+    ...present.map(q => new Option(t(`qual.${q}.label`), q)));
+  filter.value = [...filter.options].some(o => o.value === previous) ? previous : "";
+  $("#others-search").value = "";
+  drawOthers();
+}
+
+function drawOthers() {
+  const words = fold($("#others-search").value).split(/\s+/).filter(Boolean);
+  const kind = $("#others-filter").value;
+  const shown = othersState.entries.filter(e =>
+    (!kind || (kind === "product" ? e.kind === "product" : (e.qualifiers || []).some(([q]) => q === kind)))
+    && words.every(w => fold(`${otherApplies(e)} ${e.description || ""}`).includes(w)));
+  const body = $("#others-body");
+  body.replaceChildren(...shown.map(entry => {
+    const tr = document.createElement("tr");
+    const cell = (className, text) => Object.assign(document.createElement("td"), { className, textContent: text });
+    const when = cell("col-when", entry.updatedAt ? formatWhen(entry.updatedAt) : "—");
+    if (entry.updatedBy) when.append(Object.assign(document.createElement("small"), { textContent: entry.updatedBy }));
+    const action = document.createElement("td");
+    const button = Object.assign(document.createElement("button"), { type: "button", className: "btn btn-ghost others-open" });
+    I18N.set(button, "others.open");
+    if (entry.kind === "other") {
+      button.disabled = true;                 // created by another tool with qualifiers the portal does not edit
+      button.title = t("records.otherHint");
+    } else {
+      button.setAttribute("aria-label", t("others.openAria", { what: otherApplies(entry) }));
+      button.addEventListener("click", () => openOther(entry));
+    }
+    action.append(button);
+    tr.append(cell("col-applies", otherApplies(entry)), cell("col-desc", entry.description || "—"),
+              cell("col-links num", String(entry.links ?? "")), when, action);
+    return tr;
+  }));
+  I18N.set($("#others-foot"), shown.length > 5 ? "others.footScroll" : "others.foot",
+           { shown: shown.length, total: othersState.entries.length });
+  fitOthers();
+}
+
+/* Exactly five rows in view: the header plus the first five rows as drawn (rows can wrap). */
+function fitOthers() {
+  const scroll = $("#others-scroll");
+  if ($("#others").hidden) return;
+  scroll.style.maxHeight = "";
+  const head = $("thead", scroll).getBoundingClientRect().height;
+  const rows = $$("#others-body tr").slice(0, 5).reduce((n, r) => n + r.getBoundingClientRect().height, 0);
+  if ($$("#others-body tr").length > 5) scroll.style.maxHeight = `${Math.ceil(head + rows) + 1}px`;
+}
+
+/* The record being edited as it would be saved, to tell whether it has unsaved changes. */
+function editorSnapshot() {
+  const { description, links } = collect();
+  return JSON.stringify({ description, links });
+}
+
+function hasUnsavedChanges() {
+  return Boolean(state.openKey) && !$("#editor").disabled && state.snapshot !== undefined && editorSnapshot() !== state.snapshot;
+}
+
+async function openOther(entry) {
+  if (hasUnsavedChanges() && !confirm(t("others.confirmDiscard"))) return;
+  const values = Object.fromEntries(entry.qualifiers || []);
+  for (const field of document.querySelectorAll("#qualifiers .qual-field")) {
+    $("input", field).value = values[field.dataset.ai] || "";
+  }
+  onIdentityChange();
+  await openRecord();
+  $("#open").scrollIntoView({ block: "start", behavior: "smooth" });
 }
 
 async function openRecord() {
@@ -873,6 +986,7 @@ async function openRecord() {
     refreshDefault();
 
     setOpenMessage(record.exists ? "open.found" : "open.new", {}, record.otherEntries);
+    state.snapshot = editorSnapshot();         // unsaved changes are measured from here
     $("#delete").hidden = !record.exists;
     $("#history-toggle").hidden = false;
     $("#history-panel").hidden = true;
@@ -1789,6 +1903,7 @@ async function save(event) {
   hideStatus();
   try {
     const result = await api("POST", "record", collect());
+    state.snapshot = editorSnapshot();
     state.exists = true;
     $("#delete").hidden = false;
     setPublished(true);
@@ -1945,6 +2060,10 @@ async function init() {
 
   $("#key-value").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); openRecord(); } });
   $("#open").addEventListener("click", openRecord);
+  $("#others-search").addEventListener("input", drawOthers);
+  $("#others-filter").addEventListener("change", drawOthers);
+  window.addEventListener("resize", fitOthers);
+  document.addEventListener("localechange", () => { if (othersState.entries.length) renderOthers(othersState.entries); });
   $("#add").addEventListener("click", () => $(".url", addRow()).focus());
   $("#form").addEventListener("submit", save);
   $("#delete").addEventListener("click", remove);

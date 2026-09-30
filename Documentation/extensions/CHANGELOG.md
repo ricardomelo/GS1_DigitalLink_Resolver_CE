@@ -2,6 +2,21 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: other records of the same key; data attribute fixes; names in Portuguese
+- Under *Open record*, a list of the other records of the key (product, batches, serials, variants): what
+  each applies to, description, links, last change; search, filter by key qualifier, five rows in view with
+  scrolling, and *Open*, which asks for confirmation when the record being edited has unsaved changes.
+  `GET /portal/api/record` returns description, links and last change in `otherEntries`.
+- Fix: a decimal family chosen without a value (e.g. (392n)) was refused as "not a data attribute"; it now
+  asks for the value.
+- The engine's association refusals get messages of their own in both languages, naming the AIs as chosen:
+  "(392n) also needs one of: (30) …; (31nn) …" (a price needs a quantity or measure), and invalid pairs.
+- The line showing how a converted attribute went into the URI says how many decimal places were used,
+  and stands out from the format hint.
+- Data attributes named in Portuguese, with the GS1 data title in brackets: "(392n) Preço de item de medida
+  variável (PRICE)" (216 names); English keeps the data titles.
+- Tests: the list of other records (five rows, search, filter, confirmation), the fixes and the names.
+
 ### Portal: decimal families of data attributes, no limit of 10 attributes
 - Measures and amounts whose fourth digit is the number of decimal places are offered as families — (310n)
   NET WEIGHT (kg), (392n) PRICE, 59 in all — and take the number as people write it, with a comma or a point:

@@ -119,14 +119,19 @@ cases = [
     ("more decimals than a member has", GTIN, [("3103", "1,5678")], ("attr.decimals", {"ai": "3103", "max": 3})),
     ("more digits than a fixed-length measure", GTIN, [("310n", "1234,567")], ("attr.tooManyDigits", {"ai": "310n", "max": 6})),
     ("not a number", GTIN, [("310n", "12a")], ("attr.notNumber", {"ai": "310n"})),
+    ("family chosen without a value (was: not an attribute)", GTIN, [("392n", "")], ("attr.valueRequired", {"ai": "392n"})),
+    ("association rule named as chosen: price needs a quantity or measure", GTIN, [("392n", "111")],
+     ("attr.requires", {"ai": "392n", "list": ["30", "31nn", "32nn", "35nn", "36nn"]})),
+    ("association rule: expiry date needs a GTIN (or similar)", GLN, [("17", "261231")],
+     ("attr.requires", {"ai": "17", "list": ["01", "02", "03", "255", "8006", "8026"]})),
+    ("invalid pair named as chosen", GTIN, [("3102", "001000"), ("310n", "1,500")], ("attr.pair", {"ai": "3102", "other": "310n"})),
+    ("same family twice", GTIN, [("310n", "1,5"), ("310n", "2,5")], ("attr.duplicate", {"ai": "310n"})),
 ]
 for name, anchor, attrs, expected in cases:
     result = outcome(lambda: E.digital_link(STEM, anchor, [], attrs))
     check(f"refused: {name}", result == expected, result)
 for name, anchor, attrs, text, markup in [
         ("illegal month", GTIN, [("17", "261399")], "illegal month", "(17)26|13|99"),
-        ("date required association (17 with a GLN)", GLN, [("17", "261231")], "Required AIs for AI (17)", ""),
-        ("invalid pair (3102 with 3103)", GTIN, [("3102", "001000"), ("3103", "000500")], "invalid to pair", ""),
         ("character outside CSET 82", GTIN, [("99", "A B")], "non-CSET 82", "(99)A| |B"),
         ("wrong length", GTIN, [("3103", "500")], "", "")]:
     result = outcome(lambda: E.digital_link(STEM, anchor, [], attrs))

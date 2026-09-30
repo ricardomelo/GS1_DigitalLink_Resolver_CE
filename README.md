@@ -129,7 +129,9 @@ X-dimension 0.495 mm, 4X quiet zone) and buttons to try or copy the link. Label 
 text in full (every element string), for the key only or none; QR code version (automatic, the
 smallest that fits, or 1 to 40) and error correction level (L, M — the default —, Q, H), shown under the
 code as used. If a chosen version is too small for the content, an explanation with the version needed
-replaces the image. The label block sits under the form, with the code and its buttons on the left and the
+replaces the image. When the key has other records (the product, its batches, serials, variants…), a list
+under *Open record* shows them five at a time, with a search, a filter by key qualifier and a button to open
+each one (after a confirmation if the record being edited has unsaved changes). The label block sits under the form, with the code and its buttons on the left and the
 options on the right. After each save the targets are checked (see below).
 
 <p align="center">

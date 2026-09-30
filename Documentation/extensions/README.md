@@ -264,6 +264,23 @@ portal's own `records-meta.json` in the `resolver-portal-config` volume, which r
 last changed each record through the portal. Changes made through the API directly show "no history".
 The whole list is sent to the browser, which is comfortable up to a few thousand records.
 
+## Other records of the same key
+
+When the record opened in the editor has siblings on the same key — the product itself, its batches,
+serials, variants — a list appears under *Open record*: "Other records of this GTIN (21)". It shows, for each
+one, what it applies to ("Batch L2026-03 · Serial S0001", "Every unit"), its description, number of links and
+the last change made through the portal (date and user); a search by text (qualifier values, description),
+a filter by key qualifier (only the qualifiers present, plus "no qualifiers"), and *Open*. Five rows are in
+view at a time (measured, as rows may wrap) and the list scrolls, so the page does not grow with the number
+of records; on phones only what it applies to and the button remain. The data comes with the record itself
+(`otherEntries` of `GET /portal/api/record`: kind, qualifiers, description, links, `updatedAt`,
+`updatedBy`), so no extra request is made. Records created by other tools with qualifiers the portal does
+not edit are listed but cannot be opened.
+
+*Open* fills the qualifier fields and opens that record. If the description or the links of the record
+being edited differ from what was opened or last saved, the browser asks first ("This record has unsaved
+changes. Opening another one discards them."); cancelling keeps everything as it was.
+
 ## Spreadsheet import and export
 
 In **Registered records**, *Export spreadsheet (Excel)* and *Export CSV* download every record the
@@ -569,8 +586,10 @@ the human readable text. The AI is chosen in a combo box (ARIA 1.2 pattern, usab
 keyboard and screen readers): a click in the field, its arrow button or the Down key opens the whole list,
 with the current text selected so that typing replaces it; typing filters by number ("31") or by name
 ("net weight"); Enter or a click chooses; Escape closes. The list starts with the most used attributes
-(dates, net weight, price, count, origin) and then all of them, each with its GS1 data title (e.g. "(17)
-USE BY or EXPIRY"). It leaves out the record's own key and qualifiers (for a GTIN: (01), (22), (10), (21),
+(dates, net weight, price, count, origin) and then all of them. In Portuguese each has a name followed by
+its GS1 data title — "(392n) Preço de item de medida variável (PRICE)" — from the catalogue in
+`static/i18n.js` (`ai.<code>`, 216 names, which distinguish pairs the data titles do not, such as (392n)
+and (393n), both "PRICE"); in English the data title alone ("(17) USE BY or EXPIRY"). Searching finds either. It leaves out the record's own key and qualifiers (for a GTIN: (01), (22), (10), (21),
 (235)). While the user types, `POST /portal/api/digital-link`
 checks the attributes and returns the URI; the coloured link gains a green query-string part, and the QR
 image, the test and copy buttons and the downloads (`GET /portal/api/qrcode?…&attr=17:271231&attr=3103:000500`)
@@ -620,7 +639,11 @@ go in the path of the record being edited. (The grammar lists `shipToaAdd1Parame
 label, or a system receiving the URI, may not know the convention. The message gives the first and last
 day of that month (e.g. 260200 → 260201 or 260228; 29 in a leap year) (`attr.dayZero`).
 
-**Checks and messages.** The portal refuses, with its own message in both languages: an AI that is the key
+**Checks and messages.** The engine's refusals that users meet most get messages of their own in both
+languages, naming the AIs as chosen ("(392n)", not the "(3920)" it became): a missing associated AI —
+"Attribute (392n) also needs one of: (30) VAR. COUNT; (31nn); …", from the General Specifications'
+mandatory associations — and an invalid pair — "Attributes (3102) and (310n) cannot be used together". The
+portal refuses, with its own message in both languages: an AI that is the key
 or one of its qualifiers (it would go in the path and the code would point at another record — for a
 batch, serial or variant, open the record with that qualifier), an AI that is not a data attribute, a
 repeated AI, an empty value, day 00, a number written wrongly for a decimal family (above), more than 100

@@ -107,7 +107,8 @@ class Engine:
         key_ai, _ = gs1.split_anchor(anchor)
         if len(attributes) > MAX_ATTRIBUTES:
             raise ValidationError("attr.tooMany", max=MAX_ATTRIBUTES)
-        attributes = [self.resolve_decimal(ai, value) for ai, value in attributes]
+        # Checks on the attributes as the user chose them ("392n", "17"), then decimal conversion, so that
+        # every message names what the user sees
         seen = set()
         for ai, value in attributes:
             if ai == key_ai or ai in self.path_ais.get(key_ai, set()):
@@ -115,14 +116,23 @@ class Engine:
                 # the path and the QR code would point at another record. Checked first because it tells
                 # the user where the value belongs, also for qualifiers that are never data attributes.
                 raise ValidationError("attr.inPath", ai=ai)
-            if ai not in self.attributes:
+            if ai not in self.attributes and ai not in self.families:
                 raise ValidationError("attr.unknown", ai=ai)
             if ai in seen:
                 raise ValidationError("attr.duplicate", ai=ai)
             seen.add(ai)
             if not value:
                 raise ValidationError("attr.valueRequired", ai=ai)
-            _refuse_day_zero(ai, value, self.attributes[ai]["components"])
+        chosen = {}                                   # AI in the URI → AI as chosen (3920 → 392n)
+        resolved = []
+        for ai, value in attributes:
+            code, digits = self.resolve_decimal(ai, value)
+            if code in chosen:                        # 310n twice, both with the same decimals
+                raise ValidationError("attr.duplicate", ai=ai)
+            chosen[code] = ai
+            _refuse_day_zero(code, digits, self.attributes[code]["components"])
+            resolved.append((code, digits))
+        attributes = resolved
         path_uri = gs1.digital_link(stem, anchor, pairs)
         if not attributes:
             return path_uri, []
@@ -133,7 +143,7 @@ class Engine:
                 self._encoder.ai_data_str = element_string
                 uri = self._encoder.get_dl_uri(stem)
             except self._errors as exc:
-                raise ValidationError("attr.invalid", detail=str(exc), markup=self._encoder.err_markup) from exc
+                raise _engine_error(str(exc), self._encoder.err_markup, chosen) from exc
         if uri.split("?", 1)[0] != path_uri:
             # Belt and braces: the identification in the path must stay the record's own.
             raise ValidationError("attr.inPath", ai=next(iter(seen)))
@@ -174,6 +184,27 @@ class Engine:
         if last["min"] == last["max"]:
             digits = digits.rjust(last["max"], "0")
         return f"{family_code[:3]}{decimals}", prefix + digits
+
+
+_REQUIRES = re.compile(r"^Required AIs for AI \((\d+)\) are not satisfied: ([0-9n,]+)$")
+_PAIR = re.compile(r"^It is invalid to pair AI \((\d+)\) with AI \((\d+)\)$")
+_NOT_ATTRIBUTE = re.compile(r"^AI \((\d+)\) is not a valid DL URI data attribute$")
+
+
+def _engine_error(message: str, markup: str, chosen: dict[str, str]) -> ValidationError:
+    """The engine's refusal. The association rules of the General Specifications, which users meet most
+    (a price needs a quantity or measure; two weights of different precision cannot go together), get
+    messages of their own in the user's language, naming the AIs as the user chose them ("392n", not
+    "3920"). Other refusals (a check digit, a date, a code list) keep the engine's precise English text."""
+    shown = lambda ai: chosen.get(ai, ai)                      # noqa: E731
+    if match := _REQUIRES.match(message):
+        # "31nn" in the engine's list stands for the families 310n-316n; the portal writes "31nn" as well
+        return ValidationError("attr.requires", ai=shown(match.group(1)), list=match.group(2).split(","))
+    if match := _PAIR.match(message):
+        return ValidationError("attr.pair", ai=shown(match.group(1)), other=shown(match.group(2)))
+    if match := _NOT_ATTRIBUTE.match(message):
+        return ValidationError("attr.unknown", ai=shown(match.group(1)))
+    return ValidationError("attr.invalid", detail=message, markup=markup)
 
 
 def _refuse_day_zero(ai: str, value: str, components: list[dict]) -> None:

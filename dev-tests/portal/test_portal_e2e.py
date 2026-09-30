@@ -287,6 +287,69 @@ with sync_playwright() as p:
     check("SSCC opens in the editor", page.input_value("#key-type") == "00"
           and page.input_value("#description") == "Pallet 1")
 
+    # Other records of the same key: list under "Open record", five rows in view, search, filter, open
+    MANY = "07898357410015"
+    many = [({"22": f"V{n}"}, f"Café 500 g variante V{n}") for n in (1, 2, 3)]
+    many += [({"10": f"L2026-{n:02d}"}, f"Café 500 g lote {n}") for n in range(1, 13)]
+    many += [({"10": "L2026-09", "21": f"S{n:04d}"}, "Café 500 g unidade serializada") for n in range(1, 7)]
+    link = [{"linktype": "gs1:pip", "href": "https://example.org/cafe", "title": "Café", "hreflang": ["pt"]}]
+    mock_data_entry.upsert({"anchor": f"/01/{MANY}", "itemDescription": "Café 500 g", "defaultLinktype": "gs1:pip", "links": link})
+    for quals, description in many:
+        mock_data_entry.upsert({"anchor": f"/01/{MANY}", "qualifiers": [{k: v} for k, v in quals.items()],
+                                "itemDescription": description, "defaultLinktype": "gs1:pip", "links": link})
+    page.select_option("#key-type", "01"); page.wait_for_timeout(100)
+    page.fill("#key-value", MANY)
+    for field in page.query_selector_all("#qualifiers .qual-field input"):
+        field.fill("")
+    page.wait_for_timeout(200); page.click("#open"); page.wait_for_timeout(900)
+    check("other records listed under Open record", page.is_visible("#others")
+          and page.inner_text("#others-title") == "Other records of this GTIN (21)"
+          and "21 other records" in page.inner_text("#open-msg"), page.inner_text("#others-title"))
+    scroll = page.locator("#others-scroll")
+    in_view = page.evaluate("""() => { const s = document.querySelector('#others-scroll').getBoundingClientRect();
+        return [...document.querySelectorAll('#others-body tr')].filter(r => { const b = r.getBoundingClientRect();
+        return b.top >= s.top - 1 && b.bottom <= s.bottom + 1; }).length; }""")
+    check("exactly five rows in view, the list scrolls", in_view == 5
+          and page.evaluate("document.querySelector('#others-scroll').scrollHeight > document.querySelector('#others-scroll').clientHeight"),
+          in_view)
+    check("footer says how many are shown", page.inner_text("#others-foot") == "Showing 21 of 21 · scroll the list to see more")
+    filters = page.eval_on_selector_all("#others-filter option", "o => o.map(x => x.value)")
+    check("filter offers the qualifiers present", filters == ["", "22", "10", "21"], filters)
+    page.select_option("#others-filter", "21"); page.wait_for_timeout(150)
+    check("filter by serial number", len(page.query_selector_all("#others-body tr")) == 6
+          and page.inner_text("#others-foot") == "Showing 6 of 21 · scroll the list to see more")
+    page.select_option("#others-filter", "10"); page.fill("#others-search", "l2026-0"); page.wait_for_timeout(150)
+    check("filter and search together", len(page.query_selector_all("#others-body tr")) == 15,
+          len(page.query_selector_all("#others-body tr")))
+    page.fill("#others-search", "variante"); page.select_option("#others-filter", ""); page.wait_for_timeout(150)
+    rows = page.query_selector_all("#others-body tr")
+    check("search by description", len(rows) == 3 and page.inner_text("#others-foot") == "Showing 3 of 21", len(rows))
+    # unsaved change: cancelling the confirmation keeps the record, accepting opens the other one
+    page.fill("#description", "Café 500 g (edited)")
+    page.once("dialog", lambda d: d.dismiss())
+    page.click("#others-body tr:nth-child(2) .others-open"); page.wait_for_timeout(600)
+    check("unsaved changes: cancelling keeps the record being edited",
+          page.input_value("#description") == "Café 500 g (edited)" and page.input_value("#q-22") == "")
+    messages = []
+    page.once("dialog", lambda d: (messages.append(d.message), d.accept()))
+    page.click("#others-body tr:nth-child(2) .others-open"); page.wait_for_timeout(900)
+    check("accepting opens the chosen record", page.input_value("#q-22") == "V2"
+          and page.input_value("#description") == "Café 500 g variante V2"
+          and "unsaved changes" in (messages[0] if messages else ""), (page.input_value("#q-22"), messages))
+    check("the list now shows the product among the others", "Every unit" in page.inner_text("#others-body")
+          and page.inner_text("#others-title") == "Other records of this GTIN (21)")
+    opened = []
+
+    def record_dialog(dialog):
+        opened.append(dialog.message)
+        dialog.accept()
+    page.on("dialog", record_dialog)
+    page.fill("#others-search", "lote 3"); page.wait_for_timeout(150)
+    page.click("#others-body tr:first-child .others-open"); page.wait_for_timeout(900)
+    check("no confirmation without changes", not opened and page.input_value("#q-10") == "L2026-03"
+          and page.input_value("#q-22") == "", opened)
+    page.remove_listener("dialog", record_dialog)
+
     # The label block sits under the form at every width, QR code and options side by side
     for width in (1024, 1360, 1920):
         page.set_viewport_size({"width": width, "height": 900}); page.wait_for_timeout(200)
@@ -359,6 +422,18 @@ with sync_playwright() as p:
         page.select_option("#locale", "pt-BR"); page.wait_for_timeout(200)
         check("format hints follow the language", "data AAMMDD" in page.inner_text(f"{first} .attr-hint"),
               page.inner_text(f"{first} .attr-hint"))
+        check("names in Portuguese with the GS1 data title", page.input_value(f"{first} .attr-ai")
+              == "(17) Data de validade (USE BY or EXPIRY)", page.input_value(f"{first} .attr-ai"))
+        page.click(f"{second} .combo-toggle"); page.wait_for_timeout(150)
+        page.click(f"{second} .combo-option[data-ai='392n']"); page.fill(f"{second} .attr-value", ""); page.wait_for_timeout(900)
+        check("family without a value: asks for the value", "Informe o valor do atributo (392n)" in page.inner_text("#attr-msg"),
+              page.inner_text("#attr-msg"))
+        page.fill(f"{second} .attr-value", "111"); page.wait_for_timeout(900)
+        check("association rule in Portuguese, with names", page.inner_text("#attr-msg").startswith(
+              "O atributo (392n) exige também um destes: (30) Quantidade variável (VAR. COUNT); (31nn)"), page.inner_text("#attr-msg"))
+        page.click(f"{second} .combo-toggle"); page.wait_for_timeout(150)
+        page.click(f"{second} .combo-option[data-ai='310n']"); page.wait_for_timeout(100)
+        page.fill(f"{second} .attr-value", "000500"); page.wait_for_timeout(900)
         page.select_option("#locale", "en-GB"); page.wait_for_timeout(200)
         page.click(f"{second} .attr-remove"); page.wait_for_timeout(900)
         check("removing a row updates the link", page.inner_text("#dl").endswith("?17=261231"), page.inner_text("#dl"))
@@ -385,7 +460,7 @@ with sync_playwright() as p:
               page.input_value(f"{first} .attr-ai"))
         page.fill(f"{first} .attr-value", "123,45"); page.wait_for_timeout(900)
         check("decimal family: comma typed, right AI and digits in the link", page.inner_text("#dl").endswith("?3202=012345")
-              and page.inner_text(f"{first} .attr-resolved") == "In the URI: 3202=012345"
+              and page.inner_text(f"{first} .attr-resolved") == "→ In the URI: 3202=012345 (2 decimal places)"
               and page.get_attribute(f"{first} .attr-value", "inputmode") == "decimal", page.inner_text("#dl"))
         page.fill(f"{first} .attr-value", "261231")
         page.click(f"{first} .combo-toggle"); page.wait_for_timeout(150)

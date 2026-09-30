@@ -96,6 +96,27 @@
 
         <button type="button" id="open" class="btn btn-secondary" disabled data-i18n="open.button"></button>
         <p class="field-msg" id="open-msg" aria-live="polite"></p>
+        <!-- Other records of the same key (batches, serials, variants…): search, filter, open -->
+        <div class="others" id="others" role="region" data-i18n-attr="aria-label:others.aria" hidden>
+          <div class="others-head"><strong id="others-title"></strong><span data-i18n="others.help"></span></div>
+          <div class="others-tools">
+            <input type="search" id="others-search" autocomplete="off" data-i18n-attr="placeholder:others.search;aria-label:others.search">
+            <select id="others-filter" data-i18n-attr="aria-label:others.filter"></select>
+          </div>
+          <div class="others-scroll" id="others-scroll" tabindex="0" data-i18n-attr="aria-label:others.aria">
+            <table class="others-table">
+              <thead><tr>
+                <th data-i18n="others.col.applies"></th>
+                <th class="col-desc" data-i18n="others.col.description"></th>
+                <th class="col-links" data-i18n="others.col.links"></th>
+                <th class="col-when" data-i18n="others.col.changed"></th>
+                <th><span class="visually-hidden" data-i18n="others.col.action"></span></th>
+              </tr></thead>
+              <tbody id="others-body"></tbody>
+            </table>
+          </div>
+          <p class="others-foot" id="others-foot" aria-live="polite"></p>
+        </div>
       </section>
 
       <fieldset id="editor" class="edit" disabled>

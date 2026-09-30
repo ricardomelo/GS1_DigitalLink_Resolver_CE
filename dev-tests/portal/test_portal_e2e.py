@@ -61,13 +61,23 @@ with sync_playwright() as p:
     browser = p.chromium.launch()
     ctx = browser.new_context(locale="en-GB", viewport={"width": 1360, "height": 1000})
     page = ctx.new_page()
-    page.on("pageerror", lambda e: failures.append(f"page error: {e}"))
+    page.on("pageerror", lambda e: (print(f"FAIL page error: {e}"), failures.append(f"page error: {e}")))
 
     page.goto(BASE)
     check("unauthenticated → sign-in page", page.url.endswith("/portal/login"), page.url)
     page.fill("#username", "tester"); page.fill("#password", "wrong"); page.click("#login-submit"); page.wait_for_timeout(900)
     check("wrong password message", "Incorrect" in page.inner_text("#login-status"))
-    page.fill("#password", "a-long-test-password"); page.click("#login-submit"); page.wait_for_timeout(800)
+    page.fill("#password", "a-long-test-password")
+    reveal = page.locator("#password + .reveal")
+    check("sign-in: eye button to show the password", reveal.count() == 1
+          and reveal.get_attribute("aria-label") == "Show password" and reveal.get_attribute("aria-pressed") == "false")
+    reveal.click()
+    check("password shown as text", page.get_attribute("#password", "type") == "text"
+          and reveal.get_attribute("aria-pressed") == "true" and reveal.get_attribute("aria-label") == "Hide password")
+    reveal.click()
+    check("password hidden again", page.get_attribute("#password", "type") == "password")
+    reveal.click()
+    page.click("#login-submit"); page.wait_for_timeout(800)
     check("signed in", page.url.endswith("/portal/"), page.url)
 
     page.fill("#key-value", "7898357410016"); page.wait_for_timeout(100)
@@ -277,6 +287,16 @@ with sync_playwright() as p:
     check("SSCC opens in the editor", page.input_value("#key-type") == "00"
           and page.input_value("#description") == "Pallet 1")
 
+    # Medium screens: the label goes under the form, QR code and options side by side
+    page.set_viewport_size({"width": 1024, "height": 900}); page.wait_for_timeout(200)
+    form_box, panel_box = page.locator("#editor").bounding_box(), page.locator(".label-panel").bounding_box()
+    visual, controls = page.locator(".label-visual").bounding_box(), page.locator(".label-controls").bounding_box()
+    check("1024 px: label under the form, two columns", panel_box["y"] > form_box["y"] + form_box["height"] - 1
+          and controls["x"] > visual["x"] + visual["width"] - 1, (form_box, panel_box, visual, controls))
+    page.set_viewport_size({"width": 1360, "height": 1000}); page.wait_for_timeout(200)
+    check("1360 px: label beside the form", page.locator(".label-panel").bounding_box()["x"]
+          > page.locator("#editor").bounding_box()["x"] + page.locator("#editor").bounding_box()["width"] - 1)
+
     # Key qualifiers (URI Syntax 4.4, 4.6, 4.9)
     page.goto(BASE); page.wait_for_timeout(700)
     check("GTIN qualifiers in path order", [el.get_attribute("data-ai") for el in page.query_selector_all("#qualifiers .qual-field")]
@@ -309,7 +329,7 @@ with sync_playwright() as p:
         check("ticking opens the editor with one row", page.is_visible("#attrs")
               and len(page.query_selector_all("#attr-rows .attr-row")) == 1)
         first = "#attr-rows .attr-row:nth-child(1)"
-        page.fill(f"{first} .attr-ai", "17"); page.press(f"{first} .attr-ai", "Tab")
+        page.fill(f"{first} .attr-ai", "17"); page.press(f"{first} .attr-ai", "Tab"); page.wait_for_timeout(100)
         check("AI completed with its GS1 data title", page.input_value(f"{first} .attr-ai") == "(17) USE BY or EXPIRY",
               page.input_value(f"{first} .attr-ai"))
         check("format hint from the syntax dictionary", "6 digits · date YYMMDD" in page.inner_text(f"{first} .attr-hint"),
@@ -342,9 +362,85 @@ with sync_playwright() as p:
         page.select_option("#locale", "en-GB"); page.wait_for_timeout(200)
         page.click(f"{second} .attr-remove"); page.wait_for_timeout(900)
         check("removing a row updates the link", page.inner_text("#dl").endswith("?17=261231"), page.inner_text("#dl"))
+        # combo box: the list reopens with one click, filters by name, keyboard choice; key's own AIs not offered
+        page.click(f"{first} .attr-ai"); page.wait_for_timeout(150)
+        listbox = page.locator(f"{first} .combo-list")
+        check("clicking a chosen AI opens the whole list, text selected", listbox.is_visible()
+              and "most used" in listbox.inner_text().lower() and "all attributes" in listbox.inner_text().lower()
+              and page.evaluate("document.activeElement.selectionEnd - document.activeElement.selectionStart") > 5,
+              (listbox.is_visible(), listbox.inner_text()[:80] if listbox.is_visible() else "",
+               page.evaluate("[document.activeElement.className, document.activeElement.selectionStart, document.activeElement.selectionEnd]")))
+        codes = page.eval_on_selector_all(f"{first} .combo-option", "els => els.map(e => e.dataset.ai)")
+        check("list offers attributes only, not the GTIN's key or qualifiers", "17" in codes and "3103" in codes
+              and not {"01", "10", "21", "22", "235"} & set(codes) and "8200" not in codes, len(codes))
+        page.keyboard.type("net weight (kg"); page.wait_for_timeout(150)
+        check("typing filters by name", listbox.locator(".combo-option").first.inner_text().startswith("(3100)")
+              and all("NET WEIGHT (kg)" in t for t in listbox.locator(".combo-option").all_inner_texts()))
+        page.keyboard.press("ArrowDown"); page.keyboard.press("ArrowDown"); page.keyboard.press("ArrowDown")
+        page.keyboard.press("Enter"); page.wait_for_timeout(900)
+        check("keyboard choice (the first match is active after typing)",
+              page.input_value(f"{first} .attr-ai") == "(3103) NET WEIGHT (kg)" and listbox.is_hidden(),
+              page.input_value(f"{first} .attr-ai"))
+        page.click(f"{first} .combo-toggle"); page.wait_for_timeout(150)
+        page.click(f"{first} .combo-option[data-ai='17']"); page.wait_for_timeout(900)
+        check("arrow button, then a click on an option", page.input_value(f"{first} .attr-ai") == "(17) USE BY or EXPIRY"
+              and page.inner_text("#dl").endswith("?17=261231"), page.inner_text("#dl"))
+        # order of the attributes: up/down buttons
+        page.click("#attr-add"); page.wait_for_timeout(100)
+        page.fill(f"{second} .attr-ai", "3103"); page.press(f"{second} .attr-ai", "Tab")
+        page.fill(f"{second} .attr-value", "000500"); page.wait_for_timeout(900)
+        check("first row cannot move up, last cannot move down", page.is_disabled(f"{first} .attr-up")
+              and page.is_disabled(f"{second} .attr-down") and page.is_enabled(f"{first} .attr-down"))
+        page.click(f"{second} .attr-up"); page.wait_for_timeout(900)
+        check("moving a row changes the order in the link", page.inner_text("#dl").endswith("?3103=000500&17=261231"),
+              page.inner_text("#dl"))
+        # day 00 refused, with the first and last day of the month suggested
+        page.fill(f"{second} .attr-value", "260200"); page.wait_for_timeout(900)
+        check("day 00 refused with first and last day", "(17): day 00" in page.inner_text("#attr-msg")
+              and "(260201)" in page.inner_text("#attr-msg") and "(260228)" in page.inner_text("#attr-msg"), page.inner_text("#attr-msg"))
+        page.fill(f"{second} .attr-value", "261231"); page.wait_for_timeout(900)
+        # QR options: defaults, version and level used, forced version too small
+        check("QR options default to full HRI, automatic version, level M",
+              (page.input_value("#opt-hri"), page.input_value("#opt-version"), page.input_value("#opt-ecl")) == ("full", "auto", "m"))
+        check("version and level used shown under the code", page.inner_text("#qr-info").startswith("Version ")
+              and page.inner_text("#qr-info").endswith("correction M"), page.inner_text("#qr-info"))
+        page.select_option("#opt-version", "2"); page.wait_for_timeout(900)
+        check("forced version too small: explanation instead of the image", page.locator("#qr .qr-error").is_visible()
+              and "does not fit version 2 with correction M" in page.inner_text("#qr")
+              and "or higher" in page.inner_text("#qr") and page.locator("#qr img").count() == 0, page.inner_text("#qr"))
+        check("nothing to download while the code does not fit", page.get_attribute("#download-png", "href") is None
+              and page.inner_text("#qr-info") == "")
+        page.select_option("#opt-version", "auto"); page.select_option("#opt-ecl", "h"); page.wait_for_timeout(900)
+        check("level H used", page.inner_text("#qr-info").endswith("correction H") and page.locator("#qr img").count() == 1,
+              page.inner_text("#qr-info"))
+        check("download carries version and level choices", "ecl=h" in page.get_attribute("#download-png", "href")
+              and "version=auto" in page.get_attribute("#download-png", "href"))
+        page.select_option("#opt-ecl", "m"); page.wait_for_timeout(300)
         page.click("#open"); page.wait_for_timeout(800)
         check("attributes cleared when a record is opened", not page.is_checked("#opt-attrs") and page.is_hidden("#attrs")
               and "?" not in page.inner_text("#dl"), page.inner_text("#dl"))
+
+        # Phone (touch, 390 px): the list opens with a tap on the arrow and an option is chosen with a tap
+        phone_ctx = browser.new_context(locale="en-GB", viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+        phone = phone_ctx.new_page()
+        phone.on("pageerror", lambda e: (print(f"FAIL phone page error: {e}"), failures.append(f"phone page error: {e}")))
+        phone.goto(BASE); phone.fill("#username", "tester"); phone.fill("#password", "a-long-test-password")
+        phone.tap("#password + .reveal")
+        check("phone: password shown with a tap", phone.get_attribute("#password", "type") == "text")
+        phone.tap("#login-submit"); phone.wait_for_timeout(900)
+        phone.fill("#key-value", "09506000134352"); phone.wait_for_timeout(300)
+        phone.tap("#opt-attrs"); phone.wait_for_timeout(200)
+        phone.tap("#attr-rows .attr-row .combo-toggle"); phone.wait_for_timeout(200)
+        check("phone: list opened by a tap", phone.locator("#attr-rows .combo-list").is_visible())
+        phone.locator("#attr-rows .combo-option[data-ai='15']").first.tap(); phone.wait_for_timeout(200)
+        check("phone: option chosen by a tap", phone.input_value("#attr-rows .attr-ai") == "(15) BEST BEFORE or BEST BY"
+              and phone.locator("#attr-rows .combo-list").is_hidden(), phone.input_value("#attr-rows .attr-ai"))
+        check("phone: numeric keyboard for a date", phone.get_attribute("#attr-rows .attr-value", "inputmode") == "numeric")
+        phone.fill("#attr-rows .attr-value", "270131"); phone.wait_for_timeout(900)
+        check("phone: link with the attribute", phone.inner_text("#dl").endswith("?15=270131"), phone.inner_text("#dl"))
+        width = phone.evaluate("document.documentElement.scrollWidth")
+        check("phone: no horizontal scrolling", width <= 390, width)
+        phone_ctx.close()
 
     page.select_option("#key-type", "415"); page.fill("#key-value", "9506000134376"); page.wait_for_timeout(200)
     check("415 requires 8020", "requires the qualifier (8020)" in page.inner_text("#qual-msg") and page.is_disabled("#open")

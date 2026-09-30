@@ -39,11 +39,56 @@ PNG_PIXELS_PER_MODULE = 12   # ≈ 616 dpi at the target X-dimension
 TEXT_HEIGHT = TEXT_HEIGHT_MM / TARGET_X_MM   # in X
 
 
+ERROR_LEVELS = ("l", "m", "q", "h")          # QR error correction: about 7 %, 15 %, 25 %, 30 % recoverable
+
+
 @dataclass(frozen=True)
 class LabelOptions:
     uri: str
     hri_lines: tuple[str, ...]
     show_hri: bool
+    version: int | None = None                  # QR version 1-40; None chooses the smallest that fits
+    error: str = "m"                            # error correction level, exactly as chosen
+
+
+class DoesNotFit(ValueError):
+    """The URI does not fit the chosen QR version at the chosen error correction level."""
+
+    def __init__(self, version: int | None, error: str, needed: int | None, fitting_level: str | None):
+        super().__init__(f"{version}-{error}")
+        # needed: smallest version that fits at this level (None: not even version 40)
+        # fitting_level: highest level at which the chosen version fits (None: none does)
+        self.params = {"version": version, "level": error.upper(), "needed": needed,
+                       "fittingLevel": fitting_level.upper() if fitting_level else None}
+
+
+def symbol(options: LabelOptions):
+    """The QR symbol for the label. The level is never raised automatically (segno's boost_error), so
+    the code is exactly what the user chose; Micro QR is never used."""
+    try:
+        return segno.make(options.uri, error=options.error, version=options.version, micro=False, boost_error=False)
+    except segno.DataOverflowError:
+        needed = _smallest_version(options.uri, options.error)
+        fitting = None
+        if options.version:
+            fitting = next((level for level in reversed(ERROR_LEVELS)
+                            if _fits(options.uri, level, options.version)), None)
+        raise DoesNotFit(options.version, options.error, needed, fitting) from None
+
+
+def _fits(uri: str, error: str, version: int) -> bool:
+    try:
+        segno.make(uri, error=error, version=version, micro=False, boost_error=False)
+        return True
+    except segno.DataOverflowError:
+        return False
+
+
+def _smallest_version(uri: str, error: str) -> int | None:
+    try:
+        return segno.make(uri, error=error, micro=False, boost_error=False).version
+    except segno.DataOverflowError:
+        return None
 
 
 # --------------------------------------------------------------------------- assets
@@ -79,7 +124,7 @@ class _Layout:
 
 
 def _layout(options: LabelOptions) -> _Layout:
-    qr = segno.make(options.uri, error="m")
+    qr = symbol(options)
     matrix = [list(row) for row in qr.matrix]
     modules = len(matrix)
     box = modules + 2 * QUIET_ZONE

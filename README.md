@@ -66,7 +66,7 @@ the official Postman collection is at
 
 | Area | Addition |
 |---|---|
-| **Portal** (`/portal/`) | Sign-in with per-user passwords; editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; per-link query-string forwarding; QR code labels (PNG/SVG) with the dimensions of the *QR Codes powered by GS1* guidelines, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search; spreadsheet import/export (XLSX, CSV) with preview; link checker |
+| **Portal** (`/portal/`) | Sign-in with per-user passwords (with a show/hide button); editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; per-link query-string forwarding; QR code labels (PNG/SVG) with the dimensions of the *QR Codes powered by GS1* guidelines, a choice of QR version, error correction and human readable text, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search; spreadsheet import/export (XLSX, CSV) with preview; link checker |
 | **Governance** | Roles (administrator, editor, reader); access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords; history of every record with restore; audit trail with filters and CSV export |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, validated as the GS1 Barcode Syntax Engine does |
 | **Data attributes** | Every data attribute of URI Syntax §4.10 in QR codes, validated by the GS1 Barcode Syntax Engine (formats, check digits, dates, code lists and the association rules of the General Specifications); passed on by the resolver to the targets |
@@ -125,8 +125,12 @@ DELETE removes links, the default link type is shared by all records of a key).
    (`gs1:defaultLink`); each target can forward the scan's query string or not.
 
 The preview shows the Digital Link with its parts coloured, the **QR code label** (download as PNG or SVG,
-X-dimension 0.495 mm, 4X quiet zone, optional human-readable interpretation) and buttons to
-try or copy the link. After each save the targets are checked (see below).
+X-dimension 0.495 mm, 4X quiet zone) and buttons to try or copy the link. Label options: human readable
+text in full (key, qualifiers and attributes), for the key only or none; QR code version (automatic, the
+smallest that fits, or 1 to 40) and error correction level (L, M — the default —, Q, H), shown under the
+code as used. If a chosen version is too small for the content, an explanation with the version needed
+replaces the image. On screens narrower than 1200 px the label panel moves under the form. After each save
+the targets are checked (see below).
 
 <p align="center">
   <img src="Documentation/images/portal-attributes.png" alt="QR code panel with an expiry date and a net weight as data attributes" width="300">
@@ -135,8 +139,10 @@ try or copy the link. After each save the targets are checked (see below).
 **Data attributes** — ticking *Include data attributes* below the QR code adds GS1 Digital Link data
 attributes (URI Syntax §4.10) such as expiry date (17), net weight (3103) or price to the QR code:
 `https://id.example.org/01/…/10/B42?17=271231&3103=000500`. Attributes are chosen by number or name from
-the 500-odd AIs the standard allows, with their format explained, and checked as they are typed by the GS1
-Barcode Syntax Engine. They describe the item the code is printed for, so they are **not stored**: they
+the 500-odd AIs the standard allows (the record's own key and qualifiers are left out), in a list that
+opens with a click and filters as you type, with their format explained, put in order with ↑ ↓, and
+checked as they are typed by the GS1 Barcode Syntax Engine. Day 00 in dates ("end of month" in GS1
+syntax) is refused in favour of an explicit first or last day of the month. They describe the item the code is printed for, so they are **not stored**: they
 go only in the code drawn at that moment and are cleared when another record is opened. The resolver
 passes them on to targets that forward the query string. An attribute can never change the
 identification: batch, serial or variant of a GTIN are qualifiers of their own record, not attributes.
@@ -310,7 +316,7 @@ checks the user's role and GS1 Company Prefixes.
 | `POST /export` | XLSX or CSV of every record |
 | `POST /import/preview`, `POST /import/apply`, `GET /import/status` | Spreadsheet import: check, confirm, progress |
 | `POST /links/check`, `POST /links/jobs`, `GET /links/jobs/{token}`, `GET /links/last` | Link checker |
-| `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&attr=AI:value…` | QR code label, optionally with data attributes |
+| `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&attr=AI:value…` | QR code label, optionally with data attributes; headers `X-QR-Version`, `X-QR-Level`, `X-QR-Modules` |
 | `POST /digital-link` | The GS1 Digital Link URI of a record with data attributes (`attributes: [{ai, value}]`), checked by the syntax engine; nothing is stored |
 | `GET /history?key=&value=&qualifiers=` | Versions of a record (with content) |
 | `GET /users`, `POST /users`, `PUT /users/{name}`, `POST /users/{name}/reset`, `DELETE /users/{name}` | User administration (administrators) |

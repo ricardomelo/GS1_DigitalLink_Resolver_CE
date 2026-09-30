@@ -325,40 +325,111 @@ function drawDigitalLink(host, g, shown, pairs, queryString) {
   $("#legend-attr").hidden = !queryString;
 }
 
-/* Test, copy, downloads and the QR image, for a ready URI (or disabled, with a placeholder message). */
+/* Test, copy, downloads and the QR image, for a ready URI (or disabled, with a placeholder message).
+   The image is fetched rather than set as <img src>: the response says which QR version and error
+   correction level were used, and when the content does not fit a forced version the server explains
+   why (qr.tooSmall, qr.tooLong), which is shown in place of the image. Downloads are enabled only once
+   the image was drawn, so they never lead to an error. */
+let qrObjectUrl = null;
+
 function applyPreview(ready, g, l, uri, attributes, placeholder = "preview.qrPlaceholder") {
   const dl = $("#dl");
   toggleLink($("#test"), ready ? uri : null);
   const attrQuery = attributes.map(([ai, value]) => "&attr=" + encodeURIComponent(`${ai}:${value}`)).join("");
   const labelQuery = ready ? `${query(g, l)}&${labelOptionsQuery()}${attrQuery}` : "";
-  toggleLink($("#download-png"), ready ? `${BASE}api/qrcode?${labelQuery}&format=png` : null);
-  toggleLink($("#download-svg"), ready ? `${BASE}api/qrcode?${labelQuery}&format=svg` : null);
+  setDownloads(null);
   if (ready) dl.href = uri; else dl.removeAttribute("href");
   $("#copy").disabled = !ready;
   $("#copy").dataset.uri = uri;
 
   clearTimeout(qrTimer);
-  qrTimer = setTimeout(() => {
+  const seq = previewSeq;
+  qrTimer = setTimeout(async () => {
     const box = $("#qr");
     if (!ready) {
-      const span = document.createElement("span");
-      I18N.set(span, placeholder);
-      box.replaceChildren(span);
+      showQrMessage(placeholder);
       return;
     }
-    const img = new Image();
-    img.alt = t("preview.qrAlt", { uri });
-    img.src = `${BASE}api/qrcode?${labelQuery}`;
-    img.onload = () => box.replaceChildren(img);
+    try {
+      const response = await fetch(`${BASE}api/qrcode?${labelQuery}`, { credentials: "same-origin" });
+      if (seq !== previewSeq) return;
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({ code: "error.unexpected" }));
+        showQrError(body.code, body.params || {});
+        return;
+      }
+      const blob = await response.blob();
+      if (seq !== previewSeq) return;
+      const img = new Image();
+      img.alt = t("preview.qrAlt", { uri });
+      img.onload = () => {
+        box.replaceChildren(img);
+        box.classList.remove("has-error");
+        if (qrObjectUrl) URL.revokeObjectURL(qrObjectUrl);
+        qrObjectUrl = img.src;
+      };
+      img.src = URL.createObjectURL(blob);
+      I18N.set($("#qr-info"), "preview.qrInfo", {
+        version: Number(response.headers.get("X-QR-Version")),
+        modules: Number(response.headers.get("X-QR-Modules")),
+        level: response.headers.get("X-QR-Level") || "",
+      });
+      setDownloads(labelQuery);
+    } catch {
+      if (seq === previewSeq) showQrError("error.network", {});
+    }
   }, 250);
+}
+
+function setDownloads(labelQuery) {
+  toggleLink($("#download-png"), labelQuery ? `${BASE}api/qrcode?${labelQuery}&format=png` : null);
+  toggleLink($("#download-svg"), labelQuery ? `${BASE}api/qrcode?${labelQuery}&format=svg` : null);
+}
+
+function showQrMessage(key) {
+  const span = document.createElement("span");
+  I18N.set(span, key);
+  $("#qr").replaceChildren(span);
+  $("#qr").classList.remove("has-error");
+  I18N.set($("#qr-info"), null);
+}
+
+/* In place of the image: what went wrong and what to do (a forced QR version too small, content too long). */
+function showQrError(code, params) {
+  const panel = document.createElement("div");
+  panel.className = "qr-error";
+  panel.setAttribute("role", "alert");
+  const mark = Object.assign(document.createElement("span"), { className: "qr-error-mark", textContent: "!" });
+  mark.setAttribute("aria-hidden", "true");
+  const title = document.createElement("strong");
+  I18N.set(title, code, params);
+  panel.append(mark, title);
+  const fixes = code === "qr.tooSmall"
+    ? ["qr.fix.version", ...(params.fittingLevel ? ["qr.fix.level"] : []), "qr.fix.content"]
+    : code === "qr.tooLong" ? ["qr.fix.lowerLevel", "qr.fix.content"] : [];
+  if (fixes.length) {
+    const list = document.createElement("ul");
+    fixes.forEach(key => {
+      const li = document.createElement("li");
+      I18N.set(li, key, params);
+      list.append(li);
+    });
+    panel.append(list);
+  }
+  $("#qr").replaceChildren(panel);
+  $("#qr").classList.add("has-error");
+  I18N.set($("#qr-info"), null);
 }
 
 /* ---------------------------------------------------------------- data attributes
    GS1 Digital Link data attributes (URI Syntax 1.7, section 4.10): AIs such as expiry date or net weight
    written in the query string of the QR code. They are not stored on the resolver: they apply only to
-   the code drawn now, and are cleared when another record is opened. The list of AIs, their names and
-   formats come from the GS1 Barcode Syntax Dictionary (GET /portal/api/config, dataAttributes). */
+   the code drawn now, and are cleared when another record is opened. The AIs, their names and formats
+   come from the GS1 Barcode Syntax Dictionary (GET /portal/api/config, dataAttributes). */
 let attrTimer = null;
+
+// Offered first, in this order, when the record's key allows them (the full list follows)
+const COMMON_ATTRIBUTES = ["17", "15", "11", "13", "16", "7003", "3103", "3922", "30", "422", "02", "37", "10"];
 
 function attributeConfig() {
   return (CONFIG && CONFIG.dataAttributes) || { available: false };
@@ -368,16 +439,28 @@ function attributeByCode(code) {
   return (attributeConfig().ais || []).find(a => a.ai === code);
 }
 
+/* The AIs that can be attributes of the record being edited: the key itself and its qualifiers go in
+   the path (a batch of a GTIN is its own record), so they are not offered. */
+function attributesForKey() {
+  const key = readKey().ai;
+  const inPath = new Set([key, ...((attributeConfig().inPath || {})[key] || [])]);
+  return (attributeConfig().ais || []).filter(a => !inPath.has(a.ai));
+}
+
 /* "(17) USE BY or EXPIRY", "17", "(17)" → "17" */
 function attributeCode(text) {
   const match = String(text || "").trim().match(/^\(?(\d{2,4})\)?/);
   return match ? match[1] : "";
 }
 
+function attributeLabel(attribute) {
+  return `(${attribute.ai}) ${attribute.title}`;
+}
+
 function readAttributes() {
   if (!$("#opt-attrs").checked) return [];
   return $$("#attr-rows .attr-row")
-    .map(row => [attributeCode($(".attr-ai", row).value), $(".attr-value", row).value.trim()])
+    .map(row => [row.aiCode(), $(".attr-value", row).value.trim()])
     .filter(([ai, value]) => ai || value)
     .map(([ai, value]) => [ai || "?", value]);
 }
@@ -392,46 +475,224 @@ function attributeHint(attribute) {
   }).join(" + ");
 }
 
+/* Combo box for the AI: type to filter by number or name, or open the whole list with the arrow button,
+   a click in the field (its text is selected, so typing replaces it) or the Down key. Works with touch,
+   mouse and keyboard (ARIA 1.2 combobox with a listbox popup). */
+let comboCount = 0;
+
+function attributeCombo(onChange) {
+  const id = `attr-combo-${++comboCount}`;
+  const wrap = Object.assign(document.createElement("div"), { className: "combo" });
+  const input = Object.assign(document.createElement("input"), {
+    className: "attr-ai", autocomplete: "off", spellcheck: false, type: "text" });
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-autocomplete", "list");
+  input.setAttribute("aria-expanded", "false");
+  input.setAttribute("aria-controls", `${id}-list`);
+  input.dataset.i18nAttr = "placeholder:attrs.aiPlaceholder;aria-label:attrs.ai";
+  const toggle = Object.assign(document.createElement("button"), { type: "button", className: "combo-toggle", tabIndex: -1 });
+  toggle.dataset.i18nAttr = "aria-label:attrs.showList;title:attrs.showList";
+  const list = Object.assign(document.createElement("ul"), { className: "combo-list", id: `${id}-list`, hidden: true });
+  list.setAttribute("role", "listbox");
+  list.dataset.i18nAttr = "aria-label:attrs.ai";
+  wrap.append(input, toggle, list);
+
+  let selected = "";                 // chosen AI code
+  let options = [];                  // option elements currently listed
+  let active = -1;
+
+  const setActive = index => {
+    if (!options[index]) index = -1;             // nothing matches the filter
+    options.forEach((o, i) => o.classList.toggle("is-active", i === index));
+    active = index;
+    if (index >= 0) {
+      input.setAttribute("aria-activedescendant", options[index].id);
+      options[index].scrollIntoView({ block: "nearest" });
+    } else {
+      input.removeAttribute("aria-activedescendant");
+    }
+  };
+
+  const render = filter => {
+    const all = attributesForKey();
+    const byCode = new Map(all.map(a => [a.ai, a]));
+    const words = fold(filter).split(/\s+/).filter(Boolean);
+    const digits = String(filter || "").replace(/[()\s]/g, "");
+    const matches = a => !words.length || (/^\d+$/.test(digits) ? a.ai.startsWith(digits)
+      : words.every(w => fold(attributeLabel(a)).includes(w)));
+    const groups = words.length ? [[null, all.filter(matches)]]
+      : [["attrs.common", COMMON_ATTRIBUTES.map(code => byCode.get(code)).filter(Boolean)], ["attrs.all", all]];
+    list.replaceChildren();
+    options = [];
+    for (const [heading, items] of groups) {
+      if (heading && items.length) {
+        const li = Object.assign(document.createElement("li"), { className: "combo-group" });
+        li.setAttribute("role", "presentation");
+        I18N.set(li, heading);
+        list.append(li);
+      }
+      for (const attribute of items) {
+        const li = Object.assign(document.createElement("li"), { className: "combo-option",
+          id: `${id}-${heading ? heading.split(".").pop() : "m"}-${attribute.ai}` });
+        li.setAttribute("role", "option");
+        li.setAttribute("aria-selected", String(attribute.ai === selected));
+        li.dataset.ai = attribute.ai;
+        const code = Object.assign(document.createElement("span"), { className: "combo-code", textContent: `(${attribute.ai})` });
+        li.append(code, " ", attribute.title);
+        list.append(li);
+        options.push(li);
+      }
+    }
+    if (!options.length) {
+      const li = Object.assign(document.createElement("li"), { className: "combo-empty" });
+      li.setAttribute("role", "presentation");
+      I18N.set(li, "attrs.noMatch");
+      list.append(li);
+    }
+  };
+
+  const open = filter => {
+    render(filter);
+    list.hidden = false;
+    wrap.classList.add("is-open");
+    input.setAttribute("aria-expanded", "true");
+    const current = options.findIndex(o => o.dataset.ai === selected);
+    setActive(current >= 0 ? current : (filter ? 0 : -1));
+  };
+  const close = () => {
+    list.hidden = true;
+    wrap.classList.remove("is-open");
+    input.setAttribute("aria-expanded", "false");
+    setActive(-1);
+  };
+  const choose = code => {
+    const attribute = attributeByCode(code);
+    selected = attribute ? code : "";
+    input.value = attribute ? attributeLabel(attribute) : input.value;
+    close();
+    onChange();
+  };
+  // Text typed without picking from the list: "17" or "(17)" becomes (17) and its name
+  const settleTyped = () => {
+    const code = attributeCode(input.value);
+    const attribute = attributesForKey().find(a => a.ai === code);
+    if (attribute && input.value !== attributeLabel(attribute)) {
+      selected = code;
+      input.value = attributeLabel(attribute);
+      onChange();
+    } else if (!attribute) {
+      selected = code;                 // unknown or not allowed: the server says why
+    }
+  };
+
+  input.addEventListener("click", () => {
+    if (list.hidden) { input.select(); open(""); }
+  });
+  input.addEventListener("input", () => {
+    selected = attributeCode(input.value);
+    open(input.value);
+    onChange();
+  });
+  input.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (list.hidden) { open(""); return; }
+      const next = active + (e.key === "ArrowDown" ? 1 : -1);
+      setActive(Math.max(0, Math.min(options.length - 1, next)));
+    } else if (e.key === "Enter" && !list.hidden && active >= 0) {
+      e.preventDefault();
+      choose(options[active].dataset.ai);
+    } else if (e.key === "Escape" && !list.hidden) {
+      e.preventDefault();
+      close();
+      const attribute = attributeByCode(selected);
+      if (attribute) input.value = attributeLabel(attribute);
+    }
+  });
+  input.addEventListener("blur", () => setTimeout(() => {
+    if (!wrap.contains(document.activeElement)) { close(); settleTyped(); }
+  }, 0));
+  // pointerdown + preventDefault keeps the focus in the field, so the list does not close before the click
+  toggle.addEventListener("pointerdown", e => e.preventDefault());
+  toggle.addEventListener("click", () => {
+    if (list.hidden) { input.focus(); input.select(); open(""); } else { close(); }
+  });
+  list.addEventListener("pointerdown", e => e.preventDefault());
+  list.addEventListener("click", e => {
+    const option = e.target.closest(".combo-option");
+    if (option) choose(option.dataset.ai);
+  });
+
+  return {
+    element: wrap,
+    input,
+    code: () => selected || attributeCode(input.value),
+    set(code) { selected = code; const a = attributeByCode(code); input.value = a ? attributeLabel(a) : code; },
+    focus() { input.focus(); },
+  };
+}
+
+function iconButton(className, text, i18nKey, onClick) {
+  const button = Object.assign(document.createElement("button"), { type: "button", className: `attr-btn ${className}`, textContent: text });
+  button.dataset.i18nAttr = `aria-label:${i18nKey};title:${i18nKey}`;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function refreshAttributeRows() {
+  const rows = $$("#attr-rows .attr-row");
+  rows.forEach((row, index) => {
+    $(".attr-up", row).disabled = index === 0;
+    $(".attr-down", row).disabled = index === rows.length - 1;
+  });
+  $("#attr-add").disabled = rows.length >= (attributeConfig().max || 10);
+}
+
 function addAttributeRow(ai = "", value = "") {
   const row = document.createElement("div");
   row.className = "attr-row";
-  const aiInput = Object.assign(document.createElement("input"), {
-    className: "attr-ai", value: ai, autocomplete: "off", spellcheck: false });
-  aiInput.setAttribute("list", "attr-ais");
-  aiInput.dataset.i18nAttr = "placeholder:attrs.aiPlaceholder;aria-label:attrs.ai";
   const valueInput = Object.assign(document.createElement("input"), {
     className: "attr-value code", value, autocomplete: "off", spellcheck: false });
-  valueInput.dataset.i18nAttr = "aria-label:attrs.value";
-  const remove = Object.assign(document.createElement("button"), { type: "button", className: "attr-remove", textContent: "×" });
-  remove.dataset.i18nAttr = "aria-label:attrs.remove;title:attrs.remove";
+  valueInput.dataset.i18nAttr = "aria-label:attrs.value;placeholder:attrs.valuePlaceholder";
   const hint = Object.assign(document.createElement("small"), { className: "attr-hint" });
-  hint.setAttribute("aria-live", "polite");
 
   const describe = () => {
-    const attribute = attributeByCode(attributeCode(aiInput.value));
+    const attribute = attributeByCode(combo.code());
     hint.textContent = attribute ? attributeHint(attribute) : "";
-    const max = attribute ? attribute.components.reduce((n, c) => n + c.max, 0) : 90;
-    valueInput.maxLength = max;
+    valueInput.maxLength = attribute ? attribute.components.reduce((n, c) => n + c.max, 0) : 90;
     valueInput.inputMode = attribute && attribute.components.every(c => c.type === "N") ? "numeric" : "text";
-    // Show the full name once chosen: "17" → "(17) USE BY or EXPIRY"
-    if (attribute && aiInput.value.trim() === attribute.ai) aiInput.value = `(${attribute.ai}) ${attribute.title}`;
-    aiInput.title = attribute ? `(${attribute.ai}) ${attribute.title}` : "";   // the field is narrow
   };
-  aiInput.addEventListener("change", () => { describe(); renderPreview(); });
-  aiInput.addEventListener("input", renderPreview);
-  valueInput.addEventListener("input", renderPreview);
-  remove.addEventListener("click", () => {
+  const combo = attributeCombo(() => { describe(); renderPreview(); });
+  if (ai) combo.set(ai);
+  const move = direction => {
+    const sibling = direction < 0 ? row.previousElementSibling : row.nextElementSibling;
+    if (!sibling) return;
+    if (direction < 0) sibling.before(row); else sibling.after(row);
+    refreshAttributeRows();
+    // keep the focus on the same button unless it became disabled at the end of the list
+    const button = $(direction < 0 ? ".attr-up" : ".attr-down", row);
+    (button.disabled ? $(direction < 0 ? ".attr-down" : ".attr-up", row) : button).focus();
+    renderPreview();
+  };
+  const up = iconButton("attr-up", "↑", "attrs.up", () => move(-1));
+  const down = iconButton("attr-down", "↓", "attrs.down", () => move(1));
+  const remove = iconButton("attr-remove", "×", "attrs.remove", () => {
     row.remove();
-    $("#attr-add").disabled = false;
     if (!$$("#attr-rows .attr-row").length) addAttributeRow();
+    refreshAttributeRows();
     renderPreview();
   });
-  row.append(aiInput, valueInput, remove, hint);
+  valueInput.addEventListener("input", renderPreview);
+  const tools = Object.assign(document.createElement("div"), { className: "attr-tools" });
+  tools.append(up, down, remove);
+  row.append(combo.element, tools, valueInput, hint);
+  row.aiCode = () => combo.code();
   row.describe = describe;               // re-run when the language changes (format hints are translated)
+  row.focusAi = () => combo.focus();
   $("#attr-rows").append(row);
   I18N.apply(row);
   describe();
-  $("#attr-add").disabled = $$("#attr-rows .attr-row").length >= (attributeConfig().max || 10);
+  refreshAttributeRows();
   return row;
 }
 
@@ -448,38 +709,44 @@ function setupAttributes() {
   const config = attributeConfig();
   $("#opt-attrs-choice").hidden = !config.available;
   if (!config.available) return;
-  $("#attr-ais").replaceChildren(...config.ais.map(a =>
-    Object.assign(document.createElement("option"), { value: `(${a.ai}) ${a.title}` })));
   $("#opt-attrs").addEventListener("change", () => {
     $("#attrs").hidden = !$("#opt-attrs").checked;
-    if ($("#opt-attrs").checked && !$$("#attr-rows .attr-row").length) addAttributeRow().querySelector(".attr-ai").focus();
+    if ($("#opt-attrs").checked && !$$("#attr-rows .attr-row").length) addAttributeRow().focusAi();
     renderPreview();
   });
-  $("#attr-add").addEventListener("click", () => {
-    addAttributeRow().querySelector(".attr-ai").focus();
-  });
+  $("#attr-add").addEventListener("click", () => addAttributeRow().focusAi());
   document.addEventListener("localechange", () => $$("#attr-rows .attr-row").forEach(row => row.describe()));
 }
 
-/* Label option: human readable interpretation (default on).
+/* Label options: human readable interpretation (every element string, only the key, none), QR version
+   (automatic by default) and error correction level (M by default). Remembered in the browser.
    The preview image is the exported label itself, so what is shown is what is downloaded. */
 const LABEL_OPTIONS_KEY = "gs1resolver.portal.labelOptions";
+const LABEL_DEFAULTS = { hri: "full", version: "auto", ecl: "m" };
 
 function labelOptionsQuery() {
-  return `hri=${$("#opt-hri").checked ? 1 : 0}`;
+  return new URLSearchParams({ hri: $("#opt-hri").value, version: $("#opt-version").value, ecl: $("#opt-ecl").value }).toString();
 }
 
 function setupLabelOptions() {
+  let saved = {};
   try {
-    const saved = JSON.parse(localStorage.getItem(LABEL_OPTIONS_KEY) || "{}");
-    if (typeof saved.hri === "boolean") $("#opt-hri").checked = saved.hri;
+    saved = JSON.parse(localStorage.getItem(LABEL_OPTIONS_KEY) || "{}");
   } catch { /* defaults */ }
-  $("#opt-hri").addEventListener("change", () => {
-    try {
-      localStorage.setItem(LABEL_OPTIONS_KEY, JSON.stringify({ hri: $("#opt-hri").checked }));
-    } catch { /* not persisted */ }
-    renderPreview();
-  });
+  if (typeof saved.hri === "boolean") saved.hri = saved.hri ? "full" : "none";   // earlier versions: on/off
+  const fields = { hri: "#opt-hri", version: "#opt-version", ecl: "#opt-ecl" };
+  for (const [name, selector] of Object.entries(fields)) {
+    const select = $(selector);
+    const value = saved[name] ?? LABEL_DEFAULTS[name];
+    select.value = [...select.options].some(o => o.value === value) ? value : LABEL_DEFAULTS[name];
+    select.addEventListener("change", () => {
+      try {
+        localStorage.setItem(LABEL_OPTIONS_KEY, JSON.stringify(
+          Object.fromEntries(Object.entries(fields).map(([n, sel]) => [n, $(sel).value]))));
+      } catch { /* not persisted */ }
+      renderPreview();
+    });
+  }
 }
 
 function toggleLink(a, href) {

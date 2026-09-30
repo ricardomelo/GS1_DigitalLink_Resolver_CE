@@ -109,6 +109,9 @@ cases = [
     ("serial of a GTIN is a qualifier, not an attribute", GTIN, [("21", "S1")], ("attr.inPath", {"ai": "21"})),
     ("repeated attribute", GTIN, [("17", "261231"), ("17", "261231")], ("attr.duplicate", {"ai": "17"})),
     ("empty value", GTIN, [("17", "")], ("attr.valueRequired", {"ai": "17"})),
+    ("day 00 of a date (portal policy)", GTIN, [("17", "260200")], ("attr.dayZero", {"ai": "17", "first": "260201", "last": "260228"})),
+    ("day 00 in a leap-year February", GTIN, [("15", "240200")], ("attr.dayZero", {"ai": "15", "first": "240201", "last": "240229"})),
+    ("day 00 in a date and time (4324)", SSCC, [("4324", "2612002359")], ("attr.dayZero", {"ai": "4324", "first": "261201", "last": "261231"})),
     ("more than the maximum", GTIN, [(f"9{n}", "X") for n in range(1, 10)] + [("17", "261231"), ("3103", "000500")],
      ("attr.tooMany", {"max": syntax.MAX_ATTRIBUTES})),
 ]
@@ -201,6 +204,43 @@ check("QR code refused for invalid attributes", r.status_code == 422 and r.get_j
 r = root.get(f"/portal/api/qrcode?{query}&attr=17")
 check("attr without a value", r.status_code == 422 and r.get_json() == {"code": "attr.valueRequired", "params": {"ai": "17"}},
       r.get_json())
+
+# ------------------------------------------------------------------ label options: HRI, QR version, error correction
+def headers(response):
+    return response.headers.get("X-QR-Version"), response.headers.get("X-QR-Level"), response.headers.get("X-QR-Modules")
+
+
+attr_query = f"{query}&attr=17:261231&attr=3103:000500"
+full, key_only, none = (root.get(f"/portal/api/qrcode?{attr_query}&hri={mode}") for mode in ("full", "key", "none"))
+check("HRI: full > key only > none", svg_height(full) > svg_height(key_only) > svg_height(none),
+      [svg_height(r) for r in (full, key_only, none)])
+check("HRI: 1 and 0 of earlier versions still mean full and none",
+      svg_height(root.get(f"/portal/api/qrcode?{attr_query}&hri=1")) == svg_height(full)
+      and svg_height(root.get(f"/portal/api/qrcode?{attr_query}&hri=0")) == svg_height(none))
+r = root.get(f"/portal/api/qrcode?{attr_query}")
+check("defaults: automatic version, level M exactly (not raised)", headers(r) == ("5", "M", "37"), headers(r))
+r = root.get(f"/portal/api/qrcode?{attr_query}&ecl=h&version=auto")
+check("level H: larger automatic version", r.headers.get("X-QR-Level") == "H" and int(r.headers.get("X-QR-Version")) > 5, headers(r))
+r = root.get(f"/portal/api/qrcode?{attr_query}&version=10&ecl=l")
+check("forced version and level used as chosen", headers(r) == ("10", "L", "57"), headers(r))
+png = root.get(f"/portal/api/qrcode?{attr_query}&version=10&ecl=q&format=png")
+decoded = cv2.QRCodeDetector().detectAndDecode(cv2.imdecode(np.frombuffer(png.get_data(), np.uint8), 1))[0]
+check("forced version still decodes", decoded.endswith("?17=261231&3103=000500") and png.headers.get("X-QR-Version") == "10", decoded)
+r = root.get(f"/portal/api/qrcode?{attr_query}&version=2")
+check("version too small: 422 with the version needed", r.status_code == 422 and r.get_json() ==
+      {"code": "qr.tooSmall", "params": {"version": 2, "level": "M", "needed": 5, "fittingLevel": None}}, r.get_json())
+r = root.get(f"/portal/api/qrcode?{attr_query}&version=5&ecl=h")
+check("version too small at H but fits at a lower level: that level suggested", r.status_code == 422
+      and r.get_json()["params"] == {"version": 5, "level": "H", "needed": 8, "fittingLevel": "M"}, r.get_json())
+# "&" is percent-encoded in the URI (%26): nine values of 90 of them exceed version 40 at level H
+long_attrs = "".join(f"&attr=9{n}:" + "%26" * 90 for n in range(1, 10))
+r = root.get(f"/portal/api/qrcode?{query}{long_attrs}&ecl=h")
+check("content too long even for version 40", r.status_code == 422 and r.get_json()["code"] == "qr.tooLong"
+      and r.get_json()["params"]["level"] == "H", r.get_json())
+for bad, code in [("version=0", "qr.version"), ("version=41", "qr.version"), ("version=x", "qr.version"),
+                  ("ecl=z", "qr.level"), ("hri=some", "qr.hri")]:
+    r = root.get(f"/portal/api/qrcode?{query}&{bad}")
+    check(f"invalid option {bad} refused", r.status_code == 422 and r.get_json()["code"] == code, r.get_json())
 
 # ------------------------------------------------------------------ without the engine
 portal.syntax.ENGINE = syntax.Engine("/nonexistent")

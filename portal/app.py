@@ -67,7 +67,7 @@ if not RESOLVER_PUBLIC_URL:
     raise RuntimeError("Set FQDN (or RESOLVER_PUBLIC_URL): the portal needs the resolver's public address.")
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-PUBLIC_ASSETS = {"app.css", "i18n.js", "login.js", "gs1-logo.png", "favicon.png"}   # needed by the login page
+PUBLIC_ASSETS = {"app.css", "i18n.js", "login.js", "password.js", "gs1-logo.png", "favicon.png"}   # needed by the login page
 PRIVATE_ASSETS = {"app.js"}
 
 
@@ -1183,6 +1183,27 @@ def audit_csv():
                     headers={"Content-Disposition": f'attachment; filename="portal-audit-{stamp}.csv"'})
 
 
+# Human readable interpretation below the QR code: every element string, only the key's, or none.
+# "1" and "0" are the values of earlier versions of the portal.
+HRI_MODES = {"full": "full", "1": "full", "key": "key", "none": "none", "0": "none"}
+
+
+def qr_version(raw) -> int | None:
+    """QR version 1-40, or None ("auto" or absent): the smallest that fits."""
+    if raw in (None, "", "auto"):
+        return None
+    if not (str(raw).isascii() and str(raw).isdigit() and 1 <= int(raw) <= 40):
+        raise ValidationError("qr.version")
+    return int(raw)
+
+
+def qr_error_level(raw) -> str:
+    level = str(raw or "m").lower()
+    if level not in label.ERROR_LEVELS:
+        raise ValidationError("qr.level")
+    return level
+
+
 @app.post("/portal/api/digital-link")
 @require_login
 def digital_link_preview():
@@ -1205,17 +1226,29 @@ def qrcode():
     check_access(anchor)
     pairs = request_qualifiers(request.args, anchor)
     uri, attribute_lines = digital_link_for(anchor, pairs, request_attributes(request.args))
+    lines = gs1.hri_lines(anchor, pairs) + attribute_lines
+    hri = HRI_MODES.get(request.args.get("hri", "full"))
+    if hri is None:
+        raise ValidationError("qr.hri")
     options = label.LabelOptions(
         uri=uri,
-        hri_lines=tuple(gs1.hri_lines(anchor, pairs) + attribute_lines),
-        show_hri=request.args.get("hri", "1") != "0",
+        hri_lines=tuple(lines[:1] if hri == "key" else lines),
+        show_hri=hri != "none",
+        version=qr_version(request.args.get("version")),
+        error=qr_error_level(request.args.get("ecl")),
     )
+    try:
+        qr = label.symbol(options)
+    except label.DoesNotFit as exc:
+        raise ValidationError("qr.tooLong" if exc.params["needed"] is None else "qr.tooSmall", **exc.params) from None
+    # The version and level actually used, shown under the preview
+    qr_headers = {"X-QR-Version": str(qr.version), "X-QR-Level": qr.error.upper(), "X-QR-Modules": str(len(qr.matrix))}
     ai, value = gs1.split_anchor(anchor)
     suffix = "".join(f"_{q}_{v}" for q, v in pairs)
     filename = f"qrcode_{ai}_{value}{suffix}"
     download_format = request.args.get("format")
     if download_format == "png":
         return Response(label.render_png(options), mimetype="image/png",
-                        headers={"Content-Disposition": f'attachment; filename="{filename}.png"'})
+                        headers={"Content-Disposition": f'attachment; filename="{filename}.png"', **qr_headers})
     headers = {"Content-Disposition": f'attachment; filename="{filename}.svg"'} if download_format == "svg" else {}
-    return Response(label.render_svg(options), mimetype="image/svg+xml", headers=headers)
+    return Response(label.render_svg(options), mimetype="image/svg+xml", headers={**headers, **qr_headers})

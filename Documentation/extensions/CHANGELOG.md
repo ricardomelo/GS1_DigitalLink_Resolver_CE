@@ -2,6 +2,26 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: label options, attribute editor, show password
+- Sign-in and password change: an eye button shows or hides the password being typed.
+- QR code label options: human readable text in full, for the key only, or none (was on/off); QR version
+  (*Automatic*, the default, or 1 to 40) and error correction level (L, **M** by default, Q, H). **Change:**
+  the level is now exactly the one chosen; before, the QR library raised M to Q or H when the version had
+  room to spare, so some labels drawn with the defaults now have the same size but a lower level than before. The version, size and level used are shown
+  under the image (headers `X-QR-Version`, `X-QR-Modules`, `X-QR-Level`).
+- When the content does not fit a chosen version, an explanation (version needed, level that would fit,
+  shorter content) replaces the image and nothing can be downloaded (`qr.tooSmall`, `qr.tooLong`).
+- Data attributes: a combo box replaces the browser's suggestion list, which could not be reopened without
+  erasing the text and did not work on phones; most used attributes first; the record's own key and
+  qualifiers left out; ↑ ↓ to order the attributes; day 00 in dates refused, with the first and last day of
+  the month suggested (`attr.dayZero`); larger, darker helper text.
+- Layout: the label panel is wider beside the form and moves under it, in two columns, below 1200 px.
+- Documentation: which AIs the grammar of §4.10 allows (530, 525 known to the engine) and why the list
+  includes primary keys.
+- Tests: label options, forced versions and day 00 in `test_data_attributes.py` (59 checks); password
+  button, combo box (mouse, keyboard and touch on a 390 px phone), order, day 00, QR options and layout at
+  1024 and 1360 px in the portal end-to-end test, which now prints JavaScript errors of the page.
+
 ### Portal: GS1 Digital Link data attributes
 - QR codes can carry data attributes (URI Syntax 1.7, §4.10) — expiry date, net weight, price and every
   other AI the standard allows — in the query string of the Digital Link. *Include data attributes*

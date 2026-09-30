@@ -16,6 +16,7 @@ tools/build-syntax-engine.sh into GS1_SYNTAX_ENGINE_DIR.
 
 Without the engine the portal works as before and simply does not offer data attributes.
 """
+import calendar
 import ctypes
 import logging
 import os
@@ -112,6 +113,7 @@ class Engine:
             seen.add(ai)
             if not value:
                 raise ValidationError("attr.valueRequired", ai=ai)
+            _refuse_day_zero(ai, value, self.attributes[ai]["components"])
         path_uri = gs1.digital_link(stem, anchor, pairs)
         if not attributes:
             return path_uri, []
@@ -127,6 +129,23 @@ class Engine:
             # Belt and braces: the identification in the path must stay the record's own.
             raise ValidationError("attr.inPath", ai=next(iter(seen)))
         return uri, [f"({ai}){value}" for ai, value in attributes]
+
+
+def _refuse_day_zero(ai: str, value: str, components: list[dict]) -> None:
+    """GS1 allows day 00 in some dates (yymmd0: 17, 15, 11…) to mean "end of the month". The portal
+    refuses it, as a policy: a reader of the label, or a system receiving the Digital Link, may not know
+    the convention; an explicit first or last day of the month says the same without ambiguity."""
+    offset = 0
+    for component in components:
+        if component["min"] != component["max"]:
+            return                               # offsets after a variable-length part are unknown
+        date = value[offset:offset + 6]
+        if "yymmd0" in component["linters"] and len(date) == 6 and date.isascii() and date.isdigit() \
+                and date.endswith("00") and 1 <= int(date[2:4]) <= 12:
+            year, month = 2000 + int(date[:2]), int(date[2:4])       # the century does not change leap years here
+            last = calendar.monthrange(year, month)[1]
+            raise ValidationError("attr.dayZero", ai=ai, first=date[:4] + "01", last=f"{date[:4]}{last:02d}")
+        offset += component["max"]
 
 
 def _escape(value: str) -> str:

@@ -381,6 +381,10 @@ the checker cannot be used to probe the server's own network.
 - `/portal/login` is a sign-in page (no more browser pop-up). A successful sign-in sets a session cookie
   (`gs1resolver_portal`: HttpOnly, Secure, SameSite=Lax, path `/portal`) valid for 8 hours after the last
   use; afterwards the user is sent back to the sign-in page with a "session ended" message.
+- Every password field (sign-in, password change) has an eye button that shows or hides what is typed
+  (`static/password.js`, `aria-pressed`, labelled in the user's language). The field is hidden again when
+  its form is submitted, so password managers still see a password field. The script is one of the few
+  files served without a session (`PUBLIC_ASSETS`), because the sign-in page needs it.
 - After five failed attempts a username (and, separately, a client address) is locked for 15 minutes.
   The counter lives in memory, which is why the portal runs one gunicorn worker with eight threads.
 - The user icon on the right of the header opens a menu (on hover with a mouse, or on click/keyboard)
@@ -445,6 +449,13 @@ product name "GS1 Resolver Community Edition", a GS1 blue band with the page tit
 blue-grey page, GS1 orange for the main action and teal links. gs1.org uses the licensed Gotham SSm
 typeface; these pages use Montserrat, the closest free match, with Verdana as the same fallback. The logo
 is the supplied GS1 artwork converted to transparent PNG.
+
+The editor's label panel (QR code, its options, data attributes, link and legend) sits beside the form on
+screens 1200 px wide and more. Below that it would be squeezed, so it moves under the form as a wide block:
+QR code, version information and buttons on the left, options and attributes on the right, where each
+attribute fits on one line; on phones it is one column. The panel's markup has two groups
+(`.label-visual`, `.label-controls`); beside the form the stylesheet lays their contents out as one column
+in the order of earlier versions.
 
 ## Languages
 
@@ -519,8 +530,8 @@ It follows the symbol and text dimensions of the *QR Codes powered by GS1 design
   uses 12 pixels per module and carries a DPI value (≈ 616) that prints at the same size. Do not print
   below 100 %: the text is 2.2 mm high at that size and must not fall under the 2 mm minimum.
 - **Quiet zone:** 4X on all four sides, always blank.
-- **Human readable interpretation** (checkbox, on by default): the element strings below the quiet zone,
-  one per line: the key (e.g. `(01)` followed by the GTIN-14, `(414)` followed by the GLN), then each
+- **Human readable interpretation** (full by default; or the key only, or none): the element strings below
+  the quiet zone, one per line: the key (e.g. `(01)` followed by the GTIN-14, `(414)` followed by the GLN), then each
   qualifier in path order (e.g. `(10)` followed by the batch/lot, `(21)` followed by the serial), then
   each data attribute in the order entered (see below), in
   Liberation Sans (metrically equivalent to Arial). The guidelines require it when the QR code stands alone
@@ -528,8 +539,21 @@ It follows the symbol and text dimensions of the *QR Codes powered by GS1 design
   data, or on a consumer-engagement panel.
 - **SVG** is fully vector: QR modules and HRI glyph outlines, so it opens identically anywhere
   and is the format to hand to packaging designers. PNG suits documents and quick use.
-- The choice is remembered in the browser. Files are named after the key and qualifiers, e.g.
-  `qrcode_01_09506000134352_10_L1.svg`.
+  *Key only* keeps the first line, e.g. `(01)07898357410015`, for codes printed next to other text that
+  already shows the batch or date.
+- **QR version** (*Automatic* by default, the smallest version that fits; or 1 to 40, each shown with its
+  size in modules) and **error correction level** (L 7 %, **M 15 %** by default, Q 25 %, H 30 %). The level is
+  exactly the one chosen: the library the portal uses (segno) would otherwise raise it when the version has
+  room to spare (the size stays the same), which earlier versions of the portal let it do. The version, size and level used are shown under the
+  image and returned in the headers `X-QR-Version`, `X-QR-Modules` and `X-QR-Level`.
+- **When the content does not fit** a chosen version at the chosen level, the image is replaced by an
+  explanation — "The content does not fit version 2 with correction M" — with what to do: the version
+  needed at that level, the highest level at which the chosen version would fit (if any), or shorter
+  content (fewer or shorter data attributes). Nothing can be downloaded meanwhile. Content too long even
+  for version 40 at that level says so. The API answers 422 with `qr.tooSmall` (`version`, `level`,
+  `needed`, `fittingLevel`) or `qr.tooLong`.
+- The choices are remembered in the browser (the on/off HRI choice of earlier versions becomes full or
+  none). Files are named after the key and qualifiers, e.g. `qrcode_01_09506000134352_10_L1.svg`.
 
 ## GS1 Digital Link data attributes
 
@@ -539,9 +563,15 @@ query string: `https://id.example.org/01/09506000134352/10/B42?17=271231&3103=00
 the identifier (§4.10, Resolver standard §2.12).
 
 **What the portal does.** Ticking *Include data attributes* below the QR code opens an editor of up to
-10 attributes: each row takes an AI, chosen by number or name from a searchable list with its GS1 data title
-(e.g. "(17) USE BY or EXPIRY"), and a value, with the expected format explained in the user's language
-(e.g. "6 digits · date YYMMDD (DD = 00: end of month)"). While the user types, `POST /portal/api/digital-link`
+10 attributes: each row takes an AI and a value, with the expected format explained in the user's language
+(e.g. "6 digits · date YYMMDD"), and ↑ ↓ buttons that set the order of the attributes in the URI and in
+the human readable text. The AI is chosen in a combo box (ARIA 1.2 pattern, usable with mouse, touch,
+keyboard and screen readers): a click in the field, its arrow button or the Down key opens the whole list,
+with the current text selected so that typing replaces it; typing filters by number ("31") or by name
+("net weight"); Enter or a click chooses; Escape closes. The list starts with the most used attributes
+(dates, net weight, price, count, origin) and then all of them, each with its GS1 data title (e.g. "(17)
+USE BY or EXPIRY"). It leaves out the record's own key and qualifiers (for a GTIN: (01), (22), (10), (21),
+(235)). While the user types, `POST /portal/api/digital-link`
 checks the attributes and returns the URI; the coloured link gains a green query-string part, and the QR
 image, the test and copy buttons and the downloads (`GET /portal/api/qrcode?…&attr=17:271231&attr=3103:000500`)
 all use it. While an attribute is wrong the message says why and nothing can be downloaded, so a code is
@@ -576,6 +606,20 @@ the resolver also uses:
 - The dictionary supplies the list offered in the editor (AIs flagged `?`, which excludes (8200), (03) and
   (8014) as §4.10 requires), their titles and format components, and the qualifiers of each key.
 
+**Which AIs.** The list is the grammar of §4.10: `queryStringParam` names 156 parameters, which resolve to
+530 AIs (the 5 newest — (7041), (8040) to (8043) — are not yet known to the engine's release 1.4.1, so 525
+are offered). The grammar deliberately includes every primary key and the batch/lot, so that a code can carry
+a second identifier (§4.10 note, §5.9 and §5.11: an SSCC with the CONTENT, count and batch of what it
+holds); about 250 entries are the decimal variants of measures, (3100) to (3105) and so on. That is why the
+list is long, and why the portal leaves out only the AIs that would go in the path of the record being
+edited. (The grammar lists `shipToaAdd1Parameter` and `shipToaAdd2Parameter` but defines them as
+`shipToAdd1Parameter` and `shipToAdd2Parameter`, (4302) and (4303); a typing error in the standard.)
+
+**Day 00.** GS1 dates marked `yymmd0` — (11), (12), (13), (15), (16), (17), and the date part of (4324) and
+(4325) — accept day 00 as "last day of the month". The portal refuses it, as a policy: a person reading the
+label, or a system receiving the URI, may not know the convention. The message gives the first and last
+day of that month (e.g. 260200 → 260201 or 260228; 29 in a leap year) (`attr.dayZero`).
+
 **Checks and messages.** The portal refuses, with its own message in both languages: an AI that is the key
 or one of its qualifiers (it would go in the path and the code would point at another record — for a
 batch, serial or variant, open the record with that qualifier), an AI that is not a data attribute, a
@@ -588,8 +632,8 @@ satisfied: 01,02,03,255,8006,8026*. As a last guard, the path of the engine's UR
 the portal logs a warning, the option is not shown and QR codes work as before.
 
 **Limits and choices.** At most 10 attributes: each adds data to the QR code, which grows at the fixed
-X-dimension. The editor does not offer date pickers: `yymmd0` dates may end in `00` (end of month), which a
-calendar cannot express, and GS1 users know the AI formats. AI titles are GS1's data titles, which are
+X-dimension. The editor does not offer date pickers: GS1 users know the AI formats, and the numeric keyboard
+opens for date fields on phones. AI titles are GS1's data titles, which are
 language-neutral on labels.
 
 ## Resolver CE changes

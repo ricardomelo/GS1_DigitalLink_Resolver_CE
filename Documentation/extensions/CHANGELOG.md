@@ -2,6 +2,13 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: attribute list fixes
+- The list of data attributes showed the GS1 data titles only, in any language; it now shows the same
+  names as the field once chosen: "(17) Data de validade (USE BY or EXPIRY)" in Portuguese.
+- Searching the list by name ("validade") no longer drops the attribute already chosen: leaving the field
+  (Escape or a click elsewhere) without picking another brings it back. A number typed still chooses, and
+  emptying the field clears the choice.
+
 ### Portal: other records of the same key; data attribute fixes; names in Portuguese
 - Under *Open record*, a list of the other records of the key (product, batches, serials, variants): what
   each applies to, description, links, last change; search, filter by key qualifier, five rows in view with

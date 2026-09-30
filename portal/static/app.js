@@ -484,12 +484,17 @@ function attributeCode(text) {
 
 /* "(392n) Preço de item de medida variável (PRICE)" in Portuguese; "(392n) PRICE", the GS1 data title, in
    English. Names of the families serve their members: (3922) is named as (392n). */
-function attributeLabel(attribute) {
+function attributeName(attribute) {
   const key = `ai.${attribute.ai}`;
   const familyKey = `ai.${attribute.ai.slice(0, 3)}n`;
   const name = I18N.has(key) ? t(key) : (attribute.fixedDecimals !== undefined && I18N.has(familyKey) ? t(familyKey) : "");
   const title = attribute.title || "";
-  return `(${attribute.ai}) ` + (name && title ? `${name} (${title})` : name || title);
+  return name && title ? `${name} (${title})` : name || title;
+}
+
+/* The same text in the field and in the list: the code, then the name */
+function attributeLabel(attribute) {
+  return `(${attribute.ai}) ${attributeName(attribute)}`;
 }
 
 /* A list of AIs in a message ("(30) Quantidade variável (VAR. COUNT), (31nn)…"): named when known. */
@@ -589,7 +594,7 @@ function attributeCombo(onChange) {
         li.setAttribute("aria-selected", String(attribute.ai === selected));
         li.dataset.ai = attribute.ai;
         const code = Object.assign(document.createElement("span"), { className: "combo-code", textContent: `(${attribute.ai})` });
-        li.append(code, " ", attribute.title);
+        li.append(code, " ", attributeName(attribute));
         list.append(li);
         options.push(li);
       }
@@ -626,6 +631,11 @@ function attributeCombo(onChange) {
   // Text typed without picking from the list: "17" or "(17)" becomes (17) and its name
   const settleTyped = () => {
     const code = attributeCode(input.value);
+    if (!code) {                      // left after searching by name without picking: back to the choice
+      const chosen = attributeByCode(selected);
+      if (chosen) input.value = attributeLabel(chosen);
+      return;
+    }
     const attribute = attributesForKey().find(a => a.ai === code) || (code.length === 4 && attributeByCode(code));
     if (attribute && input.value !== attributeLabel(attribute)) {
       selected = code;
@@ -640,7 +650,10 @@ function attributeCombo(onChange) {
     if (list.hidden) { input.select(); open(""); }
   });
   input.addEventListener("input", () => {
-    selected = attributeCode(input.value);
+    // A number chooses ("17", "3103"); an emptied field clears the choice; any other text only searches
+    // the list and keeps the attribute already chosen until another one is picked
+    const typed = attributeCode(input.value);
+    if (typed || !input.value.trim()) selected = typed;
     open(input.value);
     onChange();
   });

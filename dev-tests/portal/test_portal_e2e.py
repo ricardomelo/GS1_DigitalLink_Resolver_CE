@@ -424,6 +424,21 @@ with sync_playwright() as p:
               page.inner_text(f"{first} .attr-hint"))
         check("names in Portuguese with the GS1 data title", page.input_value(f"{first} .attr-ai")
               == "(17) Data de validade (USE BY or EXPIRY)", page.input_value(f"{first} .attr-ai"))
+        page.click(f"{first} .combo-toggle"); page.wait_for_timeout(150)
+        option_17 = page.inner_text(f"{first} .combo-option[data-ai='17']")
+        check("list shows the same names as the field", option_17 == "(17) Data de validade (USE BY or EXPIRY)", option_17)
+        page.keyboard.type("validade"); page.wait_for_timeout(150)
+        texts = page.locator(f"{first} .combo-list .combo-option").all_inner_texts()
+        check("search by Portuguese name", "(17) Data de validade (USE BY or EXPIRY)" in texts
+              and all("validade" in t.lower() for t in texts), texts)
+        page.keyboard.press("Escape"); page.wait_for_timeout(100)
+        check("Escape restores the chosen attribute", page.input_value(f"{first} .attr-ai")
+              == "(17) Data de validade (USE BY or EXPIRY)", page.input_value(f"{first} .attr-ai"))
+        page.click(f"{first} .attr-ai"); page.keyboard.type("peso"); page.wait_for_timeout(150)
+        page.click("#attr-msg"); page.wait_for_timeout(200)
+        check("leaving after a search by name keeps the chosen attribute", page.input_value(f"{first} .attr-ai")
+              == "(17) Data de validade (USE BY or EXPIRY)" and "?" not in page.inner_text("#attr-msg"),
+              (page.input_value(f"{first} .attr-ai"), page.inner_text("#attr-msg")))
         page.click(f"{second} .combo-toggle"); page.wait_for_timeout(150)
         page.click(f"{second} .combo-option[data-ai='392n']"); page.fill(f"{second} .attr-value", ""); page.wait_for_timeout(900)
         check("family without a value: asks for the value", "Informe o valor do atributo (392n)" in page.inner_text("#attr-msg"),

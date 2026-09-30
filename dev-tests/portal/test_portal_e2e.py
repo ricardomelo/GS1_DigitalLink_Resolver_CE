@@ -371,16 +371,23 @@ with sync_playwright() as p:
               (listbox.is_visible(), listbox.inner_text()[:80] if listbox.is_visible() else "",
                page.evaluate("[document.activeElement.className, document.activeElement.selectionStart, document.activeElement.selectionEnd]")))
         codes = page.eval_on_selector_all(f"{first} .combo-option", "els => els.map(e => e.dataset.ai)")
-        check("list offers attributes only, not the GTIN's key or qualifiers", "17" in codes and "3103" in codes
-              and not {"01", "10", "21", "22", "235"} & set(codes) and "8200" not in codes, len(codes))
-        page.keyboard.type("net weight (kg"); page.wait_for_timeout(150)
-        check("typing filters by name", listbox.locator(".combo-option").first.inner_text().startswith("(3100)")
-              and all("NET WEIGHT (kg)" in t for t in listbox.locator(".combo-option").all_inner_texts()))
-        page.keyboard.press("ArrowDown"); page.keyboard.press("ArrowDown"); page.keyboard.press("ArrowDown")
-        page.keyboard.press("Enter"); page.wait_for_timeout(900)
+        check("list offers attributes only, not the GTIN's key or qualifiers", "17" in codes and "310n" in codes
+              and not {"01", "10", "21", "22", "235", "3103"} & set(codes) and "8200" not in codes, len(codes))
+        page.keyboard.type("3103"); page.wait_for_timeout(150)
+        check("typing a member's number finds its family", listbox.locator(".combo-option").all_inner_texts()
+              == ["(310n) NET WEIGHT (kg)"], listbox.locator(".combo-option").all_inner_texts())
+        page.keyboard.press("Control+a"); page.keyboard.type("net weight"); page.wait_for_timeout(150)
+        check("typing filters by name", listbox.locator(".combo-option").first.inner_text() == "(310n) NET WEIGHT (kg)"
+              and all("NET WEIGHT" in t for t in listbox.locator(".combo-option").all_inner_texts()))
+        page.keyboard.press("ArrowDown"); page.keyboard.press("Enter"); page.wait_for_timeout(200)
         check("keyboard choice (the first match is active after typing)",
-              page.input_value(f"{first} .attr-ai") == "(3103) NET WEIGHT (kg)" and listbox.is_hidden(),
+              page.input_value(f"{first} .attr-ai") == "(320n) NET WEIGHT (lb)" and listbox.is_hidden(),
               page.input_value(f"{first} .attr-ai"))
+        page.fill(f"{first} .attr-value", "123,45"); page.wait_for_timeout(900)
+        check("decimal family: comma typed, right AI and digits in the link", page.inner_text("#dl").endswith("?3202=012345")
+              and page.inner_text(f"{first} .attr-resolved") == "In the URI: 3202=012345"
+              and page.get_attribute(f"{first} .attr-value", "inputmode") == "decimal", page.inner_text("#dl"))
+        page.fill(f"{first} .attr-value", "261231")
         page.click(f"{first} .combo-toggle"); page.wait_for_timeout(150)
         page.click(f"{first} .combo-option[data-ai='17']"); page.wait_for_timeout(900)
         check("arrow button, then a click on an option", page.input_value(f"{first} .attr-ai") == "(17) USE BY or EXPIRY"

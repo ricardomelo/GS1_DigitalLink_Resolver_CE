@@ -112,8 +112,13 @@ cases = [
     ("day 00 of a date (portal policy)", GTIN, [("17", "260200")], ("attr.dayZero", {"ai": "17", "first": "260201", "last": "260228"})),
     ("day 00 in a leap-year February", GTIN, [("15", "240200")], ("attr.dayZero", {"ai": "15", "first": "240201", "last": "240229"})),
     ("day 00 in a date and time (4324)", SSCC, [("4324", "2612002359")], ("attr.dayZero", {"ai": "4324", "first": "261201", "last": "261231"})),
-    ("more than the maximum", GTIN, [(f"9{n}", "X") for n in range(1, 10)] + [("17", "261231"), ("3103", "000500")],
+    ("more than the technical ceiling (the QR code is the real limit)", GTIN, [("99", "X")] * (syntax.MAX_ATTRIBUTES + 1),
      ("attr.tooMany", {"max": syntax.MAX_ATTRIBUTES})),
+    ("two decimal separators", GTIN, [("310n", "1.234,5")], ("attr.decimalSeparator", {"ai": "310n"})),
+    ("more decimals than the family allows", GTIN, [("310n", "1,123456")], ("attr.decimals", {"ai": "310n", "max": 5})),
+    ("more decimals than a member has", GTIN, [("3103", "1,5678")], ("attr.decimals", {"ai": "3103", "max": 3})),
+    ("more digits than a fixed-length measure", GTIN, [("310n", "1234,567")], ("attr.tooManyDigits", {"ai": "310n", "max": 6})),
+    ("not a number", GTIN, [("310n", "12a")], ("attr.notNumber", {"ai": "310n"})),
 ]
 for name, anchor, attrs, expected in cases:
     result = outcome(lambda: E.digital_link(STEM, anchor, [], attrs))
@@ -127,6 +132,24 @@ for name, anchor, attrs, text, markup in [
     result = outcome(lambda: E.digital_link(STEM, anchor, [], attrs))
     check(f"engine refuses: {name}", isinstance(result, tuple) and result[0] == "attr.invalid"
           and text in result[1]["detail"] and (not markup or result[1]["markup"] == markup), result)
+
+# Decimal families (310n, 392n…): the number as people write it, comma or point
+check("decimal families found in the dictionary", E.families["310n"]["members"] == [f"310{n}" for n in range(6)]
+      and E.families["392n"]["decimals"] == 9 and E.families["394n"]["decimals"] == 3 and len(E.families) == 59)
+for attrs, expected in [
+        ([("310n", "123,45")], "?3102=012345"), ([("310n", "123.45")], "?3102=012345"),
+        ([("310n", "500")], "?3100=000500"), ([("310n", "0,5")], "?3101=000005"),
+        ([("310n", "12,50")], "?3102=001250"), ([("3103", "1,5")], "?3103=001500"),
+        ([("3103", "001500")], "?3103=001500"), ([("3103", " 1.5 ")], "?3103=001500"),
+        ([("30", "1"), ("392n", "12,50")], "?30=1&3922=1250"), ([("30", "1"), ("3922", "12,5")], "?30=1&3922=1250"),
+        ([("30", "1"), ("3922", "1250")], "?30=1&3922=1250"), ([("30", "1"), ("393n", "986 12,50")], "?30=1&3932=9861250")]:
+    result = outcome(lambda: E.digital_link(STEM, GTIN, [], attrs))
+    check(f"decimal value {attrs} → {expected}", isinstance(result, tuple) and isinstance(result[0], str)
+          and result[0].endswith(expected), result)
+check("HRI of a converted attribute", E.digital_link(STEM, GTIN, [], [("310n", "123,45")])[1] == ["(3102)012345"])
+offered = {a["ai"] for a in E.describe()["ais"]}
+check("offered list: families instead of their members", {"310n", "392n", "393n", "17"} <= offered
+      and not {"3100", "3103", "3922"} & offered and len(offered) < 250, len(offered))
 
 results, errors = [], []
 
@@ -162,7 +185,9 @@ config = root.get("/portal/api/config").get_json()["dataAttributes"]
 check("config: data attributes offered with names, formats, limit and path AIs",
       config["available"] and config["release"] == "1.4.1" and config["max"] == syntax.MAX_ATTRIBUTES
       and {"ai": "17", "title": "USE BY or EXPIRY", "components": E.attributes["17"]["components"]} in config["ais"]
-      and config["inPath"]["01"] == ["10", "21", "22", "235"], {k: v for k, v in config.items() if k != "ais"})
+      and config["inPath"]["01"] == ["10", "21", "22", "235"]
+      and any(a["ai"] == "310n" and a["family"] and a["decimals"] == 5 for a in config["ais"]),
+      {k: v for k, v in config.items() if k != "ais"})
 
 body = {"key": "01", "value": "09506000134352", "qualifiers": {"10": "L1"}}
 r = root.post("/portal/api/digital-link", json=body)
@@ -174,6 +199,9 @@ check("digital-link with attributes (brackets, spaces and invisible characters r
       r.status_code == 200 and r.get_json() == {"uri": STEM + GTIN + "/10/L1?17=261231&3103=000500",
                                                  "hri": ["(01)09506000134352", "(10)L1", "(17)261231", "(3103)000500"]},
       r.get_json())
+r = root.post("/portal/api/digital-link", json={**body, "attributes": [{"ai": "310n", "value": "123,45"}]})
+check("digital-link converts a decimal family", r.status_code == 200 and r.get_json()["uri"].endswith("/10/L1?3102=012345")
+      and r.get_json()["hri"][-1] == "(3102)012345", r.get_json())
 r = root.post("/portal/api/digital-link", json={**body, "attributes": [{"ai": "17", "value": "261399"}]})
 check("digital-link: engine's refusal as 422 with its detail", r.status_code == 422 and r.get_json()["code"] == "attr.invalid"
       and "illegal month" in r.get_json()["params"]["detail"], r.get_json())

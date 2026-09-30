@@ -292,6 +292,7 @@ function renderPreview() {
       const result = await api("POST", "digital-link", body);
       if (seq !== previewSeq) return;
       drawDigitalLink(host, g, shown, pairs, result.uri.includes("?") ? result.uri.slice(result.uri.indexOf("?")) : "");
+      showResolvedAttributes(attributes, result.hri.slice(result.hri.length - attributes.length));
       I18N.set($("#attr-msg"), "attrs.ok", { count: attributes.length });
       $("#attr-msg").className = "field-msg is-ok";
       applyPreview(true, g, l, result.uri, attributes);
@@ -302,6 +303,20 @@ function renderPreview() {
       applyPreview(false, g, l, "", attributes, "attrs.fixFirst");
     }
   }, 300);
+}
+
+/* Under each attribute converted by the server (decimal families, comma or point), how it went into the
+   URI: "310n" with 123,45 → "In the URI: 3102=012345". */
+function showResolvedAttributes(typed, lines) {
+  const rows = $$("#attr-rows .attr-row").filter(row => row.aiCode() || $(".attr-value", row).value.trim());
+  rows.forEach((row, index) => {
+    const box = $(".attr-resolved", row);
+    const match = /^\((\d+)\)(.*)$/.exec(lines[index] || "");
+    const [ai, value] = typed[index] || [];
+    const changed = match && (match[1] !== ai || match[2] !== value);
+    box.hidden = !changed;
+    if (changed) I18N.set(box, "attrs.inUri", { pair: `${match[1]}=${match[2]}` }); else I18N.set(box, null);
+  });
 }
 
 /* The GS1 Digital Link in coloured segments: resolver, key, qualifiers, data attributes. */
@@ -429,14 +444,21 @@ function showQrError(code, params) {
 let attrTimer = null;
 
 // Offered first, in this order, when the record's key allows them (the full list follows)
-const COMMON_ATTRIBUTES = ["17", "15", "11", "13", "16", "7003", "3103", "3922", "30", "422", "02", "37", "10"];
+const COMMON_ATTRIBUTES = ["17", "15", "11", "13", "16", "7003", "310n", "392n", "30", "422", "02", "37", "10"];
 
 function attributeConfig() {
   return (CONFIG && CONFIG.dataAttributes) || { available: false };
 }
 
+/* An offered AI, a decimal family ("310n": decimals from the value typed) or a member of one ("3103":
+   3 decimals, which the list does not show on its own but can be typed). */
 function attributeByCode(code) {
-  return (attributeConfig().ais || []).find(a => a.ai === code);
+  const ais = attributeConfig().ais || [];
+  const found = ais.find(a => a.ai === code);
+  if (found || !/^\d{4}$/.test(code || "")) return found;
+  const family = ais.find(a => a.family && a.ai === code.slice(0, 3) + "n");
+  return family && Number(code[3]) <= family.decimals
+    ? { ...family, ai: code, family: false, fixedDecimals: Number(code[3]) } : undefined;
 }
 
 /* The AIs that can be attributes of the record being edited: the key itself and its qualifiers go in
@@ -447,10 +469,10 @@ function attributesForKey() {
   return (attributeConfig().ais || []).filter(a => !inPath.has(a.ai));
 }
 
-/* "(17) USE BY or EXPIRY", "17", "(17)" → "17" */
+/* "(17) USE BY or EXPIRY", "17", "(17)" → "17"; "(310n) NET WEIGHT (kg)" → "310n" */
 function attributeCode(text) {
-  const match = String(text || "").trim().match(/^\(?(\d{2,4})\)?/);
-  return match ? match[1] : "";
+  const match = String(text || "").trim().match(/^\(?(\d{3}n|\d{2,4})\)?/i);
+  return match ? match[1].toLowerCase() : "";
 }
 
 function attributeLabel(attribute) {
@@ -465,8 +487,17 @@ function readAttributes() {
     .map(([ai, value]) => [ai || "?", value]);
 }
 
-/* Format hint for an AI, from its dictionary components: "6 digits · date YYMMDD" */
+/* Format hint for an AI, from its dictionary components: "6 digits · date YYMMDD". For decimal families and
+   their members the number is typed as usual, with comma or point. */
 function attributeHint(attribute) {
+  if (attribute.family) {
+    return t("attrs.decimal.family", { max: attribute.decimals, digits: attribute.components.at(-1).max,
+                                       prefix: attribute.components.length > 1 ? t("attrs.decimal.currency") : "" });
+  }
+  if (attribute.fixedDecimals !== undefined) {
+    return t("attrs.decimal.fixed", { n: attribute.fixedDecimals, digits: attribute.components.at(-1).max,
+                                      prefix: attribute.components.length > 1 ? t("attrs.decimal.currency") : "" });
+  }
   return attribute.components.map(c => {
     const size = t(`attrs.size.${c.type}.${c.min === c.max ? "fixed" : "var"}`, { n: c.max });
     const rules = c.linters.filter(l => I18N.has(`attrs.lint.${l}`)).map(l => t(`attrs.lint.${l}`));
@@ -518,7 +549,9 @@ function attributeCombo(onChange) {
     const byCode = new Map(all.map(a => [a.ai, a]));
     const words = fold(filter).split(/\s+/).filter(Boolean);
     const digits = String(filter || "").replace(/[()\s]/g, "");
-    const matches = a => !words.length || (/^\d+$/.test(digits) ? a.ai.startsWith(digits)
+    const matches = a => !words.length || (/^\d+$/.test(digits)
+      ? (a.family ? a.ai.slice(0, 3).startsWith(digits.slice(0, 3)) && (digits.length < 4 || Number(digits[3]) <= a.decimals)
+                  : a.ai.startsWith(digits))
       : words.every(w => fold(attributeLabel(a)).includes(w)));
     const groups = words.length ? [[null, all.filter(matches)]]
       : [["attrs.common", COMMON_ATTRIBUTES.map(code => byCode.get(code)).filter(Boolean)], ["attrs.all", all]];
@@ -575,7 +608,7 @@ function attributeCombo(onChange) {
   // Text typed without picking from the list: "17" or "(17)" becomes (17) and its name
   const settleTyped = () => {
     const code = attributeCode(input.value);
-    const attribute = attributesForKey().find(a => a.ai === code);
+    const attribute = attributesForKey().find(a => a.ai === code) || (code.length === 4 && attributeByCode(code));
     if (attribute && input.value !== attributeLabel(attribute)) {
       selected = code;
       input.value = attributeLabel(attribute);
@@ -655,12 +688,16 @@ function addAttributeRow(ai = "", value = "") {
     className: "attr-value code", value, autocomplete: "off", spellcheck: false });
   valueInput.dataset.i18nAttr = "aria-label:attrs.value;placeholder:attrs.valuePlaceholder";
   const hint = Object.assign(document.createElement("small"), { className: "attr-hint" });
+  const resolved = Object.assign(document.createElement("small"), { className: "attr-resolved", hidden: true });
 
   const describe = () => {
     const attribute = attributeByCode(combo.code());
     hint.textContent = attribute ? attributeHint(attribute) : "";
     valueInput.maxLength = attribute ? attribute.components.reduce((n, c) => n + c.max, 0) : 90;
-    valueInput.inputMode = attribute && attribute.components.every(c => c.type === "N") ? "numeric" : "text";
+    const decimal = attribute && (attribute.family || attribute.fixedDecimals !== undefined);
+    valueInput.maxLength = decimal ? 30 : valueInput.maxLength;
+    valueInput.inputMode = decimal ? "decimal"
+      : attribute && attribute.components.every(c => c.type === "N") ? "numeric" : "text";
   };
   const combo = attributeCombo(() => { describe(); renderPreview(); });
   if (ai) combo.set(ai);
@@ -685,7 +722,7 @@ function addAttributeRow(ai = "", value = "") {
   valueInput.addEventListener("input", renderPreview);
   const tools = Object.assign(document.createElement("div"), { className: "attr-tools" });
   tools.append(up, down, remove);
-  row.append(combo.element, tools, valueInput, hint);
+  row.append(combo.element, tools, valueInput, hint, resolved);
   row.aiCode = () => combo.code();
   row.describe = describe;               // re-run when the language changes (format hints are translated)
   row.focusAi = () => combo.focus();

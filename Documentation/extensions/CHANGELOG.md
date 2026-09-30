@@ -2,6 +2,17 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: decimal families of data attributes, no limit of 10 attributes
+- Measures and amounts whose fourth digit is the number of decimal places are offered as families — (310n)
+  NET WEIGHT (kg), (392n) PRICE, 59 in all — and take the number as people write it, with a comma or a point:
+  `123,45` becomes `3102=012345`. A member typed by number keeps its decimals (`3103` with `1,5` →
+  `3103=001500`), and digits without a separator keep the GS1 meaning. New messages for two separators, too
+  many decimals, too many digits, not a number. The editor shows how each converted attribute went into the
+  URI. The list of attributes goes from 525 to 216 entries.
+- No limit of 10 attributes: with the QR version and level configurable, the label itself says when the
+  content does not fit. A ceiling of 100 per request remains, against misuse.
+- New wording of the note in the attributes editor.
+
 ### Portal: label block under the form
 - The label block (QR code, options, data attributes, link) sits under the form at every width, with the
   code and its buttons on the left, kept in view, and the options on the right; one column on phones. The

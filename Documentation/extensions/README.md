@@ -562,8 +562,8 @@ date (17), net weight (3103), price (3922), ship-to address (4302)… — writte
 query string: `https://id.example.org/01/09506000134352/10/B42?17=271231&3103=000500`. They are not part of
 the identifier (§4.10, Resolver standard §2.12).
 
-**What the portal does.** Ticking *Include data attributes* below the QR code opens an editor of up to
-10 attributes: each row takes an AI and a value, with the expected format explained in the user's language
+**What the portal does.** Ticking *Include data attributes* below the QR code opens an editor of
+attributes: each row takes an AI and a value, with the expected format explained in the user's language
 (e.g. "6 digits · date YYMMDD"), and ↑ ↓ buttons that set the order of the attributes in the URI and in
 the human readable text. The AI is chosen in a combo box (ARIA 1.2 pattern, usable with mouse, touch,
 keyboard and screen readers): a click in the field, its arrow button or the Down key opens the whole list,
@@ -610,9 +610,9 @@ the resolver also uses:
 530 AIs (the 5 newest — (7041), (8040) to (8043) — are not yet known to the engine's release 1.4.1, so 525
 are offered). The grammar deliberately includes every primary key and the batch/lot, so that a code can carry
 a second identifier (§4.10 note, §5.9 and §5.11: an SSCC with the CONTENT, count and batch of what it
-holds); about 250 entries are the decimal variants of measures, (3100) to (3105) and so on. That is why the
-list is long, and why the portal leaves out only the AIs that would go in the path of the record being
-edited. (The grammar lists `shipToaAdd1Parameter` and `shipToaAdd2Parameter` but defines them as
+holds); 368 of them are the decimal variants of measures and amounts, (3100) to (3105) and so on, which the
+portal groups into 59 families (below), so the list has 216 entries. It leaves out the AIs that would
+go in the path of the record being edited. (The grammar lists `shipToaAdd1Parameter` and `shipToaAdd2Parameter` but defines them as
 `shipToAdd1Parameter` and `shipToAdd2Parameter`, (4302) and (4303); a typing error in the standard.)
 
 **Day 00.** GS1 dates marked `yymmd0` — (11), (12), (13), (15), (16), (17), and the date part of (4324) and
@@ -623,7 +623,8 @@ day of that month (e.g. 260200 → 260201 or 260228; 29 in a leap year) (`attr.d
 **Checks and messages.** The portal refuses, with its own message in both languages: an AI that is the key
 or one of its qualifiers (it would go in the path and the code would point at another record — for a
 batch, serial or variant, open the record with that qualifier), an AI that is not a data attribute, a
-repeated AI, an empty value, more than 10 attributes. Everything else is the engine's judgement, shown as
+repeated AI, an empty value, day 00, a number written wrongly for a decimal family (above), more than 100
+attributes. Everything else is the engine's judgement, shown as
 "The GS1 Barcode Syntax Engine refused the attributes: …" followed by the engine's own message (English),
 e.g. *AI (17): The date contains an illegal month of the year* or *Required AIs for AI (17) are not
 satisfied: 01,02,03,255,8006,8026*. As a last guard, the path of the engine's URI must be the record's own.
@@ -631,8 +632,31 @@ satisfied: 01,02,03,255,8006,8026*. As a last guard, the path of the engine's UR
 **Without the engine** (an image built before this feature, or a build without network access to GitHub)
 the portal logs a warning, the option is not shown and QR codes work as before.
 
-**Limits and choices.** At most 10 attributes: each adds data to the QR code, which grows at the fixed
-X-dimension. The editor does not offer date pickers: GS1 users know the AI formats, and the numeric keyboard
+**Decimal families.** For measures (31nn–36nn) and amounts, prices and discounts (39nn) the fourth digit
+of the AI is the number of decimal places: (3102) 012345 is 123.45 kg. `syntax.decimal_families()` groups
+them from the dictionary as the General Specifications write them — 59 families such as (310n) NET WEIGHT
+(kg), (392n) PRICE, (393n) PRICE with an ISO 4217 currency — and `Engine.resolve_decimal()` turns what is
+typed into the right AI and digits:
+
+| Chosen | Typed | In the URI |
+|---|---|---|
+| (310n) | `123,45` or `123.45` | `3102=012345` (padded to 6 digits) |
+| (310n) | `500` | `3100=000500` |
+| (392n) | `12,50` | `3922=1250` |
+| (393n) | `986 12,50` | `3932=9861250` (currency code first) |
+| (3103), a member typed by number | `1,5` | `3103=001500` (its 3 decimal places) |
+| (3922), a member typed by number | `1250` | `3922=1250` (digits without a separator keep the GS1 meaning) |
+
+Comma and point are both accepted as the decimal separator, since the portal's users write either; a value
+with more than one separator (`1.234,56`) is refused, so there is never a doubt about a thousands separator.
+Also refused, each with its own message: more decimal places than the family (or the member) allows, more
+digits than the AI holds, anything but digits. Under each converted attribute the editor shows how it went
+into the URI ("In the URI: 3102=012345"). Typing a member's number ("3103") in the list finds its family;
+typing it and leaving the field keeps that exact member.
+
+**Limits and choices.** No fixed number of attributes: the real limit is what fits in the QR code at the
+chosen version and error correction level, and the label says when the content does not fit. A ceiling of
+100 attributes per request only protects the server. The editor does not offer date pickers: GS1 users know the AI formats, and the numeric keyboard
 opens for date fields on phones. AI titles are GS1's data titles, which are
 language-neutral on labels.
 

@@ -141,7 +141,9 @@ attributes (URI Syntax §4.10) such as expiry date (17), net weight (3103) or pr
 `https://id.example.org/01/…/10/B42?17=271231&3103=000500`. Attributes are chosen by number or name from
 the 500-odd AIs the standard allows (the record's own key and qualifiers are left out), in a list that
 opens with a click and filters as you type, with their format explained, put in order with ↑ ↓, and
-checked as they are typed by the GS1 Barcode Syntax Engine. Day 00 in dates ("end of month" in GS1
+checked as they are typed by the GS1 Barcode Syntax Engine. Measures and amounts whose last digit is the
+number of decimal places are offered as families — (310n) NET WEIGHT (kg), (392n) PRICE — and take the
+number as people write it, with a comma or point: `123,45` becomes `3102=012345`. Day 00 in dates ("end of month" in GS1
 syntax) is refused in favour of an explicit first or last day of the month. They describe the item the code is printed for, so they are **not stored**: they
 go only in the code drawn at that moment and are cleared when another record is opened. The resolver
 passes them on to targets that forward the query string. An attribute can never change the
@@ -254,7 +256,8 @@ offered without 22, which the Syntax Engine refuses without a GTIN.
 attribute, which excludes (8200), (03) and (8014) as the standard does. The portal validates them with the
 GS1 Barcode Syntax Engine itself (release 1.4.1, the one the resolver uses), including the invalid pairs
 and mandatory associations of the GS1 General Specifications §4.13; values of any character of CSET 82
-are percent-encoded as needed. Up to 10 attributes per QR code.
+are percent-encoded as needed. There is no fixed number of attributes per QR code: the label says when the
+content no longer fits the chosen QR version.
 
 ## API reference
 

@@ -30,7 +30,10 @@ from gs1 import ValidationError
 log = logging.getLogger("portal.syntax")
 
 ENGINE_DIR = os.environ.get("GS1_SYNTAX_ENGINE_DIR", "/opt/gs1-syntax-engine")
-MAX_ATTRIBUTES = 10          # a QR code stays readable at the label's X-dimension; see the README
+# The real limit is what fits in a QR code at the chosen version and error correction level (the label says
+# so when the content does not fit); this ceiling only guards the server against absurd requests.
+MAX_ATTRIBUTES = 100
+_DECIMAL_SEPARATORS = re.compile(r"[.,]")
 
 _FLAG_CHARS = set("*!?\"$%&'()+,-./:;<=>@[\\]^_`{|}~")
 _COMPONENT = re.compile(r"^(\[)?([NXYZ])(\.\.)?(\d+)\]?(?:,(.*))?$")     # "N6,yymmd0", "[X..17]", "[N3],iso3166"
@@ -45,6 +48,7 @@ class Engine:
         self.release = None
         self.reason = None
         self.attributes: dict[str, dict] = {}      # AI → {ai, title, components}
+        self.families: dict[str, dict] = {}        # "310n" → {ai, title, components, members, decimals, family}
         self.path_ais: dict[str, set[str]] = {}    # primary key AI → AIs that go in its path
         self._lock = threading.Lock()
         self._encoder = None
@@ -73,6 +77,7 @@ class Engine:
                         gs1encoders.GS1EncoderGeneralException)
         with open(os.path.join(self.directory, "gs1-syntax-dictionary.txt"), encoding="utf-8") as fh:
             self.attributes, self.path_ais = parse_dictionary(fh.read())
+        self.families = decimal_families(self.attributes)
         try:
             with open(os.path.join(self.directory, "RELEASE"), encoding="utf-8") as fh:
                 self.release = fh.read().strip()
@@ -84,8 +89,11 @@ class Engine:
         """What the browser needs to offer data attributes (GET /portal/api/config)."""
         if not self.available:
             return {"available": False}
+        members = {code for family in self.families.values() for code in family["members"]}
+        offered = [a for a in self.attributes.values() if a["ai"] not in members] + list(self.families.values())
+        offered.sort(key=lambda a: (a["ai"][:2], a["ai"]))
         return {"available": True, "release": self.release, "max": MAX_ATTRIBUTES,
-                "ais": list(self.attributes.values()),
+                "ais": offered,
                 "inPath": {key: sorted(ais) for key, ais in self.path_ais.items()}}
 
     def digital_link(self, stem: str, anchor: str, pairs: list[tuple[str, str]],
@@ -99,6 +107,7 @@ class Engine:
         key_ai, _ = gs1.split_anchor(anchor)
         if len(attributes) > MAX_ATTRIBUTES:
             raise ValidationError("attr.tooMany", max=MAX_ATTRIBUTES)
+        attributes = [self.resolve_decimal(ai, value) for ai, value in attributes]
         seen = set()
         for ai, value in attributes:
             if ai == key_ai or ai in self.path_ais.get(key_ai, set()):
@@ -129,6 +138,42 @@ class Engine:
             # Belt and braces: the identification in the path must stay the record's own.
             raise ValidationError("attr.inPath", ai=next(iter(seen)))
         return uri, [f"({ai}){value}" for ai, value in attributes]
+
+    def resolve_decimal(self, ai: str, value: str) -> tuple[str, str]:
+        """AIs whose last digit is the number of decimal places (310n net weight, 392n price…) as people
+        write numbers: "310n" with "123,45" becomes (3102) 012345; a member such as "3922" with "12,5"
+        becomes (3922) 1250. Comma or point is the decimal separator (a single one, no thousands
+        separator); digits without a separator keep the GS1 meaning. Anything else is left unchanged."""
+        family_code = ai if ai in self.families else (ai[:3] + "n" if ai[:3] + "n" in self.families else None)
+        if not family_code or not value:
+            return ai, value
+        family = self.families[family_code]
+        fixed = None if ai == family_code else int(ai[3])            # decimals of a member chosen directly
+        prefix_length = sum(c["max"] for c in family["components"][:-1])   # e.g. the ISO 4217 code of 393n
+        compact = value.replace(" ", "")
+        prefix, number = compact[:prefix_length], compact[prefix_length:]
+        separators = _DECIMAL_SEPARATORS.findall(number)
+        if len(separators) > 1:
+            raise ValidationError("attr.decimalSeparator", ai=ai)
+        if not separators:
+            if fixed is not None:
+                return ai, value                                     # GS1 digits as typed
+            whole, fraction = number, ""
+        else:
+            whole, fraction = _DECIMAL_SEPARATORS.split(number)
+        if not (whole + fraction).isascii() or not (whole + fraction).isdigit() \
+                or (prefix_length and not (prefix.isascii() and prefix.isdigit())):
+            raise ValidationError("attr.notNumber", ai=ai)
+        decimals = len(fraction) if fixed is None else fixed
+        if len(fraction) > decimals or decimals > family["decimals"]:
+            raise ValidationError("attr.decimals", ai=ai, max=family["decimals"] if fixed is None else fixed)
+        digits = (whole.lstrip("0") + fraction.ljust(decimals, "0")).lstrip("0") or "0"
+        last = family["components"][-1]
+        if len(digits) > last["max"]:
+            raise ValidationError("attr.tooManyDigits", ai=ai, max=last["max"])
+        if last["min"] == last["max"]:
+            digits = digits.rjust(last["max"], "0")
+        return f"{family_code[:3]}{decimals}", prefix + digits
 
 
 def _refuse_day_zero(ai: str, value: str, components: list[dict]) -> None:
@@ -181,6 +226,20 @@ def parse_dictionary(text: str) -> tuple[dict[str, dict], dict[str, set[str]]]:
             for code in codes:
                 attributes[code] = {"ai": code, "title": title.strip(), "components": parsed}
     return attributes, path_ais
+
+
+def decimal_families(attributes: dict[str, dict]) -> dict[str, dict]:
+    """AIs whose fourth digit gives the number of decimal places — measures 31nn-36nn, amounts and prices
+    39nn — grouped as the GS1 General Specifications write them: 310n NET WEIGHT (kg) for 3100-3105."""
+    families = {}
+    for code, attribute in attributes.items():
+        if len(code) == 4 and code[:2] in {"31", "32", "33", "34", "35", "36", "39"}:
+            family = families.setdefault(code[:3] + "n", {"ai": code[:3] + "n", "title": attribute["title"],
+                                                          "components": attribute["components"], "members": [],
+                                                          "decimals": 0, "family": True})
+            family["members"].append(code)
+            family["decimals"] = max(family["decimals"], int(code[3]))
+    return families
 
 
 def _expand(ais: str) -> list[str]:

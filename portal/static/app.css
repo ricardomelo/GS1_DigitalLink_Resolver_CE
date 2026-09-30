@@ -336,6 +336,7 @@ a.dl:not([href]) { pointer-events: none; }
 .attr-row .attr-value { grid-area: value; font-size: .9375rem; }
 .attr-tools { grid-area: tools; display: flex; gap: .3rem; }
 .attr-hint { grid-area: hint; font-size: .8125rem; line-height: 1.45; color: #3E4855; }
+.attr-resolved { grid-column: 1 / -1; margin-top: -.25rem; font-size: .8125rem; color: var(--ok); font-family: var(--mono); }
 .attr-btn { width: 2.5rem; min-height: 2.75rem; border: 1px solid var(--field); background: var(--panel); border-radius: 4px;
   font-size: 1.05rem; line-height: 1; cursor: pointer; color: var(--gs1-blue); }
 .attr-btn:hover:not(:disabled) { border-color: var(--gs1-blue); background: #E8EFF7; }

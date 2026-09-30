@@ -2,6 +2,13 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: label block under the form
+- The label block (QR code, options, data attributes, link) sits under the form at every width, with the
+  code and its buttons on the left, kept in view, and the options on the right; one column on phones. The
+  side panel had become too narrow for the options and attributes (mock-ups A and B compared). The full HRI
+  option is labelled "Full (every element)".
+- Tests: layout at 1024, 1360 and 1920 px and on a phone.
+
 ### Portal: label options, attribute editor, show password
 - Sign-in and password change: an eye button shows or hides the password being typed.
 - QR code label options: human readable text in full, for the key only, or none (was on/off); QR version
@@ -15,7 +22,6 @@
   erasing the text and did not work on phones; most used attributes first; the record's own key and
   qualifiers left out; ↑ ↓ to order the attributes; day 00 in dates refused, with the first and last day of
   the month suggested (`attr.dayZero`); larger, darker helper text.
-- Layout: the label panel is wider beside the form and moves under it, in two columns, below 1200 px.
 - Documentation: which AIs the grammar of §4.10 allows (530, 525 known to the engine) and why the list
   includes primary keys.
 - Tests: label options, forced versions and day 00 in `test_data_attributes.py` (59 checks); password

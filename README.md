@@ -126,14 +126,14 @@ DELETE removes links, the default link type is shared by all records of a key).
 
 The preview shows the Digital Link with its parts coloured, the **QR code label** (download as PNG or SVG,
 X-dimension 0.495 mm, 4X quiet zone) and buttons to try or copy the link. Label options: human readable
-text in full (key, qualifiers and attributes), for the key only or none; QR code version (automatic, the
+text in full (every element string), for the key only or none; QR code version (automatic, the
 smallest that fits, or 1 to 40) and error correction level (L, M — the default —, Q, H), shown under the
 code as used. If a chosen version is too small for the content, an explanation with the version needed
-replaces the image. On screens narrower than 1200 px the label panel moves under the form. After each save
-the targets are checked (see below).
+replaces the image. The label block sits under the form, with the code and its buttons on the left and the
+options on the right. After each save the targets are checked (see below).
 
 <p align="center">
-  <img src="Documentation/images/portal-attributes.png" alt="QR code panel with an expiry date and a net weight as data attributes" width="300">
+  <img src="Documentation/images/portal-attributes.png" alt="Label block with the QR code, its options and an expiry date and a net weight as data attributes" width="820">
 </p>
 
 **Data attributes** — ticking *Include data attributes* below the QR code adds GS1 Digital Link data

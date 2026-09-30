@@ -169,14 +169,8 @@ a { color: var(--link); }
 .layout {
   max-width: 76rem; margin: -3.5rem auto 0; position: relative;
   display: grid; gap: 1.5rem; align-items: start;
-  grid-template-columns: minmax(0, 1fr) minmax(21rem, 25rem);
+  grid-template-columns: minmax(0, 1fr);
   padding: 0 clamp(1rem, 4vw, 2rem) 4rem;
-}
-/* Below 75rem (1200 px) the side panel would be squeezed: the label goes under the form, as a wide block
-   with the QR code on the left and its options on the right (one column again on phones). */
-@media (max-width: 74.99rem) {
-  .layout { grid-template-columns: minmax(0, 1fr); }
-  .label-panel { position: static; }
 }
 .sheet, .label, .auth-card {
   background: var(--panel); border-radius: 4px; box-shadow: var(--panel-shadow);
@@ -272,23 +266,17 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .status.is-error { background: #FDECEA; color: var(--err); border: 1px solid #F3B8B1; }
 
 /* ---------------------------------------------------------------- label (preview) */
-.label-panel { position: sticky; top: 1.5rem; }
-.label { padding: 1.5rem; display: flex; flex-direction: column; }
-.label-visual, .label-controls { display: contents; }
-.label .qr { order: 1; } .qr-info { order: 2; } .label-options { order: 3; } .attrs { order: 4; }
-.label .dl { order: 5; } .label .legend { order: 6; } .label .state { order: 7; } .label-actions { order: 8; }
-.qr-info { margin: -.5rem 0 1rem; text-align: center; font-size: .8125rem; color: var(--muted); min-height: 1.2em; }
-/* Under the form (below 75rem): QR code, its information and buttons on the left, options on the right.
-   Declared after the side-panel rules above so that it overrides them. */
-@media (max-width: 74.99rem) {
-  .label { display: grid; gap: 0 2rem; grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr); align-items: start; }
-  .label-visual, .label-controls { display: block; }
-  .label-visual { position: sticky; top: 1rem; }
-}
+/* The label block sits under the form, across the page: QR code, its information and buttons on the
+   left (kept in view while the options on the right are scrolled), options, data attributes, link and
+   legend on the right. One column on phones. */
+.label { padding: 1.5rem; display: grid; gap: 0 2rem; align-items: start;
+  grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr); }
+.label-visual { position: sticky; top: 1rem; }
 @media (max-width: 40rem) {
   .label { grid-template-columns: minmax(0, 1fr); }
-  .label-visual { position: static; }
+  .label-visual { position: static; margin-bottom: 1rem; }
 }
+.qr-info { margin: -.5rem 0 1rem; text-align: center; font-size: .8125rem; color: var(--muted); min-height: 1.2em; }
 /* What went wrong with the QR code, in place of the image */
 .qr.has-error { border: 1px solid #F3B8B1; border-style: solid; background: #FDECEA; aspect-ratio: auto; width: 100%;
   place-items: stretch; text-align: left; color: var(--err); }

@@ -450,12 +450,12 @@ blue-grey page, GS1 orange for the main action and teal links. gs1.org uses the 
 typeface; these pages use Montserrat, the closest free match, with Verdana as the same fallback. The logo
 is the supplied GS1 artwork converted to transparent PNG.
 
-The editor's label panel (QR code, its options, data attributes, link and legend) sits beside the form on
-screens 1200 px wide and more. Below that it would be squeezed, so it moves under the form as a wide block:
-QR code, version information and buttons on the left, options and attributes on the right, where each
-attribute fits on one line; on phones it is one column. The panel's markup has two groups
-(`.label-visual`, `.label-controls`); beside the form the stylesheet lays their contents out as one column
-in the order of earlier versions.
+The editor's label block (QR code, its options, data attributes, link and legend) sits under the form, across
+the page: QR code, version information, state and buttons on the left — kept in view while the options are
+scrolled — and options, attributes, link and legend on the right, where the three label options fit side by
+side and each attribute on one line; on phones it is one column. Until this layout the block was a narrow
+panel beside the form, which the options and attributes had outgrown (compared in two mock-ups before the
+change). The markup has two groups, `.label-visual` and `.label-controls`.
 
 ## Languages
 

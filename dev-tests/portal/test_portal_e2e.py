@@ -287,15 +287,15 @@ with sync_playwright() as p:
     check("SSCC opens in the editor", page.input_value("#key-type") == "00"
           and page.input_value("#description") == "Pallet 1")
 
-    # Medium screens: the label goes under the form, QR code and options side by side
-    page.set_viewport_size({"width": 1024, "height": 900}); page.wait_for_timeout(200)
-    form_box, panel_box = page.locator("#editor").bounding_box(), page.locator(".label-panel").bounding_box()
-    visual, controls = page.locator(".label-visual").bounding_box(), page.locator(".label-controls").bounding_box()
-    check("1024 px: label under the form, two columns", panel_box["y"] > form_box["y"] + form_box["height"] - 1
-          and controls["x"] > visual["x"] + visual["width"] - 1, (form_box, panel_box, visual, controls))
+    # The label block sits under the form at every width, QR code and options side by side
+    for width in (1024, 1360, 1920):
+        page.set_viewport_size({"width": width, "height": 900}); page.wait_for_timeout(200)
+        form_box, panel_box = page.locator("#editor").bounding_box(), page.locator(".label-panel").bounding_box()
+        visual, controls = page.locator(".label-visual").bounding_box(), page.locator(".label-controls").bounding_box()
+        check(f"{width} px: label under the form, QR code left, options right",
+              panel_box["y"] > form_box["y"] + form_box["height"] - 1 and controls["x"] > visual["x"] + visual["width"] - 1
+              and abs(controls["y"] - visual["y"]) < 2, (form_box, panel_box, visual, controls))
     page.set_viewport_size({"width": 1360, "height": 1000}); page.wait_for_timeout(200)
-    check("1360 px: label beside the form", page.locator(".label-panel").bounding_box()["x"]
-          > page.locator("#editor").bounding_box()["x"] + page.locator("#editor").bounding_box()["width"] - 1)
 
     # Key qualifiers (URI Syntax 4.4, 4.6, 4.9)
     page.goto(BASE); page.wait_for_timeout(700)
@@ -440,6 +440,9 @@ with sync_playwright() as p:
         check("phone: link with the attribute", phone.inner_text("#dl").endswith("?15=270131"), phone.inner_text("#dl"))
         width = phone.evaluate("document.documentElement.scrollWidth")
         check("phone: no horizontal scrolling", width <= 390, width)
+        visual, controls = phone.locator(".label-visual").bounding_box(), phone.locator(".label-controls").bounding_box()
+        check("phone: label in one column, options under the QR code", controls["y"] > visual["y"] + visual["height"] - 1,
+              (visual, controls))
         phone_ctx.close()
 
     page.select_option("#key-type", "415"); page.fill("#key-value", "9506000134376"); page.wait_for_timeout(200)

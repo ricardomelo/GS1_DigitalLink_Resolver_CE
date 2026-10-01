@@ -20,6 +20,7 @@ o próximo começar.
 | 2 — o fork | 25 a 29/09 | 21 commits, `d51e398` → `7e7a62a` | fork com histórico git, instalador, todas as chaves e qualificadores, planilhas, verificador de links, governança |
 | 3 — Expansion Pack | 29 e 30/09 | 22 commits, `d4e5584` → `cf5ce10` | caracteres especiais, atributos de dados, opções do QR, novo layout do editor, outros cadastros da chave |
 | 4 — busca e documentação | 30/09 a 01/10 | `f4f3071` e os commits de documentação | filtros por tipo de chave e qualificador, busca por código, guia do portal, funcionalidades, este histórico, guia do desenvolvedor, docstrings, versão em português |
+| 5 — revisão de conformidade e 2.5.9 | 01/10 | `324d85b` → `3a49ca9` e o commit de documentação | revisão de conformidade cláusula a cláusula, modelo de cadastro do Resolver 2.5.9 (lote e variante informativos numa série), um link padrão acima de todo cadastro |
 
 Ao fim da sessão 4, o fork altera ou acrescenta 70 arquivos do projeto oficial (cerca de 16.000 linhas
 acrescentadas) e é coberto por 739 verificações nos testes de desenvolvimento, além do teste do
@@ -147,6 +148,19 @@ logotipo GS1 oculto.
 O pedido de filtrar por "key attributes" foi entendido como os qualificadores de chave do padrão: atributos
 de dados nunca são gravados, então não há como filtrá-los.
 
+## Sessão 5 — revisão de conformidade e o modelo de cadastro do 2.5.9
+
+| Commit | Mudança |
+|---|---|
+| `324d85b`, `b2bda36` | [revisão de conformidade](revisao-de-conformidade.md) do branch frente à URI Syntax 1.7 e ao Resolver 1.2.1: 23 achados, 7 candidatos a errata, resultados da homologação; itens 1.5 (correções de resolução) e 1.6 (EPC binary) propostos |
+| `61babe1` | a API de cadastro recusa cadastros contra o 2.5.9 e guarda `informativeQualifiers`; o Resolver prefere o cadastro da série ao do lote |
+| `83d1ba0` | portal: lote e variante de uma série são informativos (proposta C dos mock-ups), *Este cadastro vale para*; parte servidor do cadastro da chave |
+| `3a49ca9` | portal: diálogo que oferece o cadastro da chave ao salvar, filtro *Situação* e alerta, importação de chaves sem cadastro, *Copiar destinos de…*, confirmação no *Abrir cadastro* |
+
+Decisões do responsável: a opção por link de não repassar a query string sai (item 1.5, F14); lote e
+variante de uma série ficam no banco como informação, e não só no QR Code, para poderem ser buscados,
+filtrados e exportados; o cadastro da chave é oferecido, com os mesmos destinos pré-selecionados.
+
 ## Como as principais áreas evoluíram
 
 | Área | 1.0.0 (sessão 1) | Agora |
@@ -177,6 +191,8 @@ de dados nunca são gravados, então não há como filtrá-los.
    escolhida; sem marca GS1.
 9. Atributos de dados vão só para o QR Code e são validados pelo engine da GS1.
 10. Um único worker do gunicorn com threads.
+11. O cadastro segue o Resolver 2.5.9: com número de série, lote e variante são qualificadores informativos
+    do cadastro; todo cadastro qualificado deve ter acima dele o cadastro da chave.
 
 ## Lições aprendidas
 
@@ -189,6 +205,8 @@ de dados nunca são gravados, então não há como filtrá-los.
 - A gramática da §4.10 da GS1 tem um erro de digitação (`shipToaAdd…` para (4302)/(4303)).
 - Conferir afirmações no código antes de documentá-las.
 - Mostrar layouts como imagens antes de construí-los.
+- Ler as regras de ordenação da norma, não só os conjuntos: a regra 4 do 2.5.9 também ordena os cadastros
+  (a série antes do lote), o que a subida na hierarquia não seguia.
 
 ## Pendências
 
@@ -201,6 +219,6 @@ de dados nunca são gravados, então não há como filtrá-los.
   do Resolver.
 
 Próximos passos candidatos: ler os dados brutos do leitor de código de barras (FNC1/GS) na busca por código
-usando o syntax engine, exportar só os registros filtrados, copiar destinos entre cadastros, escolha do
+usando o syntax engine, exportar só os registros filtrados, escolha do
 tamanho da etiqueta e exportação em PDF, login único (SSO), rotação do diário, monitoramento de saúde, CI
 com os testes de desenvolvimento e pull requests pequenos para o projeto oficial.

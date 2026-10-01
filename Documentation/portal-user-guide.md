@@ -150,14 +150,27 @@ the record.
 
    | Identifier | Qualifiers |
    |---|---|
-   | GTIN (01) | Product variant (22), Batch/lot (10), Serial number (21) — any of them, in this order; or Third-party serialised extension — TPX (235) alone |
-   | ITIP (8006) | Batch/lot (10), Serial number (21) |
+   | GTIN (01) | Product variant (22), Batch/lot (10), Serial number (21) — any of them, in this order (with a serial number, variant and batch are informative, see below); or Third-party serialised extension — TPX (235) alone |
+   | ITIP (8006) | Batch/lot (10), Serial number (21) (with a serial number, the batch is informative) |
    | CPID (8010) | Component serial number (8011) |
    | GLN (414) | GLN extension (254), or UIC with extension and importer index (7040) |
    | Invoicing party GLN (415) | Payment reference number (8020), required |
    | Party GLN (417), GIAI (8004) | UIC with extension and importer index (7040) |
    | GSRN (8017, 8018) | Service relation instance number (8019) |
    | GMN, GCN, SSCC, GDTI, GINC, GSIN, GRAI | none |
+
+   **A serial number with its batch or variant.** Type everything printed on the package: variant, batch
+   and serial number. With a serial number, the variant and batch fields are marked *informative* and get a
+   dashed border. The GS1 standard (GS1-Conformant Resolver, section 2.5.9) does not let a serial-number
+   record depend on its batch or variant, so the record applies to the serial number; the batch and
+   variant are kept with it — you can search, filter and export by them — and printed in the QR code.
+   Someone who scans another unit of that batch without a record of its own goes to the batch's record,
+   if there is one, and then to the product's.
+
+   Under the qualifiers, the card **This record applies to** says it in plain words, for every
+   combination: *every unit of this GTIN*, *Batch L1*, *Serial S1*…
+
+   ![A serial number with its informative variant and batch](images/guide/step1-serial.png)
 
 4. Select **Open record**. The portal asks the resolver and answers:
    - *Record found. Change whatever you need and save.* — the record exists; steps 2 and 3 show what is
@@ -168,6 +181,12 @@ the record.
 
 If you change the identifier or a qualifier after opening a record, steps 2 and 3 are locked and the
 portal asks you to select **Open record** again, so that you never overwrite another record by mistake.
+If the record had changes you had not saved, **Open record** asks before discarding them. Changing only
+the informative batch or variant of a serial number keeps the record open.
+
+Opening a serial number without its batch or variant fills in the ones kept with it. If you type a
+different batch, the portal keeps what you typed and points out the difference: saving replaces the
+stored batch.
 
 ### Step 2 — description
 
@@ -202,6 +221,11 @@ moves it to the top; **Remove** deletes a target; **Add target** adds one (up to
 > batches, its serial numbers) share the same *type* of default target, because the resolver keeps it
 > once per identifier. When other records exist, the portal shows that type and asks you to keep it first.
 
+![Copy targets from another record](images/guide/copy-targets.png)
+
+**Copy targets from…** opens a search over every record: choose one and **Add to the targets** (after
+the ones in the form) or **Replace the targets**. Nothing is saved until you select **Save links**.
+
 **Check targets** asks each address whether it answers (section 13); it never stops you from saving.
 
 ### Saving
@@ -210,6 +234,23 @@ Select **Save links**. The portal checks everything again on the server and answ
 
 - *Record created. The code now leads to the targets you entered.*
 - *Changes saved. The code now leads to the new targets.*
+
+**A record above it.** The GS1 standard asks that any code, however detailed, find a default target at
+its level or above. When you save a batch, serial number or extension of an identifier that has no record
+of its own, the portal asks first:
+
+![Saving a batch of a GTIN without a record of its own](images/guide/key-record-dialog.png)
+
+- **Also create the record of every unit of this GTIN, with the same targets** — *recommended*, and
+  chosen already. You can change those targets later in that record;
+- **Create it with another target** — for instance the product's general page instead of the batch's
+  page; the type and language are those of your default target;
+- **Save only this record** — the other batches and serial numbers of the identifier get no answer
+  (error 404) until someone creates that record, and the record list flags it.
+
+The description of the new record can be changed in the same window. **Cancel** saves nothing.
+Identifiers that cannot exist without a qualifier (invoicing party GLN with its payment reference) are not
+asked about.
 
 After saving, the portal also checks that the targets answer and warns under any that does not
 (section 13); the record is saved either way. If something is wrong, the message says what and where (for instance *Enter the address (URL) of target
@@ -336,11 +377,17 @@ ignored (*acai* finds *Açaí*).
 
 - **Identifier type** — only the records of one primary key type. The list shows only the types present,
   with how many records each has (*Product (GTIN) (01) · 6*).
-- **Qualifier** — only the records that have a given qualifier, alone or with others (a serial number
-  record also has its batch); *None (applies to the whole identifier)* for the records without
+- **Qualifier** — only the records that have a given qualifier, alone or with others, or as information
+  (a serial number with an informative batch appears under *Batch/lot*); *None (applies to the whole identifier)* for the records without
   qualifiers; *Others (created outside the portal)* for qualifier sets the portal does not manage. The
   options follow the identifier type chosen.
 - **Changed by** — only the records last changed by one user.
+- **Status** — records that need attention: *No record of the key* (a batch, serial number or extension
+  whose identifier has no record of its own, so other codes of it answer 404) and *Serial registered with
+  batch or variant* (made before the GS1 rule was applied). A badge marks each one in the list, and an
+  alert above the list offers **Show only these** while there are records without their key's record.
+
+  ![Records without their key's record](images/guide/records-status.png)
 - **Only with problems** — after a link check, only the records whose targets had problems.
 
 **Clear search and filters** appears while any of them is in use. The count line shows how many records
@@ -403,6 +450,14 @@ record; the **Default** column marks the target that opens first.
    been written yet.
 4. **Import records (n)** writes the valid records; records with errors are skipped. Correct the
    spreadsheet and import it again to include them.
+
+A serial number is written as in the label — `(22)V1(10)B42(21)S1` — and imported the same way: the
+record is the serial number's, and the variant and batch are kept with it as information. When an import
+changes the batch of an existing serial number, the preview shows the one it had (*before: …*).
+
+When the file would leave an identifier with batches or serial numbers only, without a record of its own,
+the preview lists those identifiers and offers **Also create the record of each one, with the targets of
+its first row in the spreadsheet** (ticked). Untick it to import only the rows of the file.
 
 An import never deletes anything: records that are not in the file stay as they are. It is recorded in the
 history of each record and in the audit trail.

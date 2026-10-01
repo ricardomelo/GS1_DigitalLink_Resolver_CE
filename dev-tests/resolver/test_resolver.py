@@ -316,6 +316,25 @@ except jsonschema.ValidationError as exc:
 check("informative qualifiers: not in the linkset, which stays valid", "informative" not in body and valid is True
       and "u-serial" in body and "u-batch" in body and "u-product" in body, (valid, body[:300]))
 
+# Rule 4 of section 2.5.9: the linkset of /01/{gtin}/22/V/10/L/21/S is the union of the records 01+21,
+# 01+22+10, 01+10, 01+22 and 01 (01+235 does not apply); the serial number's record answers the redirect.
+R4 = "/01/09506000999982"
+for qualifiers, name in [([], "key"), ([{"22": "V"}], "variant"), ([{"10": "L"}], "batch"),
+                         ([{"22": "V"}, {"10": "L"}], "variant-batch"), ([{"21": "S"}], "serial"), ([{"235": "T"}], "tpx")]:
+    author({"anchor": R4, **({"qualifiers": qualifiers} if qualifiers else {}), "itemDescription": "R4",
+            "defaultLinktype": "gs1:pip", "links": link(f"https://example.org/r4-{name}")})
+r = get(R4 + "/22/V/10/L/21/S")
+check("rule 4: the serial number's record answers", r.headers.get("Location") == "https://example.org/r4-serial",
+      (r.status_code, r.headers.get("Location")))
+body = get(R4 + "/22/V/10/L/21/S?linkType=linkset", "application/linkset+json").get_data(as_text=True)
+check("rule 4: the linkset is the union of 01+21, 01+22+10, 01+10, 01+22 and 01, without 01+235",
+      all(f"r4-{n}" in body for n in ("serial", "variant-batch", "batch", "variant", "key")) and "r4-tpx" not in body, body[:400])
+r = get(R4 + "/22/V/10/L")
+check("rule 4: a variant's batch answers before the batch or the variant",
+      r.headers.get("Location") == "https://example.org/r4-variant-batch", r.headers.get("Location"))
+body = get(R4 + "/235/T?linkType=linkset", "application/linkset+json").get_data(as_text=True)
+check("rule 4: the linkset of 01+235 is 01+235 and 01", "r4-tpx" in body and "r4-key" in body and "r4-batch" not in body, body[:300])
+
 QUALIFIED = [("/415/9506000134376", [{"8020": "INV-1"}]), ("/414/9506000134376", [{"254": "EXT1"}]),
              ("/417/9506000134376", [{"7040": "1ABC"}]), ("/8004/9506000ABC123", [{"7040": "1ABC"}]),
              ("/8018/950600013437612342", [{"8019": "123"}]), ("/8010/9506000ABC-1", [{"8011": "123"}]),

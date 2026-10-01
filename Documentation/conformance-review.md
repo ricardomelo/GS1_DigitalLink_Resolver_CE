@@ -41,6 +41,19 @@ Counts (clause tables of sections 4 and 5; one row per normative statement or ti
 | Not applicable / optional feature not implemented | 3 | 4 |
 | To verify | 1 | 1 |
 
+### Since the review
+
+The review describes the branch at `115a054`. Findings fixed since, with the commits:
+
+| Finding | Status | Commits |
+|---|---|---|
+| [F1](#f1) | Fixed (item 1.3): saving a qualified record of a key without a record of its own offers to create it; the record list and the import flag such keys | `83d1ba0`, `3a49ca9` |
+| [F2](#f2) | Fixed (item 1.2): with AI 21, AI 22 and AI 10 are informative, not part of the registration; the data entry API refuses them as qualifiers | `61babe1`, `83d1ba0` |
+| [F4](#f4) | Revised and fixed: when a serial-number record and a batch or variant record both apply, the resolver now redirects with the serial number's (see F4) | `61babe1` |
+| F11 | Partly fixed (item 1.2): the data entry API checks which qualifiers each key takes and the rules of 2.5.9; values are still checked by the portal only | `61babe1` |
+
+The other findings are unchanged; items 1.5 and 1.6 address them.
+
 ## 2. Method
 
 1. Every normative statement of both standards was listed — SHALL, SHALL NOT, SHOULD, SHOULD NOT,
@@ -84,7 +97,7 @@ The portal accepts a batch or serial record for a key that has no key-level reco
 and every other batch or serial of it answer 404: with only `/01/09506000134369/10/L1` registered,
 `/01/09506000134369` and `/01/09506000134369/10/L2` both answer 404. This is what GS1's test "Resolver does
 not handle unknown value for a valid key qualifier" detects. The statement is about data, so the fix is on
-the registration side. Side: registration. **Action: item 1.3.**
+the registration side. Side: registration. **Action: item 1.3.** *Fixed in `83d1ba0` and `3a49ca9`.*
 
 ### <a id="f2"></a>F2 — Serial records with a batch or a variant (Resolver 2.5.9, rule 2) — does not conform
 
@@ -97,7 +110,9 @@ qualifiers (F11). Rule 1 (01+235 alone) is already enforced by the shape `235`. 
 **Action: item 1.2.** The staging installation held no serial record with a batch or a variant (checked on
 1 October 2026), so 1.2 needs no migration tool: it refuses the combination on every input (form,
 spreadsheet import, API) and lists any such record already stored, for installations whose data predates
-the rule.
+the rule. *Fixed in `61babe1` and `83d1ba0`, with the owner's design: the batch and variant of a serial
+number are kept with its record as information (`informativeQualifiers`), so they can still be searched,
+filtered, exported and printed.*
 
 ### F3 — The default link carries a title and nothing else (Resolver 2.5.8) — conforms
 
@@ -107,7 +122,7 @@ the rule.
 sends an empty title: a blank title becomes the vocabulary title of the link type (`build_document()` in
 `portal/app.py`). Which link becomes the default is a separate problem: see F9.
 
-### F4 — The query linkset is the union of the matching registrations (Resolver 2.5.9, rule 4) — conforms
+### <a id="f4"></a>F4 — The query linkset is the union of the matching registrations (Resolver 2.5.9, rule 4) — conforms; redirect choice corrected
 
 `read_document()` gathers every entry whose qualifiers are all present in the request
 (`_entry_applies()`), most specific first, and the linkset merges them, each level with its own anchor. That
@@ -115,6 +130,12 @@ set contains the six sets of rule 4 and, in addition, entries such as 01+10+21 �
 registering. Once F2 is fixed, the two sets are the same. The match is literal: an entry 01+22+10 is not
 returned for a request without the CPV, as the standard says. **Action: item 1.2 adds a test with all six
 sets.**
+
+*Correction found while implementing item 1.2:* the linkset was right, but the redirect was not. The most
+specific entry was the one with the most qualifiers, so with records 01+10 and 01+21 a request
+`/10/B42/21/S1` (both apply, one qualifier each) could be redirected with the batch's link. Rule 4 lists
+01+21 first, and a serial number names one unit. Since `61babe1` a record with AI 21 or AI 235 outranks any
+batch or variant record (test "informative qualifiers: … → u-serial" in `test_resolver.py`).
 
 ### F5 — Walking up the tree without HTTP redirects (Resolver 2.5.9) — conforms
 
@@ -207,7 +228,8 @@ data entry API — official code — validates nothing: `_test_gs1_digital_link_
 `data_entry_logic.py` but is never called, and `_validate_data()` is an empty hook. The API needs the
 token, which only the portal holds, so the risk is limited to direct API users. Side: registration.
 **Action: item 1.2** (the API applies the same rules as the portal, including the registration sets of
-2.5.9).
+2.5.9). *Partly fixed in `61babe1`: structure and the rules of 2.5.9; values are not checked by the API, so
+that templates such as `{lotnumber}` keep working.*
 
 ### F12 — `%2F` in a value breaks resolution (Resolver 2.4.1) — partly
 

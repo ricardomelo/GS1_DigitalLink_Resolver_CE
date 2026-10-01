@@ -36,6 +36,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Feature | What it does | Since |
 |---|---|---|
 | Walk-up | A level without a record falls back to the next level: serial → batch → variant → key, instead of an error 500 | `766a652` |
+| Serial before batch | When a serial-number record and a batch or variant record both apply, the serial number's answers (GS1-Conformant Resolver 2.5.9, rule 4: 01+21 before 01+22+10) | `61babe1` |
 | 404 for a missing link type | A record without the requested `linkType` answers 404, as GS1-Conformant Resolver 2.6.2 requires (was 200 with an error inside) | `766a652` |
 | Trailing slash | `/10/123/` is treated as `/10/123` (was 400) | `766a652` |
 | `linkType` forms | Accepts `x`, `gs1:x`, `https://gs1.org/voc/x`, `https://ref.gs1.org/voc/x`, case-insensitive; `defaultLink` redirects to the default target | `766a652` |
@@ -54,6 +55,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | `GET /api/summary[?links=true]` | One line per record (anchor, qualifiers, description, default link type, number of links, optionally the links): the portal reads every record in one call | `db56b22` |
 | Token on `/api/index` | The official public `GET /api/index` (every identifier on the resolver) now requires the bearer token | `1941e75` |
 | `BearerAuth` in Swagger | Every protected operation declares the bearer scheme, so **Authorize** in `/api/docs` works | `1941e75` |
+| Registration rules | `POST /new` and `PUT` refuse qualifiers the key does not take, 415 without 8020, 235 with other qualifiers and 22 or 10 with 21 (GS1-Conformant Resolver 2.5.9, rules 1 and 2); a list is refused whole, naming the item | `61babe1` |
+| `informativeQualifiers` | A serial-number record of a GTIN or ITIP keeps the unit's variant and batch as information: stored, returned by `GET` and `/summary`, replaced by `PUT`; never used to choose a record, never in the public linkset | `61babe1` |
 
 ## Portal: access and accounts
 
@@ -77,6 +80,11 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Shared default type | Explains and enforces that every record of a key shares the default link type | `126f507` |
 | Safe API sequence | POST appends, PUT merges, partial DELETE removes only the targets the user removed; deleting one record keeps the others of the key (restored on failure) | `126f507` |
 | Other records of the key | List under *Open record*: what each applies to, description, links, last change; search, qualifier filter, five rows in view, *Open* with unsaved-changes confirmation | `08570e4` |
+| Informative batch and variant | With a serial number, the variant and batch fields of a GTIN or ITIP are marked *informative*: kept with the serial-number record, printed in the QR code, but not part of the registration (GS1-Conformant Resolver 2.5.9, rule 2); opening a serial number without them fills in the stored ones; a different typed value is pointed out | `83d1ba0` |
+| "This record applies to" | A card under the qualifiers says, in plain words, what the record applies to and where codes without a record of their own go | `83d1ba0` |
+| Record of the key when saving | Saving a batch, serial or extension of a key without a record of its own offers to create that record with the same targets (recommended), with another target, or not (GS1-Conformant Resolver 2.5.9) | `3a49ca9` |
+| Copy targets from… | Search any record and add its targets to the form or replace them | `3a49ca9` |
+| Confirmation on *Open record* | Asks before discarding unsaved changes, also after the key or qualifiers changed | `3a49ca9` |
 | Singular wording | "This identifier has one other record" | `d11c369` |
 | Read-only mode | Readers see every field disabled and a note | `71b15f2` |
 
@@ -129,6 +137,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Code search | A pasted GS1 Digital Link or bracketed element string shows the exact record (marked), the more general and the more specific ones; ignored AIs named | `f4f3071` |
 | Clear search and filters | One button | `f4f3071` |
 | Records made elsewhere | Listed (templates such as `{lotnumber}`), not opened | `db56b22`, `7339e3c` |
+| Informative qualifiers in lists | Filters, text search and code search find a serial number by its informative batch or variant; the scope shows them | `83d1ba0` |
+| Status filter and alert | *Status*: records of keys without a record of their own (with an alert and *Show only these*) and serial numbers registered with their batch before rule 2; a badge on each | `3a49ca9` |
 
 ## Portal: spreadsheets
 
@@ -140,6 +150,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Any BCP 47 language | `pt-BR`, `en-US`, `vi`, `und`… accepted and kept | `7339e3c` |
 | Limits per format | XLSX and CSV/TXT: 5,000 rows and 700 KB, shown in the dialog | `9d12f9d` |
 | Excel-friendly | Windows-1252, UTF-8 and UTF-16 ("Unicode text") files; separator detected; scientific notation detected; formula protection on export | `429dce7`, `1b58bfd` |
+| Informative qualifiers in spreadsheets | `(10)B42(21)S1` is exported for a serial number with an informative batch and imported back the same way; a change of batch is shown in the preview | `83d1ba0` |
+| Keys without a record of their own | The preview lists them and, ticked by default, creates each key's record with the targets of its first row | `3a49ca9` |
 
 ## Portal: link checker
 

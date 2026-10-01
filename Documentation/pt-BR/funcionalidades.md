@@ -33,6 +33,7 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Funcionalidade | O que faz | Desde |
 |---|---|---|
 | Subida na hierarquia (walk-up) | Um nível sem cadastro recorre ao seguinte: série → lote → variante → chave, em vez de erro 500 | `766a652` |
+| Série antes do lote | Quando um cadastro de série e um de lote ou variante se aplicam juntos, responde o da série (GS1-Conformant Resolver 2.5.9, regra 4: 01+21 antes de 01+22+10) | `61babe1` |
 | 404 para tipo de link ausente | Um cadastro sem o `linkType` pedido responde 404, como exige o GS1-Conformant Resolver 2.6.2 (antes era 200 com erro dentro) | `766a652` |
 | Barra no final | `/10/123/` é tratado como `/10/123` (antes era 400) | `766a652` |
 | Formas de `linkType` | Aceita `x`, `gs1:x`, `https://gs1.org/voc/x`, `https://ref.gs1.org/voc/x`, sem diferenciar maiúsculas; `defaultLink` redireciona ao destino principal | `766a652` |
@@ -51,6 +52,8 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | `GET /api/summary[?links=true]` | Uma linha por cadastro (âncora, qualificadores, descrição, tipo principal, número de links e, opcionalmente, os links): o portal lê todos os cadastros numa chamada só | `db56b22` |
 | Token em `/api/index` | O `GET /api/index` oficial, que era público e listava todos os identificadores do Resolver, passou a exigir o token | `1941e75` |
 | `BearerAuth` no Swagger | Toda operação protegida declara o esquema bearer, então **Authorize** em `/api/docs` funciona | `1941e75` |
+| Regras de cadastro | `POST /new` e `PUT` recusam qualificador que a chave não aceita, 415 sem 8020, 235 com outros qualificadores e 22 ou 10 junto com 21 (GS1-Conformant Resolver 2.5.9, regras 1 e 2); uma lista é recusada inteira, indicando o item | `61babe1` |
+| `informativeQualifiers` | Um cadastro de série de GTIN ou ITIP guarda variante e lote da unidade como informação: gravados, devolvidos pelo `GET` e pelo `/summary`, substituídos pelo `PUT`; nunca usados para escolher o cadastro nem publicados no linkset | `61babe1` |
 
 ## Portal: acesso e contas
 
@@ -74,6 +77,11 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Tipo principal compartilhado | Explica e garante que todos os cadastros de uma chave usem o mesmo tipo de destino principal | `126f507` |
 | Sequência segura na API | POST acrescenta, PUT mescla, DELETE parcial remove só os destinos que o usuário tirou; excluir um cadastro mantém os outros da chave (restaurados em caso de falha) | `126f507` |
 | Outros cadastros da chave | Lista embaixo de *Abrir cadastro*: a que cada um se aplica, descrição, links, última alteração; busca, filtro por qualificador, cinco linhas à vista, *Abrir* com confirmação se houver alterações não salvas | `08570e4` |
+| Lote e variante informativos | Com número de série, os campos de variante e lote de GTIN ou ITIP ficam marcados como *informativos*: guardados no cadastro da série e impressos no QR Code, mas fora do cadastro (GS1-Conformant Resolver 2.5.9, regra 2); abrir uma série sem eles preenche os gravados; um valor digitado diferente é apontado | `83d1ba0` |
+| "Este cadastro vale para" | Um quadro abaixo dos qualificadores diz, em linguagem simples, para que o cadastro vale e para onde vão os códigos sem cadastro próprio | `83d1ba0` |
+| Cadastro da chave ao salvar | Salvar um lote, série ou extensão de uma chave sem cadastro próprio oferece criar esse cadastro com os mesmos destinos (recomendado), com outro destino, ou não (GS1-Conformant Resolver 2.5.9) | `3a49ca9` |
+| Copiar destinos de… | Busca qualquer cadastro e acrescenta os destinos dele ao formulário ou os substitui | `3a49ca9` |
+| Confirmação no *Abrir cadastro* | Pergunta antes de descartar alterações não salvas, também depois de mudar a chave ou os qualificadores | `3a49ca9` |
 | Singular | "Este identificador tem mais um cadastro" | `d11c369` |
 | Modo leitura | O leitor vê todos os campos bloqueados e um aviso | `71b15f2` |
 
@@ -126,6 +134,8 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Busca por código | Um GS1 Digital Link colado ou uma element string com parênteses mostra o cadastro exato (marcado), os mais gerais e os mais específicos; nomeia os AIs ignorados | `f4f3071` |
 | Limpar busca e filtros | Um botão | `f4f3071` |
 | Cadastros feitos fora | Listados (modelos como `{lotnumber}`), sem abrir | `db56b22`, `7339e3c` |
+| Qualificadores informativos nas listas | Filtros, busca por texto e busca por código encontram uma série pelo lote ou variante informativos; o escopo os mostra | `83d1ba0` |
+| Filtro de situação e alerta | *Situação*: registros de chaves sem cadastro próprio (com alerta e *Mostrar só esses*) e séries cadastradas com lote antes da regra 2; selo em cada um | `3a49ca9` |
 
 ## Portal: planilhas
 
@@ -137,6 +147,8 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Qualquer idioma BCP 47 | `pt-BR`, `en-US`, `vi`, `und`… aceitos e mantidos | `7339e3c` |
 | Limites por formato | XLSX e CSV/TXT: 5.000 linhas e 700 KB, mostrados na janela | `9d12f9d` |
 | Amigável ao Excel | Arquivos Windows-1252, UTF-8 e UTF-16 ("Texto Unicode"); separador detectado; notação científica detectada; proteção contra fórmulas na exportação | `429dce7`, `1b58bfd` |
+| Qualificadores informativos nas planilhas | `(10)B42(21)S1` é exportado para uma série com lote informativo e importado de volta do mesmo jeito; a troca de lote aparece na prévia | `83d1ba0` |
+| Chaves sem cadastro próprio | A prévia as lista e, marcada por padrão, cria o cadastro de cada chave com os destinos da primeira linha dela | `3a49ca9` |
 
 ## Portal: verificador de links
 

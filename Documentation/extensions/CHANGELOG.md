@@ -2,6 +2,41 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Registration model of GS1-Conformant Resolver 2.5.9 (backlog items 1.2 and 1.3)
+Conformance review findings F1, F2, F4 and F11; design chosen by the owner from mock-ups (approach C).
+
+- **Serial numbers and their batch (rule 2).** With a serial number (AI 21), the variant (22) and batch
+  (10) of a GTIN or ITIP are no longer part of the registration: the record is the serial number's, and the
+  variant and batch are kept with it as `informativeQualifiers` — stored in the resolver's document,
+  returned by the data entry API, searchable, filterable, exported and printed in the QR code, but never
+  used by the resolver to choose a record and never in the public linkset. The editor keeps the fields
+  where they were, marks them *informative* when a serial number is typed and says in plain words what the
+  record applies to (*This record applies to*). Opening a serial number without its batch fills in the
+  stored one; a different batch typed is pointed out and replaces it on saving. Spreadsheets keep writing
+  `(22)V1(10)B42(21)S1`; an import that changes a serial number's batch shows the previous one.
+- **Data entry API (deliberate change to official code).** `POST /new` and `PUT` refuse qualifiers a key
+  does not take (URI Syntax 1.7, 4.9), AI 415 without AI 8020, AI 235 with other qualifiers (rule 1) and
+  AI 22 or AI 10 with AI 21 (rule 2), with a 400 naming the problem (and the item, for a list). Values are
+  not checked, so templates such as `{lotnumber}` keep working. New optional field `informativeQualifiers`
+  in the Swagger model.
+- **Resolver.** When a serial-number record and a batch or variant record both apply, the serial number's
+  answers (rule 4 lists 01+21 before 01+22+10); before, the record with more qualifiers won, so a batch
+  record could answer a request for a registered serial number.
+- **A default link above every record.** Saving a batch, serial number or extension of a key that has no
+  record of its own (except AI 415, which cannot exist without AI 8020) asks whether to create that record
+  too: with the same targets (recommended, preselected), with another target, or not. The record list has
+  a *Status* filter (no record of the key; serial numbers registered with their batch before rule 2), an
+  alert with *Show only these* and a badge on each record concerned. The import preview lists the keys it
+  would leave without a record of their own and, ticked by default, creates them with the targets of each
+  key's first row.
+- **Editor.** *Copy targets from…* adds the targets of any record to the form or replaces them; *Open
+  record* asks before discarding unsaved changes, also after the key or qualifiers were changed.
+- Records that break rule 2 and were made before it are only flagged, not changed: on staging there were
+  none (checked on 1 October 2026).
+- Tests: `dev-tests/portal/test_registration.py` (new); `test_data_entry_api.py`, `test_resolver.py` and
+  the portal end-to-end test extended; the mock data entry API keeps informative qualifiers and enforces
+  rule 2.
+
 ### Conformance review
 - `Documentation/conformance-review.md` and `Documentation/pt-BR/revisao-de-conformidade.md`: clause-by-clause
   review of the branch against GS1 Digital Link URI Syntax 1.7 and GS1-Conformant Resolver 1.2.1, with the

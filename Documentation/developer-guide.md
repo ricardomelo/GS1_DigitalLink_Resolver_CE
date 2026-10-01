@@ -181,6 +181,13 @@ sign-in throttle live in memory, which is why the portal runs a single gunicorn 
   of §4.9), `parse_qualifier_text()` (`(10)L1(21)S1` or `/10/L1/21/S1`),
   `is_valid_qualifier_set()`, `qualifier_list()` / `pairs_from()` (Resolver CE `[{AI: value}]` ↔ pairs),
   `qualifier_path()`, `qualifiers_match()`.
+- Registration model of GS1-Conformant Resolver 1.2.1 §2.5.9: `INFORMATIVE_QUALIFIERS` (for 01 and 8006,
+  with AI 21 the AIs 22 and 10 are informative), `split_informative()` (the qualifiers of a Digital Link →
+  the record's own and the informative ones), `join_informative()` (back, in path order) and
+  `has_key_level()` (whether a key can have a record without qualifiers: not 415). In `app.py`,
+  `request_record()` names a record by its own qualifiers; open, save, delete and history use it, while the
+  label and QR code use every qualifier. `key_record_document()` builds the key's own record asked for when
+  saving (`keyRecord`).
 - `normalise_key()`, `anchor_for()`, `split_anchor()`, `digital_link()`, `hri_lines()`, `element_string()`.
 - `company_part()` / `within_prefixes()` for governance; `link_key()` (type + languages + context).
 - `normalise_language()` (any BCP 47 tag).
@@ -273,13 +280,13 @@ call checks the role and limits identifiers to the user's GS1 Company Prefixes. 
 | `POST /logout` | — | Sign out |
 | `POST /password` `{currentPassword, newPassword}` | any | Change password; other sessions end |
 | `GET /config` | any | User, role, prefixes, resolver address, link types, keys with qualifiers and shapes, languages, import limits, data attributes |
-| `GET /record?key=&value=&qualifiers=/10/L1` | reader | One record: `exists`, `description`, `links`, `defaultLinkType`, `sharedDefaultLinkType`, `digitalLink`, `otherEntries` |
-| `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}]}` | editor | Create (201) or replace (200); the first link is the default |
+| `GET /record?key=&value=&qualifiers=/10/L1` | reader | One record: `exists`, `description`, `links`, `defaultLinkType`, `sharedDefaultLinkType`, `digitalLink`, `otherEntries` (each with `informative`), `qualifiers` (the record's own), `informative` (typed) and `storedInformative`, `hasKeyRecord` |
+| `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}], keyRecord?}` | editor | Create (201) or replace (200); the first link is the default. With a serial number, 22 and 10 in `qualifiers` are stored as informative. `keyRecord: {mode: copy\|target, description, url}` also creates the key's own record first (`save.createdWithKey`, `keyRecordCreated`) |
 | `DELETE /record?key=&value=&qualifiers=` | editor | Delete one record, keeping the others of the key |
-| `GET /records` | reader | Every record with kind, qualifiers, description, default link type, number of links, created/updated by and when |
+| `GET /records` | reader | Every record with kind, qualifiers, `informative`, description, default link type, number of links, created/updated by and when, `noKeyRecord`, `breaksRules` |
 | `POST /export` `{format: xlsx\|csv, labels}` | reader | Spreadsheet of every record |
-| `POST /import/preview` `{filename, data (base64), labels, checkLinks}` | editor | Validation and comparison; `token`, `records`, `errors`, `counts`, `links` |
-| `POST /import/apply` `{token}` · `GET /import/status?token=` | editor | Write a previewed import; progress and results |
+| `POST /import/preview` `{filename, data (base64), labels, checkLinks}` | editor | Validation and comparison; `token`, `records` (with `informative`, `informativeBefore`, `noKeyRecord`), `errors`, `counts`, `links`, `keysWithoutRecord` |
+| `POST /import/apply` `{token, createKeyRecords?}` · `GET /import/status?token=` | editor | Write a previewed import (with `createKeyRecords`, the keys' own records first); progress and results |
 | `POST /links/check` `{urls}` | editor | Check addresses (editor) |
 | `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `GET /links/last` | editor · editor · reader | Background link check |
 | `GET /history?key=&value=&qualifiers=` | reader | Versions of a record, with content |
@@ -304,7 +311,9 @@ All in the `resolver-portal-config` volume (`/app/config`), included in the dail
 
 - `web_logic.py`: `normalise_linktype()` (every accepted form of a link type), `_parse_qualifier_path()`
   and `_entry_applies()` (walk-up: an entry applies when all its qualifiers are in the request, templates
-  such as `{0}` matching any value; the most specific applicable entry answers first), `_qualifier_path_from()`, `_find_linktype_key()`, `_public_link()` (only public
+  such as `{0}` matching any value; the most specific applicable entry answers first — a serial number or
+  TPX (`_UNIT_QUALIFIERS`) before any batch or variant, then more qualifiers before fewer; informative
+  qualifiers are never read), `_qualifier_path_from()`, `_find_linktype_key()`, `_public_link()` (only public
   fields, `fwqs` kept), `format_linkset_for_external_use()` (RFC 9264 or JSON-LD); 404 when the link type
   is missing.
 - `web_namespace.py`: `_wants_html()` (browser or API client), `_resolver_description()` (description
@@ -321,6 +330,13 @@ The table of every behaviour change, with the clause of the standard, is in the 
 - `GET /api/summary[?links=true]` (`DocSummary` → `read_summary()` → `read_all_documents()`): one line per
   entry (anchor, qualifiers, description, default link type, number of links, optionally the links).
 - `GET /api/index` now requires the token; every protected operation declares `security='BearerAuth'`.
+- `registration_problem()` (called by `create_document()` and `update_document()`): the qualifiers each key
+  takes (`KEY_QUALIFIERS`, URI Syntax 1.7 §4.9), 415 needs 8020, and rules 1 and 2 of GS1-Conformant
+  Resolver 1.2.1 §2.5.9 (235 alone; no 22 or 10 with 21). Values are not checked, so templates such as
+  `{lotnumber}` keep working; the portal checks them in full.
+- `informativeQualifiers` (`INFORMATIVE_QUALIFIERS`): on a serial-number entry of 01 or 8006, a list like
+  `qualifiers`, stored next to it in MongoDB, returned by `GET` and `/summary`, merged by `PUT` (absent:
+  kept; empty list: cleared) and by an upsert on the same entry. Declared in the Swagger model.
 
 ## 11. Proxy and home page (`frontend_proxy_server/`)
 
@@ -345,8 +361,8 @@ No Docker needed; each program exits with status 1 on a failure. Setup and comma
 
 | Program | Checks | Covers |
 |---|---:|---|
-| `resolver/test_resolver.py` | 128 | resolver and data entry code through Flask's test client: every key and qualified record, walk-up, link types, 404 rules, linkset schema, attributes passed on, description file schema, HTML pages |
-| `resolver/test_data_entry_api.py` | 25 | token on every protected operation |
+| `resolver/test_resolver.py` | 139 | resolver and data entry code through Flask's test client: every key and qualified record, walk-up, link types, 404 rules, linkset schema, attributes passed on, description file schema, HTML pages |
+| `resolver/test_data_entry_api.py` | 53 | token on every protected operation; registration rules of §2.5.9 and informative qualifiers |
 | `portal/test_keys.py` | 137 | keys and qualifiers, compared with the GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | roles, prefixes, users, history, audit |
 | `portal/test_sheet.py` | 42 | spreadsheets, limits per format |
@@ -354,7 +370,8 @@ No Docker needed; each program exits with status 1 on a failure. Setup and comma
 | `portal/test_data_attributes.py` | 83 | data attributes, decimal families, QR options (needs `GS1_SYNTAX_ENGINE_DIR`) |
 | `portal/test_linkcheck.py` | 16 | link checker, SSRF guard |
 | `portal/test_portal_config.py` | 9 | configuration and start-up |
-| `portal/test_portal_e2e.py` | 163 | the portal in Chromium against `mock_data_entry.py`, desktop and phone; also run without the engine |
+| `portal/test_registration.py` | 26 | §2.5.9 through the portal API: informative qualifiers (save, open, history, list, export, import), records against rule 2, the key's own record when saving and importing |
+| `portal/test_portal_e2e.py` | 186 | the portal in Chromium against `mock_data_entry.py`, desktop and phone; also run without the engine |
 | `home/test_home.py` | 44 | home page through a real nginx |
 | `install/test_install.sh` | — | installer through shims (Compose v2) |
 

@@ -69,14 +69,17 @@ EXAMPLES = [
                                           "title": "Recipes", "hreflang": ["en"]}], "maria"),
     ("/01/09506000134352", [{"10": "L2026A"}], "Organic açaí 500 g", "gs1:pip",
      [pip("https://brand.example/acai/L2026A")], "joao"),
-    ("/01/09506000134376", [{"22": "V1"}, {"10": "B42"}, {"21": "S1001"}], "Infusion pump", "gs1:pip",
+    ("/01/09506000134376", [{"22": "V1"}, {"10": "B42"}, {"21": "S1001"}], "Infusion pump — unit S1001", "gs1:pip",
      [pip("https://medical.example/pump"), {"linktype": "gs1:epil", "href": "https://medical.example/missing/ifu.pdf",
                                             "title": "Instructions for use", "hreflang": ["en"]}], "maria"),
     ("/01/09506000134376", [], "Infusion pump", "gs1:pip", [pip("https://medical.example/pump")], "maria"),
     ("/01/09506000134376", [{"22": "V1"}, {"10": "B42"}], "Infusion pump — batch B42", "gs1:pip",
      [pip("https://medical.example/pump/B42")], "joao"),
-    ("/01/09506000134376", [{"22": "V1"}, {"10": "B42"}, {"21": "S1002"}], "Infusion pump", "gs1:pip",
+    ("/01/09506000134376", [{"22": "V1"}, {"10": "B42"}, {"21": "S1002"}], "Infusion pump — unit S1002", "gs1:pip",
      [pip("https://medical.example/pump")], None),
+    # a batch of a GTIN without a record of its own: flagged in the record list (section 2.5.9)
+    ("/01/09506000134925", [{"10": "C77"}], "Roasted coffee 1 kg — batch C77", "gs1:pip",
+     [pip("https://brand.example/coffee/C77")], "joao"),
     ("/00/095060001343520000", [], "Pallet 1 — São Paulo DC", "gs1:traceability",
      [{"linktype": "gs1:traceability", "href": "https://logistics.example/pallet/1", "title": "Tracking",
        "hreflang": ["en"]}], "joao"),
@@ -86,6 +89,10 @@ EXAMPLES = [
 ]
 for anchor, qualifiers, description, default, links, user in EXAMPLES:
     doc = {"anchor": anchor, "itemDescription": description, "defaultLinktype": default, "links": links}
+    # a serial number keeps its variant and batch as information (GS1-Conformant Resolver 2.5.9, rule 2)
+    if any("21" in q for q in qualifiers):
+        doc["informativeQualifiers"] = [q for q in qualifiers if "21" not in q]
+        qualifiers = [q for q in qualifiers if "21" in q]
     if qualifiers:
         doc["qualifiers"] = qualifiers
     mock_data_entry.upsert(doc)
@@ -122,6 +129,7 @@ def sign_in(browser, locale, viewport=None):
     """A new browser in the locale, signed in as maria."""
     page = browser.new_context(locale=locale, viewport=viewport or {"width": 1280, "height": 1100}).new_page()
     page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+    page.on("dialog", lambda dialog: dialog.accept())    # "discard unsaved changes?" between pictures
     page.goto(BASE); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(800)
     return page
@@ -209,6 +217,7 @@ def guide_images(locale: str, folder: str, description: str, own_copies: bool) -
         browser = p.chromium.launch()
         page = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1100}).new_page()
         page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+        page.on("dialog", lambda dialog: dialog.accept())    # "discard unsaved changes?" between pictures
         page.goto(BASE); page.wait_for_timeout(500)
         save(page, f"{folder}/sign-in.png", clip={"x": 0, "y": 0, "width": 1280, "height": 760})
         page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
@@ -231,9 +240,23 @@ def guide_images(locale: str, folder: str, description: str, own_copies: bool) -
         save_element(page, f"{folder}/other-records.png", "#others")
         open_record(page, "09506000134376", {"22": "V1", "10": "B42", "21": "S1001"})
         save_element(page, f"{folder}/label-panel.png", ".label-panel")
+        save_element(page, f"{folder}/step1-serial.png", "section.step:first-of-type")
         if own_copies and syntax.ENGINE.available:
             add_attributes(page)
             save_element(page, f"{folder}/attributes.png", ".label-panel", pad=8)
+
+        # Saving a batch of a GTIN without a record of its own (section 2.5.9), and copying targets
+        open_record(page, "09506000134901", {"10": "L1"})
+        page.fill("#description", "Chá verde 250 g — lote L1" if locale == "pt-BR" else "Green tea 250 g — batch L1")
+        page.fill(".link-row .url", "https://brand.example/tea/L1"); page.click("#description")
+        page.click("#save"); page.wait_for_timeout(500)
+        save_element(page, f"{folder}/key-record-dialog.png", "#keyrecord-dialog", pad=4)
+        page.click("#keyrecord-cancel"); page.wait_for_timeout(200)
+        page.click("#copy-from"); page.wait_for_timeout(700)
+        page.fill("#copy-search", "09506000134352"); page.wait_for_timeout(200)
+        page.click("#copy-list li"); page.wait_for_timeout(150)
+        save_element(page, f"{folder}/copy-targets.png", "#copy-pop", pad=8)
+        page.click("#copy-cancel")
 
         # Record list: filters and code search (the link check of the README pass is still shown)
         page.goto(BASE + "#records"); page.wait_for_timeout(900)
@@ -245,6 +268,9 @@ def guide_images(locale: str, folder: str, description: str, own_copies: bool) -
         page.fill("#records-search", "https://id.example.org/01/09506000134376/22/V1/10/B42/21/S1001?17=271231")
         page.wait_for_timeout(300)
         save_element(page, f"{folder}/records-code-search.png", "#records-view .sheet")
+        page.click("#records-clear")
+        page.click("#records-alert-show"); page.wait_for_timeout(200)
+        save_element(page, f"{folder}/records-status.png", "#records-view .sheet")
         page.click("#records-clear")
         if own_copies:
             page.click("#records-import"); page.wait_for_timeout(200)

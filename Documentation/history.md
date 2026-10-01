@@ -20,6 +20,7 @@ the next one started.
 | 2 — the fork | 25–29 Sep | 21 commits, `d51e398` → `7e7a62a` | fork with git history, installer, every key and qualifier, spreadsheets, link checker, governance |
 | 3 — Expansion Pack | 29–30 Sep | 22 commits, `d4e5584` → `cf5ce10` | special characters, data attributes, QR options, new editor layout, other records of a key |
 | 4 — search and documentation | 30 Sep – 1 Oct | `f4f3071` and the documentation commits | filters by key type and qualifier, code search, user guide, feature list, this history, developer guide, docstrings, Portuguese version |
+| 5 — conformance review and 2.5.9 | 1 Oct | `324d85b` → `3a49ca9` and the documentation commit | clause-by-clause conformance review, registration model of Resolver 2.5.9 (informative batch and variant of a serial number), a default link above every record |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -144,6 +145,20 @@ hidden.
 "Key attributes" in the request was read as the key qualifiers of the standard: data attributes are never
 stored, so they cannot be filtered.
 
+## Session 5 — conformance review and the registration model of 2.5.9
+
+| Commit | Change |
+|---|---|
+| `324d85b`, `b2bda36` | [conformance review](conformance-review.md) of the branch against URI Syntax 1.7 and Resolver 1.2.1: 23 findings, 7 candidate errata, staging results; backlog items 1.5 (resolution fixes) and 1.6 (EPC binary) proposed |
+| `61babe1` | data entry API refuses registrations against 2.5.9 and keeps `informativeQualifiers`; the resolver prefers a serial-number record to a batch record |
+| `83d1ba0` | portal: the batch and variant of a serial number are informative (approach C of the mock-ups), *This record applies to*; server side of the key's own record |
+| `3a49ca9` | portal: dialog offering the key's own record when saving, *Status* filter and alert, import of keys without a record, *Copy targets from…*, confirmation on *Open record* |
+
+Decisions of the owner: the per-link option to stop forwarding the query string is to be removed (item
+1.5, F14); a serial number's batch and variant stay in the database as information, not only in the QR
+code, so that they can be searched, filtered and exported; the key's own record is offered, with the same
+targets preselected.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -172,6 +187,8 @@ stored, so they cannot be filtered.
 8. Labels: X = 0.495 mm, 2.2 mm text, 4X quiet zone; error correction exactly as chosen; no GS1 branding.
 9. Data attributes go only into the QR code and are validated by GS1's engine.
 10. One gunicorn worker with threads.
+11. Registration follows Resolver 2.5.9: with a serial number, the batch and variant are informative
+    qualifiers of the record; every qualified record should have its key's own record above it.
 
 ## Lessons learnt
 
@@ -182,6 +199,8 @@ stored, so they cannot be filtered.
 - The GS1 §4.10 grammar has a typing error (`shipToaAdd…` for (4302)/(4303)).
 - Check claims against the code before documenting them.
 - Show layouts as images before building them.
+- Read the standard's ranking rules as well as its sets: rule 4 of 2.5.9 also orders the records (a serial
+  number before a batch), which the walk-up had not followed.
 
 ## Open items
 
@@ -193,6 +212,6 @@ stored, so they cannot be filtered.
 - Review of the 216 Portuguese AI names; decision on the GS1 logo on the home page and resolver pages.
 
 Candidate next steps: reading raw scanner data (FNC1/GS) in the code search through the syntax engine,
-exporting only the filtered records, copying targets between records, label size choice and PDF export,
+exporting only the filtered records, label size choice and PDF export,
 single sign-on, journal rotation, health monitoring, CI with the development tests, and small pull
 requests to the official project.

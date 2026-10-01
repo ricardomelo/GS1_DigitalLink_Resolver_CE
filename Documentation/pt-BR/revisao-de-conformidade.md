@@ -43,6 +43,19 @@ Contagens (tabelas das seções 4 e 5; uma linha por requisito normativo ou grup
 | Não se aplica / recurso opcional não implementado | 3 | 4 |
 | A verificar | 1 | 1 |
 
+### Desde a revisão
+
+A revisão descreve o branch em `115a054`. Achados corrigidos desde então, com os commits:
+
+| Achado | Situação | Commits |
+|---|---|---|
+| [F1](#f1) | Corrigido (item 1.3): salvar um cadastro qualificado de uma chave sem cadastro próprio oferece criá-lo; a lista de registros e a importação sinalizam essas chaves | `83d1ba0`, `3a49ca9` |
+| [F2](#f2) | Corrigido (item 1.2): com o AI 21, os AIs 22 e 10 são informativos, fora do cadastro; a API de cadastro os recusa como qualificadores | `61babe1`, `83d1ba0` |
+| [F4](#f4) | Revisto e corrigido: quando um cadastro de série e um de lote ou variante se aplicam juntos, o Resolver agora redireciona com o da série (ver F4) | `61babe1` |
+| F11 | Corrigido em parte (item 1.2): a API de cadastro confere quais qualificadores cada chave aceita e as regras do 2.5.9; os valores continuam sendo conferidos só pelo portal | `61babe1` |
+
+Os demais achados não mudaram; os itens 1.5 e 1.6 tratam deles.
+
 ## 2. Método
 
 1. Todos os requisitos normativos dos dois padrões foram listados — SHALL, SHALL NOT, SHOULD, SHOULD NOT,
@@ -88,7 +101,7 @@ O portal aceita um registro de lote ou série de uma chave que não tem registro
 chave e todos os outros lotes ou séries dela respondem 404: com apenas `/01/09506000134369/10/L1`
 cadastrado, `/01/09506000134369` e `/01/09506000134369/10/L2` respondem 404. É isso que o teste da GS1
 "Resolver does not handle unknown value for a valid key qualifier" detecta. O requisito é sobre os dados,
-então a correção é no cadastro. Lado: cadastro. **Ação: item 1.3.**
+então a correção é no cadastro. Lado: cadastro. **Ação: item 1.3.** *Corrigido em `83d1ba0` e `3a49ca9`.*
 
 ### <a id="f2"></a>F2 — Registros de série com lote ou variante (Resolver 2.5.9, regra 2) — não conforme
 
@@ -101,7 +114,9 @@ quaisquer qualificadores (F11). A regra 1 (01+235 sozinho) já é aplicada pelo 
 **Ação: item 1.2.** A instalação de homologação não tinha nenhum registro de série com lote ou variante
 (verificado em 1º de outubro de 2026), então o 1.2 não precisa de ferramenta de migração: recusa a combinação
 em todas as entradas (formulário, importação de planilha, API) e lista os registros desse tipo já gravados,
-para instalações com dados anteriores à regra.
+para instalações com dados anteriores à regra. *Corrigido em `61babe1` e `83d1ba0`, com o desenho escolhido
+pelo responsável: lote e variante de uma série ficam guardados no cadastro dela como informação
+(`informativeQualifiers`), e continuam podendo ser buscados, filtrados, exportados e impressos.*
 
 ### F3 — O link padrão leva título e nada mais (Resolver 2.5.8) — conforme
 
@@ -111,7 +126,7 @@ para instalações com dados anteriores à regra.
 envia título vazio: um título em branco vira o título do tipo de link no vocabulário (`build_document()` em
 `portal/app.py`). Qual link vira o padrão é outro problema: ver F9.
 
-### F4 — O linkset da consulta é a união dos cadastros correspondentes (Resolver 2.5.9, regra 4) — conforme
+### <a id="f4"></a>F4 — O linkset da consulta é a união dos cadastros correspondentes (Resolver 2.5.9, regra 4) — conforme; escolha do redirecionamento corrigida
 
 `read_document()` reúne toda entrada cujos qualificadores estão todos presentes na requisição
 (`_entry_applies()`), da mais específica para a menos, e o linkset as junta, cada nível com sua própria
@@ -119,6 +134,13 @@ envia título vazio: um título em branco vira o título do tipo de link no voca
 2 proíbe cadastrar. Corrigido o F2, os dois conjuntos ficam iguais. A correspondência é literal: uma entrada
 01+22+10 não volta numa requisição sem a CPV, como diz o padrão. **Ação: o item 1.2 acrescenta um teste com
 os seis conjuntos.**
+
+*Correção encontrada ao implementar o item 1.2:* o linkset estava certo, mas o redirecionamento não. A
+entrada mais específica era a de mais qualificadores, então com cadastros 01+10 e 01+21 uma requisição
+`/10/B42/21/S1` (os dois se aplicam, com um qualificador cada) podia ser redirecionada com o link do lote. A
+regra 4 lista 01+21 primeiro, e uma série identifica uma unidade. Desde `61babe1` um cadastro com AI 21 ou
+AI 235 vem antes de qualquer cadastro de lote ou variante (teste "informative qualifiers: … → u-serial" em
+`test_resolver.py`).
 
 ### F5 — Subir na hierarquia sem redirecionamento HTTP (Resolver 2.5.9) — conforme
 
@@ -210,7 +232,9 @@ O portal valida toda chave e qualificador (`gs1.py`, comparado com o motor por `
 cadastro — código oficial — não valida nada: `_test_gs1_digital_link_syntax()` existe em
 `data_entry_logic.py` mas nunca é chamada, e `_validate_data()` é um gancho vazio. A API exige o token, que
 só o portal tem, então o risco se limita a quem usa a API diretamente. Lado: cadastro. **Ação: item 1.2** (a
-API aplica as mesmas regras do portal, incluindo os conjuntos de cadastro do 2.5.9).
+API aplica as mesmas regras do portal, incluindo os conjuntos de cadastro do 2.5.9). *Corrigido em parte em
+`61babe1`: estrutura e regras do 2.5.9; a API não confere os valores, para que modelos como `{lotnumber}`
+continuem funcionando.*
 
 ### F12 — `%2F` num valor quebra a resolução (Resolver 2.4.1) — parcial
 

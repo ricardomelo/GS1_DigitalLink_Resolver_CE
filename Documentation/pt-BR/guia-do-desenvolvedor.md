@@ -187,6 +187,13 @@ threads.
   ordem da §4.9), `parse_qualifier_text()` (`(10)L1(21)S1` ou `/10/L1/21/S1`), `is_valid_qualifier_set()`,
   `qualifier_list()` / `pairs_from()` (Resolver CE `[{AI: valor}]` ↔ pares), `qualifier_path()`,
   `qualifiers_match()`.
+- Modelo de cadastro do GS1-Conformant Resolver 1.2.1 §2.5.9: `INFORMATIVE_QUALIFIERS` (em 01 e 8006, com o
+  AI 21 os AIs 22 e 10 são informativos), `split_informative()` (os qualificadores de um Digital Link → os do
+  cadastro e os informativos), `join_informative()` (o caminho de volta, na ordem do caminho) e
+  `has_key_level()` (se a chave pode ter cadastro sem qualificadores: o 415 não pode). No `app.py`,
+  `request_record()` identifica o cadastro pelos qualificadores dele; abrir, salvar, excluir e histórico usam
+  isso, enquanto a etiqueta e o QR Code usam todos os qualificadores. `key_record_document()` monta o
+  cadastro da chave pedido ao salvar (`keyRecord`).
 - `normalise_key()`, `anchor_for()`, `split_anchor()`, `digital_link()`, `hri_lines()`, `element_string()`.
 - `company_part()` / `within_prefixes()` para a governança; `link_key()` (tipo + idiomas + contexto).
 - `normalise_language()` (qualquer tag BCP 47).
@@ -284,13 +291,13 @@ respondem `{"code": "...", "params": {...}}`.
 | `POST /logout` | — | Sair |
 | `POST /password` `{currentPassword, newPassword}` | qualquer | Trocar a senha; outras sessões são encerradas |
 | `GET /config` | qualquer | Usuário, perfil, prefixos, endereço do Resolver, tipos de link, chaves com qualificadores e combinações, idiomas, limites de importação, atributos de dados |
-| `GET /record?key=&value=&qualifiers=/10/L1` | leitor | Um cadastro: `exists`, `description`, `links`, `defaultLinkType`, `sharedDefaultLinkType`, `digitalLink`, `otherEntries` |
-| `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}]}` | editor | Criar (201) ou substituir (200); o primeiro link é o principal |
+| `GET /record?key=&value=&qualifiers=/10/L1` | leitor | Um cadastro: `exists`, `description`, `links`, `defaultLinkType`, `sharedDefaultLinkType`, `digitalLink`, `otherEntries` (cada um com `informative`), `qualifiers` (os do cadastro), `informative` (digitados) e `storedInformative`, `hasKeyRecord` |
+| `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}], keyRecord?}` | editor | Criar (201) ou substituir (200); o primeiro link é o principal. Com número de série, 22 e 10 em `qualifiers` são gravados como informativos. `keyRecord: {mode: copy\|target, description, url}` cria antes o cadastro da chave (`save.createdWithKey`, `keyRecordCreated`) |
 | `DELETE /record?key=&value=&qualifiers=` | editor | Excluir um cadastro, mantendo os outros da chave |
-| `GET /records` | leitor | Todos os cadastros com tipo, qualificadores, descrição, tipo principal, número de links, criado/alterado por e quando |
+| `GET /records` | leitor | Todos os cadastros com tipo, qualificadores, `informative`, descrição, tipo principal, número de links, criado/alterado por e quando, `noKeyRecord`, `breaksRules` |
 | `POST /export` `{format: xlsx\|csv, labels}` | leitor | Planilha com todos os cadastros |
-| `POST /import/preview` `{filename, data (base64), labels, checkLinks}` | editor | Validação e comparação; `token`, `records`, `errors`, `counts`, `links` |
-| `POST /import/apply` `{token}` · `GET /import/status?token=` | editor | Gravar uma importação conferida; progresso e resultados |
+| `POST /import/preview` `{filename, data (base64), labels, checkLinks}` | editor | Validação e comparação; `token`, `records` (com `informative`, `informativeBefore`, `noKeyRecord`), `errors`, `counts`, `links`, `keysWithoutRecord` |
+| `POST /import/apply` `{token, createKeyRecords?}` · `GET /import/status?token=` | editor | Gravar uma importação conferida (com `createKeyRecords`, antes os cadastros das chaves); progresso e resultados |
 | `POST /links/check` `{urls}` | editor | Verificar endereços (editor) |
 | `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `GET /links/last` | editor · editor · leitor | Verificação de links em segundo plano |
 | `GET /history?key=&value=&qualifiers=` | leitor | Versões de um cadastro, com conteúdo |
@@ -316,7 +323,8 @@ Todos no volume `resolver-portal-config` (`/app/config`), incluídos no backup d
 - `web_logic.py`: `normalise_linktype()` (todas as formas aceitas de tipo de link),
   `_parse_qualifier_path()` e `_entry_applies()` (subida na hierarquia: uma entrada vale quando todos os
   seus qualificadores estão na requisição, com modelos como `{0}` aceitando qualquer valor; a entrada mais
-  específica responde primeiro), `_qualifier_path_from()`, `_find_linktype_key()`, `_public_link()` (só
+  específica responde primeiro — uma série ou TPX (`_UNIT_QUALIFIERS`) antes de qualquer lote ou variante,
+  depois mais qualificadores antes de menos; qualificadores informativos nunca são lidos), `_qualifier_path_from()`, `_find_linktype_key()`, `_public_link()` (só
   campos públicos, `fwqs` mantido), `format_linkset_for_external_use()` (RFC 9264 ou JSON-LD); 404 quando
   falta o tipo de link.
 - `web_namespace.py`: `_wants_html()` (navegador ou cliente de API), `_resolver_description()` (arquivo de
@@ -334,6 +342,14 @@ extensões (*Resolver CE changes*).
   por entrada (âncora, qualificadores, descrição, tipo principal, número de links e, opcionalmente, os
   links).
 - `GET /api/index` passou a exigir o token; toda operação protegida declara `security='BearerAuth'`.
+- `registration_problem()` (chamada por `create_document()` e `update_document()`): os qualificadores que
+  cada chave aceita (`KEY_QUALIFIERS`, URI Syntax 1.7 §4.9), 415 exige 8020, e as regras 1 e 2 do
+  GS1-Conformant Resolver 1.2.1 §2.5.9 (235 sozinho; nada de 22 ou 10 com 21). Os valores não são
+  conferidos, para que modelos como `{lotnumber}` continuem funcionando; o portal os confere por completo.
+- `informativeQualifiers` (`INFORMATIVE_QUALIFIERS`): numa entrada de série de 01 ou 8006, uma lista no
+  formato de `qualifiers`, gravada ao lado dela no MongoDB, devolvida pelo `GET` e pelo `/summary`, mesclada
+  pelo `PUT` (ausente: mantida; lista vazia: apagada) e por um upsert na mesma entrada. Declarada no modelo
+  do Swagger.
 
 ## 11. Proxy e página inicial (`frontend_proxy_server/`)
 
@@ -358,8 +374,8 @@ Não precisam de Docker; cada programa termina com status 1 em caso de falha. Pr
 
 | Programa | Verificações | Cobre |
 |---|---:|---|
-| `resolver/test_resolver.py` | 128 | código do Resolver e da API de cadastro pelo test client do Flask: todas as chaves e cadastros qualificados, subida na hierarquia, tipos de link, regras de 404, schema do linkset, repasse de atributos, schema do arquivo de descrição, páginas HTML |
-| `resolver/test_data_entry_api.py` | 25 | token em toda operação protegida |
+| `resolver/test_resolver.py` | 139 | código do Resolver e da API de cadastro pelo test client do Flask: todas as chaves e cadastros qualificados, subida na hierarquia, tipos de link, regras de 404, schema do linkset, repasse de atributos, schema do arquivo de descrição, páginas HTML |
+| `resolver/test_data_entry_api.py` | 53 | token em toda operação protegida; regras de cadastro do §2.5.9 e qualificadores informativos |
 | `portal/test_keys.py` | 137 | chaves e qualificadores, comparados com o GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | perfis, prefixos, usuários, histórico, auditoria |
 | `portal/test_sheet.py` | 42 | planilhas, limites por formato |
@@ -367,7 +383,8 @@ Não precisam de Docker; cada programa termina com status 1 em caso de falha. Pr
 | `portal/test_data_attributes.py` | 83 | atributos de dados, famílias decimais, opções do QR (precisa de `GS1_SYNTAX_ENGINE_DIR`) |
 | `portal/test_linkcheck.py` | 16 | verificador de links, proteção contra SSRF |
 | `portal/test_portal_config.py` | 9 | configuração e inicialização |
-| `portal/test_portal_e2e.py` | 163 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular; também roda sem o engine |
+| `portal/test_registration.py` | 26 | §2.5.9 pela API do portal: qualificadores informativos (salvar, abrir, histórico, lista, exportar, importar), cadastros contra a regra 2, o cadastro da chave ao salvar e ao importar |
+| `portal/test_portal_e2e.py` | 186 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular; também roda sem o engine |
 | `home/test_home.py` | 44 | página inicial com um nginx real |
 | `install/test_install.sh` | — | instalador com simulações (Compose v2) |
 

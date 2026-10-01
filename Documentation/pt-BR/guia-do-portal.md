@@ -149,14 +149,26 @@ você abre o cadastro.
 
    | Identificador | Qualificadores |
    |---|---|
-   | GTIN (01) | Variante do produto (22), Lote (10), Número de série (21) — qualquer um deles, nessa ordem; ou Extensão serializada de terceiros — TPX (235) sozinha |
-   | ITIP (8006) | Lote (10), Número de série (21) |
+   | GTIN (01) | Variante do produto (22), Lote (10), Número de série (21) — qualquer um deles, nessa ordem (com número de série, variante e lote são informativos, veja abaixo); ou Extensão serializada de terceiros — TPX (235) sozinha |
+   | ITIP (8006) | Lote (10), Número de série (21) (com número de série, o lote é informativo) |
    | CPID (8010) | Número de série do componente (8011) |
    | GLN (414) | Extensão do GLN (254), ou UIC com extensão e índice do importador (7040) |
    | GLN parte faturadora (415) | Referência de pagamento (8020), obrigatória |
    | GLN empresa (417), GIAI (8004) | UIC com extensão e índice do importador (7040) |
    | GSRN (8017, 8018) | Instância da relação de serviço (8019) |
    | GMN, GCN, SSCC, GDTI, GINC, GSIN, GRAI | nenhum |
+
+   **Série com lote ou variante.** Digite tudo o que está impresso na embalagem: variante, lote e número
+   de série. Com número de série, os campos de variante e lote ficam marcados como *informativo*, com borda
+   tracejada. A norma GS1 (GS1-Conformant Resolver, seção 2.5.9) não deixa um cadastro de série depender
+   do lote ou da variante, então o cadastro vale para a série; lote e variante ficam guardados nele — dá
+   para buscar, filtrar e exportar por eles — e vão impressos no QR Code. Quem escanear outra unidade
+   desse lote sem cadastro próprio vai para o cadastro do lote, se existir, e depois para o do produto.
+
+   Abaixo dos qualificadores, o quadro **Este cadastro vale para** diz isso em linguagem simples, para
+   qualquer combinação: *todas as unidades deste GTIN*, *Lote L1*, *Série S1*…
+
+   ![Uma série com variante e lote informativos](../images/guide/pt-BR/step1-serial.png)
 
 4. Clique em **Abrir cadastro**. O portal consulta o Resolver e responde:
    - *Cadastro encontrado. Altere o que precisar e salve.* — o cadastro existe; os passos 2 e 3 mostram o
@@ -167,7 +179,11 @@ você abre o cadastro.
 
 Se você mudar o identificador ou um qualificador depois de abrir um cadastro, os passos 2 e 3 ficam
 bloqueados e o portal pede para clicar de novo em **Abrir cadastro**. Assim você nunca sobrescreve outro
-cadastro por engano.
+cadastro por engano. Se o cadastro tinha alterações não salvas, **Abrir cadastro** pergunta antes de
+descartá-las. Mudar só o lote ou a variante informativos de uma série mantém o cadastro aberto.
+
+Abrir uma série sem lote nem variante preenche os que estão guardados nela. Se você digitar outro lote, o
+portal mantém o que você digitou e aponta a diferença: ao salvar, o lote guardado é substituído.
 
 ### Passo 2 — descrição
 
@@ -203,6 +219,12 @@ topo; **Remover** apaga um destino; **Adicionar destino** inclui mais um (até 2
 > guarda esse tipo uma vez por identificador. Quando há outros cadastros, o portal mostra esse tipo e pede
 > para mantê-lo no primeiro destino.
 
+![Copiar destinos de outro cadastro](../images/guide/pt-BR/copy-targets.png)
+
+**Copiar destinos de…** abre uma busca em todos os cadastros: escolha um e clique em **Acrescentar aos
+destinos** (depois dos que estão no formulário) ou **Substituir os destinos**. Nada é salvo até você clicar
+em **Salvar links**.
+
 **Verificar destinos** pergunta a cada endereço se ele responde (seção 13); isso nunca impede de salvar.
 
 ### Salvar
@@ -211,6 +233,23 @@ Clique em **Salvar links**. O portal confere tudo de novo no servidor e responde
 
 - *Cadastro criado. O código já leva aos destinos informados.*
 - *Alterações salvas. O código já leva aos novos destinos.*
+
+**Um cadastro acima.** A norma GS1 pede que qualquer código, por mais detalhado, encontre um destino
+padrão no seu nível ou acima. Ao salvar um lote, uma série ou uma extensão de um identificador que não tem
+cadastro próprio, o portal pergunta antes:
+
+![Salvar um lote de um GTIN sem cadastro próprio](../images/guide/pt-BR/key-record-dialog.png)
+
+- **Criar também o cadastro de todas as unidades deste GTIN, com os mesmos destinos** — *recomendado*, e
+  já escolhido. Você pode mudar esses destinos depois, nesse cadastro;
+- **Criar o cadastro com outro destino** — por exemplo, a página geral do produto em vez da página do
+  lote; tipo e idioma são os do seu destino principal;
+- **Salvar só este cadastro** — os outros lotes e séries do identificador ficam sem resposta (erro 404)
+  até alguém criar esse cadastro, e a lista de registros o sinaliza.
+
+A descrição do novo cadastro pode ser mudada na mesma janela. **Cancelar** não salva nada. Identificadores
+que não existem sem qualificador (GLN de quem fatura, com a referência de pagamento) não entram nessa
+pergunta.
 
 Depois de salvar, o portal também confere se os destinos respondem e avisa embaixo de qualquer um que não
 responda (seção 13); o cadastro fica salvo de qualquer jeito. Se algo estiver errado, a mensagem diz o quê e
@@ -340,11 +379,17 @@ maiúsculas e acentos são ignorados (*acai* encontra *Açaí*).
 
 - **Tipo de identificador** — só os cadastros de um tipo de chave primária. A lista mostra apenas os tipos
   presentes, com quantos cadastros cada um tem (*GTIN — produto (01) · 6*).
-- **Qualificador** — só os cadastros que têm um certo qualificador, sozinho ou com outros (um cadastro de
-  número de série também tem o seu lote); *Nenhum (vale para o identificador inteiro)* para os cadastros
+- **Qualificador** — só os cadastros que têm um certo qualificador, sozinho, com outros ou como informação
+  (uma série com lote informativo aparece em *Lote*); *Nenhum (vale para o identificador inteiro)* para os cadastros
   sem qualificadores; *Outros (criados fora do portal)* para conjuntos de qualificadores que o portal não
   edita. As opções acompanham o tipo de identificador escolhido.
 - **Alterado por** — só os cadastros alterados por último por um usuário.
+- **Situação** — cadastros que pedem atenção: *Sem cadastro da chave* (um lote, uma série ou uma extensão
+  cujo identificador não tem cadastro próprio, de modo que os outros códigos dele respondem 404) e *Série
+  com lote ou variante no cadastro* (feitos antes de a regra GS1 ser aplicada). Um selo marca cada um na
+  lista, e um alerta acima dela oferece **Mostrar só esses** enquanto houver cadastros sem o da chave.
+
+  ![Cadastros sem o cadastro da chave](../images/guide/pt-BR/records-status.png)
 - **Só com problemas** — depois de uma verificação de links, só os cadastros com destinos com problema.
 
 **Limpar busca e filtros** aparece enquanto algum deles está em uso. A linha de contagem mostra quantos
@@ -408,6 +453,14 @@ qualificadores formam um cadastro; a coluna **Principal** indica o destino que a
    gravado ainda.
 4. **Importar cadastros (n)** grava os cadastros válidos; os que têm erro são ignorados. Corrija a planilha
    e importe de novo para incluí-los.
+
+Uma série é escrita como na etiqueta — `(22)V1(10)B42(21)S1` — e importada do mesmo jeito: o cadastro é o
+da série, e variante e lote ficam guardados nele como informação. Quando uma importação muda o lote de uma
+série que já existe, a prévia mostra o lote que ela tinha (*antes: …*).
+
+Quando a planilha deixaria um identificador só com lotes ou séries, sem cadastro próprio, a prévia lista
+esses identificadores e oferece **Criar também o cadastro de cada um, com os destinos da primeira linha
+dele na planilha** (marcado). Desmarque para importar só as linhas da planilha.
 
 A importação nunca exclui nada: cadastros que não estão no arquivo continuam como estão. Ela fica
 registrada no histórico de cada cadastro e na auditoria.

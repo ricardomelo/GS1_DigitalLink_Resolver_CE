@@ -40,6 +40,9 @@ The changes are meant to be offered back to the official project.
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).
 
+**Documentação em português do Brasil:** [Documentation/pt-BR](Documentation/pt-BR/README.md) — visão geral,
+instalação e operação, guia do portal, funcionalidades, histórico e guia do desenvolvedor.
+
 ## Contents
 
 1. [The original project](#the-original-project)
@@ -513,8 +516,9 @@ portal/                         link management portal: app.py, gs1.py (keys, qu
 scripts/                        install.sh, templates/ (nginx), resolver-backup.sh and its cron entry
 dev-tests/                      development tests (see above)
 Documentation/                  README.md (index), portal-user-guide.md, features.md, history.md,
-                                developer-guide.md, extensions/ (detailed documentation, changelog),
-                                images/ (README) and images/guide/ (user guide), upstream-README.md
+                                developer-guide.md, pt-BR/ (documentation in Portuguese),
+                                extensions/ (detailed documentation, changelog), images/ (README),
+                                images/guide/ (user guide, pt-BR/ in Portuguese), upstream-README.md
 tests/, useful_external_python_scripts/   official tests and conversion scripts
 ```
 

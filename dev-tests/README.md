@@ -27,8 +27,8 @@ The upstream integration test `tests/setup_test.py` needs the full stack running
 and reads the API token from `SESSION_TOKEN` (default `secret`, as in `.env.example`).
 
 `docs/screenshots.py` is not a test: it produces the screenshots of the top-level README
-(`Documentation/images/*.png`) and of the portal user guide (`Documentation/images/guide/*.png`) from the
-real portal and home page with example data, hiding the GS1 logo; run it again after visual changes
+(`Documentation/images/*.png`) and of the portal user guide in English (`Documentation/images/guide/*.png`)
+and in Portuguese (`Documentation/images/guide/pt-BR/`) from the real portal and home page with example data, hiding the GS1 logo; run it again after visual changes
 (`pip install pillow playwright`) and commit only the images that really changed.
 
 **GS1 Barcode Syntax Engine for data attributes.** The portal validates GS1 Digital Link data attributes

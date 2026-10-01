@@ -9,6 +9,8 @@ The work was done in four working sessions between 22 September and 1 October 20
 installation of the resolver run by the maintainer. Every increment was tested on that installation before
 the next one started.
 
+*Versão em português: [histórico](pt-BR/historico.md).*
+
 ## Timeline
 
 | Session | Dates (2026) | Delivery | Result |
@@ -17,7 +19,7 @@ the next one started.
 | 1 — portal 1.0.0 | until 23 Sep | zip package with a patch for the official code | portal for GTINs and batches, conformance fixes, labels, backup |
 | 2 — the fork | 25–29 Sep | 21 commits, `d51e398` → `7e7a62a` | fork with git history, installer, every key and qualifier, spreadsheets, link checker, governance |
 | 3 — Expansion Pack | 29–30 Sep | 22 commits, `d4e5584` → `cf5ce10` | special characters, data attributes, QR options, new editor layout, other records of a key |
-| 4 — search and documentation | 30 Sep – 1 Oct | `f4f3071` and the documentation commits | filters by key type and qualifier, code search, user guide, feature list, this history, developer guide, docstrings |
+| 4 — search and documentation | 30 Sep – 1 Oct | `f4f3071` and the documentation commits | filters by key type and qualifier, code search, user guide, feature list, this history, developer guide, docstrings, Portuguese version |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -137,7 +139,7 @@ hidden.
 | `f4f3071` | record list filters by primary key type and key qualifier, with counts; a pasted GS1 Digital Link or bracketed element string finds the exact record and the related ones |
 | `d11c369` | "one other record" in the singular under *Open record* |
 | `52a1087` | docstrings for every function written for the fork; map of `app.js` |
-| documentation | [portal user guide](portal-user-guide.md) with screenshots, [features](features.md), this history, [developer guide](developer-guide.md), documentation index, README |
+| documentation | [portal user guide](portal-user-guide.md) with screenshots, [features](features.md), this history, [developer guide](developer-guide.md), documentation index, README; then all of it in Brazilian Portuguese ([pt-BR](pt-BR/README.md)), with screenshots in Portuguese |
 
 "Key attributes" in the request was read as the key qualifiers of the standard: data attributes are never
 stored, so they cannot be filtered.
@@ -154,7 +156,7 @@ stored, so they cannot be filtered.
 | Accounts | users from the command line, all equal | roles, prefixes, users screen, temporary passwords, history, audit trail |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
 | Tests | 69 checks | 739 checks in 11 test programs, plus the installer test |
-| Documentation | README of the package, handover | README, user guide, features, history, developer guide, extensions documentation, changelog |
+| Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
 ## Decisions that stay unless deliberately revisited
 

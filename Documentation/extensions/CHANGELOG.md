@@ -2,6 +2,14 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Documentation in Brazilian Portuguese
+- `Documentation/pt-BR/`: overview with installation, configuration and operation (`README.md`), portal
+  user guide (`guia-do-portal.md`), features (`funcionalidades.md`), history (`historico.md`) and
+  developer guide (`guia-do-desenvolvedor.md`), with screenshots of the portal and the home page in
+  Portuguese (`Documentation/images/guide/pt-BR/`). The English documents and the README link to them.
+- `dev-tests/docs/screenshots.py` produces the user guide images in both languages from one function.
+- The guides now say that the targets are checked after each save, as the editor does.
+
 ### Documentation
 - New documents: a portal user guide with screenshots (`Documentation/portal-user-guide.md`), the list of
   every feature with the commit that introduced it (`features.md`), the history of the project across its

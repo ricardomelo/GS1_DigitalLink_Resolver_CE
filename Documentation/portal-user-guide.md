@@ -9,6 +9,8 @@ English version.
 For installation and operation see the [README](../README.md); for how the portal works inside see the
 [developer guide](developer-guide.md).
 
+*Versão em português: [guia do portal](pt-BR/guia-do-portal.md).*
+
 ## Contents
 
 1. [What the portal does](#1-what-the-portal-does)
@@ -209,7 +211,8 @@ Select **Save links**. The portal checks everything again on the server and answ
 - *Record created. The code now leads to the targets you entered.*
 - *Changes saved. The code now leads to the new targets.*
 
-If something is wrong, the message says what and where (for instance *Enter the address (URL) of target
+After saving, the portal also checks that the targets answer and warns under any that does not
+(section 13); the record is saved either way. If something is wrong, the message says what and where (for instance *Enter the address (URL) of target
 2.*). The label block shows **Published** once the record exists on the resolver.
 
 ## 6. Other records of the same identifier
@@ -412,8 +415,8 @@ codes into scientific notation (the portal detects it and says so). CSV files sa
 
 The link checker asks each address whether it answers, without changing anything:
 
-- **In the editor** — **Check targets** checks the targets in the form and writes the result under each
-  one (*✓ Answered normally.* or the problem).
+- **In the editor** — automatically after each save, and on demand with **Check targets**: the targets in
+  the form are checked and the result is written under each one (*✓ Answered normally.* or the problem).
 - **Every record** — **Check links** in the record list checks all the targets in the background; the
   summary (*Last link check: … Records with problems: 2.*) stays until the next check, a badge marks each
   record with problems, and **Only with problems** filters them. Opening such a record checks its

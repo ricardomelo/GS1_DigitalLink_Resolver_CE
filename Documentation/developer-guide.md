@@ -8,6 +8,8 @@ with the docstrings in the code, which describe each function, and with the
 For installation and configuration see the [README](../README.md); for using the portal, the
 [user guide](portal-user-guide.md).
 
+*Versão em português: [guia do desenvolvedor](pt-BR/guia-do-desenvolvedor.md).*
+
 ## Contents
 
 1. [Architecture](#1-architecture)
@@ -94,7 +96,8 @@ portal/                          new: the link management portal
 scripts/                         new: install.sh, templates/, resolver-backup.sh, resolver-backup.cron
 dev-tests/                       new: development tests and the screenshot script
 Documentation/                   README index, user guide, features, history, this guide,
-                                 extensions/ (detailed documentation, changelog), images/, upstream-README.md
+                                 pt-BR/ (these documents in Portuguese), extensions/ (detailed
+                                 documentation, changelog), images/, upstream-README.md
 tests/, useful_external_python_scripts/   official
 ```
 
@@ -355,8 +358,8 @@ No Docker needed; each program exits with status 1 on a failure. Setup and comma
 | `home/test_home.py` | 44 | home page through a real nginx |
 | `install/test_install.sh` | — | installer through shims (Compose v2) |
 
-`docs/screenshots.py` regenerates the images of the README and of the user guide from the real portal
-with example data (GS1 logo hidden). Commit only images that really changed.
+`docs/screenshots.py` regenerates the images of the README and of the user guide, in English and in
+Portuguese, from the real portal with example data (GS1 logo hidden). Commit only images that really changed.
 
 ## 14. How to extend
 
@@ -391,3 +394,4 @@ together, pin the same `gs1encoder` version in `web_server/Dockerfile`; run ever
 - Secrets never printed or committed; `.env.example` holds development defaults only.
 - One topic per commit, with a message explaining why; every test passes before delivery.
 - Docstrings on every function written for the fork; the official functions keep their original form.
+- Documents that exist in both languages (`Documentation/` and `Documentation/pt-BR/`) change together.

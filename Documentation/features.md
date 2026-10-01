@@ -9,6 +9,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 [developer guide](developer-guide.md). Design decisions and details:
 [extensions documentation](extensions/README.md).
 
+*Versão em português: [funcionalidades](pt-BR/funcionalidades.md).*
+
 ## Contents
 
 - [Resolver (public resolution)](#resolver-public-resolution)
@@ -143,7 +145,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 
 | Feature | What it does | Since |
 |---|---|---|
-| Check targets (editor) | Result under each target | `0da20ee` |
+| Check targets (editor) | After each save and on demand; result under each target | `0da20ee` |
 | Check links (every record) | Background job; summary kept; badge per record; *Only with problems* | `0da20ee` |
 | Import preview check | Optional, does not stop the import | `0da20ee` |
 | SSRF guard | Only public addresses are contacted, at every redirect | `0da20ee` |

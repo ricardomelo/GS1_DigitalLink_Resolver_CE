@@ -2,6 +2,10 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Home page and record list: texts cover every GS1 key
+- The portal card of the home page and the lede of *Registered records* no longer speak of GTINs and
+  batches only: the portal registers every primary key and key qualifier.
+
 ### Documentation in Brazilian Portuguese
 - `Documentation/pt-BR/`: overview with installation, configuration and operation (`README.md`), portal
   user guide (`guia-do-portal.md`), features (`funcionalidades.md`), history (`historico.md`) and

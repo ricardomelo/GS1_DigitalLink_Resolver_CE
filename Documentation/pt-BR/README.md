@@ -33,6 +33,7 @@ uma organização precisa para operar um Resolver para os seus associados:
 | [Funcionalidades](funcionalidades.md) | todos | cada funcionalidade, o que faz e quando foi incluída |
 | [Histórico](historico.md) | mantenedores, revisores | como o projeto evoluiu sessão a sessão, decisões, lições, pendências |
 | [Guia do desenvolvedor](guia-do-desenvolvedor.md) | desenvolvedores | serviços, arquivos-fonte, fluxos, API do portal, arquivos de dados, testes, como estender |
+| [Revisão de conformidade](revisao-de-conformidade.md) | mantenedores, revisores, operadores | revisão cláusula a cláusula frente à GS1 Digital Link URI Syntax 1.7 e ao GS1-Conformant Resolver 1.2.1: achados, evidências, candidatos a errata |
 
 Em inglês ficam também a [documentação detalhada das extensões](../extensions/README.md), o
 [changelog](../extensions/CHANGELOG.md) e o [README oficial](../upstream-README.md). O índice de todos os

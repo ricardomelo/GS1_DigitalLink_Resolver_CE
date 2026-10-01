@@ -1,0 +1,451 @@
+# Revisão de conformidade
+
+*English version: [Conformance review](../conformance-review.md).*
+
+Revisão, cláusula a cláusula, deste branch frente aos dois padrões GS1 que ele implementa:
+
+- **GS1 Digital Link Standard: URI Syntax**, release 1.7.0 (ratificado, agosto de 2026) — "URI Syntax" abaixo;
+- **GS1-Conformant Resolver Standard**, release 1.2.1 (ratificado, agosto de 2026) — "padrão do Resolver"
+  abaixo.
+
+Código revisado: branch `gs1br/develop` em `115a054` (1º de outubro de 2026). Só revisão: nada no código foi
+alterado. Cada lacuna encontrada vira um item do backlog (seção 7), para que as correções partam de
+evidências.
+
+## 1. Resumo
+
+O Resolver atende corretamente ao núcleo do padrão: métodos HTTP, CORS, redirecionamento para um tipo de
+link pedido, 404 para entidades desconhecidas e tipos de link ausentes, linkset (JSON, JSON-LD, HTML) reunido
+de todos os níveis da hierarquia sem redirecionamentos HTTP, arquivo de descrição do Resolver e tolerância à
+barra final. O portal monta URIs GS1 Digital Link conformes para os rótulos.
+
+A revisão encontrou **cinco lacunas em requisitos SHALL** que importam na prática:
+
+| Achado | Cláusula | Em uma frase |
+|---|---|---|
+| [F9](#f9) | Resolver 2.6.1, 2.5.8 | Sem `linkType`, um registro com dois links do seu tipo padrão em idiomas diferentes responde **300** em vez de redirecionar para o link padrão quando o idioma do navegador não coincide com nenhum. |
+| [F1](#f1) | Resolver 2.5.9 | Um registro qualificado (lote, série…) pode existir sem registro da chave, e então os outros lotes e séries dessa chave respondem 404. |
+| [F2](#f2) | Resolver 2.5.9, regra 2 | Registros de série também podem levar lote ou variante, o que o padrão proíbe. |
+| [F6](#f6) | Resolver 2.3 | Strings EPC binary (`/eh…`, `/ex…`) não são descomprimidas; respondem 500. |
+| [F10](#f10) | Resolver 2.4.1; URI Syntax 4.9, 4.10 | Caminhos com qualificadores fora de ordem ou com atributos de dados no caminho são redirecionados em vez de recusados com 400. |
+
+e várias lacunas menores (seções 3 a 5). Encontrou também **sete candidatos a errata** nos padrões e nos
+schemas publicados (seção 6); um deles (ITIP com Consumer Product Variant) é um conflito real entre a URI
+Syntax e as GS1 General Specifications.
+
+Contagens (tabelas das seções 4 e 5; uma linha por requisito normativo ou grupo de requisitos próximos):
+
+| Situação | Padrão do Resolver | URI Syntax |
+|---|---|---|
+| Conforme | 32 | 10 |
+| Parcial | 11 | 2 |
+| Não conforme | 5 | 0 |
+| Não se aplica / recurso opcional não implementado | 3 | 4 |
+| A verificar | 1 | 1 |
+
+## 2. Método
+
+1. Todos os requisitos normativos dos dois padrões foram listados — SHALL, SHALL NOT, SHOULD, SHOULD NOT,
+   RECOMMENDED e MAY quando restringe —, com a cláusula, incluindo a declaração de conformidade do padrão do
+   Resolver (seção 5 daquele padrão), a ABNF da URI Syntax e os schemas normativos indicados pelo padrão do
+   Resolver (schema do linkset, schema do arquivo de descrição).
+2. Cada requisito foi conferido no código (arquivo e função) e, quando o comportamento importava, com uma
+   requisição: o código real do Resolver pelo test client do Flask com o GS1 Barcode Syntax Engine 1.4.1 real
+   (a estrutura de `dev-tests/resolver/test_resolver.py`), e a regra `proxy_pass` do proxy num nginx local. A
+   seção 8 lista as requisições para que possam ser repetidas, inclusive numa instalação.
+3. Cada requisito recebeu um **lado** e uma **situação**:
+
+| Lado | Significado |
+|---|---|
+| Consulta | o Resolver respondendo a um GS1 Digital Link (`web_server/`, proxy) |
+| Cadastro | o que pode ser cadastrado: portal (`portal/`) e API de cadastro (`data_entry_server/`) |
+| Descrição | o arquivo de descrição do Resolver (`/.well-known/gs1resolver`) |
+| Rótulos | as URIs GS1 Digital Link que o portal grava nos QR codes |
+| Implantação | a instalação (TLS, proxy) |
+
+| Situação | Significado |
+|---|---|
+| Conforme | o comportamento atende ao requisito |
+| Parcial | atende no caso comum mas não em todos, ou o portal atende e a API não |
+| Não conforme | o comportamento contraria o requisito |
+| Não se aplica | o requisito não se aplica, ou descreve um recurso opcional não implementado |
+| A verificar | precisa de evidência que esta revisão não tem (suíte de testes de conformidade da GS1, item 1.4) |
+
+Os testes de desenvolvimento existentes (`dev-tests/`) foram rodados antes da revisão; as 128 verificações
+do Resolver passam.
+
+## 3. Achados
+
+Os achados F1 a F8 já eram conhecidos antes da revisão e são confirmados ou descartados aqui; do F9 em diante
+são novos.
+
+### <a id="f1"></a>F1 — Nenhum link padrão acima de um registro qualificado (Resolver 2.5.9) — não conforme
+
+> For any entry point, that is, for any GS1 Digital Link URI, no matter how granular, there SHALL be a
+> default link available either at the entry level or at a higher level.
+
+O portal aceita um registro de lote ou série de uma chave que não tem registro próprio. Então a própria
+chave e todos os outros lotes ou séries dela respondem 404: com apenas `/01/09506000134369/10/L1`
+cadastrado, `/01/09506000134369` e `/01/09506000134369/10/L2` respondem 404. É isso que o teste da GS1
+"Resolver does not handle unknown value for a valid key qualifier" detecta. O requisito é sobre os dados,
+então a correção é no cadastro. Lado: cadastro. **Ação: item 1.3.**
+
+### <a id="f2"></a>F2 — Registros de série com lote ou variante (Resolver 2.5.9, regra 2) — não conforme
+
+> If a link is associated with AI 01 (GTIN) or AI 8006 (ITIP) plus AI 21 (serial), then AI 22 (CPV) or AI 10
+> (batch/lot number) SHALL NOT be defined for that association.
+
+`KEY_SHAPES` em `portal/gs1.py` dá ao GTIN o formato `22, 10, 21` com todos os qualificadores opcionais,
+então 01+10+21 e 01+22+10+21 podem ser cadastrados (o ITIP também, com 10+21). A API de cadastro aceita
+quaisquer qualificadores (F11). A regra 1 (01+235 sozinho) já é aplicada pelo formato `235`. Lado: cadastro.
+**Ação: item 1.2**, incluindo a migração dos registros existentes que violam a regra.
+
+### F3 — O link padrão leva título e nada mais (Resolver 2.5.8) — conforme
+
+`_author_db_linkset_document()` em `data_entry_server/src/data_entry_logic.py` grava
+`https://gs1.org/voc/defaultLink` só como `{"href", "title"}`; `_public_link()` e
+`format_linkset_for_external_use()` em `web_server/src/web_logic.py` o publicam sem mudança. O portal nunca
+envia título vazio: um título em branco vira o título do tipo de link no vocabulário (`build_document()` em
+`portal/app.py`). Qual link vira o padrão é outro problema: ver F9.
+
+### F4 — O linkset da consulta é a união dos cadastros correspondentes (Resolver 2.5.9, regra 4) — conforme
+
+`read_document()` reúne toda entrada cujos qualificadores estão todos presentes na requisição
+(`_entry_applies()`), da mais específica para a menos, e o linkset as junta, cada nível com sua própria
+âncora. Esse conjunto contém os seis conjuntos da regra 4 e, além deles, entradas como 01+10+21 — que a regra
+2 proíbe cadastrar. Corrigido o F2, os dois conjuntos ficam iguais. A correspondência é literal: uma entrada
+01+22+10 não volta numa requisição sem a CPV, como diz o padrão. **Ação: o item 1.2 acrescenta um teste com
+os seis conjuntos.**
+
+### F5 — Subir na hierarquia sem redirecionamento HTTP (Resolver 2.5.9) — conforme
+
+Os níveis são resolvidos dentro de uma única requisição; não há redirecionamento para uma URI menos granular.
+
+### <a id="f6"></a>F6 — Strings EPC binary não são descomprimidas (Resolver 2.3) — não conforme
+
+> A GS1-Conformant resolver SHALL decompress EPC binary strings [EPCB].
+
+Caminhos de um só segmento vão para `uncompress_gs1_digital_link()`, que chama `GS1DigitalLinkToolkit.js`.
+O toolkit só implementa o algoritmo de compressão legado do GS1 Digital Link 1.1 (opcional desde o Resolver
+1.2.0) e nada do padrão de EPC binary: as strings `/eh…` e `/ex…` são lidas como compressão legada e
+recusadas ("No optimisation defined for hex code…"). A recusa produz então **500** (ver F15). Lado: consulta.
+**Ação: novo item 1.6.**
+
+### F7 — Arquivo de descrição do Resolver (Resolver 3) — parcial
+
+O arquivo é servido em `/.well-known/gs1resolver`, valida no schema oficial (teste "description: validates
+against the official description file schema"), pega a raiz e o operador do ambiente e declara o contexto
+JSON-LD. Mas:
+
+- `"supportedPrimaryKeys": ["all"]` promete todos os qualificadores de todas as chaves (2.1, 2.5.9), o que
+  não vale para EPC binary (F6) nem para ITIP com CPV (F20);
+- `"validatesAIcombinations": true` (propriedade do arquivo legado) não é verdade enquanto o F10 existir;
+- o campo interno `"_id"` é publicado;
+- `"termsOfUse"` aponta para uma página da GS1 em toda instalação, enquanto os dados do operador vêm do
+  `.env` de cada instalação.
+
+Lado: descrição. **Ação: item 1.5** (tirar `_id`, tornar `termsOfUse` configurável ou retirá-lo, manter
+`validatesAIcombinations` verdadeiro só depois de corrigido o F10); o `"all"` passa a ser verdade com o 1.6.
+
+### F8 — URIs dos rótulos do portal (URI Syntax 4) — conforme
+
+`gs1.digital_link()` e `syntax.digital_link()` montam a URI do rótulo com valores validados: GTIN com 14
+dígitos, qualificadores na ordem do caminho (`KEY_SHAPES`), valores com percent-encoding
+(`quote(v, safe='')`), atributos de dados colocados na query string pelo GS1 Barcode Syntax Engine, sem barra
+final e com o radical do operador (`RESOLVER_PUBLIC_URL`). Quando o 1.2 restringir o que um registro pode
+cadastrar, a URI do QR code e o cadastro passam a ser coisas diferentes; o 1.2 deixa a primeira livre
+(qualquer URI válida).
+
+### <a id="f9"></a>F9 — A resposta padrão nem sempre é o link padrão (Resolver 2.6.1, 2.5.8) — não conforme
+
+> Resolvers SHALL redirect to the default link unless there is information in the request that can be used
+> to determine a better response.
+
+Sem `linkType`, `_handle_link_type()` não usa o `gs1:defaultLink` gravado: pega todos os links do
+`defaultLinktype` da chave e compara os idiomas com `Accept-Language`. Quando nada corresponde e há dois ou
+mais desses links, o último recurso de `_get_appropriate_linktype_docs_list()` devolve todos e o Resolver
+responde **300** com uma lista em JSON — também para navegadores. Exemplo: `gs1:pip` em inglês e em francês,
+requisição sem `Accept-Language` ou com `de` → 300; os exemplos 5 e 7 do padrão esperam redirecionamento para
+o padrão. Os registros do portal sempre têm idioma, então todo registro com dois idiomas no tipo padrão é
+afetado.
+
+Dois defeitos relacionados:
+
+- o `defaultLink` gravado é o **último** link do tipo padrão (o laço de `_author_db_linkset_document()` o
+  sobrescreve), enquanto o portal diz ao usuário que o primeiro link é o padrão;
+- escolher entre os links do tipo padrão pelo idioma é o comportamento de `gs1:defaultLinkMulti`, e o 2.5.8
+  diz que, se o recurso existe, "the link types for these links SHALL include gs1:defaultLinkMulti". Esses
+  links só recebem esse tipo quando um único link lista dois idiomas, e mesmo assim sob a chave
+  `defaultLinkMulti` (que não é uma URI), descartada por `format_linkset_for_external_use()`.
+
+Lado: consulta e cadastro. **Ação: item 1.5** — sem `linkType`: melhor correspondência de idioma entre links
+`gs1:defaultLinkMulti` explícitos, senão 307 para o `gs1:defaultLink`; o link padrão é o primeiro do tipo
+padrão; `defaultLinkMulti` gravado sob a sua URI e publicado.
+
+### <a id="f10"></a>F10 — Os caminhos das requisições não são validados como URIs GS1 Digital Link (Resolver 2.4, 2.4.1; URI Syntax 4.9, 4.10) — parcial
+
+`_test_gs1_digital_link_syntax()` transforma o caminho numa element string e pede ao motor que a aceite. Uma
+element string não tem ordem de caminho e admite atributos de dados, então estas requisições são
+redirecionadas (307) para o padrão da chave em vez de recusadas:
+
+| Caminho | Problema | Resposta |
+|---|---|---|
+| `/01/{gtin}/21/S1/10/L1` | qualificadores fora de ordem (4.9) | 307 |
+| `/01/{gtin}/17/261231` | atributo de dados no caminho (4.10: atributos SHALL ficar na query string) | 307 |
+| `/01/{gtin}/99/ABC` | um AI que não é qualificador da chave | 307 |
+
+O mesmo motor, recebendo a própria URI (`dataStr`, o seu parser de GS1 Digital Link), recusa as três ("The
+AIs in the path are not a valid key-qualifier sequence for the key") e também faz os testes 4 e 5 do 2.4
+(chave primária, qualificadores válidos para a chave). Ele aceita `%2F` num valor e recusa barra final, então
+a barra precisa ser retirada antes (2.13). Lado: consulta. **Ação: item 1.5.**
+
+### F11 — A API de cadastro grava sem validar o identificador (Resolver 2.4) — parcial
+
+> it SHOULD be impossible to register a link against an invalid GS1 identifier or set of identifiers.
+
+O portal valida toda chave e qualificador (`gs1.py`, comparado com o motor por `test_keys.py`). A API de
+cadastro — código oficial — não valida nada: `_test_gs1_digital_link_syntax()` existe em
+`data_entry_logic.py` mas nunca é chamada, e `_validate_data()` é um gancho vazio. A API exige o token, que
+só o portal tem, então o risco se limita a quem usa a API diretamente. Lado: cadastro. **Ação: item 1.2** (a
+API aplica as mesmas regras do portal, incluindo os conjuntos de cadastro do 2.5.9).
+
+### F12 — `%2F` num valor quebra a resolução (Resolver 2.4.1) — parcial
+
+`/` faz parte do conjunto de 82 caracteres e se escreve `%2F` numa URI (4.2). O
+`proxy_pass http://web-service:4000/api/;` do proxy repassa o caminho *decodificado* (verificado no nginx
+1.24: `/10/A%2FB` chega como `/10/A/B`), e o Werkzeug também decodifica o `PATH_INFO`. A requisição fica com
+número ímpar de segmentos e responde 400, embora a URI seja válida. O portal não deixa `/` entrar nos valores
+cadastrados, então só a subida na hierarquia a partir desses lotes ou séries é afetada. Lado: consulta,
+implantação. **Ação: item 1.5** (repassar a URI original pelo proxy e lê-la no servidor web).
+
+### F13 — A query string é remontada, não repassada (Resolver 2.12) — parcial
+
+`_extract_query_strings()` decodifica a query string e a codifica de novo com `urlencode()`. O separador `;`,
+que a URI Syntax permite (`queryStringDelim`, 4.11), não é entendido: `?17=261231;3103=000189` chega ao
+destino como `?17=261231%3B3103%3D000189`; uma chave sem valor (`?flag`) vira `?flag=`. Lado: consulta.
+**Ação: item 1.5** (acrescentar a query string original).
+
+### F14 — Desligar o repasse da query string por link (Resolver 2.12) — não conforme quando usado; decisão pendente
+
+> When redirecting, by default, a resolver SHALL transmit the entirety of the query string in the request
+> URI to the target destination.
+
+e, no changelog da release 1.2.0: "The option to omit incoming query string parameters when redirecting to a
+target URL has been removed." O portal oferece *Repassar os parâmetros do endereço para este destino* em
+cada link (gravado como `"fwqs": false`, respeitado em `_process_response()`), e as colunas de importação e
+exportação o levam. O repasse é o padrão, então só os registros em que alguém desmarcou a opção são
+afetados. O atributo `fwqs` continua no schema oficial do linkset da GS1, por isso se propõe a errata E3.
+Lado: cadastro, consulta. **Ação: decisão do responsável**, depois item 1.5: retirar a opção (e ignorar
+`fwqs: false` nos registros existentes) ou mantê-la como desvio documentado até a GS1 esclarecer.
+
+### F15 — Caminhos de um segmento não reconhecidos respondem 500 (Resolver 2.4.1) — parcial
+
+Quando o toolkit recusa um caminho de um só segmento (`/foo`, uma string EPC binary), ele termina com erro e
+`uncompress_gs1_digital_link()` devolve um dicionário sem `SUCCESS`; `_handle_request()` em
+`web_namespace.py` então gera `KeyError` e responde 500. Uma requisição que não é URI GS1 Digital Link
+válida deveria receber 400 (2.4.1). Não é um 200, então o item 9 da declaração de conformidade é atendido.
+Lado: consulta. **Ação: item 1.5** (com o 1.6 para EPC binary).
+
+### F16 — O corpo do 300 Multiple Choices não é um linkset (Resolver 2.6.3, 2.10) — parcial
+
+O status está certo, mas o corpo é `{"linkset": [ …links… ]}`: os links sem âncora e sem o tipo de link, o
+que não é um linkset RFC 9264 válido, e em JSON também quando o navegador pediu HTML. Lado: consulta.
+**Ação: item 1.5** (um linkset de verdade com os links candidatos e a página HTML para navegadores).
+
+### F17 — Linkset em HTML sem JSON-LD embutido; JSON quando nenhum tipo é pedido (Resolver 2.10) — parcial
+
+O 2.10 diz que, para `text/html` "or unspecified", o Resolver SHOULD devolver uma página HTML e SHOULD
+embutir nela o linkset em JSON-LD. A página HTML (`web_pages.render_linkset()`) não tem JSON-LD; uma
+requisição sem cabeçalho `Accept` recebe JSON (decisão desde `766a652`, para que ferramentas como o `curl`
+continuem recebendo JSON). Lado: consulta. **Ação: item 1.5** (embutir o JSON-LD; manter JSON para
+requisições sem `Accept` e documentar a escolha).
+
+### F18 — Um link sem tipo de mídia pode causar 400 (Resolver 2.4.1) — parcial
+
+`_match_media_type()` avalia `'und' in linktype_doc['type']`; num link criado pela API sem `type` o valor é
+`None` e o `TypeError` vira 400 para uma requisição válida (por exemplo, `linkType` informado e
+`Accept-Language` sem correspondência). O portal sempre grava um tipo de mídia (`gs1.guess_media_type()`),
+então só links criados pela API são afetados. Lado: consulta. **Ação: item 1.5.**
+
+### F19 — Os idiomas são comparados literalmente (Resolver 2.6.3) — parcial
+
+`Accept-Language: pt-BR` não encontra um link em `pt` a menos que o navegador também envie `pt`; os valores
+q são descartados em vez de usados para ordenar. O 2.6.3 pede a correspondência mais próxima possível. Lado:
+consulta. **Ação: item 1.5**, junto com o F9 (busca BCP 47: `pt-BR` → `pt`).
+
+### <a id="f20"></a>F20 — ITIP com Consumer Product Variant (URI Syntax 4.9; Resolver 2.5.10) — conflito entre padrões
+
+O `itip-path` do 4.9 permite `/8006/{itip}/22/{cpv}`, e o 2.5.10 do padrão do Resolver lista a CPV entre os
+qualificadores do ITIP. O GS1 Barcode Syntax Engine, seguindo o Syntax Dictionary, recusa: "Required AIs for
+AI (22) are not satisfied: 01". O Resolver responde então 400, e o portal não oferece 22 para ITIP (decisão
+de `67d40bb`). O comportamento segue as GS1 General Specifications; os padrões é que discordam entre si.
+**Ação: errata E2** (item 8.1); nenhuma mudança de código.
+
+### F21 — Títulos padrão em inglês (Resolver 2.5.3) — parcial
+
+Um título em branco vira o título do vocabulário em inglês (`LINK_TYPE_DEFAULT_TITLES`), qualquer que seja o
+idioma do link; o 2.5.3 diz que o título SHOULD estar no idioma do destino. Lado: cadastro. **Ação: item
+7.3** (títulos padrão no idioma do link quando o portal os conhece).
+
+### F22 — Namespace `gs1:` escrito como `https://gs1.org/voc/` (Resolver 2.14) — a verificar
+
+O 2.14 define `gs1:` como `https://ref.gs1.org/voc/`; os linksets usam chaves `https://gs1.org/voc/…`
+(código oficial), enquanto o arquivo de descrição declara `https://ref.gs1.org/voc/`. Os dois endereços levam
+ao vocabulário e o schema oficial aceita qualquer um. Não se sabe se a suíte de testes da GS1 ou os clientes
+comparam as strings. **Ação: item 1.4** (conferir com a suíte); se preciso, item 1.5.
+
+### F23 — Tags de idioma que o schema do linkset recusa (Resolver 2.5.4, 2.10) — parcial
+
+Desde `7339e3c` o portal aceita qualquer tag BCP 47, como exige o 2.5.4. O schema oficial do linkset, no qual
+o linkset SHALL validar, só aceita `ll` ou `ll-CC` (`(^\w{2}$)|(^\w{2}-\w{2}$)`): um link em `es-419`,
+`zh-Hant` ou `fil` torna o linkset inválido. Lado: consulta, cadastro. **Ação: errata E4**; enquanto isso, o
+item 1.5 decide se o portal avisa sobre essas tags.
+
+## 4. GS1-Conformant Resolver 1.2.1, cláusula a cláusula
+
+Os números na primeira coluna remetem à declaração de conformidade (seção 5 do padrão) quando o requisito
+aparece lá.
+
+| Cláusula | Requisito (resumo) | Lado | Situação | Evidência | Ação |
+|---|---|---|---|---|---|
+| 2.1, 2.5.9; §5.1 | Para cada chave suportada, todo qualificador SHALL ser suportado | Consulta | Parcial | toda chave e caminho qualificado resolve (`test_resolver.py`, "resolves …" com o motor real); ITIP+CPV recusado | F20 |
+| 2.2; §5.2 | HTTP 1.1 GET, HEAD e OPTIONS | Consulta | Conforme | `web_namespace.py`; HEAD responde 307 sem corpo; OPTIONS responde `Allow: GET, HEAD, OPTIONS` | — |
+| 2.2; §5.3 | HTTP sobre TLS | Implantação | Conforme | o instalador configura o nginx do host com Certbot ou certificado (`scripts/install.sh`, `TLS_MODE`); a pilha Compose escuta em 127.0.0.1 | — |
+| 2.2; §5.4 | CORS | Consulta | Conforme | `flask_cors.CORS(app)` e `add_headers()`; preflight respondido; `Link` e `Location` expostos (teste "CORS exposes Link") | — |
+| 2.2 (3b) | Redirecionar para o padrão salvo indicação em contrário | Consulta | Não conforme | ver F9 | 1.5 |
+| 2.2 (3c), 2.9 | `linkType=linkset` ou `Accept: application/linkset+json` → sem redirecionamento, linkset | Consulta | Conforme | `_get_request_parameters()`; testes "linkset …" | — |
+| 2.3; §5.5 | Descomprimir strings EPC binary | Consulta | Não conforme | F6 | 1.6 |
+| 2.3 | MAY implementar a descompressão legada | Consulta | Conforme | `uncompress_gs1_digital_link()` (toolkit oficial) | — |
+| 2.3; §5.10 | Âncoras do linkset com a URI descomprimida | Consulta | Conforme | `DocOperationsNonGS1DigitalLinkRequest` resolve os identificadores descomprimidos | — |
+| 2.3; §5.6 | Redirecionar a URI descomprimida para outro Resolver | Consulta | Não se aplica | não há redirecionamento para outros Resolvers | — |
+| 2.4 | SHOULD ser impossível cadastrar link para identificador inválido | Cadastro | Parcial | portal: `gs1.normalise_key()`, `normalise_qualifiers()`, `test_keys.py`; API: sem validação | F11 → 1.2 |
+| 2.4, testes 1–3 | Validação básica (estrutura, tamanho dos AIs, conjuntos de caracteres, dígitos verificadores, duplicados) | Consulta | Parcial | element string conferida pelo motor (`_test_gs1_digital_link_syntax()`; testes "wrong SSCC check digit…"); estrutura do caminho não conferida | F10 |
+| 2.4, testes 4–5 | MAY conferir chave primária e qualificadores válidos para a chave | Consulta | Não implementado | — | F10 (vem com a correção) |
+| 2.4.1; §5.7 | SHALL responder 400 quando a requisição falha nos testes | Consulta | Parcial | 400 para dígitos verificadores e combinações recusadas; 307 para os caminhos do F10; 400 para caminhos válidos com `%2F` (F12); 500 para segmentos únicos (F15) | 1.5 |
+| 2.4.1; §5.8 | URI válida, nada conhecido → 404 simples | Consulta | Conforme | GTIN desconhecido → 404 | — |
+| 2.4.1; §5.9 | Nenhum 200 para condição de erro | Consulta | Conforme | páginas de erro HTML mantêm o status (`render_error()`); erros são 4xx/5xx | — |
+| 2.5.1 | A URL de destino SHALL ser informada | Cadastro | Conforme | `gs1.normalise_url()`; o modelo da API exige `href` | — |
+| 2.5.1 | Modelos MAY ser suportados; SHOULD NOT usar a query string | Consulta | Conforme | os modelos oficiais `{0}`/`{1}` e de qualificadores usam só valores do caminho | — |
+| 2.5.2 | Links SHALL ter tipo de link, SHOULD do vocabulário GS1 | Cadastro | Conforme | `gs1.LINK_TYPES` (só vocabulário GS1) | — |
+| 2.5.3; §5.11 | Um título SHALL ser informado | Cadastro | Conforme | título em branco → título do vocabulário (`build_document()`); o schema do linkset exige `title` | — |
+| 2.5.3 | O título SHOULD estar no idioma do destino | Cadastro | Parcial | títulos padrão em inglês | F21 → 7.3 |
+| 2.5.4 | Tags de idioma SHALL seguir BCP 47, num array | Cadastro, consulta | Parcial | `gs1.normalise_language()`; arrays no linkset; o schema recusa tags válidas | F23 |
+| 2.5.5; §5.11 | Tipos de mídia SHALL ser tipos IANA | Cadastro | Conforme | `gs1.guess_media_type()` (tipos IANA pela extensão) | — |
+| 2.5.6 | Valores de contexto SHOULD ser declarados no arquivo de descrição | Descrição | Conforme | `supportedContextValuesExternal` (ISO 3166) | — |
+| 2.5.8; §5.14 | Exatamente um link padrão por entidade, só com título | Cadastro | Conforme | F3 | — |
+| 2.5.8 | Links `gs1:defaultLinkMulti` SHALL ter esse tipo se o recurso existe | Consulta, cadastro | Não conforme | F9 | 1.5 |
+| 2.5.8; §5.12 | Links padrão SHALL ter também um tipo descritivo | Cadastro | Conforme | o `href` do padrão também aparece sob o seu tipo de link | — |
+| 2.5.9; §5.16 | Um link padrão no nível de entrada ou acima para qualquer URI | Cadastro | Não conforme | F1 | 1.3 |
+| 2.5.9; §5.22 | As chaves primárias suportadas SHALL ser declaradas no arquivo de descrição | Descrição | Conforme | `"supportedPrimaryKeys": ["all"]` (mas ver F7) | — |
+| 2.5.9 | SHOULD NOT redirecionar para subir na hierarquia | Consulta | Conforme | F5 | — |
+| 2.5.9 regra 1 | 01+235: nenhum outro AI | Cadastro | Conforme | formato `235` em `KEY_SHAPES`; o motor recusa UPUI com lote (teste) | — |
+| 2.5.9 regra 2; §5.23 | 01/8006 + 21: sem 22 nem 10 | Cadastro | Não conforme | F2 | 1.2 |
+| 2.5.9 regra 3 | Sem 235 nem 21: 22 e/ou 10 permitidos | Cadastro | Conforme | `KEY_SHAPES` | — |
+| 2.5.9 regra 4 | O linkset da consulta SHALL ser a união de seis conjuntos | Consulta | Conforme | F4 | teste no 1.2 |
+| 2.6.2; §5.17 | Tipo de link pedido disponível → redirecionar | Consulta | Conforme | testes "redirection …", inclusive níveis herdados | — |
+| 2.6.2; §5.18 | Tipo de link pedido ausente → 404 (MAY listar os links) | Consulta | Conforme | 404 com os links disponíveis na página HTML (teste "HTML 404 page …") | — |
+| 2.6.3; §5.20 | SHOULD usar `Accept-Language`, MAY usar `Accept` e `context` | Consulta | Parcial | `_get_appropriate_linktype_docs_list()`; comparação literal de idioma | F19 |
+| 2.6.3 (7) | Escolha indecidível → 300 com os links | Consulta | Parcial | status certo, corpo não é linkset | F16 |
+| 2.8 | Redirecionamento por padrão MAY; o rel SHALL ser `gs1:handledBy` se exposto | Consulta | Não se aplica | não implementado | — |
+| 2.10 | `application/linkset+json` → JSON RFC 9264; SHALL validar no schema do linkset | Consulta | Conforme | os testes validam todo linkset no schema oficial (exceto as tags do F23) | — |
+| 2.10 | Mesma resposta RECOMMENDED para `application/json` | Consulta | Conforme | `_process_response()` | — |
+| 2.10; §5.13 | Cabeçalho Link para o contexto JSON-LD SHOULD; arquivo de contexto SHOULD ser declarado | Consulta, descrição | Conforme | `JSON_LD_CONTEXT` em toda resposta de linkset; `jsonLdContextLocation` | — |
+| 2.10 | `application/ld+json` SHOULD embutir o contexto | Consulta | Conforme | teste "JSON-LD on request" | — |
+| 2.10 | HTML SHOULD ser devolvido para `text/html` ou sem tipo, com JSON-LD embutido | Consulta | Parcial | página HTML sem JSON-LD; JSON sem `Accept` | F17 |
+| 2.11 | Tipo de link padrão `linkset`: MAY, SHOULD ser declarado | Descrição | Conforme | não suportado; `linkTypeDefaultCanBeLinkset: false` | — |
+| 2.12; §5.19 | SHALL repassar a query string inteira ao redirecionar | Consulta | Parcial | repassada por padrão, mas remontada (F13) e desligável por link (F14) | 1.5 |
+| 2.13; §5.25 | SHOULD tolerar barra final | Consulta | Conforme | `strict_slashes = False`; teste "trailing slash" | — |
+| 2.14; §5.24 | SHALL reconhecer tipos de link `gs1:`; outros namespaces SHOULD ser declarados | Consulta | Conforme | `normalise_linktype()` aceita `gs1:`, `https://gs1.org/voc/` e `https://ref.gs1.org/voc/` | F22 |
+| 2.14; §5.24 | Tipos de link de outras origens SHALL NOT duplicar os da GS1 | Cadastro | Conforme | só vocabulário GS1 | — |
+| 3; §5.21 | Arquivo de descrição em `/.well-known/gs1resolver`, válido no schema | Descrição | Conforme | teste "description: validates …" | — |
+| 3 | Conteúdo do arquivo de descrição | Descrição | Parcial | F7 | 1.5, 1.6 |
+| 2.14 | URI do namespace `gs1:` | Consulta, descrição | A verificar | F22 | 1.4 |
+
+## 5. GS1 Digital Link URI Syntax 1.7, cláusula a cláusula
+
+Este padrão restringe as URIs que o portal grava nos rótulos (lado *rótulos*) e define o que o Resolver
+precisa aceitar (lado *consulta*).
+
+| Cláusula | Requisito (resumo) | Lado | Situação | Evidência | Ação |
+|---|---|---|---|---|---|
+| 2 | Aplicações SHALL NOT supor que uma URI GS1 Digital Link aponta para um Resolver | Cadastro | Conforme | a busca por código do portal interpreta URIs de qualquer domínio sem acessá-las | — |
+| 4.1 | GTIN-8/12/13 SHALL ser escritos com 14 dígitos | Rótulos | Conforme | `gs1.normalise_gtin()` | — |
+| 4.1 | Só a infraestrutura existente SHOULD continuar aceitando formas legadas | Consulta | Conforme | o Resolver completa um GTIN de 13 dígitos (comportamento oficial); inofensivo | — |
+| 4.2 | Caracteres reservados com percent-encoding | Rótulos | Conforme | `quote(v, safe='')`; valores cadastrados limitados a letras, dígitos, `.`, `-`, `_` | — |
+| 4.3–4.6 | Chaves primárias, qualificadores e formatos | Cadastro | Conforme | `PRIMARY_KEYS`, `QUALIFIER_FORMATS`, comparados com o motor (`test_keys.py`); conjunto de caracteres deliberadamente mais estreito (decisão 4) | — |
+| 4.7–4.9 | Ordem do caminho e caminhos permitidos (inclusive UPUI, EOID, FID, MID; 415 exige 8020) | Rótulos | Conforme | `KEY_SHAPES`, `QUALIFIER_ORDER` | — |
+| 4.9 | Ordem do caminho | Consulta | Parcial | não conferida nas requisições | F10 |
+| 4.9 | `itip-path` com CPV | Consulta | A verificar | recusado pelo motor | F20, E2 |
+| 4.10 | Atributos de dados SHALL ficar na query string | Rótulos | Conforme | `get_dl_uri()` do motor; o caminho tem de continuar sendo o do registro (`syntax.digital_link()`) | — |
+| 4.10 | Atributos de dados SHALL ficar na query string | Consulta | Parcial | `/01/{gtin}/17/…` aceito | F10 |
+| 4.10 | Um segundo identificador SHALL ser atributo de dados | Rótulos | Conforme | a lista de atributos é a do Syntax Dictionary (com as chaves), menos a chave e os qualificadores do próprio registro | — |
+| 4.10.1 | Chaves de extensão SHALL NOT ser só numéricas; `linkType` e `context` reservados | Rótulos, consulta | Conforme | o portal não grava chaves de extensão; o Resolver usa as duas palavras como definido | — |
+| 4.11 | `customURIstem` com segmentos opcionais | Rótulos | Conforme | `RESOLVER_PUBLIC_URL` | — |
+| 4.11 | `customURIstem` com segmentos opcionais | Consulta | Não se aplica | o Resolver atende na raiz do domínio; um radical importa para o item 5.1 | 5.1 |
+| 4.12 | Regras da URI canônica (HTTPS, `id.gs1.org`, chaves de AI ordenadas, sem barra final) | Rótulos | Não se aplica | o portal nunca apresenta uma URI como canônica | — |
+| 6.1 | Um leitor SHALL repassar só URIs GS1 Digital Link plausíveis | — | Não se aplica | não há software de leitura no projeto | — |
+| 6.2 | A HRI segue as GS1 General Specifications | Rótulos | Não se aplica | conferir quando os rótulos com EAN/UPC forem desenhados | 5.3 |
+
+## 6. Candidatos a errata e Work Requests
+
+Para o item 8.1. Cada um foi conferido no texto dos padrões nesta revisão.
+
+| # | Documento | Problema | Proposta |
+|---|---|---|---|
+| E1 | URI Syntax 1.7, 4.10 | A lista de parâmetros da query string cita `shipToaAdd1Parameter` e `shipToaAdd2Parameter`; as regras se chamam `shipToAdd1Parameter` e `shipToAdd2Parameter` (AIs 4302, 4303). | Corrigir os nomes na lista. |
+| E2 | URI Syntax 1.7, 4.9; Resolver 1.2.1, 2.5.10 | `itip-path` permite `/22/` depois de um ITIP e o 2.5.10 lista a CPV entre os qualificadores do ITIP, mas o GS1 Syntax Dictionary faz o AI 22 exigir o AI 01, e o GS1 Barcode Syntax Engine recusa `(8006)…(22)…`. | Retirar `[cpv-comp]` do `itip-path` (e a CPV do 2.5.10 para ITIP), ou admitir 8006 na exigência do AI 22. |
+| E3 | Resolver 1.2.1, 2.12 e changelog 7.2; schema do linkset | A opção de não repassar a query string foi removida na 1.2.0, mas o schema normativo do linkset ainda define `fwqs`. | Retirar `fwqs` do schema ou definir o seu significado (por exemplo, apenas informativo). |
+| E4 | Schema do linkset; Resolver 2.5.4 | `hreflang` precisa casar com `(^\w{2}$)|(^\w{2}-\w{2}$)`, o que recusa tags BCP 47 válidas (`es-419`, `zh-Hant`, `fil`, `sr-Latn-RS`); os padrões de `anchor` e `href` usam a faixa `A-z`, que também admite `[`, `\`, `]`, `^`, `_` e `` ` ``. | Aceitar tags BCP 47 (por exemplo, o padrão da RFC 5646 ou um mais frouxo); usar `A-Za-z`. |
+| E5 | Resolver 1.2.1, seção 3, exemplo | O arquivo de descrição de exemplo não é JSON válido: `},` sobrando antes de `jsonLdContextLocation`, a URL sem aspas e `hasTelepone` em vez de `hasTelephone`. | Corrigir o exemplo. |
+| E6 | Resolver 1.2.1, seção 5 e 2.7 | Os itens 7 e 9 da declaração de conformidade remetem à "section 0"; o exemplo 3 escreve `gs1:smp` em vez de `gs1:smpc` e ainda usa o obsoleto `all`. | Correções editoriais. |
+| E7 | Resolver 1.2.1, 2.5.9 | O SHALL de um link padrão "at the entry level or higher" recai sobre os dados, mas o padrão não orienta o lado do cadastro (recusar, avisar ou criar o registro do nível acima). | Orientação informativa para ferramentas de cadastro (o que o 1.3 implementa). |
+
+A questão do namespace (F22) não está na lista: só vira errata se a suíte de testes mostrar um problema.
+
+## 7. Efeito no backlog
+
+| Item | Mudança |
+|---|---|
+| 1.2 Modelo de cadastro do 2.5.9 | Também: a API de cadastro valida chaves e qualificadores com as mesmas regras do portal (F11); um teste com os seis conjuntos da regra 4 (F4). Corrige o F2. |
+| 1.3 Link padrão num nível acima | Sem mudança; corrige o F1. |
+| **1.5 Correções de resolução (novo, M)** | F9 resposta padrão e `defaultLinkMulti`; F10 caminho validado pelo parser de GS1 Digital Link do motor; F12 URI original pelo proxy e pelo servidor web; F13 query string original; F14 depois da decisão do responsável; F15 400 em vez de 500; F16 300 como linkset (e HTML); F17 JSON-LD na página HTML; F18 links sem tipo de mídia; F19 busca BCP 47; F7 limpeza do arquivo de descrição; decisão do F23. Depende do 1.2 (mesmos registros e testes). |
+| **1.6 Descompressão de EPC binary (novo, M–L)** | F6 e o restante do F7. Implementação a escolher quando o item começar (GS1 Digital Link URI: Compression Technical Standard for EPC binary strings 1.0.0, Tag Data Standard / Tag Data Translation); o 500 para segmentos não reconhecidos é corrigido no 1.5. |
+| 1.4 Suíte de testes de conformidade da GS1 | Roda depois do 1.5 e do 1.6, para que o registro mostre o Resolver corrigido; resolve também o F22. |
+| 7.3 Acabamento | F21 (títulos padrão no idioma do link). |
+| 8.1 Work Requests / erratas | E1–E7 (seção 6). |
+
+Ordem proposta da fase 1: 1.2 → 1.3 → 1.5 → 1.6 → 1.4.
+
+## 8. Como reproduzir as verificações
+
+**Num ambiente de desenvolvimento** (ver [`dev-tests/README.md`](../../dev-tests/README.md)): a estrutura no
+início de `dev-tests/resolver/test_resolver.py` cria documentos com o código real da API de cadastro e os
+resolve com o servidor web real; com `GS1_SYNTAX_ENGINE` definido, a conferência de sintaxe do Resolver é o
+motor real. Os casos desta revisão são as requisições citadas nos achados acima, com um registro que tenha
+`gs1:pip` em dois idiomas para o F9.
+
+**O motor como parser de GS1 Digital Link** (F10, F20), com o pacote npm `gs1encoder` 1.4.1:
+
+```js
+import {GS1encoder} from "gs1encoder";
+const g = new GS1encoder(); await g.init();
+g.dataStr = "https://example.org/01/09506000134352/21/S1/10/L1";   // erro: sequência de qualificadores inválida
+```
+
+**O proxy** (F12): qualquer nginx com `location / { proxy_pass http://127.0.0.1:4000/api/; }` na frente de
+um servidor que imprima o caminho recebido mostra `/10/A%2FB` chegando como `/10/A/B`.
+
+**Numa instalação**, trocando `https://resolver.example` pelo endereço do Resolver e `{gtin}` por um GTIN
+cadastrado (para o F9, um cujo tipo de link padrão tenha links em dois idiomas). Cada linha imprime o status
+e o cabeçalho `Location`.
+
+```bash
+R=https://resolver.example; G={gtin}
+show() { curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$@"; }
+show -H 'Accept-Language: de' "$R/01/$G"            # F9:  300 hoje; esperado 307 para o link padrão
+show "$R/01/$G/17/261231"                            # F10: 307 hoje; esperado 400
+show "$R/01/$G/21/S1/10/L1"                          # F10: 307 hoje; esperado 400
+show "$R/01/$G/10/A%2FB"                             # F12: 400 hoje; esperado 307 (sobe até o GTIN)
+show "$R/01/$G?17=261231;3103=000189"                # F13: hoje o Location termina em %3B3103%3D000189
+show "$R/eh3074257bf7194e4000001a85"                 # F6, F15: 500 hoje
+```

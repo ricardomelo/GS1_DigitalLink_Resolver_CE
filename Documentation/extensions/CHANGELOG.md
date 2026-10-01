@@ -2,6 +2,11 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Conformance review
+- `Documentation/conformance-review.md` and `Documentation/pt-BR/revisao-de-conformidade.md`: clause-by-clause
+  review of the branch against GS1 Digital Link URI Syntax 1.7 and GS1-Conformant Resolver 1.2.1, with the
+  findings, the evidence behind each, the backlog items that address them and candidate errata. No code change.
+
 ### Home page and record list: texts cover every GS1 key
 - The portal card of the home page and the lede of *Registered records* no longer speak of GTINs and
   batches only: the portal registers every primary key and key qualifier.

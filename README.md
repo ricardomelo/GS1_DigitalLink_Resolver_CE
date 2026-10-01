@@ -35,13 +35,15 @@ The changes are meant to be offered back to the official project.
 | [Features](Documentation/features.md) | every feature, what it does and when it was added |
 | [History](Documentation/history.md) | how the project evolved, decisions and lessons |
 | [Developer guide](Documentation/developer-guide.md) | services, source files, portal API, data files, tests, how to extend |
+| [Conformance review](Documentation/conformance-review.md) | the branch against GS1 Digital Link URI Syntax 1.7 and GS1-Conformant Resolver 1.2.1, clause by clause |
 | [Extensions documentation](Documentation/extensions/README.md) · [Changelog](Documentation/extensions/CHANGELOG.md) | detailed rules and decisions · every change |
 
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).
 
 **Documentação em português do Brasil:** [Documentation/pt-BR](Documentation/pt-BR/README.md) — visão geral,
-instalação e operação, guia do portal, funcionalidades, histórico e guia do desenvolvedor.
+instalação e operação, guia do portal, funcionalidades, histórico, guia do desenvolvedor e revisão de
+conformidade.
 
 ## Contents
 

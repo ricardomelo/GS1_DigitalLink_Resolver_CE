@@ -581,6 +581,9 @@ def _parse_qualifier_path(qualifier_path: str | None) -> list[dict[str, str]]:
     return [{parts[i]: parts[i + 1]} for i in range(0, len(parts) - 1, 2)]
 
 
+_UNIT_QUALIFIERS = {'21', '235'}   # qualifiers that identify a single unit of a GTIN or ITIP
+
+
 def _entry_applies(path_qualifiers: list[dict[str, str]], doc_qualifiers: list[dict[str, str]]) -> tuple[bool, list[dict[str, str]]]:
     """
     A document entry applies to the request when ALL of its qualifiers are present in the path (template
@@ -791,7 +794,10 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
             if template_variables:
                 entry['linkset'] = _replace_linkset_template_variables(entry['linkset'], template_variables)
             entry['_qualifier_path'] = _qualifier_path_from(doc_qualifiers, template_variables)
-            entry['_specificity'] = len(doc_qualifiers)
+            # Most granular first: a serial number (or TPX) names one unit, so its record outranks a batch or
+            # variant record even with fewer qualifiers (GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 4:
+            # 01+21 before 01+22+10); otherwise the record with more qualifiers wins.
+            entry['_specificity'] = (any(k in _UNIT_QUALIFIERS for q in doc_qualifiers for k in q), len(doc_qualifiers))
             applicable.append(entry)
 
         if not applicable:

@@ -64,9 +64,18 @@ def register_request_models(namespace: Namespace) -> tuple[Model, Model]:
               'Optional list of qualifier key/value pairs. Each element is a one-entry object whose key is an AI code and whose value is the AI value.'
           ),
           example=[
-              {"10": "{lotnumber}"}, 
-              {"21": "{serialnumber}"}
+              {"10": "{lotnumber}"}
           ]
+      ),
+      'informativeQualifiers': fields.List(
+          fields.Raw,
+          required=False,
+          description=(
+              'Optional, on a serial number (AI 21) of AI 01 or AI 8006 only: the variant (AI 22) and batch (AI 10) '
+              'of that unit, kept as information. GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2, keeps them '
+              'out of the registration: the resolver never uses them to choose a record.'
+          ),
+          example=[{"10": "B42"}]
       ),
       'links': fields.List(
           fields.Nested(new_document_link_model),

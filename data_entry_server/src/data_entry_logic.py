@@ -67,6 +67,73 @@ def _test_gs1_digital_link_syntax(url: str) -> bool:
         return False
 
 
+# The qualifiers each primary key accepts in a registration (GS1 Digital Link URI Syntax 1.7, section 4.9);
+# keys not listed accept none. AI 8020 is required with AI 415.
+KEY_QUALIFIERS: dict[str, set[str]] = {
+    '01': {'22', '10', '21', '235'}, '8006': {'22', '10', '21'}, '8010': {'8011'}, '414': {'254', '7040'},
+    '415': {'8020'}, '417': {'7040'}, '8004': {'7040'}, '8017': {'8019'}, '8018': {'8019'},
+}
+REQUIRED_QUALIFIERS: dict[str, str] = {'415': '8020'}
+# Qualifiers that a serial-number record may keep as information only (GS1-Conformant Resolver 1.2.1,
+# section 2.5.9, rule 2: with AI 21, AI 22 and AI 10 do not define the registration). They are stored,
+# returned and searchable, but the resolver never uses them to choose a record.
+INFORMATIVE_QUALIFIERS: dict[str, set[str]] = {'01': {'22', '10'}, '8006': {'22', '10'}}
+
+
+def _qualifier_ais(qualifiers: Any, field: str) -> list[str]:
+    """The AIs of a qualifier list ([{AI: value}, ...]); raises ValueError when the list is malformed."""
+    if qualifiers is None:
+        return []
+    if not isinstance(qualifiers, list):
+        raise ValueError(f'{field} must be a list of one-entry objects')
+    ais = []
+    for item in qualifiers:
+        if not isinstance(item, dict) or len(item) != 1:
+            raise ValueError(f'{field} must be a list of one-entry objects')
+        (ai, value), = item.items()
+        if not isinstance(ai, str) or not isinstance(value, str) or not value:
+            raise ValueError(f'{field}: each entry needs an AI and a non-empty value')
+        if ai in ais:
+            raise ValueError(f'{field}: AI {ai} appears twice')
+        ais.append(ai)
+    return ais
+
+
+def registration_problem(entry: dict[str, Any]) -> str | None:
+    """Why a v3 entry cannot be registered, or None. Checks the qualifiers against the primary key
+    (URI Syntax 1.7, section 4.9) and the registration rules of GS1-Conformant Resolver 1.2.1, section
+    2.5.9: AI 235 stands alone (rule 1) and, with AI 21, AI 22 and AI 10 are not part of the
+    registration (rule 2) - they may be kept as informativeQualifiers instead."""
+    anchor = entry.get('anchor')
+    if not isinstance(anchor, str) or anchor.count('/') != 2 or not anchor.startswith('/'):
+        return None   # v2 documents and malformed anchors are handled by the existing code
+    key = anchor.split('/')[1]
+    try:
+        ais = _qualifier_ais(entry.get('qualifiers'), 'qualifiers')
+        informative = _qualifier_ais(entry.get('informativeQualifiers'), 'informativeQualifiers')
+    except ValueError as error:
+        return str(error)
+    allowed = KEY_QUALIFIERS.get(key, set())
+    for ai in ais:
+        if ai not in allowed:
+            return f'AI {ai} is not a qualifier of AI {key}'
+    required = REQUIRED_QUALIFIERS.get(key)
+    if required and required not in ais:
+        return f'AI {key} needs the qualifier AI {required}'
+    if '235' in ais and len(ais) > 1:
+        return 'AI 235 cannot be combined with other qualifiers (GS1-Conformant Resolver, section 2.5.9, rule 1)'
+    if '21' in ais and ({'22', '10'} & set(ais)):
+        return ('with AI 21, AI 22 and AI 10 cannot be part of the registration (GS1-Conformant Resolver, '
+                'section 2.5.9, rule 2); send them as informativeQualifiers')
+    if informative:
+        if '21' not in ais or key not in INFORMATIVE_QUALIFIERS:
+            return 'informativeQualifiers are only accepted on a serial number (AI 21) of AI 01 or AI 8006'
+        for ai in informative:
+            if ai not in INFORMATIVE_QUALIFIERS[key]:
+                return f'AI {ai} cannot be an informative qualifier'
+    return None
+
+
 def _validate_data(data: dict[str, Any]) -> dict[str, Any]:
     # TODO - Implement data validation using calls to your own applications where necessary.
     #        For example, you may wish to ensure a product with matching GTIN exists in your product database,
@@ -154,6 +221,10 @@ def _convert_mongo_linkset_to_v3(mongo_linkset_format: dict[str, Any]) -> list[d
             else:
                 qualifiers = None
 
+            # Batch and variant kept as information on a serial-number record (portal extension)
+            if item.get('informativeQualifiers'):
+                output_item['informativeQualifiers'] = item['informativeQualifiers']
+
             for linkset in item['linkset']:
                 for key in linkset:
                     if key.startswith(
@@ -232,6 +303,8 @@ def _author_db_linkset_document(data_entry_format: dict[str, Any]) -> dict[str, 
 
         if "qualifiers" in data_entry_format:
             data["qualifiers"] = data_entry_format["qualifiers"]
+        if data_entry_format.get("informativeQualifiers"):
+            data["informativeQualifiers"] = data_entry_format["informativeQualifiers"]
 
         # Now we construct the linkset object
         linkset_obj = {}
@@ -342,6 +415,8 @@ def _process_document_upsert(authored_doc: dict[str, Any]) -> tuple[dict[str, An
                     if _do_qualifiers_match(existing_db_entry['qualifiers'], entry['qualifiers']):
                         # If the qualifiers match, update the linkset
                         existing_db_entry['linkset'].extend(entry['linkset'])
+                        if 'informativeQualifiers' in entry:
+                            existing_db_entry['informativeQualifiers'] = entry['informativeQualifiers']
                         found = True
                         break
 
@@ -422,6 +497,11 @@ def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[s
             logger.info('Processing list of %d items', len(data))
             create_results_list = []  # Initialize a list to store results
 
+            for position, item in enumerate(data, start=1):
+                problem = registration_problem(item) if isinstance(item, dict) else None
+                if problem:
+                    return {"response_status": 400, "error": f"Item {position}: {problem}"}, 400
+
             authored_db_linkset_result = _author_db_linkset_list(data)
 
             if authored_db_linkset_result['response_status'] != 200:
@@ -450,6 +530,9 @@ def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[s
 
             # If 'data' is a dictionary (i.e., a single entry and not a list)
         elif isinstance(data, dict):
+            problem = registration_problem(data)
+            if problem:
+                return {"response_status": 400, "error": problem}, 400
             authored_linkset_doc = _author_db_linkset_document(data)
             validated_doc = _validate_data(authored_linkset_doc)
 
@@ -505,6 +588,8 @@ def read_summary(include_links: bool = False) -> dict[str, Any]:
                 }
                 if entry.get('qualifiers'):
                     line['qualifiers'] = entry['qualifiers']
+                if entry.get('informativeQualifiers'):
+                    line['informativeQualifiers'] = entry['informativeQualifiers']
                 if include_links:
                     line['links'] = entry.get('links') or []
                 summary.append(line)
@@ -585,9 +670,12 @@ def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, A
         matched_v3 = existing_v3_list[matched_idx]
 
         # 4. Merge top-level scalar fields (preserve if absent from payload)
-        for field in ['itemDescription', 'defaultLinktype']:
+        for field in ['itemDescription', 'defaultLinktype', 'informativeQualifiers']:
             if field in data:
                 matched_v3[field] = data[field]
+        problem = registration_problem(matched_v3)
+        if problem:
+            return {"response_status": 400, "error": problem}, 400
 
         # 5. Merge links
         if 'links' in data:

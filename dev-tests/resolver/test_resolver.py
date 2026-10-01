@@ -293,6 +293,29 @@ for path, target in [(Q + "/22/V1/10/L1/21/S1", "variant-batch"), (Q + "/22/V1/1
     r = get(path)
     check(f"walk-up {path} → {target}", r.status_code == 307 and r.headers.get("Location") == f"https://example.org/{target}",
           (r.status_code, r.headers.get("Location")))
+# A serial-number record keeps its variant and batch as information only (Resolver 2.5.9, rule 2): the
+# resolver chooses records by their qualifiers alone, and the informative ones never reach the linkset.
+U = "/01/09506000999975"
+author({"anchor": U, "itemDescription": "Unit", "defaultLinktype": "gs1:pip", "links": link("https://example.org/u-product")})
+author({"anchor": U, "qualifiers": [{"10": "B42"}], "itemDescription": "Unit", "defaultLinktype": "gs1:pip",
+        "links": link("https://example.org/u-batch")})
+author({"anchor": U, "qualifiers": [{"21": "S1"}], "informativeQualifiers": [{"22": "V1"}, {"10": "B42"}],
+        "itemDescription": "Unit", "defaultLinktype": "gs1:pip", "links": link("https://example.org/u-serial")})
+for path, target in [(U + "/22/V1/10/B42/21/S1", "u-serial"), (U + "/21/S1", "u-serial"), (U + "/10/OTHER/21/S1", "u-serial"),
+                     (U + "/10/B42/21/S2", "u-batch"), (U + "/10/B42", "u-batch"), (U + "/22/V1", "u-product")]:
+    r = get(path)
+    check(f"informative qualifiers: {path} → {target}", r.status_code == 307 and r.headers.get("Location") == f"https://example.org/{target}",
+          (r.status_code, r.headers.get("Location")))
+r = get(U + "/22/V1/10/B42/21/S1?linkType=linkset", "application/linkset+json")
+body = r.get_data(as_text=True)
+try:
+    jsonschema.validate(r.get_json(), SCHEMA)
+    valid = True
+except jsonschema.ValidationError as exc:
+    valid = exc.message
+check("informative qualifiers: not in the linkset, which stays valid", "informative" not in body and valid is True
+      and "u-serial" in body and "u-batch" in body and "u-product" in body, (valid, body[:300]))
+
 QUALIFIED = [("/415/9506000134376", [{"8020": "INV-1"}]), ("/414/9506000134376", [{"254": "EXT1"}]),
              ("/417/9506000134376", [{"7040": "1ABC"}]), ("/8004/9506000ABC123", [{"7040": "1ABC"}]),
              ("/8018/950600013437612342", [{"8019": "123"}]), ("/8010/9506000ABC-1", [{"8011": "123"}]),

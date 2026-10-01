@@ -142,7 +142,21 @@
           <ol id="links" class="links"></ol>
           <div class="links-actions">
             <button type="button" id="add" class="btn btn-ghost needs-editor" data-i18n="links.add"></button>
+            <button type="button" id="copy-from" class="btn btn-ghost needs-editor" aria-haspopup="dialog"
+                    aria-controls="copy-pop" aria-expanded="false" data-i18n="copy.button"></button>
             <button type="button" id="check-links" class="btn btn-ghost needs-editor" data-i18n="links.check"></button>
+          </div>
+          <!-- Copy the targets of another record into the form (nothing is saved until "Save links") -->
+          <div class="copy-pop" id="copy-pop" role="dialog" aria-labelledby="copy-title" hidden>
+            <h3 id="copy-title" data-i18n="copy.title"></h3>
+            <input type="search" id="copy-search" autocomplete="off" data-i18n-attr="placeholder:copy.search;aria-label:copy.search">
+            <ul class="copy-list" id="copy-list" role="listbox" data-i18n-attr="aria-label:copy.title"></ul>
+            <p class="field-msg" id="copy-msg" aria-live="polite" data-i18n="copy.note"></p>
+            <div class="copy-actions">
+              <button type="button" class="btn btn-ghost" id="copy-cancel" data-i18n="options.cancel"></button>
+              <button type="button" class="btn btn-secondary" id="copy-append" disabled data-i18n="copy.append"></button>
+              <button type="button" class="btn btn-primary" id="copy-replace" disabled data-i18n="copy.replace"></button>
+            </div>
           </div>
           <p class="field-msg" id="default-msg" aria-live="polite"></p>
           <p class="field-msg" id="links-check-msg" aria-live="polite"></p>
@@ -294,6 +308,11 @@
           <label for="records-user" data-i18n="records.changedBy"></label>
           <select id="records-user"></select>
         </div>
+        <!-- GS1-Conformant Resolver 1.2.1, section 2.5.9: records that need attention -->
+        <div class="records-filter">
+          <label for="records-state" data-i18n="records.state"></label>
+          <select id="records-state"></select>
+        </div>
         <button type="button" class="btn btn-ghost" id="records-clear" data-i18n="records.clearFilters" hidden></button>
       </div>
       <p class="records-code" id="records-code" aria-live="polite" hidden></p>
@@ -302,6 +321,10 @@
         <button type="button" class="btn btn-ghost" id="records-export-csv" data-i18n="records.exportCsv"></button>
         <button type="button" class="btn btn-secondary needs-editor" id="records-import" data-i18n="records.import"></button>
         <button type="button" class="btn btn-ghost needs-editor" id="records-check" data-i18n="records.check"></button>
+      </div>
+      <div class="records-alert" id="records-alert" hidden>
+        <span id="records-alert-text"></span>
+        <button type="button" class="link-button" id="records-alert-show" data-i18n="records.alert.show"></button>
       </div>
       <p class="field-msg" id="records-count" aria-live="polite"></p>
       <div class="records-check">
@@ -328,6 +351,37 @@
     </section>
   </main>
 
+
+  <!-- Saving a qualified record of a key without a record of its own (GS1-Conformant Resolver 1.2.1,
+       section 2.5.9: a default link at the entry level or higher) -->
+  <dialog id="keyrecord-dialog" class="keyrecord-dialog" aria-labelledby="keyrecord-title">
+    <div class="dialog-head">
+      <h2 id="keyrecord-title"></h2>
+      <button type="button" class="dialog-close" id="keyrecord-close" data-i18n-attr="aria-label:options.close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p class="keyrecord-intro" id="keyrecord-intro"></p>
+      <label class="choice-card"><span class="head"><input type="radio" name="keyrecord" value="copy" checked>
+        <span><span id="keyrecord-copy"></span> <span class="badge badge-recommended" data-i18n="keyRecord.recommended"></span></span></span>
+        <span class="sub"><span data-i18n="keyRecord.copyHint"></span><ul id="keyrecord-links"></ul></span></label>
+      <label class="choice-card"><span class="head"><input type="radio" name="keyrecord" value="target">
+        <span id="keyrecord-target"></span></span>
+        <span class="sub"><span data-i18n="keyRecord.targetHint"></span>
+          <span class="keyrecord-url"><span data-i18n="link.url"></span>
+            <input type="url" id="keyrecord-url" autocomplete="off" placeholder="https://"></span>
+          <span class="keyrecord-type" id="keyrecord-type"></span></span></label>
+      <label class="choice-card"><span class="head"><input type="radio" name="keyrecord" value="none">
+        <span id="keyrecord-none"></span></span>
+        <span class="sub" id="keyrecord-noneHint"></span></label>
+      <label for="keyrecord-description" id="keyrecord-description-label"></label>
+      <input id="keyrecord-description" maxlength="200">
+      <p class="field-msg is-error" id="keyrecord-msg" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="keyrecord-cancel" data-i18n="options.cancel"></button>
+        <button type="button" class="btn btn-primary" id="keyrecord-save" data-i18n="save.button"></button>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="options-dialog" aria-labelledby="options-title">
     <div class="dialog-head">
@@ -458,6 +512,11 @@
         <ul class="import-errors" id="import-errors"></ul>
         <p class="field-msg" id="import-links-msg" aria-live="polite"></p>
         <ul class="import-warnings" id="import-warnings"></ul>
+        <!-- Section 2.5.9: keys the import would leave with qualified records only -->
+        <div class="import-keys" id="import-keys" hidden>
+          <p id="import-keys-text"></p>
+          <label class="choice"><input type="checkbox" id="import-createkeys" checked> <span data-i18n="import.createKeys"></span></label>
+        </div>
         <div class="table-wrap import-table-wrap">
           <table class="records-table import-table">
             <thead>

@@ -32,6 +32,9 @@ const state = {
   openKey: null,               // query string of the record currently open for editing
   exists: false,
   sharedDefaultLinkType: null, // set when other records on the same GTIN fix the default link type
+  hasKeyRecord: true,          // whether the key has a record of its own (section 2.5.9)
+  keyPromptDone: false,        // the user chose to save without it in this editing session
+  pendingUnsaved: false,       // unsaved changes of a record whose identity was then changed
 };
 
 /* ------------------------------------------------------------------ API */
@@ -912,6 +915,7 @@ function onIdentityChange() {
   // The batch or variant of a serial number is informative: changing it keeps the record open
   const key = g.ok && l.ok ? recordKey(g, l) : null;
   if (state.openKey && key !== state.openKey) {
+    state.pendingUnsaved = hasUnsavedChanges(true);   // asked about before another record is opened
     state.openKey = null;
     $("#editor").disabled = true;
     setOpenMessage("open.changed");
@@ -1046,12 +1050,18 @@ function editorSnapshot() {
   return JSON.stringify({ description, links, informative });
 }
 
-function hasUnsavedChanges() {
-  return Boolean(state.openKey) && !$("#editor").disabled && state.snapshot !== undefined && editorSnapshot() !== state.snapshot;
+/* Whether the open record has unsaved changes. With targetsOnly the informative batch and variant are left
+   out: when the key or qualifiers have just changed, they belong to the new identity, not to the record. */
+function hasUnsavedChanges(targetsOnly = false) {
+  if (!state.openKey || $("#editor").disabled || state.snapshot === undefined) return false;
+  const now = JSON.parse(editorSnapshot()), then = JSON.parse(state.snapshot);
+  if (targetsOnly) { delete now.informative; delete then.informative; }
+  return JSON.stringify(now) !== JSON.stringify(then);
 }
 
 async function openOther(entry) {
   if (hasUnsavedChanges() && !confirm(t("others.confirmDiscard"))) return;
+  state.snapshot = editorSnapshot();         // confirmed: do not ask again in openRecord
   const values = Object.fromEntries([...(entry.qualifiers || []), ...(entry.informative || [])]);
   for (const field of document.querySelectorAll("#qualifiers .qual-field")) {
     $("input", field).value = values[field.dataset.ai] || "";
@@ -1064,6 +1074,8 @@ async function openOther(entry) {
 async function openRecord() {
   const g = readKey(), l = readQualifiers();
   if (!CONFIG || !g.ok || !l.ok) return;
+  if ((state.pendingUnsaved || hasUnsavedChanges()) && !confirm(t("others.confirmDiscard"))) return;
+  state.pendingUnsaved = false;
   const button = $("#open");
   button.disabled = true;
   setOpenMessage("open.loading");
@@ -1071,6 +1083,8 @@ async function openRecord() {
   try {
     const record = await api("GET", "record?" + query(g, l));
     state.openKey = recordKey(g, l);
+    state.hasKeyRecord = record.hasKeyRecord !== false;
+    state.keyPromptDone = false;
     // A serial number opened without its batch or variant shows the stored ones; typed ones that differ are
     // kept (they replace the stored ones on saving) and the difference is pointed out.
     const typed = splitInformative(g.ai, l.pairs).informative;
@@ -1429,10 +1443,26 @@ function fillUserFilter() {
 
 /* Filters by primary key type (URI Syntax 4.3) and key qualifier (4.4). Each lists only what the
    records contain, with how many records the option selects; the qualifier filter follows the key type. */
+/* Records that need attention (section 2.5.9): qualified records of a key without a record of its own, and
+   serial numbers registered with their batch or variant (made before rule 2). The alert offers the first. */
+function fillStateFilter() {
+  const select = $("#records-state");
+  const previous = select.value;
+  const nokey = records.all.filter(r => r.noKeyRecord).length;
+  const rules = records.all.filter(r => r.breaksRules).length;
+  select.replaceChildren(new Option(t("records.state.any"), ""),
+    ...(nokey ? [filterOption("nokey", t("records.state.nokey"), nokey)] : []),
+    ...(rules ? [filterOption("rules", t("records.state.rules"), rules)] : []));
+  keepChoice(select, previous);
+  $("#records-alert").hidden = !nokey;
+  if (nokey) I18N.set($("#records-alert-text"), nokey === 1 ? "records.alert.one" : "records.alert.many", { count: nokey });
+}
+
 function fillFilters() {
   fillKeyFilter();
   fillQualifierFilter();
   fillUserFilter();
+  fillStateFilter();
 }
 
 function filterOption(value, label, count) {
@@ -1544,7 +1574,7 @@ function codeText(code) {
 
 function filtersActive() {
   return Boolean($("#records-search").value.trim() || $("#records-key").value || $("#records-qualifier").value
-                 || $("#records-user").value || $("#records-problems").checked);
+                 || $("#records-user").value || $("#records-problems").checked || $("#records-state").value);
 }
 
 function clearFilters() {
@@ -1553,6 +1583,7 @@ function clearFilters() {
   fillQualifierFilter();
   $("#records-qualifier").value = "";
   $("#records-user").value = "";
+  $("#records-state").value = "";
   $("#records-problems").checked = false;
   renderRecords();
   $("#records-search").focus();
@@ -1577,6 +1608,13 @@ function scopeText(r) {
   return t("records.scope.product");
 }
 
+function warnBadge(key, params) {
+  const badge = document.createElement("span");
+  badge.className = "badge-warn";
+  I18N.set(badge, key, params);
+  return badge;
+}
+
 function changedText(r) {
   if (!r.updatedAt) return null;
   const when = new Date(r.updatedAt);
@@ -1593,12 +1631,14 @@ function renderRecords() {
   const qualifier = $("#records-qualifier").value;
   const user = $("#records-user").value;
   const problemsOnly = $("#records-problems").checked;
+  const status = $("#records-state").value;
   const rank = new Map(code ? records.all.map(r => [r, codeRank(r, code)]) : []);
   const shown = records.all
     .filter(r => !key || r.key === key)
     .filter(r => qualifierMatches(r, qualifier))
     .filter(r => !user || r.updatedBy === user)
     .filter(r => !problemsOnly || problemsOf(r).length > 0)
+    .filter(r => !status || (status === "nokey" ? r.noKeyRecord : r.breaksRules))
     .filter(r => !code || rank.get(r) >= 0)
     .filter(r => {
       if (!words.length) return true;
@@ -1651,7 +1691,11 @@ function renderRecords() {
       tr.classList.add("is-match");
     }
     cell("records.col.key", keyText(r.key, r.value), "code");
-    cell("records.col.scope", scopeText(r));
+    const scope = cell("records.col.scope", scopeText(r));
+    // section 2.5.9: no default link above this record, or a serial number registered with its batch
+    if (r.noKeyRecord) scope.append(document.createElement("br"), warnBadge("records.badge.nokey", {
+      what: r.key === "01" ? t("scope.everyUnit") : t("scope.wholeKey", { name: t(`key.${r.key}.short`) }) }));
+    if (r.breaksRules) scope.append(document.createElement("br"), warnBadge("records.badge.rules", {}));
     const linksCell = cell("records.col.links", String(r.links), "num");
     const problems = problemsOf(r);
     if (problems.length) {
@@ -1966,9 +2010,18 @@ function renderImportReport(report) {
     li.textContent = importErrorText(error);
     return li;
   }));
-  $("#import-body").replaceChildren(...report.records.map(item => importRow(item.rows, keyText(item.key || "01", item.value), scopeOf(item),
-    item.description, item.action)));
+  $("#import-body").replaceChildren(...report.records.map(item => importRow(item.rows, keyText(item.key || "01", item.value),
+    scopeOf(item) + (item.noKeyRecord ? " — " + t("import.noKeyRecord") : ""), item.description, item.action)));
   $("#import-report").hidden = false;
+  // section 2.5.9: keys the import would leave without a record of their own
+  const keys = report.keysWithoutRecord || [];
+  $("#import-keys").hidden = !keys.length;
+  if (keys.length) {
+    I18N.set($("#import-keys-text"), keys.length === 1 ? "import.keysOne" : "import.keysMany",
+             { count: keys.length, list: keys.slice(0, 5).map(k => keyText(k.key, k.value)).join(", ")
+                                         + (keys.length > 5 ? " …" : "") });
+    $("#import-createkeys").checked = true;
+  }
   const count = c.create + c.update;
   const apply = $("#import-apply");
   I18N.set(apply, "import.apply", { count });
@@ -1996,7 +2049,8 @@ async function applyImport() {
   apply.disabled = true;
   $("#import-file").disabled = true;
   try {
-    const started = await api("POST", "import/apply", { token: importState.token });
+    const started = await api("POST", "import/apply", { token: importState.token,
+      createKeyRecords: !$("#import-keys").hidden && $("#import-createkeys").checked });
     importStatus(null, "import.running", { done: 0, total: started.total });
     importState.polling = setInterval(pollImport, 700);
   } catch (e) {
@@ -2169,12 +2223,23 @@ function collect() {
 async function save(event) {
   event.preventDefault();
   if (!state.openKey) return;
+  const body = collect();
+  if (needsKeyRecord(body)) {
+    const choice = await askKeyRecord(body);
+    if (!choice) return;                             // cancelled: nothing saved
+    if (choice.mode === "none") state.keyPromptDone = true;
+    else body.keyRecord = choice;
+  }
   const button = $("#save");
   button.disabled = true;
   I18N.set(button, "save.saving");
   hideStatus();
   try {
-    const result = await api("POST", "record", collect());
+    const result = await api("POST", "record", body);
+    if (result.keyRecordCreated) {
+      state.hasKeyRecord = true;
+      refreshOthers();
+    }
     state.snapshot = editorSnapshot();
     state.exists = true;
     $("#delete").hidden = false;
@@ -2186,6 +2251,158 @@ async function save(event) {
   } finally {
     button.disabled = false;
     I18N.set(button, "save.button");
+  }
+}
+
+/* GS1-Conformant Resolver 1.2.1, section 2.5.9: for any code "there SHALL be a default link available either at
+   the entry level or at a higher level". Saving a qualified record of a key without a record of its own asks
+   whether to create that record too (copying the targets, recommended), with another target, or not. */
+function needsKeyRecord(body) {
+  const own = splitInformative(body.key, readQualifiers().pairs || []).pairs;
+  return keyConfig(body.key).keyLevel && own.length > 0 && !state.hasKeyRecord && !state.keyPromptDone;
+}
+
+function askKeyRecord(body) {
+  const dialog = $("#keyrecord-dialog");
+  const g = readKey();
+  const own = splitInformative(g.ai, readQualifiers().pairs || []).pairs;
+  const name = t(`key.${g.ai}.short`);
+  const what = g.ai === "01" ? t("scope.everyUnit") : t("scope.wholeKey", { name });
+  I18N.set($("#keyrecord-title"), "keyRecord.title", { what });
+  I18N.set($("#keyrecord-intro"), "keyRecord.intro", { record: qualText(own), key: keyText(g.ai, g.value), name });
+  I18N.set($("#keyrecord-copy"), "keyRecord.copy", { what });
+  I18N.set($("#keyrecord-target"), "keyRecord.target", { what });
+  I18N.set($("#keyrecord-none"), "keyRecord.none", { record: qualText(own) });
+  I18N.set($("#keyrecord-noneHint"), "keyRecord.noneHint", { name });
+  I18N.set($("#keyrecord-description-label"), "keyRecord.description", { what });
+  I18N.set($("#keyrecord-type"), "keyRecord.type", { type: I18N.linkTypeOption(body.defaultLinkType),
+                                                     language: I18N.languageName(body.links[0]?.hreflang?.[0] || "") });
+  $("#keyrecord-links").replaceChildren(...body.links.map(l => Object.assign(document.createElement("li"), {
+    textContent: `${I18N.linkTypeOption(l.linkType)} — ${l.url}` })));
+  $("#keyrecord-description").value = body.description;
+  $("#keyrecord-url").value = "";
+  I18N.set($("#keyrecord-msg"), null);
+  const radios = $$("#keyrecord-dialog input[name=keyrecord]");
+  const mark = () => radios.forEach(r => r.closest(".choice-card").classList.toggle("sel", r.checked));
+  radios[0].checked = true;
+  mark();
+  const sync = () => {
+    mark();
+    const mode = radios.find(r => r.checked).value;
+    $("#keyrecord-description").disabled = mode === "none";
+    if (mode === "target") $("#keyrecord-url").focus();
+  };
+  radios.forEach(r => { r.onchange = sync; });
+  sync();
+  dialog.showModal();
+  return new Promise(resolve => {
+    const finish = value => {
+      dialog.onclose = null;
+      dialog.close();
+      resolve(value);
+    };
+    $("#keyrecord-save").onclick = () => {
+      const mode = radios.find(r => r.checked).value;
+      const url = $("#keyrecord-url").value.trim();
+      if (mode === "target" && !/^https?:\/\/\S+$/i.test(url)) {
+        I18N.set($("#keyrecord-msg"), "keyRecord.urlRequired");
+        $("#keyrecord-url").focus();
+        return;
+      }
+      finish({ mode, url, description: $("#keyrecord-description").value.trim() });
+    };
+    $("#keyrecord-cancel").onclick = () => finish(null);
+    $("#keyrecord-close").onclick = () => finish(null);
+    dialog.onclose = () => resolve(null);           // Escape
+  });
+}
+
+/* The other records of the key, again (after a save that created the key's own record). */
+async function refreshOthers() {
+  const g = readKey(), l = readQualifiers();
+  try {
+    const record = await api("GET", "record?" + query(g, l));
+    setOpenMessage("open.found", {}, record.otherEntries);
+  } catch { /* the list stays as it was */ }
+}
+
+/* ---------------------------------------------------------------- copy targets from another record */
+const copyState = { records: null, chosen: null };
+
+async function openCopy() {
+  const pop = $("#copy-pop");
+  if (!pop.hidden) { closeCopy(); return; }
+  pop.hidden = false;
+  $("#copy-from").setAttribute("aria-expanded", "true");
+  copyState.chosen = null;
+  $("#copy-search").value = "";
+  updateCopyButtons();
+  try {
+    copyState.records = (await api("GET", "records")).records.filter(r => r.kind !== "other");
+  } catch (e) {
+    copyState.records = [];
+    I18N.set($("#copy-msg"), e.code, e.params);
+  }
+  drawCopyList();
+  $("#copy-search").focus();
+}
+
+function closeCopy() {
+  $("#copy-pop").hidden = true;
+  $("#copy-from").setAttribute("aria-expanded", "false");
+  I18N.set($("#copy-msg"), "copy.note");
+}
+
+function drawCopyList() {
+  const g = readKey();
+  const own = state.openKey;
+  const words = fold($("#copy-search").value).split(/\s+/).filter(Boolean);
+  const list = (copyState.records || [])
+    .filter(r => query({ ai: r.key, value: r.value }, { pairs: r.qualifiers }) !== own)
+    .filter(r => words.every(w => fold([r.value, r.description, scopeText(r)].join(" ")).includes(w)))
+    // records of the same key first, then the most recently changed
+    .sort((a, b) => (b.value === g.value) - (a.value === g.value) || (b.updatedAt || "").localeCompare(a.updatedAt || ""))
+    .slice(0, 8);
+  $("#copy-list").replaceChildren(...list.map(r => {
+    const li = document.createElement("li");
+    li.setAttribute("role", "option");
+    li.tabIndex = 0;
+    const name = Object.assign(document.createElement("strong"), { textContent: r.description || keyText(r.key, r.value) });
+    const what = Object.assign(document.createElement("span"), { className: "code",
+                               textContent: `${keyText(r.key, r.value)} · ${scopeText(r)}` });
+    const count = Object.assign(document.createElement("span"), { className: "copy-count",
+                                textContent: t(r.links === 1 ? "copy.oneTarget" : "copy.targets", { count: r.links }) });
+    li.append(name, what, count);
+    const choose = () => {
+      copyState.chosen = r;
+      $$("#copy-list li").forEach(x => x.setAttribute("aria-selected", String(x === li)));
+      updateCopyButtons();
+    };
+    li.addEventListener("click", choose);
+    li.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(); } });
+    return li;
+  }));
+  if (!list.length) I18N.set($("#copy-msg"), "copy.none");
+  else I18N.set($("#copy-msg"), "copy.note");
+}
+
+function updateCopyButtons() {
+  $("#copy-append").disabled = $("#copy-replace").disabled = !copyState.chosen;
+}
+
+/* Puts the chosen record's targets in the form, after the current ones or instead of them. */
+async function copyTargets(replace) {
+  const r = copyState.chosen;
+  if (!r) return;
+  try {
+    const source = await api("GET", "record?" + query({ ai: r.key, value: r.value }, { pairs: r.qualifiers }));
+    if (replace) $("#links").replaceChildren();
+    source.links.forEach(addRow);
+    refreshDefault();
+    closeCopy();
+    showStatus("ok", replace ? "copy.replaced" : "copy.appended", { count: source.links.length });
+  } catch (e) {
+    I18N.set($("#copy-msg"), e.code, e.params);
   }
 }
 
@@ -2338,6 +2555,14 @@ async function init() {
   window.addEventListener("resize", fitOthers);
   document.addEventListener("localechange", () => { if (othersState.entries.length) renderOthers(othersState.entries); });
   $("#add").addEventListener("click", () => $(".url", addRow()).focus());
+  $("#copy-from").addEventListener("click", openCopy);
+  $("#copy-cancel").addEventListener("click", closeCopy);
+  $("#copy-search").addEventListener("input", drawCopyList);
+  $("#copy-append").addEventListener("click", () => copyTargets(false));
+  $("#copy-replace").addEventListener("click", () => copyTargets(true));
+  $("#copy-pop").addEventListener("keydown", e => { if (e.key === "Escape") { closeCopy(); $("#copy-from").focus(); } });
+  $("#records-state").addEventListener("change", renderRecords);
+  $("#records-alert-show").addEventListener("click", () => { $("#records-state").value = "nokey"; renderRecords(); });
   $("#form").addEventListener("submit", save);
   $("#delete").addEventListener("click", remove);
   $("#copy").addEventListener("click", async e => {

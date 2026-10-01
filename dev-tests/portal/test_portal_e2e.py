@@ -464,13 +464,19 @@ with sync_playwright() as p:
     page.fill("#q-10", "L2"); page.wait_for_timeout(200)
     check("changing the informative batch keeps the record open", not page.is_disabled("#description"))
     page.fill("#q-22", ""); page.fill("#q-10", ""); page.wait_for_timeout(100)
+    asked = []
+    def accept_discard(dialog):
+        asked.append(dialog.message); dialog.accept()
+    page.on("dialog", accept_discard)            # the batch typed differs from the saved one: unsaved change
     page.click("#open"); page.wait_for_timeout(700)
+    check("Open record asks before discarding an unsaved change", len(asked) == 1, asked)
     check("a serial number opened without its batch shows the stored variant and batch",
           page.input_value("#q-22") == "V1" and page.input_value("#q-10") == "L1", (page.input_value("#q-22"), page.input_value("#q-10")))
     page.fill("#q-10", "L9"); page.click("#open"); page.wait_for_timeout(700)
     check("a different batch typed is kept and pointed out", page.input_value("#q-10") == "L9"
           and "registered with Variant V1 · Batch L1" in page.inner_text("#qual-msg"), page.inner_text("#qual-msg"))
     page.fill("#q-10", "L1"); page.click("#open"); page.wait_for_timeout(700)
+    page.remove_listener("dialog", accept_discard)
 
     # GS1 Digital Link data attributes (URI Syntax 4.10): only in the QR code, checked by the syntax engine
     if not portal.syntax.ENGINE.available:
@@ -686,6 +692,82 @@ with sync_playwright() as p:
     rows = reader.inner_text("#records-body")
     check("reader: only records of the prefix 9506000", "095060001343520000" in rows and "07898357410015" not in rows, rows)
     reader_ctx.close()
+
+    # A default link above every record (GS1-Conformant Resolver 1.2.1, section 2.5.9; backlog item 1.3)
+    page.goto(BASE); page.wait_for_timeout(700)
+    page.select_option("#key-type", "01"); page.fill("#key-value", "09506000134901")
+    for field in page.query_selector_all("#qualifiers .qual-field input"):
+        field.fill("")
+    page.fill("#q-10", "L1"); page.wait_for_timeout(200); page.click("#open"); page.wait_for_timeout(700)
+    check("scope of a batch of a new GTIN", page.inner_text("#scope-what") == "Batch L1", page.inner_text("#scope"))
+    page.fill("#description", "Tea L1"); page.fill(".link-row .url", "https://example.org/tea/L1"); page.click("#description")
+    page.click("#save"); page.wait_for_timeout(500)
+    check("saving a batch of a GTIN without its own record asks first", page.is_visible("#keyrecord-dialog")
+          and "every unit of this GTIN" in page.inner_text("#keyrecord-title")
+          and page.is_checked("#keyrecord-dialog input[value=copy]")
+          and "https://example.org/tea/L1" in page.inner_text("#keyrecord-links"), page.inner_text("#keyrecord-dialog"))
+    page.check("#keyrecord-dialog input[value=target]"); page.click("#keyrecord-save"); page.wait_for_timeout(200)
+    check("another target needs an address", page.is_visible("#keyrecord-dialog")
+          and "starting with https://" in page.inner_text("#keyrecord-msg"), page.inner_text("#keyrecord-msg"))
+    page.click("#keyrecord-cancel"); page.wait_for_timeout(300)
+    check("cancelling saves nothing", "01_09506000134901" not in mock_data_entry.DB and not page.is_visible("#keyrecord-dialog"))
+    page.click("#save"); page.wait_for_timeout(400)
+    page.fill("#keyrecord-description", "Tea"); page.click("#keyrecord-save"); page.wait_for_timeout(900)
+    entries = mock_data_entry.v3("01_09506000134901")
+    check("copying the targets creates the GTIN's own record, then the batch",
+          [e.get("qualifiers", []) for e in entries] == [[], [{"10": "L1"}]] and entries[0]["itemDescription"] == "Tea"
+          and "general record" in page.inner_text("#status") and "Every unit" in page.inner_text("#others"),
+          (entries, page.inner_text("#status")))
+    page.fill("#q-10", "L2"); page.wait_for_timeout(200); page.click("#open"); page.wait_for_timeout(700)
+    page.fill("#description", "Tea L2"); page.fill(".link-row .url", "https://example.org/tea/L2"); page.click("#description")
+    page.click("#save"); page.wait_for_timeout(700)
+    check("no question once the GTIN has its own record", not page.is_visible("#keyrecord-dialog")
+          and len(mock_data_entry.v3("01_09506000134901")) == 3)
+    # saving only the batch: flagged in the record list
+    page.fill("#key-value", "09506000134925"); page.fill("#q-10", "C77"); page.wait_for_timeout(200)
+    page.click("#open"); page.wait_for_timeout(700)
+    page.fill("#description", "Coffee C77"); page.fill(".link-row .url", "https://example.org/coffee/C77"); page.click("#description")
+    page.click("#save"); page.wait_for_timeout(400)
+    page.check("#keyrecord-dialog input[value=none]"); page.click("#keyrecord-save"); page.wait_for_timeout(800)
+    check("saving the batch only", [e.get("qualifiers") for e in mock_data_entry.v3("01_09506000134925")] == [[{"10": "C77"}]])
+    page.click("#copy-from"); page.wait_for_timeout(600)
+    page.fill("#copy-search", "tea l2"); page.wait_for_timeout(200)
+    items = page.query_selector_all("#copy-list li")
+    check("copy targets: the other records, searchable", len(items) == 1 and "Tea L2" in items[0].inner_text(),
+          [i.inner_text() for i in items])
+    check("copy targets: nothing chosen yet", page.is_disabled("#copy-append") and page.is_disabled("#copy-replace"))
+    items[0].click(); page.click("#copy-append"); page.wait_for_timeout(600)
+    urls = [el.input_value() for el in page.query_selector_all(".link-row .url")]
+    check("copy targets: added after the current ones, nothing saved yet",
+          urls == ["https://example.org/coffee/C77", "https://example.org/tea/L2"] and not page.is_visible("#copy-pop")
+          and len(mock_data_entry.v3("01_09506000134925")[0]["links"]) == 1, urls)
+    page.click("#copy-from"); page.wait_for_timeout(600); page.fill("#copy-search", "tea l1"); page.wait_for_timeout(200)
+    page.click("#copy-list li"); page.click("#copy-replace"); page.wait_for_timeout(600)
+    urls = [el.input_value() for el in page.query_selector_all(".link-row .url")]
+    check("copy targets: replacing", urls == ["https://example.org/tea/L1"], urls)
+    # Open record asks before discarding the unsaved targets of the record being edited
+    page.fill("#q-10", "C78"); page.wait_for_timeout(200)
+    asked = []
+    def dismiss_discard(dialog):
+        asked.append(dialog.message); dialog.dismiss()
+    page.on("dialog", dismiss_discard)
+    page.click("#open"); page.wait_for_timeout(500)
+    page.remove_listener("dialog", dismiss_discard)
+    check("Open record asks before discarding unsaved targets; cancelling keeps them", len(asked) == 1
+          and page.input_value(".link-row .url") == "https://example.org/tea/L1", asked)
+    page.goto(BASE + "#records"); page.wait_for_timeout(900)
+    alert = page.inner_text("#records-alert")
+    flagged = int(alert.split(" ", 1)[0]) if alert[:1].isdigit() else 0
+    check("record list: alert for records without their key's record", page.is_visible("#records-alert")
+          and flagged >= 1 and "without a record of" in alert, alert)
+    row = page.query_selector("#records-body tr:has-text('Coffee C77')")
+    check("record list: the batch is flagged", row is not None and "No record of every unit of this GTIN" in row.inner_text(),
+          row.inner_text() if row else None)
+    page.click("#records-alert-show"); page.wait_for_timeout(200)
+    check("record list: Show only these", page.input_value("#records-state") == "nokey"
+          and len(page.query_selector_all("#records-body tr")) == flagged
+          and "Coffee C77" in page.inner_text("#records-body"), page.inner_text("#records-body"))
+    page.click("#records-clear"); page.wait_for_timeout(200)
 
     page.click("#user-button"); page.click("#menu-audit"); page.wait_for_timeout(900)
     audit_text = page.inner_text("#audit-body")

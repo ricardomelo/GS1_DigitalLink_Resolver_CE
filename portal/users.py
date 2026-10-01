@@ -49,10 +49,12 @@ class UserError(Exception):
 
 
 def _now() -> str:
+    """Current UTC time, ISO 8601 with a Z, to the second."""
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _account(value) -> dict:
+    """An account with every field present; plain hashes from before roles become administrators."""
     if isinstance(value, str):                     # before roles: every user was an administrator
         value = {"hash": value, "role": "admin"}
     account = {"hash": "", "role": "admin", "prefixes": [], "disabled": False, "mustChange": False,
@@ -64,6 +66,7 @@ def _account(value) -> dict:
 
 
 def load() -> dict[str, dict]:
+    """Every account, keyed by user name."""
     try:
         with open(USERS_FILE, encoding="utf-8") as fh:
             data = json.load(fh)
@@ -73,10 +76,12 @@ def load() -> dict[str, dict]:
 
 
 def get(username: str) -> dict | None:
+    """One account, or None."""
     return load().get(username or "")
 
 
 def verify(username: str, password: str) -> bool:
+    """Whether the password is right and the account enabled; spends the same time when the user does not exist."""
     account = get(username)
     if not account or not account["hash"]:
         check_password_hash(_DUMMY_HASH, password or "")
@@ -95,12 +100,14 @@ def fingerprint(username: str) -> str | None:
 
 
 def fingerprint_matches(username: str, value: str | None) -> bool:
+    """Whether a session's fingerprint still matches the account (constant-time comparison)."""
     current = fingerprint(username)
     return bool(current and value) and hmac.compare_digest(current, value)
 
 
 @contextmanager
 def _locked():
+    """Exclusive lock on the user file; StoreNotWritable when the volume is read-only."""
     lock_path = USERS_FILE + ".lock"
     try:
         fh = open(lock_path, "a")
@@ -115,6 +122,7 @@ def _locked():
 
 
 def _write(accounts: dict[str, dict]) -> None:
+    """Writes the user file atomically, readable by the portal only."""
     tmp = USERS_FILE + ".tmp"
     try:
         with open(tmp, "w", encoding="utf-8") as fh:
@@ -126,10 +134,12 @@ def _write(accounts: dict[str, dict]) -> None:
 
 
 def _active_admins(accounts: dict[str, dict]) -> set[str]:
+    """Names of the enabled administrators."""
     return {n for n, a in accounts.items() if a["role"] == "admin" and not a["disabled"]}
 
 
 def clean_prefixes(values) -> list[str]:
+    """GS1 Company Prefixes as stored: trimmed, unique, sorted, 4 to 12 digits each."""
     prefixes = sorted({str(v).strip() for v in values or [] if str(v).strip()})
     for prefix in prefixes:
         if not PREFIX.match(prefix):
@@ -154,6 +164,7 @@ def set_password(username: str, password: str, must_change: bool = False, role: 
 
 
 def create(username: str, password: str, role: str, prefixes=(), must_change: bool = True) -> None:
+    """Creates a user (name, role, prefixes); by default the password must be changed at the first sign-in."""
     if not USERNAME.match(username or ""):
         raise UserError("users.nameInvalid")
     if role not in ROLES:
@@ -192,6 +203,7 @@ def update(username: str, role: str | None = None, prefixes=None, disabled: bool
 
 
 def remove(username: str) -> None:
+    """Removes a user, keeping at least one enabled administrator."""
     with _locked():
         accounts = load()
         if username not in accounts:
@@ -203,6 +215,7 @@ def remove(username: str) -> None:
 
 
 def touch_login(username: str) -> None:
+    """Records the time of a successful sign-in (best effort)."""
     try:
         with _locked():
             accounts = load()
@@ -220,6 +233,7 @@ def public(username: str, account: dict) -> dict:
 
 
 def is_writable() -> bool:
+    """Whether the user file can be written (checked at start-up and before password changes)."""
     directory = os.path.dirname(USERS_FILE) or "."
     if os.path.exists(USERS_FILE):
         return os.access(USERS_FILE, os.W_OK) and os.access(directory, os.W_OK)

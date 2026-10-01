@@ -1,6 +1,9 @@
 """
-GS1 rules used by the portal: GTIN and batch/lot validation, the supported link types
-(a subset of the GS1 Web Vocabulary) and construction of the GS1 Digital Link URI.
+GS1 rules used by the portal: validation of every primary identification key of GS1 Digital Link URI
+Syntax 1.7 (section 4.3, PRIMARY_KEYS) and of their key qualifiers (sections 4.4, 4.6 and 4.9, KEY_SHAPES),
+the GS1 Company Prefix of an identifier (governance), clean-up of free text and target addresses, the
+supported link types (a subset of the GS1 Web Vocabulary), languages, and construction of the GS1 Digital
+Link URI. The rules mirror the GS1 Barcode Syntax Engine; dev-tests/portal/test_keys.py compares them.
 
 Validation failures raise ValidationError with a message *code* and parameters rather than
 a sentence. The browser turns the code into text in the user's language (see static/i18n.js),
@@ -106,10 +109,12 @@ _CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 
 
 def without_invisible(text) -> str:
+    """Text without invisible characters (zero-width space, joiners, BOM, soft hyphen, direction marks)."""
     return _INVISIBLE.sub("", str(text or ""))
 
 
 def ascii_digits(value: str) -> bool:
+    """Whether the value has ASCII digits only (str.isdigit alone also accepts other scripts' digits)."""
     return value.isascii() and value.isdigit()
 
 
@@ -170,6 +175,7 @@ def gmn_check_pair(body: str) -> str:
 
 
 def _digits(value: str, length: int) -> None:
+    """Raises ValidationError unless the value has exactly `length` ASCII digits."""
     if not ascii_digits(value):
         raise ValidationError("key.digitsOnly")
     if len(value) != length:
@@ -177,12 +183,14 @@ def _digits(value: str, length: int) -> None:
 
 
 def _check_digit(digits: str) -> None:
+    """Raises ValidationError unless the last digit is the GS1 mod-10 check digit of the others."""
     expected = gtin_check_digit(digits[:-1])
     if int(digits[-1]) != expected:
         raise ValidationError("key.checkDigit", expected=expected)
 
 
 def _alnum(value: str, maximum: int, pattern=_ALNUM, code="key.chars") -> None:
+    """Common rules of alphanumeric keys: maximum length, allowed characters, GS1 Company Prefix first."""
     if len(value) > maximum:
         raise ValidationError("key.tooLong", max=maximum)
     if not pattern.match(value):
@@ -192,6 +200,7 @@ def _alnum(value: str, maximum: int, pattern=_ALNUM, code="key.chars") -> None:
 
 
 def _numeric_key(length: int):
+    """Validator of a fixed-length numeric key with a check digit (GLN, GSRN, SSCC, GSIN)."""
     def check(value: str) -> str:
         _digits(value, length)
         _check_digit(value)
@@ -200,6 +209,7 @@ def _numeric_key(length: int):
 
 
 def _itip(value: str) -> str:
+    """ITIP (8006): GTIN-14 with its check digit, then piece and total, piece from 1 to total."""
     _digits(value, 18)
     _check_digit(value[:14])
     piece, total = int(value[14:16]), int(value[16:18])
@@ -209,6 +219,7 @@ def _itip(value: str) -> str:
 
 
 def _gmn(value: str) -> str:
+    """GMN (8013): alphanumeric with the check-character pair of the GS1 General Specifications."""
     _alnum(value, 25)
     if len(value) < 3:
         raise ValidationError("key.gmnPair", expected="")
@@ -219,11 +230,14 @@ def _gmn(value: str) -> str:
 
 
 def _cpid(value: str) -> str:
+    """CPID (8010): digits, capital letters and '-' after a GS1 Company Prefix (the portal leaves out the
+    '#' and '/' of character set 39)."""
     _alnum(value, 30, _CPID_CHARS, "key.cpidChars")
     return value
 
 
 def _gcn(value: str) -> str:
+    """GCN (255): GCN-13 with its check digit and an optional serial, 13 to 25 digits."""
     if not ascii_digits(value):
         raise ValidationError("key.digitsOnly")
     if not 13 <= len(value) <= 25:
@@ -235,6 +249,7 @@ def _gcn(value: str) -> str:
 def _with_serial(prefix_length: int, serial_max: int, filler: str = ""):
     """13 digits with a check digit, then an optional serial (GDTI, GRAI)."""
     def check(value: str) -> str:
+        """Checks a key made of a numeric base with check digit and an optional serial."""
         body = value
         if filler:
             if not value.startswith(filler):
@@ -253,6 +268,7 @@ def _with_serial(prefix_length: int, serial_max: int, filler: str = ""):
 
 
 def _alnum_key(maximum: int):
+    """Validator of an alphanumeric key of up to `maximum` characters (GINC, GIAI)."""
     def check(value: str) -> str:
         _alnum(value, maximum)
         return value
@@ -260,6 +276,7 @@ def _alnum_key(maximum: int):
 
 
 def _gtin(value: str) -> str:
+    """GTIN (01): any GTIN length, returned as 14 digits."""
     return normalise_gtin(value)
 
 
@@ -353,6 +370,7 @@ def normalise_qualifiers(ai: str, raw) -> list[tuple[str, str]]:
 
 
 def is_valid_qualifier_set(ai: str, pairs) -> bool:
+    """Whether the qualifier pairs are valid for the key (format, combination, order)."""
     try:
         normalise_qualifiers(ai, pairs)
         return True
@@ -405,6 +423,7 @@ def normalise_key(ai: str, raw) -> str:
 
 
 def anchor_for(ai: str, value: str) -> str:
+    """The resolver's anchor of a key: /AI/value."""
     return f"/{ai}/{value}"
 
 
@@ -435,6 +454,7 @@ def within_prefixes(anchor: str, prefixes) -> bool:
 
 
 def digital_link(base_url: str, anchor: str, pairs: list[tuple[str, str]] = ()) -> str:
+    """The GS1 Digital Link URI of a record: resolver address, anchor and qualifier path."""
     return f"{base_url}{anchor}{qualifier_path(list(pairs))}"
 
 
@@ -450,6 +470,9 @@ def element_string(anchor: str, pairs: list[tuple[str, str]] = ()) -> str:
 
 
 def normalise_url(raw: str, position: int) -> str:
+    """A target address as stored: trimmed, HTTPS only, without spaces, control or invisible characters;
+    raises ValidationError with the target's position otherwise.
+    """
     url = (raw or "").strip()
     if not url:
         raise ValidationError("link.urlRequired", position=position)
@@ -466,6 +489,7 @@ def normalise_url(raw: str, position: int) -> str:
 
 
 def guess_media_type(url: str) -> str:
+    """The media type stored with a target, from the extension of its path (PDF, images, video…)."""
     path = urlparse(url).path.lower()
     for extension, media_type in _MIME_BY_EXTENSION.items():
         if path.endswith(extension):
@@ -483,6 +507,7 @@ def link_key(link: dict) -> tuple:
 
 
 def qualifiers_match(a: list | None, b: list | None) -> bool:
+    """Whether two Resolver CE qualifier lists ([{AI: value}, …]) name the same set, in any order."""
     def normalise(qualifiers):
         return sorted((k, v) for item in (qualifiers or []) for k, v in item.items())
     return normalise(a) == normalise(b)

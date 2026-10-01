@@ -44,6 +44,9 @@ ERROR_LEVELS = ("l", "m", "q", "h")          # QR error correction: about 7 %, 1
 
 @dataclass(frozen=True)
 class LabelOptions:
+    """What to draw: the URI, the lines of human readable text, whether to show them, the QR version
+    (None: the smallest that fits) and the error correction level.
+    """
     uri: str
     hri_lines: tuple[str, ...]
     show_hri: bool
@@ -77,6 +80,7 @@ def symbol(options: LabelOptions):
 
 
 def _fits(uri: str, error: str, version: int) -> bool:
+    """Whether the URI fits the QR version at the error correction level, exactly as chosen."""
     try:
         segno.make(uri, error=error, version=version, micro=False, boost_error=False)
         return True
@@ -85,6 +89,7 @@ def _fits(uri: str, error: str, version: int) -> bool:
 
 
 def _smallest_version(uri: str, error: str) -> int | None:
+    """The smallest QR version holding the URI at that level, or None when not even version 40 does."""
     try:
         return segno.make(uri, error=error, micro=False, boost_error=False).version
     except segno.DataOverflowError:
@@ -94,10 +99,12 @@ def _smallest_version(uri: str, error: str) -> int | None:
 # --------------------------------------------------------------------------- assets
 @lru_cache(maxsize=1)
 def _font() -> TTFont:
+    """The HRI font (Liberation Sans), loaded once."""
     return TTFont(HRI_FONT)
 
 
 def _font_metrics() -> tuple[int, int, int]:
+    """Units per em, cap height and descent of the HRI font, to size the text in millimetres."""
     font = _font()
     return font["head"].unitsPerEm, font["OS/2"].sCapHeight, -font["hhea"].descent
 
@@ -113,6 +120,7 @@ def _text_width(text: str, em: float) -> float:
 # --------------------------------------------------------------------------- geometry
 @dataclass
 class _Layout:
+    """Geometry of a label in modules: the QR matrix, its position and the HRI text lines."""
     matrix: list
     modules: int
     width: float
@@ -124,6 +132,7 @@ class _Layout:
 
 
 def _layout(options: LabelOptions) -> _Layout:
+    """Places the symbol, its quiet zone and the HRI lines; text height follows the 2 mm minimum."""
     qr = symbol(options)
     matrix = [list(row) for row in qr.matrix]
     modules = len(matrix)
@@ -154,6 +163,7 @@ def _layout(options: LabelOptions) -> _Layout:
 
 # --------------------------------------------------------------------------- SVG
 def _qr_path(layout: _Layout) -> str:
+    """SVG path of the dark modules, one rectangle per horizontal run."""
     parts = []
     for row_index, row in enumerate(layout.matrix):
         col = 0
@@ -171,6 +181,7 @@ def _qr_path(layout: _Layout) -> str:
 
 
 def _hri_path(text: str, x: float, baseline: float, em: float) -> str:
+    """SVG path of a line of text drawn with the font's glyph outlines (no font needed to view it)."""
     font = _font()
     glyph_set = font.getGlyphSet()
     cmap, hmtx = font.getBestCmap(), font["hmtx"]
@@ -185,6 +196,7 @@ def _hri_path(text: str, x: float, baseline: float, em: float) -> str:
 
 
 def render_svg(options: LabelOptions) -> bytes:
+    """The label as SVG sized in millimetres (X = 0.495 mm), text as outlines."""
     layout = _layout(options)
     w_mm, h_mm = layout.width * TARGET_X_MM, layout.height * TARGET_X_MM
     parts = [
@@ -204,11 +216,13 @@ def render_svg(options: LabelOptions) -> bytes:
 
 
 def _xml(value: str) -> str:
+    """Escapes text for XML attributes and elements."""
     return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
 # --------------------------------------------------------------------------- PNG
 def render_png(options: LabelOptions) -> bytes:
+    """The label as PNG at PNG_PIXELS_PER_MODULE pixels per module."""
     layout = _layout(options)
     px = PNG_PIXELS_PER_MODULE
 

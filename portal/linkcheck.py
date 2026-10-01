@@ -48,10 +48,12 @@ def _public_host(host: str) -> bool | None:
 
 
 def is_downgrade(from_url: str, to_url: str) -> bool:
+    """Whether a redirect goes from HTTPS to plain HTTP."""
     return urlparse(from_url).scheme == "https" and urlparse(to_url).scheme == "http"
 
 
 def _request(session: requests.Session, url: str) -> requests.Response:
+    """One request without following redirects: HEAD, or GET without reading the body when HEAD is refused."""
     response = session.head(url, allow_redirects=False, timeout=TIMEOUT)
     if response.status_code in (400, 403, 405, 501):     # many servers refuse or mishandle HEAD
         response.close()
@@ -61,6 +63,7 @@ def _request(session: requests.Session, url: str) -> requests.Response:
 
 
 def check_url(url: str) -> dict:
+    """Result of checking one address, cached for CACHE_SECONDS."""
     now = time.time()
     with _cache_lock:
         cached = _cache.get(url)
@@ -73,11 +76,15 @@ def check_url(url: str) -> dict:
 
 
 def _result(url, problem=None, http_status=None, final=None, **params) -> dict:
+    """The result of a check: ok, problem code, HTTP status, final address and message parameters."""
     return {"url": url, "ok": problem is None, "problem": problem, "status": http_status,
             "finalUrl": final or url, "params": params}
 
 
 def _check(url: str) -> dict:
+    """Follows the redirects of an address by hand, refusing private addresses at every step (SSRF guard)
+    and HTTPS → HTTP downgrades; reports errors, blocked checks and unreachable sites.
+    """
     current = url
     with requests.Session() as session:
         session.headers["User-Agent"] = USER_AGENT

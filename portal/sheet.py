@@ -79,6 +79,7 @@ def limits() -> list[dict]:
 
 
 def detect_format(filename: str, data: bytes) -> str:
+    """"xlsx" or "csv" from the file's content and name; SheetError for anything else."""
     name = (filename or "").lower()
     if data[:2] == b"PK" or name.endswith(FORMATS["xlsx"][0]):
         return "xlsx"
@@ -115,6 +116,7 @@ def read_table(filename: str, data: bytes) -> Table:
 
 
 def _cell_text(value) -> str:
+    """Text of a spreadsheet cell: numbers typed as numbers lose the ".0", formula protection removed."""
     if value is None:
         return ""
     if isinstance(value, bool):
@@ -125,6 +127,7 @@ def _cell_text(value) -> str:
 
 
 def _read_xlsx(data: bytes) -> list[list[str]]:
+    """Rows of the first sheet of an Excel workbook, as text."""
     try:
         workbook = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     except Exception as exc:  # noqa: BLE001  (any unreadable file is reported the same way)
@@ -136,6 +139,7 @@ def _read_xlsx(data: bytes) -> list[list[str]]:
 
 
 def _read_csv(data: bytes) -> list[list[str]]:
+    """Rows of a CSV or text file: encoding (UTF-16, UTF-8, Windows-1252) and separator detected."""
     # UTF-16 with its byte order mark is Excel's "Unicode text" (.txt, tab-separated); UTF-8 with or
     # without BOM is "CSV UTF-8"; Excel in Brazil saves plain "CSV" as Windows-1252.
     encodings = ("utf-16",) if data[:2] in (b"\xff\xfe", b"\xfe\xff") else ("utf-8-sig", "cp1252")
@@ -172,6 +176,7 @@ def map_header(header: list[str], aliases: dict[str, list[str]]) -> dict[str, in
 
 
 def yes_no(value: str, default: bool, extra_yes=(), extra_no=()) -> bool | None:
+    """True, False, the default for an empty cell, or None when the word is not a yes or a no."""
     folded = fold(value)
     if folded in _YES or folded in {fold(v) for v in extra_yes}:
         return True
@@ -285,6 +290,7 @@ def export_rows(records: list[dict]) -> list[list[str]]:
 
 
 def _localise_flags(rows, yes_word, no_word):
+    """Default and Forward query string columns in the user's language (yes/no words)."""
     for row in rows:
         row[8] = yes_word if row[8] == "yes" else ""
         row[9] = yes_word if row[9] == "yes" else no_word
@@ -292,6 +298,7 @@ def _localise_flags(rows, yes_word, no_word):
 
 
 def write_csv(rows: list[list[str]], labels: dict) -> bytes:
+    """Export as CSV for Excel: UTF-8 with BOM, ';' separator, cells protected against formulas."""
     out = io.StringIO()
     writer = csv.writer(out, delimiter=";", lineterminator="\r\n")
     writer.writerow([protect(labels.get("headers", {}).get(key, key)) for key in EXPORTED])
@@ -302,6 +309,7 @@ def write_csv(rows: list[list[str]], labels: dict) -> bytes:
 
 def write_xlsx(rows: list[list[str]], labels: dict, link_types: list[tuple[str, str, str]],
                languages: list[tuple[str, str]], keys: list[tuple[str, str]] = ()) -> bytes:
+    """Export as XLSX: the links sheet plus reference sheets of link types, keys and languages."""
     headers = labels.get("headers", {})
     sheets = labels.get("sheets", {})
     bold = Font(bold=True, color="FFFFFF")
@@ -366,4 +374,5 @@ def write_xlsx(rows: list[list[str]], labels: dict, link_types: list[tuple[str, 
 
 
 def known_link_types() -> list[str]:
+    """Codes of the link types the portal offers (gs1:pip, …)."""
     return [code for code, _, _ in gs1.LINK_TYPES]

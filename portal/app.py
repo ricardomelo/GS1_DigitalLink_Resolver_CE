@@ -128,6 +128,9 @@ _bootstrap_admin()
 
 
 class UpstreamError(Exception):
+    """The data entry API failed or refused a call: a message code for the browser, the HTTP status to
+    answer with and the upstream detail, which is logged but never shown.
+    """
     def __init__(self, code: str, status: int = 502, detail=None, **params):
         super().__init__(code)
         self.code = code
@@ -137,6 +140,7 @@ class UpstreamError(Exception):
 
 
 def message(code: str, status: int = 200, **extra):
+    """JSON answer carrying a message code (rendered in the user's language by i18n.js) and extra fields."""
     return jsonify(code=code, **extra), status
 
 
@@ -150,9 +154,11 @@ class LoginThrottle:
         self._failures: dict[str, list[float]] = {}
 
     def _recent(self, key: str, now: float) -> list[float]:
+        """Failure times of a key still inside the lockout window."""
         return [t for t in self._failures.get(key, []) if now - t < LOCKOUT_SECONDS]
 
     def retry_after(self, *keys: str) -> int:
+        """Seconds to wait before another attempt for any of the keys (0 when none is locked)."""
         now = time.time()
         with self._lock:
             waits = []
@@ -164,12 +170,14 @@ class LoginThrottle:
             return max(waits, default=0)
 
     def fail(self, *keys: str) -> None:
+        """Records a failed attempt for every key (user name and client address)."""
         now = time.time()
         with self._lock:
             for key in keys:
                 self._failures[key] = self._recent(key, now) + [now]
 
     def clear(self, *keys: str) -> None:
+        """Forgets the failures of the keys after a successful sign-in."""
         with self._lock:
             for key in keys:
                 self._failures.pop(key, None)
@@ -179,10 +187,14 @@ throttle = LoginThrottle()
 
 
 def client_address() -> str:
+    """Address of the browser as seen through the proxies (X-Forwarded-For), for the sign-in throttle."""
     return request.access_route[0] if request.access_route else (request.remote_addr or "?")
 
 
 def current_user() -> str | None:
+    """Signed-in user of this session, or None. The session also carries a fingerprint of the account's
+    password hash: a password change or reset ends every other session of that user.
+    """
     username = session.get("user")
     if username and users.fingerprint_matches(username, session.get("fp")):
         return username
@@ -233,10 +245,12 @@ class AccessDenied(Exception):
 
 
 def allowed(anchor: str) -> bool:
+    """Whether the signed-in user may see and change this anchor (GS1 Company Prefixes of the account)."""
     return gs1.within_prefixes(anchor, getattr(g, "prefixes", None))
 
 
 def check_access(anchor: str) -> None:
+    """Raises AccessDenied (403) when the anchor is outside the user's GS1 Company Prefixes."""
     if not allowed(anchor):
         raise AccessDenied(anchor)
 
@@ -263,6 +277,7 @@ def same_origin_only():
 
 @app.after_request
 def security_headers(resp):
+    """Headers added to every answer: no MIME sniffing, no framing, same-origin referrer, no caching."""
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
     resp.headers.setdefault("X-Frame-Options", "DENY")
@@ -272,27 +287,34 @@ def security_headers(resp):
 
 @app.errorhandler(ValidationError)
 def on_validation_error(err):
+    """A rule of the standard or of the portal was broken: 422 with the message code and parameters."""
     return message(err.code, 422, params=err.params)
 
 
 @app.errorhandler(AccessDenied)
 def on_access_denied(err):
+    """Identifier outside the user's GS1 Company Prefixes: 403."""
     return message("access.prefix", 403)
 
 
 @app.errorhandler(users.UserError)
 def on_user_error(err):
+    """User administration refused (invalid name, last administrator, …): 422."""
     return message(err.code, 422, params=err.params)
 
 
 @app.errorhandler(UpstreamError)
 def on_upstream_error(err):
+    """The resolver failed or refused: logged with its detail, answered with a message code only."""
     log.warning("Upstream: %s | %s", err.code, err.detail)
     return message(err.code, err.status, params=err.params)
 
 
 # --------------------------------------------------------------------------- resolver API client
 def resolver(method: str, path: str, payload=None) -> tuple[int, object]:
+    """One call to the data entry API with the bearer token: (HTTP status, decoded JSON body).
+    Raises UpstreamError when the API cannot be reached or refuses the token.
+    """
     headers = {"Authorization": f"Bearer {SESSION_TOKEN}", "Accept": "application/json"}
     try:
         r = requests.request(method, DATA_ENTRY_URL + path, headers=headers,
@@ -321,6 +343,7 @@ def read_entries(anchor: str) -> tuple[list[dict], str | None]:
 
 
 def find_entry(entries: list[dict], qualifiers: list) -> dict | None:
+    """The entry of a document whose qualifier set equals the given one (order does not matter), or None."""
     for entry in entries:
         if gs1.qualifiers_match(entry.get("qualifiers"), qualifiers):
             return entry
@@ -357,6 +380,7 @@ def record_change(anchor: str, pairs: list, doc: dict | None, action: str) -> No
 
 
 def is_success(status: int, body) -> bool:
+    """Whether a data entry answer is a success (the API sometimes answers 200 with an error field)."""
     return status in (200, 201) and not (isinstance(body, dict) and body.get("error"))
 
 
@@ -397,6 +421,9 @@ def digital_link_for(anchor: str, pairs, attributes) -> tuple[str, list[str]]:
 
 
 def build_document(data: dict) -> tuple[str, str | None, dict]:
+    """Validates a record sent by the browser (key, qualifiers, description, targets, default) and builds
+    the Resolver CE v3 document: (anchor, qualifier pairs, document). Raises ValidationError on the first problem.
+    """
     anchor = request_key(data)
     pairs = request_qualifiers(data, anchor)
 
@@ -455,17 +482,20 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
 # --------------------------------------------------------------------------- pages and assets
 @app.get("/portal")
 def portal_root():
+    """/portal → /portal/ (relative addresses of the page depend on the trailing slash)."""
     return redirect("/portal/", 301)
 
 
 @app.get("/portal/")
 @require_login
 def index():
+    """The portal page (sign-in required)."""
     return send_from_directory(STATIC_DIR, "index.html")
 
 
 @app.get("/portal/login")
 def login_page():
+    """The sign-in page; a user already signed in goes straight to the portal."""
     if current_user():
         return redirect("/portal/")
     return send_from_directory(STATIC_DIR, "login.html")
@@ -473,6 +503,7 @@ def login_page():
 
 @app.get("/portal/<name>")
 def assets(name):
+    """Static files: those used by the sign-in page for anyone (PUBLIC_ASSETS), the others only after sign-in."""
     if name in PUBLIC_ASSETS:
         return send_from_directory(STATIC_DIR, name, max_age=3600 if name.endswith(".png") else 0)
     if name in PRIVATE_ASSETS and current_user():
@@ -492,6 +523,9 @@ def shown_username(typed: str) -> str:
 
 @app.post("/portal/api/login")
 def login():
+    """Signs a user in: throttled per user name and per address, audited, and the session is bound to the
+    account's password fingerprint.
+    """
     data = request.get_json(silent=True) or {}
     username = str(data.get("username", "")).strip()
     password = str(data.get("password", ""))
@@ -518,6 +552,7 @@ def login():
 
 @app.post("/portal/api/logout")
 def logout():
+    """Ends the session and records it in the audit trail."""
     username = session.get("user")
     session.clear()
     if username:
@@ -529,6 +564,9 @@ def logout():
 @app.post("/portal/api/password")
 @require_login
 def change_password():
+    """Changes the signed-in user's password (current password required, minimum length); ends the other
+    sessions of the account and clears the must-change flag.
+    """
     data = request.get_json(silent=True) or {}
     current = str(data.get("currentPassword", ""))
     new = str(data.get("newPassword", ""))
@@ -555,6 +593,7 @@ def change_password():
 
 @app.get("/portal/healthz")
 def healthz():
+    """Health check for Compose and monitoring: the portal is up and whether the resolver answers."""
     try:
         status, _ = resolver("GET", "/heartbeat")
     except UpstreamError:
@@ -566,6 +605,9 @@ def healthz():
 @app.get("/portal/api/config")
 @require_login
 def config():
+    """Everything the page needs at start-up: user, role, prefixes, resolver address, link types, primary keys
+    with their qualifiers and allowed qualifier shapes, languages, import limits and the data attributes on offer.
+    """
     return jsonify(
         user=g.user, role=g.role, prefixes=g.prefixes, mustChange=g.must_change,
         resolver=RESOLVER_PUBLIC_URL,
@@ -582,6 +624,9 @@ def config():
 @app.get("/portal/api/record")
 @require_login
 def get_record():
+    """One record (key + qualifier set) for the editor: description, targets with the default first, the
+    Digital Link and the other records of the same key (for the list under Open record).
+    """
     anchor = request_key(request.args)
     check_access(anchor)
     pairs = request_qualifiers(request.args, anchor)
@@ -626,6 +671,7 @@ def get_record():
 @require_login
 @role_required("editor")
 def save_record():
+    """Creates or replaces a record from the editor (editor role, within the user's prefixes)."""
     anchor, pairs, doc = build_document(request.get_json(silent=True) or {})
     check_access(anchor)
     uri = gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, pairs)
@@ -682,6 +728,9 @@ def store_record(anchor: str, pairs: list, doc: dict) -> bool:
 @require_login
 @role_required("editor")
 def delete_record():
+    """Deletes one record. The API deletes whole documents only, so the other records of the key are
+    written back, and the original is restored if that fails.
+    """
     anchor = request_key(request.args)
     check_access(anchor)
     pairs = request_qualifiers(request.args, anchor)
@@ -744,6 +793,7 @@ def list_records():
 
 # --------------------------------------------------------------------------- spreadsheets
 def summary_with_links() -> list[dict]:
+    """Every record on the resolver with its targets (GET /summary?links=true), keys the portal manages only."""
     status, body = resolver("GET", "/summary?links=true")
     if status == 404:
         return []
@@ -792,6 +842,7 @@ IMPORT_TTL = 30 * 60
 
 
 def _forget_old_imports() -> None:
+    """Drops import previews older than IMPORT_TTL."""
     now = time.time()
     with IMPORTS_LOCK:
         for token in [t for t, job in IMPORTS.items() if now - job["created"] > IMPORT_TTL]:
@@ -799,6 +850,7 @@ def _forget_old_imports() -> None:
 
 
 def _row_of(record: dict, position) -> int:
+    """Spreadsheet row of a record's target at a 1-based position (for error messages); first row otherwise."""
     try:
         return record["links"][int(position) - 1]["row"]
     except (KeyError, IndexError, TypeError, ValueError):
@@ -806,6 +858,9 @@ def _row_of(record: dict, position) -> int:
 
 
 def _same_record(target: dict, doc: dict) -> bool:
+    """Whether an imported record equals the one on the resolver (description, default and targets), so the
+    preview can show it as unchanged.
+    """
     def links(items):
         return sorted((l.get("linktype"), l.get("href"), l.get("title") or "", tuple(sorted(l.get("hreflang") or [])),
                        l.get("fwqs", True) is not False, tuple(sorted(l.get("context") or []))) for l in items)
@@ -937,6 +992,9 @@ def import_preview():
 
 
 def _run_import(token: str, user: str) -> None:
+    """Background thread: writes the records of a confirmed import one by one with the editor's call
+    sequence, counting created, updated and failed records.
+    """
     job = IMPORTS[token]
     with app.test_request_context():
         g.user = user                                   # store_record logs and records who changed it
@@ -965,6 +1023,7 @@ def _run_import(token: str, user: str) -> None:
 @require_login
 @role_required("editor")
 def import_apply():
+    """Starts writing a previewed import (by its token); the browser then polls /import/status."""
     token = (request.get_json(silent=True) or {}).get("token", "")
     with IMPORTS_LOCK:
         job = IMPORTS.get(token)
@@ -981,6 +1040,7 @@ def import_apply():
 @require_login
 @role_required("editor")
 def import_status():
+    """Progress of an import and, when finished, the result of every record."""
     job = IMPORTS.get(request.args.get("token", ""))
     if not job or job["user"] != g.user:
         raise ValidationError("import.expired")
@@ -1006,6 +1066,9 @@ def check_links():
 
 
 def _run_link_job(token: str) -> None:
+    """Background thread of a link check: checks every address once and maps problems back to records
+    (scope "all") or to the addresses sent (editor and import preview).
+    """
     job = LINK_JOBS[token]
 
     def progress(done, total):
@@ -1066,6 +1129,7 @@ def start_link_job():
 @require_login
 @role_required("editor")
 def link_job_status(token):
+    """Progress of a link check and, when finished, its problems."""
     job = LINK_JOBS.get(token)
     if not job or job["user"] != g.user:
         raise ValidationError("linkcheck.expired")
@@ -1081,6 +1145,7 @@ def link_job_status(token):
 @app.get("/portal/api/links/last")
 @require_login
 def last_link_check():
+    """Result of the last check of every record, limited to the records the user may see."""
     if not LAST_FULL_CHECK:
         return jsonify({})
     records = {k: v for k, v in LAST_FULL_CHECK.get("records", {}).items() if allowed(k.split("|")[0])}
@@ -1098,6 +1163,7 @@ def temporary_password() -> str:
 @require_login
 @role_required("admin")
 def list_users():
+    """Every portal user without password hashes, and the roles (administrators)."""
     return jsonify({"users": [users.public(name, account) for name, account in sorted(users.load().items())],
                     "roles": list(users.ROLES)})
 
@@ -1106,6 +1172,7 @@ def list_users():
 @require_login
 @role_required("admin")
 def create_user():
+    """Creates a user with a temporary password, shown once in the answer (administrators)."""
     data = request.get_json(silent=True) or {}
     username = str(data.get("username", "")).strip()
     password = temporary_password()
@@ -1119,6 +1186,7 @@ def create_user():
 @require_login
 @role_required("admin")
 def update_user(username):
+    """Changes the role, prefixes or status of a user; administrators cannot disable or demote themselves."""
     data = request.get_json(silent=True) or {}
     if username == g.user and (data.get("disabled") or data.get("role") not in (None, "admin")):
         raise users.UserError("users.notSelf")          # an administrator cannot lock himself out
@@ -1134,6 +1202,7 @@ def update_user(username):
 @require_login
 @role_required("admin")
 def reset_user(username):
+    """Gives a user a new temporary password (shown once) and ends the user's sessions (administrators)."""
     if not users.get(username):
         raise users.UserError("users.unknown", user=username)
     password = temporary_password()
@@ -1147,6 +1216,7 @@ def reset_user(username):
 @require_login
 @role_required("admin")
 def remove_user(username):
+    """Removes a user; the user's changes stay in the journal (administrators)."""
     if username == g.user:
         raise users.UserError("users.notSelf")
     users.remove(username)
@@ -1167,6 +1237,7 @@ def record_history():
 
 
 def _audit_events():
+    """Journal events matching the audit filters of the request, limited to the user's prefixes."""
     args = request.args
     return journal.search(user=args.get("user") or None, since=args.get("from") or None,
                           until=args.get("to") or None, text=args.get("q") or None,
@@ -1177,6 +1248,7 @@ def _audit_events():
 @require_login
 @role_required("admin")
 def audit_trail():
+    """The audit trail as JSON, newest first (administrators)."""
     return jsonify({"events": _audit_events()})
 
 
@@ -1184,6 +1256,7 @@ def audit_trail():
 @require_login
 @role_required("admin")
 def audit_csv():
+    """The audit trail as CSV for Excel (UTF-8 with BOM, ';', cells protected against formulas)."""
     out = io.StringIO()
     writer = csv.writer(out, delimiter=";", lineterminator="\r\n")
     writer.writerow(["at", "user", "action", "anchor", "qualifiers", "detail"])
@@ -1209,6 +1282,7 @@ def qr_version(raw) -> int | None:
 
 
 def qr_error_level(raw) -> str:
+    """The QR error correction level of a request (L, M, Q or H; default M), or ValidationError."""
     level = str(raw or "m").lower()
     if level not in label.ERROR_LEVELS:
         raise ValidationError("qr.level")

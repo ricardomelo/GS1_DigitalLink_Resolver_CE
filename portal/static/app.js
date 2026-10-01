@@ -1,5 +1,26 @@
 "use strict";
 
+/*
+ * The portal page: one script, no build step and no framework. The server (portal/app.py) is the
+ * authority on every rule; the checks here only give instant feedback. Texts come from I18N
+ * (i18n.js) by message code, so the same code serves pt-BR and en-GB.
+ *
+ * Sections, in order:
+ *   API ............................ api(): JSON calls to /portal/api/*, errors as ApiError(code, params)
+ *   GS1 rules, primary keys ........ readKey(): live validation of the identifier (URI Syntax 4.3)
+ *   key qualifiers ................. fields per key, readQualifiers(): formats, shapes, order (4.4, 4.6, 4.9)
+ *   label preview .................. renderPreview(): Digital Link, QR code image, options, downloads
+ *   data attributes ................ attribute rows, combo box, decimal families, engine check (4.10)
+ *   step 1 ......................... key type menu, openRecord()
+ *   other records of the same key .. list under Open record: search, filter, unsaved-changes guard
+ *   record list (#records) ......... views (applyView), then loading, filters, code search, rendering
+ *   roles, history, users, audit ... read-only mode, versions of a record, administration screens
+ *   link checker ................... editor, every record, import preview
+ *   spreadsheets ................... export and two-step import with preview
+ *   step 3 ......................... target rows (type, language, address, title, forwarding, default)
+ *   save / delete, user menu, options (password), language menu, start-up (init: every event handler)
+ */
+
 /* Base path of the portal (e.g. "/portal/"), so it works behind any prefix. */
 const BASE = location.pathname.replace(/[^/]*$/, "");
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1301,6 +1322,7 @@ function downloadAudit() {
   location.href = BASE + "api/audit.csv?" + auditQuery();
 }
 
+/* ------------------------------------------------------------------ record list: loading, filters, code search */
 async function loadRecords() {
   I18N.set($("#records-count"), "records.loading");
   $("#records-body").replaceChildren();

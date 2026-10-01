@@ -203,18 +203,22 @@ def negotiate_locale(accept_language: str, cookie: str | None = None) -> str:
 
 
 def _request_locale() -> str:
+    """Language of the page: the language cookie, else the browser's Accept-Language, else English."""
     return negotiate_locale(request.headers.get('Accept-Language', ''), request.cookies.get(LOCALE_COOKIE))
 
 
 def _t(locale: str, key: str, **params) -> str:
+    """A text of the page in the language, with its parameters."""
     return TEXT[locale][key].format(**params)
 
 
 def _label(locale: str, term: str) -> str:
+    """Name of a GS1 link type in the language (the term itself when unknown)."""
     return LINK_TYPE_LABELS[locale].get(term, term)
 
 
 def _level_label(locale: str, anchor: str) -> str:
+    """Name of a level of the linkset (serial, batch, variant, product or the key) from its anchor."""
     # /AI/value followed by the key qualifiers, e.g. /01/…/10/L1/21/S1 or /414/…/254/1. Linkset anchors
     # are absolute URIs (https://id.example.org/01/…), so only the path is read.
     parts = urlparse(anchor).path.strip('/').split('/')
@@ -240,6 +244,7 @@ def _web_address(href) -> str | None:
 
 
 def _levels(locale: str, linkset: list[dict]) -> list[dict]:
+    """The links of each level of a linkset, grouped for the HTML page (default link marked)."""
     levels = []
     for item in linkset:
         links, seen = [], set()
@@ -265,11 +270,13 @@ def _levels(locale: str, linkset: list[dict]) -> list[dict]:
 
 
 def _hri(identifiers: str, qualifier_path: str | None) -> str:
+    """The identification in human readable form: (01) 0950… (10) L1."""
     parts = (identifiers + (qualifier_path or '')).strip('/').split('/')
     return '  '.join(f'({parts[i]}) {parts[i + 1]}' for i in range(0, len(parts) - 1, 2))
 
 
 def _page(locale: str, title: str, body: str) -> str:
+    """A whole HTML page: header, language menu, body and the operator footer from the configuration."""
     return render_template_string(_BASE, locale=locale, title=title, product=PRODUCT_NAME, logo=LOGO_DATA_URI,
                                   org=ORG_NAME, org_url=ORG_URL, footer=_t(locale, 'footer'),
                                   language_label=_t(locale, 'language'), home_label=_t(locale, 'home'),
@@ -278,6 +285,7 @@ def _page(locale: str, title: str, body: str) -> str:
 
 
 def render_linkset(identifiers: str, qualifier_path: str | None, linkset: list[dict]) -> str:
+    """HTML page listing every link of a linkset, for people who open ?linkType=linkset in a browser."""
     locale = _request_locale()
     title = _t(locale, 'linkset.title')
     body = render_template_string("<p class='code'>{{ hri }}</p>" + _LINKS,
@@ -287,6 +295,9 @@ def render_linkset(identifiers: str, qualifier_path: str | None, linkset: list[d
 
 def render_error(status: int, identifiers: str, qualifier_path: str | None, linktype: str | None,
                  available: list[dict] | None) -> str:
+    """HTML page for 400 (not a valid Digital Link) and 404 (unknown identifier, or a link type the
+    identifier does not have, with the types it has).
+    """
     locale = _request_locale()
     if status == 400:
         title, text = _t(locale, 'error.400.title'), _t(locale, 'error.400.text')

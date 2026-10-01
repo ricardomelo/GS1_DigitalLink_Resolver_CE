@@ -28,6 +28,7 @@ def key(anchor: str, qpath: str = "") -> str:
 
 
 def load() -> dict[str, dict]:
+    """The whole metadata file ({record key: {createdAt, createdBy, updatedAt, updatedBy}}); empty if absent."""
     try:
         with open(META_FILE, encoding="utf-8") as fh:
             data = json.load(fh)
@@ -38,6 +39,7 @@ def load() -> dict[str, dict]:
 
 @contextmanager
 def _locked():
+    """Exclusive lock on the metadata file (one writer at a time, also across processes)."""
     with open(META_FILE + ".lock", "a") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
         try:
@@ -47,6 +49,7 @@ def _locked():
 
 
 def _write(data: dict) -> None:
+    """Writes the metadata atomically (temporary file, then rename), readable by the portal only."""
     tmp = META_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=1, sort_keys=True)
@@ -55,6 +58,7 @@ def _write(data: dict) -> None:
 
 
 def _now() -> str:
+    """Current UTC time, ISO 8601 with a Z, to the second."""
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
@@ -71,6 +75,7 @@ def touch(anchor: str, qpath: str, user: str) -> None:
 
 
 def remove(anchor: str, qpath: str) -> None:
+    """Forgets the metadata of a deleted record."""
     with _locked():
         data = load()
         if data.pop(key(anchor, qpath), None) is not None:

@@ -225,6 +225,7 @@ def _refuse_day_zero(ai: str, value: str, components: list[dict]) -> None:
 
 
 def _escape(value: str) -> str:
+    """Escapes '(' in a value for the engine's bracketed element string syntax."""
     # In the engine's bracketed syntax a literal "(" in a value is written "\("
     return value.replace("(", "\\(")
 
@@ -274,6 +275,7 @@ def decimal_families(attributes: dict[str, dict]) -> dict[str, dict]:
 
 
 def _expand(ais: str) -> list[str]:
+    """AIs of a Syntax Dictionary range ("3100-3105" → 3100, 3101, …)."""
     if "-" not in ais:
         return [ais]
     first, last = ais.split("-")

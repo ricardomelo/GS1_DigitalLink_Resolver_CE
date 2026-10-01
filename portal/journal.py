@@ -23,10 +23,12 @@ RECORD_ACTIONS = ("create", "update", "delete")
 
 
 def _now() -> str:
+    """Current UTC time, ISO 8601 with a Z, to the second."""
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def append(action: str, user: str, **fields) -> None:
+    """Adds one event (one JSON line) to the journal under an exclusive file lock."""
     event = {"at": _now(), "user": user, "action": action, **{k: v for k, v in fields.items() if v is not None}}
     line = json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
     with open(JOURNAL_FILE, "a", encoding="utf-8") as fh:
@@ -42,6 +44,7 @@ def append(action: str, user: str, **fields) -> None:
 
 
 def _events():
+    """Every event of the journal, oldest first; damaged lines are skipped."""
     try:
         with open(JOURNAL_FILE, encoding="utf-8") as fh:
             for line in fh:

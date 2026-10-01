@@ -16,6 +16,7 @@ import users
 
 
 def main() -> None:
+    """Command line: create a user or set a new password (asked twice), with role and prefixes, or remove a user."""
     parser = argparse.ArgumentParser(description="Create, reset or remove a portal user.")
     parser.add_argument("username")
     parser.add_argument("--role", choices=users.ROLES)

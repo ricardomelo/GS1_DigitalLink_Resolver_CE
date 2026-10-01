@@ -879,7 +879,7 @@ function setOpenMessage(key, params, otherEntries = []) {
   const parts = [main];
   if (otherEntries.length) {
     const extra = document.createElement("span");
-    I18N.set(extra, "open.othersCount", { count: otherEntries.length });
+    I18N.set(extra, otherEntries.length === 1 ? "open.othersOne" : "open.othersCount", { count: otherEntries.length });
     parts.push(" ", extra);
   }
   box.replaceChildren(...parts);

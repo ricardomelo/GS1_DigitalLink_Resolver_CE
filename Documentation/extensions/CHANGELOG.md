@@ -2,6 +2,18 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Portal: record list filters by key type and key qualifier; code search
+- Two filters on *Registered records*: primary key type (GTIN, SSCC, GLN…) and key qualifier (variant,
+  batch/lot, serial…, "None" for the whole key, "Others" for qualifier sets made elsewhere). They list only
+  what the records contain, with counts, follow the language and keep the choice when the list reloads; the
+  qualifier filter follows the key type. A button clears the search and every filter.
+- A GS1 Digital Link URI or an element string with brackets in the search box finds the exact record of
+  that code (marked "Exact"), the more general records that apply to it and the more specific ones, and
+  says which AIs it ignored (data attributes are never stored). GTIN-8/12/13 are completed to 14 digits.
+- "No record matches the search and filters." replaces "No record matches the search.".
+- Everything happens in the browser on the list already sent by `GET /portal/api/records`; no API change.
+- Tests: filters, counts, language, clearing, Digital Link and element string searches.
+
 ### Portal: attribute list fixes
 - The list of data attributes showed the GS1 data titles only, in any language; it now shows the same
   names as the field once chosen: "(17) Data de validade (USE BY or EXPIRY)" in Portuguese.

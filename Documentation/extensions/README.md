@@ -254,6 +254,21 @@ the portal (date and user).
   description or qualifier value; several words narrow the result; case and accents are ignored. Filter
   by the user who made the last change, or show only records whose targets had problems in the last link
   check.
+- Filter by **primary key type** (URI Syntax 4.3) and by **key qualifier** (4.4). Each filter lists only
+  what the records contain, with how many records each option selects ("Batch/lot (10) · 4"); the
+  qualifier filter follows the key type chosen. A qualifier selects the records that have it, alone or with
+  others (a serial-number record also has its batch); "None" selects the records of the whole key and
+  "Others" those created elsewhere with qualifiers the portal does not manage. *Clear search and filters*
+  appears while any of them is in use. Data attributes (4.10) are not a filter: they are never stored.
+- **Code search** — a GS1 Digital Link URI (any domain, any path before the key) or an element string with
+  the AIs in brackets, `(01)07898357410015(10)L1`, pasted or typed in the search box is read as a code
+  instead of words. The list then shows the records of that key related to it: the **exact** record first
+  (marked), then the more general ones (e.g. the batch and the product of a serial number, most qualifiers
+  first), then the more specific ones (e.g. the serial numbers of a batch); other batches, variants and so
+  on are left out. A line under the filters shows the code as read; AIs that are not qualifiers of the key,
+  including data attributes in the query string, are named as ignored. A GTIN-8, -12 or -13 is completed to
+  14 digits. A Digital Link of the key alone lists every record of the key. Element strings scanned
+  without brackets (with FNC1/GS separators) are not read as codes.
 - Selecting a record opens it in the editor; the browser's back button returns to the list.
 - Records created by other tools with a qualifier set the portal does not manage (a lot template such as
   `{lotnumber}`, characters outside the portal's rules, a combination section 4.9 does not allow) are

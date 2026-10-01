@@ -66,7 +66,7 @@ the official Postman collection is at
 
 | Area | Addition |
 |---|---|
-| **Portal** (`/portal/`) | Sign-in with per-user passwords (with a show/hide button); editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; per-link query-string forwarding; QR code labels (PNG/SVG) with the dimensions of the *QR Codes powered by GS1* guidelines, a choice of QR version, error correction and human readable text, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search; spreadsheet import/export (XLSX, CSV) with preview; link checker |
+| **Portal** (`/portal/`) | Sign-in with per-user passwords (with a show/hide button); editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; per-link query-string forwarding; QR code labels (PNG/SVG) with the dimensions of the *QR Codes powered by GS1* guidelines, a choice of QR version, error correction and human readable text, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search and filters by key type and qualifier; spreadsheet import/export (XLSX, CSV) with preview; link checker |
 | **Governance** | Roles (administrator, editor, reader); access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords; history of every record with restore; audit trail with filters and CSV export |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, validated as the GS1 Barcode Syntax Engine does |
 | **Data attributes** | Every data attribute of URI Syntax §4.10 in QR codes, validated by the GS1 Barcode Syntax Engine (formats, check digits, dates, code lists and the association rules of the General Specifications); passed on by the resolver to the targets |
@@ -152,12 +152,14 @@ passes them on to targets that forward the query string. An attribute can never 
 identification: batch, serial or variant of a GTIN are qualifiers of their own record, not attributes.
 
 <p align="center">
-  <img src="Documentation/images/portal-records.png" alt="Record list with search, spreadsheet buttons and link check result" width="820">
+  <img src="Documentation/images/portal-records.png" alt="Record list with search, filters by key type and qualifier, spreadsheet buttons and link check result" width="820">
 </p>
 
 **Record list** (`/portal/#records`) — every record on the resolver with identifier, qualifiers, number of
 links and last change (date and user); search by identifier (leading zeros optional), description or
-qualifier, ignoring case and accents; filter by who changed it; open a record in the editor.
+qualifier, ignoring case and accents; filter by primary key type (GTIN, SSCC, GLN…), by key qualifier
+(batch, serial, variant… or none) and by who changed it; paste a GS1 Digital Link or an element string
+such as `(01)…(10)…` to find its exact record and the related ones; open a record in the editor.
 
 **Spreadsheets** — export every record as XLSX (with reference sheets for link types, keys and languages)
 or CSV; import in two steps: a preview validates every row with the editor's rules and shows what will be

@@ -272,12 +272,25 @@
           <label for="records-search" class="visually-hidden" data-i18n="records.search"></label>
           <input id="records-search" type="search" autocomplete="off" data-i18n-attr="placeholder:records.searchPlaceholder">
         </div>
+        <a href="#" class="btn btn-primary" id="records-new" data-i18n="records.new"></a>
+      </div>
+      <!-- Filters: primary key type, key qualifier and author of the last change -->
+      <div class="records-filters" role="group" data-i18n-attr="aria-label:records.filters">
+        <div class="records-filter">
+          <label for="records-key" data-i18n="records.keyType"></label>
+          <select id="records-key"></select>
+        </div>
+        <div class="records-filter">
+          <label for="records-qualifier" data-i18n="records.qualifier"></label>
+          <select id="records-qualifier"></select>
+        </div>
         <div class="records-filter">
           <label for="records-user" data-i18n="records.changedBy"></label>
           <select id="records-user"></select>
         </div>
-        <a href="#" class="btn btn-primary" id="records-new" data-i18n="records.new"></a>
+        <button type="button" class="btn btn-ghost" id="records-clear" data-i18n="records.clearFilters" hidden></button>
       </div>
+      <p class="records-code" id="records-code" aria-live="polite" hidden></p>
       <div class="records-sheet">
         <button type="button" class="btn btn-ghost" id="records-export-xlsx" data-i18n="records.exportXlsx"></button>
         <button type="button" class="btn btn-ghost" id="records-export-csv" data-i18n="records.exportCsv"></button>

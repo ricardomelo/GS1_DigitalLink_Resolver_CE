@@ -1309,7 +1309,7 @@ async function loadRecords() {
     const data = await api("GET", "records");
     records.all = data.records || [];
     records.loaded = true;
-    fillUserFilter();
+    fillFilters();
     try { showLinkCheck(await api("GET", "links/last")); } catch { /* optional */ }
     renderRecords();
     $("#records-search").focus();
@@ -1327,6 +1327,136 @@ function fillUserFilter() {
   any.textContent = t("records.anyone");
   select.replaceChildren(any, ...names.map(n => new Option(n, n)));
   select.value = names.includes(current) ? current : "";
+}
+
+/* Filters by primary key type (URI Syntax 4.3) and key qualifier (4.4). Each lists only what the
+   records contain, with how many records the option selects; the qualifier filter follows the key type. */
+function fillFilters() {
+  fillKeyFilter();
+  fillQualifierFilter();
+  fillUserFilter();
+}
+
+function filterOption(value, label, count) {
+  return new Option(t("records.filter.option", { label, count }), value);
+}
+
+function keepChoice(select, previous) {
+  select.value = [...select.options].some(o => o.value === previous) ? previous : "";
+}
+
+function fillKeyFilter() {
+  const select = $("#records-key");
+  const previous = select.value;
+  const counts = {};
+  records.all.forEach(r => { counts[r.key] = (counts[r.key] || 0) + 1; });
+  const order = (CONFIG?.keys || []).map(k => k.code);   // the order of the editor's key list
+  const codes = Object.keys(counts).sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99));
+  select.replaceChildren(new Option(t("records.keyType.any"), ""),
+    ...codes.map(code => filterOption(code, t(`key.${code}.name`), counts[code])));
+  keepChoice(select, previous);
+}
+
+function fillQualifierFilter() {
+  const select = $("#records-qualifier");
+  const previous = select.value;
+  const key = $("#records-key").value;
+  const counts = {};
+  const add = value => { counts[value] = (counts[value] || 0) + 1; };
+  records.all.filter(r => !key || r.key === key).forEach(r => {
+    if (r.kind === "product") add("none");
+    else if (r.kind === "other") add("other");
+    else (r.qualifiers || []).forEach(([q]) => add(q));
+  });
+  select.replaceChildren(new Option(t("records.qualifier.any"), ""),
+    ...(counts.none ? [filterOption("none", t("records.qualifier.none"), counts.none)] : []),
+    ...QUAL_ORDER.filter(q => counts[q]).map(q => filterOption(q, t(`qual.${q}.label`), counts[q])),
+    ...(counts.other ? [filterOption("other", t("records.qualifier.other"), counts.other)] : []));
+  keepChoice(select, previous);
+}
+
+/* "none": records without qualifiers; "other": qualifier sets the portal does not manage; an AI: records
+   that have that qualifier, alone or with others (a serial number record also has its batch). */
+function qualifierMatches(r, choice) {
+  if (!choice) return true;
+  if (choice === "none") return r.kind === "product";
+  if (choice === "other") return r.kind === "other";
+  return (r.qualifiers || []).some(([q]) => q === choice);
+}
+
+/* A GS1 Digital Link URI (any domain, any path before the key, query string ignored) or an element
+   string with the AIs in brackets, pasted or scanned into the search box:
+   { key, value, pairs, ignored } or null when the text is neither. Pairs are the key qualifiers of that
+   key; other AIs (data attributes such as (17)) are listed in ignored, as the portal never stores them. */
+function parseCode(text) {
+  const raw = text.replace(INVISIBLE, "").trim();
+  const known = new Set((CONFIG?.keys || []).map(k => k.code));
+  let elements = [], extra = [];
+  if (raw.startsWith("(")) {
+    const compact = raw.replace(/\s+/g, "");
+    const found = [...compact.matchAll(/\((\d{2,4})\)([^()]+)/g)];
+    if (!found.length || found.map(m => m[0]).join("") !== compact) return null;
+    elements = found.map(m => [m[1], m[2]]);
+  } else if (/^https?:\/\//i.test(raw)) {
+    let url;
+    try { url = new URL(raw); } catch { return null; }
+    const parts = url.pathname.split("/").filter(Boolean).map(part => {
+      try { return decodeURIComponent(part); } catch { return part; }
+    });
+    const start = parts.findIndex((part, i) => known.has(part) && i + 1 < parts.length);
+    if (start < 0) return null;
+    for (let i = start; i + 1 < parts.length; i += 2) elements.push([parts[i], parts[i + 1]]);
+    // data attributes in the query string (?17=271231) are never qualifiers, and never stored
+    extra = [...url.searchParams.keys()].filter(name => /^\d{2,4}$/.test(name));
+  } else {
+    return null;
+  }
+  let [[key, value]] = elements;
+  if (!known.has(key)) return null;
+  if (key === "01" && /^\d{8,13}$/.test(value)) value = value.padStart(14, "0");   // GTIN-8, -12, -13
+  const allowed = keyConfig(key).qualifiers;
+  const rest = elements.slice(1);
+  return {
+    key, value,
+    pairs: rest.filter(([q]) => allowed.includes(q)),
+    ignored: [...new Set([...rest.filter(([q]) => !allowed.includes(q)).map(([q]) => q), ...extra])],
+  };
+}
+
+/* How a record relates to a code read in the search box: 0 = the exact record (same key and qualifier
+   set), 1 = a less specific record (some of the code's qualifiers and nothing else, e.g. the batch of a
+   serial number), 2 = a more specific record (every qualifier of the code and more, e.g. the serial
+   numbers of a batch); -1 = not related (another batch, a variant when the code names a batch…). */
+function codeRank(r, code) {
+  if (r.key !== code.key || r.value !== code.value) return -1;
+  if (r.kind === "other") return code.pairs.length ? -1 : 2;   // qualifiers the portal does not read
+  const own = Object.fromEntries(r.qualifiers || []);
+  const wanted = Object.fromEntries(code.pairs);
+  const inCode = Object.entries(own).every(([q, v]) => wanted[q] === v);
+  const inRecord = code.pairs.every(([q, v]) => own[q] === v);
+  if (inCode && inRecord) return 0;
+  if (inCode) return 1;
+  return inRecord ? 2 : -1;
+}
+
+function codeText(code) {
+  return [keyText(code.key, code.value), ...code.pairs.map(([q, v]) => keyText(q, v))].join(" ");
+}
+
+function filtersActive() {
+  return Boolean($("#records-search").value.trim() || $("#records-key").value || $("#records-qualifier").value
+                 || $("#records-user").value || $("#records-problems").checked);
+}
+
+function clearFilters() {
+  $("#records-search").value = "";
+  $("#records-key").value = "";
+  fillQualifierFilter();
+  $("#records-qualifier").value = "";
+  $("#records-user").value = "";
+  $("#records-problems").checked = false;
+  renderRecords();
+  $("#records-search").focus();
 }
 
 /* Case- and accent-insensitive text for searching ("Açaí" matches "acai"). */
@@ -1356,21 +1486,40 @@ function changedText(r) {
 
 function renderRecords() {
   if (!records.loaded) return;
-  const words = fold($("#records-search").value).split(/\s+/).filter(Boolean);
+  const text = $("#records-search").value;
+  // A GS1 Digital Link or a bracketed element string finds the records of that code; other text is searched word by word.
+  const code = parseCode(text);
+  const words = code ? [] : fold(text).split(/\s+/).filter(Boolean);
+  const key = $("#records-key").value;
+  const qualifier = $("#records-qualifier").value;
   const user = $("#records-user").value;
   const problemsOnly = $("#records-problems").checked;
+  const rank = new Map(code ? records.all.map(r => [r, codeRank(r, code)]) : []);
   const shown = records.all
+    .filter(r => !key || r.key === key)
+    .filter(r => qualifierMatches(r, qualifier))
     .filter(r => !user || r.updatedBy === user)
     .filter(r => !problemsOnly || problemsOf(r).length > 0)
+    .filter(r => !code || rank.get(r) >= 0)
     .filter(r => {
       if (!words.length) return true;
       const haystack = fold([r.value, r.value.replace(/^0+/, ""), r.key, t(`key.${r.key}.short`), r.description,
                              (r.qualifiers || []).map(p => p[1]).join(" "), qualText(r.qualifiers), r.other].join(" "));
       return words.every(w => haystack.includes(w));
     })
-    // Most recently changed first; records without portal history after, by GTIN.
-    .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "") || a.anchor.localeCompare(b.anchor)
+    // For a code: the exact record first, then the less specific ones (most qualifiers first).
+    // Otherwise the most recently changed first; records without portal history after, by key.
+    .sort((a, b) => (code ? rank.get(a) - rank.get(b) || (b.qualifiers || []).length - (a.qualifiers || []).length : 0)
+                    || (b.updatedAt || "").localeCompare(a.updatedAt || "") || a.anchor.localeCompare(b.anchor)
                     || (a.qpath || "").localeCompare(b.qpath || ""));
+
+  const hint = $("#records-code");
+  hint.hidden = !code;
+  if (code) {
+    hint.textContent = t("records.code", { code: codeText(code) })
+      + (code.ignored.length ? " " + t("records.codeIgnored", { ais: code.ignored.map(q => `(${q})`).join(" ") }) : "");
+  }
+  $("#records-clear").hidden = !filtersActive();
 
   const rows = shown.map(r => {
     const tr = document.createElement("tr");
@@ -1394,7 +1543,13 @@ function renderRecords() {
       name.textContent = r.description || t("records.noDescription");
       name.addEventListener("click", e => { e.preventDefault(); openFromList(r); });
     }
-    cell("records.col.product", name);
+    const product = cell("records.col.product", name);
+    if (code && rank.get(r) === 0) {
+      const badge = Object.assign(document.createElement("span"), { className: "badge badge-match", title: t("records.exactMatchHint") });
+      badge.textContent = t("records.exactMatch");
+      product.append(" ", badge);
+      tr.classList.add("is-match");
+    }
     cell("records.col.key", keyText(r.key, r.value), "code");
     cell("records.col.scope", scopeText(r));
     const linksCell = cell("records.col.links", String(r.links), "num");
@@ -2105,6 +2260,9 @@ async function init() {
   $("#import-close").addEventListener("click", closeImport);
   $("#import-dialog").addEventListener("cancel", e => { e.preventDefault(); closeImport(); });
   $("#records-user").addEventListener("change", renderRecords);
+  $("#records-key").addEventListener("change", () => { fillQualifierFilter(); renderRecords(); });
+  $("#records-qualifier").addEventListener("change", renderRecords);
+  $("#records-clear").addEventListener("click", clearFilters);
   $("#records-new").addEventListener("click", e => {
     e.preventDefault();
     history.pushState(null, "", location.pathname + location.search);
@@ -2113,7 +2271,10 @@ async function init() {
     $("#key-value").focus();
   });
   window.addEventListener("hashchange", applyView);
-  document.addEventListener("localechange", renderRecords);   // dates and scope texts follow the language
+  document.addEventListener("localechange", () => {            // dates, scope texts and filter names follow the language
+    if (records.loaded) fillFilters();
+    renderRecords();
+  });
   applyView();
 
   try {

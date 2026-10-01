@@ -137,7 +137,7 @@ with sync_playwright() as p:
     page.fill("#records-search", "9506000134352 ser1"); page.wait_for_timeout(100)
     check("search by GTIN without leading zero and qualifier", len(page.query_selector_all("#records-body tr")) == 1)
     page.fill("#records-search", "zzz"); page.wait_for_timeout(100)
-    check("no match message", page.inner_text("#records-empty") == "No record matches the search.")
+    check("no match message", page.inner_text("#records-empty") == "No record matches the search and filters.")
     page.fill("#records-search", ""); page.select_option("#records-user", "tester"); page.wait_for_timeout(100)
     check("filter by user", len(page.query_selector_all("#records-body tr")) == 1)
     page.select_option("#records-user", "")
@@ -359,6 +359,71 @@ with sync_playwright() as p:
               panel_box["y"] > form_box["y"] + form_box["height"] - 1 and controls["x"] > visual["x"] + visual["width"] - 1
               and abs(controls["y"] - visual["y"]) < 2, (form_box, panel_box, visual, controls))
     page.set_viewport_size({"width": 1360, "height": 1000}); page.wait_for_timeout(200)
+
+    # Record list: filters by primary key type and key qualifier; a GS1 Digital Link or element string in the search box
+    page.set_viewport_size({"width": 1360, "height": 1000})
+    mock_data_entry.upsert({"anchor": "/414/9506000134376", "qualifiers": [{"254": "DOCK-3"}], "itemDescription": "Dock 3",
+                            "defaultLinktype": "gs1:pip", "links": link})
+    page.goto(BASE + "#records"); page.wait_for_timeout(900)
+    shown = lambda: len(page.query_selector_all("#records-body tr"))  # noqa: E731
+    total = shown()
+    keys = page.eval_on_selector_all("#records-key option", "o => o.map(x => [x.value, x.textContent])")
+    check("key type filter: the types present, in the editor's order, with counts",
+          [k[0] for k in keys] == ["", "01", "414", "00"] and keys[2][1] == "Physical location (GLN) (414) · 1"
+          and keys[3][1] == "Logistic unit (SSCC) (00) · 1", keys)
+    page.select_option("#records-key", "00"); page.wait_for_timeout(150)
+    quals = page.eval_on_selector_all("#records-qualifier option", "o => o.map(x => x.value)")
+    check("key type filter: SSCC only; the qualifier filter follows the key type",
+          shown() == 1 and "095060001343520000" in page.inner_text("#records-body") and quals == ["", "none"], quals)
+    check("clear button shown while a filter is active", page.is_visible("#records-clear"))
+    page.select_option("#records-key", "01"); page.wait_for_timeout(150)
+    quals = page.eval_on_selector_all("#records-qualifier option", "o => o.map(x => x.value)")
+    check("qualifier filter offers the qualifiers of the GTIN records in URI order", quals == ["", "none", "22", "10", "21", "other"], quals)
+    page.select_option("#records-qualifier", "21"); page.wait_for_timeout(150)
+    check("qualifier filter: records with a serial number (with or without other qualifiers)",
+          shown() == 7 and "Serial SER1" in page.inner_text("#records-body"), shown())
+    page.fill("#records-search", "l2026-09"); page.wait_for_timeout(150)
+    check("qualifier filter and text search together", shown() == 6, shown())
+    page.select_option("#records-qualifier", "other"); page.fill("#records-search", ""); page.wait_for_timeout(150)
+    check("qualifier filter: records created elsewhere with qualifiers the portal does not manage",
+          shown() == 1 and "{lotnumber}" in page.inner_text("#records-body"), shown())
+    page.select_option("#records-key", "414"); page.wait_for_timeout(150)
+    check("a qualifier absent from the new key type is reset", page.input_value("#records-qualifier") == "" and shown() == 1)
+    page.select_option("#locale", "pt-BR"); page.wait_for_timeout(200)
+    check("filters follow the language and keep the choice", page.input_value("#records-key") == "414"
+          and "GLN — local físico (414) · 1" in page.inner_text("#records-key"), page.inner_text("#records-key"))
+    page.select_option("#locale", "en-GB"); page.wait_for_timeout(200)
+    page.click("#records-clear"); page.wait_for_timeout(150)
+    check("clear button: every record again", shown() == total and not page.is_visible("#records-clear")
+          and page.input_value("#records-key") == "", shown())
+
+    page.fill("#records-search", f"https://id.example.org/01/{MANY}/10/L2026-09/21/S0003?17=271231"); page.wait_for_timeout(150)
+    rows = page.query_selector_all("#records-body tr")
+    check("Digital Link: the exact record first, marked, then the more general ones",
+          len(rows) == 3 and "Exact" in rows[0].inner_text() and "Serial S0003" in rows[0].inner_text()
+          and "Batch L2026-09" in rows[1].inner_text() and "Every unit" in rows[2].inner_text(),
+          [r.inner_text() for r in rows])
+    check("Digital Link: the code read is shown, data attributes ignored", "(01) 07898357410015 (10) L2026-09 (21) S0003"
+          in page.inner_text("#records-code") and "(17)" in page.inner_text("#records-code"), page.inner_text("#records-code"))
+    page.fill("#records-search", "(01)7898357410015(10)L2026-09"); page.wait_for_timeout(150)
+    rows = page.query_selector_all("#records-body tr")
+    check("element string, GTIN-13: the batch, the product and the batch's serial numbers; no other batch or variant",
+          len(rows) == 8 and "Exact" in rows[0].inner_text() and "Batch L2026-09" in rows[0].inner_text()
+          and "Every unit" in rows[1].inner_text() and page.query_selector("#records-body tr:has-text('L2026-08')") is None
+          and page.query_selector("#records-body tr:has-text('Variant')") is None, len(rows))
+    page.fill("#records-search", f"https://id.example.org/01/{MANY}"); page.wait_for_timeout(150)
+    check("Digital Link of the key alone: every record of the key, the product first", shown() == 22
+          and "Exact" in page.query_selector_all("#records-body tr")[0].inner_text(), shown())
+    page.fill("#records-search", "(00)095060001343520000"); page.wait_for_timeout(150)
+    check("element string of another key type", shown() == 1 and "Exact" in page.inner_text("#records-body"))
+    page.fill("#records-search", "(01)07898357410015(10)NOPE"); page.wait_for_timeout(150)
+    check("a batch not registered: the product record still found", shown() == 1
+          and "Every unit" in page.inner_text("#records-body") and "Exact" not in page.inner_text("#records-body"))
+    page.fill("#records-search", "(01) 095"); page.wait_for_timeout(150)
+    check("an incomplete code is looked up as a code", shown() == 0 and page.is_visible("#records-code"))
+    page.fill("#records-search", "https://example.org/acai"); page.wait_for_timeout(150)
+    check("an address that is not a Digital Link is searched as text", not page.is_visible("#records-code"))
+    page.click("#records-clear")
 
     # Key qualifiers (URI Syntax 4.4, 4.6, 4.9)
     page.goto(BASE); page.wait_for_timeout(700)

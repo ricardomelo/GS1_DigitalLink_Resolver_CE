@@ -23,7 +23,7 @@ A revisão encontrou **cinco lacunas em requisitos SHALL** que importam na prát
 
 | Achado | Cláusula | Em uma frase |
 |---|---|---|
-| [F9](#f9) | Resolver 2.6.1, 2.5.8 | Sem `linkType`, um registro com dois links do seu tipo padrão em idiomas diferentes responde **300** em vez de redirecionar para o link padrão quando o idioma do navegador não coincide com nenhum. |
+| [F9](#f9) | Resolver 2.6.1, 2.5.8 | Sem `linkType`, um registro com dois links do seu tipo padrão em idiomas diferentes responde **300** em vez de redirecionar para o link padrão quando o idioma da requisição não coincide com nenhum, ou quando ela não indica idioma. |
 | [F1](#f1) | Resolver 2.5.9 | Um registro qualificado (lote, série…) pode existir sem registro da chave, e então os outros lotes e séries dessa chave respondem 404. |
 | [F2](#f2) | Resolver 2.5.9, regra 2 | Registros de série também podem levar lote ou variante, o que o padrão proíbe. |
 | [F6](#f6) | Resolver 2.3 | Strings EPC binary (`/eh…`, `/ex…`) não são descomprimidas; respondem 500. |
@@ -98,7 +98,10 @@ então a correção é no cadastro. Lado: cadastro. **Ação: item 1.3.**
 `KEY_SHAPES` em `portal/gs1.py` dá ao GTIN o formato `22, 10, 21` com todos os qualificadores opcionais,
 então 01+10+21 e 01+22+10+21 podem ser cadastrados (o ITIP também, com 10+21). A API de cadastro aceita
 quaisquer qualificadores (F11). A regra 1 (01+235 sozinho) já é aplicada pelo formato `235`. Lado: cadastro.
-**Ação: item 1.2**, incluindo a migração dos registros existentes que violam a regra.
+**Ação: item 1.2.** A instalação de homologação não tinha nenhum registro de série com lote ou variante
+(verificado em 1º de outubro de 2026), então o 1.2 não precisa de ferramenta de migração: recusa a combinação
+em todas as entradas (formulário, importação de planilha, API) e lista os registros desse tipo já gravados,
+para instalações com dados anteriores à regra.
 
 ### F3 — O link padrão leva título e nada mais (Resolver 2.5.8) — conforme
 
@@ -225,7 +228,7 @@ que a URI Syntax permite (`queryStringDelim`, 4.11), não é entendido: `?17=261
 destino como `?17=261231%3B3103%3D000189`; uma chave sem valor (`?flag`) vira `?flag=`. Lado: consulta.
 **Ação: item 1.5** (acrescentar a query string original).
 
-### F14 — Desligar o repasse da query string por link (Resolver 2.12) — não conforme quando usado; decisão pendente
+### F14 — Desligar o repasse da query string por link (Resolver 2.12) — não conforme quando usado; opção a retirar
 
 > When redirecting, by default, a resolver SHALL transmit the entirety of the query string in the request
 > URI to the target destination.
@@ -235,8 +238,9 @@ target URL has been removed." O portal oferece *Repassar os parâmetros do ender
 cada link (gravado como `"fwqs": false`, respeitado em `_process_response()`), e as colunas de importação e
 exportação o levam. O repasse é o padrão, então só os registros em que alguém desmarcou a opção são
 afetados. O atributo `fwqs` continua no schema oficial do linkset da GS1, por isso se propõe a errata E3.
-Lado: cadastro, consulta. **Ação: decisão do responsável**, depois item 1.5: retirar a opção (e ignorar
-`fwqs: false` nos registros existentes) ou mantê-la como desvio documentado até a GS1 esclarecer.
+Lado: cadastro, consulta. **Ação: item 1.5**, conforme decisão do mantenedor em 1º de outubro de 2026: a
+opção sai do editor de links e da importação e exportação de planilhas, e o Resolver ignora `fwqs: false` nos
+registros que já o têm, de modo que todo redirecionamento repasse a query string.
 
 ### F15 — Caminhos de um segmento não reconhecidos respondem 500 (Resolver 2.4.1) — parcial
 
@@ -406,9 +410,9 @@ A questão do namespace (F22) não está na lista: só vira errata se a suíte d
 
 | Item | Mudança |
 |---|---|
-| 1.2 Modelo de cadastro do 2.5.9 | Também: a API de cadastro valida chaves e qualificadores com as mesmas regras do portal (F11); um teste com os seis conjuntos da regra 4 (F4). Corrige o F2. |
+| 1.2 Modelo de cadastro do 2.5.9 | Também: a API de cadastro valida chaves e qualificadores com as mesmas regras do portal (F11); um teste com os seis conjuntos da regra 4 (F4); sem ferramenta de migração (ver F2). Corrige o F2. |
 | 1.3 Link padrão num nível acima | Sem mudança; corrige o F1. |
-| **1.5 Correções de resolução (novo, M)** | F9 resposta padrão e `defaultLinkMulti`; F10 caminho validado pelo parser de GS1 Digital Link do motor; F12 URI original pelo proxy e pelo servidor web; F13 query string original; F14 depois da decisão do responsável; F15 400 em vez de 500; F16 300 como linkset (e HTML); F17 JSON-LD na página HTML; F18 links sem tipo de mídia; F19 busca BCP 47; F7 limpeza do arquivo de descrição; decisão do F23. Depende do 1.2 (mesmos registros e testes). |
+| **1.5 Correções de resolução (novo, M)** | F9 resposta padrão e `defaultLinkMulti`; F10 caminho validado pelo parser de GS1 Digital Link do motor; F12 URI original pelo proxy e pelo servidor web; F13 query string original; F14 retirada da opção por link; F15 400 em vez de 500; F16 300 como linkset (e HTML); F17 JSON-LD na página HTML; F18 links sem tipo de mídia; F19 busca BCP 47; F7 limpeza do arquivo de descrição; decisão do F23. Depende do 1.2 (mesmos registros e testes). |
 | **1.6 Descompressão de EPC binary (novo, M–L)** | F6 e o restante do F7. Implementação a escolher quando o item começar (GS1 Digital Link URI: Compression Technical Standard for EPC binary strings 1.0.0, Tag Data Standard / Tag Data Translation); o 500 para segmentos não reconhecidos é corrigido no 1.5. |
 | 1.4 Suíte de testes de conformidade da GS1 | Roda depois do 1.5 e do 1.6, para que o registro mostre o Resolver corrigido; resolve também o F22. |
 | 7.3 Acabamento | F21 (títulos padrão no idioma do link). |
@@ -435,12 +439,13 @@ g.dataStr = "https://example.org/01/09506000134352/21/S1/10/L1";   // erro: sequ
 **O proxy** (F12): qualquer nginx com `location / { proxy_pass http://127.0.0.1:4000/api/; }` na frente de
 um servidor que imprima o caminho recebido mostra `/10/A%2FB` chegando como `/10/A/B`.
 
-**Numa instalação**, trocando `https://resolver.example` pelo endereço do Resolver e `{gtin}` por um GTIN
-cadastrado (para o F9, um cujo tipo de link padrão tenha links em dois idiomas). Cada linha imprime o status
-e o cabeçalho `Location`.
+**Numa instalação**, trocando os valores de `R` (o endereço do Resolver) e `G` (um GTIN cadastrado, com 14
+dígitos, sem chaves). As respostas esperadas nas linhas do F10 supõem um GTIN cuja própria requisição
+redireciona; para um GTIN afetado pelo F9 elas também dão 300, o que ainda mostra que o caminho não foi
+recusado. Cada linha imprime o status e o cabeçalho `Location`.
 
 ```bash
-R=https://resolver.example; G={gtin}
+R=https://resolver.example; G=09506000134352
 show() { curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$@"; }
 show -H 'Accept-Language: de' "$R/01/$G"            # F9:  300 hoje; esperado 307 para o link padrão
 show "$R/01/$G/17/261231"                            # F10: 307 hoje; esperado 400
@@ -449,3 +454,18 @@ show "$R/01/$G/10/A%2FB"                             # F12: 400 hoje; esperado 3
 show "$R/01/$G?17=261231;3103=000189"                # F13: hoje o Location termina em %3B3103%3D000189
 show "$R/eh3074257bf7194e4000001a85"                 # F6, F15: 500 hoje
 ```
+
+Resultados na instalação de homologação (1º de outubro de 2026), com um GTIN cujo tipo de link padrão tem
+links em mais de um idioma:
+
+| Linha | Resposta | Leitura |
+|---|---|---|
+| F9, `Accept-Language: de` | 300 | F9 confirmado |
+| F10, `/17/261231` | 300 | não recusado: o caminho subiu até o GTIN e caiu no F9 — F10 confirmado |
+| F10, `/21/S1/10/L1` | 300 | o mesmo — F10 confirmado |
+| F12, `/10/A%2FB` | 400 | F12 confirmado passando pelo nginx do host e pelo proxy |
+| F13, `?17=…;3103=…` | 300 | de novo o F9; sem redirecionamento não se vê a query string repassada (o F13 se apoia na verificação do ambiente de desenvolvimento) |
+| F6, F15, `/eh…` | 500 | F6 e F15 confirmados |
+
+As linhas do F10 e do F13 também responderam 300 sem nenhum cabeçalho `Accept-Language`, ou seja, o exemplo
+5 do padrão (sem informação de idioma → link padrão) falha do mesmo jeito que o exemplo 7.

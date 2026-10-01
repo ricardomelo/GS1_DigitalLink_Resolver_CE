@@ -21,7 +21,7 @@ The review found **five gaps with a SHALL** that matter in practice:
 
 | Finding | Clause | In one sentence |
 |---|---|---|
-| [F9](#f9) | Resolver 2.6.1, 2.5.8 | Without `linkType`, a record with two links of its default type in different languages answers **300** instead of redirecting to the default link when the browser's language matches neither. |
+| [F9](#f9) | Resolver 2.6.1, 2.5.8 | Without `linkType`, a record with two links of its default type in different languages answers **300** instead of redirecting to the default link when the request's language matches neither, or names no language at all. |
 | [F1](#f1) | Resolver 2.5.9 | A qualified record (batch, serial…) can exist without a record for its key, so other batches and serials of that key answer 404. |
 | [F2](#f2) | Resolver 2.5.9, rule 2 | Serial records may also carry a batch or a variant, which the standard forbids. |
 | [F6](#f6) | Resolver 2.3 | EPC binary strings (`/eh…`, `/ex…`) are not decompressed; they answer 500. |
@@ -94,7 +94,10 @@ the registration side. Side: registration. **Action: item 1.3.**
 `KEY_SHAPES` in `portal/gs1.py` gives GTIN the shape `22, 10, 21` with every qualifier optional, so
 01+10+21 and 01+22+10+21 can be registered (ITIP likewise with 10+21). The data entry API accepts any
 qualifiers (F11). Rule 1 (01+235 alone) is already enforced by the shape `235`. Side: registration.
-**Action: item 1.2**, including the migration of existing records that break the rule.
+**Action: item 1.2.** The staging installation held no serial record with a batch or a variant (checked on
+1 October 2026), so 1.2 needs no migration tool: it refuses the combination on every input (form,
+spreadsheet import, API) and lists any such record already stored, for installations whose data predates
+the rule.
 
 ### F3 — The default link carries a title and nothing else (Resolver 2.5.8) — conforms
 
@@ -222,7 +225,7 @@ delimiter that the URI Syntax allows (`queryStringDelim`, 4.11) is not understoo
 reaches the target as `?17=261231%3B3103%3D000189`; a key without a value (`?flag`) becomes `?flag=`. Side:
 query. **Action: item 1.5** (append the raw query string).
 
-### F14 — Turning off query-string forwarding per link (Resolver 2.12) — does not conform when used; decision pending
+### F14 — Turning off query-string forwarding per link (Resolver 2.12) — does not conform when used; option to be removed
 
 > When redirecting, by default, a resolver SHALL transmit the entirety of the query string in the request
 > URI to the target destination.
@@ -232,8 +235,9 @@ redirecting to a target URL has been removed." The portal offers *Pass the reque
 this target* per link (stored as `"fwqs": false`, honoured in `_process_response()`), and the import and
 export columns carry it. Forwarding is the default, so only records where a user unticked the box are
 affected. The attribute `fwqs` is still part of GS1's official linkset schema, which is why erratum E3 is
-proposed. Side: registration, query. **Action: owner's decision**, then item 1.5: either remove the option
-(and ignore `fwqs: false` in existing records), or keep it as a documented deviation until GS1 clarifies.
+proposed. Side: registration, query. **Action: item 1.5**, as decided by the maintainer on 1 October 2026: the option
+leaves the link editor and the spreadsheet import and export, and the resolver ignores `fwqs: false` in
+records that already carry it, so that every redirect forwards the query string.
 
 ### F15 — Unrecognised single-segment paths answer 500 (Resolver 2.4.1) — partly
 
@@ -404,9 +408,9 @@ The namespace question (F22) is not listed: it becomes an erratum only if the te
 
 | Item | Change |
 |---|---|
-| 1.2 Registration model of 2.5.9 | Also: the data entry API validates keys and qualifiers with the same rules as the portal (F11); a test with the six sets of rule 4 (F4). Fixes F2. |
+| 1.2 Registration model of 2.5.9 | Also: the data entry API validates keys and qualifiers with the same rules as the portal (F11); a test with the six sets of rule 4 (F4); no migration tool (see F2). Fixes F2. |
 | 1.3 Default link at a higher level | Unchanged; fixes F1. |
-| **1.5 Resolution fixes (new, M)** | F9 default response and `defaultLinkMulti`; F10 path validated by the engine's GS1 Digital Link parser; F12 raw request URI through the proxy and the web server; F13 raw query string; F14 after the owner's decision; F15 400 instead of 500; F16 300 as a linkset (and HTML); F17 JSON-LD in the HTML page; F18 links without media type; F19 BCP 47 lookup; F7 description file tidy-up; F23 decision. Depends on 1.2 (the same records and tests). |
+| **1.5 Resolution fixes (new, M)** | F9 default response and `defaultLinkMulti`; F10 path validated by the engine's GS1 Digital Link parser; F12 raw request URI through the proxy and the web server; F13 raw query string; F14 removal of the per-link option; F15 400 instead of 500; F16 300 as a linkset (and HTML); F17 JSON-LD in the HTML page; F18 links without media type; F19 BCP 47 lookup; F7 description file tidy-up; F23 decision. Depends on 1.2 (the same records and tests). |
 | **1.6 EPC binary decompression (new, M–L)** | F6 and the remaining part of F7. Implementation to be chosen when the item starts (GS1 Digital Link URI: Compression Technical Standard for EPC binary strings 1.0.0, Tag Data Standard / Tag Data Translation); the 500 for unrecognised segments is fixed in 1.5. |
 | 1.4 GS1 conformance test suite | Runs after 1.5 and 1.6, so that the record reflects the corrected resolver; also settles F22. |
 | 7.3 Polish | F21 (default titles in the link's language). |
@@ -433,12 +437,13 @@ g.dataStr = "https://example.org/01/09506000134352/21/S1/10/L1";   // throws: no
 **The proxy** (F12): any nginx with `location / { proxy_pass http://127.0.0.1:4000/api/; }` in front of a
 server that prints the path it receives shows `/10/A%2FB` arriving as `/10/A/B`.
 
-**Against an installation**, replacing `https://resolver.example` by the resolver's address and `{gtin}`
-by a registered GTIN (for F9, one whose default link type has links in two languages). Each line prints
-the status and the `Location` header.
+**Against an installation**, replacing the values of `R` (the resolver's address) and `G` (a registered
+GTIN, 14 digits, without braces). The expected answers of the F10 lines assume a GTIN whose own request
+redirects; for a GTIN affected by F9 they also give 300, which still shows that the path was not refused.
+Each line prints the status and the `Location` header.
 
 ```bash
-R=https://resolver.example; G={gtin}
+R=https://resolver.example; G=09506000134352
 show() { curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$@"; }
 show -H 'Accept-Language: de' "$R/01/$G"            # F9:  300 today; 307 to the default link expected
 show "$R/01/$G/17/261231"                            # F10: 307 today; 400 expected
@@ -447,3 +452,18 @@ show "$R/01/$G/10/A%2FB"                             # F12: 400 today; 307 expec
 show "$R/01/$G?17=261231;3103=000189"                # F13: Location ends in %3B3103%3D000189 today
 show "$R/eh3074257bf7194e4000001a85"                 # F6, F15: 500 today
 ```
+
+Results on the staging installation (1 October 2026), with a GTIN whose default link type has links in
+more than one language:
+
+| Line | Answer | Reading |
+|---|---|---|
+| F9, `Accept-Language: de` | 300 | F9 confirmed |
+| F10, `/17/261231` | 300 | not refused: the path walked up to the GTIN and met F9 — F10 confirmed |
+| F10, `/21/S1/10/L1` | 300 | the same — F10 confirmed |
+| F12, `/10/A%2FB` | 400 | F12 confirmed through the host's nginx and the proxy |
+| F13, `?17=…;3103=…` | 300 | F9 again; without a redirect the forwarded query string cannot be seen (F13 rests on the sandbox check) |
+| F6, F15, `/eh…` | 500 | F6 and F15 confirmed |
+
+The F10 and F13 lines also answered 300 without any `Accept-Language` header, which is the standard's
+example 5 (no language information → the default link) failing in the same way as example 7.

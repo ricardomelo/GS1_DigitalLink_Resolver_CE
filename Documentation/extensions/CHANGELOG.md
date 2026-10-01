@@ -2,6 +2,19 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Documentation
+- New documents: a portal user guide with screenshots (`Documentation/portal-user-guide.md`), the list of
+  every feature with the commit that introduced it (`features.md`), the history of the project across its
+  working sessions (`history.md`), a developer guide to the source code, the portal API and data files
+  (`developer-guide.md`), and an index (`Documentation/README.md`). The README links to all of them.
+- Docstrings for every function written for the fork and a map of `app.js`'s sections; no behaviour change.
+- `dev-tests/docs/screenshots.py` also produces the user guide's images (`Documentation/images/guide/`);
+  the example data gained the product and batch records of the infusion pump, so the README screenshots of
+  the editor, the attributes panel and the record list show the list of other records.
+
+### Portal: one other record in the singular
+- "This identifier has one other record, listed below." instead of "1 other records".
+
 ### Portal: record list filters by key type and key qualifier; code search
 - Two filters on *Registered records*: primary key type (GTIN, SSCC, GLN…) and key qualifier (variant,
   batch/lot, serial…, "None" for the whole key, "Others" for qualifier sets made elsewhere). They list only

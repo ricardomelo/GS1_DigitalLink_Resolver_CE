@@ -27,6 +27,19 @@ The changes are meant to be offered back to the official project.
 
 ---
 
+## Documentation
+
+| | |
+|---|---|
+| [Portal user guide](Documentation/portal-user-guide.md) | every task in the portal, step by step, with screenshots |
+| [Features](Documentation/features.md) | every feature, what it does and when it was added |
+| [History](Documentation/history.md) | how the project evolved, decisions and lessons |
+| [Developer guide](Documentation/developer-guide.md) | services, source files, portal API, data files, tests, how to extend |
+| [Extensions documentation](Documentation/extensions/README.md) · [Changelog](Documentation/extensions/CHANGELOG.md) | detailed rules and decisions · every change |
+
+This README covers the overview, the API, installation and operation. The index of every document is
+[Documentation/README.md](Documentation/README.md).
+
 ## Contents
 
 1. [The original project](#the-original-project)
@@ -109,6 +122,8 @@ browser, and the portal reads before writing to use the API's operations safely 
 DELETE removes links, the default link type is shared by all records of a key).
 
 ## The link management portal
+
+Step-by-step instructions for every task are in the [portal user guide](Documentation/portal-user-guide.md).
 
 <p align="center">
   <img src="Documentation/images/portal-editor.png" alt="Portal editor with a GTIN, its qualifiers, targets and QR code" width="640">
@@ -479,7 +494,8 @@ GS1_SYNTAX_ENGINE=/tmp/se python dev-tests/portal/test_keys.py
 ```
 
 The official integration test `tests/setup_test.py` needs the running stack and reads the token from
-`SESSION_TOKEN`. The screenshots of this README are produced by `dev-tests/docs/screenshots.py`.
+`SESSION_TOKEN`. The screenshots of this README and of the user guide are produced by
+`dev-tests/docs/screenshots.py`.
 
 ## Repository layout
 
@@ -496,7 +512,9 @@ portal/                         link management portal: app.py, gs1.py (keys, qu
                                 tools/build-syntax-engine.sh (GS1 Barcode Syntax Engine)
 scripts/                        install.sh, templates/ (nginx), resolver-backup.sh and its cron entry
 dev-tests/                      development tests (see above)
-Documentation/                  extensions/ (detailed documentation, changelog), images/, upstream-README.md
+Documentation/                  README.md (index), portal-user-guide.md, features.md, history.md,
+                                developer-guide.md, extensions/ (detailed documentation, changelog),
+                                images/ (README) and images/guide/ (user guide), upstream-README.md
 tests/, useful_external_python_scripts/   official tests and conversion scripts
 ```
 

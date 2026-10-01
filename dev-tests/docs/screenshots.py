@@ -1,6 +1,7 @@
 """
-Produces the screenshots used by README.md (Documentation/images/*.png) from the real portal and home
-page, with example data and no network access. The GS1 logo is hidden in the images (it is a GS1
+Produces the screenshots used by README.md (Documentation/images/*.png) and by the portal user guide
+(Documentation/images/guide/*.png) from the real portal and home page, with example data and no network
+access. The GS1 logo is hidden in the images (it is a GS1
 trademark and the images illustrate the software, not an endorsement). Run it again after visual changes.
 
   pip install -r portal/requirements.txt playwright pillow && playwright install chromium
@@ -71,6 +72,11 @@ EXAMPLES = [
     ("/01/09506000134376", [{"22": "V1"}, {"10": "B42"}, {"21": "S1001"}], "Infusion pump", "gs1:pip",
      [pip("https://medical.example/pump"), {"linktype": "gs1:epil", "href": "https://medical.example/missing/ifu.pdf",
                                             "title": "Instructions for use", "hreflang": ["en"]}], "maria"),
+    ("/01/09506000134376", [], "Infusion pump", "gs1:pip", [pip("https://medical.example/pump")], "maria"),
+    ("/01/09506000134376", [{"22": "V1"}, {"10": "B42"}], "Infusion pump — batch B42", "gs1:pip",
+     [pip("https://medical.example/pump/B42")], "joao"),
+    ("/01/09506000134376", [{"22": "V1"}, {"10": "B42"}, {"21": "S1002"}], "Infusion pump", "gs1:pip",
+     [pip("https://medical.example/pump")], None),
     ("/00/095060001343520000", [], "Pallet 1 — São Paulo DC", "gs1:traceability",
      [{"linktype": "gs1:traceability", "href": "https://logistics.example/pallet/1", "title": "Tracking",
        "hreflang": ["en"]}], "joao"),
@@ -98,14 +104,41 @@ def save(page, name, clip=None, full=False):
     print("wrote", os.path.relpath(path, REPO))
 
 
+def save_element(page, name, selector, pad=12, extra_height=0):
+    """Screenshot of one element of the page (with a margin), wherever it is on the page."""
+    page.locator(selector).first.scroll_into_view_if_needed()
+    page.wait_for_timeout(150)
+    box = page.locator(selector).first.bounding_box()
+    scroll_x, scroll_y = page.evaluate("[window.scrollX, window.scrollY]")
+    save(page, name, clip={"x": max(box["x"] + scroll_x - pad, 0), "y": max(box["y"] + scroll_y - pad, 0),
+                           "width": box["width"] + 2 * pad, "height": box["height"] + 2 * pad + extra_height}, full=True)
+
+
 os.makedirs(OUT, exist_ok=True)
+os.makedirs(os.path.join(OUT, "guide"), exist_ok=True)
 with sync_playwright() as p:
     browser = p.chromium.launch()
     ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 1100})
     page = ctx.new_page()
     page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
-    page.goto(BASE); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
+    page.goto(BASE); page.wait_for_timeout(500)
+    save(page, "guide/sign-in.png", clip={"x": 0, "y": 0, "width": 1280, "height": 760})
+    page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(800)
+
+    # User guide: the editor step by step (Documentation/portal-user-guide.md)
+    save(page, "guide/editor-start.png", clip={"x": 0, "y": 0, "width": 1280, "height": 820})
+    page.select_option("#key-type", "01"); page.fill("#key-value", "9506000134352"); page.wait_for_timeout(300)
+    page.fill("#q-10", "L2026A"); page.wait_for_timeout(300)
+    page.click("#open"); page.wait_for_timeout(900)
+    page.fill("#description", "Organic açaí 500 g — batch L2026A"); page.click("#save"); page.wait_for_timeout(900)
+    save_element(page, "guide/step1-identify.png", "section.step:first-of-type")
+    save_element(page, "guide/step3-targets.png", "#editor")
+    page.click("#history-toggle"); page.wait_for_timeout(700)
+    save_element(page, "guide/history.png", "#history-panel")
+    page.click("#user-button"); page.wait_for_timeout(300)
+    save(page, "guide/user-menu.png", clip={"x": 900, "y": 0, "width": 380, "height": 420})
+    page.keyboard.press("Escape"); page.mouse.click(5, 300); page.wait_for_timeout(200)
 
     # Editor: GTIN with variant, batch and serial
     page.fill("#key-value", "09506000134376")
@@ -113,6 +146,15 @@ with sync_playwright() as p:
     page.click("#open"); page.wait_for_timeout(900)
     page.click("#check-links"); page.wait_for_timeout(1200)
     save(page, "portal-editor.png", full=True)
+
+    save_element(page, "guide/label-panel.png", ".label-panel")
+    page.goto(BASE); page.wait_for_timeout(700)
+    page.fill("#key-value", "09506000134376"); page.wait_for_timeout(300)
+    page.click("#open"); page.wait_for_timeout(900)
+    save_element(page, "guide/other-records.png", "#others")
+    page.fill("#key-value", "09506000134376")
+    page.fill("#q-22", "V1"); page.fill("#q-10", "B42"); page.fill("#q-21", "S1001"); page.wait_for_timeout(300)
+    page.click("#open"); page.wait_for_timeout(900)
 
     # QR code panel with data attributes (needs the GS1 Barcode Syntax Engine: GS1_SYNTAX_ENGINE_DIR)
     import syntax  # noqa: PLC0415
@@ -136,6 +178,13 @@ with sync_playwright() as p:
     page.goto(BASE + "#records"); page.wait_for_timeout(800)
     page.click("#records-check"); page.wait_for_timeout(2500)
     save(page, "portal-records.png", clip={"x": 0, "y": 0, "width": 1280, "height": 900})
+    page.select_option("#records-key", "01"); page.select_option("#records-qualifier", "10"); page.wait_for_timeout(200)
+    save_element(page, "guide/records-filters.png", "#records-view .sheet")
+    page.click("#records-clear")
+    page.fill("#records-search", "https://id.example.org/01/09506000134376/22/V1/10/B42/21/S1001?17=271231")
+    page.wait_for_timeout(300)
+    save_element(page, "guide/records-code-search.png", "#records-view .sheet")
+    page.click("#records-clear")
 
     # Spreadsheet import preview
     from openpyxl import Workbook
@@ -158,6 +207,11 @@ with sync_playwright() as p:
     page.fill("#new-user-name", "joana"); page.select_option("#new-user-role", "editor"); page.fill("#new-user-prefixes", "7895678")
     page.click("#users-create button[type=submit]"); page.wait_for_timeout(800)
     save(page, "portal-users.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1100})
+    page.goto(BASE + "#audit"); page.wait_for_timeout(900)
+    save(page, "guide/audit.png", clip={"x": 0, "y": 0, "width": 1280, "height": 900})
+    page.goto(BASE); page.wait_for_timeout(700)
+    page.click("#user-button"); page.click("#menu-options"); page.wait_for_timeout(400)
+    save_element(page, "guide/password.png", "#options-dialog", pad=4)
     browser.close()
 
 # Home page

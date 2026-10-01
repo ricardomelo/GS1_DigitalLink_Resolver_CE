@@ -222,7 +222,10 @@ function buildQualifierFields() {
     const note = document.createElement("span");
     note.className = "optional";
     I18N.set(note, alwaysRequired(ai, q) ? "qual.required" : "qual.optional");
-    label.append(name, " ", note);
+    const tag = document.createElement("span");
+    tag.className = "tag-info";
+    I18N.set(tag, "informative.tag");
+    label.append(name, " ", note, tag);
     const input = document.createElement("input");
     input.id = "q-" + q;
     input.className = "code";
@@ -274,6 +277,25 @@ function qualifierPath(pairs) {
 /* "Batch L1 · Serial S1" */
 function qualText(pairs) {
   return (pairs || []).map(([q, v]) => t(`qual.${q}.item`, { value: v })).join(" · ");
+}
+
+/* GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2: with a serial number, the variant and batch of a GTIN
+   or ITIP are not part of the record. The portal keeps them with the serial-number record as information
+   (stored, searchable, printed in the QR code). { pairs: the record's qualifiers, informative }. */
+function splitInformative(ai, pairs) {
+  const rule = keyConfig(ai).informative;
+  if (!rule || !(pairs || []).some(([q]) => q === rule.serial)) return { pairs: pairs || [], informative: [] };
+  return { pairs: pairs.filter(([q]) => !rule.ais.includes(q)), informative: pairs.filter(([q]) => rule.ais.includes(q)) };
+}
+
+/* " · Batch B42 (informative)" after the record's own qualifiers, or "" */
+function informativeText(pairs) {
+  return pairs?.length ? " · " + t("informative.suffix", { list: qualText(pairs) }) : "";
+}
+
+/* What identifies the record being edited: key and the record's own qualifiers (not the informative ones). */
+function recordKey(g, l) {
+  return query(g, { pairs: splitInformative(g.ai, l.pairs).pairs });
 }
 
 function query(g, qual) {
@@ -360,8 +382,10 @@ function drawDigitalLink(host, g, shown, pairs, queryString) {
   segment("seg-host", host);
   segment("seg-key", `/${g.ai}/${shown}`);
   I18N.set($("#legend-key"), "legend.key", { ai: g.ai, name: t(`key.${g.ai}.short`) });
-  pairs.forEach(([q, v]) => segment("seg-qual", `/${q}/${encodeURIComponent(v)}`));
-  $("#legend-lot").hidden = pairs.length === 0;
+  const informative = splitInformative(g.ai, pairs).informative.map(([q]) => q);
+  pairs.forEach(([q, v]) => segment(informative.includes(q) ? "seg-info" : "seg-qual", `/${q}/${encodeURIComponent(v)}`));
+  $("#legend-lot").hidden = pairs.length === informative.length;
+  $("#legend-info").hidden = informative.length === 0;
   // "?17=261231&3103=000500": one segment per attribute so long query strings wrap between them
   queryString.slice(1).split("&").filter(Boolean)
     .forEach((pair, i) => segment("seg-attr", (i ? "&" : "?") + pair));
@@ -883,13 +907,47 @@ function onIdentityChange() {
   qualMsg.className = "field-msg" + (l.error ? " is-error" : "");
 
   $("#open").disabled = !(CONFIG && g.ok && l.ok);
-  const key = g.ok && l.ok ? query(g, l) : null;
+  markInformative(g, l);
+  renderScope(g, l);
+  // The batch or variant of a serial number is informative: changing it keeps the record open
+  const key = g.ok && l.ok ? recordKey(g, l) : null;
   if (state.openKey && key !== state.openKey) {
     state.openKey = null;
     $("#editor").disabled = true;
     setOpenMessage("open.changed");
   }
   renderPreview();
+}
+
+/* With a serial number, the variant and batch fields of a GTIN or ITIP are marked as informative. */
+function markInformative(g, l) {
+  const rule = keyConfig(g.ai).informative;
+  const serial = rule && $(`#q-${rule.serial}`)?.value.trim();
+  for (const field of $$("#qualifiers .qual-field")) {
+    field.classList.toggle("is-informative", Boolean(serial) && rule.ais.includes(field.dataset.ai));
+  }
+}
+
+/* "This record applies to: …" under the qualifiers, in plain words, with what happens to codes that have no
+   record of their own (the resolver walks up to a less specific record, section 2.5.9). */
+function renderScope(g, l) {
+  const box = $("#scope");
+  if (!g.ok || !l.ok || !keyConfig(g.ai).qualifiers.length) { box.hidden = true; return; }
+  const { pairs, informative } = splitInformative(g.ai, l.pairs);
+  const name = t(`key.${g.ai}.short`);
+  I18N.set($("#scope-what"), pairs.length ? null : g.ai === "01" ? "scope.everyUnit" : "scope.wholeKey", { name });
+  if (pairs.length) $("#scope-what").textContent = qualText(pairs);
+  const notes = [];
+  if (informative.length) notes.push(["scope.informative", { list: qualText(informative) }]);
+  if (!pairs.length) notes.push(["scope.keyFallback", { name }]);
+  else if (pairs.some(([q]) => q === "21" || q === "235")) notes.push(["scope.unitFallback", { name }]);
+  else notes.push(["scope.narrowFallback", { name }]);
+  $("#scope-notes").replaceChildren(...notes.map(([k, params]) => {
+    const li = document.createElement("li");
+    I18N.set(li, k, params);
+    return li;
+  }));
+  box.hidden = false;
 }
 
 /* The open message may have a second sentence listing other records on the same GTIN. */
@@ -916,7 +974,7 @@ const othersState = { entries: [] };
 function otherApplies(entry) {
   if (entry.kind === "product") return t("others.product");
   if (entry.kind === "other") return entry.value;
-  return qualText(entry.qualifiers);
+  return qualText(entry.qualifiers) + informativeText(entry.informative);
 }
 
 function renderOthers(entries) {
@@ -926,7 +984,8 @@ function renderOthers(entries) {
   if (box.hidden) return;
   I18N.set($("#others-title"), "others.title", { count: othersState.entries.length, key: t(`key.${readKey().ai}.short`) });
   // Filter: every key qualifier present in the list
-  const present = [...new Set(othersState.entries.flatMap(e => (e.qualifiers || []).map(([q]) => q)))];
+  const present = [...new Set(othersState.entries.flatMap(e => [...(e.qualifiers || []), ...(e.informative || [])].map(([q]) => q)))]
+    .sort((a, b) => QUAL_ORDER.indexOf(a) - QUAL_ORDER.indexOf(b));
   const filter = $("#others-filter");
   const previous = filter.value;
   filter.replaceChildren(new Option(t("others.filter.all"), ""),
@@ -941,7 +1000,8 @@ function drawOthers() {
   const words = fold($("#others-search").value).split(/\s+/).filter(Boolean);
   const kind = $("#others-filter").value;
   const shown = othersState.entries.filter(e =>
-    (!kind || (kind === "product" ? e.kind === "product" : (e.qualifiers || []).some(([q]) => q === kind)))
+    (!kind || (kind === "product" ? e.kind === "product"
+                                   : [...(e.qualifiers || []), ...(e.informative || [])].some(([q]) => q === kind)))
     && words.every(w => fold(`${otherApplies(e)} ${e.description || ""}`).includes(w)));
   const body = $("#others-body");
   body.replaceChildren(...shown.map(entry => {
@@ -981,8 +1041,9 @@ function fitOthers() {
 
 /* The record being edited as it would be saved, to tell whether it has unsaved changes. */
 function editorSnapshot() {
-  const { description, links } = collect();
-  return JSON.stringify({ description, links });
+  const { key, description, links } = collect();
+  const informative = splitInformative(key, readQualifiers().pairs || []).informative;
+  return JSON.stringify({ description, links, informative });
 }
 
 function hasUnsavedChanges() {
@@ -991,7 +1052,7 @@ function hasUnsavedChanges() {
 
 async function openOther(entry) {
   if (hasUnsavedChanges() && !confirm(t("others.confirmDiscard"))) return;
-  const values = Object.fromEntries(entry.qualifiers || []);
+  const values = Object.fromEntries([...(entry.qualifiers || []), ...(entry.informative || [])]);
   for (const field of document.querySelectorAll("#qualifiers .qual-field")) {
     $("input", field).value = values[field.dataset.ai] || "";
   }
@@ -1009,7 +1070,18 @@ async function openRecord() {
   hideStatus();
   try {
     const record = await api("GET", "record?" + query(g, l));
-    state.openKey = query(g, l);
+    state.openKey = recordKey(g, l);
+    // A serial number opened without its batch or variant shows the stored ones; typed ones that differ are
+    // kept (they replace the stored ones on saving) and the difference is pointed out.
+    const typed = splitInformative(g.ai, l.pairs).informative;
+    const stored = record.storedInformative || [];
+    let informativeNote = null;
+    if (!typed.length && stored.length) {
+      for (const [q, v] of stored) { const input = $(`#q-${q}`); if (input) input.value = v; }
+      onIdentityChange();
+    } else if (record.exists && JSON.stringify(typed) !== JSON.stringify(stored)) {
+      informativeNote = stored.length ? ["informative.differs", { stored: qualText(stored) }] : ["informative.added", {}];
+    }
     state.exists = record.exists;
     resetAttributes();                  // data attributes belong to the code drawn for one item, not the record
     state.sharedDefaultLinkType = record.sharedDefaultLinkType;
@@ -1020,6 +1092,10 @@ async function openRecord() {
     refreshDefault();
 
     setOpenMessage(record.exists ? "open.found" : "open.new", {}, record.otherEntries);
+    if (informativeNote) {
+      I18N.set($("#qual-msg"), ...informativeNote);
+      $("#qual-msg").className = "field-msg is-warn";
+    }
     state.snapshot = editorSnapshot();         // unsaved changes are measured from here
     $("#delete").hidden = !record.exists;
     $("#history-toggle").hidden = false;
@@ -1388,7 +1464,7 @@ function fillQualifierFilter() {
   records.all.filter(r => !key || r.key === key).forEach(r => {
     if (r.kind === "product") add("none");
     else if (r.kind === "other") add("other");
-    else (r.qualifiers || []).forEach(([q]) => add(q));
+    else new Set([...(r.qualifiers || []), ...(r.informative || [])].map(([q]) => q)).forEach(add);
   });
   select.replaceChildren(new Option(t("records.qualifier.any"), ""),
     ...(counts.none ? [filterOption("none", t("records.qualifier.none"), counts.none)] : []),
@@ -1398,12 +1474,12 @@ function fillQualifierFilter() {
 }
 
 /* "none": records without qualifiers; "other": qualifier sets the portal does not manage; an AI: records
-   that have that qualifier, alone or with others (a serial number record also has its batch). */
+   that have that qualifier, alone or with others, or as information (the batch of a serial number). */
 function qualifierMatches(r, choice) {
   if (!choice) return true;
   if (choice === "none") return r.kind === "product";
   if (choice === "other") return r.kind === "other";
-  return (r.qualifiers || []).some(([q]) => q === choice);
+  return [...(r.qualifiers || []), ...(r.informative || [])].some(([q]) => q === choice);
 }
 
 /* A GS1 Digital Link URI (any domain, any path before the key, query string ignored) or an element
@@ -1453,12 +1529,13 @@ function codeRank(r, code) {
   if (r.key !== code.key || r.value !== code.value) return -1;
   if (r.kind === "other") return code.pairs.length ? -1 : 2;   // qualifiers the portal does not read
   const own = Object.fromEntries(r.qualifiers || []);
+  const known = { ...Object.fromEntries(r.informative || []), ...own };    // with the informative batch/variant
   const wanted = Object.fromEntries(code.pairs);
+  const record = splitInformative(code.key, code.pairs).pairs;            // what the code's own record would be
   const inCode = Object.entries(own).every(([q, v]) => wanted[q] === v);
-  const inRecord = code.pairs.every(([q, v]) => own[q] === v);
-  if (inCode && inRecord) return 0;
+  if (inCode && record.length === Object.keys(own).length && record.every(([q, v]) => own[q] === v)) return 0;
   if (inCode) return 1;
-  return inRecord ? 2 : -1;
+  return code.pairs.every(([q, v]) => known[q] === v) ? 2 : -1;
 }
 
 function codeText(code) {
@@ -1492,7 +1569,7 @@ function keyText(ai, value) {
 }
 
 function scopeText(r) {
-  if (r.kind === "qualified") return qualText(r.qualifiers);
+  if (r.kind === "qualified") return qualText(r.qualifiers) + informativeText(r.informative);
   if (r.kind !== "other" && r.key !== "01") return t("records.scope.key", { name: t(`key.${r.key}.short`) });
   if (r.kind === "other") {
     return t("records.scope.other", { value: r.other });
@@ -1526,7 +1603,8 @@ function renderRecords() {
     .filter(r => {
       if (!words.length) return true;
       const haystack = fold([r.value, r.value.replace(/^0+/, ""), r.key, t(`key.${r.key}.short`), r.description,
-                             (r.qualifiers || []).map(p => p[1]).join(" "), qualText(r.qualifiers), r.other].join(" "));
+                             [...(r.qualifiers || []), ...(r.informative || [])].map(p => p[1]).join(" "),
+                             qualText(r.qualifiers), qualText(r.informative), r.other].join(" "));
       return words.every(w => haystack.includes(w));
     })
     // For a code: the exact record first, then the less specific ones (most qualifiers first).
@@ -1846,7 +1924,11 @@ function readAsBase64(file) {
 }
 
 function scopeOf(item) {
-  if (item.qualifiers?.length) return qualText(item.qualifiers);
+  if (item.qualifiers?.length) {
+    const before = item.informativeBefore
+      ? " — " + t("import.informativeChange", { before: qualText(item.informativeBefore) || t("informative.none") }) : "";
+    return qualText(item.qualifiers) + informativeText(item.informative) + before;
+  }
   return item.key && item.key !== "01" ? t("records.scope.key", { name: t(`key.${item.key}.short`) }) : t("records.scope.product");
 }
 
@@ -2109,8 +2191,9 @@ async function save(event) {
 
 async function remove() {
   const g = readKey(), l = readQualifiers();
-  const target = l.pairs?.length
-    ? t("delete.targetQualified", { qualifiers: qualText(l.pairs), key: keyText(g.ai, g.value) })
+  const own = splitInformative(g.ai, l.pairs || []).pairs;
+  const target = own.length
+    ? t("delete.targetQualified", { qualifiers: qualText(own), key: keyText(g.ai, g.value) })
     : t("delete.targetBase", { key: keyText(g.ai, g.value) });
   if (!confirm(t("delete.confirm", { target }))) return;
   try {

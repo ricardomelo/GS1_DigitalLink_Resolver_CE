@@ -318,12 +318,13 @@ a.dl:not([href]) { pointer-events: none; }
 .seg-key  { color: var(--gs1-blue); font-weight: 600; }
 .seg-qual { color: var(--action); font-weight: 600; }
 .seg-attr { color: var(--ok); font-weight: 600; }
+.seg-info { color: #6B3FA0; font-weight: 600; text-decoration: underline dotted; text-underline-offset: 3px; }
 .legend { margin: 0 0 1rem; font-size: .8125rem; }
 .legend div { display: flex; flex-wrap: wrap; gap: .1rem .5rem; margin-bottom: .3rem; }
 .legend dt { font-weight: 600; display: flex; align-items: center; gap: .4rem; color: var(--ink); }
 .legend dd { margin: 0; color: var(--muted); }
 .sw { width: .7rem; height: .7rem; border-radius: 2px; display: inline-block; }
-.sw-host { background: var(--muted); } .sw-key { background: var(--gs1-blue); } .sw-qual { background: var(--action); } .sw-attr { background: var(--ok); }
+.sw-host { background: var(--muted); } .sw-key { background: var(--gs1-blue); } .sw-qual { background: var(--action); } .sw-attr { background: var(--ok); } .sw-info { background: #6B3FA0; }
 /* Other records of the same key, below "Open record" */
 .others { margin: .25rem 0 1.25rem; border: 1px solid var(--line); border-radius: 4px; background: var(--page); padding: .9rem 1rem 1rem; max-width: 52rem; }
 .others-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: .25rem 1rem; margin-bottom: .6rem; }
@@ -467,6 +468,18 @@ dialog::backdrop { background: rgba(0, 30, 74, .45); }
 .qual-field input { max-width: 30ch; }
 .qual-field .optional { color: var(--muted); font-weight: 400; font-size: .8125rem; }
 .qual-field .qual-help { margin: .25rem 0 0; font-size: .8125rem; color: var(--muted); }
+/* Section 2.5.9: a serial number's variant and batch are informative (kept with the record, not part of it) */
+.tag-info { display: none; margin-left: .4rem; padding: .05rem .45rem; border-radius: 999px; background: #EFE7F8;
+            color: #5B2E91; font-size: .75rem; font-weight: 600; vertical-align: middle; }
+.qual-field.is-informative .tag-info { display: inline-block; }
+.qual-field.is-informative input { border-style: dashed; border-color: #6B3FA0; }
+.scope-card { max-width: 52rem; margin: 1rem 0 .5rem; padding: .8rem 1rem; border: 1px solid var(--line);
+              border-left: 4px solid var(--gs1-blue); border-radius: 0 6px 6px 0; background: var(--panel); font-size: .875rem; }
+.scope-card .scope-title { margin: 0; color: var(--ink); font-size: .9375rem; }
+.scope-card .scope-title strong { color: var(--gs1-blue); }
+.scope-card ul { margin: .4rem 0 0; padding-left: 1.1rem; }
+.scope-card li { margin-top: .2rem; }
+.field-msg.is-warn { color: #9A5B00; }
 
 /* ---------------------------------------------------------------- roles and governance */
 body[data-role="reader"] .needs-editor { display: none !important; }

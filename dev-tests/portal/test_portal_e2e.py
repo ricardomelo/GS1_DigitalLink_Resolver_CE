@@ -291,11 +291,13 @@ with sync_playwright() as p:
     MANY = "07898357410015"
     many = [({"22": f"V{n}"}, f"Café 500 g variante V{n}") for n in (1, 2, 3)]
     many += [({"10": f"L2026-{n:02d}"}, f"Café 500 g lote {n}") for n in range(1, 13)]
-    many += [({"10": "L2026-09", "21": f"S{n:04d}"}, "Café 500 g unidade serializada") for n in range(1, 7)]
+    # serial numbers keep their batch as information (GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2)
+    many += [({"21": f"S{n:04d}"}, "Café 500 g unidade serializada") for n in range(1, 7)]
     link = [{"linktype": "gs1:pip", "href": "https://example.org/cafe", "title": "Café", "hreflang": ["pt"]}]
     mock_data_entry.upsert({"anchor": f"/01/{MANY}", "itemDescription": "Café 500 g", "defaultLinktype": "gs1:pip", "links": link})
     for quals, description in many:
         mock_data_entry.upsert({"anchor": f"/01/{MANY}", "qualifiers": [{k: v} for k, v in quals.items()],
+                                **({"informativeQualifiers": [{"10": "L2026-09"}]} if "21" in quals else {}),
                                 "itemDescription": description, "defaultLinktype": "gs1:pip", "links": link})
     page.select_option("#key-type", "01"); page.wait_for_timeout(100)
     page.fill("#key-value", MANY)
@@ -319,7 +321,7 @@ with sync_playwright() as p:
     check("filter by serial number", len(page.query_selector_all("#others-body tr")) == 6
           and page.inner_text("#others-foot") == "Showing 6 of 21 · scroll the list to see more")
     page.select_option("#others-filter", "10"); page.fill("#others-search", "l2026-0"); page.wait_for_timeout(150)
-    check("filter and search together", len(page.query_selector_all("#others-body tr")) == 15,
+    check("filter and search together (a serial number's informative batch counts)", len(page.query_selector_all("#others-body tr")) == 15,
           len(page.query_selector_all("#others-body tr")))
     page.fill("#others-search", "variante"); page.select_option("#others-filter", ""); page.wait_for_timeout(150)
     rows = page.query_selector_all("#others-body tr")
@@ -433,6 +435,18 @@ with sync_playwright() as p:
     page.fill("#key-value", "09506000134352")
     page.fill("#q-21", "S1"); page.fill("#q-10", "L1"); page.fill("#q-22", "V1"); page.wait_for_timeout(300)
     check("preview path follows 4.9 order", "/01/09506000134352/22/V1/10/L1/21/S1" in page.inner_text("#dl"), page.inner_text("#dl"))
+    check("with a serial number, variant and batch are marked informative",
+          page.is_visible(".qual-field[data-ai='22'] .tag-info") and page.is_visible(".qual-field[data-ai='10'] .tag-info")
+          and not page.is_visible(".qual-field[data-ai='21'] .tag-info"))
+    check("scope: the unit, with the informative batch and variant", page.inner_text("#scope-what") == "Serial S1"
+          and "Variant V1 · Batch L1 are kept with this record" in page.inner_text("#scope-notes"), page.inner_text("#scope"))
+    check("Digital Link: informative segments and legend", page.inner_text("#dl .seg-info") == "/22/V1"
+          and page.is_visible("#legend-info"), page.inner_html("#dl"))
+    page.fill("#q-21", ""); page.wait_for_timeout(100)
+    check("without a serial number nothing is informative; the scope names the batch of the variant",
+          not page.is_visible(".qual-field[data-ai='10'] .tag-info") and page.inner_text("#scope-what") == "Variant V1 · Batch L1"
+          and not page.is_visible("#legend-info"), page.inner_text("#scope"))
+    page.fill("#q-21", "S1"); page.wait_for_timeout(100)
     page.fill("#q-235", "TPX1"); page.wait_for_timeout(100)
     check("UPUI (235) cannot be combined with 22/10/21", "does not allow this combination" in page.inner_text("#qual-msg")
           and page.is_disabled("#open"), page.inner_text("#qual-msg"))
@@ -441,12 +455,22 @@ with sync_playwright() as p:
     page.fill("#description", "Variant batch serial")
     page.fill(".link-row .url", "https://example.org/serial"); page.click("#description")
     page.click("#save"); page.wait_for_timeout(800)
-    stored = [e for e in mock_data_entry.v3("01_09506000134352") if e.get("qualifiers") and len(e["qualifiers"]) == 3]
-    check("qualified record stored with its qualifiers in order", stored and stored[0]["qualifiers"] == [{"22": "V1"}, {"10": "L1"}, {"21": "S1"}],
-          stored)
+    stored = [e for e in mock_data_entry.v3("01_09506000134352") if e.get("qualifiers") == [{"21": "S1"}]]
+    check("serial record stored with its serial only, variant and batch as informative (section 2.5.9, rule 2)",
+          stored and stored[0].get("informativeQualifiers") == [{"22": "V1"}, {"10": "L1"}], stored)
     response = ctx.request.get(f"http://127.0.0.1:{PORT}" + page.get_attribute("#download-png", "href"))
     decoded = cv2.QRCodeDetector().detectAndDecode(cv2.imdecode(np.frombuffer(response.body(), np.uint8), 1))[0]
     check("QR code with every qualifier", decoded.endswith("/01/09506000134352/22/V1/10/L1/21/S1"), decoded)
+    page.fill("#q-10", "L2"); page.wait_for_timeout(200)
+    check("changing the informative batch keeps the record open", not page.is_disabled("#description"))
+    page.fill("#q-22", ""); page.fill("#q-10", ""); page.wait_for_timeout(100)
+    page.click("#open"); page.wait_for_timeout(700)
+    check("a serial number opened without its batch shows the stored variant and batch",
+          page.input_value("#q-22") == "V1" and page.input_value("#q-10") == "L1", (page.input_value("#q-22"), page.input_value("#q-10")))
+    page.fill("#q-10", "L9"); page.click("#open"); page.wait_for_timeout(700)
+    check("a different batch typed is kept and pointed out", page.input_value("#q-10") == "L9"
+          and "registered with Variant V1 · Batch L1" in page.inner_text("#qual-msg"), page.inner_text("#qual-msg"))
+    page.fill("#q-10", "L1"); page.click("#open"); page.wait_for_timeout(700)
 
     # GS1 Digital Link data attributes (URI Syntax 4.10): only in the QR code, checked by the syntax engine
     if not portal.syntax.ENGINE.available:
@@ -617,7 +641,8 @@ with sync_playwright() as p:
 
     page.goto(BASE + "#records"); page.wait_for_timeout(700)
     row = page.query_selector("#records-body tr:has-text('Variant batch serial')")
-    check("qualified record in the list", row is not None and "Variant V1 · Batch L1 · Serial S1" in row.inner_text(),
+    check("serial record in the list, its variant and batch informative", row is not None
+          and "Serial S1 · Variant V1 · Batch L1 (informative)" in row.inner_text(),
           row.inner_text() if row else None)
     row.query_selector("a").click(); page.wait_for_timeout(800)
     check("qualified record opens with its qualifiers", page.input_value("#q-22") == "V1" and page.input_value("#q-10") == "L1"

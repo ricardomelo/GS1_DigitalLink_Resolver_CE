@@ -93,6 +93,11 @@
           <div id="qualifiers"></div>
           <p class="field-msg" id="qual-msg" aria-live="polite"></p>
         </fieldset>
+        <!-- What the record applies to, in plain words (GS1-Conformant Resolver 1.2.1, section 2.5.9) -->
+        <div class="scope-card" id="scope" aria-live="polite" hidden>
+          <p class="scope-title"><span data-i18n="scope.title"></span> <strong id="scope-what"></strong></p>
+          <ul id="scope-notes"></ul>
+        </div>
 
         <button type="button" id="open" class="btn btn-secondary" disabled data-i18n="open.button"></button>
         <p class="field-msg" id="open-msg" aria-live="polite"></p>
@@ -257,6 +262,7 @@
             <div><dt><span class="sw sw-host"></span><span data-i18n="legend.host"></span></dt><dd data-i18n="legend.hostHelp"></dd></div>
             <div><dt><span class="sw sw-key"></span><span id="legend-key" data-i18n="legend.key" data-i18n-params='{"ai":"01","name":"GTIN"}'></span></dt><dd data-i18n="legend.keyHelp"></dd></div>
             <div id="legend-lot" hidden><dt><span class="sw sw-qual"></span><span data-i18n="legend.qual"></span></dt><dd data-i18n="legend.qualHelp"></dd></div>
+            <div id="legend-info" hidden><dt><span class="sw sw-info"></span><span data-i18n="legend.info"></span></dt><dd data-i18n="legend.infoHelp"></dd></div>
             <div id="legend-attr" hidden><dt><span class="sw sw-attr"></span><span data-i18n="legend.attr"></span></dt><dd data-i18n="legend.attrHelp"></dd></div>
           </dl>
         </div>

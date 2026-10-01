@@ -362,7 +362,8 @@ def describe_entry(entry: dict) -> dict:
     if key and gs1.is_valid_qualifier_set(key[0], pairs):
         pairs = gs1.normalise_qualifiers(key[0], pairs)
         return {"kind": "qualified", "qualifiers": [list(p) for p in pairs],
-                "path": gs1.qualifier_path(pairs, encode=False)}
+                "path": gs1.qualifier_path(pairs, encode=False),
+                "informative": [list(p) for p in gs1.pairs_from(entry.get("informativeQualifiers"))]}
     return {"kind": "other", "value": "".join(f"({q}){v}" for q, v in pairs)}
 
 
@@ -402,6 +403,12 @@ def request_qualifiers(source, anchor: str) -> list[tuple[str, str]]:
     return gs1.normalise_qualifiers(gs1.split_anchor(anchor)[0], pairs)
 
 
+def request_record(source, anchor: str) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """The record named by a request: (its qualifiers, the informative ones). The qualifiers of a GS1 Digital
+    Link may include a serial number's variant and batch, which are not part of the record (section 2.5.9)."""
+    return gs1.split_informative(gs1.split_anchor(anchor)[0], request_qualifiers(source, anchor))
+
+
 def request_attributes(source) -> list[tuple[str, str]]:
     """GS1 Digital Link data attributes named by a request: [{"ai": "17", "value": "261231"}] (JSON) or
     repeated attr=17:261231 (query string). Only put in the QR code, never stored."""
@@ -425,7 +432,7 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
     the Resolver CE v3 document: (anchor, qualifier pairs, document). Raises ValidationError on the first problem.
     """
     anchor = request_key(data)
-    pairs = request_qualifiers(data, anchor)
+    pairs, informative = request_record(data, anchor)
 
     description = gs1.clean_text(data.get("description"))
     if not description:
@@ -476,6 +483,11 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
            "defaultLinktype": default, "links": links}
     if pairs:
         doc["qualifiers"] = gs1.qualifier_list(pairs)
+    rule = gs1.INFORMATIVE_QUALIFIERS.get(gs1.split_anchor(anchor)[0])
+    if rule and rule[0] in {q for q, _ in pairs}:
+        # A serial-number record always sends the field, so that clearing the batch or variant reaches the
+        # resolver (an absent field keeps the stored value on PUT).
+        doc["informativeQualifiers"] = gs1.qualifier_list(informative)
     return anchor, pairs, doc
 
 
@@ -613,7 +625,11 @@ def config():
         resolver=RESOLVER_PUBLIC_URL,
         linkTypes=[{"code": code, "group": group} for code, group, _ in gs1.LINK_TYPES],
         keys=[{"code": ai, "name": name, "qualifiers": gs1.key_qualifiers(ai),
-               "shapes": [[{"ai": q, "required": req} for q, req in shape] for shape in gs1.KEY_SHAPES.get(ai, [[]])]}
+               "shapes": [[{"ai": q, "required": req} for q, req in shape] for shape in gs1.KEY_SHAPES.get(ai, [[]])],
+               # section 2.5.9: a serial number's variant and batch are informative; a key-level record is possible
+               "informative": ({"serial": gs1.INFORMATIVE_QUALIFIERS[ai][0], "ais": list(gs1.INFORMATIVE_QUALIFIERS[ai][1])}
+                               if ai in gs1.INFORMATIVE_QUALIFIERS else None),
+               "keyLevel": gs1.has_key_level(ai)}
               for ai, (name, _) in gs1.PRIMARY_KEYS.items()],
         languages=gs1.LANGUAGES,
         importLimits=sheet.limits(),
@@ -629,9 +645,10 @@ def get_record():
     """
     anchor = request_key(request.args)
     check_access(anchor)
-    pairs = request_qualifiers(request.args, anchor)
+    pairs, informative = request_record(request.args, anchor)
     entries, default = read_entries(anchor)
     target = find_entry(entries, gs1.qualifier_list(pairs))
+    stored = gs1.pairs_from(target.get("informativeQualifiers")) if target else []
     known = meta.load()
     others = []
     for entry in entries:
@@ -648,8 +665,12 @@ def get_record():
 
     result = {
         "key": ai, "value": value, "anchor": anchor, "qualifiers": [list(p) for p in pairs],
-        "digitalLink": gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, pairs),
+        # the serial number's variant and batch typed now, and those kept with the record
+        "informative": [list(p) for p in informative], "storedInformative": [list(p) for p in stored],
+        "digitalLink": gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, gs1.join_informative(pairs, informative or stored)),
         "exists": target is not None,
+        # section 2.5.9: whether the key has a record of its own (the editor offers one when saving)
+        "hasKeyRecord": any(not e.get("qualifiers") for e in entries),
         "otherEntries": others,
         # With other entries on the same key the default link type is shared and cannot change here.
         "sharedDefaultLinkType": default if others else None,
@@ -672,12 +693,41 @@ def get_record():
 @role_required("editor")
 def save_record():
     """Creates or replaces a record from the editor (editor role, within the user's prefixes)."""
-    anchor, pairs, doc = build_document(request.get_json(silent=True) or {})
+    data = request.get_json(silent=True) or {}
+    anchor, pairs, doc = build_document(data)
     check_access(anchor)
-    uri = gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, pairs)
+    uri = gs1.digital_link(RESOLVER_PUBLIC_URL, anchor,
+                           gs1.join_informative(pairs, gs1.pairs_from(doc.get("informativeQualifiers"))))
+    key_doc = key_record_document(anchor, pairs, doc, data.get("keyRecord"))
+    if key_doc:
+        store_record(anchor, [], key_doc)        # first, so the qualified record is never without a default above it
     created = store_record(anchor, pairs, doc)
-    return message("save.created" if created else "save.updated", 201 if created else 200,
-                   digitalLink=uri, created=created)
+    code = ("save.createdWithKey" if key_doc else "save.created") if created else ("save.updatedWithKey" if key_doc else "save.updated")
+    return message(code, 201 if created else 200, digitalLink=uri, created=created, keyRecordCreated=bool(key_doc))
+
+
+def key_record_document(anchor: str, pairs: list, doc: dict, request_data) -> dict | None:
+    """The key-level record asked for when saving a qualified record of a key that has none (GS1-Conformant
+    Resolver 1.2.1, section 2.5.9: a default link at the entry level or higher). request_data:
+    {"mode": "copy", "description"} copies the targets being saved; {"mode": "target", "description", "url"}
+    gives one target of the key's default link type, in the language of the record's default target.
+    None when nothing was asked for, or the key already has its record."""
+    if not isinstance(request_data, dict) or not pairs or not gs1.has_key_level(gs1.split_anchor(anchor)[0]):
+        return None
+    entries, _ = read_entries(anchor)
+    if any(not e.get("qualifiers") for e in entries):
+        return None
+    ai, value = gs1.split_anchor(anchor)
+    default = doc["links"][0]
+    if request_data.get("mode") == "target":
+        rows = [{"linkType": doc["defaultLinktype"], "url": request_data.get("url"), "hreflang": default["hreflang"],
+                 "title": ""}]
+    else:
+        rows = [{"linkType": l["linktype"], "url": l["href"], "hreflang": l["hreflang"], "title": l["title"],
+                 "forwardQueryString": l.get("fwqs", True), "context": l.get("context", [])} for l in doc["links"]]
+    _, _, key_doc = build_document({"key": ai, "value": value, "description": request_data.get("description") or doc["itemDescription"],
+                                    "defaultLinkType": doc["defaultLinktype"], "links": rows})
+    return key_doc
 
 
 def store_record(anchor: str, pairs: list, doc: dict) -> bool:
@@ -733,7 +783,7 @@ def delete_record():
     """
     anchor = request_key(request.args)
     check_access(anchor)
-    pairs = request_qualifiers(request.args, anchor)
+    pairs, _ = request_record(request.args, anchor)
     entries, _ = read_entries(anchor)
     target = find_entry(entries, gs1.qualifier_list(pairs))
     if target is None:
@@ -770,6 +820,8 @@ def list_records():
         lines = body.get("data") or []
     known = meta.load()
     records = []
+    # GS1-Conformant Resolver 1.2.1, section 2.5.9: keys that have a record of their own (no qualifiers)
+    with_key_record = {line.get("anchor") for line in lines if not line.get("qualifiers")}
     for line in lines:
         anchor = line.get("anchor") or ""
         key = gs1.split_anchor(anchor)
@@ -781,12 +833,18 @@ def list_records():
         records.append({
             "key": key[0], "value": key[1], "anchor": anchor, "kind": entry["kind"],
             "qualifiers": entry.get("qualifiers", []), "qpath": qpath,
+            "informative": entry.get("informative", []),
             "other": entry.get("value") if entry["kind"] == "other" else None,
             "description": line.get("itemDescription") or "",
             "defaultLinkType": line.get("defaultLinktype"),
             "links": line.get("linkCount", 0),
             "updatedAt": info.get("updatedAt"), "updatedBy": info.get("updatedBy"),
             "createdAt": info.get("createdAt"), "createdBy": info.get("createdBy"),
+            # qualified record of a key without a record of its own: other codes of that key answer 404
+            "noKeyRecord": bool(entry["kind"] != "product" and gs1.has_key_level(key[0]) and anchor not in with_key_record),
+            # a serial number registered together with its batch or variant (made before rule 2 was applied)
+            "breaksRules": entry["kind"] == "qualified" and bool(gs1.split_informative(
+                key[0], [tuple(p) for p in entry.get("qualifiers", [])])[1]),
         })
     return jsonify({"records": records})
 
@@ -815,7 +873,9 @@ def export_records():
         if entry["kind"] == "other" or not allowed(line["anchor"]):
             continue
         ai, value = gs1.split_anchor(line["anchor"])
-        records.append({"key": ai, "value": value, "qualifiers": entry.get("qualifiers", []),
+        # the spreadsheet writes the qualifiers of the record's GS1 Digital Link, informative ones included
+        records.append({"key": ai, "value": value,
+                        "qualifiers": gs1.join_informative(entry.get("qualifiers", []), entry.get("informative", [])),
                         "description": line.get("itemDescription") or "",
                         "defaultLinkType": line.get("defaultLinktype"), "links": line.get("links") or []})
     rows = sheet.export_rows(records)
@@ -866,6 +926,7 @@ def _same_record(target: dict, doc: dict) -> bool:
                        l.get("fwqs", True) is not False, tuple(sorted(l.get("context") or []))) for l in items)
     return ((target.get("itemDescription") or "") == doc["itemDescription"]
             and target.get("defaultLinktype") == doc["defaultLinktype"]
+            and gs1.pairs_from(target.get("informativeQualifiers")) == gs1.pairs_from(doc.get("informativeQualifiers"))
             and links(target.get("links") or []) == links(doc["links"]))
 
 
@@ -948,8 +1009,9 @@ def import_preview():
             report.append(item)
             continue
 
+        informative = gs1.pairs_from(doc.get("informativeQualifiers"))
         item.update(key=gs1.split_anchor(anchor)[0], value=gs1.split_anchor(anchor)[1],
-                    qualifiers=[list(p) for p in pairs])
+                    qualifiers=[list(p) for p in pairs], informative=[list(p) for p in informative])
         if not allowed(anchor):
             errors.append({"row": record["rows"][0], "code": "access.prefixRow", "params": {"value": item["value"]}})
             item["action"] = "error"
@@ -974,6 +1036,9 @@ def import_preview():
             item["action"] = "unchanged"
         else:
             item["action"] = "update"
+        if item["action"] == "update" and gs1.pairs_from(target.get("informativeQualifiers")) != informative:
+            # a serial number whose batch or variant changes: shown in the preview
+            item["informativeBefore"] = [list(p) for p in gs1.pairs_from(target.get("informativeQualifiers"))]
         if item["action"] in ("create", "update"):
             # less qualified records first, so a new key is created with its unqualified record
             plan.append({"anchor": anchor, "pairs": pairs, "doc": doc, "rows": record["rows"]})
@@ -981,14 +1046,32 @@ def import_preview():
         report.append(item)
 
     plan.sort(key=lambda p: (p["anchor"], len(p["pairs"])))
+    # Section 2.5.9: keys that would be left with qualified records only. The preview lists them; on applying,
+    # the user may create each key's own record with the targets of its first qualified record in the file.
+    in_file = {p["anchor"] for p in plan if not p["pairs"]}
+    key_records = {}
+    for item in plan:
+        anchor = item["anchor"]
+        if (item["pairs"] and anchor not in in_file and anchor not in key_records and gs1.has_key_level(gs1.split_anchor(anchor)[0])
+                and not any(not e.get("qualifiers") for e in existing.get(anchor, []))):
+            doc = {k: v for k, v in item["doc"].items() if k not in ("qualifiers", "informativeQualifiers")}
+            key_records[anchor] = {"anchor": anchor, "pairs": [], "doc": doc, "rows": item["rows"]}
+    for item in report:
+        anchor = gs1.anchor_for(item["key"], item["value"]) if item.get("action") in ("create", "update") else None
+        if anchor in key_records:
+            item["noKeyRecord"] = True
     token = uuid.uuid4().hex
     with IMPORTS_LOCK:
         IMPORTS[token] = {"user": g.user, "created": time.time(), "plan": plan, "state": "ready",
+                          "keyRecords": list(key_records.values()),
                           "done": 0, "total": len(plan), "results": []}
     counts = {action: sum(1 for i in report if i["action"] == action)
               for action in ("create", "update", "unchanged", "error")}
     errors.sort(key=lambda e: e["row"])
-    return jsonify({"token": token, "records": report, "errors": errors, "counts": counts, "links": to_check})
+    return jsonify({"token": token, "records": report, "errors": errors, "counts": counts, "links": to_check,
+                    "keysWithoutRecord": [{"key": gs1.split_anchor(k["anchor"])[0], "value": gs1.split_anchor(k["anchor"])[1],
+                                           "rows": k["rows"], "description": k["doc"]["itemDescription"]}
+                                          for k in key_records.values()]})
 
 
 def _run_import(token: str, user: str) -> None:
@@ -1024,13 +1107,18 @@ def _run_import(token: str, user: str) -> None:
 @role_required("editor")
 def import_apply():
     """Starts writing a previewed import (by its token); the browser then polls /import/status."""
-    token = (request.get_json(silent=True) or {}).get("token", "")
+    data = request.get_json(silent=True) or {}
+    token = data.get("token", "")
     with IMPORTS_LOCK:
         job = IMPORTS.get(token)
         if not job or job["user"] != g.user:
             raise ValidationError("import.expired")
         if job["state"] != "ready":
             raise ValidationError("import.alreadyApplied")
+        if data.get("createKeyRecords") and job.get("keyRecords"):
+            # the keys' own records go first (section 2.5.9: a default link above every qualified record)
+            job["plan"] = job["keyRecords"] + job["plan"]
+            job["total"] = len(job["plan"])
         job["state"] = "running"
     threading.Thread(target=_run_import, args=(token, g.user), daemon=True).start()
     return jsonify({"token": token, "total": job["total"]}), 202
@@ -1231,7 +1319,7 @@ def record_history():
     """The latest versions of one record, with their content, for the editor's History panel."""
     anchor = request_key(request.args)
     check_access(anchor)
-    pairs = request_qualifiers(request.args, anchor)
+    pairs, _ = request_record(request.args, anchor)
     versions = journal.for_record(anchor, gs1.qualifier_path(pairs, encode=False))
     return jsonify({"versions": versions})
 

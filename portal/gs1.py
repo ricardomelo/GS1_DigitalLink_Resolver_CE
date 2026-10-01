@@ -369,6 +369,34 @@ def normalise_qualifiers(ai: str, raw) -> list[tuple[str, str]]:
     raise ValidationError("qualifier.combination", key=ai, given=" + ".join(sorted(given, key=QUALIFIER_ORDER.index)))
 
 
+# GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2: with a serial number (AI 21) the variant (AI 22) and the
+# batch (AI 10) of a GTIN or ITIP are not part of the registration. The portal keeps them with the serial-number
+# record as information ("informativeQualifiers"): stored, searchable and printed in the QR code, never used by
+# the resolver to choose a record.
+INFORMATIVE_QUALIFIERS: dict[str, tuple[str, tuple[str, ...]]] = {"01": ("21", ("22", "10")), "8006": ("21", ("22", "10"))}
+
+
+def split_informative(ai: str, pairs: list[tuple[str, str]]) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Splits the qualifiers of a GS1 Digital Link (path order) into the record's qualifiers and the informative
+    ones: (registration pairs, informative pairs). Only a serial number of a GTIN or ITIP has informative ones."""
+    rule = INFORMATIVE_QUALIFIERS.get(ai)
+    if not rule or rule[0] not in {q for q, _ in pairs}:
+        return list(pairs), []
+    return [(q, v) for q, v in pairs if q not in rule[1]], [(q, v) for q, v in pairs if q in rule[1]]
+
+
+def join_informative(pairs, informative) -> list[tuple[str, str]]:
+    """The qualifiers of the record's GS1 Digital Link: its own and the informative ones, in path order."""
+    joined = list(pairs) + list(informative or [])
+    return sorted(joined, key=lambda kv: QUALIFIER_ORDER.index(kv[0]) if kv[0] in QUALIFIER_ORDER else 99)
+
+
+def has_key_level(ai: str) -> bool:
+    """Whether the key can have a record of its own, without qualifiers (not AI 415, which needs AI 8020).
+    GS1-Conformant Resolver 1.2.1, section 2.5.9, asks for a default link at that level or higher."""
+    return any(all(not needed for _, needed in shape) for shape in KEY_SHAPES.get(ai, [[]]))
+
+
 def is_valid_qualifier_set(ai: str, pairs) -> bool:
     """Whether the qualifier pairs are valid for the key (format, combination, order)."""
     try:

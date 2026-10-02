@@ -78,7 +78,7 @@ O README original é mantido, sem mudanças, em [upstream-README.md](../upstream
 | **Governança** | Perfis (administrador, editor, leitor); acesso limitado a prefixos de empresa GS1 por usuário; tela de administração de usuários com senhas temporárias; histórico de cada cadastro com restauração; auditoria com filtros e exportação CSV |
 | **Chaves e qualificadores** | As 16 chaves primárias da URI Syntax §4.3 e todos os qualificadores da §4.4, com os formatos da §4.6, a ordem e os caminhos compostos da §4.9, validados como faz o GS1 Barcode Syntax Engine |
 | **Atributos de dados** | Todos os atributos de dados da URI Syntax §4.10 nos QR Codes, validados pelo GS1 Barcode Syntax Engine (formatos, dígitos verificadores, datas, listas de códigos e as regras de associação das General Specifications); repassados pelo Resolver aos destinos |
-| **Resolver** | Subida na hierarquia de qualificadores (série → lote → variante → chave), regras de 404, formas de `linkType`, `defaultLink`, linkset RFC 9264 válido no schema da GS1, JSON-LD sob pedido, o link padrão salvo quando a requisição indica uma versão de idioma, caminhos conferidos pelo GS1 Barcode Syntax Engine, valores com `%2F`, a query string repassada exatamente como enviada, páginas HTML em pt-BR / en-GB para navegadores |
+| **Resolver** | Subida na hierarquia de qualificadores (série → lote → variante → chave), regras de 404, formas de `linkType`, `defaultLink`, linkset RFC 9264 válido no schema da GS1, JSON-LD sob pedido, o link padrão salvo quando a requisição indica uma versão de idioma, caminhos conferidos pelo GS1 Barcode Syntax Engine, valores com `%2F`, a query string repassada exatamente como enviada, EPC em binário (`/eh…`, `/ex…`) de etiquetas NFC descomprimido, páginas HTML em pt-BR / en-GB para navegadores |
 | **API de cadastro** | `GET /api/summary` (todos os cadastros numa requisição); `GET /api/index` passou a exigir o token; o "Authorize" do Swagger funciona em todas as operações protegidas |
 | **Configuração** | Padrões no `.env.example` + `.env` opcional para todos os serviços; arquivo de descrição (`/.well-known/gs1resolver`) montado a partir da configuração; endereços de bind para as portas publicadas |
 | **Página inicial** (`/`) | Menu para o portal, a documentação da API, o padrão GS1 Digital Link, gs1.org e este código; independente do domínio |
@@ -275,6 +275,7 @@ quando o conteúdo não cabe mais na versão escolhida.
 | `…?linkType=linkset` ou `Accept: application/linkset+json` | Linkset (RFC 9264, válido no schema de linkset da GS1); `application/ld+json` para JSON-LD |
 | `Accept-Language`, `Accept`, `context` | Escolha entre links do mesmo tipo por idioma, tipo de mídia ou contexto |
 | Navegador (`Accept: text/html`) num erro | Página HTML (não encontrado, informação indisponível com os links disponíveis, código inválido), pt-BR / en-GB |
+| `GET /eh{hexadecimal}`, `GET /ex{base 64}` | EPC em binário (por exemplo, de uma etiqueta NFC) resolvido como o GS1 Digital Link que ele representa; atributos de dados que ele traz são repassados na query string; `400` se não decodificar |
 | `GET /.well-known/gs1resolver` | Arquivo de descrição do Resolver; `resolverRoot` e `contact` vindos da configuração |
 | `GET /` | Página inicial |
 

@@ -75,7 +75,10 @@ data_entry_server/src/
   data_entry_db.py               read_all_documents()
 web_server/src/
   web_logic.py                   subida na hierarquia, formas de linkType, escolha do link, regras de 404, linkset
-  web_namespace.py               caminho original, resposta HTML ou JSON, arquivo de descrição, query string
+  web_namespace.py               caminho original, resposta HTML ou JSON, arquivo de descrição, query string,
+                                 requisições /eh… e /ex…
+  epc_binary.py                  novo: EPC em binário (eh/ex) decodificado para GS1 Digital Link
+  tdt/                           novo: artefatos do EPC Tag Data Translation 2.2 (arquivos da GS1, sem alteração)
   web_pages.py                   novo: páginas HTML (erros, linkset) em pt-BR e en-GB
   public/gs1resolver.json        modelo do arquivo de descrição
 frontend_proxy_server/
@@ -127,6 +130,12 @@ URI; o Resolver lê o documento de `/01/09506000134352`, escolhe a entrada do co
 (subindo para uma entrada menos específica quando não há uma exata), escolhe o link por `linkType`,
 idioma, tipo de mídia e contexto, e responde `307` para ele, acrescentando a query string da leitura
 exatamente como foi enviada.
+
+**Uma etiqueta NFC com um EPC.** `GET /eh30164596f40c0e5cbe991a83` (ou `/exMBZFlvQMDly-mRqD`) → proxy →
+web-service. O segmento único casa com a RE3 da URI Syntax 1.7, então `epc_binary.decompress()` o converte
+em `/01/09528765123457/21/123456789123` (mais uma query string quando a etiqueta traz atributos de dados);
+daí em diante a requisição é resolvida como a leitura acima, com os atributos decodificados antes da query
+string da própria requisição.
 
 **Salvar um cadastro no portal.** O navegador envia `POST /portal/api/record` com `key`, `value`,
 `qualifiers`, `description` e `links`. O `app.py`:
@@ -342,6 +351,37 @@ Todos no volume `resolver-portal-config` (`/app/config`), incluídos no backup d
   cabeçalho `Accept`: HTML), `_resolver_description()` (arquivo de descrição a partir de `FQDN`, `RESOLVER_*`
   e `RESOLVER_TERMS_URL`, sem `_id`), `_bad_request()`, `_append_query()` (query string unida com `&`), o 300
   como linkset ou página, `_latin1()` (cabeçalhos `Location` seguros), barra no final aceita.
+- `web_namespace.py`, item 1.6: `_handle_request()` envia um segmento que casa com
+  `epc_binary.COMPRESSED_EPC` (RE3) para `_resolve_compressed_epc()`: decodifica, confere os atributos de
+  dados junto com o caminho por `_test_gs1_digital_link_syntax()` (o `_SAFE_GS1_PATTERN` admite `?`, `=` e
+  `&` para isso) e chama `_process_response()` com os atributos decodificados seguidos da query string da
+  requisição; um `EpcDecodeError` responde 400 com o motivo. Os demais segmentos únicos continuam indo para o
+  toolkit oficial (compressão antiga do Digital Link 1.1).
+- `epc_binary.py` (novo, item 1.6), a partir do EPCB 1.0.0, do TDS 2.3 e do TDT 2.2:
+  - `compression_bits()` (`eh`: 4 bits por caractere; `ex`: 6 bits, alfabeto da RFC 4648, seção 5);
+    `decode_binary()` escolhe o esquema pelo cabeçalho de 8 bits (`prefixMatch` do nível BINARY; os
+    cabeçalhos `++` de `PLUS_PLUS` apontam para o esquema `+` correspondente); `decompress()` faz as duas
+    coisas. O resultado, `DecodedEpc`, dá `path()` (chave primária e seus `gs1DigitalLinkKeyQualifiers` na
+    ordem, valores com percent-encoding), `query()` (os demais AIs) e `uri(stem)`, além do esquema, filtro,
+    bit de toggle e hostname.
+  - Esquemas anteriores ao TDS 2.0, `_decode_tdt_scheme()`: a opção do nível BINARY cujo `pattern` casa;
+    cada campo como inteiro ou, com `compaction`, como caracteres (`_decode_characters()`); preenchimento
+    conforme o nível de saída ou, na falta dele, o nível tag-encoding (figura 3-6 do TDT); regras EXTRACT do
+    BINARY e FORMAT do GS1_DIGITAL_LINK (`_call_rule()`: SUBSTR, CONCAT, GS1CHECKSUM, codificações URL/URN);
+    a `grammar` do nível preenchida e lida de volta como pares AI/valor. Nada específico de um esquema está
+    no código.
+  - Esquemas `+` e `++`, `_decode_plus_scheme()`: toggle, filtro e data do DSGTIN+ a partir do artefato; os
+    valores de `encodedAI` por `_ai_value()` (linha da Tabela F → `_component()`, um ramo por método do TDS
+    14.5); `_hostname()` para `++` (URN Code 40 ou 7 bits com as tabelas de otimização `_HOST_TABLE_A` e
+    `_HOST_TABLES_B`, transcritas das Tabelas 14-11 a 14-15 do TDS); `_aidc_data()` para o que vem depois
+    (TDS 15.3: Tabela K para o tamanho do AI; para quando restam menos de 8 bits ou há um cabeçalho zero com
+    menos de 72 bits).
+  - Rigor: os bits depois dos dados precisam ser zero, os valores precisam ser plausíveis (datas, dígitos,
+    conjuntos de caracteres, tamanhos), cada AI aparece uma vez. As conferências finais por AI (associações,
+    formatos) ficam com o GS1 Barcode Syntax Engine, no servidor web.
+  - `tdt/` guarda os arquivos da GS1 como publicados (rascunhos de 18/11/2024 do TDT 2.2), com `+` nos nomes
+    como no manifest; para atualizar, substitua os arquivos e rode `dev-tests/resolver/test_epc_binary.py`.
+    `TDT_DIR` aponta para outro lugar, se preciso.
 - `web_pages.py` (novo): `render_error()` e `render_linkset()` (também a página de escolha do 300, com o
   linkset embutido em JSON-LD) em pt-BR / en-GB, `negotiate_locale()`, o rodapé do operador, só destinos
   `http(s)` como links.
@@ -389,7 +429,8 @@ Não precisam de Docker; cada programa termina com status 1 em caso de falha. Pr
 
 | Programa | Verificações | Cobre |
 |---|---:|---|
-| `resolver/test_resolver.py` | 170 | código do Resolver e da API de cadastro pelo test client do Flask: todas as chaves e cadastros qualificados, subida na hierarquia, tipos de link, regras de 404, schema do linkset, repasse de atributos, schema do arquivo de descrição, páginas HTML |
+| `resolver/test_resolver.py` | 189 | código do Resolver e da API de cadastro pelo test client do Flask: todas as chaves e cadastros qualificados, subida na hierarquia, tipos de link, regras de 404, schema do linkset, repasse de atributos, schema do arquivo de descrição, páginas HTML, requisições `/eh…` e `/ex…` |
+| `resolver/test_epc_binary.py` | 163 | decodificador de EPC em binário: exemplos do EPCB, todos os vetores do anexo E.3 do TDS 2.3 (`eh` e `ex`), dados +AIDC, hostnames `++`, recusas, RE3, artefatos do TDT contra o seu schema; 800 EPCs aleatórios comparados com o `epc-tds` quando `EPC_TDS` está definido (162 sem ele) |
 | `resolver/test_data_entry_api.py` | 53 | token em toda operação protegida; regras de cadastro do §2.5.9 e qualificadores informativos |
 | `portal/test_keys.py` | 137 | chaves e qualificadores, comparados com o GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | perfis, prefixos, usuários, histórico, auditoria |
@@ -427,6 +468,12 @@ nos dois idiomas; considere o `activeLinkTypes` em `web_server/src/public/gs1res
 gravações, `@role_required("editor")`; chame `check_access()` para cada identificador; responda com
 códigos de `message()`; registre com `audit.info()` e `log_event()`; acrescente testes; liste-o neste guia,
 na versão em inglês e no README.
+
+**Um esquema EPC ou uma nova versão do TDT.** Copie os novos arquivos de definição e tabelas para
+`web_server/src/tdt/` (mantendo o `+` nos nomes) e atualize o `manifest.json`; esquemas anteriores ao TDS
+2.0 não precisam de código. Um esquema `+` só precisa de código para um formato da Tabela F ou método do
+TDS 14.5 que `_component()` não conheça; um esquema `++`, só de uma entrada em `PLUS_PLUS` enquanto o TDT
+não tiver artefato para ele. Acrescente o vetor do anexo E do TDS ao `test_epc_binary.py`.
 
 **O syntax engine.** Mude a tag em `portal/tools/build-syntax-engine.sh` e, para manter os dois engines
 juntos, fixe a mesma versão do `gs1encoder` em `web_server/Dockerfile`; rode todos os testes.

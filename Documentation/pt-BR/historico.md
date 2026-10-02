@@ -21,6 +21,7 @@ o próximo começar.
 | 3 — Expansion Pack | 29 e 30/09 | 22 commits, `d4e5584` → `cf5ce10` | caracteres especiais, atributos de dados, opções do QR, novo layout do editor, outros cadastros da chave |
 | 4 — busca e documentação | 30/09 a 01/10 | `f4f3071` e os commits de documentação | filtros por tipo de chave e qualificador, busca por código, guia do portal, funcionalidades, este histórico, guia do desenvolvedor, docstrings, versão em português |
 | 5 — revisão de conformidade e 2.5.9 | 01/10 | `324d85b` → `db8e342` e os commits de documentação | revisão de conformidade cláusula a cláusula, modelo de cadastro do Resolver 2.5.9 (lote e variante informativos numa série), um link padrão acima de todo cadastro, correções de resolução (item 1.5) |
+| 6 — EPC em binário | 02/10 | `51a0da8`, `895c4b1` e o commit de documentação | `/eh…` e `/ex…` descomprimidos para todos os esquemas EPC que têm GS1 Digital Link (item 1.6), a partir dos artefatos do TDT 2.2 e do TDS 2.3; mais quatro candidatos a errata |
 
 Ao fim da sessão 4, o fork altera ou acrescenta 70 arquivos do projeto oficial (cerca de 16.000 linhas
 acrescentadas) e é coberto por 739 verificações nos testes de desenvolvimento, além do teste do
@@ -163,6 +164,24 @@ Decisões do responsável: a opção por link de não repassar a query string sa
 variante de uma série ficam no banco como informação, e não só no QR Code, para poderem ser buscados,
 filtrados e exportados; o cadastro da chave é oferecido, com os mesmos destinos pré-selecionados.
 
+## Sessão 6 — EPC em binário
+
+| Commit | Mudança |
+|---|---|
+| `51a0da8` | `epc_binary.py`: EPC em binário decodificado para GS1 Digital Link — esquemas anteriores ao TDS 2.0 inteiramente a partir dos artefatos do TDT 2.2 (agora em `web_server/src/tdt/`), esquemas `+` com a Tabela F e seus dados +AIDC, esquemas `++` com o hostname; o `test_epc_binary.py` confere todos os vetores do anexo E.3 do TDS 2.3 e 800 EPCs aleatórios contra a biblioteca `epc-tds` |
+| `895c4b1` | Resolver: `/eh…` e `/ex…` resolvidos como o GS1 Digital Link descomprimido (F6, restante do F7); atributos de dados conferidos pelo engine e repassados; 400 quando a cadeia não decodifica |
+
+Decisões do responsável: o decodificador cobre todos os esquemas de uma vez (clássicos, `+` com dados
++AIDC, `++`); qualificadores trazidos pela etiqueta vão para o caminho e atributos de dados para a query
+string repassada ao destino; o hostname dentro de um EPC `++` é ignorado e o Resolver mantém o próprio
+domínio. A implementação lê os artefatos do TDT (sem código específico por esquema para os clássicos) em
+vez de usar a biblioteca `epc-tds`, que conhece só parte dos esquemas clássicos e nada do TDS 2.0; o
+`epc-tds` serve de conferência independente nos testes.
+
+Candidatos a errata encontrados ao decodificar: E8 (EPCB 4.2.2), E9 (anexo E.3 do TDS 2.3: cabeçalhos de
+SSCC++ e ITIP++, hostnames de SGTIN++ e DSGTIN++, uma EPC URI), E10 (Tabelas 14-14 e 14-15 do TDS 2.3), E11
+(artefato do TDT do CPI-var) — seção 6 da revisão de conformidade.
+
 ## Como as principais áreas evoluíram
 
 | Área | 1.0.0 (sessão 1) | Agora |
@@ -174,7 +193,8 @@ filtrados e exportados; o cadastro da chave é oferecido, com os mesmos destinos
 | Qualidade dos destinos | nenhuma | verificador de links no editor, em todos os cadastros e na importação |
 | Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, tela de usuários, senhas temporárias, histórico, auditoria |
 | Instalação | manual, com patch | fork git, configuração em camadas, instalador para Ubuntu, backup |
-| Testes | 69 verificações | 739 verificações em 11 programas de teste, além do teste do instalador |
+| Resolução | GTIN e lote, links comprimidos do Digital Link 1.1 | todas as chaves e qualificadores, as regras do Resolver 1.2.1, EPC em binário de etiquetas NFC (`/eh…`, `/ex…`) |
+| Testes | 69 verificações | 1.042 verificações em 13 programas de teste, além do teste do instalador |
 | Documentação | README do pacote, documento de passagem | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e português), documentação das extensões, changelog |
 
 ## Decisões que ficam, a não ser que sejam revistas de propósito
@@ -195,6 +215,9 @@ filtrados e exportados; o cadastro da chave é oferecido, com os mesmos destinos
 10. Um único worker do gunicorn com threads.
 11. O cadastro segue o Resolver 2.5.9: com número de série, lote e variante são qualificadores informativos
     do cadastro; todo cadastro qualificado deve ter acima dele o cadastro da chave.
+12. O EPC em binário é decodificado a partir dos artefatos do TDT da GS1, incluídos sem alteração;
+    qualificadores vindos da etiqueta vão para o caminho, atributos de dados para a query string; o hostname
+    de um `++` é ignorado.
 
 ## Lições aprendidas
 
@@ -209,6 +232,11 @@ filtrados e exportados; o cadastro da chave é oferecido, com os mesmos destinos
 - Mostrar layouts como imagens antes de construí-los.
 - Ler as regras de ordenação da norma, não só os conjuntos: a regra 4 do 2.5.9 também ordena os cadastros
   (a série antes do lote), o que a subida na hierarquia não seguia.
+- Artefatos legíveis por máquina e exemplos resolvidos também têm erros (um nome de campo num rascunho do
+  TDT, cabeçalhos no anexo E.3): decodificar todos os vetores publicados e comparar com uma implementação
+  independente.
+- Ler o modelo de processamento, não só os dados: o artefato do SGCN-96 precisa das regras EXTRACT do seu
+  nível BINARY, que a leitura só do nível de saída deixou passar.
 
 ## Pendências
 

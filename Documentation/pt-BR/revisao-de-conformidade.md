@@ -53,7 +53,8 @@ A revisão descreve o branch em `115a054`. Achados corrigidos desde então, com 
 | [F2](#f2) | Corrigido (item 1.2): com o AI 21, os AIs 22 e 10 são informativos, fora do cadastro; a API de cadastro os recusa como qualificadores | `61babe1`, `83d1ba0` |
 | [F4](#f4) | Revisto e corrigido: quando um cadastro de série e um de lote ou variante se aplicam juntos, o Resolver agora redireciona com o da série (ver F4) | `61babe1` |
 | F11 | Corrigido em parte (item 1.2): a API de cadastro confere quais qualificadores cada chave aceita e as regras do 2.5.9; os valores continuam sendo conferidos só pelo portal | `61babe1` |
-| F7 | Corrigido (item 1.5): sem `_id`; `termsOfUse` de `RESOLVER_TERMS_URL`; `validatesAIcombinations` agora verdadeiro (F10). As chaves `"all"` ainda prometem EPC binary (F6) | `4f81234` |
+| [F6](#f6) | Corrigido (item 1.6): `/eh…` e `/ex…` descomprimidos e resolvidos como o GS1 Digital Link equivalente — todos os esquemas EPC que têm Digital Link, esquemas `+` com dados +AIDC, esquemas `++` (hostname ignorado); o linkset é o da URI descomprimida; 400 quando a cadeia não decodifica | `51a0da8`, `895c4b1` |
+| F7 | Corrigido (itens 1.5 e 1.6): sem `_id`; `termsOfUse` de `RESOLVER_TERMS_URL`; `validatesAIcombinations` agora verdadeiro (F10); as chaves `"all"` agora valem também para EPC binary (F6) | `4f81234`, `51a0da8`, `895c4b1` |
 | F9 | Corrigido (item 1.5): sem `linkType`, o link padrão, salvo quando a requisição indica uma variante; `gs1:defaultLinkMulti` publicado; o primeiro link do tipo principal é o padrão | `4f81234` |
 | F10 | Corrigido (item 1.5): caminhos conferidos pelo leitor de Digital Link do engine | `4f81234` |
 | F12 | Corrigido (item 1.5): URI original pelo proxy e pelo Resolver | `4f81234` |
@@ -65,7 +66,7 @@ A revisão descreve o branch em `115a054`. Achados corrigidos desde então, com 
 | F18 | Corrigido (item 1.5): links sem tipo de mídia tratados | `4f81234` |
 | F19 | Corrigido (item 1.5): pesos q e busca da RFC 4647 | `4f81234` |
 
-Ainda em aberto: F6 (EPC binary, item 1.6), F20 e F23 (erratas E2 e E4), F21 (item 7.3), F22 (item 1.4).
+Ainda em aberto: F20 e F23 (erratas E2 e E4), F21 (item 7.3), F22 (item 1.4).
 
 ## 2. Método
 
@@ -439,6 +440,15 @@ Para o item 8.1. Cada um foi conferido no texto dos padrões nesta revisão.
 | E6 | Resolver 1.2.1, seção 5 e 2.7 | Os itens 7 e 9 da declaração de conformidade remetem à "section 0"; o exemplo 3 escreve `gs1:smp` em vez de `gs1:smpc` e ainda usa o obsoleto `all`. | Correções editoriais. |
 | E7 | Resolver 1.2.1, 2.5.9 | O SHALL de um link padrão "at the entry level or higher" recai sobre os dados, mas o padrão não orienta o lado do cadastro (recusar, avisar ou criar o registro do nível acima). | Orientação informativa para ferramentas de cadastro (o que o 1.3 implementa). |
 
+Acrescentados depois da revisão, durante o item 1.6 (cada um conferido decodificando os bits):
+
+| # | Documento | Problema | Proposta |
+|---|---|---|---|
+| E8 | EPCB 1.0.0, 4.2.2 | A opção B manda acrescentar os caracteres base 64 a 'eh' (é 'ex'), e o passo 2 da decodificação fala em 6 bits por caractere "hexadecimal" (são caracteres base 64). | Correções editoriais. |
+| E9 | TDS 2.3, anexo E.3 | Os exemplos de SSCC++ e ITIP++ começam com os cabeçalhos F9 e F3, de SSCC+ e ITIP+; com EF e ED (Tabela 14-1) os mesmos bits dão as URIs mostradas. Os exemplos de SGTIN++ e DSGTIN++ mostram o hostname example.com, mas os bits codificam id.example.com, como todos os outros exemplos `++`. A EPC URI do exemplo de SGTIN-96 termina em `1234567896789`; o número de série é `123456789`. | Corrigir os cabeçalhos, as duas URIs e a EPC URI. |
+| E10 | TDS 2.3, Tabelas 14-14 e 14-15 | Na Tabela 14-14 (B3), as linhas `.org.cn` e `.net.cn` trazem o prefixo `0000000`, da Tabela B1, em vez de `0000010`; a legenda da Tabela 14-15 (B4) diz que os valores começam com `0000010`, mas começam com `0000011`. | Corrigir os prefixos e a legenda. |
+| E11 | Artefato do TDT 2.2 `CPI-var.json` (rascunho de 18/11/2024) | A gramática do nível GS1_AI_JSON cita um campo `serial`; o campo é `cpiserial` (o nível GS1_DIGITAL_LINK está certo). | Corrigir o artefato antes da publicação. |
+
 A questão do namespace (F22) não está na lista: só vira errata se a suíte de testes mostrar um problema.
 
 ## 7. Efeito no backlog
@@ -451,7 +461,7 @@ A questão do namespace (F22) não está na lista: só vira errata se a suíte d
 | **1.6 Descompressão de EPC binary (novo, M–L)** | F6 e o restante do F7. Implementação a escolher quando o item começar (GS1 Digital Link URI: Compression Technical Standard for EPC binary strings 1.0.0, Tag Data Standard / Tag Data Translation); o 500 para segmentos não reconhecidos é corrigido no 1.5. |
 | 1.4 Suíte de testes de conformidade da GS1 | Roda depois do 1.5 e do 1.6, para que o registro mostre o Resolver corrigido; resolve também o F22. |
 | 7.3 Acabamento | F21 (títulos padrão no idioma do link). |
-| 8.1 Work Requests / erratas | E1–E7 (seção 6). |
+| 8.1 Work Requests / erratas | E1–E7 (seção 6); E8–E11 acrescentados no item 1.6. |
 
 Ordem proposta da fase 1: 1.2 → 1.3 → 1.5 → 1.6 → 1.4.
 

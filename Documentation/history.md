@@ -21,6 +21,7 @@ the next one started.
 | 3 — Expansion Pack | 29–30 Sep | 22 commits, `d4e5584` → `cf5ce10` | special characters, data attributes, QR options, new editor layout, other records of a key |
 | 4 — search and documentation | 30 Sep – 1 Oct | `f4f3071` and the documentation commits | filters by key type and qualifier, code search, user guide, feature list, this history, developer guide, docstrings, Portuguese version |
 | 5 — conformance review and 2.5.9 | 1 Oct | `324d85b` → `db8e342` and the documentation commits | clause-by-clause conformance review, registration model of Resolver 2.5.9 (informative batch and variant of a serial number), a default link above every record, resolution fixes (item 1.5) |
+| 6 — EPC binary strings | 2 Oct | `51a0da8`, `895c4b1` and the documentation commit | `/eh…` and `/ex…` decompressed for every EPC scheme with a GS1 Digital Link (item 1.6), from the TDT 2.2 artefacts and TDS 2.3; four more candidate errata |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -161,6 +162,24 @@ Decisions of the owner: the per-link option to stop forwarding the query string 
 code, so that they can be searched, filtered and exported; the key's own record is offered, with the same
 targets preselected.
 
+## Session 6 — EPC binary strings
+
+| Commit | Change |
+|---|---|
+| `51a0da8` | `epc_binary.py`: EPC binary strings decoded to GS1 Digital Link — schemes before TDS 2.0 entirely from the TDT 2.2 artefacts (now in `web_server/src/tdt/`), `+` schemes with Table F and their +AIDC data, `++` schemes with their hostname; `test_epc_binary.py` checks every vector of TDS 2.3 annex E.3 and 800 random EPCs against the `epc-tds` library |
+| `895c4b1` | resolver: `/eh…` and `/ex…` resolved as the decompressed GS1 Digital Link (F6, rest of F7); data attributes checked by the engine and passed on; 400 when a string does not decode |
+
+Decisions of the owner: the decoder covers every scheme at once (classic, `+` with +AIDC data, `++`); key
+qualifiers carried by a tag go to the path and data attributes to the query string passed on to the target;
+the hostname inside a `++` EPC is ignored and the resolver keeps its own stem. The implementation reads the
+TDT artefacts (no scheme-specific code for the classic schemes) rather than using the `epc-tds` library,
+which knows only part of the classic schemes and none of TDS 2.0; `epc-tds` serves as an independent check
+in the tests.
+
+Candidate errata found by decoding: E8 (EPCB 4.2.2), E9 (TDS 2.3 annex E.3: SSCC++ and ITIP++ headers,
+SGTIN++ and DSGTIN++ hostnames, an EPC URI), E10 (TDS 2.3 Tables 14-14 and 14-15), E11 (TDT artefact of
+CPI-var) — section 6 of the conformance review.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -172,7 +191,8 @@ targets preselected.
 | Quality of targets | none | link checker in the editor, for every record and on import |
 | Accounts | users from the command line, all equal | roles, prefixes, users screen, temporary passwords, history, audit trail |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
-| Tests | 69 checks | 739 checks in 11 test programs, plus the installer test |
+| Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
+| Tests | 69 checks | 1,042 checks in 13 test programs, plus the installer test |
 | Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
 ## Decisions that stay unless deliberately revisited
@@ -191,6 +211,8 @@ targets preselected.
 10. One gunicorn worker with threads.
 11. Registration follows Resolver 2.5.9: with a serial number, the batch and variant are informative
     qualifiers of the record; every qualified record should have its key's own record above it.
+12. EPC binary strings are decoded from GS1's TDT artefacts, shipped unchanged; key qualifiers from the tag
+    go to the path, data attributes to the query string; a `++` hostname is ignored.
 
 ## Lessons learnt
 
@@ -203,6 +225,10 @@ targets preselected.
 - Show layouts as images before building them.
 - Read the standard's ranking rules as well as its sets: rule 4 of 2.5.9 also orders the records (a serial
   number before a batch), which the walk-up had not followed.
+- Machine-readable artefacts and worked examples have errors too (a field name in a TDT draft, headers in
+  annex E.3): decode every published vector and compare with an independent implementation.
+- Read the processing model, not only the data: the SGCN-96 artefact needs the EXTRACT rules of its BINARY
+  level, which a reading of the output level alone missed.
 
 ## Open items
 

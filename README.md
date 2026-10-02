@@ -88,7 +88,7 @@ the official Postman collection is at
 | **Governance** | Roles (administrator, editor, reader); access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords; history of every record with restore; audit trail with filters and CSV export |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, validated as the GS1 Barcode Syntax Engine does |
 | **Data attributes** | Every data attribute of URI Syntax §4.10 in QR codes, validated by the GS1 Barcode Syntax Engine (formats, check digits, dates, code lists and the association rules of the General Specifications); passed on by the resolver to the targets |
-| **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, the default link unless the request decides a language variant, request paths checked by the GS1 Barcode Syntax Engine, values with `%2F`, the query string passed on exactly as sent, HTML pages in pt-BR / en-GB for browsers |
+| **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, the default link unless the request decides a language variant, request paths checked by the GS1 Barcode Syntax Engine, values with `%2F`, the query string passed on exactly as sent, EPC binary strings (`/eh…`, `/ex…`) from NFC tags decompressed, HTML pages in pt-BR / en-GB for browsers |
 | **Data entry API** | `GET /api/summary` (all records in one request); `GET /api/index` now requires the token; Swagger "Authorize" works on every protected operation |
 | **Configuration** | `.env.example` defaults + optional `.env` for every service; description file (`/.well-known/gs1resolver`) built from the configuration; bind addresses for the published ports |
 | **Home page** (`/`) | Menu to the portal, the API documentation, the GS1 Digital Link standard, gs1.org and this code; domain independent |
@@ -294,6 +294,7 @@ content no longer fits the chosen QR version.
 | `…?linkType=linkset` or `Accept: application/linkset+json` | Linkset (RFC 9264, valid against GS1's linkset schema); `application/ld+json` for JSON-LD |
 | `Accept-Language`, `Accept`, `context` | Choose between links of the same type by language, media type or context |
 | Browser (`Accept: text/html`) on an error | HTML page (not found, information not available with the available links, invalid code), pt-BR / en-GB |
+| `GET /eh{hexadecimal}`, `GET /ex{base 64}` | EPC binary string (e.g. from an NFC tag) resolved as the GS1 Digital Link it stands for; data attributes it carries are passed on in the query string; `400` if it does not decode |
 | `GET /.well-known/gs1resolver` | Resolver description file; `resolverRoot` and `contact` from the configuration |
 | `GET /` | Home page |
 
@@ -477,7 +478,8 @@ The tests in [`dev-tests/`](dev-tests/README.md) run without Docker or MongoDB:
 
 | Test | Covers |
 |---|---|
-| `resolver/test_resolver.py` | Resolver behaviour, walk-up, linksets, HTML pages, description file, every key and qualified record |
+| `resolver/test_resolver.py` | Resolver behaviour, walk-up, linksets, HTML pages, description file, every key and qualified record, EPC binary strings |
+| `resolver/test_epc_binary.py` | EPC binary decoder: every example of the EPC Tag Data Standard, +AIDC data, `++` hostnames, refusals; optionally compared with `epc-tds` |
 | `resolver/test_data_entry_api.py` | Token protection of every data entry operation and the Swagger declarations |
 | `portal/test_keys.py` | Every primary key and qualifier combination, compared with the GS1 Syntax Engine |
 | `portal/test_portal_e2e.py` | The portal in Chromium: editor, keys, qualifiers, labels, list, spreadsheets, link checker, users |

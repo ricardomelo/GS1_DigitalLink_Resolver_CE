@@ -43,6 +43,7 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Escolha entre links de um tipo | Tipo de mídia, depois idioma (pesos q, `pt-BR` → `pt`), depois contexto (exemplos 8 a 13); o 300 devolve um linkset válido daquele nível, ou uma página HTML | `4f81234` |
 | Caminhos conferidos pelo engine | O leitor de Digital Link do GS1 Barcode Syntax Engine confere o caminho: qualificadores fora de ordem, atributos de dados ou AIs desconhecidos no caminho → 400 | `4f81234` |
 | Valores com `/` | Um `%2F` num valor fica dentro dele: o proxy repassa a URI original e o Resolver decodifica cada segmento separadamente | `4f81234` |
+| EPC em binário | `/eh…` e `/ex…` (um EPC lido de uma etiqueta NFC ou híbrida UHF/NFC) são descomprimidos e resolvidos como o GS1 Digital Link equivalente: todos os esquemas EPC que têm Digital Link, os esquemas `+` com seus dados +AIDC e os esquemas `++` (com o hostname ignorado); qualificadores vindos da etiqueta vão para o caminho, atributos de dados para a query string repassada ao destino; 400 quando a cadeia não decodifica (Resolver 2.3, EPCB 1.0.0) | `51a0da8`, `895c4b1` |
 | Páginas HTML para navegadores | Erros (400, 404, tipo de link indisponível — com a lista dos links disponíveis) e o linkset como páginas no estilo do gs1.org, em pt-BR / en-GB, com o mesmo status HTTP e menu de idioma | `766a652` |
 | Nomes dos níveis no linkset | Cada nível nomeado pela sua âncora: a chave, variante, lote, série, extensão do GLN… | `b33def6` |
 | Links seguros nas páginas HTML | Só destinos `http(s)` viram links; `javascript:`, `data:` e outros aparecem sem link | `92bfb5d` |
@@ -219,7 +220,7 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 
 | Funcionalidade | O que faz | Desde |
 |---|---|---|
-| Testes de desenvolvimento | Resolver, API de cadastro, chaves, governança, planilhas, caracteres especiais, atributos de dados, verificador de links, portal de ponta a ponta no Chromium (desktop e celular), página inicial com nginx, instalador com simulações | `0733a3f` e seguintes |
+| Testes de desenvolvimento | Resolver, decodificador de EPC em binário (conferido com o anexo E.3 do TDS e com a biblioteca `epc-tds`), API de cadastro, chaves, governança, planilhas, caracteres especiais, atributos de dados, verificador de links, portal de ponta a ponta no Chromium (desktop e celular), página inicial com nginx, instalador com simulações | `0733a3f` e seguintes |
 | Screenshots | `dev-tests/docs/screenshots.py` regenera as imagens do README e do guia do portal nos dois idiomas | `f14d8c4`, sessão 4 |
 | Documentação | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e em português), documentação das extensões, changelog | `539bab0` e seguintes |
 

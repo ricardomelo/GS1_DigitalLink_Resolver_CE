@@ -72,7 +72,10 @@ data_entry_server/src/
   data_entry_db.py               read_all_documents()
 web_server/src/
   web_logic.py                   walk-up, linkType forms, choice of a link, 404 rules, linkset
-  web_namespace.py               raw request path, HTML or JSON answers, description file, query string
+  web_namespace.py               raw request path, HTML or JSON answers, description file, query string,
+                                 /eh… and /ex… requests
+  epc_binary.py                  new: EPC binary strings (eh/ex) decoded to GS1 Digital Link
+  tdt/                           new: EPC Tag Data Translation 2.2 artefacts (GS1's files, unchanged)
   web_pages.py                   new: HTML pages (errors, linkset) in pt-BR and en-GB
   public/gs1resolver.json        description file template
 frontend_proxy_server/
@@ -123,6 +126,12 @@ for tests, the `PORTAL_*_FILE` / `PORTAL_CONFIG_DIR` paths.
 resolver reads the document of `/01/09506000134352`, chooses the entry of the qualifier set (walking up to
 a less specific entry when there is none), picks the link by `linkType`, language, media type and context,
 and answers `307` to it with the scan's query string appended exactly as sent.
+
+**An NFC tag with an EPC.** `GET /eh30164596f40c0e5cbe991a83` (or `/exMBZFlvQMDly-mRqD`) → proxy →
+web-service. The single segment matches RE3 of URI Syntax 1.7, so `epc_binary.decompress()` turns it into
+`/01/09528765123457/21/123456789123` (plus a query string when the tag carries data attributes); from
+there the request is resolved like the scan above, with the decoded attributes in front of the request's
+own query string.
 
 **Saving a record in the portal.** The browser sends `POST /portal/api/record` with `key`, `value`,
 `qualifiers`, `description` and `links`. `app.py`:
@@ -330,6 +339,34 @@ All in the `resolver-portal-config` volume (`/app/config`), included in the dail
   `_resolver_description()` (description file from `FQDN`, `RESOLVER_*` and `RESOLVER_TERMS_URL`, without
   `_id`), `_bad_request()`, `_append_query()` (query string joined with `&`), the 300 as a linkset or a page,
   `_latin1()` (safe `Location` headers), trailing slash accepted.
+- `web_namespace.py`, item 1.6: `_handle_request()` sends a segment matching
+  `epc_binary.COMPRESSED_EPC` (RE3) to `_resolve_compressed_epc()`: decode, check the data attributes with
+  the path through `_test_gs1_digital_link_syntax()` (`_SAFE_GS1_PATTERN` admits `?`, `=`, `&` for this),
+  then `_process_response()` with the decoded attributes followed by the request's query string; an
+  `EpcDecodeError` answers 400 with its reason. Other single segments still go to the official toolkit
+  (legacy compression of Digital Link 1.1).
+- `epc_binary.py` (new, item 1.6), from EPCB 1.0.0, TDS 2.3 and TDT 2.2:
+  - `compression_bits()` (`eh`: 4 bits per character; `ex`: 6 bits, RFC 4648 section 5 alphabet);
+    `decode_binary()` picks the scheme by the 8-bit header (`prefixMatch` of the BINARY level; the `++`
+    headers of `PLUS_PLUS` map to their `+` scheme); `decompress()` does both. The result, `DecodedEpc`, gives
+    `path()` (primary key and its `gs1DigitalLinkKeyQualifiers` in order, values percent-encoded),
+    `query()` (every other AI) and `uri(stem)`, plus the scheme, filter value, toggle bit and hostname.
+  - Schemes before TDS 2.0, `_decode_tdt_scheme()`: the BINARY option whose `pattern` matches; each field
+    as an integer or, with `compaction`, characters (`_decode_characters()`); padding from the output
+    level or else the tag-encoding level (TDT figure 3-6); EXTRACT rules of BINARY and FORMAT rules of
+    GS1_DIGITAL_LINK (`_call_rule()`: SUBSTR, CONCAT, GS1CHECKSUM, URL/URN encodings); the level's
+    `grammar` filled in and read back as AI/value pairs. Nothing scheme-specific is in the code.
+  - `+` and `++` schemes, `_decode_plus_scheme()`: toggle, filter and DSGTIN+ date from the artefact; the
+    values of `encodedAI` with `_ai_value()` (Table F row → `_component()`, one branch per method of TDS
+    14.5); `_hostname()` for `++` (URN Code 40 or 7-bit with the optimisation tables `_HOST_TABLE_A` and
+    `_HOST_TABLES_B`, transcribed from TDS Tables 14-11 to 14-15); `_aidc_data()` for what follows (TDS
+    15.3: Table K for the AI length, stop on fewer than 8 bits or a zero header with fewer than 72 bits).
+  - Strictness: bits after the data must be zero, values must be plausible (dates, digits, character sets,
+    lengths), an AI may appear once. Final AI-level checks (associations, formats) are left to the GS1
+    Barcode Syntax Engine in the web server.
+  - `tdt/` holds GS1's files as published (2024-11-18 drafts for TDT 2.2), with `+` in the names as in
+    the manifest; to update, replace the files and run `dev-tests/resolver/test_epc_binary.py`.
+    `TDT_DIR` points elsewhere if needed.
 - `web_pages.py` (new): `render_error()` and `render_linkset()` (also the 300 choice page, with the linkset
   embedded as JSON-LD) in pt-BR / en-GB, `negotiate_locale()`, the operator footer, only `http(s)` targets
   as links.
@@ -374,7 +411,8 @@ No Docker needed; each program exits with status 1 on a failure. Setup and comma
 
 | Program | Checks | Covers |
 |---|---:|---|
-| `resolver/test_resolver.py` | 170 | resolver and data entry code through Flask's test client: every key and qualified record, walk-up, link types, 404 rules, linkset schema, attributes passed on, description file schema, HTML pages |
+| `resolver/test_resolver.py` | 189 | resolver and data entry code through Flask's test client: every key and qualified record, walk-up, link types, 404 rules, linkset schema, attributes passed on, description file schema, HTML pages, `/eh…` and `/ex…` requests |
+| `resolver/test_epc_binary.py` | 163 | EPC binary decoder: EPCB examples, every vector of TDS 2.3 annex E.3 (`eh` and `ex`), +AIDC data, `++` hostnames, refusals, RE3, TDT artefacts against their schema; 800 random EPCs against `epc-tds` when `EPC_TDS` is set (162 without) |
 | `resolver/test_data_entry_api.py` | 53 | token on every protected operation; registration rules of §2.5.9 and informative qualifiers |
 | `portal/test_keys.py` | 137 | keys and qualifiers, compared with the GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | roles, prefixes, users, history, audit |
@@ -411,6 +449,12 @@ the shapes to `KEY_SHAPES` and formats to `QUALIFIER_FORMATS` in `gs1.py`; mirro
 **An API endpoint.** Add the route to the right section of `app.py` with `@require_login` and, for writes,
 `@role_required("editor")`; call `check_access()` for every identifier; answer with `message()` codes;
 log with `audit.info()` and `log_event()`; add tests; list it in this guide and in the README.
+
+**An EPC scheme or a new TDT release.** Copy the new definition files and tables into
+`web_server/src/tdt/` (keeping `+` in the names) and update `manifest.json`; schemes before TDS 2.0 then
+need no code. A `+` scheme needs code only for a Table F format or TDS 14.5 method that `_component()`
+does not know; a `++` scheme only an entry in `PLUS_PLUS` while TDT has no artefact for it. Add its TDS
+annex E vector to `test_epc_binary.py`.
 
 **The syntax engine.** Change the tag in `portal/tools/build-syntax-engine.sh` and, to keep both engines
 together, pin the same `gs1encoder` version in `web_server/Dockerfile`; run every test.

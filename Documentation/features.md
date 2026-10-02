@@ -46,6 +46,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Choosing among links of one type | Media type, then language (q-values, `pt-BR` → `pt`), then context (examples 8-13); 300 answers a valid linkset of that level, or an HTML page | `4f81234` |
 | Request paths checked by the engine | The GS1 Barcode Syntax Engine's Digital Link parser checks the path: qualifiers out of order, data attributes or unknown AIs in the path → 400 | `4f81234` |
 | Values with `/` | `%2F` in a value stays in it: the proxy passes the raw request URI and the resolver decodes each segment on its own | `4f81234` |
+| EPC binary strings | `/eh…` and `/ex…` (an EPC read from an NFC or hybrid UHF/NFC tag) are decompressed and resolved as the equivalent GS1 Digital Link: every EPC scheme with a Digital Link, the `+` schemes with their +AIDC data and the `++` schemes (their hostname ignored); key qualifiers from the tag go to the path, data attributes to the query string passed on to the target; 400 when the string does not decode (Resolver 2.3, EPCB 1.0.0) | `51a0da8`, `895c4b1` |
 | HTML pages for browsers | Errors (400, 404, link type not available — listing the available links) and the linkset as gs1.org-style pages in pt-BR / en-GB, same HTTP status, language menu | `766a652` |
 | Level names on the linkset page | Each level named by its anchor: the key, variant, batch/lot, serial, GLN extension… | `b33def6` |
 | Safe links on HTML pages | Only `http(s)` targets are links; `javascript:`, `data:` and others are listed without a link | `92bfb5d` |
@@ -222,7 +223,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 
 | Feature | What it does | Since |
 |---|---|---|
-| Development tests | Resolver, data entry, keys, governance, spreadsheets, special characters, data attributes, link checker, portal end to end in Chromium (desktop and phone), home page through nginx, installer through shims | `0733a3f` and later |
+| Development tests | Resolver, EPC binary decoder (checked against TDS annex E.3 and the `epc-tds` library), data entry, keys, governance, spreadsheets, special characters, data attributes, link checker, portal end to end in Chromium (desktop and phone), home page through nginx, installer through shims | `0733a3f` and later |
 | Screenshots | `dev-tests/docs/screenshots.py` regenerates the README and user guide images | `f14d8c4`, session 4 |
 | Documentation | README, user guide, features, history, developer guide, extensions documentation, changelog | `539bab0` and later |
 

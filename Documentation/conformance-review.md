@@ -51,7 +51,8 @@ The review describes the branch at `115a054`. Findings fixed since, with the com
 | [F2](#f2) | Fixed (item 1.2): with AI 21, AI 22 and AI 10 are informative, not part of the registration; the data entry API refuses them as qualifiers | `61babe1`, `83d1ba0` |
 | [F4](#f4) | Revised and fixed: when a serial-number record and a batch or variant record both apply, the resolver now redirects with the serial number's (see F4) | `61babe1` |
 | F11 | Partly fixed (item 1.2): the data entry API checks which qualifiers each key takes and the rules of 2.5.9; values are still checked by the portal only | `61babe1` |
-| F7 | Fixed (item 1.5): no `_id`; `termsOfUse` from `RESOLVER_TERMS_URL`; `validatesAIcombinations` now true (F10). `"all"` keys still promise EPC binary (F6) | `4f81234` |
+| [F6](#f6) | Fixed (item 1.6): `/eh…` and `/ex…` decompressed and resolved as the equivalent GS1 Digital Link — every EPC scheme with a Digital Link, `+` schemes with +AIDC data, `++` schemes (hostname ignored); the linkset is the decompressed URI's; 400 when the string does not decode | `51a0da8`, `895c4b1` |
+| F7 | Fixed (items 1.5 and 1.6): no `_id`; `termsOfUse` from `RESOLVER_TERMS_URL`; `validatesAIcombinations` now true (F10); `"all"` keys now true for EPC binary strings (F6) | `4f81234`, `51a0da8`, `895c4b1` |
 | F9 | Fixed (item 1.5): without `linkType` the default link unless the request decides a variant; `gs1:defaultLinkMulti` published; the first default-type link is the default | `4f81234` |
 | F10 | Fixed (item 1.5): request paths checked by the engine's Digital Link parser | `4f81234` |
 | F12 | Fixed (item 1.5): raw request URI through the proxy and the resolver | `4f81234` |
@@ -63,7 +64,7 @@ The review describes the branch at `115a054`. Findings fixed since, with the com
 | F18 | Fixed (item 1.5): links without a media type handled | `4f81234` |
 | F19 | Fixed (item 1.5): q-values and RFC 4647 lookup | `4f81234` |
 
-Still open: F6 (EPC binary, item 1.6), F20 and F23 (errata E2 and E4), F21 (item 7.3), F22 (item 1.4).
+Still open: F20 and F23 (errata E2 and E4), F21 (item 7.3), F22 (item 1.4).
 
 ## 2. Method
 
@@ -435,6 +436,15 @@ For item 8.1. Each was checked against the text of the standards in this review.
 | E6 | Resolver 1.2.1, section 5 and 2.7 | Items 7 and 9 of the conformance statement refer to "section 0"; example 3 writes `gs1:smp` for `gs1:smpc` and still uses the deprecated `all`. | Editorial corrections. |
 | E7 | Resolver 1.2.1, 2.5.9 | The SHALL on a default link "at the entry level or higher" binds the data, but the standard gives no guidance to the registration side (refuse, warn or create the higher-level record). | Informative guidance for registration tools (what 1.3 implements). |
 
+Added after the review, while doing item 1.6 (each checked by decoding the bits):
+
+| # | Document | Problem | Proposal |
+|---|---|---|---|
+| E8 | EPCB 1.0.0, 4.2.2 | Option B says to append the base 64 characters to 'eh' (it is 'ex'), and step 2 of the decoding speaks of 6 bits per "hexadecimal" character (they are base 64 characters). | Editorial corrections. |
+| E9 | TDS 2.3, annex E.3 | The SSCC++ and ITIP++ examples begin with the headers F9 and F3, those of SSCC+ and ITIP+; with EF and ED (Table 14-1) the same bits give the URIs shown. The SGTIN++ and DSGTIN++ examples show the hostname example.com, while their bits encode id.example.com like every other `++` example. The EPC URI of the SGTIN-96 example ends `1234567896789`; its serial number is `123456789`. | Correct the headers, the two URIs and the EPC URI. |
+| E10 | TDS 2.3, Tables 14-14 and 14-15 | In Table 14-14 (B3) the rows `.org.cn` and `.net.cn` give the prefix `0000000`, Table B1's, instead of `0000010`; the caption of Table 14-15 (B4) says its values begin with `0000010`, but they begin with `0000011`. | Correct the prefixes and the caption. |
+| E11 | TDT 2.2 artefact `CPI-var.json` (draft of 2024-11-18) | The grammar of the GS1_AI_JSON level names a field `serial`; the field is `cpiserial` (the GS1_DIGITAL_LINK level is right). | Correct the artefact before it is published. |
+
 The namespace question (F22) is not listed: it becomes an erratum only if the test suite shows a problem.
 
 ## 7. Effect on the backlog
@@ -447,7 +457,7 @@ The namespace question (F22) is not listed: it becomes an erratum only if the te
 | **1.6 EPC binary decompression (new, M–L)** | F6 and the remaining part of F7. Implementation to be chosen when the item starts (GS1 Digital Link URI: Compression Technical Standard for EPC binary strings 1.0.0, Tag Data Standard / Tag Data Translation); the 500 for unrecognised segments is fixed in 1.5. |
 | 1.4 GS1 conformance test suite | Runs after 1.5 and 1.6, so that the record reflects the corrected resolver; also settles F22. |
 | 7.3 Polish | F21 (default titles in the link's language). |
-| 8.1 Work Requests / errata | E1–E7 (section 6). |
+| 8.1 Work Requests / errata | E1–E7 (section 6); E8–E11 added during item 1.6. |
 
 Proposed order of phase 1: 1.2 → 1.3 → 1.5 → 1.6 → 1.4.
 

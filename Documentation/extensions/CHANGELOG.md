@@ -2,6 +2,37 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### EPC binary strings: `/eh…` and `/ex…` (backlog item 1.6)
+Conformance review finding F6 and the rest of F7. GS1-Conformant Resolver 1.2.1, section 2.3; GS1 Digital
+Link URI: Compression Technical Standard for EPC binary strings (EPCB) 1.0.0.
+
+- **Decompression**: a request whose only path segment is `eh` + lower-case hexadecimal or `ex` + base 64
+  URL (RE3 of URI Syntax 1.7, 6.1.2) is decoded as an EPC binary string and resolved as the equivalent fully
+  uncompressed GS1 Digital Link URI on the resolver's own stem; the linkset is that URI's (it was 500 before
+  item 1.5, then 400).
+- **Every EPC scheme with a GS1 Digital Link**: the schemes before TDS 2.0 (SGTIN-96, SGTIN-198, SSCC-96,
+  SGLN-96/195, GRAI-96/170, GIAI-96/202, GSRN-96, GSRNP-96, GDTI-96/113/174, SGCN-96, ITIP-110/212, CPI-96,
+  CPI-var) entirely from the artefacts of EPC Tag Data Translation 2.2, now shipped in
+  `web_server/src/tdt/`; the twelve `+` schemes of TDS 2.0 with Table F and the methods of TDS 14.5,
+  including the **+AIDC data** that may follow the EPC (TDS 15.3); the twelve `++` schemes of TDS 2.3 (no
+  TDT artefacts yet) as their `+` scheme followed by a custom hostname (TDS 14.5.16).
+- **Owner's decisions**: key qualifiers carried by the tag (a batch, variant or serial in +AIDC data) go to
+  the path in the order of the key; data attributes (the date of a DSGTIN+, other +AIDC data) go to the
+  query string and are passed on to the target before the request's own query string (2.12); the hostname
+  inside a `++` EPC is decoded but **ignored** — the resolver keeps its own stem (EPCB 4.2, step 3).
+- **Checks**: data attributes are checked with the path by the GS1 Barcode Syntax Engine's Digital Link
+  parser (mandatory associations, plausible dates…). A string that matches RE3 but does not decode answers
+  **400** with the reason: unknown or reserved header, scheme without a Digital Link (GID-96, USDOD-96,
+  ADI-var), data after the end, value cut short, reserved encoding, repeated AI. The filter value has no
+  counterpart in a Digital Link and is dropped; the +AIDC data toggle bit is not relied on (TDS 14.5.1).
+- **Description file**: `"supportedPrimaryKeys": ["all"]` is now true for EPC binary strings as well.
+- Tests: `dev-tests/resolver/test_epc_binary.py` (163 checks: the EPCB worked examples, every vector of TDS
+  2.3 annex E.3 in both forms, +AIDC data and hostnames, refusals, 800 random EPCs compared with the
+  independent library `epc-tds` when `EPC_TDS` is set); `test_resolver.py` 189 checks.
+- Candidate errata found (conformance review, section 6): E8 in EPCB 4.2.2; E9 in TDS 2.3 annex E.3
+  (headers of SSCC++ and ITIP++, hostname of SGTIN++ and DSGTIN++); E10 in TDS 2.3 Table 14-14 and 14-15;
+  E11 in the TDT 2.2 artefact of CPI-var.
+
 ### Resolution fixes of the conformance review (backlog item 1.5)
 Conformance review findings F7, F9, F10, F12-F19. Deliberate changes to official code are marked.
 

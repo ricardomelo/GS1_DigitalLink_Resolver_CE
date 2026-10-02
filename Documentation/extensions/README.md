@@ -715,6 +715,7 @@ language-neutral on labels.
 | request path checked as an element string: qualifiers out of order, data attributes or unknown AIs in the path redirected | the GS1 Barcode Syntax Engine's Digital Link parser checks the path: 400 | 2.4.1; URI Syntax 4.9, 4.10 |
 | `%2F` in a value decoded by the proxy and by Werkzeug: 400 | the raw request URI reaches the resolver (`$request_uri`) and each segment is decoded on its own | 2.4.1; URI Syntax 4.2 |
 | a single segment that is not a compressed Digital Link → 500 | 400 (HTML page for browsers) | 2.4.1 |
+| `/eh…` and `/ex…` (EPC binary strings) read as legacy compression → 500, then 400 | decompressed and resolved as the equivalent GS1 Digital Link on the resolver's own stem: every EPC scheme with a Digital Link (schemes before TDS 2.0 from the TDT 2.2 artefacts, `+` schemes with +AIDC data, `++` schemes with their hostname ignored); key qualifiers from the tag in the path, data attributes in the query string, passed on before the request's own; 400 with the reason when the string does not decode | 2.3, item 5; EPCB 1.0.0, 4.2; URI Syntax 6.1.2 (RE3) |
 | HTML linkset page without JSON-LD; JSON with no `Accept` header | JSON-LD embedded; HTML when the request has no `Accept` header | 2.10 |
 | description file with the internal `_id` and GS1's terms of use | neither; `termsOfUse` from `RESOLVER_TERMS_URL` | 3 |
 | serial-number record and batch record both applying: the one with more qualifiers wins | the serial number's | 2.5.9, rule 4 |
@@ -727,6 +728,43 @@ Link 1.1 the resolver redirected to the default target; that is no longer permit
 ask for JSON keep receiving JSON.
 
 Without these changes the portal still works, but the defects in the table remain.
+
+### EPC binary strings in detail
+
+An NFC tag (often a hybrid UHF/NFC tag) can emit `https://<resolver>/eh<hexadecimal>` or
+`https://<resolver>/ex<base 64>`, where the characters after `eh`/`ex` are the tag's EPC in the binary
+encoding of the EPC Tag Data Standard. The resolver turns it into the GS1 Digital Link the EPC stands for:
+
+| Request | Resolved as |
+|---|---|
+| `/eh30164596f40c0e5cbe991a83` (SGTIN-96, EPCB example) | `/01/09528765123457/21/123456789123` |
+| `/exMBZFlvQMDly-mRqD` (the same, base 64) | `/01/09528765123457/21/123456789123` |
+| `/ehfb342cde795211411234538566cb0afc4` (DSGTIN+, TDS annex E.3) | `/01/79521141123453/21/32a%2Fb?17=220630` |
+| SGTIN+ with +AIDC data (10) L1 and (17) 261231 | `/01/…/10/L1/21/…?17=261231` |
+| `/ehfd37…d800` (SGTIN++ with the hostname id.example.com) | `/01/79521141123453/21/32a%2Fb` on this resolver |
+
+- **What is supported.** The schemes defined before TDS 2.0 that have a GS1 Digital Link (SGTIN-96/198,
+  SSCC-96, SGLN-96/195, GRAI-96/170, GIAI-96/202, GSRN-96, GSRNP-96, GDTI-96/113/174, SGCN-96, ITIP-110/212,
+  CPI-96, CPI-var), the twelve `+` schemes of TDS 2.0 and the twelve `++` schemes of TDS 2.3. GID-96,
+  USDOD-96 and ADI-var have no GS1 Digital Link: 400.
+- **Where the rules come from.** The machine-readable artefacts of EPC Tag Data Translation 2.2, shipped in
+  `web_server/src/tdt/` exactly as GS1 publishes them; TDS 2.3 for the methods of section 14.5 and the
+  hostname tables, which have no artefact yet.
+- **Key qualifiers and data attributes** (owner's decision). A batch, variant or serial number carried in
+  +AIDC data is a key qualifier: it goes to the path, in the order of the key, and takes part in the
+  walk-up. Everything else (the date of a DSGTIN+, an expiry date, a weight…) is a data attribute: it goes to
+  the query string, which the resolver passes on to the target (2.12), in front of whatever query string the
+  request itself had. The path and the attributes are checked together by the GS1 Barcode Syntax Engine; a
+  combination the engine refuses (for example AI 7258 without 8018 and 7259) answers 400.
+- **Hostname of a `++` EPC** (owner's decision). Decoded, so that the data after it can be read, and
+  ignored: the resolver answers on its own stem, as EPCB 4.2 (step 3) says. Tags that should resolve
+  elsewhere should carry that host in the URI they emit.
+- **Not used.** The filter value (no counterpart in a Digital Link). The +AIDC data toggle bit is not
+  relied on: whatever follows the EPC is decoded (TDS 14.5.1 makes it non-essential for decoding).
+- **Refused (400, with the reason).** Unknown or reserved headers (`00`, `E2`, `FE`…), bits after the data
+  that are not zero, values cut short or longer than their AI allows, implausible dates and times, reserved
+  encodings, a special +AIDC data header (`A0`…`FF`), an AI given twice. Upper-case `EH`/`EX` and
+  upper-case hexadecimal are not EPC binary strings (RE3).
 
 ## Operations
 

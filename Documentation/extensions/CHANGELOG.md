@@ -2,6 +2,13 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Fixed: every resolution through the proxy answered 500 (since item 1.5)
+The `upstream` block added in item 1.5 was named `resolver_web`; nginx sends the upstream's name as the
+`Host` header, and Werkzeug 3.1 refuses a host name with an underscore before any resolver code runs, so
+every `/…` request through the proxy answered 500 (`/portal/healthz` does not go through it and stayed
+`ok`). The upstream is now `resolver-web`. `test_home.py` checks that every upstream receives a Host header
+Werkzeug accepts (54 checks). Commit `b9a7631`.
+
 ### EPC binary strings: `/eh…` and `/ex…` (backlog item 1.6)
 Conformance review finding F6 and the rest of F7. GS1-Conformant Resolver 1.2.1, section 2.3; GS1 Digital
 Link URI: Compression Technical Standard for EPC binary strings (EPCB) 1.0.0.

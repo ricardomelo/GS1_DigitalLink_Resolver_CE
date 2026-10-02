@@ -169,6 +169,7 @@ filtrados e exportados; o cadastro da chave é oferecido, com os mesmos destinos
 | Commit | Mudança |
 |---|---|
 | `51a0da8` | `epc_binary.py`: EPC em binário decodificado para GS1 Digital Link — esquemas anteriores ao TDS 2.0 inteiramente a partir dos artefatos do TDT 2.2 (agora em `web_server/src/tdt/`), esquemas `+` com a Tabela F e seus dados +AIDC, esquemas `++` com o hostname; o `test_epc_binary.py` confere todos os vetores do anexo E.3 do TDS 2.3 e 800 EPCs aleatórios contra a biblioteca `epc-tds` |
+| `b9a7631` | proxy: o upstream `resolver_web` do item 1.5 renomeado para `resolver-web` — o Werkzeug recusava o sublinhado no cabeçalho Host, então toda resolução pelo nginx dava 500 na homologação desde o 1.5; o `test_home.py` agora confere o cabeçalho Host |
 | `895c4b1` | Resolver: `/eh…` e `/ex…` resolvidos como o GS1 Digital Link descomprimido (F6, restante do F7); atributos de dados conferidos pelo engine e repassados; 400 quando a cadeia não decodifica |
 
 Decisões do responsável: o decodificador cobre todos os esquemas de uma vez (clássicos, `+` com dados
@@ -194,7 +195,7 @@ SSCC++ e ITIP++, hostnames de SGTIN++ e DSGTIN++, uma EPC URI), E10 (Tabelas 14-
 | Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, tela de usuários, senhas temporárias, histórico, auditoria |
 | Instalação | manual, com patch | fork git, configuração em camadas, instalador para Ubuntu, backup |
 | Resolução | GTIN e lote, links comprimidos do Digital Link 1.1 | todas as chaves e qualificadores, as regras do Resolver 1.2.1, EPC em binário de etiquetas NFC (`/eh…`, `/ex…`) |
-| Testes | 69 verificações | 1.042 verificações em 13 programas de teste, além do teste do instalador |
+| Testes | 69 verificações | 1.051 verificações em 13 programas de teste, além do teste do instalador |
 | Documentação | README do pacote, documento de passagem | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e português), documentação das extensões, changelog |
 
 ## Decisões que ficam, a não ser que sejam revistas de propósito
@@ -232,6 +233,10 @@ SSCC++ e ITIP++, hostnames de SGTIN++ e DSGTIN++, uma EPC URI), E10 (Tabelas 14-
 - Mostrar layouts como imagens antes de construí-los.
 - Ler as regras de ordenação da norma, não só os conjuntos: a regra 4 do 2.5.9 também ordena os cadastros
   (a série antes do lote), o que a subida na hierarquia não seguia.
+- Um dublê de teste esconde o que o componente real confere: o upstream simulado do teste do proxy aceitava
+  qualquer cabeçalho Host, então o upstream `resolver_web` do item 1.5 (recusado pelo Werkzeug) passou em
+  todos os testes e quebrou todas as resoluções na homologação. Conferir resoluções pelo proxy depois de cada
+  instalação, não só o `/portal/healthz`.
 - Artefatos legíveis por máquina e exemplos resolvidos também têm erros (um nome de campo num rascunho do
   TDT, cabeçalhos no anexo E.3): decodificar todos os vetores publicados e comparar com uma implementação
   independente.

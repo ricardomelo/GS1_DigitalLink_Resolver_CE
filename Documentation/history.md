@@ -167,6 +167,7 @@ targets preselected.
 | Commit | Change |
 |---|---|
 | `51a0da8` | `epc_binary.py`: EPC binary strings decoded to GS1 Digital Link — schemes before TDS 2.0 entirely from the TDT 2.2 artefacts (now in `web_server/src/tdt/`), `+` schemes with Table F and their +AIDC data, `++` schemes with their hostname; `test_epc_binary.py` checks every vector of TDS 2.3 annex E.3 and 800 random EPCs against the `epc-tds` library |
+| `b9a7631` | proxy: the upstream `resolver_web` of item 1.5 renamed `resolver-web` — Werkzeug refused the underscore in the Host header, so every resolution through nginx was a 500 on staging since 1.5; `test_home.py` now checks the Host header |
 | `895c4b1` | resolver: `/eh…` and `/ex…` resolved as the decompressed GS1 Digital Link (F6, rest of F7); data attributes checked by the engine and passed on; 400 when a string does not decode |
 
 Decisions of the owner: the decoder covers every scheme at once (classic, `+` with +AIDC data, `++`); key
@@ -192,7 +193,7 @@ CPI-var) — section 6 of the conformance review.
 | Accounts | users from the command line, all equal | roles, prefixes, users screen, temporary passwords, history, audit trail |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
 | Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
-| Tests | 69 checks | 1,042 checks in 13 test programs, plus the installer test |
+| Tests | 69 checks | 1,051 checks in 13 test programs, plus the installer test |
 | Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
 ## Decisions that stay unless deliberately revisited
@@ -225,6 +226,10 @@ CPI-var) — section 6 of the conformance review.
 - Show layouts as images before building them.
 - Read the standard's ranking rules as well as its sets: rule 4 of 2.5.9 also orders the records (a serial
   number before a batch), which the walk-up had not followed.
+- A test double hides what the real component checks: the proxy test's mock upstream accepted any Host
+  header, so the `resolver_web` upstream of item 1.5 (refused by Werkzeug) passed every test and broke
+  every resolution on staging. Check resolutions through the proxy after each installation, not only
+  `/portal/healthz`.
 - Machine-readable artefacts and worked examples have errors too (a field name in a TDT draft, headers in
   annex E.3): decode every published vector and compare with an independent implementation.
 - Read the processing model, not only the data: the SGCN-96 artefact needs the EXTRACT rules of its BINARY

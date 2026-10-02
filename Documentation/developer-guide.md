@@ -390,7 +390,8 @@ The table of every behaviour change, with the clause of the standard, is in the 
 ## 11. Proxy and home page (`frontend_proxy_server/`)
 
 `nginx.conf` serves `/` and `/home/…` from the image, sends `/` paths to web-service (the raw request URI,
-`proxy_pass http://resolver_web/api$request_uri`, so that `%2F` and the query string arrive as sent), `/api` and
+`proxy_pass http://resolver-web/api$request_uri`, so that `%2F` and the query string arrive as sent; the upstream's
+name is also the Host header the web server receives, so it must be a valid host name), `/api` and
 `/swaggerui` to data-entry-service, and `/portal/` to portal-service (with `/portal` → `/portal/`).
 `home/home.js` reads the operator from `/.well-known/gs1resolver`, takes the resolver root from the address
 bar, and shares the language choice with the portal.
@@ -423,7 +424,7 @@ No Docker needed; each program exits with status 1 on a failure. Setup and comma
 | `portal/test_portal_config.py` | 9 | configuration and start-up |
 | `portal/test_registration.py` | 26 | §2.5.9 through the portal API: informative qualifiers (save, open, history, list, export, import), records against rule 2, the key's own record when saving and importing |
 | `portal/test_portal_e2e.py` | 186 | the portal in Chromium against `mock_data_entry.py`, desktop and phone; also run without the engine |
-| `home/test_home.py` | 45 | home page through a real nginx |
+| `home/test_home.py` | 54 | home page through a real nginx; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts |
 | `install/test_install.sh` | — | installer through shims (Compose v2) |
 
 `docs/screenshots.py` regenerates the images of the README and of the user guide, in English and in

@@ -407,8 +407,9 @@ extensões (*Resolver CE changes*).
 ## 11. Proxy e página inicial (`frontend_proxy_server/`)
 
 O `nginx.conf` serve `/` e `/home/…` a partir da imagem, envia os caminhos `/` ao web-service (a URI
-original, `proxy_pass http://resolver_web/api$request_uri`, para o `%2F` e a query string chegarem como
-foram enviados), `/api` e
+original, `proxy_pass http://resolver-web/api$request_uri`, para o `%2F` e a query string chegarem como
+foram enviados; o nome do upstream é também o cabeçalho Host que o servidor web recebe, então precisa ser um
+nome de host válido), `/api` e
 `/swaggerui` ao data-entry-service e `/portal/` ao portal-service (com `/portal` → `/portal/`). O
 `home/home.js` lê o operador em `/.well-known/gs1resolver`, pega a raiz do Resolver da barra de endereços e
 compartilha a escolha de idioma com o portal.
@@ -441,7 +442,7 @@ Não precisam de Docker; cada programa termina com status 1 em caso de falha. Pr
 | `portal/test_portal_config.py` | 9 | configuração e inicialização |
 | `portal/test_registration.py` | 26 | §2.5.9 pela API do portal: qualificadores informativos (salvar, abrir, histórico, lista, exportar, importar), cadastros contra a regra 2, o cadastro da chave ao salvar e ao importar |
 | `portal/test_portal_e2e.py` | 186 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular; também roda sem o engine |
-| `home/test_home.py` | 45 | página inicial com um nginx real |
+| `home/test_home.py` | 54 | página inicial com um nginx real; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug |
 | `install/test_install.sh` | — | instalador com simulações (Compose v2) |
 
 O `docs/screenshots.py` regenera as imagens do README e do guia do portal em inglês e em português a partir

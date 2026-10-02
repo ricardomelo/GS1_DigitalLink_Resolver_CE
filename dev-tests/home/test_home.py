@@ -152,6 +152,8 @@ def routing_checks(base: str) -> None:
         ("/01/09506000134352", "resolver", "/api/01/09506000134352"),
         ("/01/09506000134352/10/ABC123?linkType=gs1:pip", "resolver", "/api/01/09506000134352/10/ABC123?linkType=gs1:pip"),
         ("/homepage", "resolver", "/api/homepage"),
+        # a value with "/" (%2F) and the ';' delimiter reach the resolver exactly as sent (URI Syntax 4.2, 4.11)
+        ("/01/09506000134352/10/A%2FB?17=261231;3103=000189", "resolver", "/api/01/09506000134352/10/A%2FB?17=261231;3103=000189"),
         ("/api/docs", "data-entry", "/api/docs"),
         ("/swaggerui/swagger-ui.css", "data-entry", "/swaggerui/swagger-ui.css"),
         ("/portal/", "portal", "/portal/"),

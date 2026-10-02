@@ -14,7 +14,8 @@ Clients asking for JSON keep receiving JSON; nothing here alters machine respons
 """
 import base64
 import os
-from urllib.parse import urlparse
+import json
+from urllib.parse import unquote, urlparse
 
 from flask import render_template_string, request
 
@@ -38,6 +39,8 @@ LOCALE_MATCHERS = [('pt', 'pt-BR'), ('en', 'en-GB')]
 TEXT = {
     'pt-BR': {
         'linkset.title': 'Informações disponíveis',
+        'choice.title': 'Escolha uma opção',
+        'choice.text': 'Há mais de uma versão desta informação. Escolha a que preferir.',
         'level.serial': 'Unidade (série {value})', 'level.lot': 'Lote {value}',
         'level.variant': 'Variante {value}', 'level.product': 'Produto (todas as unidades)',
         'error.400.title': 'Código inválido',
@@ -55,6 +58,8 @@ TEXT = {
     },
     'en-GB': {
         'linkset.title': 'Available information',
+        'choice.title': 'Choose an option',
+        'choice.text': 'There is more than one version of this information. Choose the one you prefer.',
         'level.serial': 'Item (serial {value})', 'level.lot': 'Batch/lot {value}',
         'level.variant': 'Variant {value}', 'level.product': 'Product (every unit)',
         'error.400.title': 'Invalid code',
@@ -271,7 +276,7 @@ def _levels(locale: str, linkset: list[dict]) -> list[dict]:
 
 def _hri(identifiers: str, qualifier_path: str | None) -> str:
     """The identification in human readable form: (01) 0950… (10) L1."""
-    parts = (identifiers + (qualifier_path or '')).strip('/').split('/')
+    parts = [unquote(p) for p in (identifiers + (qualifier_path or '')).strip('/').split('/')]
     return '  '.join(f'({parts[i]}) {parts[i + 1]}' for i in range(0, len(parts) - 1, 2))
 
 
@@ -284,12 +289,20 @@ def _page(locale: str, title: str, body: str) -> str:
                                   cookie=LOCALE_COOKIE, body=body)
 
 
-def render_linkset(identifiers: str, qualifier_path: str | None, linkset: list[dict]) -> str:
-    """HTML page listing every link of a linkset, for people who open ?linkType=linkset in a browser."""
+def render_linkset(identifiers: str, qualifier_path: str | None, linkset: list[dict],
+                   json_ld: dict | None = None, choice: bool = False) -> str:
+    """HTML page listing every link of a linkset, for people who open ?linkType=linkset in a browser, or the
+    links among which the resolver could not choose (choice: 300 Multiple Choices). With json_ld the linkset
+    is embedded as JSON-LD too (GS1-Conformant Resolver 1.2.1, section 2.10)."""
     locale = _request_locale()
-    title = _t(locale, 'linkset.title')
-    body = render_template_string("<p class='code'>{{ hri }}</p>" + _LINKS,
+    title = _t(locale, 'choice.title' if choice else 'linkset.title')
+    body = render_template_string("{% if text %}<p>{{ text }}</p>{% endif %}<p class='code'>{{ hri }}</p>" + _LINKS,
+                                  text=_t(locale, 'choice.text') if choice else '',
                                   hri=_hri(identifiers, qualifier_path), levels=_levels(locale, linkset))
+    if json_ld is not None:
+        # '<' escaped so that no value can close the script element
+        data = json.dumps(json_ld, ensure_ascii=False).replace('<', '\\u003c')
+        body += f'<script type="application/ld+json">{data}</script>'
     return _page(locale, title, body)
 
 

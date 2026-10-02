@@ -335,11 +335,13 @@ def _author_db_linkset_document(data_entry_format: dict[str, Any]) -> dict[str, 
                 if isinstance(linkset_entry['hreflang'], list) and len(linkset_entry['hreflang']) > 1:
                     linkset_obj['https://gs1.org/voc/defaultLinkMulti'] = linkset_entry
 
-                # In any case we append 'defaultLink' to the linkset_obj with only linktype, href and title
-                linkset_obj['defaultLink'] = {
-                    "href": link['href'],
-                    "title": link['title']
-                }
+                # 'defaultLink' with only href and title: the FIRST link of the default type, as the portal and
+                # the API describe it (the official loop kept the last one; GS1-Conformant Resolver 2.5.8)
+                if 'defaultLink' not in linkset_obj:
+                    linkset_obj['defaultLink'] = {
+                        "href": link['href'],
+                        "title": link['title']
+                    }
 
         # finally we re-arrange 'defaultLink' to be the first element in the list and
         # defaultLinkMulti to be the second element in the list:

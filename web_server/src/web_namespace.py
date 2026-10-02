@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote, unquote, urlsplit
 
 from flask import request, abort, Response, send_from_directory, jsonify, make_response
 from flask_restx import Namespace, Resource
@@ -105,15 +105,18 @@ class DocOperationsNonGS1DigitalLinkRequest(Resource):
                 anchor_ai = list(decompress_result['identifiers'][0].values())[0]
                 identifiers = f'/{anchor_ai_code}/{anchor_ai}'
                 doc_id = f'{anchor_ai_code}_{anchor_ai}'
-                qualifiers = ['{0}/{1}'.format(list(d.keys())[0], list(d.values())[0]) for d in decompress_result['qualifiers']]
+                qualifiers = ['{0}/{1}'.format(list(d.keys())[0], quote(str(list(d.values())[0]), safe=''))
+                              for d in decompress_result['qualifiers']]
                 qualifier_path = '/' + '/'.join(qualifiers) if qualifiers else None
-                return _process_response(doc_id, identifiers, qualifier_path or None)
-            else:
-                return jsonify({'error': decompress_result['error']}), 400
+                return _process_response(doc_id, identifiers, qualifier_path or None,
+                                         query_strings=_extract_query_strings(request))
+            # Not a compressed GS1 Digital Link (nor anything else the resolver knows): 400, as section 2.4.1
+            # asks for a request that is not a valid GS1 Digital Link URI (was 500)
+            return _bad_request('/' + non_gs1dl_request, decompress_result.get('error', 'Not a GS1 Digital Link'))
 
         except Exception as e:
             logger.warning('Error getting document: %s', e)
-            abort(500, description="Error getting document")
+            return _bad_request('/' + non_gs1dl_request, 'Not a GS1 Digital Link')
 
 
 @web_namespace.route('/<anchor_ai_code>/<anchor_ai>')
@@ -125,16 +128,7 @@ class DocOperationsIdentifiersOnly(Resource):
             if anchor_ai_code == '.well-known' and anchor_ai == 'gs1resolver':
                 return _resolver_description()
 
-            anchor_ai = _confirm_gtin_14(anchor_ai, anchor_ai_code)
-            identifiers = f'/{anchor_ai_code}/{anchor_ai}'
-            doc_id = f'{anchor_ai_code}_{anchor_ai}'
-            logger.debug('GS1 identifiers only: %s', identifiers)
-
-            # Extract all query strings into a URL-compatible string
-            query_strings = _extract_query_strings(request)
-
-            compress = request.args.get('compress', None)
-            return _process_response(doc_id, identifiers, compress=compress, query_strings=query_strings)
+            return _resolve_path(anchor_ai_code, [anchor_ai_code, anchor_ai])
 
         except Exception as e:
             logger.warning('Error getting document: %s', e)
@@ -167,24 +161,7 @@ class DocOperationsResource(Resource):
     def get(self, anchor_ai_code: str, anchor_ai: str, extra_segments: str | None = None) -> Response | tuple[Any, int]:
         try:
             logger.debug("Extra segments: %s", extra_segments)
-
-            anchor_ai = _confirm_gtin_14(anchor_ai, anchor_ai_code)
-            identifiers = f'/{anchor_ai_code}/{anchor_ai}'
-            doc_id = f'{anchor_ai_code}_{anchor_ai}'
-
-            extra_segments = (extra_segments or '').strip('/')
-            if extra_segments:
-                qualifier_path = f'/{extra_segments}'
-            else:
-                qualifier_path = ''
-
-            logger.debug('Processed identifiers and qualifiers: %s', identifiers + qualifier_path)
-
-            # Extract all query strings into a URL-compatible string
-            query_strings = _extract_query_strings(request)
-
-            compress = request.args.get('compress', None)
-            return _process_response(doc_id, identifiers, qualifier_path=qualifier_path, compress=compress, query_strings=query_strings)
+            return _resolve_path(anchor_ai_code, [anchor_ai_code, anchor_ai, *(extra_segments or '').split('/')])
 
         except Exception as e:
             logger.warning('Error getting document: %s', e)
@@ -211,6 +188,46 @@ class DocOperationsResource(Resource):
 # as well obtain the three contexts that are used in the web_logic.py file. Note that the decision to
 # return a linkset rather than attempt a 307 redirect is made here by setting the linkset_requested variable
 # should the 'Accept' header contain 'application/linkset+json' or 'application/json'
+def _request_segments(anchor_ai_code: str) -> list[str] | None:
+    """
+    The path segments of the request as the client sent them, each percent-decoded on its own, from the AI of
+    the primary key on. Werkzeug (and nginx before it) decode %2F into '/' in the path, which would split a
+    value such as batch A/B (82-character set, URI Syntax 1.7, section 4.2) into two segments; the raw
+    request URI keeps it whole. None when the server does not provide the raw URI.
+    """
+    raw = request.environ.get('RAW_URI') or request.environ.get('REQUEST_URI')
+    if not raw:
+        return None
+    raw_segments = [unquote(s) for s in urlsplit(raw).path.split('/') if s]
+    decoded = [s for s in request.path.split('/') if s]
+    if anchor_ai_code not in decoded:
+        return None
+    start = decoded.index(anchor_ai_code)          # segments of the mount point (/api) contain no %2F
+    segments = raw_segments[start:]
+    return segments if segments and segments[0] == anchor_ai_code else None
+
+
+def _resolve_path(anchor_ai_code: str, fallback_segments: list[str]) -> Response | tuple[Any, int]:
+    """Resolves /AI/value[/qualifier/value...] taken from the raw request URI (see _request_segments)."""
+    segments = _request_segments(anchor_ai_code) or [s for s in fallback_segments if s != '']
+    anchor_ai = _confirm_gtin_14(segments[1], anchor_ai_code)
+    identifiers = f'/{anchor_ai_code}/{anchor_ai}'
+    doc_id = f'{anchor_ai_code}_{anchor_ai}'
+    # values percent-encoded, so that a '/' inside one stays inside it (web_logic decodes them)
+    qualifier_path = ''.join('/' + quote(s, safe='') for s in segments[2:])
+    logger.debug('Processed identifiers and qualifiers: %s', identifiers + qualifier_path)
+    compress = request.args.get('compress', None)
+    return _process_response(doc_id, identifiers, qualifier_path=qualifier_path or None, compress=compress,
+                             query_strings=_extract_query_strings(request))
+
+
+def _bad_request(path: str, error: str) -> Response | tuple[Any, int]:
+    """400 for a request that is not a valid GS1 Digital Link URI (section 2.4.1): HTML page or JSON."""
+    if _wants_html():
+        return Response(web_pages.render_error(400, path, None, None, None), status=400, mimetype='text/html')
+    return {'response_status': 400, 'error': error}, 400
+
+
 def _resolver_description() -> Response:
     """
     Resolver Description File (GS1-Conformant Resolver standard, section 3).
@@ -220,6 +237,10 @@ def _resolver_description() -> Response:
     """
     with open(os.path.join(static_folder_path, 'gs1resolver.json'), encoding='utf-8') as fh:
         description = json.load(fh)
+    description.pop('_id', None)                     # internal field of the official file
+    terms = os.getenv('RESOLVER_TERMS_URL', '').strip()
+    if terms:
+        description['termsOfUse'] = terms            # the operator's own terms of use, when there are any
 
     fqdn = os.getenv('FQDN', '').strip()
     if fqdn:
@@ -291,8 +312,12 @@ def _confirm_gtin_14(anchor_ai: str, anchor_ai_code: str) -> str:
 
 
 def _extract_query_strings(req: request) -> str:
-    """Extract all query parameters into a URL-encoded string."""
-    return urlencode(list(req.args.items(multi=True)))
+    """
+    The query string exactly as sent (section 2.12: the resolver SHALL transmit its entirety). Decoding and
+    re-encoding it changed it: the ';' delimiter of URI Syntax 1.7, section 4.11, became %3B and a key
+    without a value gained '='.
+    """
+    return req.query_string.decode('utf-8', 'replace')
 
 
 # Allowed Content-Type values that may be reflected from the Accept header
@@ -306,8 +331,12 @@ JSON_LD_CONTEXT = 'https://ref.gs1.org/standards/resolver/linkset-context'
 
 
 def _wants_html() -> bool:
-    """A browser asking for a page (explicit text/html and no JSON type). curl and apps keep receiving JSON."""
-    accept = request.headers.get('Accept', '')
+    """A browser asking for a page (explicit text/html and no JSON type), or a request with no Accept header
+    at all (section 2.10: HTML when the media type is unspecified). curl and apps, which send Accept: */*,
+    keep receiving JSON."""
+    accept = request.headers.get('Accept')
+    if accept is None:
+        return True
     return 'text/html' in accept and not any(t in accept for t in ('json',))
 
 
@@ -356,7 +385,9 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
         accept = request.headers.get('Accept', '')
         if _wants_html():
             linkset = web_logic.format_linkset_for_external_use(response_data, identifiers)['linkset']
-            response = Response(web_pages.render_linkset(identifiers, qualifier_path, linkset),
+            # section 2.10: the HTML page carries the linkset as JSON-LD too
+            json_ld = web_logic.format_linkset_for_external_use(response_data, identifiers, as_json_ld=True)
+            response = Response(web_pages.render_linkset(identifiers, qualifier_path, linkset, json_ld),
                                 status=200, mimetype='text/html')
         else:
             as_json_ld = 'application/ld+json' in accept
@@ -376,16 +407,29 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
         target = response_data['data']
         response = Response(status=307)
         location = target['href']
-        # Section 2.12: by default the whole query string is passed on; a link can switch this off with
-        # "fwqs": false (an attribute defined in GS1's official linkset schema).
-        if query_strings and target.get('fwqs', True) is not False:
+        # Section 2.12: the whole query string is passed on, always. "fwqs": false in older records is
+        # ignored: release 1.2.0 of the standard removed the option to switch it off.
+        if query_strings:
             location = _append_query(location, query_strings)
         response.headers['Location'] = location
         response.headers['Link'] = _latin1(link_header)
         return response
 
     if status == 300:
-        return {'linkset': response_data['data']}, 300
+        # Section 2.6.3, step 7: the links of the requested type among which the request could not decide,
+        # as a linkset (section 2.10) of the level that holds them; an HTML page for browsers.
+        choice = {'response_status': 300, 'data': [{'anchor': response_data.get('anchor', identifiers),
+                                                     response_data.get('linktype_key'): response_data['data']}]}
+        linkset = web_logic.format_linkset_for_external_use(choice, identifiers)
+        if _wants_html():
+            json_ld = web_logic.format_linkset_for_external_use(choice, identifiers, as_json_ld=True)
+            response = Response(web_pages.render_linkset(identifiers, qualifier_path, linkset['linkset'], json_ld,
+                                                         choice=True), status=300, mimetype='text/html')
+        else:
+            response = Response(json.dumps(linkset, ensure_ascii=False), status=300,
+                                content_type='application/linkset+json')
+        response.headers['Link'] = _latin1(link_header)
+        return response
 
     return response_data, status
 

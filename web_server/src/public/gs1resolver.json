@@ -1,8 +1,6 @@
 {
-  "_id": "gs1resolver.json",
   "name": "GS1 Resolver Community Edition",
   "resolverRoot": "https://id.mydomain.org",
-  "termsOfUse": "https://www.gs1.org/standards/resolver/terms-of-use",
   "supportedLinkType": [
     {
       "namespace": "https://ref.gs1.org/voc/",

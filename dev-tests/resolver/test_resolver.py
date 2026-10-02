@@ -66,12 +66,15 @@ ENGINE = os.environ.get("GS1_SYNTAX_ENGINE")        # optional: the real GS1 Bar
 
 
 def engine_check(ai_data_string):
-    """What the resolver's toolkit call does in production: accept or refuse the element string."""
+    """What the resolver's toolkit call does in production: accept or refuse the GS1 Digital Link URI (or an
+    element string), with the GS1 Barcode Syntax Engine."""
     script = os.path.join(ENGINE, "_resolver_check.mjs")
     if not os.path.exists(script):
         with open(script, "w") as fh:
             fh.write('import {GS1encoder} from "gs1encoder"; const g = new GS1encoder(); await g.init();'
-                     'try { g.aiDataStr = process.argv[2]; g.getDLuri(null); } catch (e) { g.free(); process.exit(1); } g.free();')
+                     'const a = process.argv[2];'
+                     'try { if (a.startsWith("https://")) g.dataStr = a; else { g.aiDataStr = a; g.getDLuri(null); } }'
+                     'catch (e) { g.free(); process.exit(1); } g.free();')
     import subprocess
     return subprocess.run(["node", script, ai_data_string], cwd=ENGINE, capture_output=True).returncode == 0
 from __init__ import create_app  # noqa: E402
@@ -105,7 +108,7 @@ author({"anchor": G, "qualifiers": [{"10": "123"}], "itemDescription": "Teste Lo
 # ---------------------------------------------------------------- redirection
 redirects = [
     (G, "https://www.codigo2d.com.br"),
-    (G + "?linkType=gs1:instructions", "https://www.codigo2d.com.br?linkType=gs1%3Ainstructions"),
+    (G + "?linkType=gs1:instructions", "https://www.codigo2d.com.br?linkType=gs1:instructions"),
     (G + "?linkType=instructions", "https://www.codigo2d.com.br?linkType=instructions"),
     (G + "?linkType=https://gs1.org/voc/instructions", "https://www.codigo2d.com.br"),
     (G + "?linkType=https://ref.gs1.org/voc/instructions", "https://www.codigo2d.com.br"),
@@ -124,14 +127,17 @@ for path, expected in redirects:
     check(f"307 {path}", r.status_code == 307 and location.startswith(expected), f"{r.status_code} {location}")
 
 # GS1 Digital Link data attributes (URI Syntax 4.10) in the query string, as the portal puts them in QR
-# codes: passed on to the target unchanged, in order and encoding (Resolver standard 2.12, requirement 19),
-# unless the link has fwqs false. The resolver does not judge them: an invalid date is passed on too.
+# codes: passed on to the target exactly as sent, in order and encoding (Resolver standard 2.12,
+# requirement 19), also for a link with "fwqs": false (the option was removed in release 1.2.0). The
+# resolver does not judge them: an invalid date is passed on too.
 data_attributes = [
     (G + "?17=261231&3103=000500", "https://www.codigo2d.com.br?17=261231&3103=000500"),
     (G + "/10/123?17=261231", "https://www.example.org?17=261231"),
-    (G + "?linkType=gs1:instructions&17=261231", "https://www.codigo2d.com.br?linkType=gs1%3Ainstructions&17=261231"),
+    (G + "?linkType=gs1:instructions&17=261231", "https://www.codigo2d.com.br?linkType=gs1:instructions&17=261231"),
     (G + "?99=A%28B%29%2FC%26D&17=261231", "https://www.codigo2d.com.br?99=A%28B%29%2FC%26D&17=261231"),
-    (G + "?linkType=pip&17=261231", "https://www.codigo2d.com.br/produto"),               # fwqs false
+    (G + "?linkType=pip&17=261231", "https://www.codigo2d.com.br/produto?linkType=pip&17=261231"),  # fwqs false ignored
+    (G + "?17=261231;3103=000500", "https://www.codigo2d.com.br?17=261231;3103=000500"),    # ';' delimiter (4.11)
+    (G + "?flag&17=261231", "https://www.codigo2d.com.br?flag&17=261231"),                 # a key without a value
     (G + "?17=261399", "https://www.codigo2d.com.br?17=261399"),
 ]
 for path, expected in data_attributes:
@@ -182,7 +188,8 @@ author({"anchor": UNSAFE, "itemDescription": "Unsafe targets", "defaultLinktype"
 unsafe_html = get(UNSAFE + "?linkType=linkset", "text/html").get_data(as_text=True)
 check("HTML linkset page: https target linked", 'href="https://example.org/ok"' in unsafe_html)
 check("HTML linkset page: javascript: and data: targets listed without a link",
-      "javascript:" not in unsafe_html.lower().split("<script>")[0] and "data:text/html" not in unsafe_html
+      "javascript:" not in unsafe_html.lower().split('<script type="application/ld+json">')[0].split("<script>")[0]
+      and 'href="data:' not in unsafe_html and 'href=" javascript' not in unsafe_html.lower()
       and unsafe_html.count('class="unlinked"') == 3 and "Script 2" in unsafe_html, unsafe_html[unsafe_html.find("<h2>"):][:900])
 unsafe_404 = get(UNSAFE + "?linkType=gs1:recallStatus", "text/html").get_data(as_text=True)
 check("HTML 404 page lists the same targets without links", 'class="unlinked"' in unsafe_404 and "javascript:alert" not in unsafe_404)
@@ -348,6 +355,95 @@ for anchor, qualifiers in QUALIFIED:
           r.status_code == 307 and r.headers.get("Location") == "https://example.org/q" + anchor.replace("/", "-"),
           (r.status_code, r.headers.get("Location")))
 
+# ---------------------------------------------------------------- choosing a link (section 2.6.3, examples 5 to 13)
+# The sample data of table 2-4: the default link type gs1:pip in English (first, so the default) and French,
+# gs1:whatsInTheBox in three language/context variants, gs1:relatedVideo with no language.
+X = "/01/09506000999913"
+author({"anchor": X, "itemDescription": "Examples", "defaultLinktype": "gs1:pip", "links": [
+    {"linktype": "gs1:pip", "href": "https://example.com/en/defaultPage", "title": "Default", "type": "text/html", "hreflang": ["en"]},
+    {"linktype": "gs1:pip", "href": "https://example.com/fr/defaultPage", "title": "Défaut", "type": "text/html", "hreflang": ["fr"]},
+    {"linktype": "gs1:whatsInTheBox", "href": "https://example.com/en/packContents/GB", "title": "Box", "type": "text/html", "hreflang": ["en"], "context": ["GB"]},
+    {"linktype": "gs1:whatsInTheBox", "href": "https://example.com/fr/packContents/FR", "title": "Boîte", "type": "text/html", "hreflang": ["fr"], "context": ["FR"]},
+    {"linktype": "gs1:whatsInTheBox", "href": "https://example.com/fr/packContents/CH", "title": "Boîte CH", "type": "text/html", "hreflang": ["fr"], "context": ["CH"]},
+    {"linktype": "gs1:relatedVideo", "href": "https://example.com/video/abcd", "title": "Video"}]})
+
+
+def location_of(path, language=None, accept="*/*"):
+    headers = {"Accept": accept}
+    if language is not None:
+        headers["Accept-Language"] = language
+    r = client.get("/api" + path, headers=headers)
+    return r.status_code, (r.headers.get("Location") or "").split("?")[0]
+
+
+for name, path, language, expected in [
+    ("example 5: no language → the default", X, None, (307, "https://example.com/en/defaultPage")),
+    ("example 6: fr → the French default", X, "fr", (307, "https://example.com/fr/defaultPage")),
+    ("example 7: de → the default, not 300", X, "de", (307, "https://example.com/en/defaultPage")),
+    ("q-values: fr;q=0.5, en;q=0.9 → English", X, "fr;q=0.5, en;q=0.9", (307, "https://example.com/en/defaultPage")),
+    ("lookup: fr-CA → fr", X, "fr-CA,fr;q=0.8", (307, "https://example.com/fr/defaultPage")),
+    ("example 8: relatedVideo, no language on the link", X + "?linkType=gs1:relatedVideo", "de", (307, "https://example.com/video/abcd")),
+    ("example 9: instructions → 404", X + "?linkType=gs1:instructions", "en", (404, "")),
+    ("example 10: pip + en", X + "?linkType=gs1:pip", "en", (307, "https://example.com/en/defaultPage")),
+    ("example 11: pip + vi → 300", X + "?linkType=gs1:pip", "vi", (300, "")),
+    ("example 12: whatsInTheBox + fr + CH", X + "?linkType=gs1:whatsInTheBox&context=CH", "fr", (307, "https://example.com/fr/packContents/CH")),
+    ("example 13: whatsInTheBox + en + CH → language first", X + "?linkType=gs1:whatsInTheBox&context=CH", "en", (307, "https://example.com/en/packContents/GB")),
+    ("linkType=defaultLink", X + "?linkType=gs1:defaultLink", "fr", (307, "https://example.com/en/defaultPage")),
+    ("linkType=defaultLinkMulti + fr", X + "?linkType=gs1:defaultLinkMulti", "fr", (307, "https://example.com/fr/defaultPage")),
+]:
+    got = location_of(path, language)
+    check(f"choosing a link, {name}", got == expected, got)
+r = client.get("/api" + X + "?linkType=gs1:pip", headers={"Accept": "*/*", "Accept-Language": "vi"})
+body = r.get_json(force=True, silent=True) or {}
+try:
+    jsonschema.validate(body, SCHEMA)
+    valid = True
+except jsonschema.ValidationError as exc:
+    valid = exc.message
+item = (body.get("linkset") or [{}])[0]
+check("300: a valid linkset of the two gs1:pip links, with the anchor of their level",
+      r.status_code == 300 and r.content_type.startswith("application/linkset+json") and valid is True
+      and item.get("anchor") == "https://id.example.org" + X and len(item.get("https://gs1.org/voc/pip", [])) == 2,
+      (r.status_code, valid, body))
+r = client.get("/api" + X + "?linkType=gs1:pip", headers={"Accept": "text/html", "Accept-Language": "vi"})
+html300 = r.get_data(as_text=True)
+check("300 for a browser: an HTML page listing both links", r.status_code == 300 and "text/html" in r.content_type
+      and "example.com/en/defaultPage" in html300 and "example.com/fr/defaultPage" in html300)
+body = client.get("/api" + X + "?linkType=linkset", headers={"Accept": "application/linkset+json"}).get_json(force=True)
+item = body["linkset"][0]
+check("linkset: gs1:defaultLink is the first default-type link; gs1:defaultLinkMulti lists both (2.5.8)",
+      item["https://gs1.org/voc/defaultLink"][0]["href"] == "https://example.com/en/defaultPage"
+      and [l["href"] for l in item.get("https://gs1.org/voc/defaultLinkMulti", [])]
+      == ["https://example.com/en/defaultPage", "https://example.com/fr/defaultPage"], item)
+author({"anchor": "/01/09506000999920", "itemDescription": "No media type", "defaultLinktype": "gs1:pip", "links": [
+    {"linktype": "gs1:pip", "href": "https://example.com/a", "title": "A", "hreflang": ["en"]},
+    {"linktype": "gs1:pip", "href": "https://example.com/b", "title": "B", "hreflang": ["fr"]}]})
+got = location_of("/01/09506000999920?linkType=gs1:pip", "de")
+check("links without a media type: no 400 (was a TypeError)", got[0] == 300, got)
+
+# Query string (2.12), unspecified media type and HTML linkset (2.10), errors (2.4.1), description file (3)
+r = client.get("/api" + X + "?linkType=linkset")             # no Accept header at all
+check("no Accept header: the linkset as an HTML page, with the linkset embedded as JSON-LD",
+      r.status_code == 200 and "text/html" in r.content_type
+      and '<script type="application/ld+json">' in r.get_data(as_text=True), r.content_type)
+check("a single unknown path segment → 400, not 500", get("/notadigitallink").status_code == 400, get("/notadigitallink").status_code)
+check("…and an HTML page for a browser", get("/notadigitallink", "text/html").status_code == 400)
+description = get("/.well-known/gs1resolver").get_json(force=True)
+check("description file: no internal _id; termsOfUse only when RESOLVER_TERMS_URL is set",
+      "_id" not in description and "termsOfUse" not in description, list(description)[:6])
+
+# A value with '/', written %2F (URI Syntax 1.7, 4.2): one segment, not two
+SL = "/01/09506000999937"
+author({"anchor": SL, "itemDescription": "Slash", "defaultLinktype": "gs1:pip", "links": link("https://example.org/slash-product")})
+author({"anchor": SL, "qualifiers": [{"10": "A/B"}], "itemDescription": "Slash", "defaultLinktype": "gs1:pip",
+        "links": link("https://example.org/slash-batch")})
+check("batch A/B (%2F) finds its record", location_of(SL + "/10/A%2FB") == (307, "https://example.org/slash-batch"),
+      location_of(SL + "/10/A%2FB"))
+check("batch A/C (%2F) walks up to the GTIN", location_of(SL + "/10/A%2FC") == (307, "https://example.org/slash-product"),
+      location_of(SL + "/10/A%2FC"))
+body = client.get("/api" + SL + "/10/A%2FB?linkType=linkset", headers={"Accept": "application/linkset+json"}).get_json(force=True)
+check("…and its anchor keeps the value encoded", body["linkset"][0]["anchor"].endswith("/10/A%2FB"), body["linkset"][0]["anchor"])
+
 if ENGINE:
     r = get("/00/095060001343520001")
     check("wrong SSCC check digit refused by the syntax engine", r.status_code == 400, r.status_code)
@@ -355,6 +451,13 @@ if ENGINE:
     check("415 without its required 8020 refused by the syntax engine", r.status_code == 400, r.status_code)
     r = get("/01/09506000999999/235/TPX123/10/L1")
     check("UPUI combined with a batch refused by the syntax engine", r.status_code == 400, r.status_code)
+    # Section 2.4.1 with the engine's GS1 Digital Link parser (URI Syntax 1.7, 4.9 and 4.10)
+    for path, problem in [(G + "/21/S1/10/L1", "qualifiers out of order"), (G + "/17/261231", "a data attribute in the path"),
+                          (G + "/99/ABC", "an AI that is not a qualifier of the key"), (G + "/10", "a qualifier without a value")]:
+        r = get(path)
+        check(f"400 for {problem}: {path}", r.status_code == 400, r.status_code)
+    r = get(SL + "/10/A%2FB")
+    check("a valid value with '/' passes the engine", r.status_code == 307, r.status_code)
 else:
     print("SKIP real syntax engine checks (set GS1_SYNTAX_ENGINE, see dev-tests/portal/test_keys.py)")
 

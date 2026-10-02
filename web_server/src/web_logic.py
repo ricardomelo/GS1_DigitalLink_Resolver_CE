@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 from typing import Any
+from urllib.parse import quote, unquote
 
 
 import web_db
@@ -93,24 +94,30 @@ def compress_gs1_digital_link(uncompressed_link: str) -> dict[str, Any]:
     return json.loads(stdout)
 
 
+def _encode(value: str) -> str:
+    """A path segment value, percent-encoded (every reserved character, '/' included)."""
+    return quote(value, safe='')
+
+
+def _encoded_identifier(identifier: str) -> str:
+    """'/AI/value' with the value percent-encoded."""
+    ai, _, value = identifier.strip('/').partition('/')
+    return f'/{ai}/{_encode(value)}'
+
+
 def _test_gs1_digital_link_syntax(url: str) -> bool:
     """
-    This function tests the syntax of a GS1 Digital Link URL. It returns True if the URL is valid,
-    and False if it is not.
+    Tests the path of a GS1 Digital Link (e.g. /01/09506000134352/10/A%2FB, values percent-encoded) with the
+    GS1 Barcode Syntax Engine's own GS1 Digital Link parser, which checks what an element string cannot:
+    the qualifiers of the key and their order (URI Syntax 1.7, section 4.9) and that no data attribute is in
+    the path (section 4.10), besides lengths, character sets and check digits (GS1-Conformant Resolver
+    1.2.1, section 2.4, tests 1 to 5). The domain is irrelevant to the check.
     """
 
     try:
-        url_parts = url.split('/')
-        # Add the identifier
-        ai_data_string = f"({url_parts[1]}){url_parts[2]}"
-
-        # Add the key qualifiers (e.g. CPV, lot and serial for GTINs, GLN extension, CPID serial)
-        if len(url_parts) > 3:
-            for i in range(3, len(url_parts), 2):
-                ai_data_string += f"({url_parts[i]}){url_parts[i + 1]}"
-
-        # Call the toolkit
-        return _call_gs1_toolkit(ai_data_string)
+        if url.count('/') < 2:
+            return False
+        return _call_gs1_toolkit('https://id.gs1.org' + url)
 
     except IndexError as e:
         logger.warning("URL is missing expected segments: %s", e)
@@ -123,173 +130,8 @@ def _test_gs1_digital_link_syntax(url: str) -> bool:
         return False
 
 
-def _match_all_three_contexts(linktype_doc_list: list[dict[str, Any]], accept_language_list: list[str], context: str | None, media_types_list: list[str] | None) -> list[dict[str, Any]] | None:
-    wanted_doc_list = []
-    logger.debug('Matching all three contexts: %s, %s, %s', accept_language_list, context, media_types_list)
-    for value in accept_language_list:  # iterate accept_language_list first
-        for linktype_doc in linktype_doc_list:
-            if 'hreflang' in linktype_doc and 'context' in linktype_doc and 'type' in linktype_doc and \
-                    context in linktype_doc['context'] and \
-                    linktype_doc['type'] in media_types_list and \
-                    value in linktype_doc['hreflang']:
-                # found a match, append it
-                logger.debug('Matched all three contexts: %s', value)
-                wanted_doc_list.append(linktype_doc)
-                break
-        else:
-            continue
-        break
-
-    # If list is not empty, return it. Otherwise, return None
-    return wanted_doc_list if wanted_doc_list else None
-
-
-def _match_accept_language_and_context(linktype_doc_list: list[dict[str, Any]], accept_language_list: list[str], context: str | None) -> list[dict[str, Any]] | None:
-    wanted_doc_list = []
-    logger.debug('Matching accept_language and context: %s, %s', accept_language_list, context)
-    for value in accept_language_list:  # iterate accept_language_list first
-        for linktype_doc in linktype_doc_list:
-            if 'hreflang' in linktype_doc and 'context' in linktype_doc and \
-                    context in linktype_doc['context'] and \
-                    value in linktype_doc['hreflang']:
-                logger.debug('Matched accept_language and context: %s', value)
-                wanted_doc_list.append(linktype_doc)
-                break
-        else:
-            continue
-        break
-
-    # If list is not empty, return it. Otherwise, return None
-    return wanted_doc_list if wanted_doc_list else None
-
-
-def _match_accept_language_and_media_types(linktype_doc_list: list[dict[str, Any]], accept_language_list: list[str], media_types_list: list[str] | None) -> list[dict[str, Any]] | None:
-    wanted_doc_list = []
-    logger.debug('Matching accept_language and media_types: %s, %s', accept_language_list, media_types_list)
-    for value in accept_language_list:  # iterate accept_language_list first
-        for linktype_doc in linktype_doc_list:
-            if 'hreflang' in linktype_doc and 'type' in linktype_doc and \
-                    linktype_doc['type'] in media_types_list and \
-                    value in linktype_doc['hreflang']:
-                logger.debug('Matched accept_language and media_types: %s', value)
-                wanted_doc_list.append(linktype_doc)
-                break
-        else:
-            continue
-        break
-
-    # If list is not empty, return it. Otherwise, return None
-    return wanted_doc_list if wanted_doc_list else None
-
-
-def _match_context_and_media_types(linktype_doc_list: list[dict[str, Any]], context: str | None, media_types_list: list[str] | None) -> list[dict[str, Any]] | None:
-    wanted_doc_list = []
-    logger.debug('Matching context and media_types: %s, %s', context, media_types_list)
-    for linktype_doc in linktype_doc_list:
-        if 'context' in linktype_doc and \
-                'type' in linktype_doc and \
-                context in linktype_doc['context'] and \
-                (linktype_doc['type'] in media_types_list or 'und' in linktype_doc['type']):
-            logger.debug('Matched context and media_types')
-            wanted_doc_list.append(linktype_doc)
-
-    # If list is not empty, return it. Otherwise, return None
-    return wanted_doc_list if wanted_doc_list else None
-
-
-def _match_accept_language(linktype_doc_list: list[dict[str, Any]], accept_language_list: list[str]) -> list[dict[str, Any]] | None:
-    wanted_doc_list = []
-    for value in accept_language_list:
-        for linktype_doc in linktype_doc_list:
-            if 'hreflang' in linktype_doc and value in linktype_doc['hreflang']:
-                wanted_doc_list.append(linktype_doc)
-                break  # This breaks the inner linktype_doc_list loop
-        else:
-            continue  # Continue if the inner loop wasn't broken.
-        break  # Break the outer loop if the inner one was broken
-
-    # If list is not empty, return it. Otherwise, return None
-    return wanted_doc_list if wanted_doc_list else None
-
-
-def _match_context(linktype_doc_list: list[dict[str, Any]], context: str | None) -> list[dict[str, Any]] | None:
-    wanted_doc_list = []
-    logger.debug('Matching context: %s', context)
-    for linktype_doc in linktype_doc_list:
-        if 'context' in linktype_doc and \
-                context in linktype_doc['context']:
-            logger.debug('Matched context')
-            wanted_doc_list.append(linktype_doc)
-
-    # If list is not empty, return it. Otherwise, return None
-    return wanted_doc_list if wanted_doc_list else None
-
-
-def _match_media_type(linktype_doc_list: list[dict[str, Any]], media_types_list: list[str] | None) -> list[dict[str, Any]] | None:
-    wanted_doc_list = []
-    logger.debug('Matching media_types: %s', media_types_list)
-    for linktype_doc in linktype_doc_list:
-        if 'type' in linktype_doc and \
-                (linktype_doc['type'] in media_types_list or 'und' in linktype_doc['type']):
-            logger.debug('Matched media_type')
-            wanted_doc_list.append(linktype_doc)
-
-    # If list is not empty, return it. Otherwise, return None
-    return wanted_doc_list if wanted_doc_list else None
-
-
-def _match_und_hreflang(linktype_doc_list: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-    wanted_doc_list = []
-    for linktype_doc in linktype_doc_list:
-        if 'hreflang' in linktype_doc and 'und' in linktype_doc['hreflang']:
-            logger.debug('Found und match in hreflang')
-            wanted_doc_list.append(linktype_doc)
-    if wanted_doc_list:
-        return wanted_doc_list
-
-
-def _match_und_media_type(linktype_doc_list: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-    wanted_doc_list = []
-    for linktype_doc in linktype_doc_list:
-        if 'type' in linktype_doc and 'und' in linktype_doc['type']:
-            logger.debug('Found und match in type')
-            wanted_doc_list.append(linktype_doc)
-    if wanted_doc_list:
-        return wanted_doc_list
-
-
-def _get_appropriate_linktype_docs_list(linktype_doc_list: list[dict[str, Any]], accept_language_list: list[str], context: str | None, media_types_list: list[str] | None) -> list[dict[str, Any]]:
-    """
-    This function returns the most appropriate linktype document from a list of linktype documents.
-    It does this by checking if the linktype document matches the accept_language_list, context, and media_types_list.
-    Matching is logged at DEBUG level for diagnostic visibility.
-    :param linktype_doc_list:
-    :param accept_language_list:
-    :param context:
-    :param media_types_list:
-    :return wanted_doc_list:
-    """
-    if match := _match_all_three_contexts(linktype_doc_list, accept_language_list, context, media_types_list):
-        return match
-    elif match := _match_accept_language_and_context(linktype_doc_list, accept_language_list, context):
-        return match
-    elif match := _match_accept_language_and_media_types(linktype_doc_list, accept_language_list, media_types_list):
-        return match
-    elif match := _match_context_and_media_types(linktype_doc_list, context, media_types_list):
-        return match
-    elif match := _match_accept_language(linktype_doc_list, accept_language_list):
-        return match
-    elif match := _match_context(linktype_doc_list, context):
-        return match
-    elif match := _match_media_type(linktype_doc_list, media_types_list):
-        return match
-    elif match := _match_und_hreflang(linktype_doc_list):
-        return match
-    elif match := _match_und_media_type(linktype_doc_list):
-        return match
-    # We are out of reasonable options, return the first linktype_doc in the list:
-    logger.debug('No match found, returning first linktype_doc')
-    return linktype_doc_list
+# The official _match_*() helpers and _get_appropriate_linktype_docs_list() were replaced by choose_links()
+# (below): they failed on links without a media type and answered 300 where the standard expects the default.
 
 
 def _do_qualifiers_match(qualifier_path: str | None, doc_qualifiers: list[dict[str, str]]) -> tuple[bool, list[dict[str, str]] | None]:
@@ -461,7 +303,7 @@ def _validate_and_fetch_document(identifier: str, qualifier_path: str | None, do
     """
     try:
         # Concatenate the identifiers and qualifier_path to form the complete digital link
-        digital_link = identifier + (qualifier_path if qualifier_path is not None else '')
+        digital_link = _encoded_identifier(identifier) + (qualifier_path if qualifier_path is not None else '')
 
         # Check if the digital link has valid syntax.
         dl_test_result = _test_gs1_digital_link_syntax(digital_link)
@@ -578,7 +420,8 @@ def _parse_qualifier_path(qualifier_path: str | None) -> list[dict[str, str]]:
     if not qualifier_path:
         return []
     parts = [p for p in qualifier_path.strip('/').split('/') if p != '']
-    return [{parts[i]: parts[i + 1]} for i in range(0, len(parts) - 1, 2)]
+    # values arrive percent-encoded (a batch may contain '/', see web_namespace._request_segments)
+    return [{parts[i]: unquote(parts[i + 1])} for i in range(0, len(parts) - 1, 2)]
 
 
 _UNIT_QUALIFIERS = {'21', '235'}   # qualifiers that identify a single unit of a GTIN or ITIP
@@ -611,7 +454,7 @@ def _qualifier_path_from(doc_qualifiers: list[dict[str, str]], template_variable
         for k, v in q.items():
             pairs.append((k, values.get(v, v)))
     pairs.sort(key=lambda kv: _QUALIFIER_ORDER.index(kv[0]) if kv[0] in _QUALIFIER_ORDER else len(_QUALIFIER_ORDER))
-    return ''.join(f'/{k}/{v}' for k, v in pairs)
+    return ''.join(f'/{k}/{_encode(v)}' for k, v in pairs)
 
 
 def _find_linktype_key(linkset_item: dict[str, Any], short_linktype: str) -> str | None:
@@ -624,60 +467,152 @@ def _find_linktype_key(linkset_item: dict[str, Any], short_linktype: str) -> str
 
 
 def _public_link(link: dict[str, Any]) -> dict[str, Any]:
-    """Drops null values (e.g. type=None), which make the linkset fail the official schema."""
-    return {k: v for k, v in link.items() if v is not None and not (k == 'hreflang' and v == [])}
+    """Drops null values (e.g. type=None), which make the linkset fail the official schema, and "fwqs": the
+    query string is always passed on (GS1-Conformant Resolver 1.2.1, section 2.12; the option to switch
+    it off was removed in release 1.2.0), so the attribute of older records means nothing any more."""
+    return {k: v for k, v in link.items()
+            if v is not None and k != 'fwqs' and not (k == 'hreflang' and v == [])}
+
+
+def language_ranges(accept_language: list[str] | None) -> list[str]:
+    """Accept-Language as language ranges, most preferred first: q-values honoured, q=0 dropped, case folded."""
+    ranges = []
+    for position, entry in enumerate(accept_language or []):
+        tag, *params = [part.strip() for part in entry.split(';')]
+        weight = 1.0
+        for param in params:
+            if param.lower().startswith('q='):
+                try:
+                    weight = float(param[2:])
+                except ValueError:
+                    weight = 0.0
+        if tag and weight > 0:
+            ranges.append((-weight, position, tag.lower()))
+    return [tag for _, _, tag in sorted(ranges)]
+
+
+def _language_match(links: list[dict[str, Any]], ranges: list[str]) -> list[dict[str, Any]] | None:
+    """
+    The links that best serve the language preferences, or None (RFC 4647 lookup). For each range, most
+    preferred first: the links in exactly that language ('pt-br' → pt-BR), then in a shorter form of it
+    ('pt-br' → pt), then in a more specific one ('pt' → pt-BR). The first range served decides.
+    """
+    def tags(link: dict[str, Any]) -> list[str]:
+        return [str(t).lower() for t in (link.get('hreflang') or []) if t]
+    for wanted in ranges:
+        if wanted == '*':
+            return list(links)
+        candidate = wanted
+        while candidate:
+            hit = [link for link in links if candidate in tags(link)]
+            if hit:
+                return hit
+            candidate = candidate.rpartition('-')[0]
+        hit = [link for link in links if any(tag.startswith(wanted + '-') for tag in tags(link))]
+        if hit:
+            return hit
+    return None
+
+
+def _media_type(link: dict[str, Any]) -> str:
+    return str(link.get('type') or '').split(';')[0].strip().lower()
+
+
+def choose_links(links: list[dict[str, Any]], ranges: list[str], context: str | None,
+                 media_types: list[str] | None) -> tuple[list[dict[str, Any]], bool]:
+    """
+    Best match among links of one link type (GS1-Conformant Resolver 1.2.1, section 2.6.3, in the order it
+    suggests: media type, then language, then context). Returns the remaining links and whether the request
+    decided anything (a media type, language or context matched). Links with no media type, language or
+    context are handled like any other: nothing here fails on missing attributes.
+    """
+    pool, decided = list(links), False
+    wanted_types = {m.strip().lower() for m in (media_types or []) if m and '*' not in m}
+    if wanted_types:
+        hit = [link for link in pool if _media_type(link) in wanted_types]
+        if hit and len(hit) < len(pool):
+            pool, decided = hit, True
+    by_language = _language_match(pool, ranges)
+    if by_language:
+        pool, decided = by_language, True
+    else:
+        neutral = [link for link in pool if not link.get('hreflang') or 'und' in link.get('hreflang')]
+        if neutral:
+            pool = neutral
+    if context:
+        hit = [link for link in pool if context in (link.get('context') or [])]
+        if hit:
+            pool, decided = hit, True
+    return pool, decided
+
+
+def with_default_multi(item: dict[str, Any], default_linktype: str | None) -> dict[str, Any]:
+    """
+    The linkset item with gs1:defaultLinkMulti (section 2.5.8) when its links of the key's default link type
+    are several (language variants of the default target): the resolver chooses among them by the request's
+    preferences and falls back to gs1:defaultLink, and the linkset declares them as the standard requires.
+    """
+    short = normalise_linktype(default_linktype)
+    key = _find_linktype_key(item, short) if short else None
+    links = item.get(key) if key else None
+    multi_key = _find_linktype_key(item, 'defaultLinkMulti')
+    if isinstance(links, list) and len(links) > 1:
+        item = {k: v for k, v in item.items() if k != multi_key}
+        item['https://gs1.org/voc/defaultLinkMulti'] = [dict(link) for link in links]
+    elif multi_key and isinstance(item[multi_key], dict):
+        # the data entry API stores one link with several languages as a single object
+        item = dict(item)
+        item[multi_key] = [item[multi_key]]
+    return item
 
 
 def _handle_link_type(linktype: str | None, default_linktype: str, linkset: list[dict[str, Any]], accept_language_list: list[str], context: str | None, media_types_list: list[str] | None,
                       linkset_requested: bool = False) -> dict[str, Any]:
+    """
+    One level of the record: the response for the requested link type, or for no link type the default
+    (GS1-Conformant Resolver 1.2.1, sections 2.6.1 to 2.6.3). 307 with the link, 300 with the links of that
+    type when the request cannot decide among them, 404 when this level has nothing of that type.
+    """
     try:
         if linkset_requested or linktype in ['all', 'linkset']:
             return {"response_status": 200, "data": linkset}
+        item = with_default_multi(linkset[0], default_linktype)
+        ranges = language_ranges(accept_language_list)
 
-        item = linkset[0]
         if linktype is None:
-            key = _find_linktype_key(item, normalise_linktype(default_linktype) or '')
-            if key is None:
-                # The entry has no links of the GTIN's default type: use the entry's own defaultLink,
-                # recovering the full link (with fwqs, language, etc.) by its href.
-                default_link = item.get('https://gs1.org/voc/defaultLink')
-                if isinstance(default_link, list):
-                    default_link = default_link[0] if default_link else None
-                if not default_link:
-                    return {"response_status": 404, "error": "No default link at this level"}
-                for k, v in item.items():
-                    if k.startswith('https://gs1.org/voc/') and isinstance(v, list):
-                        for link in v:
-                            if isinstance(link, dict) and link.get('href') == default_link.get('href') and 'type' in link:
-                                return {"response_status": 307, "data": link}
-                return {"response_status": 307, "data": default_link}
-        else:
-            key = _find_linktype_key(item, normalise_linktype(linktype))
-            if key is None:
-                return {"response_status": 404, "error": f"Linktype not found in linkset: {linktype}"}
+            # Section 2.6.3, steps 3 and 4: only gs1:defaultLinkMulti and gs1:defaultLink compete; a language
+            # variant wins only when the request decides it, otherwise the default link answers (examples 5-7).
+            default_key = _find_linktype_key(item, 'defaultLink')
+            default_link = item.get(default_key) if default_key else None
+            if isinstance(default_link, list):
+                default_link = default_link[0] if default_link else None
+            multi_key = _find_linktype_key(item, 'defaultLinkMulti')
+            if multi_key:
+                pool, decided = choose_links(item[multi_key], ranges, context, media_types_list)
+                if decided and pool:
+                    hrefs = [link.get('href') for link in pool]
+                    if default_link and default_link.get('href') in hrefs:
+                        return {"response_status": 307, "data": default_link}
+                    return {"response_status": 307, "data": pool[0]}
+            if not default_link:
+                return {"response_status": 404, "error": "No default link at this level"}
+            return {"response_status": 307, "data": default_link}
 
-        wanted_linktype_entry = item[key]
-        if isinstance(wanted_linktype_entry, dict):   # defaultLink is stored as a single object
-            wanted_linktype_entry = [wanted_linktype_entry]
-
-        wanted_linktype_docs_list = _get_appropriate_linktype_docs_list(
-            wanted_linktype_entry, accept_language_list, context, media_types_list)
-
-        if not wanted_linktype_docs_list:
+        key = _find_linktype_key(item, normalise_linktype(linktype))
+        if key is None:
+            return {"response_status": 404, "error": f"Linktype not found in linkset: {linktype}"}
+        links = item[key] if isinstance(item[key], list) else [item[key]]
+        pool, _ = choose_links([link for link in links if isinstance(link, dict)], ranges, context, media_types_list)
+        if not pool:
             return {"response_status": 404, "error": f"No link found for linktype: {linktype}"}
-        if len(wanted_linktype_docs_list) == 1:
-            return {"response_status": 307, "data": wanted_linktype_docs_list[0]}
-        return {"response_status": 300, "data": wanted_linktype_docs_list}
-
-    except TypeError as e:
-        logger.warning('handle_link_type TypeError: %s', e)
-        return {"response_status": 400,
-                "error": f"TypeError occurred. Expected list or dictionary-like object. Details: {str(e)}"}
+        if len(pool) == 1:
+            return {"response_status": 307, "data": pool[0]}
+        # Section 2.6.3, step 7: no best match among links of the same type (example 11)
+        return {"response_status": 300, "data": pool, "linktype_key": key}
 
     except Exception as e:
         logger.error('handle_link_type error: %s', e)
         return {"response_status": 500, "error": f"Unexpected error occurred. Details: {str(e)}"}
-
 
 
 def get_compressed_link(uncompressed_link: str) -> dict[str, Any]:
@@ -780,7 +715,7 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
             return doc_data, None
 
         database_doc = doc_data['data']
-        accept_language_list = _clean_q_values_from_header_entries(accept_language_list or ['und'])
+        accept_language_list = accept_language_list or []     # q-values kept: language_ranges() orders by them
         media_types_list = _clean_q_values_from_header_entries(media_types_list) if media_types_list else []
         default_linktype = database_doc.get('defaultLinktype', '')
         path_qualifiers = _parse_qualifier_path(qualifier_path)
@@ -794,6 +729,7 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
             if template_variables:
                 entry['linkset'] = _replace_linkset_template_variables(entry['linkset'], template_variables)
             entry['_qualifier_path'] = _qualifier_path_from(doc_qualifiers, template_variables)
+            entry['linkset'] = [with_default_multi(item, default_linktype) for item in entry['linkset']]
             # Most granular first: a serial number (or TPX) names one unit, so its record outranks a batch or
             # variant record even with fewer qualifiers (GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 4:
             # 01+21 before 01+22+10); otherwise the record with more qualifiers wins.
@@ -804,15 +740,16 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
             return {"response_status": 404, "error": f"No links found for {gs1dl_identifier}{qualifier_path or ''}"}, None
 
         applicable.sort(key=lambda e: e['_specificity'], reverse=True)
+        identifier = _encoded_identifier(gs1dl_identifier)
         pointer = _author_link_header_with_pointer_to_linkset(
-            [{"anchor": gs1dl_identifier + (qualifier_path or '').rstrip('/')}])
+            [{"anchor": identifier + (qualifier_path or '').rstrip('/')}])
 
         if linkset_requested:
             merged = []
             for entry in applicable:
                 for item in entry['linkset']:
                     item = dict(item)
-                    item['anchor'] = gs1dl_identifier + entry['_qualifier_path']
+                    item['anchor'] = identifier + entry['_qualifier_path']
                     merged.append(item)
             return {"response_status": 200, "data": merged}, pointer
 
@@ -820,6 +757,8 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
         for entry in applicable:
             result = _handle_link_type(linktype, default_linktype, entry['linkset'],
                                        accept_language_list, context, media_types_list)
+            if result['response_status'] == 300:
+                result['anchor'] = identifier + entry['_qualifier_path']   # the level whose links are offered
             if result['response_status'] in (300, 307):
                 return result, pointer
             if result['response_status'] >= 500:

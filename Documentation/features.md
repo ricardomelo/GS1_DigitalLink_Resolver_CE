@@ -41,6 +41,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Trailing slash | `/10/123/` is treated as `/10/123` (was 400) | `766a652` |
 | `linkType` forms | Accepts `x`, `gs1:x`, `https://gs1.org/voc/x`, `https://ref.gs1.org/voc/x`, case-insensitive; `defaultLink` redirects to the default target | `766a652` |
 | Conformant linkset | `?linkType=linkset` / `Accept: application/linkset+json` returns plain RFC 9264, valid against GS1's linkset schema; JSON-LD only on request; correct JSON-LD context `Link` header exposed to CORS | `766a652` |
+| `gs1:` namespace | Link types in linksets and in the JSON-LD context written in `https://ref.gs1.org/voc/` (Resolver 2.14); stored documents unchanged | `bc573c4` |
+| GS1's test suite | Passes every test of GS1's resolver test suite on staging; the suite also runs in the development tests | `cc95d77` |
 | Query string forwarding | The scan's query string (data attributes included) is passed on exactly as sent — `;` delimiter and keys without a value kept — always (`"fwqs": false` in older records ignored, Resolver 2.12); joined with `&` when the target already has a query | `766a652`, `4f81234` |
 | Default response | Without `linkType`, the default link, unless the request decides a language variant (Resolver 2.6.3, examples 5-7; was 300 for two languages without a match); several links of the default type published as `gs1:defaultLinkMulti` | `4f81234` |
 | Choosing among links of one type | Media type, then language (q-values, `pt-BR` → `pt`), then context (examples 8-13); 300 answers a valid linkset of that level, or an HTML page | `4f81234` |
@@ -223,7 +225,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 
 | Feature | What it does | Since |
 |---|---|---|
-| Development tests | Resolver, EPC binary decoder (checked against TDS annex E.3 and the `epc-tds` library), data entry, keys, governance, spreadsheets, special characters, data attributes, link checker, portal end to end in Chromium (desktop and phone), home page through nginx, installer through shims | `0733a3f` and later |
+| Development tests | Resolver, GS1's resolver test suite run in Chromium against the resolver code, EPC binary decoder (checked against TDS annex E.3 and the `epc-tds` library), data entry, keys, governance, spreadsheets, special characters, data attributes, link checker, portal end to end in Chromium (desktop and phone), home page through nginx, installer through shims | `0733a3f` and later |
 | Screenshots | `dev-tests/docs/screenshots.py` regenerates the README and user guide images | `f14d8c4`, session 4 |
 | Documentation | README, user guide, features, history, developer guide, extensions documentation, changelog | `539bab0` and later |
 

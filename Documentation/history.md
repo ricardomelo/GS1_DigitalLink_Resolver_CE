@@ -186,7 +186,23 @@ Candidate errata found by decoding: E8 (EPCB 4.2.2), E9 (TDS 2.3 annex E.3: SSCC
 SGTIN++ and DSGTIN++ hostnames, an EPC URI), E10 (TDS 2.3 Tables 14-14 and 14-15), E11 (TDT artefact of
 CPI-var) — section 6 of the conformance review.
 
-## How the main areas evolved
+## Session 7 — GS1's resolver test suite (item 1.4)
+
+| Commit | Change |
+|---|---|
+| `bc573c4` | resolver: linksets and the JSON-LD context write `gs1:` link types in `https://ref.gs1.org/voc/` (Resolver 2.14, F22); stored documents unchanged |
+| `cc95d77` | `test_gs1_suite.py`: GS1's resolver test suite, its JavaScript unchanged, in Chromium against the resolver code, with a Python version of its PHP helper; seven scenarios |
+
+The suite's code was read and run in the sandbox before the owner ran it on staging. Staging (2 October,
+`ef96276`, a GTIN with a default link in Portuguese and English and instructions in both): **31 of 31
+tests pass**. In the sandbox one divergence remains, which staging does not exercise: under a batch with its
+own default link, the suite expects the GTIN's language variants of the default (erratum E12; the resolver
+keeps the batch's default).
+
+Decisions of the owner: link types are published in `https://ref.gs1.org/voc/` (option B of F22); the
+behaviour under E12 is kept and becomes an erratum and an issue for the suite.
+
+
 
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|
@@ -198,7 +214,7 @@ CPI-var) — section 6 of the conformance review.
 | Accounts | users from the command line, all equal | roles, prefixes, users screen, temporary passwords, history, audit trail |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
 | Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
-| Tests | 69 checks | 1,051 checks in 13 test programs, plus the installer test |
+| Tests | 69 checks | 1,271 checks in 14 test programs (one of them GS1's own test suite), plus the installer test |
 | Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
 ## Decisions that stay unless deliberately revisited
@@ -219,6 +235,8 @@ CPI-var) — section 6 of the conformance review.
     qualifiers of the record; every qualified record should have its key's own record above it.
 12. EPC binary strings are decoded from GS1's TDT artefacts, shipped unchanged; key qualifiers from the tag
     go to the path, data attributes to the query string; a `++` hostname is ignored.
+13. Linksets write `gs1:` link types in `https://ref.gs1.org/voc/` (Resolver 2.14); stored documents keep
+    the official `https://gs1.org/voc/` keys.
 
 ## Lessons learnt
 
@@ -239,13 +257,16 @@ CPI-var) — section 6 of the conformance review.
   annex E.3): decode every published vector and compare with an independent implementation.
 - Read the processing model, not only the data: the SGCN-96 artefact needs the EXTRACT rules of its BINARY
   level, which a reading of the output level alone missed.
+- Run a conformance suite in the sandbox before running it for real: its unchanged code against the real
+  resolver code predicted the staging result and found the one divergence before the owner's run.
+- A test suite encodes its authors' reading of the standard: check each failure against the text before
+  changing the code (E12).
 
 ## Open items
 
 - Security notice to the official maintainers about the public `GET /api/index` (drafted).
 - Rotation of the development secrets of the staging installation (an installer option is a candidate).
 - A fresh installation with `scripts/install.sh` on a clean machine (only the re-run path is proven).
-- A recorded run of the GS1 conformance test suite against the staging resolver (item 1.4).
 - The installer's final check uses `/portal/healthz` only; it should also request the resolver through the
   proxy (item 7.2).
 - An off-server backup copy and a restore rehearsal.

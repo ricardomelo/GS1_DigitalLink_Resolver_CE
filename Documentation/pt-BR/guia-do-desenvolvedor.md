@@ -342,6 +342,9 @@ Todos no volume `resolver-portal-config` (`/app/config`), incluídos no backup d
   (tipo de mídia, depois `_language_match()` com `language_ranges()` — pesos q, busca da RFC 4647 — depois
   contexto) substitui os `_match_*()` oficiais; `with_default_multi()` publica e usa vários links do tipo
   principal da chave como `gs1:defaultLinkMulti`; um 300 leva a âncora do seu nível.
+  `format_linkset_for_external_use()` escreve toda chave de tipo de link por `public_linktype_key()`, de modo
+  que os clientes veem o namespace `gs1:` da seção 2.14 (`GS1_VOC`, `https://ref.gs1.org/voc/`), enquanto os
+  documentos mantêm as chaves `https://gs1.org/voc/`, que `_find_linktype_key()` e o código de cadastro usam.
   `_test_gs1_digital_link_syntax()` envia `https://id.gs1.org` + o caminho codificado ao `callGS1encoder.js`,
   que usa o leitor de Digital Link do engine (`dataStr`) para uma URI e mantém `aiDataStr` para uma element
   string.
@@ -430,8 +433,9 @@ Não precisam de Docker; cada programa termina com status 1 em caso de falha. Pr
 
 | Programa | Verificações | Cobre |
 |---|---:|---|
-| `resolver/test_resolver.py` | 189 | código do Resolver e da API de cadastro pelo test client do Flask: todas as chaves e cadastros qualificados, subida na hierarquia, tipos de link, regras de 404, schema do linkset, repasse de atributos, schema do arquivo de descrição, páginas HTML, requisições `/eh…` e `/ex…` |
+| `resolver/test_resolver.py` | 194 | código do Resolver e da API de cadastro pelo test client do Flask: todas as chaves e cadastros qualificados, subida na hierarquia, tipos de link, regras de 404, schema do linkset, repasse de atributos, schema do arquivo de descrição, páginas HTML, requisições `/eh…` e `/ex…` |
 | `resolver/test_epc_binary.py` | 163 | decodificador de EPC em binário: exemplos do EPCB, todos os vetores do anexo E.3 do TDS 2.3 (`eh` e `ex`), dados +AIDC, hostnames `++`, recusas, RE3, artefatos do TDT contra o seu schema; 800 EPCs aleatórios comparados com o `epc-tds` quando `EPC_TDS` está definido (162 sem ele) |
+| `resolver/test_gs1_suite.py` | 215 | suíte de testes de Resolver da GS1, com o JavaScript sem alteração no Chromium, contra o código do web server por HTTP; uma versão em Python do seu `tester.php`; sete cenários; precisa de `GS1_RESOLVER_TESTSUITE` e `AJV_DIST` (pulado sem eles) |
 | `resolver/test_data_entry_api.py` | 53 | token em toda operação protegida; regras de cadastro do §2.5.9 e qualificadores informativos |
 | `portal/test_keys.py` | 137 | chaves e qualificadores, comparados com o GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | perfis, prefixos, usuários, histórico, auditoria |

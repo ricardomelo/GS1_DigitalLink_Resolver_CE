@@ -63,8 +63,9 @@ The review describes the branch at `115a054`. Findings fixed since, with the com
 | F17 | Fixed (item 1.5): JSON-LD in the HTML page; HTML without an `Accept` header | `4f81234` |
 | F18 | Fixed (item 1.5): links without a media type handled | `4f81234` |
 | F19 | Fixed (item 1.5): q-values and RFC 4647 lookup | `4f81234` |
+| F22 | Settled (item 1.4, owner's decision): GS1's test suite accepts either namespace; linksets and the JSON-LD context now write `gs1:` link types in `https://ref.gs1.org/voc/` as 2.14 defines it; stored documents unchanged (section 8) | `bc573c4` |
 
-Still open: F20 and F23 (errata E2 and E4), F21 (item 7.3), F22 (item 1.4).
+Still open: F20 and F23 (errata E2 and E4), F21 (item 7.3).
 
 ## 2. Method
 
@@ -445,7 +446,16 @@ Added after the review, while doing item 1.6 (each checked by decoding the bits)
 | E10 | TDS 2.3, Tables 14-14 and 14-15 | In Table 14-14 (B3) the rows `.org.cn` and `.net.cn` give the prefix `0000000`, Table B1's, instead of `0000010`; the caption of Table 14-15 (B4) says its values begin with `0000010`, but they begin with `0000011`. | Correct the prefixes and the caption. |
 | E11 | TDT 2.2 artefact `CPI-var.json` (draft of 2024-11-18) | The grammar of the GS1_AI_JSON level names a field `serial`; the field is `cpiserial` (the GS1_DIGITAL_LINK level is right). | Correct the artefact before it is published. |
 
-The namespace question (F22) is not listed: it becomes an erratum only if the test suite shows a problem.
+Added during item 1.4, from GS1's test suite (section 8):
+
+| # | Document | Problem | Proposal |
+|---|---|---|---|
+| E12 | Resolver 1.2.1, 2.5.8, 2.5.9, 2.6.3; GS1's resolver test suite | When a qualified level (a batch) has its own default link and a higher level (the GTIN) has `gs1:defaultLinkMulti` links, the standard does not say whether those variants apply to a request at the qualified level. GS1's test suite treats `gs1:defaultLinkMulti` as any inherited link type and expects the batch URI with a matching `Accept-Language` to go to the GTIN's variant, bypassing the batch's own default. 2.5.8 gives each identified entity exactly one default link, of which the variants are refinements. | State that the default link and its `gs1:defaultLinkMulti` variants come from the same level: the most granular one that has a default link. Align the test suite (an issue on its repository, item 8.2). |
+
+The namespace question (F22) did not become an erratum: the test suite accepts either form. The standard
+itself is slightly inconsistent — 2.14 expands `gs1:` to `https://ref.gs1.org/voc/` while its reference
+\[GS1Voc\] gives `https://gs1.org/voc/` — but the reference names the vocabulary's address, not the
+namespace.
 
 ## 7. Effect on the backlog
 
@@ -457,7 +467,7 @@ The namespace question (F22) is not listed: it becomes an erratum only if the te
 | **1.6 EPC binary decompression (new, M–L)** | F6 and the remaining part of F7. Implementation to be chosen when the item starts (GS1 Digital Link URI: Compression Technical Standard for EPC binary strings 1.0.0, Tag Data Standard / Tag Data Translation); the 500 for unrecognised segments is fixed in 1.5. |
 | 1.4 GS1 conformance test suite | Runs after 1.5 and 1.6, so that the record reflects the corrected resolver; also settles F22. |
 | 7.3 Polish | F21 (default titles in the link's language). |
-| 8.1 Work Requests / errata | E1–E7 (section 6); E8–E11 added during item 1.6. |
+| 8.1 Work Requests / errata | E1–E7 (section 6); E8–E11 added during item 1.6; E12 during item 1.4. |
 
 Proposed order of phase 1: 1.2 → 1.3 → 1.5 → 1.6 → 1.4.
 
@@ -521,4 +531,53 @@ proxy):
 | SGTIN+ of G with +AIDC (10) 123 and (17) 261231 | 307 to the batch record's target, `?17=261231` appended | qualifier in the path, data attribute passed on |
 | GID-96 (`/eh3500e86f8000a9e000000586`) | 400, "GID-96 has no GS1 Digital Link equivalent" | F15 behaviour for strings that do not decode |
 
-The F9-F13 lines above are to be run again with the GS1 test suite (item 1.4).
+### Results of GS1's test suite (item 1.4)
+
+GS1's suite (https://ref.gs1.org/test-suites/resolver/, for Resolver 1.2.1; code at
+[GS1DL-resolver-testsuite](https://github.com/gs1/GS1DL-resolver-testsuite) `32597c1`, 7 August 2026)
+takes one GS1 Digital Link URI and derives every request from it and from the linkset the resolver returns:
+
+- the URI followed by `/foo` (400 expected), by `/10/KL8G` or `/254/KL8G` (walk-up: anything but 404), by a
+  trailing slash (same answer), and with `?foo=bar` (passed on);
+- the linkset by `?linkType=linkset` and by `Accept: application/linkset+json` (200, valid against the
+  linkset schema, JSON-LD context `Link` header, content type); its anchor must equal the URI;
+- the URI alone (307 to the `href` of `gs1:defaultLink`); `?linkType=` each link type of the linkset, with
+  `Accept` and `Accept-Language` set from each link's type and language when one type has several links
+  (300 expected for links it cannot tell apart); `?linkType=gs1:nosuchlt` (404);
+- OPTIONS for CORS and the methods; the description file fetched by the browser itself and validated against
+  the published schema; link types compared with the ratified list.
+
+Most requests are made by GS1's PHP helper (HEAD, `Accept: */*`, no `Accept-Language`). The suite does not
+test compression; item 1.6 rests on its own tests and the staging checks above.
+
+**Staging, 2 October 2026**, at `ef96276` (before `bc573c4`), URI
+`https://idhml.gs1br.org/01/07898357410022`, a record created in the portal for the test: default link type
+`gs1:pip`, with links in Portuguese and English; `gs1:instructions` in Portuguese and English; all
+`text/html`.
+
+| Result | Tests |
+|---|---|
+| **31 of 31 pass** | valid URL, GS1 Digital Link URI, HTTPS, TLS, walk-up, description file valid against the schema, HTTP 1.1, CORS, GET/HEAD/OPTIONS, 400 for an invalid URI, no error with 200, trailing slash, no legacy links in the `Link` header, query string passed on, linkset by `linkType` and by `Accept`, valid linkset, JSON-LD context header, content type, a single default link, redirect to the default, `gs1:pip` and `gs1:instructions` in each language, both `gs1:defaultLinkMulti` variants, ratified link types, 404 for a missing link type |
+
+**Sandbox** (`dev-tests/resolver/test_gs1_suite.py`, the same suite code, unchanged, in Chromium against the
+resolver code): seven scenarios — the GTIN above with a 300 pair added (the portal cannot create one: it
+refuses two links of one type and language), a GTIN with a batch record, a serial number with an informative
+batch, the language-variant GTIN under a batch, a GLN (walk-up through `/254/`), and header names in lower
+case as over HTTP/2 — pass every test except one known divergence:
+
+- **Language variants of a higher level under a batch (erratum E12).** With a batch record that has its own
+  default link, under a GTIN whose default link has language variants, the suite expects `/10/LOT1` with
+  `Accept-Language: pt` or `en` to go to the GTIN's variant. The resolver answers with the batch's default
+  link: each identified entity has exactly one default link, of which `gs1:defaultLinkMulti` links are
+  refinements (2.5.8); a lower level may define its own default (2.5.9); step 3 of 2.6.3 restricts the
+  choice to the default link and its variants without saying from which level. The resolver keeps the
+  variants with the default they refine. The standard does not settle it, so this is an erratum and an
+  issue for the suite (item 8.2), not a code change. It does not arise on staging, where no batch is
+  registered under that GTIN.
+
+**F22 is closed.** The suite turns `https://gs1.org/voc/`, `https://ref.gs1.org/voc/` and
+`https://www.gs1.org/voc/` into `gs1:` before every check, so the namespace never changes its verdict; its
+own model linkset uses `https://ref.gs1.org/voc/`, which is how 2.14 expands `gs1:`. Since `bc573c4`
+linksets use that namespace (owner's decision).
+
+The F9-F13 lines above are to be run again against staging once `bc573c4` is installed.

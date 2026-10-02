@@ -2,6 +2,21 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### GS1's resolver test suite (backlog item 1.4)
+- **Staging passes every test** of GS1's own suite (https://ref.gs1.org/test-suites/resolver/, Resolver
+  1.2.1): 31 of 31 on a GTIN whose default link has a Portuguese and an English version, 2 October 2026.
+- **New development test** `dev-tests/resolver/test_gs1_suite.py` (215 checks): the suite's JavaScript,
+  unchanged, in Chromium against the resolver code, with a Python version of its PHP helper; seven
+  scenarios. One known divergence, under a batch (erratum E12 below). Commit `cc95d77`.
+- **Link types published in `https://ref.gs1.org/voc/`** (finding F22, owner's decision; **deliberate
+  change to official code**): linksets (200 and 300, JSON and JSON-LD) and the JSON-LD context write the
+  `gs1:` namespace as Resolver 1.2.1, section 2.14 defines it, and as the description file already
+  declared it; the official code wrote `https://gs1.org/voc/`. Stored documents and the data entry API keep
+  `https://gs1.org/voc/` keys; `?linkType=` still accepts every form. `test_resolver.py` 194 checks. Commit
+  `bc573c4`.
+- Candidate erratum E12 (conformance review, section 6): the standard does not say whether
+  `gs1:defaultLinkMulti` links of a higher level apply under a level that has its own default link.
+
 ### Fixed: every resolution through the proxy answered 500 (since item 1.5)
 The `upstream` block added in item 1.5 was named `resolver_web`; nginx sends the upstream's name as the
 `Host` header, and Werkzeug 3.1 refuses a host name with an underscore before any resolver code runs, so

@@ -38,6 +38,8 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Barra no final | `/10/123/` é tratado como `/10/123` (antes era 400) | `766a652` |
 | Formas de `linkType` | Aceita `x`, `gs1:x`, `https://gs1.org/voc/x`, `https://ref.gs1.org/voc/x`, sem diferenciar maiúsculas; `defaultLink` redireciona ao destino principal | `766a652` |
 | Linkset conforme | `?linkType=linkset` / `Accept: application/linkset+json` devolve RFC 9264 puro, válido no schema de linkset da GS1; JSON-LD só sob pedido; cabeçalho `Link` do contexto JSON-LD correto e exposto ao CORS | `766a652` |
+| Namespace `gs1:` | Tipos de link nos linksets e no contexto JSON-LD escritos em `https://ref.gs1.org/voc/` (Resolver 2.14); documentos gravados sem alteração | `bc573c4` |
+| Suíte de testes da GS1 | Passa em todos os testes da suíte de testes de Resolver da GS1 na homologação; a suíte também roda nos testes de desenvolvimento | `cc95d77` |
 | Repasse da query string | A query string da leitura (atributos de dados incluídos) é repassada exatamente como enviada — com o separador `;` e chaves sem valor — sempre (`"fwqs": false` de cadastros antigos é ignorado, Resolver 2.12); unida com `&` quando o destino já tem parâmetros | `766a652`, `4f81234` |
 | Resposta padrão | Sem `linkType`, o link padrão, salvo quando a requisição indica uma versão de idioma (Resolver 2.6.3, exemplos 5 a 7; antes, 300 para dois idiomas sem correspondência); vários links do tipo principal publicados como `gs1:defaultLinkMulti` | `4f81234` |
 | Escolha entre links de um tipo | Tipo de mídia, depois idioma (pesos q, `pt-BR` → `pt`), depois contexto (exemplos 8 a 13); o 300 devolve um linkset válido daquele nível, ou uma página HTML | `4f81234` |
@@ -220,7 +222,7 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 
 | Funcionalidade | O que faz | Desde |
 |---|---|---|
-| Testes de desenvolvimento | Resolver, decodificador de EPC em binário (conferido com o anexo E.3 do TDS e com a biblioteca `epc-tds`), API de cadastro, chaves, governança, planilhas, caracteres especiais, atributos de dados, verificador de links, portal de ponta a ponta no Chromium (desktop e celular), página inicial com nginx, instalador com simulações | `0733a3f` e seguintes |
+| Testes de desenvolvimento | Resolver, suíte de testes de Resolver da GS1 rodando no Chromium contra o código do Resolver, decodificador de EPC em binário (conferido com o anexo E.3 do TDS e com a biblioteca `epc-tds`), API de cadastro, chaves, governança, planilhas, caracteres especiais, atributos de dados, verificador de links, portal de ponta a ponta no Chromium (desktop e celular), página inicial com nginx, instalador com simulações | `0733a3f` e seguintes |
 | Screenshots | `dev-tests/docs/screenshots.py` regenera as imagens do README e do guia do portal nos dois idiomas | `f14d8c4`, sessão 4 |
 | Documentação | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e em português), documentação das extensões, changelog | `539bab0` e seguintes |
 

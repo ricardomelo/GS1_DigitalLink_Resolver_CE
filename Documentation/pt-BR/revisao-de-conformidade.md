@@ -65,8 +65,9 @@ A revisão descreve o branch em `115a054`. Achados corrigidos desde então, com 
 | F17 | Corrigido (item 1.5): JSON-LD na página HTML; HTML sem cabeçalho `Accept` | `4f81234` |
 | F18 | Corrigido (item 1.5): links sem tipo de mídia tratados | `4f81234` |
 | F19 | Corrigido (item 1.5): pesos q e busca da RFC 4647 | `4f81234` |
+| F22 | Resolvido (item 1.4, decisão do responsável): a suíte de testes da GS1 aceita os dois namespaces; os linksets e o contexto JSON-LD agora escrevem os tipos de link `gs1:` em `https://ref.gs1.org/voc/`, como o 2.14 define; documentos gravados sem alteração (seção 8) | `bc573c4` |
 
-Ainda em aberto: F20 e F23 (erratas E2 e E4), F21 (item 7.3), F22 (item 1.4).
+Ainda em aberto: F20 e F23 (erratas E2 e E4), F21 (item 7.3).
 
 ## 2. Método
 
@@ -449,7 +450,16 @@ Acrescentados depois da revisão, durante o item 1.6 (cada um conferido decodifi
 | E10 | TDS 2.3, Tabelas 14-14 e 14-15 | Na Tabela 14-14 (B3), as linhas `.org.cn` e `.net.cn` trazem o prefixo `0000000`, da Tabela B1, em vez de `0000010`; a legenda da Tabela 14-15 (B4) diz que os valores começam com `0000010`, mas começam com `0000011`. | Corrigir os prefixos e a legenda. |
 | E11 | Artefato do TDT 2.2 `CPI-var.json` (rascunho de 18/11/2024) | A gramática do nível GS1_AI_JSON cita um campo `serial`; o campo é `cpiserial` (o nível GS1_DIGITAL_LINK está certo). | Corrigir o artefato antes da publicação. |
 
-A questão do namespace (F22) não está na lista: só vira errata se a suíte de testes mostrar um problema.
+Acrescentado durante o item 1.4, a partir da suíte de testes da GS1 (seção 8):
+
+| # | Documento | Problema | Proposta |
+|---|---|---|---|
+| E12 | Resolver 1.2.1, 2.5.8, 2.5.9, 2.6.3; suíte de testes de Resolver da GS1 | Quando um nível qualificado (um lote) tem link padrão próprio e um nível acima (o GTIN) tem links `gs1:defaultLinkMulti`, o padrão não diz se essas variantes valem para uma requisição no nível qualificado. A suíte da GS1 trata `gs1:defaultLinkMulti` como qualquer tipo de link herdado e espera que a URI do lote com `Accept-Language` correspondente vá para a variante do GTIN, passando por cima do link padrão do próprio lote. O 2.5.8 dá a cada entidade identificada exatamente um link padrão, do qual as variantes são refinamentos. | Dizer que o link padrão e as suas variantes `gs1:defaultLinkMulti` vêm do mesmo nível: o mais granular que tem link padrão. Alinhar a suíte de testes (uma issue no repositório dela, item 8.2). |
+
+A questão do namespace (F22) não virou errata: a suíte de testes aceita as duas formas. O próprio padrão é
+um pouco inconsistente — o 2.14 expande `gs1:` para `https://ref.gs1.org/voc/`, enquanto a referência
+\[GS1Voc\] traz `https://gs1.org/voc/` —, mas a referência indica o endereço do vocabulário, não o
+namespace.
 
 ## 7. Efeito no backlog
 
@@ -461,7 +471,7 @@ A questão do namespace (F22) não está na lista: só vira errata se a suíte d
 | **1.6 Descompressão de EPC binary (novo, M–L)** | F6 e o restante do F7. Implementação a escolher quando o item começar (GS1 Digital Link URI: Compression Technical Standard for EPC binary strings 1.0.0, Tag Data Standard / Tag Data Translation); o 500 para segmentos não reconhecidos é corrigido no 1.5. |
 | 1.4 Suíte de testes de conformidade da GS1 | Roda depois do 1.5 e do 1.6, para que o registro mostre o Resolver corrigido; resolve também o F22. |
 | 7.3 Acabamento | F21 (títulos padrão no idioma do link). |
-| 8.1 Work Requests / erratas | E1–E7 (seção 6); E8–E11 acrescentados no item 1.6. |
+| 8.1 Work Requests / erratas | E1–E7 (seção 6); E8–E11 acrescentados no item 1.6; E12 no item 1.4. |
 
 Ordem proposta da fase 1: 1.2 → 1.3 → 1.5 → 1.6 → 1.4.
 
@@ -525,4 +535,54 @@ pelo proxy):
 | SGTIN+ de G com +AIDC (10) 123 e (17) 261231 | 307 para o destino do cadastro do lote, com `?17=261231` | qualificador no caminho, atributo de dados repassado |
 | GID-96 (`/eh3500e86f8000a9e000000586`) | 400, "GID-96 has no GS1 Digital Link equivalent" | comportamento do F15 para cadeias que não decodificam |
 
-As linhas do F9 ao F13 acima serão refeitas com a suíte de testes da GS1 (item 1.4).
+### Resultados da suíte de testes da GS1 (item 1.4)
+
+A suíte da GS1 (https://ref.gs1.org/test-suites/resolver/, para o Resolver 1.2.1; código em
+[GS1DL-resolver-testsuite](https://github.com/gs1/GS1DL-resolver-testsuite) `32597c1`, 7 de agosto de 2026)
+recebe uma URI GS1 Digital Link e deriva dela, e do linkset que o Resolver devolve, todas as requisições:
+
+- a URI seguida de `/foo` (espera 400), de `/10/KL8G` ou `/254/KL8G` (subida na hierarquia: qualquer coisa
+  menos 404), de uma barra final (mesma resposta) e com `?foo=bar` (repassado);
+- o linkset por `?linkType=linkset` e por `Accept: application/linkset+json` (200, válido no schema do
+  linkset, cabeçalho `Link` do contexto JSON-LD, tipo de conteúdo); a âncora precisa ser igual à URI;
+- a URI sozinha (307 para o `href` do `gs1:defaultLink`); `?linkType=` com cada tipo de link do linkset,
+  com `Accept` e `Accept-Language` tirados do tipo e do idioma de cada link quando um tipo tem vários links
+  (espera 300 para links que ela não consegue distinguir); `?linkType=gs1:nosuchlt` (404);
+- OPTIONS para o CORS e os métodos; o arquivo de descrição, buscado pelo próprio navegador e validado no
+  schema publicado; os tipos de link comparados com a lista ratificada.
+
+A maior parte das requisições é feita pelo auxiliar PHP da GS1 (HEAD, `Accept: */*`, sem
+`Accept-Language`). A suíte não testa compressão; o item 1.6 se apoia nos seus próprios testes e nas
+verificações de homologação acima.
+
+**Homologação, 2 de outubro de 2026**, em `ef96276` (antes do `bc573c4`), URI
+`https://idhml.gs1br.org/01/07898357410022`, cadastro criado no portal para o teste: tipo de link padrão
+`gs1:pip`, com links em português e inglês; `gs1:instructions` em português e inglês; todos `text/html`.
+
+| Resultado | Testes |
+|---|---|
+| **31 de 31 aprovados** | URL válida, URI GS1 Digital Link, HTTPS, TLS, subida na hierarquia, arquivo de descrição válido no schema, HTTP 1.1, CORS, GET/HEAD/OPTIONS, 400 para URI inválida, nenhum erro com 200, barra final, nenhum link legado no cabeçalho `Link`, query string repassada, linkset por `linkType` e por `Accept`, linkset válido, cabeçalho do contexto JSON-LD, tipo de conteúdo, um único link padrão, redirecionamento ao padrão, `gs1:pip` e `gs1:instructions` em cada idioma, as duas variantes `gs1:defaultLinkMulti`, tipos de link ratificados, 404 para tipo de link ausente |
+
+**Ambiente de desenvolvimento** (`dev-tests/resolver/test_gs1_suite.py`, o mesmo código da suíte, sem
+alteração, no Chromium contra o código do Resolver): sete cenários — o GTIN acima com um par que dá 300 (o
+portal não consegue criar um: recusa dois links do mesmo tipo e idioma), um GTIN com cadastro de lote, um
+número de série com lote informativo, o GTIN com variantes de idioma sob um lote, um GLN (subida por
+`/254/`) e nomes de cabeçalho em minúsculas, como no HTTP/2 — passam em todos os testes, exceto uma
+divergência conhecida:
+
+- **Variantes de idioma de um nível acima sob um lote (errata E12).** Com um cadastro de lote que tem link
+  padrão próprio, sob um GTIN cujo link padrão tem variantes de idioma, a suíte espera que `/10/LOT1` com
+  `Accept-Language: pt` ou `en` vá para a variante do GTIN. O Resolver responde com o link padrão do lote:
+  cada entidade identificada tem exatamente um link padrão, do qual os links `gs1:defaultLinkMulti` são
+  refinamentos (2.5.8); um nível abaixo pode definir o seu próprio padrão (2.5.9); o passo 3 do 2.6.3
+  restringe a escolha ao link padrão e às suas variantes sem dizer de qual nível. O Resolver mantém as
+  variantes junto do padrão que elas refinam. O padrão não resolve a questão, então isto é uma errata e uma
+  issue para a suíte (item 8.2), não uma mudança de código. O caso não aparece na homologação, onde não há
+  lote cadastrado sob esse GTIN.
+
+**O F22 está encerrado.** A suíte transforma `https://gs1.org/voc/`, `https://ref.gs1.org/voc/` e
+`https://www.gs1.org/voc/` em `gs1:` antes de toda verificação, então o namespace nunca muda o veredito; o
+próprio linkset-modelo da suíte usa `https://ref.gs1.org/voc/`, que é como o 2.14 expande `gs1:`. Desde o
+`bc573c4` os linksets usam esse namespace (decisão do responsável).
+
+As linhas do F9 ao F13 acima serão refeitas na homologação depois que o `bc573c4` for instalado.

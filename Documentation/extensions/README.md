@@ -707,6 +707,7 @@ language-neutral on labels.
 | `/10/123/` (trailing slash) → 400 | treated as `/10/123` | 2.13, item 25 |
 | `?linkType=defaultLink` → 300 with an object | redirects to the default target | 2.5.8 |
 | only `x` and `gs1:x` | also `https://gs1.org/voc/x`, `https://ref.gs1.org/voc/x`, case-insensitive | 2.5.2, 2.14 |
+| linkset keys and JSON-LD context in `https://gs1.org/voc/` | `https://ref.gs1.org/voc/`, the namespace of `gs1:`; stored documents keep `https://gs1.org/voc/` (`web_logic.public_linktype_key()`) | 2.14, item 24 |
 | linkset with JSON-LD keys, relative anchor | plain RFC 9264, validates against the linkset schema; JSON-LD only with `Accept: application/ld+json` | 2.10, item 10 |
 | JSON-LD context Link header malformed and hidden from CORS | `<…/linkset-context>; rel="http://www.w3.org/ns/json-ld#context"`, exposed | 2.10, item 13 |
 | query string always passed on, with a second `?` if the target already had one | passed on exactly as sent (`;` delimiter and keys without a value kept), always — `fwqs: false` is ignored, the option having been removed in Resolver 1.2.0; joined with `&` | 2.12, item 19 |

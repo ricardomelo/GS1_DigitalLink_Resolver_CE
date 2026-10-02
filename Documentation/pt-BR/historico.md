@@ -188,7 +188,23 @@ Candidatos a errata encontrados ao decodificar: E8 (EPCB 4.2.2), E9 (anexo E.3 d
 SSCC++ e ITIP++, hostnames de SGTIN++ e DSGTIN++, uma EPC URI), E10 (Tabelas 14-14 e 14-15 do TDS 2.3), E11
 (artefato do TDT do CPI-var) — seção 6 da revisão de conformidade.
 
-## Como as principais áreas evoluíram
+## Sessão 7 — suíte de testes de Resolver da GS1 (item 1.4)
+
+| Commit | Mudança |
+|---|---|
+| `bc573c4` | Resolver: linksets e contexto JSON-LD escrevem os tipos de link `gs1:` em `https://ref.gs1.org/voc/` (Resolver 2.14, F22); documentos gravados sem alteração |
+| `cc95d77` | `test_gs1_suite.py`: a suíte de testes de Resolver da GS1, com o JavaScript sem alteração, no Chromium contra o código do Resolver, com uma versão em Python do seu auxiliar PHP; sete cenários |
+
+O código da suíte foi lido e executado no ambiente de desenvolvimento antes de o responsável rodá-la na
+homologação. Homologação (2 de outubro, `ef96276`, um GTIN com link padrão em português e inglês e
+instruções nos dois idiomas): **31 de 31 testes aprovados**. No ambiente de desenvolvimento resta uma
+divergência, que a homologação não exercita: sob um lote com link padrão próprio, a suíte espera as
+variantes de idioma do padrão do GTIN (errata E12; o Resolver mantém o padrão do lote).
+
+Decisões do responsável: os tipos de link são publicados em `https://ref.gs1.org/voc/` (opção B do F22); o
+comportamento da E12 é mantido e vira errata e issue para a suíte.
+
+
 
 | Área | 1.0.0 (sessão 1) | Agora |
 |---|---|---|
@@ -200,7 +216,7 @@ SSCC++ e ITIP++, hostnames de SGTIN++ e DSGTIN++, uma EPC URI), E10 (Tabelas 14-
 | Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, tela de usuários, senhas temporárias, histórico, auditoria |
 | Instalação | manual, com patch | fork git, configuração em camadas, instalador para Ubuntu, backup |
 | Resolução | GTIN e lote, links comprimidos do Digital Link 1.1 | todas as chaves e qualificadores, as regras do Resolver 1.2.1, EPC em binário de etiquetas NFC (`/eh…`, `/ex…`) |
-| Testes | 69 verificações | 1.051 verificações em 13 programas de teste, além do teste do instalador |
+| Testes | 69 verificações | 1.271 verificações em 14 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador |
 | Documentação | README do pacote, documento de passagem | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e português), documentação das extensões, changelog |
 
 ## Decisões que ficam, a não ser que sejam revistas de propósito
@@ -224,6 +240,8 @@ SSCC++ e ITIP++, hostnames de SGTIN++ e DSGTIN++, uma EPC URI), E10 (Tabelas 14-
 12. O EPC em binário é decodificado a partir dos artefatos do TDT da GS1, incluídos sem alteração;
     qualificadores vindos da etiqueta vão para o caminho, atributos de dados para a query string; o hostname
     de um `++` é ignorado.
+13. Os linksets escrevem os tipos de link `gs1:` em `https://ref.gs1.org/voc/` (Resolver 2.14); os
+    documentos gravados mantêm as chaves oficiais `https://gs1.org/voc/`.
 
 ## Lições aprendidas
 
@@ -247,13 +265,17 @@ SSCC++ e ITIP++, hostnames de SGTIN++ e DSGTIN++, uma EPC URI), E10 (Tabelas 14-
   independente.
 - Ler o modelo de processamento, não só os dados: o artefato do SGCN-96 precisa das regras EXTRACT do seu
   nível BINARY, que a leitura só do nível de saída deixou passar.
+- Rodar uma suíte de conformidade no ambiente de desenvolvimento antes de rodá-la de verdade: o código dela,
+  sem alteração, contra o código real do Resolver previu o resultado da homologação e achou a única
+  divergência antes da execução do responsável.
+- Uma suíte de testes traz a leitura que os seus autores fazem do padrão: conferir cada falha com o texto
+  antes de mudar o código (E12).
 
 ## Pendências
 
 - Aviso aos mantenedores oficiais sobre o `GET /api/index` público (redigido).
 - Troca dos segredos de desenvolvimento da instalação de homologação (uma opção do instalador é candidata).
 - Uma instalação nova com `scripts/install.sh` numa máquina limpa (só a reexecução foi comprovada).
-- Um registro da suíte de conformidade da GS1 contra o Resolver de homologação (item 1.4).
 - A verificação final do instalador usa só o `/portal/healthz`; deveria também pedir algo ao Resolver pelo
   proxy (item 7.2).
 - Uma cópia do backup fora do servidor e um ensaio de restauração.

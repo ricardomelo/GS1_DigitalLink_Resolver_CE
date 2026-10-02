@@ -330,7 +330,9 @@ All in the `resolver-portal-config` volume (`/app/config`), included in the dail
   `choose_links()` (media type, then `_language_match()` with `language_ranges()` — q-values, RFC 4647
   lookup — then context) replaces the official `_match_*()` helpers; `with_default_multi()` publishes and
   uses several links of the key's default type as `gs1:defaultLinkMulti`; a 300 carries the anchor of its
-  level. `_test_gs1_digital_link_syntax()` sends `https://id.gs1.org` + the encoded path to
+  level. `format_linkset_for_external_use()` writes every link type key through `public_linktype_key()`, so
+  clients see the `gs1:` namespace of section 2.14 (`GS1_VOC`, `https://ref.gs1.org/voc/`) while documents
+  keep `https://gs1.org/voc/` keys, which `_find_linktype_key()` and the data entry code use. `_test_gs1_digital_link_syntax()` sends `https://id.gs1.org` + the encoded path to
   `callGS1encoder.js`, which uses the engine's Digital Link parser (`dataStr`) for a URI and keeps
   `aiDataStr` for an element string.
 - `web_namespace.py`: `_request_segments()` and `_resolve_path()` (the path from the raw request URI,
@@ -412,8 +414,9 @@ No Docker needed; each program exits with status 1 on a failure. Setup and comma
 
 | Program | Checks | Covers |
 |---|---:|---|
-| `resolver/test_resolver.py` | 189 | resolver and data entry code through Flask's test client: every key and qualified record, walk-up, link types, 404 rules, linkset schema, attributes passed on, description file schema, HTML pages, `/eh…` and `/ex…` requests |
+| `resolver/test_resolver.py` | 194 | resolver and data entry code through Flask's test client: every key and qualified record, walk-up, link types, 404 rules, linkset schema, attributes passed on, description file schema, HTML pages, `/eh…` and `/ex…` requests |
 | `resolver/test_epc_binary.py` | 163 | EPC binary decoder: EPCB examples, every vector of TDS 2.3 annex E.3 (`eh` and `ex`), +AIDC data, `++` hostnames, refusals, RE3, TDT artefacts against their schema; 800 random EPCs against `epc-tds` when `EPC_TDS` is set (162 without) |
+| `resolver/test_gs1_suite.py` | 215 | GS1's resolver test suite, its JavaScript unchanged in Chromium, against the web server code over HTTP; a Python version of its `tester.php`; seven scenarios; needs `GS1_RESOLVER_TESTSUITE` and `AJV_DIST` (skipped without) |
 | `resolver/test_data_entry_api.py` | 53 | token on every protected operation; registration rules of §2.5.9 and informative qualifiers |
 | `portal/test_keys.py` | 137 | keys and qualifiers, compared with the GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | roles, prefixes, users, history, audit |

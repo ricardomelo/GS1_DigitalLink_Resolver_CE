@@ -78,7 +78,7 @@ variants, roles and prefixes, history and audit.
 to a fork of the official repository on GitHub (branch `gs1br/develop`, made the default branch) — the
 maintainer's first GitHub project. Every increment is delivered as a git bundle that the maintainer pulls
 on a workstation and pushes, and the server follows with `git pull && docker compose up -d --build`. The
-1.0.0 contents were rewritten as seven topic commits so that each can later be offered upstream on its own.
+1.0.0 contents were rewritten as seven topic commits so that each can be reviewed on its own.
 
 | Commit | Change | Why |
 |---|---|---|

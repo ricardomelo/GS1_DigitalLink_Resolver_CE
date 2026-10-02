@@ -19,8 +19,6 @@ adds what an organisation needs to run one for its members:
 - a **home page**, a **configurable resolver description file**, **security hardening**;
 - an **interactive installer for Ubuntu**, a **daily backup** and **development tests** for everything.
 
-The changes are meant to be offered back to the official project.
-
 <p align="center">
   <img src="Documentation/images/home.png" alt="Home page of the resolver" width="820">
 </p>
@@ -535,8 +533,7 @@ The items below are in the agreed order; sizes are relative (S, M, L).
 | Production | 7.1 | **Single sign-on** for the portal; per-role limits on exports | M | — |
 | | 7.2 | **Production readiness**: rotation of secrets, installation on a clean machine (with a check through the proxy at the end), off-server backup copy and restore rehearsal, production domain checklist | M | — |
 | | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages, default link titles in the link's language (conformance review F21) | S | — |
-| Standards and community | 8.1 | **Errata and Work Requests to GS1**: E1–E12 of the [conformance review](Documentation/conformance-review.md) | S | — |
-| | 8.2 | **Small contributions to the official project**, each discussed first in an issue (candidates: the EPC binary decoder with the TDT artefacts, the raw request URI, the choice of a link); an issue on GS1's test suite for erratum E12 | M | — |
+| Standards | 8.1 | **Errata and Work Requests to GS1**: E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
 
 Later, when convenient:
 

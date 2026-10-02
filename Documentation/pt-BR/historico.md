@@ -81,7 +81,7 @@ trabalho passou para um fork do repositório oficial no GitHub (branch `gs1br/de
 padrão) — o primeiro projeto do mantenedor no GitHub. Cada incremento é entregue como um git bundle que o
 mantenedor aplica na estação de trabalho e envia com push; o servidor acompanha com
 `git pull && docker compose up -d --build`. O conteúdo da 1.0.0 foi reescrito em sete commits por assunto,
-para que cada um possa ser oferecido depois ao projeto oficial separadamente.
+para que cada um possa ser revisado separadamente.
 
 | Commit | Mudança | Por quê |
 |---|---|---|

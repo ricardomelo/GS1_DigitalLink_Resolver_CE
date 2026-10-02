@@ -486,8 +486,7 @@ instalação de homologação). O que foi feito está no [histórico](historico.
 | Produção | 7.1 | **Login único (SSO)** no portal; limites de exportação por perfil | M | — |
 | | 7.2 | **Prontidão para produção**: troca de segredos, instalação numa máquina limpa (com verificação pelo proxy no final), cópia do backup fora do servidor e ensaio de restauração, checklist do domínio de produção | M | — |
 | | 7.3 | **Acabamento**: revisão dos nomes de AIs em português, logotipo na página inicial e nas páginas do Resolver, títulos padrão no idioma do link (achado F21 da revisão de conformidade) | P | — |
-| Padrões e comunidade | 8.1 | **Erratas e Work Requests à GS1**: E1–E12 da [revisão de conformidade](revisao-de-conformidade.md) | P | — |
-| | 8.2 | **Contribuições pequenas ao projeto oficial**, cada uma discutida antes numa issue (candidatas: o decodificador de EPC em binário com os artefatos do TDT, a URI original da requisição, a escolha de um link); uma issue na suíte de testes da GS1 sobre a errata E12 | M | — |
+| Padrões | 8.1 | **Erratas e Work Requests à GS1**: E1–E12 da [revisão de conformidade](revisao-de-conformidade.md), e uma issue na suíte de testes de Resolver da GS1 sobre a errata E12 | P | — |
 
 Mais adiante, quando for conveniente:
 

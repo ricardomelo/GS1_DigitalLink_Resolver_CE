@@ -454,7 +454,7 @@ Acrescentado durante o item 1.4, a partir da suíte de testes da GS1 (seção 8)
 
 | # | Documento | Problema | Proposta |
 |---|---|---|---|
-| E12 | Resolver 1.2.1, 2.5.8, 2.5.9, 2.6.3; suíte de testes de Resolver da GS1 | Quando um nível qualificado (um lote) tem link padrão próprio e um nível acima (o GTIN) tem links `gs1:defaultLinkMulti`, o padrão não diz se essas variantes valem para uma requisição no nível qualificado. A suíte da GS1 trata `gs1:defaultLinkMulti` como qualquer tipo de link herdado e espera que a URI do lote com `Accept-Language` correspondente vá para a variante do GTIN, passando por cima do link padrão do próprio lote. O 2.5.8 dá a cada entidade identificada exatamente um link padrão, do qual as variantes são refinamentos. | Dizer que o link padrão e as suas variantes `gs1:defaultLinkMulti` vêm do mesmo nível: o mais granular que tem link padrão. Alinhar a suíte de testes (uma issue no repositório dela, item 8.2). |
+| E12 | Resolver 1.2.1, 2.5.8, 2.5.9, 2.6.3; suíte de testes de Resolver da GS1 | Quando um nível qualificado (um lote) tem link padrão próprio e um nível acima (o GTIN) tem links `gs1:defaultLinkMulti`, o padrão não diz se essas variantes valem para uma requisição no nível qualificado. A suíte da GS1 trata `gs1:defaultLinkMulti` como qualquer tipo de link herdado e espera que a URI do lote com `Accept-Language` correspondente vá para a variante do GTIN, passando por cima do link padrão do próprio lote. O 2.5.8 dá a cada entidade identificada exatamente um link padrão, do qual as variantes são refinamentos. | Dizer que o link padrão e as suas variantes `gs1:defaultLinkMulti` vêm do mesmo nível: o mais granular que tem link padrão. Alinhar a suíte de testes (uma issue no repositório dela, item 8.1). |
 
 A questão do namespace (F22) não virou errata: a suíte de testes aceita as duas formas. O próprio padrão é
 um pouco inconsistente — o 2.14 expande `gs1:` para `https://ref.gs1.org/voc/`, enquanto a referência
@@ -577,7 +577,7 @@ divergência conhecida:
   refinamentos (2.5.8); um nível abaixo pode definir o seu próprio padrão (2.5.9); o passo 3 do 2.6.3
   restringe a escolha ao link padrão e às suas variantes sem dizer de qual nível. O Resolver mantém as
   variantes junto do padrão que elas refinam. O padrão não resolve a questão, então isto é uma errata e uma
-  issue para a suíte (item 8.2), não uma mudança de código. O caso não aparece na homologação, onde não há
+  issue para a suíte (item 8.1), não uma mudança de código. O caso não aparece na homologação, onde não há
   lote cadastrado sob esse GTIN.
 
 **O F22 está encerrado.** A suíte transforma `https://gs1.org/voc/`, `https://ref.gs1.org/voc/` e

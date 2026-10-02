@@ -450,7 +450,7 @@ Added during item 1.4, from GS1's test suite (section 8):
 
 | # | Document | Problem | Proposal |
 |---|---|---|---|
-| E12 | Resolver 1.2.1, 2.5.8, 2.5.9, 2.6.3; GS1's resolver test suite | When a qualified level (a batch) has its own default link and a higher level (the GTIN) has `gs1:defaultLinkMulti` links, the standard does not say whether those variants apply to a request at the qualified level. GS1's test suite treats `gs1:defaultLinkMulti` as any inherited link type and expects the batch URI with a matching `Accept-Language` to go to the GTIN's variant, bypassing the batch's own default. 2.5.8 gives each identified entity exactly one default link, of which the variants are refinements. | State that the default link and its `gs1:defaultLinkMulti` variants come from the same level: the most granular one that has a default link. Align the test suite (an issue on its repository, item 8.2). |
+| E12 | Resolver 1.2.1, 2.5.8, 2.5.9, 2.6.3; GS1's resolver test suite | When a qualified level (a batch) has its own default link and a higher level (the GTIN) has `gs1:defaultLinkMulti` links, the standard does not say whether those variants apply to a request at the qualified level. GS1's test suite treats `gs1:defaultLinkMulti` as any inherited link type and expects the batch URI with a matching `Accept-Language` to go to the GTIN's variant, bypassing the batch's own default. 2.5.8 gives each identified entity exactly one default link, of which the variants are refinements. | State that the default link and its `gs1:defaultLinkMulti` variants come from the same level: the most granular one that has a default link. Align the test suite (an issue on its repository, item 8.1). |
 
 The namespace question (F22) did not become an erratum: the test suite accepts either form. The standard
 itself is slightly inconsistent — 2.14 expands `gs1:` to `https://ref.gs1.org/voc/` while its reference
@@ -572,7 +572,7 @@ case as over HTTP/2 — pass every test except one known divergence:
   refinements (2.5.8); a lower level may define its own default (2.5.9); step 3 of 2.6.3 restricts the
   choice to the default link and its variants without saying from which level. The resolver keeps the
   variants with the default they refine. The standard does not settle it, so this is an erratum and an
-  issue for the suite (item 8.2), not a code change. It does not arise on staging, where no batch is
+  issue for the suite (item 8.1), not a code change. It does not arise on staging, where no batch is
   registered under that GTIN.
 
 **F22 is closed.** The suite turns `https://gs1.org/voc/`, `https://ref.gs1.org/voc/` and

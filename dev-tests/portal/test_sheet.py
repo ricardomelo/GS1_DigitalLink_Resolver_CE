@@ -51,8 +51,9 @@ check("rows of the same GTIN and lot form one record", product["rows"] == [2, 3]
 check("scheme added to bare addresses", product["links"][0]["url"] == "https://www.exemplo.com.br/cafe")
 check("'gs1:' added to bare link types", product["links"][1]["linkType"] == "gs1:instructions")
 check("several languages in one cell", product["links"][1]["hreflang"] == ["pt", "en"])
-check("sim/não and empty defaults", product["links"][0]["default"] and not product["links"][1]["default"]
-      and product["links"][0]["forward"] and not product["links"][1]["forward"] and records[1]["links"][0]["forward"])
+check("sim/não and empty defaults; the old forward column is read but ignored",
+      product["links"][0]["default"] and not product["links"][1]["default"]
+      and all("forward" not in link for r in records for link in r["links"]))
 
 check("canonical keys accepted without aliases", error_code(lambda: sheet.parse_rows(sheet.read_table("a.csv", b"gtin,description,linkType,url\n1,a,b,c\n"), {})) is None)
 rows = sheet.read_table("x.csv", "GTIN;Descrição;Tipo de link;URL\r\n7,89836E+12;Café;gs1:pip;https://x.org\r\n".encode())
@@ -126,12 +127,13 @@ check("XLSX: key and identifier stored as text with leading zeros", links["A2"].
       and links["B2"].number_format == "@")
 back, errors = sheet.parse_rows(sheet.read_table("x.xlsx", data), PT)
 check("XLSX round trip", not errors and len(back) == 1 and back[0]["links"][0]["default"]
-      and back[0]["links"][1]["forward"] is False and back[0]["links"][1]["hreflang"] == ["pt", "en"], (back, errors))
+      and back[0]["links"][1]["hreflang"] == ["pt", "en"], (back, errors))
+check("export: no forward column (the query string is always passed on)", len(rows[0]) == 9
+      and "Repassar parâmetros" not in [c.value for c in links[1]], [c.value for c in links[1]])
 csv_bytes = sheet.write_csv([list(r) for r in rows], labels)
-check("CSV export: BOM, ';' and localised yes/no", csv_bytes.startswith(b"\xef\xbb\xbf") and b";sim;sim" in csv_bytes
-      and "não".encode() in csv_bytes)
+check("CSV export: BOM, ';' and localised yes", csv_bytes.startswith(b"\xef\xbb\xbf") and b";sim\r\n" in csv_bytes)
 back, errors = sheet.parse_rows(sheet.read_table("x.csv", csv_bytes), PT, ["sim"], ["não"])
-check("CSV round trip", not errors and back[0]["links"][1]["forward"] is False, (back, errors))
+check("CSV round trip", not errors and back[0]["links"][0]["default"] and len(back[0]["links"]) == 2, (back, errors))
 
 # Language tags and lots stored by other tools
 import gs1  # noqa: E402

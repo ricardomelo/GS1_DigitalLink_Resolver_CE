@@ -461,9 +461,9 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
             "title": gs1.clean_text(row.get("title"))[:120] or gs1.LINK_TYPE_DEFAULT_TITLES[link_type],
             "type": gs1.guess_media_type(href),
             "hreflang": hreflang,
-            # fwqs = "forward query strings", an attribute of the official GS1 linkset schema.
-            # True is the default behaviour required by section 2.12 of the resolver standard.
-            "fwqs": row.get("forwardQueryString", True) is not False,
+            # No "fwqs": the resolver always passes the query string on (GS1-Conformant Resolver 1.2.1, section
+            # 2.12; the option to switch it off was removed in release 1.2.0, and from the portal on the owner's
+            # decision). Saving a record drops "fwqs": false from records made before.
         }
         context = [c for c in (row.get("context") or []) if isinstance(c, str) and c]
         if context:  # preserved when the link was created by another tool
@@ -682,7 +682,6 @@ def get_record():
         result["links"] = [{
             "linkType": l.get("linktype"), "url": l.get("href"), "title": l.get("title") or "",
             "hreflang": l.get("hreflang") or ["pt"], "context": l.get("context") or [],
-            "forwardQueryString": l.get("fwqs", True) is not False,
         } for l in target.get("links", [])]
         result["links"].sort(key=lambda l: l["linkType"] != default)   # default link first
     return jsonify(result)
@@ -724,7 +723,7 @@ def key_record_document(anchor: str, pairs: list, doc: dict, request_data) -> di
                  "title": ""}]
     else:
         rows = [{"linkType": l["linktype"], "url": l["href"], "hreflang": l["hreflang"], "title": l["title"],
-                 "forwardQueryString": l.get("fwqs", True), "context": l.get("context", [])} for l in doc["links"]]
+                 "context": l.get("context", [])} for l in doc["links"]]
     _, _, key_doc = build_document({"key": ai, "value": value, "description": request_data.get("description") or doc["itemDescription"],
                                     "defaultLinkType": doc["defaultLinktype"], "links": rows})
     return key_doc
@@ -923,7 +922,7 @@ def _same_record(target: dict, doc: dict) -> bool:
     """
     def links(items):
         return sorted((l.get("linktype"), l.get("href"), l.get("title") or "", tuple(sorted(l.get("hreflang") or [])),
-                       l.get("fwqs", True) is not False, tuple(sorted(l.get("context") or []))) for l in items)
+                       tuple(sorted(l.get("context") or []))) for l in items)
     return ((target.get("itemDescription") or "") == doc["itemDescription"]
             and target.get("defaultLinktype") == doc["defaultLinktype"]
             and gs1.pairs_from(target.get("informativeQualifiers")) == gs1.pairs_from(doc.get("informativeQualifiers"))
@@ -997,7 +996,7 @@ def import_preview():
                 "description": record["description"],
                 "defaultLinkType": ordered[0]["linkType"] if ordered else None,
                 "links": [{"linkType": l["linkType"], "url": l["url"], "hreflang": l["hreflang"],
-                           "title": l["title"], "forwardQueryString": l["forward"]} for l in ordered]})
+                           "title": l["title"]} for l in ordered]})
         except ValidationError as exc:
             params = dict(exc.params)
             row = _row_of({"links": ordered, "rows": record["rows"]}, params.get("position"))

@@ -29,9 +29,11 @@ from gs1 import ValidationError
 
 # canonical key, column width in the XLSX export
 COLUMNS = [("key", 8), ("value", 22), ("qualifiers", 24), ("description", 36), ("linkType", 24), ("url", 48),
-           ("language", 10), ("title", 30), ("default", 10), ("forward", 12)]
+           ("language", 10), ("title", 30), ("default", 10)]
 EXPORTED = [key for key, _ in COLUMNS]
-KEYS = EXPORTED + ["lot"]                      # "lot": accepted on import (older spreadsheets), not exported
+# Accepted on import (older spreadsheets), not exported: "lot", and "forward", ignored since the query string
+# is always passed on (GS1-Conformant Resolver 1.2.1, section 2.12)
+KEYS = EXPORTED + ["lot", "forward"]
 REQUIRED = {"value", "description", "linkType", "url"}
 # Headers accepted for a column besides its key and the labels sent by the browser
 BUILT_IN_ALIASES = {"value": ["gtin"], "key": ["ai"]}
@@ -191,7 +193,7 @@ def parse_rows(rows: list[list[str]], aliases: dict[str, list[str]], yes=(), no=
 
     Groups the data rows into records. Returns (records, errors):
       records: [{"rows": [row numbers], "gtin": raw, "lot": raw, "description": str,
-                 "links": [{"row", "linkType", "url", "hreflang", "title", "default", "forward"}]}]
+                 "links": [{"row", "linkType", "url", "hreflang", "title", "default"}]}]
       errors:  [{"row", "code", "params"}]  for rows that cannot be read at all
     Validation of the resulting records is left to the editor's own rules (app.build_document).
     """
@@ -245,12 +247,9 @@ def parse_rows(rows: list[list[str]], aliases: dict[str, list[str]], yes=(), no=
             record["description"] = record["description"] or description
 
         default = yes_no(cell(row, "default"), False, yes, no)
-        forward = yes_no(cell(row, "forward"), True, yes, no)
-        if default is None or forward is None:
-            errors.append({"row": number, "code": "import.yesNo",
-                           "params": {"value": cell(row, "default") if default is None else cell(row, "forward")}})
-            default = bool(default)
-            forward = True if forward is None else forward
+        if default is None:
+            errors.append({"row": number, "code": "import.yesNo", "params": {"value": cell(row, "default")}})
+            default = False
         language = [code.strip() for code in re.split(r"[,;/\s]+", cell(row, "language")) if code.strip()]
         link_type = cell(row, "linkType")
         if link_type and ":" not in link_type:
@@ -259,7 +258,7 @@ def parse_rows(rows: list[list[str]], aliases: dict[str, list[str]], yes=(), no=
         if url and not re.match(r"^[a-z]+://", url, re.I):
             url = "https://" + url                             # as the editor does
         record["links"].append({"row": number, "linkType": link_type, "url": url, "hreflang": language or ["pt"],
-                                "title": cell(row, "title"), "default": default, "forward": forward})
+                                "title": cell(row, "title"), "default": default})
     result = []
     for key in order:
         record = records.pop(key)
@@ -285,15 +284,14 @@ def export_rows(records: list[dict]) -> list[list[str]]:
             rows.append([record["key"], record["value"], qualifiers, record.get("description") or "",
                          link.get("linktype") or "", link.get("href") or "",
                          ", ".join(link.get("hreflang") or []), link.get("title") or "",
-                         "yes" if is_default else "", "no" if link.get("fwqs") is False else "yes"])
+                         "yes" if is_default else ""])
     return rows
 
 
 def _localise_flags(rows, yes_word, no_word):
-    """Default and Forward query string columns in the user's language (yes/no words)."""
+    """The Default column in the user's language (yes word)."""
     for row in rows:
         row[8] = yes_word if row[8] == "yes" else ""
-        row[9] = yes_word if row[9] == "yes" else no_word
     return rows
 
 

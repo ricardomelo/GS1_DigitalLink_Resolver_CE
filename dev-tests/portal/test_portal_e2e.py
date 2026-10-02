@@ -93,13 +93,13 @@ with sync_playwright() as p:
     page.click("#add"); rows = page.query_selector_all(".link-row")
     rows[1].query_selector(".link-type").select_option("gs1:instructions")
     rows[1].query_selector(".url").fill("https://www.codigo2d.com.br/manual.pdf")
-    rows[1].query_selector(".forward").uncheck()
     rows[1].query_selector(".make-default").click()
     page.click("#save"); page.wait_for_timeout(600)
     check("record created", "Record created" in page.inner_text("#status"), page.inner_text("#status"))
     stored = json.dumps(mock_data_entry.DB)
     check("default link type = first target", '"default": "gs1:instructions"' in stored)
-    check("fwqs false stored", '"fwqs": false' in stored)
+    check("no query-string option: nothing about fwqs stored (always passed on, Resolver 2.12)",
+          '"fwqs"' not in stored and page.query_selector(".forward") is None)
 
     page.select_option("#locale", "pt-BR"); page.wait_for_timeout(200)
     check("live language switch", "Cadastro criado" in page.inner_text("#status"), page.inner_text("#status"))

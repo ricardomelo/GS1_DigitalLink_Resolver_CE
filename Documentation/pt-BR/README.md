@@ -414,6 +414,7 @@ da instalação, nunca versionados).
 | `SESSION_TOKEN` | Token bearer da API de cadastro (usado também pelo portal) |
 | `FQDN` | Domínio do Resolver; a raiz do Resolver é `https://FQDN` |
 | `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | Operador no arquivo de descrição, na página inicial e nas páginas do Resolver (nome com link para `RESOLVER_ORG_URL`) |
+| `RESOLVER_TERMS_URL` | Opcional: os termos de uso do operador, publicados como `termsOfUse` no arquivo de descrição (omitido quando vazio) |
 | `RESOLVER_PUBLIC_URL` | Endereço público do portal quando não é `https://FQDN` (por exemplo, desenvolvimento) |
 | `PORTAL_ADMIN_USERNAME`, `PORTAL_ADMIN_PASSWORD` | Primeiro usuário do portal, criado só enquanto não há nenhum |
 | `PORTAL_SESSION_HOURS`, `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE` | Configurações opcionais do portal |

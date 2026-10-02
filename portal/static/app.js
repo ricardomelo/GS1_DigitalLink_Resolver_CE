@@ -17,7 +17,7 @@
  *   roles, history, users, audit ... read-only mode, versions of a record, administration screens
  *   link checker ................... editor, every record, import preview
  *   spreadsheets ................... export and two-step import with preview
- *   step 3 ......................... target rows (type, language, address, title, forwarding, default)
+ *   step 3 ......................... target rows (type, language, address, title, default)
  *   save / delete, user menu, options (password), language menu, start-up (init: every event handler)
  */
 
@@ -1226,7 +1226,7 @@ function restoreVersion(version) {
   $("#links").replaceChildren();
   const links = [...(doc.links || [])].sort((a, b) => (a.linktype !== doc.defaultLinktype) - (b.linktype !== doc.defaultLinktype));
   links.forEach(l => addRow({ linkType: l.linktype, url: l.href, title: l.title || "", hreflang: l.hreflang || ["pt"],
-                              context: l.context || [], forwardQueryString: l.fwqs !== false }));
+                              context: l.context || [] }));
   refreshDefault();
   showStatus("ok", "history.restored", { when: formatWhen(version.at), user: version.user });
   $("#description").focus();
@@ -2154,7 +2154,6 @@ function addRow(data = {}) {
 
   $(".url", li).value = data.url || "";
   $(".title", li).value = data.title || "";
-  $(".forward", li).checked = data.forwardQueryString !== false;
 
   typeSelect.addEventListener("change", () => { refreshRowHelp(li); refreshDefault(); });
   languageSelect.addEventListener("change", () => {
@@ -2214,7 +2213,6 @@ function collect() {
       title: $(".title", li).value.trim(),
       hreflang: JSON.parse(li.dataset.hreflang),
       context: JSON.parse(li.dataset.context),
-      forwardQueryString: $(".forward", li).checked,
     })),
   };
 }

@@ -7,6 +7,7 @@ from urllib.parse import quote, unquote, urlsplit
 from flask import request, abort, Response, send_from_directory, jsonify, make_response
 from flask_restx import Namespace, Resource
 
+import epc_binary
 import web_logic
 import web_pages
 
@@ -95,6 +96,8 @@ class DocOperationsNonGS1DigitalLinkRequest(Resource):
         return response
 
     def _handle_request(self, non_gs1dl_request: str) -> Response | tuple[Any, int]:
+        if epc_binary.COMPRESSED_EPC.fullmatch(non_gs1dl_request):
+            return _resolve_compressed_epc(non_gs1dl_request)
         try:
             logger.info('Non-GS1DL request received')
             decompress_result = web_logic.uncompress_gs1_digital_link(non_gs1dl_request)
@@ -219,6 +222,35 @@ def _resolve_path(anchor_ai_code: str, fallback_segments: list[str]) -> Response
     compress = request.args.get('compress', None)
     return _process_response(doc_id, identifiers, qualifier_path=qualifier_path or None, compress=compress,
                              query_strings=_extract_query_strings(request))
+
+
+def _resolve_compressed_epc(segment: str) -> Response | tuple[Any, int]:
+    """
+    /eh… or /ex…: an EPC binary string in a compressed GS1 Digital Link URI (EPCB 1.0.0, section 4.2; RE3 of
+    URI Syntax 1.7, section 6.1.2), which a GS1-Conformant resolver SHALL decompress (Resolver 1.2.1,
+    section 2.3). It is resolved as the equivalent fully uncompressed GS1 Digital Link URI on this resolver's
+    own stem, which is also the anchor of any linkset: key qualifiers in the path, data attributes (a DSGTIN+
+    date, +AIDC data) in the query string, passed on to the target before the request's own query string
+    (section 2.12). The hostname of a '++' EPC is not used. A string that does not decode is answered 400.
+    """
+    try:
+        epc = epc_binary.decompress(segment)
+    except epc_binary.EpcDecodeError as e:
+        logger.info('EPC binary string not decoded: %s', e)
+        return _bad_request('/' + segment, f'Not a decodable EPC binary string: {e}')
+    path, attributes = epc.path(), epc.query()
+    logger.debug('%s decoded as %s %s?%s (hostname %s)', segment, epc.scheme, path, attributes, epc.hostname)
+    if attributes and not web_logic._test_gs1_digital_link_syntax(f'{path}?{attributes}'):
+        # the path alone is checked again when the document is read; the data attributes only here
+        return _bad_request('/' + segment, f'The GS1 Digital Link decoded from the {epc.scheme} EPC is not valid: '
+                                           f'{path}?{attributes}')
+    segments = [unquote(s) for s in path.split('/') if s]
+    identifiers = f'/{segments[0]}/{segments[1]}'
+    qualifier_path = ''.join('/' + quote(s, safe='') for s in segments[2:])
+    own_query = _extract_query_strings(request)
+    query_strings = '&'.join(q for q in (attributes, own_query) if q)
+    return _process_response(f'{segments[0]}_{segments[1]}', identifiers, qualifier_path=qualifier_path or None,
+                             compress=request.args.get('compress', None), query_strings=query_strings)
 
 
 def _bad_request(path: str, error: str) -> Response | tuple[Any, int]:

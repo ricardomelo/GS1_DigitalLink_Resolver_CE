@@ -12,8 +12,9 @@ import web_db
 logger = logging.getLogger(__name__)
 
 # Pattern for validating GS1 Digital Link path segments (AI codes + values).
-# Allows alphanumeric characters, hyphens, dots, underscores, percent-encoded bytes, and parentheses.
-_SAFE_GS1_PATTERN = re.compile(r'^[A-Za-z0-9\-._~%()/:+]+$')
+# Allows alphanumeric characters, hyphens, dots, underscores, percent-encoded bytes, and parentheses;
+# also '?', '=' and '&' for the query string of a GS1 Digital Link decoded from an EPC binary string.
+_SAFE_GS1_PATTERN = re.compile(r'^[A-Za-z0-9\-._~%()/:+?=&]+$')
 
 
 def _validate_gs1_input(value: str) -> str:

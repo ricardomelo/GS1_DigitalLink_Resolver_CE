@@ -444,6 +444,56 @@ check("batch A/C (%2F) walks up to the GTIN", location_of(SL + "/10/A%2FC") == (
 body = client.get("/api" + SL + "/10/A%2FB?linkType=linkset", headers={"Accept": "application/linkset+json"}).get_json(force=True)
 check("…and its anchor keeps the value encoded", body["linkset"][0]["anchor"].endswith("/10/A%2FB"), body["linkset"][0]["anchor"])
 
+# ---------------------------------------------------------------- EPC binary strings (Resolver 2.3, EPCB 1.0.0)
+author({"anchor": "/01/09528765123457", "itemDescription": "EPCB example", "defaultLinktype": "gs1:pip",
+        "links": link("https://example.org/epcb")})
+author({"anchor": "/01/79521141123453", "itemDescription": "TDS annex E.3", "defaultLinktype": "gs1:pip",
+        "links": link("https://example.org/e3")})
+EPCB_EH, EPCB_EX = "/eh30164596f40c0e5cbe991a83", "/exMBZFlvQMDly-mRqD"       # EPCB 4.2.1 and 4.2.2, SGTIN-96
+
+
+def full_location(path):
+    r = client.get("/api" + path, headers={"Accept": "*/*"})
+    return r.status_code, r.headers.get("Location")
+
+
+def linkset_anchor(path):
+    r = client.get("/api" + path + "?linkType=linkset", headers={"Accept": "application/linkset+json"})
+    return r.get_json(force=True)["linkset"][0]["anchor"] if r.status_code == 200 else r.status_code
+
+
+for path in (EPCB_EH, EPCB_EX):
+    check(f"EPC binary string {path} resolves as /01/09528765123457/21/123456789123",
+          location_of(path) == (307, "https://example.org/epcb"), location_of(path))
+    anchor, expected = linkset_anchor(path), linkset_anchor("/01/09528765123457/21/123456789123")
+    check(f"…its linkset is the decompressed URI's, same anchor {path}", anchor == expected and "/01/09528765123457" in anchor
+          and "/eh" not in anchor and "/ex" not in anchor, (anchor, expected))
+check("the request's own query string is passed on (and linkType applies)",
+      full_location(EPCB_EH + "?linkType=gs1:pip&x=1") == (307, "https://example.org/epcb?linkType=gs1:pip&x=1"),
+      full_location(EPCB_EH + "?linkType=gs1:pip&x=1"))
+DSGTIN = "/ehfb342cde795211411234538566cb0afc4"                              # TDS annex E.3, DSGTIN+ (17)220630
+check("DSGTIN+ date passed on as a data attribute", full_location(DSGTIN) == (307, "https://example.org/e3?17=220630"),
+      full_location(DSGTIN))
+check("…before the request's own query string", full_location(DSGTIN + "?x=1") == (307, "https://example.org/e3?17=220630&x=1"),
+      full_location(DSGTIN + "?x=1"))
+SGTIN_PP = "/ehfd3795211411234538566cb0afc525065f1876f0d996d800"            # TDS annex E.3, SGTIN++ (id.example.com)
+check("SGTIN++ resolves here; the hostname in the EPC is not used", location_of(SGTIN_PP) == (307, "https://example.org/e3"),
+      location_of(SGTIN_PP))
+AIDC = "/ehf7b07898357410015624b510031ec5cd67c0"      # SGTIN+ S1 with +AIDC (10)123 and (17)261231
+check("+AIDC batch goes to the path (batch record), expiry date to the query string",
+      full_location(AIDC) == (307, "https://www.example.org?17=261231"), full_location(AIDC))
+for path, problem in [("/eh", "no EPC binary string"), ("/eh00000000000000000000000000", "unprogrammed header"),
+                      ("/ehfe00", "reserved header"), ("/eh3500e86f8000a9e000000586", "GID-96, no GS1 Digital Link"),
+                      ("/eh30164596f40c0e5cbe991a830001", "data after the end of the EPC")]:
+    r = get(path)
+    body = r.get_json(force=True) or {}
+    check(f"400 for an EPC binary string that does not decode ({problem})",
+          r.status_code == 400 and "EPC binary string" in body.get("error", ""), (r.status_code, body))
+r = client.get("/api/eh3500e86f8000a9e000000586")                                 # no Accept header: HTML
+check("…as an HTML page for a browser", r.status_code == 400 and r.mimetype == "text/html", (r.status_code, r.mimetype))
+r = get("/EH30164596f40c0e5cbe991a83")
+check("upper-case 'EH' is not an EPC binary string (RE3): 400", r.status_code == 400, r.status_code)
+
 if ENGINE:
     r = get("/00/095060001343520001")
     check("wrong SSCC check digit refused by the syntax engine", r.status_code == 400, r.status_code)
@@ -458,6 +508,11 @@ if ENGINE:
         check(f"400 for {problem}: {path}", r.status_code == 400, r.status_code)
     r = get(SL + "/10/A%2FB")
     check("a valid value with '/' passes the engine", r.status_code == 307, r.status_code)
+    r = get("/ehf7b09506000134352624b5725813")                # SGTIN+ with +AIDC (7258) and none of what it needs
+    check("data attributes decoded from an EPC are checked by the engine (7258 without 8018 and 7259): 400",
+          r.status_code == 400 and "7258" in (r.get_json(force=True) or {}).get("error", ""), (r.status_code, r.get_data(as_text=True)[:200]))
+    check("EPCB example passes the engine", location_of(EPCB_EH) == (307, "https://example.org/epcb"), location_of(EPCB_EH))
+    check("DSGTIN+ with its date passes the engine", location_of(DSGTIN)[0] == 307, location_of(DSGTIN))
 else:
     print("SKIP real syntax engine checks (set GS1_SYNTAX_ENGINE, see dev-tests/portal/test_keys.py)")
 

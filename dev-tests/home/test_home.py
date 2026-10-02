@@ -48,6 +48,21 @@ def check(condition: bool, label: str) -> None:
     print(("PASS " if condition else "FAIL ") + label)
 
 
+def host_accepted(host: str | None) -> bool:
+    """Whether Werkzeug (the web servers behind the proxy) accepts this Host header."""
+    if not host:
+        return False
+    try:
+        from werkzeug.sansio.utils import get_host
+    except ImportError:                                   # same rule: hostname characters and an optional port
+        return re.fullmatch(r"[A-Za-z0-9.-]+(:\d+)?", host) is not None
+    try:
+        get_host("http", host)
+        return True
+    except Exception:
+        return False
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -63,7 +78,7 @@ def mock_upstream(name: str) -> int:
                 body = json.dumps(DESCRIPTION).encode()
                 content_type = "application/json"
             else:
-                body = json.dumps({"upstream": name, "path": self.path}).encode()
+                body = json.dumps({"upstream": name, "path": self.path, "host": self.headers.get("Host")}).encode()
                 content_type = "application/json"
             self.send_response(200)
             self.send_header("Content-Type", content_type)
@@ -157,6 +172,8 @@ def routing_checks(base: str) -> None:
         ("/api/docs", "data-entry", "/api/docs"),
         ("/swaggerui/swagger-ui.css", "data-entry", "/swaggerui/swagger-ui.css"),
         ("/portal/", "portal", "/portal/"),
+        # an EPC binary string (item 1.6) is a single segment for the resolver
+        ("/eh30164596f40c0e5cbe991a83", "resolver", "/api/eh30164596f40c0e5cbe991a83"),
     ]
     for path, upstream, received in expectations:
         status, _, body = fetch(base + path)
@@ -166,6 +183,10 @@ def routing_checks(base: str) -> None:
             data = {}
         check(status == 200 and data.get("upstream") == upstream and data.get("path") == received,
               f"GET {path} → {upstream} ({received}), unchanged")
+        # The Host header nginx sends must be one the upstream's Werkzeug accepts: with "proxy_pass
+        # http://resolver_web/…" and no Host header, nginx sent "resolver_web", which Werkzeug 3.1 refuses
+        # (an underscore is not a hostname character), so every resolution through the proxy was a 500.
+        check(host_accepted(data.get("host")), f"GET {path}: Host header {data.get('host')!r} accepted by Werkzeug")
 
     status, _, body = fetch(base + "/.well-known/gs1resolver")
     check(status == 200 and json.loads(body).get("contact", {}).get("fn") == "Example Org",

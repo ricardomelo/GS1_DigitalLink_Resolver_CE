@@ -53,7 +53,8 @@ documentos está em [Documentation/README.md](../README.md).
 10. [Configuração](#configuração)
 11. [Operação](#operação)
 12. [Desenvolvimento e testes](#desenvolvimento-e-testes)
-13. [Licença e créditos](#licença-e-créditos)
+13. [Backlog em aberto](#backlog-em-aberto)
+14. [Licença e créditos](#licença-e-créditos)
 
 ## O projeto original
 
@@ -74,7 +75,7 @@ O README original é mantido, sem mudanças, em [upstream-README.md](../upstream
 
 | Área | Acréscimo |
 |---|---|
-| **Portal** (`/portal/`) | Entrada com senha por usuário (com botão de mostrar/ocultar); editor para qualquer chave primária e qualificadores, com conferências GS1 enquanto se digita; destinos por tipo de link GS1, idioma e título; destino principal; repasse da query string por link; etiquetas com QR Code (PNG/SVG) nas dimensões do guia *QR Codes powered by GS1*, com escolha de versão, correção de erros e texto legível, opcionalmente com atributos de dados GS1 Digital Link (validade, peso, preço…); lista de registros com busca e filtros por tipo de chave e qualificador; importação/exportação de planilhas (XLSX, CSV) com prévia; verificador de links |
+| **Portal** (`/portal/`) | Entrada com senha por usuário (com botão de mostrar/ocultar); editor para qualquer chave primária e qualificadores, com conferências GS1 enquanto se digita; destinos por tipo de link GS1, idioma e título; destino principal; etiquetas com QR Code (PNG/SVG) nas dimensões do guia *QR Codes powered by GS1*, com escolha de versão, correção de erros e texto legível, opcionalmente com atributos de dados GS1 Digital Link (validade, peso, preço…); lista de registros com busca e filtros por tipo de chave e qualificador; importação/exportação de planilhas (XLSX, CSV) com prévia; verificador de links |
 | **Governança** | Perfis (administrador, editor, leitor); acesso limitado a prefixos de empresa GS1 por usuário; tela de administração de usuários com senhas temporárias; histórico de cada cadastro com restauração; auditoria com filtros e exportação CSV |
 | **Chaves e qualificadores** | As 16 chaves primárias da URI Syntax §4.3 e todos os qualificadores da §4.4, com os formatos da §4.6, a ordem e os caminhos compostos da §4.9, validados como faz o GS1 Barcode Syntax Engine |
 | **Atributos de dados** | Todos os atributos de dados da URI Syntax §4.10 nos QR Codes, validados pelo GS1 Barcode Syntax Engine (formatos, dígitos verificadores, datas, listas de códigos e as regras de associação das General Specifications); repassados pelo Resolver aos destinos |
@@ -83,7 +84,7 @@ O README original é mantido, sem mudanças, em [upstream-README.md](../upstream
 | **Configuração** | Padrões no `.env.example` + `.env` opcional para todos os serviços; arquivo de descrição (`/.well-known/gs1resolver`) montado a partir da configuração; endereços de bind para as portas publicadas |
 | **Página inicial** (`/`) | Menu para o portal, a documentação da API, o padrão GS1 Digital Link, gs1.org e este código; independente do domínio |
 | **Operação** | Instalador interativo para Ubuntu 22.04 / 24.04; backup diário do banco e da configuração do portal; o Compose reinicia o proxy quando um serviço atrás dele é recriado |
-| **Qualidade** | Testes de desenvolvimento do Resolver, da API de cadastro, do portal (unitários e de ponta a ponta no navegador), da página inicial, do instalador e do verificador de links; comparação com o GS1 Syntax Engine |
+| **Qualidade** | Testes de desenvolvimento do Resolver, da API de cadastro, do portal (unitários e de ponta a ponta no navegador), da página inicial, do instalador e do verificador de links; comparação com o GS1 Syntax Engine; aprovação na própria suíte de testes de Resolver da GS1 (31 de 31), que também roda nos testes de desenvolvimento |
 
 ## Arquitetura
 
@@ -459,6 +460,45 @@ GS1_SYNTAX_ENGINE=/tmp/se python dev-tests/portal/test_keys.py
 ```
 
 As imagens do README e do guia do portal, nos dois idiomas, são geradas por `dev-tests/docs/screenshots.py`.
+
+## Backlog em aberto
+
+Situação em 2 de outubro de 2026. A fase 1, a base de conformidade, está concluída: a revisão cláusula a
+cláusula, o modelo de cadastro do GS1-Conformant Resolver 2.5.9, um link padrão acima de todo cadastro, as
+correções de resolução, o EPC em binário e a própria suíte de testes de Resolver da GS1 (aprovada numa
+instalação de homologação). O que foi feito está no [histórico](historico.md) e no
+[changelog](../extensions/CHANGELOG.md). Os itens abaixo seguem a ordem combinada; os tamanhos são relativos
+(P, M, G).
+
+| Fase | # | Item | Tam. | Depende de |
+|---|---|---|---|---|
+| Fundações técnicas | 2.1 | **Integração contínua**: os testes de desenvolvimento como suítes pytest num workflow do GitHub Actions (engines em cache) | M | — |
+| | 2.2 | **Uma fonte única para as regras GS1**: chaves, qualificadores, formatos e nomes de AIs derivados do GS1 Barcode Syntax Dictionary, os dois engines na mesma versão, mensagens do engine traduzidas, atualizações do dicionário propostas por uma tarefa agendada; traz os AIs (7041) e (8040)–(8043) | G | 2.1 |
+| Log de resolução | 3.1 | **Log das requisições ao Resolver** (chave, qualificadores, AIs de atributos de dados, tipo de link, resultado e nível, latência, idioma, dispositivo, origem, esquema EPC), assíncrono, com privacidade desde a concepção, eventos brutos com prazo de expiração e agregados diários | G | — |
+| | 3.2 | **Rotação e arquivamento** do diário do portal | P | 3.1 |
+| Página inicial do portal e monitoramento | 4.1 | **Página inicial pós-login com indicadores**: uso, qualidade da resolução (primeiro os 404 de códigos desconhecidos), qualidade dos cadastros, operação, governança | G | 3.1 |
+| | 4.2 | **Monitoramento e alertas**: Resolver fora do ar (verificado pelo proxy), falha de backup, picos de 404, vencimento do certificado | M | 4.1 |
+| Estúdio de etiquetas | 5.1 | **Raiz alternativa para o QR Code**, por instalação ou por prefixo de empresa GS1, com caminho-base opcional (URI Syntax 4.11) | M | 2.2 |
+| | 5.2 | **Escolha da dimensão X e exportação em PDF** | M | 5.1 |
+| | 5.3 | **QR Code com EAN-13/UPC-A (e EAN-8/UPC-E)** para a transição ao 2D, com as regras de texto legível das GS1 General Specifications | M | 5.2 |
+| | 5.4 | **Todos os formatos de etiqueta num único zip** | P | 5.3 |
+| Página de destinos | 6.1 | **Página com os links do item** como destino padrão: gerada pelo Resolver, pensada primeiro para o celular, um ícone por tipo de link, logotipo e cores por prefixo, idiomas, cliques registrados | G | 3.1, 5.1 |
+| Produção | 7.1 | **Login único (SSO)** no portal; limites de exportação por perfil | M | — |
+| | 7.2 | **Prontidão para produção**: troca de segredos, instalação numa máquina limpa (com verificação pelo proxy no final), cópia do backup fora do servidor e ensaio de restauração, checklist do domínio de produção | M | — |
+| | 7.3 | **Acabamento**: revisão dos nomes de AIs em português, logotipo na página inicial e nas páginas do Resolver, títulos padrão no idioma do link (achado F21 da revisão de conformidade) | P | — |
+| Padrões e comunidade | 8.1 | **Erratas e Work Requests à GS1**: E1–E12 da [revisão de conformidade](revisao-de-conformidade.md) | P | — |
+| | 8.2 | **Contribuições pequenas ao projeto oficial**, cada uma discutida antes numa issue (candidatas: o decodificador de EPC em binário com os artefatos do TDT, a URI original da requisição, a escolha de um link); uma issue na suíte de testes da GS1 sobre a errata E12 | M | — |
+
+Mais adiante, quando for conveniente:
+
+- Busca por código lendo os dados brutos do leitor (sem parênteses, FNC1/GS, identificadores de simbologia
+  `]d2`/`]Q3`) pelo engine, e EPC em binário (`eh…`, `ex…`, hexadecimal) lido de um leitor RFID.
+- Uma opção de etiqueta EPC/NFC: o SGTIN de um cadastro como `eh…`/`ex…` para gravar etiquetas NFC ou
+  híbridas (exige um codificador).
+- Exportar só os registros filtrados; filtros que podem ser salvos como favoritos.
+- Um jeito de corrigir cadastros feitos antes de a regra 2 do 2.5.9 ser aplicada (hoje só são sinalizados).
+- API de cadastro: conferir também os valores pelo engine, não só a estrutura (restante do achado F11).
+- Uma versão em português da documentação de extensões.
 
 ## Licença e créditos
 

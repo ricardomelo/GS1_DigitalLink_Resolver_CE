@@ -199,7 +199,9 @@ tests pass**. In the sandbox one divergence remains, which staging does not exer
 own default link, the suite expects the GTIN's language variants of the default (erratum E12; the resolver
 keeps the batch's default). After `bc573c4` was installed: 31 of 31 again, link types in
 `https://ref.gs1.org/voc/`, and the F9-F13 checks of the conformance review all as expected (307 to the
-default link, 400, 400, 307 walking up with `%2F`, query string passed on as sent).
+default link, 400, 400, 307 walking up with `%2F`, query string passed on as sent). The GTIN of the usual
+deployment check answered 404 at the same time: its record had been deleted on staging, and a valid GTIN
+without a record is a 404 (2.4.1). The open backlog is now listed in the README.
 
 Decisions of the owner: link types are published in `https://ref.gs1.org/voc/` (option B of F22); the
 behaviour under E12 is kept and becomes an erratum and an issue for the suite.
@@ -274,7 +276,4 @@ behaviour under E12 is kept and becomes an erratum and an issue for the suite.
 - An off-server backup copy and a restore rehearsal.
 - Review of the 216 Portuguese AI names; decision on the GS1 logo on the home page and resolver pages.
 
-Candidate next steps: reading raw scanner data (FNC1/GS) in the code search through the syntax engine,
-exporting only the filtered records, label size choice and PDF export,
-single sign-on, journal rotation, health monitoring, CI with the development tests, and small pull
-requests to the official project.
+Next steps: the open backlog, in the agreed order, is in the README ([Open backlog](../README.md#open-backlog)).

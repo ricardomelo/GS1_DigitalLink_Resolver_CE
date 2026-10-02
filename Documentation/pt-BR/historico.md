@@ -201,7 +201,9 @@ instruções nos dois idiomas): **31 de 31 testes aprovados**. No ambiente de de
 divergência, que a homologação não exercita: sob um lote com link padrão próprio, a suíte espera as
 variantes de idioma do padrão do GTIN (errata E12; o Resolver mantém o padrão do lote). Depois da instalação do `bc573c4`: 31 de 31 de novo,
 tipos de link em `https://ref.gs1.org/voc/` e as verificações F9-F13 da revisão de conformidade todas como
-esperado (307 para o link padrão, 400, 400, 307 subindo com `%2F`, query string repassada como enviada).
+esperado (307 para o link padrão, 400, 400, 307 subindo com `%2F`, query string repassada como enviada). O GTIN da
+verificação habitual de cada instalação respondeu 404 na mesma ocasião: o cadastro dele tinha sido apagado na
+homologação, e um GTIN válido sem cadastro é um 404 (2.4.1). O backlog em aberto passou a constar do README.
 
 Decisões do responsável: os tipos de link são publicados em `https://ref.gs1.org/voc/` (opção B do F22); o
 comportamento da E12 é mantido e vira errata e issue para a suíte.
@@ -284,7 +286,4 @@ comportamento da E12 é mantido e vira errata e issue para a suíte.
 - Revisão dos 216 nomes de AIs em português; decisão sobre o logotipo GS1 na página inicial e nas páginas
   do Resolver.
 
-Próximos passos candidatos: ler os dados brutos do leitor de código de barras (FNC1/GS) na busca por código
-usando o syntax engine, exportar só os registros filtrados, escolha do
-tamanho da etiqueta e exportação em PDF, login único (SSO), rotação do diário, monitoramento de saúde, CI
-com os testes de desenvolvimento e pull requests pequenos para o projeto oficial.
+Próximos passos: o backlog em aberto, na ordem combinada, está no README ([Backlog em aberto](README.md#backlog-em-aberto)).

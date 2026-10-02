@@ -59,8 +59,9 @@ conformidade.
 10. [Configuration](#configuration)
 11. [Operation](#operation)
 12. [Development and tests](#development-and-tests)
-13. [Repository layout](#repository-layout)
-14. [Licence and credits](#licence-and-credits)
+13. [Open backlog](#open-backlog)
+14. [Repository layout](#repository-layout)
+15. [Licence and credits](#licence-and-credits)
 
 ---
 
@@ -93,7 +94,7 @@ the official Postman collection is at
 | **Configuration** | `.env.example` defaults + optional `.env` for every service; description file (`/.well-known/gs1resolver`) built from the configuration; bind addresses for the published ports |
 | **Home page** (`/`) | Menu to the portal, the API documentation, the GS1 Digital Link standard, gs1.org and this code; domain independent |
 | **Operations** | Interactive installer for Ubuntu 22.04 / 24.04; daily backup of the database and the portal's configuration; Compose restarts the proxy when a service behind it is recreated |
-| **Quality** | Development tests for the resolver, the data entry API, the portal (unit and browser end-to-end), the home page, the installer and the link checker; comparison with the GS1 Syntax Engine |
+| **Quality** | Development tests for the resolver, the data entry API, the portal (unit and browser end-to-end), the home page, the installer and the link checker; comparison with the GS1 Syntax Engine; GS1's own resolver test suite passed (31 of 31) and also run in the development tests |
 
 The full change log is in [Documentation/extensions/CHANGELOG.md](Documentation/extensions/CHANGELOG.md) and
 the detailed documentation in [Documentation/extensions/README.md](Documentation/extensions/README.md).
@@ -484,6 +485,7 @@ The tests in [`dev-tests/`](dev-tests/README.md) run without Docker or MongoDB:
 |---|---|
 | `resolver/test_resolver.py` | Resolver behaviour, walk-up, linksets, HTML pages, description file, every key and qualified record, EPC binary strings |
 | `resolver/test_epc_binary.py` | EPC binary decoder: every example of the EPC Tag Data Standard, +AIDC data, `++` hostnames, refusals; optionally compared with `epc-tds` |
+| `resolver/test_gs1_suite.py` | GS1's resolver test suite, its code unchanged, in Chromium against the resolver code, in seven scenarios |
 | `resolver/test_data_entry_api.py` | Token protection of every data entry operation and the Swagger declarations |
 | `portal/test_keys.py` | Every primary key and qualifier combination, compared with the GS1 Syntax Engine |
 | `portal/test_portal_e2e.py` | The portal in Chromium: editor, keys, qualifiers, labels, list, spreadsheets, link checker, users |
@@ -508,6 +510,44 @@ GS1_SYNTAX_ENGINE=/tmp/se python dev-tests/portal/test_keys.py
 The official integration test `tests/setup_test.py` needs the running stack and reads the token from
 `SESSION_TOKEN`. The screenshots of this README and of the user guide are produced by
 `dev-tests/docs/screenshots.py`.
+
+## Open backlog
+
+Status on 2 October 2026. Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
+fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). What was
+done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
+The items below are in the agreed order; sizes are relative (S, M, L).
+
+| Phase | # | Item | Size | Depends on |
+|---|---|---|---|---|
+| Technical foundations | 2.1 | **Continuous integration**: the development tests as pytest suites in a GitHub Actions workflow (engines cached) | M | — |
+| | 2.2 | **One source for the GS1 rules**: keys, qualifiers, formats and AI names derived from the GS1 Barcode Syntax Dictionary, both engines on one version, engine messages translated, dictionary updates proposed by a scheduled job; brings AIs (7041) and (8040)–(8043) | L | 2.1 |
+| Resolution log | 3.1 | **Log of resolver requests** (key, qualifiers, data attribute AIs, link type, outcome and level, latency, language, device, referrer, EPC scheme), asynchronous, privacy by design, raw events with an expiry plus daily aggregates | L | — |
+| | 3.2 | **Rotation and archiving** of the portal's journal | S | 3.1 |
+| Portal home page and monitoring | 4.1 | **Home page after sign-in with indicators**: usage, resolution quality (404 for unknown codes first), record quality, operation, governance | L | 3.1 |
+| | 4.2 | **Monitoring and alerts**: resolver down (checked through the proxy), failed backup, spikes of 404, certificate expiry | M | 4.1 |
+| Label studio | 5.1 | **Alternative root for the QR code**, per installation or per GS1 Company Prefix, with an optional path stem (URI Syntax 4.11) | M | 2.2 |
+| | 5.2 | **X-dimension choice and PDF export** | M | 5.1 |
+| | 5.3 | **QR code with EAN-13/UPC-A (and EAN-8/UPC-E)** for the transition to 2D, with the HRI rules of the GS1 General Specifications | M | 5.2 |
+| | 5.4 | **Every label format in one zip** | S | 5.3 |
+| Landing page | 6.1 | **Page of the item's links** as the default target: generated by the resolver, mobile first, an icon per link type, logo and colours per prefix, languages, clicks logged | L | 3.1, 5.1 |
+| Production | 7.1 | **Single sign-on** for the portal; per-role limits on exports | M | — |
+| | 7.2 | **Production readiness**: rotation of secrets, installation on a clean machine (with a check through the proxy at the end), off-server backup copy and restore rehearsal, production domain checklist | M | — |
+| | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages, default link titles in the link's language (conformance review F21) | S | — |
+| Standards and community | 8.1 | **Errata and Work Requests to GS1**: E1–E12 of the [conformance review](Documentation/conformance-review.md) | S | — |
+| | 8.2 | **Small contributions to the official project**, each discussed first in an issue (candidates: the EPC binary decoder with the TDT artefacts, the raw request URI, the choice of a link); an issue on GS1's test suite for erratum E12 | M | — |
+
+Later, when convenient:
+
+- Code search reading raw scanner data (no brackets, FNC1/GS, symbology identifiers `]d2`/`]Q3`) through
+  the engine, and EPC binary strings (`eh…`, `ex…`, hexadecimal) read from an RFID reader.
+- An EPC/NFC label option: a record's SGTIN as `eh…`/`ex…` for programming NFC or hybrid tags (needs an
+  encoder).
+- Export only the filtered records; bookmarkable filters.
+- A way to fix records registered before rule 2 of 2.5.9 was enforced (today they are only flagged).
+- Data entry API: check values with the engine, not only the structure (rest of finding F11).
+- A Portuguese version of the extensions documentation.
 
 ## Repository layout
 

@@ -199,7 +199,9 @@ O código da suíte foi lido e executado no ambiente de desenvolvimento antes de
 homologação. Homologação (2 de outubro, `ef96276`, um GTIN com link padrão em português e inglês e
 instruções nos dois idiomas): **31 de 31 testes aprovados**. No ambiente de desenvolvimento resta uma
 divergência, que a homologação não exercita: sob um lote com link padrão próprio, a suíte espera as
-variantes de idioma do padrão do GTIN (errata E12; o Resolver mantém o padrão do lote).
+variantes de idioma do padrão do GTIN (errata E12; o Resolver mantém o padrão do lote). Depois da instalação do `bc573c4`: 31 de 31 de novo,
+tipos de link em `https://ref.gs1.org/voc/` e as verificações F9-F13 da revisão de conformidade todas como
+esperado (307 para o link padrão, 400, 400, 307 subindo com `%2F`, query string repassada como enviada).
 
 Decisões do responsável: os tipos de link são publicados em `https://ref.gs1.org/voc/` (opção B do F22); o
 comportamento da E12 é mantido e vira errata e issue para a suíte.

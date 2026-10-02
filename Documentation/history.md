@@ -197,7 +197,9 @@ The suite's code was read and run in the sandbox before the owner ran it on stag
 `ef96276`, a GTIN with a default link in Portuguese and English and instructions in both): **31 of 31
 tests pass**. In the sandbox one divergence remains, which staging does not exercise: under a batch with its
 own default link, the suite expects the GTIN's language variants of the default (erratum E12; the resolver
-keeps the batch's default).
+keeps the batch's default). After `bc573c4` was installed: 31 of 31 again, link types in
+`https://ref.gs1.org/voc/`, and the F9-F13 checks of the conformance review all as expected (307 to the
+default link, 400, 400, 307 walking up with `%2F`, query string passed on as sent).
 
 Decisions of the owner: link types are published in `https://ref.gs1.org/voc/` (option B of F22); the
 behaviour under E12 is kept and becomes an erratum and an issue for the suite.

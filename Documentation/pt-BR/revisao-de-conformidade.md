@@ -585,4 +585,14 @@ divergência conhecida:
 próprio linkset-modelo da suíte usa `https://ref.gs1.org/voc/`, que é como o 2.14 expande `gs1:`. Desde o
 `bc573c4` os linksets usam esse namespace (decisão do responsável).
 
-As linhas do F9 ao F13 acima serão refeitas na homologação depois que o `bc573c4` for instalado.
+Depois da instalação do `bc573c4` (2 de outubro de 2026, em `e86d120`), a suíte deu de novo **31 de 31**
+com a mesma URI, os tipos de link do linkset estavam todos em `https://ref.gs1.org/voc/` (`defaultLink`,
+`defaultLinkMulti`, `instructions`, `pip`) e as linhas do F9 ao F13 desta seção, com esse GTIN, deram:
+
+| Linha | Resposta | Leitura |
+|---|---|---|
+| F9, `Accept-Language: de` | 307 para o link padrão (`…/pip-pt`) | F9 corrigido: idioma sem correspondência → link padrão (exemplo 7) |
+| F10, `/17/261231` | 400 | F10 corrigido: atributo de dados no caminho é recusado |
+| F10, `/21/S1/10/L1` | 400 | F10 corrigido: qualificadores fora de ordem são recusados |
+| F12, `/10/A%2FB` | 307 para o link padrão | F12 corrigido: o valor mantém a `/` e o lote desconhecido sobe até o GTIN |
+| F13, `?17=…;3103=…` | 307 para `…/pip-pt?17=261231;3103=000189` | F13 corrigido: a query string é repassada exatamente como enviada |

@@ -4,7 +4,8 @@
 
 ### GS1's resolver test suite (backlog item 1.4)
 - **Staging passes every test** of GS1's own suite (https://ref.gs1.org/test-suites/resolver/, Resolver
-  1.2.1): 31 of 31 on a GTIN whose default link has a Portuguese and an English version, 2 October 2026.
+  1.2.1): 31 of 31 on a GTIN whose default link has a Portuguese and an English version, 2 October 2026,
+  before and after `bc573c4`.
 - **New development test** `dev-tests/resolver/test_gs1_suite.py` (215 checks): the suite's JavaScript,
   unchanged, in Chromium against the resolver code, with a Python version of its PHP helper; seven
   scenarios. One known divergence, under a batch (erratum E12 below). Commit `cc95d77`.

@@ -580,4 +580,14 @@ case as over HTTP/2 — pass every test except one known divergence:
 own model linkset uses `https://ref.gs1.org/voc/`, which is how 2.14 expands `gs1:`. Since `bc573c4`
 linksets use that namespace (owner's decision).
 
-The F9-F13 lines above are to be run again against staging once `bc573c4` is installed.
+After `bc573c4` was installed (2 October 2026, at `e86d120`), the suite gave **31 of 31** again with the
+same URI, the linkset's link types were all in `https://ref.gs1.org/voc/` (`defaultLink`,
+`defaultLinkMulti`, `instructions`, `pip`), and the F9-F13 lines of this section, with that GTIN, gave:
+
+| Line | Answer | Reading |
+|---|---|---|
+| F9, `Accept-Language: de` | 307 to the default link (`…/pip-pt`) | F9 fixed: no matching language → the default link (example 7) |
+| F10, `/17/261231` | 400 | F10 fixed: a data attribute in the path is refused |
+| F10, `/21/S1/10/L1` | 400 | F10 fixed: qualifiers out of order are refused |
+| F12, `/10/A%2FB` | 307 to the default link | F12 fixed: the value keeps its `/` and the unknown batch walks up to the GTIN |
+| F13, `?17=…;3103=…` | 307 to `…/pip-pt?17=261231;3103=000189` | F13 fixed: the query string is passed on exactly as sent |

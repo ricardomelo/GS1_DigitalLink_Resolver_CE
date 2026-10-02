@@ -41,11 +41,15 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Trailing slash | `/10/123/` is treated as `/10/123` (was 400) | `766a652` |
 | `linkType` forms | Accepts `x`, `gs1:x`, `https://gs1.org/voc/x`, `https://ref.gs1.org/voc/x`, case-insensitive; `defaultLink` redirects to the default target | `766a652` |
 | Conformant linkset | `?linkType=linkset` / `Accept: application/linkset+json` returns plain RFC 9264, valid against GS1's linkset schema; JSON-LD only on request; correct JSON-LD context `Link` header exposed to CORS | `766a652` |
-| Query string forwarding per link | The scan's query string (data attributes included) is passed on unchanged unless the target has `"fwqs": false`; joined with `&` when the target already has a query | `766a652` |
+| Query string forwarding | The scan's query string (data attributes included) is passed on exactly as sent — `;` delimiter and keys without a value kept — always (`"fwqs": false` in older records ignored, Resolver 2.12); joined with `&` when the target already has a query | `766a652`, `4f81234` |
+| Default response | Without `linkType`, the default link, unless the request decides a language variant (Resolver 2.6.3, examples 5-7; was 300 for two languages without a match); several links of the default type published as `gs1:defaultLinkMulti` | `4f81234` |
+| Choosing among links of one type | Media type, then language (q-values, `pt-BR` → `pt`), then context (examples 8-13); 300 answers a valid linkset of that level, or an HTML page | `4f81234` |
+| Request paths checked by the engine | The GS1 Barcode Syntax Engine's Digital Link parser checks the path: qualifiers out of order, data attributes or unknown AIs in the path → 400 | `4f81234` |
+| Values with `/` | `%2F` in a value stays in it: the proxy passes the raw request URI and the resolver decodes each segment on its own | `4f81234` |
 | HTML pages for browsers | Errors (400, 404, link type not available — listing the available links) and the linkset as gs1.org-style pages in pt-BR / en-GB, same HTTP status, language menu | `766a652` |
 | Level names on the linkset page | Each level named by its anchor: the key, variant, batch/lot, serial, GLN extension… | `b33def6` |
 | Safe links on HTML pages | Only `http(s)` targets are links; `javascript:`, `data:` and others are listed without a link | `92bfb5d` |
-| Configurable description file | `/.well-known/gs1resolver` takes `resolverRoot` and `contact` (name, address, telephone, `hasURL`) from `.env`; validated against a schema in the tests | `766a652`, `764e360`, `cc72145` |
+| Configurable description file | `/.well-known/gs1resolver` takes `resolverRoot` and `contact` (name, address, telephone, `hasURL`) from `.env`, and `termsOfUse` from `RESOLVER_TERMS_URL`; validated against a schema in the tests | `766a652`, `764e360`, `cc72145`, `4f81234` |
 | Operator footer | "GS1 Digital Link service operated by …" from `RESOLVER_ORG_NAME`, per installation | `766a652`, `764e360` |
 
 ## Data entry API
@@ -76,7 +80,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 |---|---|---|
 | Three-step form | Identify → describe → targets, with live validation and the label alongside | `126f507` |
 | Open record | Reads the record from the resolver; tells whether it exists and which other records the key has; locks steps 2 and 3 when the identifier changes afterwards | `126f507` |
-| Targets | Link type (29 GS1 link types with explanations), language, URL, title, query-string forwarding, default target, up to 20 per record | `126f507` |
+| Targets | Link type (29 GS1 link types with explanations), language, URL, title, default target, up to 20 per record (the per-target query-string option was removed in `db8e342`) | `126f507` |
 | Shared default type | Explains and enforces that every record of a key shares the default link type | `126f507` |
 | Safe API sequence | POST appends, PUT merges, partial DELETE removes only the targets the user removed; deleting one record keeps the others of the key (restored on failure) | `126f507` |
 | Other records of the key | List under *Open record*: what each applies to, description, links, last change; search, qualifier filter, five rows in view, *Open* with unsaved-changes confirmation | `08570e4` |

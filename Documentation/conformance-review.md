@@ -51,8 +51,19 @@ The review describes the branch at `115a054`. Findings fixed since, with the com
 | [F2](#f2) | Fixed (item 1.2): with AI 21, AI 22 and AI 10 are informative, not part of the registration; the data entry API refuses them as qualifiers | `61babe1`, `83d1ba0` |
 | [F4](#f4) | Revised and fixed: when a serial-number record and a batch or variant record both apply, the resolver now redirects with the serial number's (see F4) | `61babe1` |
 | F11 | Partly fixed (item 1.2): the data entry API checks which qualifiers each key takes and the rules of 2.5.9; values are still checked by the portal only | `61babe1` |
+| F7 | Fixed (item 1.5): no `_id`; `termsOfUse` from `RESOLVER_TERMS_URL`; `validatesAIcombinations` now true (F10). `"all"` keys still promise EPC binary (F6) | `4f81234` |
+| F9 | Fixed (item 1.5): without `linkType` the default link unless the request decides a variant; `gs1:defaultLinkMulti` published; the first default-type link is the default | `4f81234` |
+| F10 | Fixed (item 1.5): request paths checked by the engine's Digital Link parser | `4f81234` |
+| F12 | Fixed (item 1.5): raw request URI through the proxy and the resolver | `4f81234` |
+| F13 | Fixed (item 1.5): query string passed on exactly as sent | `4f81234` |
+| F14 | Fixed (item 1.5, owner's decision): the per-target option removed; `fwqs: false` ignored | `4f81234`, `db8e342` |
+| F15 | Fixed (item 1.5): 400 instead of 500 | `4f81234` |
+| F16 | Fixed (item 1.5): 300 as a valid linkset, or an HTML page | `4f81234` |
+| F17 | Fixed (item 1.5): JSON-LD in the HTML page; HTML without an `Accept` header | `4f81234` |
+| F18 | Fixed (item 1.5): links without a media type handled | `4f81234` |
+| F19 | Fixed (item 1.5): q-values and RFC 4647 lookup | `4f81234` |
 
-The other findings are unchanged; items 1.5 and 1.6 address them.
+Still open: F6 (EPC binary, item 1.6), F20 and F23 (errata E2 and E4), F21 (item 7.3), F22 (item 1.4).
 
 ## 2. Method
 

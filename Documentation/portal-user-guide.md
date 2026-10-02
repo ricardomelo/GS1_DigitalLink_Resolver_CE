@@ -205,13 +205,11 @@ Each target is one web page or document. For each target fill in:
   type chosen.
 - **Language** — the language of the page (Portuguese, English, Spanish, French, German, Italian, Chinese,
   Japanese). Two targets of the same type are allowed only in different languages: the resolver then
-  sends each person to the version in their browser's language.
+  sends each person to the version in their browser's language. Someone whose language has no version
+  gets the default target (the first one).
 - **Address (URL)** — the full address, starting with `https://`. Copy it from the browser's address bar;
   spaces, line breaks and invisible characters are refused.
 - **Title** (optional) — a short name shown in lists of links.
-- **Pass the request's query parameters on to this target** — ticked by default. When someone opens the
-  code with extra parameters (`?linkType=…`, or data attributes such as an expiry date, section 10), the
-  resolver adds them to this target's address. Untick it to always send exactly the registered address.
 
 The first target is the **default target** (badge *Default target*, `gs1:defaultLink`): it opens when
 someone scans the code without asking for anything in particular. **Make default** on another target
@@ -352,8 +350,8 @@ others, some cannot appear together) and the portal explains any refusal. A qual
 (batch, serial, variant) is never an attribute: open or create the record with that qualifier instead.
 
 > **Attributes are not saved.** They go only into the QR code drawn now and its downloads, and are
-> cleared when another record is opened. The resolver passes them on only to targets with *Pass the
-> request's query parameters on to this target* ticked.
+> cleared when another record is opened. The resolver passes them on to the target, as it does with any
+> parameter of the scanned address.
 
 ## 11. Registered records: searching and filtering
 

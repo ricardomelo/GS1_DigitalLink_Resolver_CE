@@ -38,11 +38,15 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Barra no final | `/10/123/` é tratado como `/10/123` (antes era 400) | `766a652` |
 | Formas de `linkType` | Aceita `x`, `gs1:x`, `https://gs1.org/voc/x`, `https://ref.gs1.org/voc/x`, sem diferenciar maiúsculas; `defaultLink` redireciona ao destino principal | `766a652` |
 | Linkset conforme | `?linkType=linkset` / `Accept: application/linkset+json` devolve RFC 9264 puro, válido no schema de linkset da GS1; JSON-LD só sob pedido; cabeçalho `Link` do contexto JSON-LD correto e exposto ao CORS | `766a652` |
-| Repasse da query string por link | A query string da leitura (atributos de dados incluídos) é repassada sem mudança, a não ser que o destino tenha `"fwqs": false`; unida com `&` quando o destino já tem parâmetros | `766a652` |
+| Repasse da query string | A query string da leitura (atributos de dados incluídos) é repassada exatamente como enviada — com o separador `;` e chaves sem valor — sempre (`"fwqs": false` de cadastros antigos é ignorado, Resolver 2.12); unida com `&` quando o destino já tem parâmetros | `766a652`, `4f81234` |
+| Resposta padrão | Sem `linkType`, o link padrão, salvo quando a requisição indica uma versão de idioma (Resolver 2.6.3, exemplos 5 a 7; antes, 300 para dois idiomas sem correspondência); vários links do tipo principal publicados como `gs1:defaultLinkMulti` | `4f81234` |
+| Escolha entre links de um tipo | Tipo de mídia, depois idioma (pesos q, `pt-BR` → `pt`), depois contexto (exemplos 8 a 13); o 300 devolve um linkset válido daquele nível, ou uma página HTML | `4f81234` |
+| Caminhos conferidos pelo engine | O leitor de Digital Link do GS1 Barcode Syntax Engine confere o caminho: qualificadores fora de ordem, atributos de dados ou AIs desconhecidos no caminho → 400 | `4f81234` |
+| Valores com `/` | Um `%2F` num valor fica dentro dele: o proxy repassa a URI original e o Resolver decodifica cada segmento separadamente | `4f81234` |
 | Páginas HTML para navegadores | Erros (400, 404, tipo de link indisponível — com a lista dos links disponíveis) e o linkset como páginas no estilo do gs1.org, em pt-BR / en-GB, com o mesmo status HTTP e menu de idioma | `766a652` |
 | Nomes dos níveis no linkset | Cada nível nomeado pela sua âncora: a chave, variante, lote, série, extensão do GLN… | `b33def6` |
 | Links seguros nas páginas HTML | Só destinos `http(s)` viram links; `javascript:`, `data:` e outros aparecem sem link | `92bfb5d` |
-| Arquivo de descrição configurável | `/.well-known/gs1resolver` usa `resolverRoot` e `contact` (nome, endereço, telefone, `hasURL`) do `.env`; validado por schema nos testes | `766a652`, `764e360`, `cc72145` |
+| Arquivo de descrição configurável | `/.well-known/gs1resolver` usa `resolverRoot` e `contact` (nome, endereço, telefone, `hasURL`) do `.env`, e `termsOfUse` de `RESOLVER_TERMS_URL`; validado por schema nos testes | `766a652`, `764e360`, `cc72145`, `4f81234` |
 | Rodapé do operador | "Serviço GS1 Digital Link operado por …" a partir de `RESOLVER_ORG_NAME`, por instalação | `766a652`, `764e360` |
 
 ## API de cadastro (data entry)
@@ -73,7 +77,7 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 |---|---|---|
 | Formulário em três passos | Identificar → descrever → destinos, com validação imediata e a etiqueta ao lado | `126f507` |
 | Abrir cadastro | Lê o cadastro no Resolver; informa se existe e quais outros cadastros a chave tem; bloqueia os passos 2 e 3 quando o identificador muda depois | `126f507` |
-| Destinos | Tipo de link (29 tipos GS1 com explicações), idioma, URL, título, repasse de parâmetros, destino principal, até 20 por cadastro | `126f507` |
+| Destinos | Tipo de link (29 tipos GS1 com explicações), idioma, URL, título, destino principal, até 20 por cadastro (a opção de repasse de parâmetros por destino saiu em `db8e342`) | `126f507` |
 | Tipo principal compartilhado | Explica e garante que todos os cadastros de uma chave usem o mesmo tipo de destino principal | `126f507` |
 | Sequência segura na API | POST acrescenta, PUT mescla, DELETE parcial remove só os destinos que o usuário tirou; excluir um cadastro mantém os outros da chave (restaurados em caso de falha) | `126f507` |
 | Outros cadastros da chave | Lista embaixo de *Abrir cadastro*: a que cada um se aplica, descrição, links, última alteração; busca, filtro por qualificador, cinco linhas à vista, *Abrir* com confirmação se houver alterações não salvas | `08570e4` |

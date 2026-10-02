@@ -202,13 +202,11 @@ Cada destino é uma página ou um documento na internet. Para cada destino, pree
   total). O texto embaixo do campo explica o tipo escolhido.
 - **Idioma** — o idioma da página (português, inglês, espanhol, francês, alemão, italiano, chinês,
   japonês). Dois destinos do mesmo tipo só são aceitos em idiomas diferentes: o Resolver então leva cada
-  pessoa à versão no idioma do navegador dela.
+  pessoa à versão no idioma do navegador dela. Quem usa um idioma sem versão recebe o destino principal (o
+  primeiro).
 - **Endereço (URL)** — o endereço completo, começando com `https://`. Copie-o da barra de endereços do
   navegador; espaços, quebras de linha e caracteres invisíveis são recusados.
 - **Título** (opcional) — um nome curto mostrado nas listas de links.
-- **Repassar os parâmetros do endereço para este destino** — vem marcado. Quando alguém abre o código com
-  parâmetros a mais (`?linkType=…`, ou atributos de dados como a validade, seção 10), o Resolver os
-  acrescenta ao endereço deste destino. Desmarque para enviar sempre exatamente o endereço cadastrado.
 
 O primeiro destino é o **destino principal** (selo *Destino principal*, `gs1:defaultLink`): é o que abre
 quando alguém escaneia o código sem pedir nada específico. **Tornar principal** leva outro destino para o
@@ -354,8 +352,8 @@ não podem aparecer juntos), e o portal explica qualquer recusa. Um qualificador
 variante) nunca é atributo: abra ou crie o cadastro com esse qualificador.
 
 > **Os atributos não são salvos.** Eles vão só para o QR Code gerado agora e seus downloads, e são limpos
-> quando outro cadastro é aberto. O Resolver só os repassa aos destinos com *Repassar os parâmetros do
-> endereço para este destino* marcado.
+> quando outro cadastro é aberto. O Resolver os repassa ao destino, como faz com qualquer parâmetro do
+> endereço lido.
 
 ## 11. Registros cadastrados: busca e filtros
 

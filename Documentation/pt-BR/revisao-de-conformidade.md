@@ -53,8 +53,19 @@ A revisão descreve o branch em `115a054`. Achados corrigidos desde então, com 
 | [F2](#f2) | Corrigido (item 1.2): com o AI 21, os AIs 22 e 10 são informativos, fora do cadastro; a API de cadastro os recusa como qualificadores | `61babe1`, `83d1ba0` |
 | [F4](#f4) | Revisto e corrigido: quando um cadastro de série e um de lote ou variante se aplicam juntos, o Resolver agora redireciona com o da série (ver F4) | `61babe1` |
 | F11 | Corrigido em parte (item 1.2): a API de cadastro confere quais qualificadores cada chave aceita e as regras do 2.5.9; os valores continuam sendo conferidos só pelo portal | `61babe1` |
+| F7 | Corrigido (item 1.5): sem `_id`; `termsOfUse` de `RESOLVER_TERMS_URL`; `validatesAIcombinations` agora verdadeiro (F10). As chaves `"all"` ainda prometem EPC binary (F6) | `4f81234` |
+| F9 | Corrigido (item 1.5): sem `linkType`, o link padrão, salvo quando a requisição indica uma variante; `gs1:defaultLinkMulti` publicado; o primeiro link do tipo principal é o padrão | `4f81234` |
+| F10 | Corrigido (item 1.5): caminhos conferidos pelo leitor de Digital Link do engine | `4f81234` |
+| F12 | Corrigido (item 1.5): URI original pelo proxy e pelo Resolver | `4f81234` |
+| F13 | Corrigido (item 1.5): query string repassada exatamente como enviada | `4f81234` |
+| F14 | Corrigido (item 1.5, decisão do responsável): a opção por destino saiu; `fwqs: false` ignorado | `4f81234`, `db8e342` |
+| F15 | Corrigido (item 1.5): 400 em vez de 500 | `4f81234` |
+| F16 | Corrigido (item 1.5): 300 como linkset válido, ou página HTML | `4f81234` |
+| F17 | Corrigido (item 1.5): JSON-LD na página HTML; HTML sem cabeçalho `Accept` | `4f81234` |
+| F18 | Corrigido (item 1.5): links sem tipo de mídia tratados | `4f81234` |
+| F19 | Corrigido (item 1.5): pesos q e busca da RFC 4647 | `4f81234` |
 
-Os demais achados não mudaram; os itens 1.5 e 1.6 tratam deles.
+Ainda em aberto: F6 (EPC binary, item 1.6), F20 e F23 (erratas E2 e E4), F21 (item 7.3), F22 (item 1.4).
 
 ## 2. Método
 

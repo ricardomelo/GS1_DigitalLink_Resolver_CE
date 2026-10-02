@@ -550,7 +550,7 @@ language, context). Targets with a `context` created by other tools are preserve
 
 On screen: the link type menu shows the code first (`gs1:pip — Product information page`); the first
 target is the default link (`gs1:defaultLink`) and "Make default" moves another one to the top; each target
-has "Pass the request's query parameters on to this target" (stored as `fwqs`); the QR code downloads as
+had "Pass the request's query parameters on to this target" (`fwqs`) until item 1.5 removed it; the QR code downloads as
 PNG or SVG and the address beneath it is a link.
 
 ## QR code label
@@ -616,8 +616,8 @@ the record, so they are not written to the resolver, the history or the audit tr
 code drawn at that moment and are cleared when another record is opened or a new one started.
 
 **What the resolver does.** Nothing beyond passing them on: a GS1-Conformant Resolver transmits the whole
-query string to the target (Resolver standard §2.12, requirement 19), here for every target with *Pass the
-request's query parameters* ticked (`fwqs`). It does not judge them; an invalid date reaches the target
+query string to the target (Resolver standard §2.12, requirement 19), exactly as it was sent. It does not
+judge them; an invalid date reaches the target
 unchanged. `dev-tests/resolver/test_resolver.py` checks this.
 
 **Validation: the GS1 Barcode Syntax Engine itself.** About 500 AIs can be data attributes, each with its
@@ -709,7 +709,15 @@ language-neutral on labels.
 | only `x` and `gs1:x` | also `https://gs1.org/voc/x`, `https://ref.gs1.org/voc/x`, case-insensitive | 2.5.2, 2.14 |
 | linkset with JSON-LD keys, relative anchor | plain RFC 9264, validates against the linkset schema; JSON-LD only with `Accept: application/ld+json` | 2.10, item 10 |
 | JSON-LD context Link header malformed and hidden from CORS | `<…/linkset-context>; rel="http://www.w3.org/ns/json-ld#context"`, exposed | 2.10, item 13 |
-| query string always passed on, with a second `?` if the target already had one | passed on by default; `fwqs: false` on a target switches it off; joined with `&` | 2.12, item 19; `fwqs` attribute of the linkset schema |
+| query string always passed on, with a second `?` if the target already had one | passed on exactly as sent (`;` delimiter and keys without a value kept), always — `fwqs: false` is ignored, the option having been removed in Resolver 1.2.0; joined with `&` | 2.12, item 19 |
+| without `linkType`, several links of the default type in different languages and no matching language → 300 with a JSON list | the default link, unless the request decides a language variant; those links published as `gs1:defaultLinkMulti` | 2.5.8, 2.6.1, 2.6.3 (examples 5-7) |
+| choice among links of one type: `Accept-Language` without q-values, exact tags only (`pt-BR` ≠ `pt`), 400 for links without a media type, 300 body without anchor | media type, then language (q-values, RFC 4647 lookup), then context; 300 answers a valid linkset of that level, or an HTML page | 2.6.3 (examples 8-13), 2.10 |
+| request path checked as an element string: qualifiers out of order, data attributes or unknown AIs in the path redirected | the GS1 Barcode Syntax Engine's Digital Link parser checks the path: 400 | 2.4.1; URI Syntax 4.9, 4.10 |
+| `%2F` in a value decoded by the proxy and by Werkzeug: 400 | the raw request URI reaches the resolver (`$request_uri`) and each segment is decoded on its own | 2.4.1; URI Syntax 4.2 |
+| a single segment that is not a compressed Digital Link → 500 | 400 (HTML page for browsers) | 2.4.1 |
+| HTML linkset page without JSON-LD; JSON with no `Accept` header | JSON-LD embedded; HTML when the request has no `Accept` header | 2.10 |
+| description file with the internal `_id` and GS1's terms of use | neither; `termsOfUse` from `RESOLVER_TERMS_URL` | 3 |
+| serial-number record and batch record both applying: the one with more qualifiers wins | the serial number's | 2.5.9, rule 4 |
 | browsers get raw JSON on errors | HTML page in the gs1.org style (logo, pt-BR/en-GB language menu) with the same HTTP status; a 404 for a linkType lists the available links | 2.6.2 (MAY list other links) |
 | `?linkType=linkset` in a browser → JSON | HTML page listing the links per level (the key, then each applicable qualified record: variant, batch/lot, serial, …) | 2.10 |
 | — | on the HTML pages only `http`/`https` targets are links; others (`javascript:`, `data:`, stored through the API, which takes any href) are listed without a link, so they cannot run in the resolver's origin | — |
@@ -718,8 +726,7 @@ An unknown linkType **still** returns 404: the standard requires it (2.6.2, item
 Link 1.1 the resolver redirected to the default target; that is no longer permitted. Apps and scripts that
 ask for JSON keep receiving JSON.
 
-Without these changes the portal still works, but the "pass parameters on" option has no effect (the resolver
-ignores `fwqs`) and the defects in the table remain.
+Without these changes the portal still works, but the defects in the table remain.
 
 ## Operations
 

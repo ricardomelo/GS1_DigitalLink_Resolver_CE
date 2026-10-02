@@ -20,7 +20,7 @@ o próximo começar.
 | 2 — o fork | 25 a 29/09 | 21 commits, `d51e398` → `7e7a62a` | fork com histórico git, instalador, todas as chaves e qualificadores, planilhas, verificador de links, governança |
 | 3 — Expansion Pack | 29 e 30/09 | 22 commits, `d4e5584` → `cf5ce10` | caracteres especiais, atributos de dados, opções do QR, novo layout do editor, outros cadastros da chave |
 | 4 — busca e documentação | 30/09 a 01/10 | `f4f3071` e os commits de documentação | filtros por tipo de chave e qualificador, busca por código, guia do portal, funcionalidades, este histórico, guia do desenvolvedor, docstrings, versão em português |
-| 5 — revisão de conformidade e 2.5.9 | 01/10 | `324d85b` → `3a49ca9` e o commit de documentação | revisão de conformidade cláusula a cláusula, modelo de cadastro do Resolver 2.5.9 (lote e variante informativos numa série), um link padrão acima de todo cadastro |
+| 5 — revisão de conformidade e 2.5.9 | 01/10 | `324d85b` → `db8e342` e os commits de documentação | revisão de conformidade cláusula a cláusula, modelo de cadastro do Resolver 2.5.9 (lote e variante informativos numa série), um link padrão acima de todo cadastro, correções de resolução (item 1.5) |
 
 Ao fim da sessão 4, o fork altera ou acrescenta 70 arquivos do projeto oficial (cerca de 16.000 linhas
 acrescentadas) e é coberto por 739 verificações nos testes de desenvolvimento, além do teste do
@@ -156,6 +156,8 @@ de dados nunca são gravados, então não há como filtrá-los.
 | `61babe1` | a API de cadastro recusa cadastros contra o 2.5.9 e guarda `informativeQualifiers`; o Resolver prefere o cadastro da série ao do lote |
 | `83d1ba0` | portal: lote e variante de uma série são informativos (proposta C dos mock-ups), *Este cadastro vale para*; parte servidor do cadastro da chave |
 | `3a49ca9` | portal: diálogo que oferece o cadastro da chave ao salvar, filtro *Situação* e alerta, importação de chaves sem cadastro, *Copiar destinos de…*, confirmação no *Abrir cadastro* |
+| `4f81234` | Resolver e proxy (item 1.5): resposta padrão e `gs1:defaultLinkMulti`, escolha do link (exemplos 5 a 13), caminhos conferidos pelo leitor de Digital Link do engine, `%2F` em valores, query string original, 400 em vez de 500, 300 como linkset, JSON-LD no HTML, arquivo de descrição |
+| `db8e342` | portal (item 1.5): saiu a opção de repasse da query string por destino; `RESOLVER_TERMS_URL` |
 
 Decisões do responsável: a opção por link de não repassar a query string sai (item 1.5, F14); lote e
 variante de uma série ficam no banco como informação, e não só no QR Code, para poderem ser buscados,

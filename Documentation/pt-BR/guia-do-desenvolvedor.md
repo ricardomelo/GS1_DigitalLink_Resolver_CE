@@ -74,8 +74,8 @@ data_entry_server/src/
   data_entry_logic.py            read_summary()
   data_entry_db.py               read_all_documents()
 web_server/src/
-  web_logic.py                   subida na hierarquia, formas de linkType, regras de 404, linkset, fwqs
-  web_namespace.py               resposta HTML ou JSON, arquivo de descrição, repasse da query string
+  web_logic.py                   subida na hierarquia, formas de linkType, escolha do link, regras de 404, linkset
+  web_namespace.py               caminho original, resposta HTML ou JSON, arquivo de descrição, query string
   web_pages.py                   novo: páginas HTML (erros, linkset) em pt-BR e en-GB
   public/gs1resolver.json        modelo do arquivo de descrição
 frontend_proxy_server/
@@ -125,8 +125,8 @@ e, nos testes, os caminhos `PORTAL_*_FILE` / `PORTAL_CONFIG_DIR`.
 **Uma leitura do código.** `GET /01/09506000134352/10/L2026A` → proxy → web-service. O engine confere a
 URI; o Resolver lê o documento de `/01/09506000134352`, escolhe a entrada do conjunto de qualificadores
 (subindo para uma entrada menos específica quando não há uma exata), escolhe o link por `linkType`,
-idioma, tipo de mídia e contexto, e responde `307` para ele, acrescentando a query string da leitura a não
-ser que o link tenha `"fwqs": false`.
+idioma, tipo de mídia e contexto, e responde `307` para ele, acrescentando a query string da leitura
+exatamente como foi enviada.
 
 **Salvar um cadastro no portal.** O navegador envia `POST /portal/api/record` com `key`, `value`,
 `qualifiers`, `description` e `links`. O `app.py`:
@@ -324,14 +324,27 @@ Todos no volume `resolver-portal-config` (`/app/config`), incluídos no backup d
   `_parse_qualifier_path()` e `_entry_applies()` (subida na hierarquia: uma entrada vale quando todos os
   seus qualificadores estão na requisição, com modelos como `{0}` aceitando qualquer valor; a entrada mais
   específica responde primeiro — uma série ou TPX (`_UNIT_QUALIFIERS`) antes de qualquer lote ou variante,
-  depois mais qualificadores antes de menos; qualificadores informativos nunca são lidos), `_qualifier_path_from()`, `_find_linktype_key()`, `_public_link()` (só
-  campos públicos, `fwqs` mantido), `format_linkset_for_external_use()` (RFC 9264 ou JSON-LD); 404 quando
-  falta o tipo de link.
-- `web_namespace.py`: `_wants_html()` (navegador ou cliente de API), `_resolver_description()` (arquivo de
-  descrição a partir de `FQDN` e `RESOLVER_*`), `_append_query()` (query string unida com `&`, respeitando
-  `fwqs`), `_latin1()` (cabeçalhos `Location` seguros), barra no final aceita.
-- `web_pages.py` (novo): `render_error()` e `render_linkset()` em pt-BR / en-GB, `negotiate_locale()`, o
-  rodapé do operador, só destinos `http(s)` como links.
+  depois mais qualificadores antes de menos; qualificadores informativos nunca são lidos),
+  `_qualifier_path_from()` (valores com percent-encoding), `_find_linktype_key()`, `_public_link()` (só campos
+  públicos; `fwqs` retirado), `format_linkset_for_external_use()` (RFC 9264 ou JSON-LD); 404 quando falta o
+  tipo de link.
+  Escolha do link (item 1.5): `_handle_link_type()` segue a seção 2.6.3 — sem `linkType` só `gs1:defaultLink`
+  e `gs1:defaultLinkMulti` concorrem, e uma variante só vence quando a requisição a indica; `choose_links()`
+  (tipo de mídia, depois `_language_match()` com `language_ranges()` — pesos q, busca da RFC 4647 — depois
+  contexto) substitui os `_match_*()` oficiais; `with_default_multi()` publica e usa vários links do tipo
+  principal da chave como `gs1:defaultLinkMulti`; um 300 leva a âncora do seu nível.
+  `_test_gs1_digital_link_syntax()` envia `https://id.gs1.org` + o caminho codificado ao `callGS1encoder.js`,
+  que usa o leitor de Digital Link do engine (`dataStr`) para uma URI e mantém `aiDataStr` para uma element
+  string.
+- `web_namespace.py`: `_request_segments()` e `_resolve_path()` (o caminho a partir da URI original,
+  `RAW_URI`, cada segmento decodificado separadamente, para o `%2F` ficar no seu valor),
+  `_extract_query_strings()` (a query string original), `_wants_html()` (navegador, cliente de API, ou sem
+  cabeçalho `Accept`: HTML), `_resolver_description()` (arquivo de descrição a partir de `FQDN`, `RESOLVER_*`
+  e `RESOLVER_TERMS_URL`, sem `_id`), `_bad_request()`, `_append_query()` (query string unida com `&`), o 300
+  como linkset ou página, `_latin1()` (cabeçalhos `Location` seguros), barra no final aceita.
+- `web_pages.py` (novo): `render_error()` e `render_linkset()` (também a página de escolha do 300, com o
+  linkset embutido em JSON-LD) em pt-BR / en-GB, `negotiate_locale()`, o rodapé do operador, só destinos
+  `http(s)` como links.
 
 A tabela com cada mudança de comportamento e a cláusula do padrão correspondente está na documentação das
 extensões (*Resolver CE changes*).
@@ -353,7 +366,9 @@ extensões (*Resolver CE changes*).
 
 ## 11. Proxy e página inicial (`frontend_proxy_server/`)
 
-O `nginx.conf` serve `/` e `/home/…` a partir da imagem, envia os caminhos `/` ao web-service, `/api` e
+O `nginx.conf` serve `/` e `/home/…` a partir da imagem, envia os caminhos `/` ao web-service (a URI
+original, `proxy_pass http://resolver_web/api$request_uri`, para o `%2F` e a query string chegarem como
+foram enviados), `/api` e
 `/swaggerui` ao data-entry-service e `/portal/` ao portal-service (com `/portal` → `/portal/`). O
 `home/home.js` lê o operador em `/.well-known/gs1resolver`, pega a raiz do Resolver da barra de endereços e
 compartilha a escolha de idioma com o portal.
@@ -374,18 +389,18 @@ Não precisam de Docker; cada programa termina com status 1 em caso de falha. Pr
 
 | Programa | Verificações | Cobre |
 |---|---:|---|
-| `resolver/test_resolver.py` | 139 | código do Resolver e da API de cadastro pelo test client do Flask: todas as chaves e cadastros qualificados, subida na hierarquia, tipos de link, regras de 404, schema do linkset, repasse de atributos, schema do arquivo de descrição, páginas HTML |
+| `resolver/test_resolver.py` | 170 | código do Resolver e da API de cadastro pelo test client do Flask: todas as chaves e cadastros qualificados, subida na hierarquia, tipos de link, regras de 404, schema do linkset, repasse de atributos, schema do arquivo de descrição, páginas HTML |
 | `resolver/test_data_entry_api.py` | 53 | token em toda operação protegida; regras de cadastro do §2.5.9 e qualificadores informativos |
 | `portal/test_keys.py` | 137 | chaves e qualificadores, comparados com o GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | perfis, prefixos, usuários, histórico, auditoria |
-| `portal/test_sheet.py` | 42 | planilhas, limites por formato |
+| `portal/test_sheet.py` | 43 | planilhas, limites por formato |
 | `portal/test_special_chars.py` | 57 | caracteres especiais |
 | `portal/test_data_attributes.py` | 83 | atributos de dados, famílias decimais, opções do QR (precisa de `GS1_SYNTAX_ENGINE_DIR`) |
 | `portal/test_linkcheck.py` | 16 | verificador de links, proteção contra SSRF |
 | `portal/test_portal_config.py` | 9 | configuração e inicialização |
 | `portal/test_registration.py` | 26 | §2.5.9 pela API do portal: qualificadores informativos (salvar, abrir, histórico, lista, exportar, importar), cadastros contra a regra 2, o cadastro da chave ao salvar e ao importar |
 | `portal/test_portal_e2e.py` | 186 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular; também roda sem o engine |
-| `home/test_home.py` | 44 | página inicial com um nginx real |
+| `home/test_home.py` | 45 | página inicial com um nginx real |
 | `install/test_install.sh` | — | instalador com simulações (Compose v2) |
 
 O `docs/screenshots.py` regenera as imagens do README e do guia do portal em inglês e em português a partir

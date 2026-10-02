@@ -20,7 +20,7 @@ the next one started.
 | 2 — the fork | 25–29 Sep | 21 commits, `d51e398` → `7e7a62a` | fork with git history, installer, every key and qualifier, spreadsheets, link checker, governance |
 | 3 — Expansion Pack | 29–30 Sep | 22 commits, `d4e5584` → `cf5ce10` | special characters, data attributes, QR options, new editor layout, other records of a key |
 | 4 — search and documentation | 30 Sep – 1 Oct | `f4f3071` and the documentation commits | filters by key type and qualifier, code search, user guide, feature list, this history, developer guide, docstrings, Portuguese version |
-| 5 — conformance review and 2.5.9 | 1 Oct | `324d85b` → `3a49ca9` and the documentation commit | clause-by-clause conformance review, registration model of Resolver 2.5.9 (informative batch and variant of a serial number), a default link above every record |
+| 5 — conformance review and 2.5.9 | 1 Oct | `324d85b` → `db8e342` and the documentation commits | clause-by-clause conformance review, registration model of Resolver 2.5.9 (informative batch and variant of a serial number), a default link above every record, resolution fixes (item 1.5) |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -153,6 +153,8 @@ stored, so they cannot be filtered.
 | `61babe1` | data entry API refuses registrations against 2.5.9 and keeps `informativeQualifiers`; the resolver prefers a serial-number record to a batch record |
 | `83d1ba0` | portal: the batch and variant of a serial number are informative (approach C of the mock-ups), *This record applies to*; server side of the key's own record |
 | `3a49ca9` | portal: dialog offering the key's own record when saving, *Status* filter and alert, import of keys without a record, *Copy targets from…*, confirmation on *Open record* |
+| `4f81234` | resolver and proxy (item 1.5): default response and `gs1:defaultLinkMulti`, choice of a link (examples 5-13), request paths checked by the engine's Digital Link parser, `%2F` in values, raw query string, 400 instead of 500, 300 as a linkset, JSON-LD in HTML, description file |
+| `db8e342` | portal (item 1.5): the per-target query-string option removed; `RESOLVER_TERMS_URL` |
 
 Decisions of the owner: the per-link option to stop forwarding the query string is to be removed (item
 1.5, F14); a serial number's batch and variant stay in the database as information, not only in the QR

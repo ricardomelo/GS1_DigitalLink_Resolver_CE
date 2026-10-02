@@ -2,6 +2,37 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Resolution fixes of the conformance review (backlog item 1.5)
+Conformance review findings F7, F9, F10, F12-F19. Deliberate changes to official code are marked.
+
+- **Default response** (Resolver 2.6.1, 2.6.3 steps 3-4): without `linkType`, the default link, unless
+  the request decides a language variant; a record with its default target in two languages answered 300
+  with a JSON list when the browser's language matched neither, or sent none (examples 5 and 7). Several
+  links of the key's default type are published and used as `gs1:defaultLinkMulti` (2.5.8). The data entry
+  API keeps the *first* link of the default type as `gs1:defaultLink` (official code kept the last).
+- **Choosing a link** (official code replaced): `choose_links()` — media type, then language, then context,
+  as 2.6.3 suggests (examples 8-13) — replaces the `_match_*()` helpers, which ignored q-values, matched
+  language tags literally (`pt-BR` did not find `pt`) and failed with a 400 on links without a media type.
+  The 300 Multiple Choices answers a valid linkset of the links of that level (with its anchor), or an HTML
+  page for browsers.
+- **Request paths** (2.4.1; URI Syntax 4.9, 4.10): checked by the GS1 Barcode Syntax Engine's own Digital
+  Link parser (`callGS1encoder.js` accepts a URI): qualifiers out of order, data attributes or unknown AIs
+  in the path and qualifiers without a value answer 400 instead of being redirected.
+- **Values with `/`** (URI Syntax 4.2): the proxy passes the raw request URI (`$request_uri`, with an
+  `upstream` block) and the resolver reads the raw URI, so `%2F` stays inside its value (was 400).
+- **Query string** (2.12): passed on exactly as sent (the `;` delimiter became `%3B`, a key without a
+  value gained `=`), and always: the per-target option is gone from the portal and the spreadsheets (owner's
+  decision; release 1.2.0 of the standard removed it), `"fwqs": false` in older records is ignored and no
+  longer published. Spreadsheets with the old Forward column are still read; the column is ignored.
+- **Errors**: a single path segment that is not a compressed Digital Link answers 400 (was 500).
+- **HTML** (2.10): the linkset page embeds the linkset as JSON-LD; a request without an `Accept` header
+  gets HTML.
+- **Description file** (3): no internal `_id`; `termsOfUse` only from the new optional `RESOLVER_TERMS_URL`
+  (it pointed to a GS1 page for every installation).
+- Tests: `test_resolver.py` 170 checks, including examples 5 to 13 of the standard and the real engine's
+  400s; `test_home.py` checks `%2F` and `;` through nginx; `test_sheet.py` and the e2e test follow the
+  removal of the option.
+
 ### Registration model of GS1-Conformant Resolver 2.5.9 (backlog items 1.2 and 1.3)
 Conformance review findings F1, F2, F4 and F11; design chosen by the owner from mock-ups (approach C).
 

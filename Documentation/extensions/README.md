@@ -768,6 +768,15 @@ encoding of the EPC Tag Data Standard. The resolver turns it into the GS1 Digita
 
 ## Operations
 
+After every installation or update, check the resolver **through the proxy** as well as the health check,
+which reaches the web server directly (item 1.5 broke every resolution through the proxy while
+`/portal/healthz` stayed `ok`):
+```bash
+curl -s http://127.0.0.1:8080/portal/healthz                                  # {"portal":"ok","resolver":"ok"}
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver    # 200
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' http://127.0.0.1:8080/01/<a registered GTIN>   # 307 …
+```
+
 Audit trail (who changed what):
 ```bash
 docker compose logs -f portal-service | grep portal.audit

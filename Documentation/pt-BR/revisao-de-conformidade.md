@@ -57,7 +57,7 @@ A revisão descreve o branch em `115a054`. Achados corrigidos desde então, com 
 | F7 | Corrigido (itens 1.5 e 1.6): sem `_id`; `termsOfUse` de `RESOLVER_TERMS_URL`; `validatesAIcombinations` agora verdadeiro (F10); as chaves `"all"` agora valem também para EPC binary (F6) | `4f81234`, `51a0da8`, `895c4b1` |
 | F9 | Corrigido (item 1.5): sem `linkType`, o link padrão, salvo quando a requisição indica uma variante; `gs1:defaultLinkMulti` publicado; o primeiro link do tipo principal é o padrão | `4f81234` |
 | F10 | Corrigido (item 1.5): caminhos conferidos pelo leitor de Digital Link do engine | `4f81234` |
-| F12 | Corrigido (item 1.5): URI original pelo proxy e pelo Resolver | `4f81234` |
+| F12 | Corrigido (item 1.5): URI original pelo proxy e pelo Resolver; upstream do proxy renomeado (o nome `resolver_web`, enviado como cabeçalho Host, fazia o Werkzeug recusar toda requisição) | `4f81234`, `b9a7631` |
 | F13 | Corrigido (item 1.5): query string repassada exatamente como enviada | `4f81234` |
 | F14 | Corrigido (item 1.5, decisão do responsável): a opção por destino saiu; `fwqs: false` ignorado | `4f81234`, `db8e342` |
 | F15 | Corrigido (item 1.5): 400 em vez de 500 | `4f81234` |
@@ -514,3 +514,15 @@ links em mais de um idioma:
 
 As linhas do F10 e do F13 também responderam 300 sem nenhum cabeçalho `Accept-Language`, ou seja, o exemplo
 5 do padrão (sem informação de idioma → link padrão) falha do mesmo jeito que o exemplo 7.
+
+Resultados na instalação de homologação depois dos itens 1.5 e 1.6 (2 de outubro de 2026, em `4b9a7be`,
+pelo proxy):
+
+| Requisição | Resposta | Leitura |
+|---|---|---|
+| `/01/{G}` | 307 para o link padrão do GTIN | a resolução pelo proxy voltou a funcionar (`b9a7631`) |
+| SGTIN-96 de G, série 1001, como `eh…` e como `ex…` | 307, mesmo destino | F6 corrigido; as duas formas dão `/01/{G}/21/1001` |
+| SGTIN+ de G com +AIDC (10) 123 e (17) 261231 | 307 para o destino do cadastro do lote, com `?17=261231` | qualificador no caminho, atributo de dados repassado |
+| GID-96 (`/eh3500e86f8000a9e000000586`) | 400, "GID-96 has no GS1 Digital Link equivalent" | comportamento do F15 para cadeias que não decodificam |
+
+As linhas do F9 ao F13 acima serão refeitas com a suíte de testes da GS1 (item 1.4).

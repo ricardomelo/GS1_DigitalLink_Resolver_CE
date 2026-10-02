@@ -55,7 +55,7 @@ The review describes the branch at `115a054`. Findings fixed since, with the com
 | F7 | Fixed (items 1.5 and 1.6): no `_id`; `termsOfUse` from `RESOLVER_TERMS_URL`; `validatesAIcombinations` now true (F10); `"all"` keys now true for EPC binary strings (F6) | `4f81234`, `51a0da8`, `895c4b1` |
 | F9 | Fixed (item 1.5): without `linkType` the default link unless the request decides a variant; `gs1:defaultLinkMulti` published; the first default-type link is the default | `4f81234` |
 | F10 | Fixed (item 1.5): request paths checked by the engine's Digital Link parser | `4f81234` |
-| F12 | Fixed (item 1.5): raw request URI through the proxy and the resolver | `4f81234` |
+| F12 | Fixed (item 1.5): raw request URI through the proxy and the resolver; the proxy's upstream renamed (its name `resolver_web`, sent as the Host header, made Werkzeug refuse every request) | `4f81234`, `b9a7631` |
 | F13 | Fixed (item 1.5): query string passed on exactly as sent | `4f81234` |
 | F14 | Fixed (item 1.5, owner's decision): the per-target option removed; `fwqs: false` ignored | `4f81234`, `db8e342` |
 | F15 | Fixed (item 1.5): 400 instead of 500 | `4f81234` |
@@ -510,3 +510,15 @@ more than one language:
 
 The F10 and F13 lines also answered 300 without any `Accept-Language` header, which is the standard's
 example 5 (no language information → the default link) failing in the same way as example 7.
+
+Results on the staging installation after items 1.5 and 1.6 (2 October 2026, at `4b9a7be`, through the
+proxy):
+
+| Request | Answer | Reading |
+|---|---|---|
+| `/01/{G}` | 307 to the GTIN's default link | resolution through the proxy works again (`b9a7631`) |
+| SGTIN-96 of G, serial 1001, as `eh…` and as `ex…` | 307, same target | F6 fixed; both forms give `/01/{G}/21/1001` |
+| SGTIN+ of G with +AIDC (10) 123 and (17) 261231 | 307 to the batch record's target, `?17=261231` appended | qualifier in the path, data attribute passed on |
+| GID-96 (`/eh3500e86f8000a9e000000586`) | 400, "GID-96 has no GS1 Digital Link equivalent" | F15 behaviour for strings that do not decode |
+
+The F9-F13 lines above are to be run again with the GS1 test suite (item 1.4).

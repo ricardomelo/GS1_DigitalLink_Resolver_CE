@@ -425,7 +425,9 @@ sudo FQDN=id.example.org TLS_MODE=letsencrypt CERTBOT_EMAIL=ops@example.org \
    ```
 
 4. **Start.** `docker compose up -d --build`, then check `curl -s http://127.0.0.1:8080/portal/healthz`
-   (`{"portal":"ok","resolver":"ok"}`).
+   (`{"portal":"ok","resolver":"ok"}`) and a request that reaches the resolver through the proxy:
+   `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver` (`200`). The
+   health check reaches the web server directly, without the proxy's resolver route.
 5. **HTTPS.** Put a TLS reverse proxy in front of `127.0.0.1:8080`. With nginx: copy
    `scripts/templates/nginx-site-http.conf` to `/etc/nginx/sites-available/gs1resolver`, replace `@FQDN@`
    and `@PROXY_PORT@` (8080), enable it, then `sudo certbot --nginx -d id.example.org --redirect`.
@@ -460,6 +462,8 @@ never committed).
 
 ```bash
 git pull && docker compose up -d --build                         # update
+curl -s http://127.0.0.1:8080/portal/healthz                     # {"portal":"ok","resolver":"ok"}
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver   # 200: resolver through the proxy
 docker compose exec portal-service python create_user.py maria --role editor   # add or reset a user
 # who changed what: user menu → Audit trail (administrators), or the container log:
 docker compose logs -f portal-service | grep portal.audit
@@ -486,7 +490,7 @@ The tests in [`dev-tests/`](dev-tests/README.md) run without Docker or MongoDB:
 | `portal/test_governance.py` | Roles, prefixes, user administration, temporary passwords, history, audit trail |
 | `portal/test_data_attributes.py` | Data attributes: syntax engine and dictionary, every refusal, the API and QR codes, the portal without the engine |
 | `portal/test_sheet.py`, `test_special_chars.py`, `test_linkcheck.py`, `test_portal_config.py` | Spreadsheets, special characters, link checker, start-up configuration |
-| `home/test_home.py` | Home page through the real nginx configuration |
+| `home/test_home.py` | Home page and proxy routes through the real nginx configuration, including the Host header each service receives |
 | `install/test_install.sh` | Installer in eight scenarios, with the real `docker compose config` and `nginx -t` |
 
 ```bash

@@ -5,7 +5,7 @@ by session, with the decisions taken on the way and why. The day-by-day list of 
 [extensions/CHANGELOG.md](extensions/CHANGELOG.md); what each feature does today is in
 [features.md](features.md).
 
-The work was done in four working sessions between 22 September and 1 October 2026, against a staging
+The work was done in six working sessions between 22 September and 2 October 2026, against a staging
 installation of the resolver run by the maintainer. Every increment was tested on that installation before
 the next one started.
 
@@ -21,7 +21,7 @@ the next one started.
 | 3 — Expansion Pack | 29–30 Sep | 22 commits, `d4e5584` → `cf5ce10` | special characters, data attributes, QR options, new editor layout, other records of a key |
 | 4 — search and documentation | 30 Sep – 1 Oct | `f4f3071` and the documentation commits | filters by key type and qualifier, code search, user guide, feature list, this history, developer guide, docstrings, Portuguese version |
 | 5 — conformance review and 2.5.9 | 1 Oct | `324d85b` → `db8e342` and the documentation commits | clause-by-clause conformance review, registration model of Resolver 2.5.9 (informative batch and variant of a serial number), a default link above every record, resolution fixes (item 1.5) |
-| 6 — EPC binary strings | 2 Oct | `51a0da8`, `895c4b1` and the documentation commit | `/eh…` and `/ex…` decompressed for every EPC scheme with a GS1 Digital Link (item 1.6), from the TDT 2.2 artefacts and TDS 2.3; four more candidate errata |
+| 6 — EPC binary strings | 2 Oct | `51a0da8` → `4b9a7be` and the documentation commits | `/eh…` and `/ex…` decompressed for every EPC scheme with a GS1 Digital Link (item 1.6), from the TDT 2.2 artefacts and TDS 2.3; the proxy's upstream name fixed (every resolution through nginx had been a 500 since 1.5); four more candidate errata; confirmed on staging |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -177,6 +177,11 @@ TDT artefacts (no scheme-specific code for the classic schemes) rather than usin
 which knows only part of the classic schemes and none of TDS 2.0; `epc-tds` serves as an independent check
 in the tests.
 
+Staging (2 October, through the proxy): a registered GTIN `/01/…` → 307; the same GTIN as SGTIN-96 in
+`eh` and `ex` form → 307 to the same target; an SGTIN+ with +AIDC batch 123 and expiry date → 307 to the
+batch record's target with `?17=261231`; a GID-96 → 400 with its reason. The first attempt answered 500
+everywhere: that is how the upstream-name defect of item 1.5 came to light.
+
 Candidate errata found by decoding: E8 (EPCB 4.2.2), E9 (TDS 2.3 annex E.3: SSCC++ and ITIP++ headers,
 SGTIN++ and DSGTIN++ hostnames, an EPC URI), E10 (TDS 2.3 Tables 14-14 and 14-15), E11 (TDT artefact of
 CPI-var) — section 6 of the conformance review.
@@ -240,7 +245,9 @@ CPI-var) — section 6 of the conformance review.
 - Security notice to the official maintainers about the public `GET /api/index` (drafted).
 - Rotation of the development secrets of the staging installation (an installer option is a candidate).
 - A fresh installation with `scripts/install.sh` on a clean machine (only the re-run path is proven).
-- A recorded run of the GS1 conformance test suite against the staging resolver.
+- A recorded run of the GS1 conformance test suite against the staging resolver (item 1.4).
+- The installer's final check uses `/portal/healthz` only; it should also request the resolver through the
+  proxy (item 7.2).
 - An off-server backup copy and a restore rehearsal.
 - Review of the 216 Portuguese AI names; decision on the GS1 logo on the home page and resolver pages.
 

@@ -389,7 +389,9 @@ sudo FQDN=id.example.org TLS_MODE=letsencrypt CERTBOT_EMAIL=ops@example.org \
    ```
 
 4. **Iniciar.** `docker compose up -d --build` e depois confira
-   `curl -s http://127.0.0.1:8080/portal/healthz` (`{"portal":"ok","resolver":"ok"}`).
+   `curl -s http://127.0.0.1:8080/portal/healthz` (`{"portal":"ok","resolver":"ok"}`) e uma requisição que
+   chega ao Resolver pelo proxy: `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver`
+   (`200`). A verificação de saúde fala direto com o servidor web, sem passar pela rota do Resolver no proxy.
 5. **HTTPS.** Coloque um proxy reverso TLS na frente de `127.0.0.1:8080`. Com nginx: copie
    `scripts/templates/nginx-site-http.conf` para `/etc/nginx/sites-available/gs1resolver`, substitua
    `@FQDN@` e `@PROXY_PORT@` (8080), ative o site e rode `sudo certbot --nginx -d id.example.org --redirect`.
@@ -425,6 +427,8 @@ da instalação, nunca versionados).
 
 ```bash
 git pull && docker compose up -d --build                         # atualizar
+curl -s http://127.0.0.1:8080/portal/healthz                     # {"portal":"ok","resolver":"ok"}
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver   # 200: Resolver pelo proxy
 docker compose exec portal-service python create_user.py maria --role editor   # incluir ou redefinir um usuário
 # quem alterou o quê: menu do usuário → Auditoria (administradores), ou o log do contêiner:
 docker compose logs -f portal-service | grep portal.audit

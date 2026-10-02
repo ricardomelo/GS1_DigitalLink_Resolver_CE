@@ -7,7 +7,7 @@ sessão por sessão, com as decisões tomadas no caminho e os motivos. A lista d
 
 *English version: [history](../history.md).*
 
-O trabalho foi feito em quatro sessões entre 22 de setembro e 1º de outubro de 2026, sobre uma instalação
+O trabalho foi feito em seis sessões entre 22 de setembro e 2 de outubro de 2026, sobre uma instalação
 de homologação do Resolver operada pelo mantenedor. Cada incremento foi testado nessa instalação antes de
 o próximo começar.
 
@@ -21,7 +21,7 @@ o próximo começar.
 | 3 — Expansion Pack | 29 e 30/09 | 22 commits, `d4e5584` → `cf5ce10` | caracteres especiais, atributos de dados, opções do QR, novo layout do editor, outros cadastros da chave |
 | 4 — busca e documentação | 30/09 a 01/10 | `f4f3071` e os commits de documentação | filtros por tipo de chave e qualificador, busca por código, guia do portal, funcionalidades, este histórico, guia do desenvolvedor, docstrings, versão em português |
 | 5 — revisão de conformidade e 2.5.9 | 01/10 | `324d85b` → `db8e342` e os commits de documentação | revisão de conformidade cláusula a cláusula, modelo de cadastro do Resolver 2.5.9 (lote e variante informativos numa série), um link padrão acima de todo cadastro, correções de resolução (item 1.5) |
-| 6 — EPC em binário | 02/10 | `51a0da8`, `895c4b1` e o commit de documentação | `/eh…` e `/ex…` descomprimidos para todos os esquemas EPC que têm GS1 Digital Link (item 1.6), a partir dos artefatos do TDT 2.2 e do TDS 2.3; mais quatro candidatos a errata |
+| 6 — EPC em binário | 02/10 | `51a0da8` → `4b9a7be` e os commits de documentação | `/eh…` e `/ex…` descomprimidos para todos os esquemas EPC que têm GS1 Digital Link (item 1.6), a partir dos artefatos do TDT 2.2 e do TDS 2.3; nome do upstream do proxy corrigido (toda resolução pelo nginx dava 500 desde o 1.5); mais quatro candidatos a errata; confirmado na homologação |
 
 Ao fim da sessão 4, o fork altera ou acrescenta 70 arquivos do projeto oficial (cerca de 16.000 linhas
 acrescentadas) e é coberto por 739 verificações nos testes de desenvolvimento, além do teste do
@@ -179,6 +179,11 @@ domínio. A implementação lê os artefatos do TDT (sem código específico por
 vez de usar a biblioteca `epc-tds`, que conhece só parte dos esquemas clássicos e nada do TDS 2.0; o
 `epc-tds` serve de conferência independente nos testes.
 
+Homologação (2 de outubro, pelo proxy): um GTIN cadastrado `/01/…` → 307; o mesmo GTIN como SGTIN-96 nas
+formas `eh` e `ex` → 307 para o mesmo destino; um SGTIN+ com lote 123 e validade em +AIDC → 307 para o
+destino do cadastro do lote, com `?17=261231`; um GID-96 → 400 com o motivo. A primeira tentativa deu 500 em
+tudo: foi assim que apareceu o defeito do nome do upstream do item 1.5.
+
 Candidatos a errata encontrados ao decodificar: E8 (EPCB 4.2.2), E9 (anexo E.3 do TDS 2.3: cabeçalhos de
 SSCC++ e ITIP++, hostnames de SGTIN++ e DSGTIN++, uma EPC URI), E10 (Tabelas 14-14 e 14-15 do TDS 2.3), E11
 (artefato do TDT do CPI-var) — seção 6 da revisão de conformidade.
@@ -248,7 +253,9 @@ SSCC++ e ITIP++, hostnames de SGTIN++ e DSGTIN++, uma EPC URI), E10 (Tabelas 14-
 - Aviso aos mantenedores oficiais sobre o `GET /api/index` público (redigido).
 - Troca dos segredos de desenvolvimento da instalação de homologação (uma opção do instalador é candidata).
 - Uma instalação nova com `scripts/install.sh` numa máquina limpa (só a reexecução foi comprovada).
-- Um registro da suíte de conformidade da GS1 contra o Resolver de homologação.
+- Um registro da suíte de conformidade da GS1 contra o Resolver de homologação (item 1.4).
+- A verificação final do instalador usa só o `/portal/healthz`; deveria também pedir algo ao Resolver pelo
+  proxy (item 7.2).
 - Uma cópia do backup fora do servidor e um ensaio de restauração.
 - Revisão dos 216 nomes de AIs em português; decisão sobre o logotipo GS1 na página inicial e nas páginas
   do Resolver.

@@ -248,13 +248,17 @@ def _web_address(href) -> str | None:
     return href if urlparse(href).scheme.lower() in ('http', 'https') else None
 
 
+_GS1_KEY_PREFIXES = ('https://ref.gs1.org/voc/', 'https://gs1.org/voc/')
+
+
 def _levels(locale: str, linkset: list[dict]) -> list[dict]:
     """The links of each level of a linkset, grouped for the HTML page (default link marked)."""
     levels = []
     for item in linkset:
         links, seen = [], set()
         for key, value in item.items():
-            if not key.startswith('https://gs1.org/voc/') or key.endswith('/defaultLink') or key.endswith('/defaultLinkMulti'):
+            # published keys use https://ref.gs1.org/voc/ (section 2.14); https://gs1.org/voc/ is still read
+            if not key.startswith(_GS1_KEY_PREFIXES) or key.endswith('/defaultLink') or key.endswith('/defaultLinkMulti'):
                 continue
             term = key.rsplit('/', 1)[-1]
             for link in value:

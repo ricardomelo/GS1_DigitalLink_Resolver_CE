@@ -640,6 +640,23 @@ def _clean_q_values_from_header_entries(header_values_list: list[str]) -> list[s
     return [entry.split(';')[0] for entry in header_values_list]
 
 
+# Namespace of the gs1: prefix (GS1-Conformant Resolver 1.2.1, section 2.14: "gs1:pip expands to
+# https://ref.gs1.org/voc/pip"). Documents keep the official code's https://gs1.org/voc/ keys; linksets sent to
+# clients use this namespace (deliberate change to official code, finding F22).
+GS1_VOC = 'https://ref.gs1.org/voc/'
+_GS1_VOC_ALIASES = ('https://gs1.org/voc/', 'http://gs1.org/voc/', 'https://www.gs1.org/voc/',
+                    'http://www.gs1.org/voc/', 'http://ref.gs1.org/voc/')
+
+
+def public_linktype_key(key: str) -> str:
+    """A link type key of a stored document as it is published: any address of the GS1 Web vocabulary becomes
+    https://ref.gs1.org/voc/ (section 2.14); link types of other namespaces are returned unchanged."""
+    for alias in _GS1_VOC_ALIASES:
+        if key.lower().startswith(alias):
+            return GS1_VOC + key[len(alias):]
+    return key
+
+
 def format_linkset_for_external_use(response_data: dict[str, Any], identifiers: str, as_json_ld: bool = False) -> dict[str, Any]:
     """
     Builds the linkset for the client.
@@ -672,7 +689,7 @@ def format_linkset_for_external_use(response_data: dict[str, Any], identifiers: 
                             del link['hreflang']
                     clean.append(link)
                 if clean:
-                    out[key] = clean
+                    out.setdefault(public_linktype_key(key), []).extend(clean)
         linkset.append(out)
 
     if not as_json_ld:
@@ -683,7 +700,7 @@ def format_linkset_for_external_use(response_data: dict[str, Any], identifiers: 
     response_linkset = {
         "@context": {
             "schema": "https://schema.org/",
-            "gs1": "https://gs1.org/voc/",
+            "gs1": GS1_VOC,
             "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
             "dcterms": "http://purl.org/dc/terms/",
             "href": "@id",

@@ -162,6 +162,19 @@ for path, accept in [(G + "/10/123", "application/linkset+json"), (G + "?linkTyp
     check(f"linkset context header {path}", "json-ld#context" in (r.headers.get("Link") or ""), r.headers.get("Link"))
 r = get(G + "/10/123?linkType=linkset", "application/ld+json")
 check("JSON-LD on request", r.content_type.startswith("application/ld+json") and "@context" in r.get_json())
+# F22: the gs1: prefix is https://ref.gs1.org/voc/ (section 2.14); stored documents keep https://gs1.org/voc/ keys
+check("JSON-LD context: gs1 is https://ref.gs1.org/voc/", r.get_json()["@context"].get("gs1") == "https://ref.gs1.org/voc/",
+      r.get_json()["@context"].get("gs1"))
+for path in [G, G + "/10/123"]:
+    text = get(path + "?linkType=linkset", "application/linkset+json").get_data(as_text=True)
+    keys = [k for item in json.loads(text)["linkset"] for k in item if k.startswith("http")]
+    check(f"linkset link types in https://ref.gs1.org/voc/ {path}",
+          keys and all(k.startswith("https://ref.gs1.org/voc/") for k in keys) and "https://gs1.org/voc/" not in text, keys)
+check("documents keep the https://gs1.org/voc/ keys", "https://gs1.org/voc/pip" in DB["01_07898357410015"]["data"][0]["linkset"][0])
+check("public link type key: GS1 addresses folded, other namespaces kept",
+      [web_logic.public_linktype_key(k) for k in ("https://gs1.org/voc/pip", "http://www.gs1.org/voc/epil",
+                                                    "https://ref.gs1.org/voc/smpc", "https://example.org/rel/x")]
+      == ["https://ref.gs1.org/voc/pip", "https://ref.gs1.org/voc/epil", "https://ref.gs1.org/voc/smpc", "https://example.org/rel/x"])
 
 # ---------------------------------------------------------------- HTML pages and language
 cases = [("pt-BR,pt;q=0.9", None, "pt-BR"), ("pt-BR,pt;q=0.9", "en-GB", "en-GB"), ("en-GB", None, "en-GB"),
@@ -403,7 +416,7 @@ except jsonschema.ValidationError as exc:
 item = (body.get("linkset") or [{}])[0]
 check("300: a valid linkset of the two gs1:pip links, with the anchor of their level",
       r.status_code == 300 and r.content_type.startswith("application/linkset+json") and valid is True
-      and item.get("anchor") == "https://id.example.org" + X and len(item.get("https://gs1.org/voc/pip", [])) == 2,
+      and item.get("anchor") == "https://id.example.org" + X and len(item.get("https://ref.gs1.org/voc/pip", [])) == 2,
       (r.status_code, valid, body))
 r = client.get("/api" + X + "?linkType=gs1:pip", headers={"Accept": "text/html", "Accept-Language": "vi"})
 html300 = r.get_data(as_text=True)
@@ -412,8 +425,8 @@ check("300 for a browser: an HTML page listing both links", r.status_code == 300
 body = client.get("/api" + X + "?linkType=linkset", headers={"Accept": "application/linkset+json"}).get_json(force=True)
 item = body["linkset"][0]
 check("linkset: gs1:defaultLink is the first default-type link; gs1:defaultLinkMulti lists both (2.5.8)",
-      item["https://gs1.org/voc/defaultLink"][0]["href"] == "https://example.com/en/defaultPage"
-      and [l["href"] for l in item.get("https://gs1.org/voc/defaultLinkMulti", [])]
+      item["https://ref.gs1.org/voc/defaultLink"][0]["href"] == "https://example.com/en/defaultPage"
+      and [l["href"] for l in item.get("https://ref.gs1.org/voc/defaultLinkMulti", [])]
       == ["https://example.com/en/defaultPage", "https://example.com/fr/defaultPage"], item)
 author({"anchor": "/01/09506000999920", "itemDescription": "No media type", "defaultLinktype": "gs1:pip", "links": [
     {"linktype": "gs1:pip", "href": "https://example.com/a", "title": "A", "hreflang": ["en"]},

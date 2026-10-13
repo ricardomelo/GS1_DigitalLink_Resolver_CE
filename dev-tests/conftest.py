@@ -23,6 +23,7 @@ GROUPS = {
     "e2e": "portal in Chromium (with and without the syntax engine) and session limits",
     "home": "home page and proxy routes through a real nginx",
     "install": "Ubuntu installer (root, nginx, Docker Compose v2)",
+    "database": "the portal's database layer against a real MongoDB (PORTAL_TEST_MONGO_URI)",
 }
 
 _CHECKS = pytest.StashKey[dict]()

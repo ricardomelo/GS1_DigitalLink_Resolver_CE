@@ -42,7 +42,8 @@ For installation and configuration see the [README](../README.md); for using the
                                                         ▼
                                               data-entry-service:3000/api
  web-service ─┐
- data-entry ──┴──► database-service (MongoDB 27017)
+ data-entry ──┼──► database-service (MongoDB 27017): resolver_ce (records), resolver_portal (portal)
+ portal ──────┘    the portal with its own user, readWrite on resolver_portal only
 ```
 
 - **web-service** (official, changed) answers GS1 Digital Link URIs: redirects, linksets, HTML pages.
@@ -50,7 +51,10 @@ For installation and configuration see the [README](../README.md); for using the
 - **portal-service** (new) is a Flask application behind gunicorn. It serves the portal's pages and is the
   only client of the data entry API used by people: the browser talks to `/portal/api/*` with a simple
   JSON document and never sees the API token. The portal validates, reads the current state, chooses a
-  safe sequence of API calls, and records who changed what.
+  safe sequence of API calls, and records who changed what. Its own data (users, record metadata, journal,
+  sign-in failures, caches) is in a database of its own, `resolver_portal`, reached with its own user
+  ([ADR 0001](adr/0001-portal-state-in-mongodb.md)).
+- **portal-db-init** (new, one-shot) creates or updates that user, then exits; the portal starts after it.
 - **frontend-proxy-service** (official, changed) routes the paths above and serves the home page.
 - **database-service** (official) is MongoDB.
 
@@ -88,9 +92,12 @@ portal/                          new: the link management portal
   label.py                       QR code labels (SVG, PNG)
   sheet.py                       spreadsheet import and export
   linkcheck.py                   link checker with SSRF guard
+  store.py                       the portal's database: connection, indexes, settings, shared lock
   users.py                       user store and roles
   meta.py                        who created and last changed each record
-  journal.py                     history of records and audit trail
+  journal.py                     history of records and audit trail, retention
+  migrate.py                     one-off move of the files of earlier versions into the database
+  db_init.py                     creates the portal's database user (portal-db-init service)
   create_user.py                 command-line user administration
   static/                        index.html, login.html, app.js, login.js, password.js, i18n.js, app.css
   tools/build-syntax-engine.sh   builds the engine (C library + Python binding)
@@ -113,14 +120,17 @@ tests/, useful_external_python_scripts/   official
 | `database-service` | `database_server/` | `${DATABASE_BIND_ADDRESS:-0.0.0.0}:27017` | database data |
 | `data-entry-service` | `data_entry_server/` | internal 3000 | — |
 | `web-service` | `web_server/` | internal 4000 | — |
+| `portal-db-init` | `portal/` (`python db_init.py`, runs once at each start) | — | — |
 | `portal-service` | `portal/` (two stages: syntax engine, application) | internal 8000 | `resolver-portal-config:/app/config` |
 | `frontend-proxy-service` | `frontend_proxy_server/` | `${PROXY_BIND_ADDRESS:-0.0.0.0}:8080` | — |
 
 Every service reads `.env.example` and then `.env` (Compose ≥ 2.24, `required: false`), so `.env` holds
 only what an installation changes. The bind addresses are read by Compose itself, from `.env` only. The
 variables are described in `.env.example` and in the README's *Configuration* section; the portal also
-reads `PORTAL_SESSION_IDLE_MINUTES`, `PORTAL_SESSION_MAX_HOURS`, `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT` and,
-for tests, the `PORTAL_*_FILE` / `PORTAL_CONFIG_DIR` paths.
+reads `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD`, `PORTAL_DB_HOST` (or `PORTAL_DB_URI`),
+`PORTAL_JOURNAL_*_DAYS`, `PORTAL_SESSION_IDLE_MINUTES`, `PORTAL_SESSION_MAX_HOURS`, `PORTAL_SECRET_KEY`,
+`PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT` and `PORTAL_CONFIG_DIR` (and `PORTAL_*_FILE`, the files
+the migration reads). `portal-db-init` alone receives the root `MONGO_URI`; the portal's is blanked.
 
 ## 4. Request flows
 
@@ -143,7 +153,7 @@ own query string.
 3. `store_record()` reads the current document (`GET /api/01/…`) and chooses the calls:
    new entry → `POST /api/new`; existing entry → `PUT` (merge) and then a partial `DELETE` of the targets
    the user removed, in that order so the record is never without targets;
-4. `record_change()` updates `records-meta.json` and appends a version to `journal.jsonl`;
+4. `record_change()` updates the record's metadata (`record_meta`) and appends a version to the journal;
 5. answers a message code (`save.created`, `save.updated`), translated by the browser.
 
 **Deleting one record of a key.** The API can only delete a whole document, so `delete_record()` deletes it
@@ -156,7 +166,9 @@ editor's rules, compares with the resolver and keeps the plan in memory under a 
 
 **A link check.** `POST /links/check` (editor) or `POST /links/jobs` (every record, import preview) start a
 background job; `linkcheck.check_many()` checks each address once; `GET /links/jobs/{token}` reports
-progress and problems; the last full check is kept in memory for `GET /links/last`.
+progress and problems; the last full check is kept in the database (settings `lastFullCheck`) for
+`GET /links/last`. Import plans and job progress are still in the memory of the single gunicorn worker
+until step 3 of [ADR 0001](adr/0001-portal-state-in-mongodb.md) moves them to a worker.
 
 ## 5. Portal back end (`portal/`)
 
@@ -166,8 +178,8 @@ Organised in sections (comment lines `# ---- …`):
 
 | Section | Contents |
 |---|---|
-| configuration | environment, Flask settings (session cookie `gs1resolver_portal`, HttpOnly, SameSite=Lax, Secure over HTTPS, sliding expiry), loggers (`portal`, `portal.audit`), first user from `PORTAL_ADMIN_*` |
-| authentication | `Throttle` (5 failures → 15 minutes, per user name and per address), `current_user()` with the password fingerprint, `require_login`, `role_required()`, `allowed()` / `check_access()` for prefixes, same-origin check for writes, security headers, error handlers |
+| configuration | environment, Flask settings (session cookie `gs1resolver_portal`, HttpOnly, SameSite=Lax, Secure over HTTPS, sliding expiry), loggers (`portal`, `portal.audit`); at start-up `migrate.run()`, `journal.apply_retention()`, then the first user from `PORTAL_ADMIN_*` |
+| authentication | `LoginThrottle` (5 failures → 15 minutes, per user name and per address, in the `login_failures` collection), `current_user()` with the password fingerprint, `require_login`, `role_required()`, `allowed()` / `check_access()` for prefixes, same-origin check for writes, security headers, error handlers |
 | resolver API client | `resolver()` (one API call with the token), `read_entries()`, `find_entry()`, `describe_entry()` (product, qualified or other), `record_change()` |
 | form → Resolver CE v3 | `request_key()`, `request_qualifiers()`, `build_document()` |
 | pages and assets | `/portal/`, `/portal/login`, static files (`PUBLIC_ASSETS` before sign-in, `PRIVATE_ASSETS` after) |
@@ -178,8 +190,9 @@ Organised in sections (comment lines `# ---- …`):
 | labels | `qr_version()`, `qr_error_level()`, `/digital-link`, `/qrcode` |
 
 Errors are exceptions carrying a message code: `gs1.ValidationError` (422), `AccessDenied` (403),
-`users.UserError` (422), `UpstreamError` (502/503, detail logged only). Imports, link-check jobs and the
-sign-in throttle live in memory, which is why the portal runs a single gunicorn worker with threads.
+`users.UserError` (422), `UpstreamError` (502/503, detail logged only). Imports and link-check jobs still
+live in memory, which is why the portal runs a single gunicorn worker with threads until step 3 of
+ADR 0001.
 
 ### `gs1.py` — GS1 rules
 
@@ -233,16 +246,31 @@ and separator detection), `map_header()` (column titles in any language, old `gt
 
 ### `linkcheck.py` — link checker
 
-`check_url()` (cached 10 minutes) → `_check()`: follows redirects by hand (at most 5), resolves every host
+`check_url()` (cached 10 minutes in the `linkcheck_cache` collection, shared by every replica) → `_check()`: follows redirects by hand (at most 5), resolves every host
 and refuses private, loopback and link-local addresses at each step, uses `HEAD` and falls back to `GET`
 without reading the body, reports HTTPS → HTTP downgrades. `check_many()` runs a thread pool with progress.
 
-### `users.py`, `meta.py`, `journal.py` — portal files
+### `store.py`, `users.py`, `meta.py`, `journal.py` — the portal's database
 
-Small stores for the files of section 8. All writes are atomic (temporary file + rename, mode 600) and
-serialised with an advisory lock, so the portal and `create_user.py` can work at the same time. `users.py`
-also hashes passwords (Werkzeug), spends the same time for unknown users, and computes the session
-fingerprint. `journal.search()` filters events by user, dates, text and prefix permission.
+`store.py` holds one MongoDB client per process (`store.db()`, created and indexed at the first call;
+`store.col(name)`), the connection settings (`PORTAL_DB_*`, or `PORTAL_DB_URI`; `mongomock://` for the
+development tests), UTC dates (`now()`, `iso()`, `parse_iso()`), values in the `settings` collection
+(`get_setting()`, `set_setting()`) and `lock(name)`, an exclusive lock shared by every process (a document
+`lock:<name>` in `settings`; a lock older than `hold_seconds` is broken). `users.py` writes under the
+`users` lock, so two administrators cannot remove the last enabled one at the same moment; it also hashes
+passwords (Werkzeug), spends the same time for unknown users, and computes the session fingerprint.
+`meta.py` keeps creation and last change per record. `journal.py` stores one document per event with its
+category (`session`, `record`, `admin`) and `expiresAt`; `for_record()` and `search()` keep the output of the
+former `journal.jsonl` lines; `apply_retention()` updates `expiresAt` when `PORTAL_JOURNAL_*_DAYS` change.
+Section 8 lists the collections.
+
+### `migrate.py`, `db_init.py`
+
+`migrate.run(config_dir)` moves `users.json`, `records-meta.json` and `journal.jsonl` into empty collections
+once, under the `migration` lock, with fixed `_id`s so that an interrupted import finishes at the next
+start; the files become `*.migrated`. `db_init.py` (the `portal-db-init` service) connects with the root
+`MONGO_URI` and creates the portal's user, or updates its password and roles; it refuses `admin`, `local`,
+`config` and `resolver_ce` as the portal's database.
 
 ### `create_user.py`
 
@@ -308,16 +336,25 @@ call checks the role and limits identifiers to the user's GS1 Company Prefixes. 
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&attr=AI:value` | reader | Label; headers `X-QR-Version`, `X-QR-Level`, `X-QR-Modules`; 422 `qr.tooSmall` / `qr.tooLong` |
 | `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable"}` |
 
-## 8. Portal data files
+## 8. Portal data
 
-All in the `resolver-portal-config` volume (`/app/config`), included in the daily backup.
+The portal's database (`PORTAL_DB_NAME`, default `resolver_portal`), included in the daily MongoDB dump.
+Decisions and the reasons for them: [ADR 0001](adr/0001-portal-state-in-mongodb.md).
 
-| File | Content |
-|---|---|
-| `users.json` | `{"maria": {"hash", "role", "prefixes": ["7891234"], "disabled", "mustChange", "created", "lastLogin"}}`; files from before roles (`{"name": "<hash>"}`) are read as administrators |
-| `secret.key` | random key signing the session cookies (unless `PORTAL_SECRET_KEY` is set) |
-| `records-meta.json` | `{"09506000134352/10/L2026A": {"createdAt", "createdBy", "updatedAt", "updatedBy"}}`; GTIN records keyed by the 14 digits, other keys by `AI/value` |
-| `journal.jsonl` | one JSON event per line: `{"at", "user", "action", "anchor"?, "qpath"?, "doc"?, "detail"?}`; record actions `create`, `update`, `delete` (with the record's content), `import`; others `login`, `login-failed`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove` |
+| Collection | `_id` and content | Indexes |
+|---|---|---|
+| `users` | user name; `hash`, `role`, `prefixes`, `disabled`, `mustChange`, `created`, `lastLogin` | — |
+| `record_meta` | record key (GTIN records by the 14 digits, other keys by `AI/value`, plus the qualifier path); `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | — |
+| `journal` | ObjectId (`jsonl-<line>` for migrated events); `at` (date), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Record actions `create`, `update`, `delete` (with the record's content), `import`; others `login`, `login-failed`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove` | date; record + date; user + date; category; TTL on `expiresAt` |
+| `login_failures` | `key` (`user:<name>` or `addr:<address>`), `at` | key + date; TTL 15 minutes on `at` |
+| `linkcheck_cache` | address; `result`, `expiresAt` | TTL on `expiresAt` |
+| `settings` | `lastFullCheck`, `journalRetention`, `migration`, and the `lock:<name>` documents | — |
+
+Journal retention: an event is kept for `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS` (0)
+or `PORTAL_JOURNAL_ADMIN_DAYS` (0) days from the end of the day it was made; 0 keeps it for ever.
+
+The `resolver-portal-config` volume (`/app/config`, in the daily backup) keeps `secret.key`, the session key
+used when `PORTAL_SECRET_KEY` is not set, and the files of earlier versions renamed `*.migrated`.
 
 ## 9. Changes to the resolver (`web_server/`)
 
@@ -407,12 +444,14 @@ portal.
   Docker, host nginx with Certbot or an existing certificate or an external proxy, `.env` with generated
   secrets, start-up, backup cron). Safe to re-run; `--non-interactive` reads every answer from
   environment variables. Templates of the nginx site in `templates/`.
-- `resolver-backup.sh` + `resolver-backup.cron`: MongoDB dump through the container and archive of the
-  portal volume, 14 days kept.
+- `resolver-backup.sh` + `resolver-backup.cron`: MongoDB dump through the container (every database, the
+  portal's included) and archive of the portal volume, 14 days kept.
 
 ## 13. Development tests (`dev-tests/`)
 
-No Docker needed; each program exits with status 1 on a failure. Setup and commands are in
+No Docker needed; each program exits with status 1 on a failure. The portal programs use `mongomock`
+(`PORTAL_DB_URI=mongomock://`, one database per program); with `PORTAL_DB_URI` set to a real MongoDB they
+run against it. Setup and commands are in
 `dev-tests/README.md`.
 
 | Program | Checks | Covers |
@@ -429,26 +468,30 @@ No Docker needed; each program exits with status 1 on a failure. Setup and comma
 | `portal/test_linkcheck.py` | 16 | link checker, SSRF guard |
 | `portal/test_portal_config.py` | 13 | configuration and start-up, session limits |
 | `portal/test_session.py` | 30 | session limits (15 s idle in the test): server rules, warning, renewal on use, other tabs, absolute limit, both languages; community notice in the footer (about two minutes) |
+| `portal/test_store.py` | 58 | the portal's database layer: connection settings, indexes, the shared lock (also between two administrators at once), users, record metadata, journal and its retention, sign-in throttle, migration of the old files (also interrupted and resumed) |
+| `portal/test_store_mongodb.py` | 76 | on a real MongoDB (`PORTAL_TEST_MONGO_URI`, CI only): the user made by `db_init.py` and its privileges, `test_store.py` again as that user, the TTL monitor |
 | `portal/test_registration.py` | 26 | §2.5.9 through the portal API: informative qualifiers (save, open, history, list, export, import), records against rule 2, the key's own record when saving and importing |
 | `portal/test_portal_e2e.py` | 186 | the portal in Chromium against `mock_data_entry.py`, desktop and phone; also run without the engine |
 | `home/test_home.py` | 55 | home page through a real nginx, no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts |
-| `install/test_install.sh` | — | installer through shims (Compose v2) |
+| `install/test_install.sh` | 57 | installer through shims (Compose v2) |
 
 **pytest and continuous integration.** `dev-tests/test_programs.py` runs each program above as one pytest
 test (a subprocess from the repository root): exit status 0 without a `FAIL` line passes; otherwise the
 report shows the `FAIL` lines and the end of the output; a program that only printed `SKIP` is skipped.
 Markers group them: `resolver` (resolver, EPC binary, data entry, GS1 suite), `portal` (the portal programs
 without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`), `home`,
-`install` (run through password-less `sudo` when not root). `dev-tests/conftest.py` keeps the programs from
+`install` (run through password-less `sudo` when not root), `database` (`test_store_mongodb.py`). `dev-tests/conftest.py` keeps the programs from
 being imported by pytest, registers the markers and prints the check counts of each program at the end (and
 in the GitHub Actions run summary). With `DEV_TESTS_STRICT=1` a program fails when an environment variable
-it needs is not set or names a missing path, when a command it needs is not on the PATH, or when it prints
-`SKIP`. To add a program: write it with `PASS`/`FAIL` lines and an exit status, add a `Program(...)` line to
-`PROGRAMS` (group, path, the variables and commands it needs), and a row to the table above.
+it needs is not set or names a missing path (`needs_env`), when a variable that is not a path is not set
+(`needs_var`), when a command it needs is not on the PATH, or when it prints `SKIP`. To add a program: write
+it with `PASS`/`FAIL` lines and an exit status, add a `Program(...)` line to `PROGRAMS` (group, path, the
+variables and commands it needs), and a row to the table above.
 
 `.github/workflows/dev-tests.yml` runs one job per group in parallel on every push and pull request to
-`gs1br/develop` (not for changes to `Documentation/` or Markdown files only), in strict mode. `e2e` and
-`install` are informative (`continue-on-error`) until they prove stable. The composite action
+`gs1br/develop` (not for changes to `Documentation/` or Markdown files only), in strict mode. The `database`
+job starts a `mongo:7` service container and runs the `portal` and `database` groups on it. `e2e`,
+`install` and `database` are informative (`continue-on-error`) until they prove stable. The composite action
 `.github/actions/dev-tests-setup` installs only what a job asks for and exports the variables: Python 3.12
 and Node.js 24 as in the images; `gs1encoder`, `epc-tds` and `ajv-dist` at pinned versions (cache keyed by
 the versions); the portal's engine built by `portal/tools/build-syntax-engine.sh` (cache keyed by the

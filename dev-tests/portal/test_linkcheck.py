@@ -12,6 +12,8 @@ import threading
 HERE = os.path.dirname(os.path.abspath(__file__))
 os.environ["PORTAL_LINKCHECK_ALLOW_PRIVATE"] = "1"      # the test server is on 127.0.0.1
 os.environ["PORTAL_LINKCHECK_TIMEOUT"] = "2"
+os.environ.setdefault("PORTAL_DB_URI", "mongomock://")   # the cache is in the portal's database
+os.environ["PORTAL_DB_NAME"] = f"devtest_linkcheck_{os.getpid()}"
 sys.path.insert(0, os.environ.get("PORTAL_DIR", os.path.join(HERE, "..", "..", "portal")))
 
 import linkcheck  # noqa: E402
@@ -97,7 +99,7 @@ results = linkcheck.check_many([BASE + "/ok", BASE + "/missing", BASE + "/ok"], 
 check("check_many: distinct URLs, progress reported", len(results) == 2 and seen[-1] == (2, 2), (results.keys(), seen))
 
 linkcheck.ALLOW_PRIVATE = False
-linkcheck._cache.clear()
+linkcheck.clear_cache()
 for url in (BASE + "/ok", "http://169.254.169.254/latest/meta-data/", "http://localhost/", "http://10.0.0.1/"):
     r = linkcheck.check_url(url)
     check(f"internal address refused: {url}", r["problem"] == "linkcheck.privateAddress", r)

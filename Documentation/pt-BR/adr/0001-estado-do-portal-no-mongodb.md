@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Situação | **Aceito** (13 de outubro de 2026). Implementação em quatro etapas; este registro é a etapa 1 |
+| Situação | **Aceito** (13 de outubro de 2026). Implementação em quatro etapas: 1 (este registro) e 2 (os dados no MongoDB) concluídas |
 | Item do backlog | 2.3 — arquitetura para escala e os dados do portal no MongoDB |
 | Decidido por | o responsável pelo branch, sobre as opções da seção 4 |
 | Inglês | [ADR 0001 in English](../../adr/0001-portal-state-in-mongodb.md) (versão de referência) |
@@ -80,10 +80,11 @@ um `container_name` fixo, que o Compose não aceita replicar.
 - Banco `resolver_portal` (`PORTAL_DB_NAME`), usuário `resolver_portal` (`PORTAL_DB_USERNAME`), senha
   `PORTAL_DB_PASSWORD`. O `.env.example` traz valores de desenvolvimento, como para os outros segredos; o
   instalador grava valores aleatórios no `.env`.
-- O usuário é criado por **um serviço do Compose que roda uma vez e termina, `portal-db-init`**, feito a
-  partir da imagem do banco. Ele recebe as credenciais root (como o `database-service` já recebe), roda um
-  script `mongosh` idempotente — cria o usuário, ou atualiza senha e permissões quando ele já existe — e
-  sai. `portal-service` e `portal-worker` dependem dele com `condition: service_completed_successfully`.
+- O usuário é criado por **um serviço do Compose que roda uma vez e termina, `portal-db-init`**: a imagem do
+  portal rodando o `portal/db_init.py`. Ele recebe o `MONGO_URI` root (como os serviços oficiais já recebem),
+  cria o usuário, ou atualiza senha e permissões quando ele já existe, e sai. Python na imagem do portal, em
+  vez de um script `mongosh` na imagem do banco, permite que os testes de desenvolvimento rodem o mesmo
+  script contra um MongoDB real no CI. `portal-service` e `portal-worker` dependem dele com `condition: service_completed_successfully`.
   Assim, toda forma de subir o sistema (instalador, `docker compose up -d` manual, uma restauração) termina
   com o usuário e a senha certos, e mudar `PORTAL_DB_PASSWORD` no `.env` vale no próximo `up -d`. (Os
   scripts de `/docker-entrypoint-initdb.d` do próprio MongoDB só rodam num volume vazio, então não servem
@@ -100,16 +101,18 @@ um `container_name` fixo, que o Compose não aceita replicar.
 |---|---|---|---|
 | `users` | nome de usuário | `hash`, `role`, `prefixes`, `disabled`, `mustChange`, `created`, `lastLogin` | — |
 | `record_meta` | chave do cadastro (`meta.key()`) | `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | — |
-| `journal` | ObjectId | `at` (data), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt` | `{at: -1}`; `{anchor, qpath, at: -1}`; `{user, at: -1}`; TTL em `expiresAt` |
+| `journal` | ObjectId (`jsonl-<linha>` quando migrado) | `at` (data), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt` | `{at: -1}`; `{anchor, qpath, at: -1}`; `{user, at: -1}`; `{category}`; TTL em `expiresAt` |
 | `login_failures` | ObjectId | `key` (nome de usuário ou endereço), `at` (data) | `{key, at}`; TTL em `at`, 15 minutos |
 | `jobs` | token | `type` (`import`, `linkcheck`), `user`, `state`, `created`, `heartbeat`, `worker`, `done`, `total`, `plan`, `results`, `expiresAt` | `{state, created}`; TTL em `expiresAt` |
 | `linkcheck_cache` | endereço | `result`, `expiresAt` | TTL em `expiresAt` |
-| `settings` | nome | `lastFullCheck`, `migration` | — |
+| `settings` | nome | `value` (`lastFullCheck`, `journalRetention`, `migration`); documentos de trava `lock:<nome>` | — |
 
 Observações:
-- **Último administrador ativo**: `users.update()` e `users.remove()` mantêm a regra; a conferência e a
-  alteração acontecem num só `find_one_and_update` / `delete_one` com condição, para que dois
-  administradores agindo no mesmo instante não consigam remover ambos o último.
+- **Último administrador ativo**: `users.update()` e `users.remove()` mantêm a regra. Um MongoDB sem replica
+  set não tem transações entre documentos, então toda alteração de usuários roda sob uma trava comum a
+  todos os processos (um documento `lock:users` em `settings`, criado com `_id` único; uma trava deixada por
+  um processo que morreu é quebrada depois de um minuto): dois administradores agindo no mesmo instante não
+  conseguem remover ambos o último.
 - **Datas**: gravadas como datas BSON (o TTL precisa delas); a API continua devolvendo textos ISO 8601 com
   `Z`, então o navegador não vê mudança.
 - **Tamanho**: um documento tem no máximo 16 MB. Uma importação é limitada a 5.000 linhas e 700 KB
@@ -147,9 +150,11 @@ Observações:
 | `PORTAL_JOURNAL_RECORD_DAYS` | 0 (para sempre) | `create`, `update`, `delete`, `import` |
 | `PORTAL_JOURNAL_ADMIN_DAYS` | 0 (para sempre) | `password-change`, `user-create`, `user-update`, `user-reset`, `user-remove`, `export` |
 
-Um evento recebe `expiresAt` = `at` + os dias da sua categoria, ou nenhum `expiresAt` quando o valor é 0; o
-monitor de TTL do MongoDB o apaga depois desse prazo (ele roda mais ou menos uma vez por minuto). Quando um
-valor muda, o portal recalcula no início o `expiresAt` dos eventos daquela categoria. O backup diário guarda
+Um evento é guardado pelos dias da sua categoria contados a partir do fim do dia (UTC) em que aconteceu:
+`expiresAt` = essa meia-noite + os dias, ou nenhum `expiresAt` quando o valor é 0; o monitor de TTL do
+MongoDB o apaga depois desse prazo (ele roda mais ou menos uma vez por minuto). Dias inteiros deixam a regra
+simples de enunciar e permitem que o portal, quando um valor muda, recalcule no início o `expiresAt` da
+categoria com uma atualização por dia do diário (sob uma trava, para que as réplicas o façam uma vez só). O backup diário guarda
 o que expira pelo seu próprio prazo (`RETENTION_DAYS`, 14 dias por padrão). O histórico de um cadastro fica
 no diário, então limitar `PORTAL_JOURNAL_RECORD_DAYS` também limita até quando um cadastro pode ser
 restaurado; os documentos de configuração dizem isso.
@@ -218,7 +223,7 @@ Pior, e como fica contido:
 - mais peças (`portal-db-init`, `portal-worker`): ambas usam imagens que a instalação já constrói;
 - o worker consulta o MongoDB uma vez por segundo quando parado: uma consulta indexada, desprezível;
 - `mongomock` não é o MongoDB: o job do CI com `mongo:7` real cobre índices TTL, as permissões do usuário e
-  a migração. O ambiente de desenvolvimento não roda MongoDB, então o primeiro resultado real desse job vem
+  a migração; ele é informativo até provar estabilidade. O ambiente de desenvolvimento não roda MongoDB, então o primeiro resultado real desse job vem
   do GitHub Actions.
 
 ## 6. Configuração acrescentada

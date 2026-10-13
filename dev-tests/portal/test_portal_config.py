@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORTAL = os.environ.get("PORTAL_DIR", os.path.join(HERE, "..", "..", "portal"))
@@ -36,7 +37,8 @@ def run(env: dict, users: dict | None = None):
             json.dump(users, fh)
     base = {k: v for k, v in os.environ.items()
             if not k.startswith(("PORTAL_", "RESOLVER_")) and k not in ("FQDN", "SESSION_TOKEN")}
-    base.update(SESSION_TOKEN="tok", PORTAL_CONFIG_DIR=config, PORTAL_USERS_FILE=os.path.join(config, "users.json"))
+    base.update(SESSION_TOKEN="tok", PORTAL_CONFIG_DIR=config, PORTAL_DB_NAME=f"devtest_config_{uuid.uuid4().hex[:12]}",
+                PORTAL_DB_URI=os.environ.get("PORTAL_DB_URI") or "mongomock://")
     base.update(env)
     proc = subprocess.run([sys.executable, "-c", PROBE], cwd=PORTAL, env=base, capture_output=True, text=True)
     if proc.returncode:

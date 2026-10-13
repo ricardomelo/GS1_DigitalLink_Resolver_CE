@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Daily backup of a GS1 Resolver CE installation: the MongoDB database and the portal's
-# configuration volume (users.json with password hashes, secret.key).
+# Daily backup of a GS1 Resolver CE installation: every MongoDB database (the resolver's records and the
+# portal's own database: users with password hashes, record metadata, journal) and the portal's
+# configuration volume (the fallback session key and the files of earlier versions, *.migrated).
 #
 # Run it from the repository (no copy needed):  sudo scripts/resolver-backup.sh
 # Scheduled by scripts/resolver-backup.cron. Settings can be overridden from the environment.

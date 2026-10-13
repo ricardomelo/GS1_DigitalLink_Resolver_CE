@@ -26,9 +26,10 @@ CONFIG = tempfile.mkdtemp()
 PORT, DATA_ENTRY_PORT = 8198, 3198
 IDLE = 15                       # seconds without use
 os.environ.update(DATA_ENTRY_URL=f"http://127.0.0.1:{DATA_ENTRY_PORT}/api", SESSION_TOKEN="tok",
-                  PORTAL_USERS_FILE=f"{CONFIG}/users.json", PORTAL_CONFIG_DIR=CONFIG,
+                  PORTAL_CONFIG_DIR=CONFIG, PORTAL_DB_NAME=f"devtest_session_{os.getpid()}",
                   PORTAL_ORIGIN=f"http://127.0.0.1:{PORT}", PORTAL_COOKIE_SECURE="false",
                   RESOLVER_PUBLIC_URL="https://id.example.org", PORTAL_SESSION_IDLE_MINUTES=str(IDLE / 60))
+os.environ.setdefault("PORTAL_DB_URI", "mongomock://")   # a real MongoDB when PORTAL_DB_URI is set
 sys.path[:0] = [HERE, PORTAL]
 
 import mock_data_entry  # noqa: E402

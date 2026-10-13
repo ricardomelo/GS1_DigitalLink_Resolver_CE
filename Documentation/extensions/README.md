@@ -62,6 +62,9 @@ Every service loads `.env.example` and then `.env` if it exists; a value in `.en
 | `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | description file `contact` (`RESOLVER_ORG_URL` as `hasURL`), footer of the home page and of the resolver pages (name linked to `RESOLVER_ORG_URL`) | `My Organisation` | the operator |
 | `RESOLVER_PUBLIC_URL` | portal (printed links, Origin check, cookie flag) | empty → `https://FQDN` | usually empty |
 | `PORTAL_ADMIN_USERNAME`, `PORTAL_ADMIN_PASSWORD` | portal, first user only | `admin` / `change-me-please` | chosen at installation |
+| `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD` | portal, portal-db-init | `resolver_portal` (all three) | random password (installer) |
+| `PORTAL_SECRET_KEY` | portal (session cookies) | empty → `secret.key` in the volume | random (installer); required with several portal replicas |
+| `PORTAL_JOURNAL_SESSION_DAYS`, `PORTAL_JOURNAL_RECORD_DAYS`, `PORTAL_JOURNAL_ADMIN_DAYS` | portal (journal retention) | 180, 0, 0 (0 = for ever) | as the operator's policy requires |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Docker Compose (**only from `.env`**) | `0.0.0.0` | `127.0.0.1` behind a TLS proxy |
 
 Rules worth knowing:
@@ -71,6 +74,8 @@ Rules worth knowing:
 - `MONGO_INITDB_ROOT_*` only apply when the database volume is created. To change the password later,
   change it in MongoDB first (`db.changeUserPassword`), then update `.env` and recreate the services.
 - After editing `.env` run `docker compose up -d` (not `restart`, which keeps the old environment).
+- `PORTAL_DB_PASSWORD` can be changed at any time: `portal-db-init` sets the portal user's password to the
+  value in `.env` at every `docker compose up -d`, before the portal starts.
 - For local development of the portal over plain HTTP, set `RESOLVER_PUBLIC_URL=http://localhost:8080`
   in `.env`.
 - Requires Docker Compose 2.24 or later (`env_file` with `required`).
@@ -157,8 +162,18 @@ docker compose exec portal-service python create_user.py maria            # crea
 docker compose exec portal-service python create_user.py maria --remove   # remove
 ```
 
-The user store (`users.json`, password hashes) and the session key (`secret.key`) live in the named
-volume `resolver-portal-config`, which the image initialises with the right owner.
+Users (with password hashes), record metadata and the journal live in the portal's own MongoDB database
+(`PORTAL_DB_NAME`, default `resolver_portal`), reached with a user that may read and write that database
+only; the one-shot `portal-db-init` service creates that user, or updates its password, at every start.
+The session key is `PORTAL_SECRET_KEY` from `.env`; without it, `secret.key` in the named volume
+`resolver-portal-config`, which the image initialises with the right owner. The reasons for this design
+are in [ADR 0001](../adr/0001-portal-state-in-mongodb.md).
+
+**Moving from the files of earlier versions.** Earlier versions kept `users.json`, `records-meta.json` and
+`journal.jsonl` in the volume. At its first start with the database, the portal imports each file into its
+empty collection, renames it `*.migrated` (kept as a copy) and logs the counts
+(`docker compose logs portal-service | grep -i moved`). Nothing else is needed; the `*.lock` files left
+next to them are no longer used.
 
 ## Primary identification keys
 
@@ -227,9 +242,10 @@ Roles (checked by the server on every call; the interface hides what a role cann
 | editor | create, change, delete records; import; link checks |
 | reader | consult, list, export, labels |
 
-- `users.json` holds, per user: password hash, role, GS1 Company Prefixes, disabled, must-change flag,
-  creation and last sign-in. Files from before roles (`{"name": "<hash>"}`) are read as administrators and
-  converted on the next write.
+- The `users` collection holds, per user: password hash, role, GS1 Company Prefixes, disabled, must-change
+  flag, creation and last sign-in. Users of a `users.json` from before roles (`{"name": "<hash>"}`) are
+  imported as administrators. Changes to users are serialised by a lock shared by every portal replica, so
+  the last enabled administrator can never be removed or demoted.
 - GS1 Company Prefixes (4-12 digits) limit a user to identifiers whose company part starts with one of
   them (`gs1.company_part`: after the indicator digit of GTIN-14 and ITIP, the extension digit of SSCC and
   the filler zero of GRAI). Records, lists, exports, imports, labels, history and link checks are filtered
@@ -237,10 +253,16 @@ Roles (checked by the server on every call; the interface hides what a role cann
 - Temporary passwords (16 characters without look-alikes) are shown once; the account can only call
   `/config`, `/password` and `/logout` until it sets its own password.
 - A password reset, disabling or removal ends the user's open sessions (session fingerprint).
-- `journal.jsonl` (portal configuration volume, mode 600) records every event: `login`, `login-failed`,
-  `logout`, `password-change`, `create`, `update`, `delete` (with the record's content), `import`,
-  `export`, `user-create`, `user-update`, `user-reset`, `user-remove`. The editor's History panel shows
-  the last 20 versions of a record; the audit trail shows events without record contents.
+- The journal (the `journal` collection of the portal's database) records every event: `login`,
+  `login-failed`, `logout`, `password-change`, `create`, `update`, `delete` (with the record's content),
+  `import`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`. The editor's History panel
+  shows the last 20 versions of a record; the audit trail shows events without record contents.
+- **Retention.** Events are kept by age, per category, counted from the end of the day they happened:
+  sign-ins and sign-outs `PORTAL_JOURNAL_SESSION_DAYS` (default 180); record changes and imports
+  `PORTAL_JOURNAL_RECORD_DAYS` (default 0, for ever); user administration, password changes and exports
+  `PORTAL_JOURNAL_ADMIN_DAYS` (default 0, for ever). MongoDB deletes expired events itself (TTL index).
+  A record can be restored only from versions still in the journal, so a limit on record changes also
+  limits how far back a record can be restored. A changed value applies to older events at the next start.
 
 ## Record list
 
@@ -275,7 +297,7 @@ the portal (date and user).
   listed but not opened.
 
 Data comes from the data entry API's `GET /api/summary` (one request for all records) and from the
-portal's own `records-meta.json` in the `resolver-portal-config` volume, which records who created and
+portal's own record metadata (the `record_meta` collection of its database), which records who created and
 last changed each record through the portal. Changes made through the API directly show "no history".
 The whole list is sent to the browser, which is comfortable up to a few thousand records.
 
@@ -432,13 +454,15 @@ the checker cannot be used to probe the server's own network.
   its form is submitted, so password managers still see a password field. The script is one of the few
   files served without a session (`PUBLIC_ASSETS`), because the sign-in page needs it.
 - After five failed attempts a username (and, separately, a client address) is locked for 15 minutes.
-  The counter lives in memory, which is why the portal runs one gunicorn worker with eight threads.
+  The failures are kept in the portal's database (`login_failures`, emptied by MongoDB after 15 minutes),
+  so the lock holds across every replica of the portal and across restarts.
 - The user icon on the right of the header opens a menu (on hover with a mouse, or on click/keyboard)
   showing the username, **Options** and **Sign out**. Options lets users change their own password
   (current password required, at least 12 characters). Changing the password signs out every other
   session of that account.
-- Sessions are signed with `secret.key` in the portal's configuration volume, created automatically on first start. Deleting that file
-  (in the `resolver-portal-config` volume) and restarting signs everybody out. `PORTAL_SECRET_KEY` in the environment takes precedence.
+- Sessions are signed with `PORTAL_SECRET_KEY` (written to `.env` by the installer; every portal replica
+  must share it). Without it, a `secret.key` created automatically in the `resolver-portal-config` volume is
+  used, which is enough for a single portal replica. Changing the key signs everybody out.
 - Environment settings: `PORTAL_SESSION_IDLE_MINUTES` (default 30), `PORTAL_SESSION_MAX_HOURS` (default 12),
   `PORTAL_COOKIE_SECURE` (default: on when the public address is `https://`, off for plain-HTTP
   development). `PORTAL_SESSION_HOURS`, the former sliding limit, is ignored with a warning in the log.
@@ -820,14 +844,17 @@ To offer more link types, add a row to `LINK_TYPES` in `portal/gs1.py` and its l
   network. Docker publishes ports past the host firewall (ufw/iptables), so this setting matters.
 - With the portal live, restrict `/api` and `/swaggerui` at the edge proxy to the integrations that
   genuinely need them.
+- The portal is given no root database credentials: its MongoDB user may read and write the portal's own
+  database only (`readWrite` on `PORTAL_DB_NAME`); only the one-shot `portal-db-init` service receives
+  `MONGO_URI`.
 - For many users, consider single sign-on (e.g. `oauth2-proxy` in front of `/portal/`) instead of local
   passwords, passing the authenticated user to `app.py` in a header.
 
 ## Daily backup
 
-`scripts/resolver-backup.sh` dumps MongoDB (through the database container, so the credentials never
-appear on the host) and archives the portal's configuration volume, keeping 14 days in
-`/var/backups/resolver`. It finds the repository from its own location.
+`scripts/resolver-backup.sh` dumps every MongoDB database (the resolver's records and the portal's users,
+record metadata and journal), through the database container so the credentials never appear on the host,
+and archives the portal's configuration volume, keeping 14 days in `/var/backups/resolver`. It finds the repository from its own location.
 
 ```bash
 sudo scripts/resolver-backup.sh                                     # test: prints OK and the sizes
@@ -839,10 +866,20 @@ Restore the database (replaces the current one):
 ```bash
 docker compose exec -T database-service sh -c 'mongorestore -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --archive --gzip --drop' < /var/backups/resolver/ARCHIVE.archive.gz
 ```
-Restore the portal configuration:
+Then run `docker compose up -d`: `portal-db-init` runs again and gives the portal's user the password in
+`.env`, whatever the restored database held.
+
+Restore the portal configuration (the fallback session key and the `*.migrated` copies; only needed when
+`PORTAL_SECRET_KEY` is not set):
 ```bash
 docker compose exec -T portal-service tar -xzf - -C /app/config < /var/backups/resolver/portal-config-ARCHIVE.tar.gz
 ```
+A backup taken before the portal used its database holds the portal's data in that archive (`users.json`,
+`records-meta.json`, `journal.jsonl`) and none in the database dump. To restore such a backup, restore both,
+remove the portal's database (`docker compose exec database-service sh -c 'mongosh -u
+"$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin resolver_portal
+--eval "db.dropDatabase()"'`) and run `docker compose up -d --force-recreate portal-db-init portal-service`: the
+files are imported again at the start.
 Keep a copy of the archives on another machine as well.
 
 ## Development tests

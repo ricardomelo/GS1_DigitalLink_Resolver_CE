@@ -19,9 +19,10 @@ PORTAL = os.environ.get("PORTAL_DIR", os.path.join(HERE, "..", "..", "portal"))
 CONFIG = tempfile.mkdtemp()
 DATA_ENTRY_PORT = 3399
 os.environ.update(DATA_ENTRY_URL=f"http://127.0.0.1:{DATA_ENTRY_PORT}/api", SESSION_TOKEN="tok",
-                  PORTAL_USERS_FILE=f"{CONFIG}/users.json", PORTAL_CONFIG_DIR=CONFIG,
+                  PORTAL_CONFIG_DIR=CONFIG, PORTAL_DB_NAME=f"devtest_governance_{os.getpid()}",
                   PORTAL_ORIGIN="http://localhost", PORTAL_COOKIE_SECURE="false",
                   RESOLVER_PUBLIC_URL="https://id.example.org")
+os.environ.setdefault("PORTAL_DB_URI", "mongomock://")   # a real MongoDB when PORTAL_DB_URI is set
 sys.path[:0] = [HERE, PORTAL]
 
 # A users file written before roles existed: {"name": "<hash>"}
@@ -31,6 +32,7 @@ with open(f"{CONFIG}/users.json", "w") as fh:
 
 import mock_data_entry  # noqa: E402
 import app as portal  # noqa: E402
+import store  # noqa: E402
 import users  # noqa: E402
 
 threading.Thread(target=make_server("127.0.0.1", DATA_ENTRY_PORT, mock_data_entry.app, threaded=True).serve_forever,
@@ -70,7 +72,9 @@ check("administrator creates an editor limited to a prefix; temporary password r
 r = admin.post("/portal/api/users", json={"username": "rui", "role": "reader"})
 rui_password = r.get_json().get("password")
 check("administrator creates a reader", r.status_code == 201)
-check("old file converted on write", isinstance(json.load(open(f"{CONFIG}/users.json"))["boss"], dict))
+check("old users file moved into the database, kept as users.json.migrated",
+      not os.path.exists(f"{CONFIG}/users.json") and os.path.exists(f"{CONFIG}/users.json.migrated")
+      and store.col("users").find_one({"_id": "boss"})["role"] == "admin")
 check("duplicate user refused", admin.post("/portal/api/users", json={"username": "ana", "role": "reader"}).get_json()["code"] == "users.exists")
 check("invalid prefix refused", admin.post("/portal/api/users", json={"username": "x1x", "role": "reader", "prefixes": ["78A"]})
       .get_json()["code"] == "users.prefixInvalid")

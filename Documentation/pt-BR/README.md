@@ -109,7 +109,8 @@ flowchart LR
     portal -->|"token bearer"| de
     web --> db[("MongoDB<br/>database-service")]
     de --> db
-    portal -.->|"usuários, histórico"| vol[("volume<br/>resolver-portal-config")]
+    portal -->|"usuário próprio: usuários, histórico"| db
+    init["portal-db-init<br/>(roda uma vez)"] -.->|"cria o usuário do portal"| db
 ```
 
 | Serviço | Contêiner | Papel | Publicado |
@@ -118,12 +119,16 @@ flowchart LR
 | `web-service` | `resolver-web-server` | Resolve GS1 Digital Links (redirecionamentos, linksets, páginas HTML) | interno |
 | `data-entry-service` | `data-entry-server` | API REST para criar, ler, alterar e excluir cadastros | interno (via `/api`) |
 | `portal-service` | `resolver-portal` | Portal de gestão de links (Flask + front-end estático) | interno (via `/portal/`) |
+| `portal-db-init` | — | Cria ou atualiza o usuário do banco do portal e termina (roda a cada início) | — |
 | `database-service` | `database-server` | MongoDB | `${DATABASE_BIND_ADDRESS}:27017` |
 
 O portal é um back-end entre o navegador e a API de cadastro: o token da API nunca chega ao navegador, e o
 portal lê antes de gravar para usar as operações da API com segurança (POST acrescenta, PUT mescla, DELETE
-remove links, o tipo do destino principal é compartilhado por todos os cadastros de uma chave). Os
-detalhes estão no [guia do desenvolvedor](guia-do-desenvolvedor.md).
+remove links, o tipo do destino principal é compartilhado por todos os cadastros de uma chave). Os dados
+do próprio portal (usuários, metadados dos cadastros, histórico e auditoria) ficam num banco próprio no
+mesmo MongoDB, `resolver_portal`, acessado por um usuário que só pode usar esse banco; o banco do Resolver
+nunca é tocado ([ADR 0001](adr/0001-estado-do-portal-no-mongodb.md)). Os detalhes estão no
+[guia do desenvolvedor](guia-do-desenvolvedor.md).
 
 ## O portal de gestão de links
 
@@ -432,7 +437,10 @@ da instalação, nunca versionados).
 | `RESOLVER_TERMS_URL` | Opcional: os termos de uso do operador, publicados como `termsOfUse` no arquivo de descrição (omitido quando vazio) |
 | `RESOLVER_PUBLIC_URL` | Endereço público do portal quando não é `https://FQDN` (por exemplo, desenvolvimento) |
 | `PORTAL_ADMIN_USERNAME`, `PORTAL_ADMIN_PASSWORD` | Primeiro usuário do portal, criado só enquanto não há nenhum |
-| `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE` | Configurações opcionais do portal: minutos sem uso e horas depois da entrada até a sessão terminar, chave da sessão, cookie Secure |
+| `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD` | Banco e usuário próprios do portal (criado pelo `portal-db-init`); o instalador gera a senha |
+| `PORTAL_SECRET_KEY` | Chave que assina as sessões do portal; todas as réplicas do portal precisam compartilhá-la (o instalador a gera; vazia: uma chave guardada no volume do portal) |
+| `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS` (0), `PORTAL_JOURNAL_ADMIN_DAYS` (0) | Dias que o diário guarda entradas, alterações de cadastros e eventos de administração (0 = para sempre) |
+| `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_COOKIE_SECURE` | Configurações opcionais do portal: minutos sem uso e horas depois da entrada até a sessão terminar, cookie Secure |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Endereços do host para as portas 8080 e 27017 (lidos pelo Compose só do `.env`) |
 
 ## Operação
@@ -444,22 +452,24 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1re
 docker compose exec portal-service python create_user.py maria --role editor   # incluir ou redefinir um usuário
 # quem alterou o quê: menu do usuário → Auditoria (administradores), ou o log do contêiner:
 docker compose logs -f portal-service | grep portal.audit
-sudo scripts/resolver-backup.sh                                  # backup agora (banco + usuários do portal)
+sudo scripts/resolver-backup.sh                                  # backup agora (todos os bancos + volume do portal)
 ```
 
 Os backups vão para `/var/backups/resolver` (14 dias). Restaure o banco com
-`mongorestore … --archive --gzip --drop` via `docker compose exec -T database-service`, e a configuração do
-portal extraindo o arquivo dela em `/app/config` do `portal-service`; os comandos exatos estão na
+`mongorestore … --archive --gzip --drop` via `docker compose exec -T database-service` e depois rode
+`docker compose up -d` (o usuário do banco do portal recebe de novo a senha do `.env`); o volume do portal
+guarda só a chave de sessão reserva e cópias dos arquivos antigos. Os comandos exatos estão na
 [documentação das extensões](../extensions/README.md#daily-backup). Guarde cópias em outra máquina.
 
 ## Desenvolvimento e testes
 
-Os testes de [`dev-tests/`](../../dev-tests/README.md) rodam sem Docker nem MongoDB; a lista completa, com
+Os testes de [`dev-tests/`](../../dev-tests/README.md) rodam sem Docker nem MongoDB (o banco do portal é
+substituído pelo `mongomock`; o CI também os roda num MongoDB real); a lista completa, com
 o número de verificações e o que cada programa cobre, está no
 [guia do desenvolvedor](guia-do-desenvolvedor.md#13-testes-de-desenvolvimento-dev-tests).
 
 ```bash
-pip install -r web_server/src/requirements.txt -r portal/requirements.txt jsonschema playwright opencv-python-headless
+pip install -r web_server/src/requirements.txt -r portal/requirements.txt jsonschema playwright opencv-python-headless mongomock
 playwright install chromium
 python dev-tests/resolver/test_resolver.py
 # GS1 Barcode Syntax Engine para os atributos de dados, como a imagem do portal o compila:
@@ -472,7 +482,7 @@ GS1_SYNTAX_ENGINE=/tmp/se python dev-tests/portal/test_keys.py
 
 Todos os programas também rodam pelo pytest, por uma camada fina (`dev-tests/test_programs.py`) que executa
 cada um como subprocesso e mostra o número de verificações de cada programa ao final; os grupos `resolver`,
-`portal`, `e2e`, `home` e `install` podem ser escolhidos com `-m`:
+`portal`, `e2e`, `home`, `install` e `database` podem ser escolhidos com `-m`:
 
 ```bash
 pip install pytest
@@ -482,10 +492,11 @@ DEV_TESTS_STRICT=1 python -m pytest dev-tests -m portal   # como no CI: o que fa
 ```
 
 **Integração contínua.** O workflow `.github/workflows/dev-tests.yml` roda os testes no GitHub Actions a cada
-push e pull request para `gs1br/develop` (mudanças só de documentação não disparam), em cinco jobs paralelos:
-Resolver (com EPC binário, API de cadastro e a suíte da GS1), portal, portal no Chromium, página inicial com
-nginx e instalador. O portal no Chromium e o instalador começam como informativos: uma
-falha neles aparece, mas não reprova a execução. As versões de Python, Node.js, engines, suíte da GS1 e
+push e pull request para `gs1br/develop` (mudanças só de documentação não disparam), em seis jobs paralelos:
+Resolver (com EPC binário, API de cadastro e a suíte da GS1), portal, portal num MongoDB real (um contêiner
+de serviço `mongo:7`), portal no Chromium, página inicial com nginx e instalador. O portal no MongoDB, o
+portal no Chromium e o instalador começam como informativos: uma falha neles aparece, mas não reprova a
+execução. As versões de Python, Node.js, engines, suíte da GS1 e
 Docker Compose ficam fixadas em `.github/actions/dev-tests-setup/action.yml`; engines, pacotes e o navegador
 ficam em cache. O resultado de cada job, com a contagem de verificações, aparece no resumo da execução.
 
@@ -505,7 +516,7 @@ e os tenants vêm antes da API, do e-mail e dos analytics, que precisam saber de
 
 | Fase | # | Item | Tam. | Depende de |
 |---|---|---|---|---|
-| Fundações técnicas | 2.3 | **Arquitetura para escala e dados do portal no MongoDB**: um registro de decisão de arquitetura (serviços sem estado, estado no banco, tarefas em segundo plano fora do processo web, mais de uma réplica de cada serviço); usuários, metadados dos cadastros, diário, tarefas e bloqueio de login do portal saem de arquivos e da memória para um banco próprio no MongoDB existente, sem alterar as coleções do Resolver oficial; retenção do diário; migração das instalações existentes; backup e restauração incluídos. Decisões: [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md) (etapa 1 de 4 concluída) | G | — |
+| Fundações técnicas | 2.3 | **Arquitetura para escala e dados do portal no MongoDB**: um registro de decisão de arquitetura (serviços sem estado, estado no banco, tarefas em segundo plano fora do processo web, mais de uma réplica de cada serviço); usuários, metadados dos cadastros, diário, tarefas e bloqueio de login do portal saem de arquivos e da memória para um banco próprio no MongoDB existente, sem alterar as coleções do Resolver oficial; retenção do diário; migração das instalações existentes; backup e restauração incluídos. Decisões: [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md) (etapas 1 e 2 de 4 concluídas: o registro; usuários, metadados dos cadastros, diário, bloqueio de entrada e caches no MongoDB) | G | — |
 | | 2.4 | **Tenants**: uma organização (tenant) é dona dos seus prefixos de empresa GS1, cada prefixo pertencendo a um único tenant; um administrador do servidor cria tenants e atribui prefixos; um administrador do tenant gerencia os usuários do tenant; toda chamada confere o tenant no servidor; trilha de auditoria por tenant; e-mail por usuário; privacidade desde a concepção (minimização de dados, acesso do administrador do servidor aos dados de um tenant registrado na trilha de auditoria desse tenant) | G | 2.3 |
 | | 2.5 | **Uma fonte única para as regras GS1**: chaves, qualificadores, formatos e nomes de AIs derivados do GS1 Barcode Syntax Dictionary, os dois engines na mesma versão, mensagens do engine traduzidas, atualizações do dicionário propostas por uma tarefa agendada; traz os AIs (7041) e (8040)–(8043) | G | — |
 | Serviços da plataforma | 3.1 | **E-mail**: envio por um relay autenticado (configurações no `.env`), convites para novos usuários, recuperação de senha por link de uso único, uma estrutura de notificações com preferências por usuário | M | 2.4 |

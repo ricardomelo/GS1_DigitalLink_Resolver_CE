@@ -18,7 +18,8 @@ Programs are grouped with markers, so that a part can be run on its own::
 program whose external pieces are missing fails instead of skipping them: every environment
 variable it needs must name an existing path, every command it needs must be on the PATH, and
 a ``SKIP`` line is a failure. A cache restored empty or an engine that did not build cannot then
-pass unnoticed.
+pass unnoticed. Variables that are not paths (a MongoDB URI) are listed in ``needs_var`` and only
+need to be set.
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ class Program:
     needs_cmd: tuple[str, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
     root: bool = False
+    needs_var: tuple[str, ...] = ()
 
 
 PROGRAMS = [
@@ -62,6 +64,8 @@ PROGRAMS = [
     Program("linkcheck", "portal", "portal/test_linkcheck.py"),
     Program("portal_config", "portal", "portal/test_portal_config.py"),
     Program("registration", "portal", "portal/test_registration.py"),
+    Program("store", "portal", "portal/test_store.py"),
+    Program("store_mongodb", "database", "portal/test_store_mongodb.py", needs_var=("PORTAL_TEST_MONGO_URI",)),
     Program("portal_e2e", "e2e", "portal/test_portal_e2e.py", ("GS1_SYNTAX_ENGINE_DIR",)),
     Program("portal_e2e_without_engine", "e2e", "portal/test_portal_e2e.py",
             env={"GS1_SYNTAX_ENGINE_DIR": "/nonexistent"}),
@@ -80,6 +84,7 @@ def _missing(program: Program) -> list[str]:
             missing.append(f"{var} is not set")
         elif not Path(value).exists():
             missing.append(f"{var}={value} does not exist")
+    missing += [f"{var} is not set" for var in program.needs_var if not os.environ.get(var)]
     missing += [f"'{cmd}' is not on the PATH" for cmd in program.needs_cmd if not shutil.which(cmd)]
     return missing
 

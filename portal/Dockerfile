@@ -16,13 +16,16 @@ COPY --from=syntax-engine /opt/gs1-syntax-engine /opt/gs1-syntax-engine
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py gs1.py journal.py label.py linkcheck.py users.py meta.py sheet.py syntax.py create_user.py ./
+COPY app.py gs1.py journal.py label.py linkcheck.py users.py meta.py sheet.py syntax.py create_user.py \
+     store.py migrate.py db_init.py ./
 COPY assets ./assets
 COPY static ./static
 
 RUN useradd --system --uid 10001 portal \
  && mkdir -p /app/config && chown portal /app/config && chmod 700 /app/config
-# /app/config (users.json, secret.key) is a named volume; Docker initialises a new volume from this
+# /app/config is a named volume: secret.key when PORTAL_SECRET_KEY is not set, and the users.json,
+# records-meta.json and journal.jsonl of earlier versions, renamed *.migrated once moved into the
+# database. Docker initialises a new volume from this
 # directory, so it starts out owned by the portal user and needs no chown on the host.
 VOLUME /app/config
 USER portal

@@ -1,42 +1,43 @@
 """
-Portal user store: a JSON file mapping username → account.
+Portal user store: the "users" collection of the portal's database (store.py), one document per account.
 
-    {"maria": {"hash": "<werkzeug hash>", "role": "editor", "prefixes": ["7891234"],
-               "disabled": false, "mustChange": false, "created": "…", "lastLogin": "…"}}
+    {"_id": "maria", "hash": "<werkzeug hash>", "role": "editor", "prefixes": ["7891234"],
+     "disabled": false, "mustChange": false, "created": "…", "lastLogin": "…"}
 
 Roles, from least to most: reader (consults and exports), editor (also changes records), admin (also
 manages users and sees the audit trail). "prefixes" limits an account to identifiers of those GS1
 Company Prefixes (empty: every identifier). "mustChange" asks for a new password at the next sign-in
-(temporary passwords). Files written before roles existed ({"name": "<hash>"}) are read as admins and
-converted on the next write.
+(temporary passwords). Accounts imported from a users.json written before roles existed ({"name": "<hash>"})
+are read as admins (migrate.py).
 
-Writes are atomic (temporary file + rename) and serialised with an advisory lock, so the portal and
-create_user.py can safely touch the file at the same time. The file is re-read on every lookup, so
-changes made from the command line take effect at once.
+Writes run under a lock shared by every replica (store.lock), so two administrators acting at the same
+moment cannot both remove the last enabled administrator. Every lookup reads the database, so changes made
+from the command line (create_user.py) take effect at once.
 """
-import fcntl
 import hashlib
 import hmac
-import json
 import os
 import re
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
+from pymongo.errors import DuplicateKeyError, PyMongoError
 from werkzeug.security import check_password_hash, generate_password_hash
 
-USERS_FILE = os.environ.get("PORTAL_USERS_FILE", "/app/config/users.json")
+import store
+
 MIN_PASSWORD_LENGTH = 12
 ROLES = ("reader", "editor", "admin")
 USERNAME = re.compile(r"^[A-Za-z0-9._@\-]{3,64}$")
 PREFIX = re.compile(r"^\d{4,12}$", re.ASCII)   # ASCII digits only: \d alone would accept "７"
+FIELDS = ("hash", "role", "prefixes", "disabled", "mustChange", "created", "lastLogin")
 # Hash of a random password, checked when the username does not exist so that response
 # times do not reveal which usernames are valid.
 _DUMMY_HASH = generate_password_hash(os.urandom(16).hex())
 
 
 class StoreNotWritable(Exception):
-    """The users file (or its directory) cannot be written by the portal process."""
+    """The user store cannot be written: the database is unreachable or refused the write."""
 
 
 class UserError(Exception):
@@ -59,25 +60,25 @@ def _account(value) -> dict:
         value = {"hash": value, "role": "admin"}
     account = {"hash": "", "role": "admin", "prefixes": [], "disabled": False, "mustChange": False,
                "created": None, "lastLogin": None}
-    account.update(value)
+    account.update({k: v for k, v in value.items() if k in FIELDS})
     if account["role"] not in ROLES:
         account["role"] = "reader"
     return account
 
 
+def _users():
+    return store.col("users")
+
+
 def load() -> dict[str, dict]:
     """Every account, keyed by user name."""
-    try:
-        with open(USERS_FILE, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except FileNotFoundError:
-        return {}
-    return {name: _account(value) for name, value in data.items()}
+    return {doc["_id"]: _account(doc) for doc in _users().find().sort("_id", 1)}
 
 
 def get(username: str) -> dict | None:
     """One account, or None."""
-    return load().get(username or "")
+    doc = _users().find_one({"_id": username or ""})
+    return _account(doc) if doc else None
 
 
 def verify(username: str, password: str) -> bool:
@@ -107,30 +108,17 @@ def fingerprint_matches(username: str, value: str | None) -> bool:
 
 @contextmanager
 def _locked():
-    """Exclusive lock on the user file; StoreNotWritable when the volume is read-only."""
-    lock_path = USERS_FILE + ".lock"
+    """The users lock (store.lock); StoreNotWritable when the database cannot be reached or written."""
     try:
-        fh = open(lock_path, "a")
-    except OSError as exc:
-        raise StoreNotWritable(str(exc)) from exc
-    with fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
-        try:
+        with store.lock("users"):
             yield
-        finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
-
-
-def _write(accounts: dict[str, dict]) -> None:
-    """Writes the user file atomically, readable by the portal only."""
-    tmp = USERS_FILE + ".tmp"
-    try:
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(accounts, fh, indent=2)
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, USERS_FILE)
-    except OSError as exc:
+    except (PyMongoError, store.LockTimeout) as exc:
         raise StoreNotWritable(str(exc)) from exc
+
+
+def _save(username: str, account: dict) -> None:
+    """Writes one account (whole document)."""
+    _users().replace_one({"_id": username}, {k: account[k] for k in FIELDS}, upsert=True)
 
 
 def _active_admins(accounts: dict[str, dict]) -> set[str]:
@@ -151,16 +139,14 @@ def set_password(username: str, password: str, must_change: bool = False, role: 
                  prefixes=None) -> None:
     """Sets the password, creating the account when needed (role admin unless given)."""
     with _locked():
-        accounts = load()
-        account = accounts.get(username) or _account({"role": role or "admin", "created": _now()})
+        account = get(username) or _account({"role": role or "admin", "created": _now()})
         account["hash"] = generate_password_hash(password)
         account["mustChange"] = must_change
         if role:
             account["role"] = role
         if prefixes is not None:
             account["prefixes"] = clean_prefixes(prefixes)
-        accounts[username] = account
-        _write(accounts)
+        _save(username, account)
 
 
 def create(username: str, password: str, role: str, prefixes=(), must_change: bool = True) -> None:
@@ -170,15 +156,14 @@ def create(username: str, password: str, role: str, prefixes=(), must_change: bo
     if role not in ROLES:
         raise UserError("users.roleInvalid")
     prefixes = clean_prefixes(prefixes)
+    account = _account({"role": role, "prefixes": prefixes, "created": _now()})
+    account["hash"] = generate_password_hash(password)
+    account["mustChange"] = must_change
     with _locked():
-        accounts = load()
-        if username in accounts:
-            raise UserError("users.exists", user=username)
-        account = _account({"role": role, "prefixes": prefixes, "created": _now()})
-        account["hash"] = generate_password_hash(password)
-        account["mustChange"] = must_change
-        accounts[username] = account
-        _write(accounts)
+        try:
+            _users().insert_one({"_id": username, **{k: account[k] for k in FIELDS}})
+        except DuplicateKeyError:
+            raise UserError("users.exists", user=username) from None
 
 
 def update(username: str, role: str | None = None, prefixes=None, disabled: bool | None = None) -> dict:
@@ -198,7 +183,7 @@ def update(username: str, role: str | None = None, prefixes=None, disabled: bool
             account["disabled"] = bool(disabled)
         if not _active_admins(accounts):
             raise UserError("users.lastAdmin")
-        _write(accounts)
+        _save(username, account)
         return account
 
 
@@ -211,18 +196,14 @@ def remove(username: str) -> None:
         accounts.pop(username)
         if not _active_admins(accounts):
             raise UserError("users.lastAdmin")
-        _write(accounts)
+        _users().delete_one({"_id": username})
 
 
 def touch_login(username: str) -> None:
     """Records the time of a successful sign-in (best effort)."""
     try:
-        with _locked():
-            accounts = load()
-            if username in accounts:
-                accounts[username]["lastLogin"] = _now()
-                _write(accounts)
-    except StoreNotWritable:
+        _users().update_one({"_id": username}, {"$set": {"lastLogin": _now()}})
+    except PyMongoError:
         pass
 
 
@@ -230,11 +211,3 @@ def public(username: str, account: dict) -> dict:
     """What the administration screen shows (never the hash)."""
     return {"username": username, **{k: account[k] for k in
                                      ("role", "prefixes", "disabled", "mustChange", "created", "lastLogin")}}
-
-
-def is_writable() -> bool:
-    """Whether the user file can be written (checked at start-up and before password changes)."""
-    directory = os.path.dirname(USERS_FILE) or "."
-    if os.path.exists(USERS_FILE):
-        return os.access(USERS_FILE, os.W_OK) and os.access(directory, os.W_OK)
-    return os.access(directory, os.W_OK)

@@ -3,7 +3,8 @@ Link checker: does each target address answer, and does it stay on HTTPS?
 
 For every URL: a HEAD request (GET when the server refuses HEAD), following up to MAX_REDIRECTS
 redirects one by one so that a hop from https:// to http:// can be reported. Results are cached for
-CACHE_SECONDS so that checking the same addresses again does not hammer the sites.
+CACHE_SECONDS in the "linkcheck_cache" collection of the portal's database (shared by every replica, emptied
+by MongoDB through a TTL index) so that checking the same addresses again does not hammer the sites.
 
 Only public addresses are contacted. Host names resolving to private, loopback, link-local or other
 non-global addresses (the Docker network, the cloud metadata service, …) are refused, at every hop, so
@@ -18,12 +19,14 @@ Result: {"url", "ok", "problem" (message code or None), "status", "finalUrl", "p
 import ipaddress
 import os
 import socket
-import threading
-import time
+from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urljoin, urlparse
 
 import requests
+from pymongo.errors import PyMongoError
+
+import store
 
 TIMEOUT = float(os.environ.get("PORTAL_LINKCHECK_TIMEOUT", "8"))
 MAX_REDIRECTS = 5
@@ -32,8 +35,6 @@ WORKERS = 8
 ALLOW_PRIVATE = os.environ.get("PORTAL_LINKCHECK_ALLOW_PRIVATE") == "1"
 USER_AGENT = "GS1-Resolver-CE-LinkChecker/1.0"
 
-_cache: dict[str, tuple[float, dict]] = {}
-_cache_lock = threading.Lock()
 
 
 def _public_host(host: str) -> bool | None:
@@ -63,16 +64,26 @@ def _request(session: requests.Session, url: str) -> requests.Response:
 
 
 def check_url(url: str) -> dict:
-    """Result of checking one address, cached for CACHE_SECONDS."""
-    now = time.time()
-    with _cache_lock:
-        cached = _cache.get(url)
-        if cached and now - cached[0] < CACHE_SECONDS:
-            return cached[1]
+    """Result of checking one address, cached for CACHE_SECONDS (a database failure only skips the cache)."""
+    cache = store.col("linkcheck_cache")
+    try:
+        cached = cache.find_one({"_id": url, "expiresAt": {"$gt": store.now()}})
+    except PyMongoError:
+        cached = None
+    if cached:
+        return cached["result"]
     result = _check(url)
-    with _cache_lock:
-        _cache[url] = (now, result)
+    try:
+        cache.replace_one({"_id": url}, {"result": result, "expiresAt": store.now() + timedelta(seconds=CACHE_SECONDS)},
+                          upsert=True)
+    except PyMongoError:
+        pass
     return result
+
+
+def clear_cache() -> None:
+    """Forgets every cached result (development tests)."""
+    store.col("linkcheck_cache").delete_many({})
 
 
 def _result(url, problem=None, http_status=None, final=None, **params) -> dict:

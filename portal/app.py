@@ -26,13 +26,16 @@ from functools import wraps
 
 import requests
 from flask import Flask, Response, g, jsonify, redirect, request, send_from_directory, session
+from pymongo.errors import PyMongoError
 
 import gs1
 import journal
 import label
 import linkcheck
 import meta
+import migrate
 import sheet
+import store
 import syntax
 import users
 from gs1 import ValidationError
@@ -57,7 +60,7 @@ SESSION_IDLE_MINUTES = max(0.1, float(os.environ.get("PORTAL_SESSION_IDLE_MINUTE
 SESSION_MAX_HOURS = max(SESSION_IDLE_MINUTES / 60, float(os.environ.get("PORTAL_SESSION_MAX_HOURS", "12")))
 SESSION_WARNING_SECONDS = min(120.0, SESSION_IDLE_MINUTES * 60 / 4)
 MAX_LOGIN_FAILURES = 5
-LOCKOUT_SECONDS = 15 * 60
+LOCKOUT_SECONDS = store.LOGIN_FAILURE_SECONDS   # 15 minutes
 UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "15"))
 MAX_LINKS = 20
 
@@ -79,7 +82,8 @@ PRIVATE_ASSETS = {"app.js"}
 
 
 def _secret_key() -> bytes:
-    """PORTAL_SECRET_KEY if set; otherwise a random key created once in the config volume."""
+    """PORTAL_SECRET_KEY if set (the installer writes one to .env; every replica must share it); otherwise a
+    random key created once in the config volume, which serves an installation with a single portal replica."""
     if os.environ.get("PORTAL_SECRET_KEY"):
         return os.environ["PORTAL_SECRET_KEY"].encode()
     path = os.path.join(CONFIG_DIR, "secret.key")
@@ -108,9 +112,9 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=SESSION_IDLE_MINUTES),
     SESSION_REFRESH_EACH_REQUEST=True,   # sliding expiry: the cookie's signed time is renewed on every request
 )
-if not users.is_writable():
-    log.warning("The users file is read-only for the portal: password changes will fail. "
-                "Check that /app/config is writable by uid 10001 (the portal-config volume).")
+if not os.environ.get("PORTAL_SECRET_KEY"):
+    log.warning("PORTAL_SECRET_KEY is not set: sessions are signed with %s, which works for one portal "
+                "replica only.", os.path.join(CONFIG_DIR, "secret.key"))
 
 
 def _bootstrap_admin() -> None:
@@ -131,6 +135,10 @@ def _bootstrap_admin() -> None:
         log.warning("Cannot create the first portal user (%s).", exc)
 
 
+# Start-up: the files of earlier versions move into the database once, the journal's retention follows the
+# environment, and the first user is created while there is none.
+migrate.run(CONFIG_DIR)
+journal.apply_retention()
 _bootstrap_admin()
 
 
@@ -153,41 +161,34 @@ def message(code: str, status: int = 200, **extra):
 
 # --------------------------------------------------------------------------- authentication
 class LoginThrottle:
-    """Locks a username (and, separately, a client address) after repeated failures.
-    Kept in memory: the portal runs a single gunicorn worker (with threads) for this reason."""
+    """Locks a username (and, separately, a client address) after repeated failures. The failures are
+    documents of the "login_failures" collection, so every replica of the portal sees the same count;
+    MongoDB deletes them once they are older than the lockout window (TTL index, store.py)."""
 
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._failures: dict[str, list[float]] = {}
-
-    def _recent(self, key: str, now: float) -> list[float]:
-        """Failure times of a key still inside the lockout window."""
-        return [t for t in self._failures.get(key, []) if now - t < LOCKOUT_SECONDS]
+    @staticmethod
+    def _failures():
+        return store.col("login_failures")
 
     def retry_after(self, *keys: str) -> int:
         """Seconds to wait before another attempt for any of the keys (0 when none is locked)."""
-        now = time.time()
-        with self._lock:
-            waits = []
-            for key in keys:
-                recent = self._recent(key, now)
-                self._failures[key] = recent
-                if len(recent) >= MAX_LOGIN_FAILURES:
-                    waits.append(int(LOCKOUT_SECONDS - (now - recent[0])) + 1)
-            return max(waits, default=0)
+        now = store.now()
+        window = now - timedelta(seconds=LOCKOUT_SECONDS)
+        waits = []
+        for key in keys:
+            recent = list(self._failures().find({"key": key, "at": {"$gt": window}}, {"at": 1})
+                          .sort("at", 1).limit(MAX_LOGIN_FAILURES))
+            if len(recent) >= MAX_LOGIN_FAILURES:
+                waits.append(int(LOCKOUT_SECONDS - (now - recent[0]["at"]).total_seconds()) + 1)
+        return max(waits, default=0)
 
     def fail(self, *keys: str) -> None:
         """Records a failed attempt for every key (user name and client address)."""
-        now = time.time()
-        with self._lock:
-            for key in keys:
-                self._failures[key] = self._recent(key, now) + [now]
+        now = store.now()
+        self._failures().insert_many([{"key": key, "at": now} for key in keys])
 
     def clear(self, *keys: str) -> None:
         """Forgets the failures of the keys after a successful sign-in."""
-        with self._lock:
-            for key in keys:
-                self._failures.pop(key, None)
+        self._failures().delete_many({"key": {"$in": list(keys)}})
 
 
 throttle = LoginThrottle()
@@ -283,7 +284,7 @@ def log_event(action: str, **fields) -> None:
     try:
         user = fields.pop("user", None) or getattr(g, "user", None) or "-"
         journal.append(action, user, **fields)
-    except OSError as exc:
+    except (OSError, PyMongoError) as exc:
         log.warning("Journal not written (%s): %s", action, exc)
 
 
@@ -398,7 +399,7 @@ def record_change(anchor: str, pairs: list, doc: dict | None, action: str) -> No
             meta.remove(anchor, qpath)
         else:
             meta.touch(anchor, qpath, g.user)
-    except OSError as exc:
+    except (OSError, PyMongoError) as exc:
         log.warning("Record metadata not updated for %s: %s", meta.key(anchor, qpath), exc)
     log_event(action, anchor=anchor, qpath=qpath, doc=doc)
 
@@ -1177,7 +1178,20 @@ def import_status():
 # --------------------------------------------------------------------------- link checker
 LINK_JOBS: dict[str, dict] = {}
 LINK_JOBS_LOCK = threading.Lock()
-LAST_FULL_CHECK: dict = {}             # result of the latest "check every record", shown in the list
+
+
+def _last_full_check() -> dict:
+    """Result of the latest "check every record" (settings "lastFullCheck"), shown in the record list."""
+    value = store.get_setting("lastFullCheck") or {}
+    # stored as pairs: record keys contain "/" and "." and are not used as field names
+    return {**value, "records": dict(value.get("records") or [])} if value else {}
+
+
+def _save_last_full_check(value: dict) -> None:
+    """Keeps the result of a "check every record" for every replica."""
+    store.set_setting("lastFullCheck", {**value, "records": [[k, v] for k, v in value["records"].items()]})
+
+
 MAX_CHECK_URLS = 5000
 
 
@@ -1208,9 +1222,8 @@ def _run_link_job(token: str) -> None:
             for key in job["urls"][url]:
                 by_record.setdefault(key, []).append(result)
         job["records"] = by_record
-        LAST_FULL_CHECK.clear()
-        LAST_FULL_CHECK.update(checkedAt=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                               records=by_record, urls=len(results), user=job["user"])
+        _save_last_full_check({"checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                               "records": by_record, "urls": len(results), "user": job["user"]})
         audit.info("user=%s action=linkcheck urls=%d problems=%d", job["user"], len(results), len(problems))
     job["problems"] = list(problems.values())
     job["state"] = "finished"
@@ -1263,7 +1276,7 @@ def link_job_status(token):
     if job["state"] == "finished":
         out["problems"] = job["problems"]
         if job["scope"] == "all":
-            out.update(LAST_FULL_CHECK)
+            out.update(_last_full_check())
             out["records"] = job.get("records", {})
     return jsonify(out)
 
@@ -1272,10 +1285,11 @@ def link_job_status(token):
 @require_login
 def last_link_check():
     """Result of the last check of every record, limited to the records the user may see."""
-    if not LAST_FULL_CHECK:
+    last = _last_full_check()
+    if not last:
         return jsonify({})
-    records = {k: v for k, v in LAST_FULL_CHECK.get("records", {}).items() if allowed(k.split("|")[0])}
-    return jsonify({**LAST_FULL_CHECK, "records": records})
+    records = {k: v for k, v in last.get("records", {}).items() if allowed(k.split("|")[0])}
+    return jsonify({**last, "records": records})
 
 
 # --------------------------------------------------------------------------- governance

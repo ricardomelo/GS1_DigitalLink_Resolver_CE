@@ -38,7 +38,8 @@ def main() -> None:
     except users.UserError as exc:
         sys.exit(f"Refused: {exc.code} {exc.params or ''}")
     except users.StoreNotWritable as exc:
-        sys.exit(f"Cannot write the users file ({exc}). /app/config must be writable by uid 10001.")
+        sys.exit(f"Cannot write to the portal's database ({exc}). Check PORTAL_DB_* in .env and that the "
+                 "portal-db-init service completed (docker compose logs portal-db-init).")
 
 
 if __name__ == "__main__":

@@ -2,86 +2,171 @@
 Journal of what happens in the portal: sign-ins, user administration and every record change, with the
 full content of each version of a record so that it can be restored.
 
-One JSON object per line in journal.jsonl, next to users.json in the portal's configuration volume
-(included in the daily backup). Appends are serialised with an advisory lock; reads scan the file,
-newest first, which is comfortable for hundreds of thousands of events.
+One document per event in the "journal" collection of the portal's database (store.py), included in the
+daily backup with the rest of the database. Queries use indexes on the date, the record and the user.
 
-Event: {"at", "user", "action", "anchor"?, "qpath"?, "doc"?, "detail"?}
+Event: {"at", "user", "action", "category", "anchor"?, "qpath"?, "doc"?, "detail"?, "expiresAt"?}
   record actions: create, update, delete (doc = the record after the change, or before a deletion),
   import (detail = counts); others: login, login-failed, logout, password-change, user-create,
   user-update, user-reset, user-remove, export.
+
+Retention by age, per category (Documentation/adr/0001-portal-state-in-mongodb.md, section 3.5):
+  PORTAL_JOURNAL_SESSION_DAYS  login, login-failed, logout                       default 180
+  PORTAL_JOURNAL_RECORD_DAYS   create, update, delete, import                    default 0 (kept for ever)
+  PORTAL_JOURNAL_ADMIN_DAYS    password-change, user-*, export and anything else  default 0 (kept for ever)
+An event is kept for the days of its category counted from the end of the day (UTC) it was made: expiresAt
+is that midnight plus the days (none when 0), and MongoDB's TTL monitor deletes it after that. Whole days keep
+the rule simple and let apply_retention() bring older events in line, one day at a time, when a value
+changes.
 """
-import fcntl
-import json
+import logging
 import os
-from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 
-JOURNAL_FILE = os.environ.get("PORTAL_JOURNAL_FILE",
-                              os.path.join(os.environ.get("PORTAL_CONFIG_DIR", "/app/config"), "journal.jsonl"))
+from pymongo import ASCENDING, DESCENDING
+
+import store
+
+log = logging.getLogger("portal.journal")
+
 RECORD_ACTIONS = ("create", "update", "delete")
+CATEGORIES = {
+    "session": ("login", "login-failed", "logout"),
+    "record": ("create", "update", "delete", "import"),
+}
+RETENTION_VARIABLES = {"session": ("PORTAL_JOURNAL_SESSION_DAYS", 180),
+                       "record": ("PORTAL_JOURNAL_RECORD_DAYS", 0),
+                       "admin": ("PORTAL_JOURNAL_ADMIN_DAYS", 0)}
+OUTPUT_FIELDS = ("at", "user", "action", "anchor", "qpath", "doc", "detail")
 
 
-def _now() -> str:
-    """Current UTC time, ISO 8601 with a Z, to the second."""
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+def category(action: str) -> str:
+    """session, record or admin (the retention category of an action)."""
+    for name, actions in CATEGORIES.items():
+        if action in actions:
+            return name
+    return "admin"
+
+
+def retention_days() -> dict[str, int]:
+    """Days each category is kept ({"session": 180, "record": 0, "admin": 0}; 0 = for ever), from the environment."""
+    days = {}
+    for name, (variable, default) in RETENTION_VARIABLES.items():
+        text = os.environ.get(variable, "").strip()
+        try:
+            days[name] = max(0, int(text)) if text else default
+        except ValueError:
+            log.warning("%s=%r is not a number of days: using %d.", variable, text, default)
+            days[name] = default
+    return days
+
+
+def _day(at) -> datetime:
+    """Midnight (UTC) at the start of the day of `at`."""
+    return datetime(at.year, at.month, at.day)
+
+
+def expires_at(at, cat: str, days: dict[str, int] | None = None):
+    """When an event of that category, made at `at`, expires: the end of its day plus the category's days
+    (None: kept for ever)."""
+    keep = (days or retention_days())[cat]
+    return _day(at) + timedelta(days=keep + 1) if keep else None
+
+
+def _journal():
+    return store.col("journal")
+
+
+def event_document(at, user: str, action: str, days: dict[str, int] | None = None, **fields) -> dict:
+    """The stored form of an event (also used by the migration of journal.jsonl)."""
+    cat = category(action)
+    doc = {"at": at, "user": user, "action": action, "category": cat,
+           **{k: v for k, v in fields.items() if v is not None}}
+    expiry = expires_at(at, cat, days)
+    if expiry is not None:
+        doc["expiresAt"] = expiry
+    return doc
 
 
 def append(action: str, user: str, **fields) -> None:
-    """Adds one event (one JSON line) to the journal under an exclusive file lock."""
-    event = {"at": _now(), "user": user, "action": action, **{k: v for k, v in fields.items() if v is not None}}
-    line = json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
-    with open(JOURNAL_FILE, "a", encoding="utf-8") as fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
-        try:
-            fh.write(line)
-        finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
-    try:
-        os.chmod(JOURNAL_FILE, 0o600)
-    except OSError:
-        pass
+    """Adds one event to the journal."""
+    _journal().insert_one(event_document(store.now(), user, action, **fields))
 
 
-def _events():
-    """Every event of the journal, oldest first; damaged lines are skipped."""
-    try:
-        with open(JOURNAL_FILE, encoding="utf-8") as fh:
-            for line in fh:
-                try:
-                    yield json.loads(line)
-                except ValueError:
-                    continue
-    except FileNotFoundError:
-        return
+def _output(doc: dict, with_doc: bool = True) -> dict:
+    """An event as the API returns it (the format of the former journal.jsonl lines)."""
+    event = {k: doc[k] for k in OUTPUT_FIELDS if k in doc and (with_doc or k != "doc")}
+    event["at"] = store.iso(doc.get("at"))
+    return event
 
 
 def for_record(anchor: str, qpath: str, limit: int = 20) -> list[dict]:
     """The latest versions of one record, newest first."""
-    found = deque(maxlen=limit)
-    for event in _events():
-        if event.get("anchor") == anchor and event.get("qpath", "") == qpath and event.get("action") in RECORD_ACTIONS:
-            found.append(event)
-    return list(reversed(found))
+    query = {"anchor": anchor, "action": {"$in": list(RECORD_ACTIONS)},
+             "qpath": qpath if qpath else {"$in": ["", None]}}
+    cursor = _journal().find(query).sort([("at", DESCENDING), ("_id", DESCENDING)]).limit(limit)
+    return [_output(doc) for doc in cursor]
 
 
 def search(user: str | None = None, since: str | None = None, until: str | None = None,
            text: str | None = None, allowed=None, limit: int = 500) -> list[dict]:
     """Events newest first, without record contents. since/until are ISO dates (inclusive);
-    text matches the anchor, qualifiers or action; allowed(anchor) filters records by permission."""
-    found = deque(maxlen=limit)
+    text matches the anchor, qualifiers, action or detail; allowed(anchor) filters records by permission."""
+    query: dict = {}
+    if user:
+        query["user"] = user
+    bounds = {}
+    start = store.parse_iso(f"{since}T00:00:00") if since else None
+    end = store.parse_iso(f"{until}T00:00:00") if until else None
+    if start:
+        bounds["$gte"] = start
+    if end:
+        bounds["$lt"] = end + timedelta(days=1)
+    if bounds:
+        query["at"] = bounds
     needle = (text or "").lower()
-    for event in _events():
-        day = event.get("at", "")[:10]
-        if user and event.get("user") != user:
-            continue
-        if since and day < since:
-            continue
-        if until and day > until:
-            continue
+    found = []
+    cursor = _journal().find(query, {"doc": 0}).sort([("at", DESCENDING), ("_id", DESCENDING)])
+    for event in cursor:
         if needle and needle not in " ".join(str(event.get(k, "")) for k in ("anchor", "qpath", "action", "detail")).lower():
             continue
         if allowed and event.get("anchor") and not allowed(event["anchor"]):
             continue
-        found.append({k: v for k, v in event.items() if k != "doc"})
-    return list(reversed(found))
+        found.append(_output(event, with_doc=False))
+        if len(found) >= limit:
+            break
+    return found
+
+
+def apply_retention() -> dict[str, int]:
+    """Recalculates expiresAt of the events of every category whose retention changed since the last start
+    (the values in use are kept in settings "journalRetention"), one day at a time, under a lock so that
+    replicas starting together do it once. Returns the number of events updated per category."""
+    days = retention_days()
+    changed = {}
+    if store.get_setting("journalRetention") == days:
+        return changed
+    journal = _journal()
+    with store.lock("retention", hold_seconds=1800, wait_seconds=1800):
+        previous = store.get_setting("journalRetention") or {}
+        for cat, keep in days.items():
+            if previous.get(cat) == keep:
+                continue
+            if not keep:
+                count = journal.update_many({"category": cat}, {"$unset": {"expiresAt": ""}}).modified_count
+            else:
+                count = 0
+                first = journal.find_one({"category": cat}, {"at": 1}, sort=[("at", ASCENDING)])
+                last = journal.find_one({"category": cat}, {"at": 1}, sort=[("at", DESCENDING)])
+                day = _day(first["at"]) if first else None
+                while day is not None and day <= last["at"]:
+                    following = day + timedelta(days=1)
+                    count += journal.update_many({"category": cat, "at": {"$gte": day, "$lt": following}},
+                                                 {"$set": {"expiresAt": day + timedelta(days=keep + 1)}}).modified_count
+                    day = following
+            changed[cat] = count
+            if previous:
+                log.info("Journal retention of %s events is now %s; %d event(s) updated.",
+                         cat, f"{keep} days" if keep else "for ever", count)
+        store.set_setting("journalRetention", days)
+    return changed

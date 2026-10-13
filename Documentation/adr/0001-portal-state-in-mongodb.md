@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (13 October 2026). Implementation in four steps; this record is step 1 |
+| Status | **Accepted** (13 October 2026). Implementation in four steps: 1 (this record) and 2 (the data in MongoDB) done |
 | Backlog item | 2.3 — architecture for scale and the portal's data in MongoDB |
 | Decided by | the owner of the branch, on the options set out in section 4 |
 | Portuguese | [ADR 0001 em português](../pt-BR/adr/0001-estado-do-portal-no-mongodb.md) |
@@ -77,9 +77,11 @@ built-in server (`python -m main` → `app.run()`), and every service in `docker
 - Database `resolver_portal` (`PORTAL_DB_NAME`), user `resolver_portal` (`PORTAL_DB_USERNAME`), password
   `PORTAL_DB_PASSWORD`. `.env.example` carries development defaults, as for the other secrets; the installer
   writes random values to `.env`.
-- The user is created by **a one-shot Compose service, `portal-db-init`**, built from the database image. It
-  receives the root credentials (as `database-service` already does), runs an idempotent `mongosh` script
-  — create the user, or update its password and roles when it exists — and exits. `portal-service` and
+- The user is created by **a one-shot Compose service, `portal-db-init`**: the portal's image running
+  `portal/db_init.py`. It receives the root `MONGO_URI` (as the official services already do), creates the
+  user, or updates its password and roles when it exists, and exits. Python in the portal's image, rather
+  than a `mongosh` script in the database image, lets the development tests run the same script against a
+  real MongoDB in CI. `portal-service` and
   `portal-worker` depend on it with `condition: service_completed_successfully`. Every way of starting the
   stack (installer, manual `docker compose up -d`, a restore) therefore ends with the right user and
   password, and changing `PORTAL_DB_PASSWORD` in `.env` takes effect at the next `up -d`.
@@ -97,16 +99,17 @@ built-in server (`python -m main` → `app.run()`), and every service in `docker
 |---|---|---|---|
 | `users` | user name | `hash`, `role`, `prefixes`, `disabled`, `mustChange`, `created`, `lastLogin` | — |
 | `record_meta` | record key (`meta.key()`) | `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | — |
-| `journal` | ObjectId | `at` (date), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt` | `{at: -1}`; `{anchor, qpath, at: -1}`; `{user, at: -1}`; TTL on `expiresAt` |
+| `journal` | ObjectId (`jsonl-<line>` when migrated) | `at` (date), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt` | `{at: -1}`; `{anchor, qpath, at: -1}`; `{user, at: -1}`; `{category}`; TTL on `expiresAt` |
 | `login_failures` | ObjectId | `key` (user name or address), `at` (date) | `{key, at}`; TTL on `at`, 15 minutes |
 | `jobs` | token | `type` (`import`, `linkcheck`), `user`, `state`, `created`, `heartbeat`, `worker`, `done`, `total`, `plan`, `results`, `expiresAt` | `{state, created}`; TTL on `expiresAt` |
 | `linkcheck_cache` | address | `result`, `expiresAt` | TTL on `expiresAt` |
-| `settings` | name | `lastFullCheck`, `migration` | — |
+| `settings` | name | `value` (`lastFullCheck`, `journalRetention`, `migration`); lock documents `lock:<name>` | — |
 
 Notes:
-- **Last active administrator**: `users.update()` and `users.remove()` keep their rule; the check and the
-  change run in one `find_one_and_update` / `delete_one` with a guard, so two administrators acting at the same
-  moment cannot both remove the last one.
+- **Last active administrator**: `users.update()` and `users.remove()` keep their rule. A standalone MongoDB
+  has no multi-document transactions, so every change of users runs under a lock shared by all processes (a
+  document `lock:users` in `settings`, created with a unique `_id`; one left by a process that died is broken
+  after a minute): two administrators acting at the same moment cannot both remove the last one.
 - **Dates**: stored as BSON dates (TTL needs them); the API still returns ISO 8601 strings with a `Z`, so the
   browser sees no change.
 - **Size**: a document holds at most 16 MB. An import is limited to 5,000 rows and 700 KB
@@ -142,9 +145,11 @@ Notes:
 | `PORTAL_JOURNAL_RECORD_DAYS` | 0 (kept for ever) | `create`, `update`, `delete`, `import` |
 | `PORTAL_JOURNAL_ADMIN_DAYS` | 0 (kept for ever) | `password-change`, `user-create`, `user-update`, `user-reset`, `user-remove`, `export` |
 
-An event gets `expiresAt` = `at` + the days of its category, or no `expiresAt` when the value is 0; MongoDB's
-TTL monitor deletes it after that time (it runs about once a minute). When a value changes, the portal
-recalculates `expiresAt` of the events of that category at start-up. The daily backup keeps what expires
+An event is kept for the days of its category counted from the end of the day (UTC) it was made:
+`expiresAt` = that midnight + the days, or no `expiresAt` when the value is 0; MongoDB's TTL monitor deletes
+it after that time (it runs about once a minute). Whole days keep the rule easy to state and let the portal,
+when a value changes, recalculate `expiresAt` of that category at start-up with one update per day of the
+journal (under a lock, so replicas do it once). The daily backup keeps what expires
 for its own retention (`RETENTION_DAYS`, 14 days by default). A record's history lives in the journal, so a
 limit on `PORTAL_JOURNAL_RECORD_DAYS` also limits how far back a record can be restored; the configuration
 documents say so.
@@ -210,7 +215,7 @@ Worse, and how it is contained:
 - more moving parts (`portal-db-init`, `portal-worker`): both use images the installation already builds;
 - the worker polls MongoDB once a second when idle: one indexed query, negligible;
 - `mongomock` is not MongoDB: the CI job against a real `mongo:7` covers TTL indexes, the user's
-  privileges and the migration. The development sandbox cannot run MongoDB, so that job's first real result
+  privileges and the migration; it is informative until it has proved stable. The development sandbox cannot run MongoDB, so that job's first real result
   comes from GitHub Actions.
 
 ## 6. Configuration added

@@ -1,10 +1,11 @@
 # Continuous integration: the development tests (dev-tests/README.md) on every push and pull request
-# to the development branch, in five jobs that run in parallel. Each job runs its group of programs
+# to the development branch, in six jobs that run in parallel. Each job runs its group of programs
 # through the pytest layer (dev-tests/test_programs.py) in strict mode: a missing engine, browser or
 # tool fails the job instead of skipping checks.
 #
-# The portal in Chromium (e2e) and the installer start as informative jobs: a failure there is shown
-# but does not mark the run as failed, until they have proved stable on GitHub's runners.
+# The portal in Chromium (e2e), the installer and the portal on a real MongoDB start as informative jobs:
+# a failure there is shown but does not mark the run as failed, until they have proved stable on GitHub's
+# runners.
 name: Development tests
 
 on:
@@ -56,6 +57,38 @@ jobs:
       - run: python -m pytest dev-tests -m portal -ra
         env:
           DEV_TESTS_TITLE: Portal
+
+  database:
+    # The portal's programs again, on a real MongoDB 7 instead of mongomock, plus test_store_mongodb.py:
+    # the user made by portal-db-init, its privileges and the TTL monitor. The credentials exist only in
+    # this throw-away service container.
+    name: Portal on a real MongoDB (informative)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    continue-on-error: true
+    services:
+      mongodb:
+        image: mongo:7
+        env:
+          MONGO_INITDB_ROOT_USERNAME: devtests
+          MONGO_INITDB_ROOT_PASSWORD: devtests-only
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping: 1}).ok'"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+    env:
+      PORTAL_TEST_MONGO_URI: mongodb://devtests:devtests-only@localhost:27017/?authSource=admin
+      PORTAL_DB_URI: mongodb://devtests:devtests-only@localhost:27017/?authSource=admin
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/dev-tests-setup
+        with:
+          npm: "true"
+          syntax-engine: "true"
+      - run: python -m pytest dev-tests -m "database or portal" -ra
+        env:
+          DEV_TESTS_TITLE: Portal on a real MongoDB
 
   e2e:
     name: Portal in Chromium (informative)

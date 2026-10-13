@@ -125,6 +125,8 @@ check "A: .env mode 600" "[[ \$(stat -c %a $SB/repo/.env) == 600 ]]"
 check "A: MongoDB password generated (48 hex)" "[[ \$(envval MONGO_INITDB_ROOT_PASSWORD) =~ ^[0-9a-f]{48}$ ]]"
 check "A: MONGO_URI matches the password" "[[ \$(envval MONGO_URI) == mongodb://gs1resolver:\$(envval MONGO_INITDB_ROOT_PASSWORD)@database-service:27017 ]]"
 check "A: API token generated (64 hex)" "[[ \$(envval SESSION_TOKEN) =~ ^[0-9a-f]{64}$ ]]"
+check "A: portal database password generated (48 hex)" "[[ \$(envval PORTAL_DB_PASSWORD) =~ ^[0-9a-f]{48}$ ]]"
+check "A: portal session key generated (64 hex)" "[[ \$(envval PORTAL_SECRET_KEY) =~ ^[0-9a-f]{64}$ ]]"
 check "A: first-user password cleared after start" "[[ -z \$(envval PORTAL_ADMIN_PASSWORD) && \$(envval PORTAL_ADMIN_USERNAME) == admin ]]"
 check "A: generated password shown once in the summary" "grep -Eq 'First portal user: +admin +/ +[0-9a-f]{20}' $SB/state/out"
 A_ADMIN=$(grep -Eo 'First portal user: +admin +/ +[0-9a-f]{20}' "$SB/state/out" | grep -Eo '[0-9a-f]{20}$')
@@ -138,6 +140,7 @@ check "A: certbot called for the domain" "grep -q 'certbot --nginx -d id.example
 check "A: nginx and certbot packages requested" "grep -q 'apt-get install -y.*certbot python3-certbot-nginx' $SB/state/calls"
 check "A: backup cron points at the repository" "grep -q \"root $SB/repo/scripts/resolver-backup.sh\" $SB/state/cron"
 A_TOKEN=$(envval SESSION_TOKEN); A_PWD=$(envval MONGO_INITDB_ROOT_PASSWORD)
+A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY)
 
 # ------------------------------------------------------------------------------ B. re-run
 echo "--- B. second run on the same installation"
@@ -146,6 +149,7 @@ echo "PORTAL_SESSION_IDLE_MINUTES='20'" >> "$SB/repo/.env"
 run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org; rc=$?
 check "B: exit status 0" "[[ $rc == 0 ]]"
 check "B: secrets kept" "[[ \$(envval SESSION_TOKEN) == $A_TOKEN && \$(envval MONGO_INITDB_ROOT_PASSWORD) == $A_PWD ]]"
+check "B: portal database password and session key kept" "[[ \$(envval PORTAL_DB_PASSWORD) == $A_PORTAL_DB && \$(envval PORTAL_SECRET_KEY) == $A_KEY ]]"
 check "B: settings kept from .env (operator)" "[[ \$(envval RESOLVER_ORG_NAME) == 'Example Org' ]]"
 check "B: unmanaged setting carried over" "grep -q \"^PORTAL_SESSION_IDLE_MINUTES='20'\" $SB/repo/.env"
 check "B: previous .env backed up with mode 600" "ls $SB/repo/.env.bak-* >/dev/null && [[ \$(stat -c %a \$(ls $SB/repo/.env.bak-* | head -n 1)) == 600 ]]"
@@ -178,6 +182,7 @@ run_installer TLS_MODE=letsencrypt CERTBOT_EMAIL=ops@example.org; rc=$?
 check "C: exit status 0" "[[ $rc == 0 ]]"
 check "C: percent-encoded MONGO_URI kept as is" "[[ \$(envval MONGO_URI) == 'mongodb://resolveradmin:p%40ss%3Aw0rd%21xyz@database-service:27017' ]]"
 check "C: MongoDB user and token kept" "[[ \$(envval MONGO_INITDB_ROOT_USERNAME) == resolveradmin && \$(envval SESSION_TOKEN) == 0123456789abcdef0123456789abcdef ]]"
+check "C: an installation from before the portal's database gets its password and session key" "[[ \$(envval PORTAL_DB_PASSWORD) =~ ^[0-9a-f]{48}$ && \$(envval PORTAL_SECRET_KEY) =~ ^[0-9a-f]{64}$ ]]"
 check "C: quoted values read correctly" "[[ \$(envval RESOLVER_CONTACT_STREET) == 'Av. Exemplo, 328 - Pinheiros' ]]"
 check "C: existing certificate site kept" "grep -q snakeoil $SB/nginx/sites-available/gs1resolver && ! grep -q '^certbot' $SB/state/calls"
 check "C: Compose accepts the rewritten .env" "compose_cfg | grep -q 'MONGO_URI: mongodb://resolveradmin:p%40ss'"

@@ -195,7 +195,8 @@ EXISTING_ORDER=()
 MANAGED_KEYS=" MONGO_INITDB_ROOT_USERNAME MONGO_INITDB_ROOT_PASSWORD MONGO_URI SESSION_TOKEN FQDN
   RESOLVER_ORG_NAME RESOLVER_ORG_URL RESOLVER_CONTACT_STREET RESOLVER_CONTACT_LOCALITY RESOLVER_CONTACT_REGION
   RESOLVER_CONTACT_POSTCODE RESOLVER_CONTACT_COUNTRY RESOLVER_CONTACT_TELEPHONE PORTAL_ADMIN_USERNAME
-  PORTAL_ADMIN_PASSWORD PROXY_BIND_ADDRESS DATABASE_BIND_ADDRESS TLS_MODE CERTBOT_EMAIL TLS_CERT_FILE TLS_KEY_FILE "
+  PORTAL_ADMIN_PASSWORD PORTAL_DB_PASSWORD PORTAL_SECRET_KEY PROXY_BIND_ADDRESS DATABASE_BIND_ADDRESS TLS_MODE
+  CERTBOT_EMAIL TLS_CERT_FILE TLS_KEY_FILE "
 
 # Reads KEY=VALUE lines of an existing .env (quotes removed) into EXISTING.
 load_existing_env() {
@@ -246,6 +247,10 @@ write_env() {
     printf '# The installer clears the password once the user exists.\n'
     env_line PORTAL_ADMIN_USERNAME "$PORTAL_ADMIN_USERNAME"
     env_line PORTAL_ADMIN_PASSWORD "$PORTAL_ADMIN_PASSWORD"
+    printf '\n# Portal: password of its own database user (portal-db-init applies it at every start)\n'
+    printf '# and the key that signs its sessions (shared by every portal replica).\n'
+    env_line PORTAL_DB_PASSWORD "$PORTAL_DB_PASSWORD"
+    env_line PORTAL_SECRET_KEY "$PORTAL_SECRET_KEY"
     printf '\n# Read by Docker Compose itself\n'
     env_line PROXY_BIND_ADDRESS "$PROXY_BIND_ADDRESS"
     env_line DATABASE_BIND_ADDRESS "127.0.0.1"
@@ -500,6 +505,8 @@ secrets() {
   MONGO_USER=$(existing MONGO_INITDB_ROOT_USERNAME); MONGO_USER=${MONGO_USER:-gs1resolver}
   MONGO_PASSWORD=$(existing MONGO_INITDB_ROOT_PASSWORD)
   SESSION_TOKEN=$(existing SESSION_TOKEN)
+  PORTAL_DB_PASSWORD=$(existing PORTAL_DB_PASSWORD)
+  PORTAL_SECRET_KEY=$(existing PORTAL_SECRET_KEY)
   local db_exists=0
   command -v docker >/dev/null 2>&1 && volume_exists resolver-database-volume && db_exists=1
 
@@ -529,8 +536,18 @@ secrets() {
   else
     info "API token kept from .env."
   fi
+  # The portal's database user takes whatever password .env holds at the next start (portal-db-init), so a
+  # missing or development value can simply be replaced.
+  if [[ -z $PORTAL_DB_PASSWORD || $PORTAL_DB_PASSWORD == resolver_portal ]]; then
+    PORTAL_DB_PASSWORD=$(random_secret 24)
+    info "A password for the portal's database user was generated."
+  fi
+  if [[ -z $PORTAL_SECRET_KEY ]]; then
+    PORTAL_SECRET_KEY=$(random_secret 32)
+    info "A session key for the portal was generated (signed-in users sign in again once)."
+  fi
   local value
-  for value in "$MONGO_PASSWORD" "$MONGO_URI" "$SESSION_TOKEN"; do
+  for value in "$MONGO_PASSWORD" "$MONGO_URI" "$SESSION_TOKEN" "$PORTAL_DB_PASSWORD" "$PORTAL_SECRET_KEY"; do
     [[ $value != *"'"* ]] || die "A secret in .env contains a single quote; replace it before running the installer."
   done
 }

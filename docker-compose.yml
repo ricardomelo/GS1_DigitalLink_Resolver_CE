@@ -43,6 +43,22 @@ services:
     networks:
       - resolver-internal-network
 
+  portal-db-init:
+    # One-shot: creates the portal's own MongoDB user (readWrite on PORTAL_DB_NAME only), or brings its
+    # password and roles up to date, then exits. It alone receives the root MONGO_URI on the portal's side.
+    build: './portal'
+    command: ["python", "db_init.py"]
+    env_file:
+      - path: .env.example
+        required: true
+      - path: .env          # installation values; overrides .env.example (never committed)
+        required: false
+    depends_on:
+      - database-service
+    restart: "no"
+    networks:
+      - resolver-internal-network
+
   portal-service:
     # Link management portal for non-technical users (served at /portal/ by the proxy)
     build: './portal'
@@ -54,14 +70,18 @@ services:
         required: false
     environment:
       DATA_ENTRY_URL: http://data-entry-service:3000/api
-      # The portal talks to the data entry API only; it is not given the MongoDB credentials.
+      # The portal changes records through the data entry API only, and keeps its own data in its own
+      # database with its own user (PORTAL_DB_*); it is not given the root MongoDB credentials.
       MONGO_URI: ""
       MONGO_INITDB_ROOT_USERNAME: ""
       MONGO_INITDB_ROOT_PASSWORD: ""
     volumes:
       - resolver-portal-config:/app/config
     depends_on:
-      - data-entry-service
+      data-entry-service:
+        condition: service_started
+      portal-db-init:
+        condition: service_completed_successfully
     restart: always
     networks:
       - resolver-internal-network

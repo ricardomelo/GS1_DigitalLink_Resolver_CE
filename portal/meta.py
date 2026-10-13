@@ -1,22 +1,18 @@
 """
 Record metadata kept by the portal: who created and who last changed each record, and when.
 
-The resolver stores only the links, so this small JSON file (next to users.json, in the portal's
-configuration volume) lets the record list show and filter by "last change". Records created or
-changed outside the portal simply have no metadata.
+The resolver stores only the links, so the "record_meta" collection of the portal's database (store.py)
+lets the record list show and filter by "last change". Records created or changed outside the portal simply
+have no metadata.
 
-Key: see key(): "<GTIN-14>" and "<GTIN-14>/10/<lot>" for GTINs, "<AI>/<value>" for the other keys.
-Writes are atomic and serialised with an advisory lock, as in users.py. A failure here never
-stops a save: the caller logs it and carries on.
+Key (the document's _id): see key(): "<GTIN-14>" and "<GTIN-14>/10/<lot>" for GTINs, "<AI>/<value>" for the
+other keys. A failure here never stops a save: the caller logs it and carries on.
 """
-import fcntl
-import json
-import os
-from contextlib import contextmanager
 from datetime import datetime, timezone
 
-META_FILE = os.environ.get("PORTAL_META_FILE",
-                           os.path.join(os.environ.get("PORTAL_CONFIG_DIR", "/app/config"), "records-meta.json"))
+import store
+
+FIELDS = ("createdAt", "createdBy", "updatedAt", "updatedBy")
 
 
 def key(anchor: str, qpath: str = "") -> str:
@@ -27,34 +23,13 @@ def key(anchor: str, qpath: str = "") -> str:
     return base + (qpath or "")
 
 
+def _meta():
+    return store.col("record_meta")
+
+
 def load() -> dict[str, dict]:
-    """The whole metadata file ({record key: {createdAt, createdBy, updatedAt, updatedBy}}); empty if absent."""
-    try:
-        with open(META_FILE, encoding="utf-8") as fh:
-            data = json.load(fh)
-        return data if isinstance(data, dict) else {}
-    except (FileNotFoundError, ValueError):
-        return {}
-
-
-@contextmanager
-def _locked():
-    """Exclusive lock on the metadata file (one writer at a time, also across processes)."""
-    with open(META_FILE + ".lock", "a") as fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
-
-
-def _write(data: dict) -> None:
-    """Writes the metadata atomically (temporary file, then rename), readable by the portal only."""
-    tmp = META_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=1, sort_keys=True)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, META_FILE)
+    """Every record's metadata ({record key: {createdAt, createdBy, updatedAt, updatedBy}}); empty if none."""
+    return {doc["_id"]: {k: doc[k] for k in FIELDS if k in doc} for doc in _meta().find()}
 
 
 def _now() -> str:
@@ -64,19 +39,12 @@ def _now() -> str:
 
 def touch(anchor: str, qpath: str, user: str) -> None:
     """Records a creation or a change by `user` now."""
-    with _locked():
-        data = load()
-        k = key(anchor, qpath)
-        now = _now()
-        entry = data.get(k) or {"createdAt": now, "createdBy": user}
-        entry.update(updatedAt=now, updatedBy=user)
-        data[k] = entry
-        _write(data)
+    now = _now()
+    _meta().update_one({"_id": key(anchor, qpath)},
+                       {"$set": {"updatedAt": now, "updatedBy": user},
+                        "$setOnInsert": {"createdAt": now, "createdBy": user}}, upsert=True)
 
 
 def remove(anchor: str, qpath: str) -> None:
     """Forgets the metadata of a deleted record."""
-    with _locked():
-        data = load()
-        if data.pop(key(anchor, qpath), None) is not None:
-            _write(data)
+    _meta().delete_one({"_id": key(anchor, qpath)})

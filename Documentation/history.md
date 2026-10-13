@@ -266,6 +266,8 @@ real MongoDB; four deliveries. They are recorded in
 | `a072e9d` | step 3: `jobs.py` and `worker.py`; imports and link checks as jobs; the `portal-worker` service and `PORTAL_WORKER`; queue, "not running" and failure messages in the browser; `worker` in the health check and in the installer's checks; `test_jobs.py`, `test_worker_processes.py`, e2e and installer scenarios |
 | `f1e4577` | docs: step 3 in the changelog, features and histories |
 | `20f3304` | step 4: replicas (`deploy.replicas` from `.env`, no fixed `container_name` on the replicable services); gunicorn in the resolver and the data entry API, `WEB_CONCURRENCY` processes everywhere; nginx 1.30 with `resolve` in every upstream; the portal's fallback session key safe under concurrent starts; replica counts in the installer; e2e and installer jobs required; `test_deploy.py`, replicas in `test_home.py` and `test_install.sh` |
+| `c426dfd` | docs: step 4 in the changelog, features and histories |
+| `3298da7` | dev-tests: every nginx temporary folder in the proxy test's work folder (the first CI run on nginx.org's nginx) |
 
 Step 2. Three details changed while it was built, and ADR 0001 was brought in line: the portal's user is
 made by a Python script in the portal's image (`db_init.py`), so that CI can run the same script against a
@@ -314,6 +316,17 @@ of its own that answers the service names with replicas on `127.0.0.x`, and `tes
 image's gunicorn command. A rehearsal in the sandbox put two gunicorn replicas of the resolver and of the
 data entry API behind that proxy: requests were shared evenly; the records themselves could not be stored,
 because FerretDB refuses keys containing a dot, which the official records use.
+
+Step 4 was confirmed on staging: after a backup and the four replica counts set to 2 in `.env`, `docker
+compose up -d --build` replaced the containers with fixed names by two of each service
+(`gs1_digitallink_resolver_ce-web-service-1`, `-2`, …) beside the single `database-server` and
+`frontend-proxy-server`; the health check, both resolutions through the proxy and the two worker
+announcements were as expected; twelve resolutions were shared six and six between the two `web-service`
+replicas; in the browser, signing in, moving between screens across replicas, saving a product and a batch,
+export, import and redirection all worked; GS1's resolver test suite passed again against the resolver now
+running under gunicorn. The first CI run of `c426dfd` was green except the proxy test, which stopped before
+its first check: nginx from nginx.org's package keeps its temporary folders in `/var/cache/nginx`, which the
+runner's user cannot create; the test now keeps every temporary folder in its work folder (`3298da7`).
 
 ## How the main areas evolved
 
@@ -394,6 +407,9 @@ because FerretDB refuses keys containing a dot, which the official records use.
   hoping concurrent starts will meet.
 - Check a plan against the way it will be operated: restarting the proxy when a service is recreated works
   for one container per service, not for a container added beside the others.
+- A tool from another packager behaves differently in small ways: Ubuntu's and nginx.org's nginx keep their
+  temporary folders in different places. Reproduce the CI runner's conditions (the package's paths, a user who
+  is not root) before blaming the code.
 
 ## Open items
 

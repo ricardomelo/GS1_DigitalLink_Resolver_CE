@@ -271,6 +271,8 @@ job do CI com MongoDB real; quatro entregas. Elas estão registradas no
 | `a072e9d` | etapa 3: `jobs.py` e `worker.py`; importações e verificações de links como tarefas; o serviço `portal-worker` e `PORTAL_WORKER`; mensagens de fila, de "não está em execução" e de falha no navegador; `worker` na verificação de saúde e nas conferências do instalador; `test_jobs.py`, `test_worker_processes.py`, cenários de e2e e do instalador |
 | `f1e4577` | docs: etapa 3 no changelog, nas funcionalidades e nos históricos |
 | `20f3304` | etapa 4: réplicas (`deploy.replicas` a partir do `.env`, sem `container_name` fixo nos serviços replicáveis); gunicorn no Resolver e na API de cadastro, `WEB_CONCURRENCY` processos em todos; nginx 1.30 com `resolve` em todos os upstreams; a chave de sessão reserva do portal segura com inícios simultâneos; quantidades de réplicas no instalador; jobs e2e e do instalador obrigatórios; `test_deploy.py`, réplicas no `test_home.py` e no `test_install.sh` |
+| `c426dfd` | docs: etapa 4 no changelog, nas funcionalidades e nos históricos |
+| `3298da7` | dev-tests: todas as pastas temporárias do nginx na pasta de trabalho do teste do proxy (a primeira execução do CI no nginx do nginx.org) |
 
 Etapa 2. Três detalhes mudaram durante a construção, e o ADR 0001 foi alinhado: o usuário do portal é
 criado por um script Python na imagem do portal (`db_init.py`), para que o CI rode o mesmo script contra um
@@ -322,6 +324,18 @@ dos serviços com réplicas em `127.0.0.x`, e o `test_deploy.py` inicia o comand
 ensaio no ambiente de desenvolvimento pôs duas réplicas gunicorn do Resolver e da API de cadastro atrás desse
 proxy: as requisições foram repartidas por igual; os cadastros em si não puderam ser gravados, porque o
 FerretDB recusa chaves com ponto, que os cadastros oficiais usam.
+
+A etapa 4 foi confirmada na homologação: depois de um backup e das quatro quantidades de réplicas definidas
+como 2 no `.env`, o `docker compose up -d --build` trocou os contêineres de nome fixo por dois de cada serviço
+(`gs1_digitallink_resolver_ce-web-service-1`, `-2`, …) ao lado dos únicos `database-server` e
+`frontend-proxy-server`; a verificação de saúde, as duas resoluções pelo proxy e os dois anúncios de worker
+ficaram como esperado; doze resoluções foram repartidas seis e seis entre as duas réplicas do `web-service`; no
+navegador, entrar, passar de tela em tela entre réplicas, salvar um produto e um lote, exportar, importar e
+redirecionar funcionaram; a suíte de testes de Resolver da GS1 passou de novo contra o Resolver agora no
+gunicorn. A primeira execução do CI do `c426dfd` ficou verde, exceto o teste do proxy, que parou antes da
+primeira verificação: o nginx do pacote do nginx.org guarda suas pastas temporárias em `/var/cache/nginx`, que
+o usuário do runner não consegue criar; o teste agora mantém todas as pastas temporárias na sua pasta de
+trabalho (`3298da7`).
 
 ## Como as principais áreas evoluíram
 
@@ -408,6 +422,9 @@ FerretDB recusa chaves com ponto, que os cadastros oficiais usam.
   teste em vez de esperar que inícios simultâneos se encontrem.
 - Confira um plano contra a forma como ele vai ser operado: reiniciar o proxy quando um serviço é recriado
   funciona com um contêiner por serviço, não com um contêiner acrescentado ao lado dos outros.
+- Uma ferramenta de outro empacotador se comporta diferente em detalhes: o nginx do Ubuntu e o do nginx.org
+  guardam as pastas temporárias em lugares diferentes. Reproduza as condições do runner do CI (os caminhos do
+  pacote, um usuário que não é root) antes de culpar o código.
 
 ## Pendências
 

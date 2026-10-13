@@ -14,6 +14,7 @@ an installation is responsible for its use (see the notice at the top of the [RE
 | [Extensions documentation](extensions/README.md) | developers, operators | detailed rules and design decisions of each part, backup and restore, hardening |
 | [Changelog](extensions/CHANGELOG.md) | maintainers | every change on the branch |
 | [Architecture decisions](adr/0001-portal-state-in-mongodb.md) | maintainers, developers, operators | ADR 0001: the portal's state in MongoDB, background jobs in a worker, more than one replica |
+| [Tenants](adr/0002-tenants.md) | maintainers, developers, operators | ADR 0002: organisations that own GS1 Company Prefixes, the server administrator, support access, an audit trail per tenant |
 | [Official README](upstream-README.md) | — | the README of the official GS1 Resolver CE, kept for reference |
 | [Development tests](../dev-tests/README.md) | developers | how to set up and run the tests |
 | [Documentação em português](pt-BR/README.md) | Portuguese readers | overview, installation and operation, plus the user guide, features, history, developer guide, conformance review and architecture decisions in Brazilian Portuguese |

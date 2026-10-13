@@ -44,6 +44,7 @@ uma organização precisa para operar um Resolver para os seus associados:
 | [Guia do desenvolvedor](guia-do-desenvolvedor.md) | desenvolvedores | serviços, arquivos-fonte, fluxos, API do portal, arquivos de dados, testes, como estender |
 | [Revisão de conformidade](revisao-de-conformidade.md) | mantenedores, revisores, operadores | revisão cláusula a cláusula frente à GS1 Digital Link URI Syntax 1.7 e ao GS1-Conformant Resolver 1.2.1: achados, evidências, candidatos a errata |
 | [Decisões de arquitetura](adr/0001-estado-do-portal-no-mongodb.md) | mantenedores, desenvolvedores, operadores | ADR 0001: o estado do portal no MongoDB, tarefas em segundo plano num worker, mais de uma réplica |
+| [Organizações (tenants)](adr/0002-organizacoes.md) | mantenedores, desenvolvedores, operadores | ADR 0002: organizações donas de prefixos de empresa GS1, o administrador do servidor, acesso de suporte, uma trilha de auditoria por tenant |
 
 Em inglês ficam também a [documentação detalhada das extensões](../extensions/README.md), o
 [changelog](../extensions/CHANGELOG.md) e o [README oficial](../upstream-README.md). O índice de todos os

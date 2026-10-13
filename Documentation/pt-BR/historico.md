@@ -23,7 +23,7 @@ o próximo começar.
 | 5 — revisão de conformidade e 2.5.9 | 01/10 | `324d85b` → `db8e342` e os commits de documentação | revisão de conformidade cláusula a cláusula, modelo de cadastro do Resolver 2.5.9 (lote e variante informativos numa série), um link padrão acima de todo cadastro, correções de resolução (item 1.5) |
 | 6 — EPC em binário | 02/10 | `51a0da8` → `4b9a7be` e os commits de documentação | `/eh…` e `/ex…` descomprimidos para todos os esquemas EPC que têm GS1 Digital Link (item 1.6), a partir dos artefatos do TDT 2.2 e do TDS 2.3; nome do upstream do proxy corrigido (toda resolução pelo nginx dava 500 desde o 1.5); mais quatro candidatos a errata; confirmado na homologação |
 | 7 — suíte de testes da GS1 | 02/10 | `bc573c4` → `386a8c3` | a própria suíte da GS1 aprovada na homologação (31 de 31), tipos de link publicados em `https://ref.gs1.org/voc/` (F22), errata E12, backlog em aberto no README |
-| 8 — backlog e ajustes rápidos | 13/10 | `bc1c86b`, `1a1ca59` e o commit de documentação | backlog reordenado em torno de tenants, e-mail, chaves de API e domínios próprios; sessão de 30 minutos sem uso com aviso e limite de 12 horas; quadro da sintaxe retirado da página inicial; aviso da comunidade |
+| 8 — backlog, ajustes rápidos, CI | 13/10 | `bc1c86b`, `1a1ca59`, `d68a883` e os commits de documentação | backlog reordenado em torno de tenants, e-mail, chaves de API e domínios próprios; sessão de 30 minutos sem uso com aviso e limite de 12 horas; quadro da sintaxe retirado da página inicial; aviso da comunidade; testes de desenvolvimento pelo pytest e no GitHub Actions |
 
 Ao fim da sessão 4, o fork altera ou acrescenta 70 arquivos do projeto oficial (cerca de 16.000 linhas
 acrescentadas) e é coberto por 739 verificações nos testes de desenvolvimento, além do teste do
@@ -210,12 +210,13 @@ homologação, e um GTIN válido sem cadastro é um 404 (2.4.1). O backlog em ab
 Decisões do responsável: os tipos de link são publicados em `https://ref.gs1.org/voc/` (opção B do F22); o
 comportamento da E12 é mantido e vira errata e issue para a suíte.
 
-## Sessão 8 — backlog reordenado, ajustes rápidos (item 2.1)
+## Sessão 8 — backlog reordenado, ajustes rápidos (item 2.1), integração contínua (item 2.2)
 
 | Commit | Mudança |
 |---|---|
 | `bc1c86b` | backlog do README reescrito a partir das anotações do responsável de 13 de outubro: ajustes rápidos, arquitetura para escala com os dados do portal no MongoDB, tenants com administradores do servidor e do tenant, e-mail, uma API do tenant com chaves de API, analytics por tenant com exportação, o domínio do próprio tenant no QR Code, Verified by GS1 na página de destinos, um teste de carga |
 | `1a1ca59` | portal: a sessão termina após 30 minutos sem uso e 12 horas depois da entrada, com aviso dois minutos antes, renovação enquanto o usuário trabalha e compartilhada entre abas; página inicial sem o quadro da sintaxe GS1 Digital Link; aviso da comunidade no README, na documentação e nos rodapés; `test_session.py` |
+| `d68a883` | integração contínua (item 2.2): o `dev-tests/test_programs.py` roda todos os programas de teste pelo pytest, por grupo, com um modo estrito; workflow `.github/workflows/dev-tests.yml` com cinco jobs paralelos e uma action de preparação que fixa todas as versões; o `main.yml` vazio removido; selo de status |
 
 Depois de uma pausa de 2 a 13 de outubro, o fork, o projeto oficial e a suíte da GS1 não tinham mudado. As
 anotações do responsável foram avaliadas uma a uma: todas ficaram, algumas fundidas a itens existentes. A
@@ -232,6 +233,16 @@ entrada, ambos configuráveis.
 Compilação do engine de sintaxe do portal no ambiente de desenvolvimento: o arquivo da release não pôde ser
 baixado ali, então a mesma tag foi clonada com git e compilada com os passos do script (o script não mudou).
 
+Integração contínua (item 2.2). Decisões do responsável: uma camada fina de pytest sobre os programas
+existentes (não uma reescrita das verificações); cinco jobs em paralelo; todos obrigatórios, menos o portal
+no Chromium e o instalador, que começam como informativos; um selo de status no README. Antes de escrever o
+workflow a linha de base foi rodada de novo (`a6be2ad`: 194 e 215 verificações, depois todos os programas), e
+ficou provado que a camada sabe falhar: uma mudança proposital no verificador de links fez duas verificações
+falharem, e a camada as relatou. Os passos de preparação também rodaram com Python 3.12, uma pasta de cache
+limpa e as versões npm fixadas, como num runner: todos os programas passaram. O teste do instalador, que
+precisa de root, rodou como usuário comum com sudo sem senha. Os logs das execuções do GitHub Actions exigem
+login, então os primeiros resultados vêm do responsável.
+
 
 
 | Área | 1.0.0 (sessão 1) | Agora |
@@ -244,7 +255,7 @@ baixado ali, então a mesma tag foi clonada com git e compilada com os passos do
 | Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, tela de usuários, senhas temporárias, histórico, auditoria |
 | Instalação | manual, com patch | fork git, configuração em camadas, instalador para Ubuntu, backup |
 | Resolução | GTIN e lote, links comprimidos do Digital Link 1.1 | todas as chaves e qualificadores, as regras do Resolver 1.2.1, EPC em binário de etiquetas NFC (`/eh…`, `/ex…`) |
-| Testes | 69 verificações | 1.306 verificações em 15 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador |
+| Testes | 69 verificações | 1.306 verificações em 15 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador; rodam pelo pytest e no GitHub Actions |
 | Documentação | README do pacote, documento de passagem | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e português), documentação das extensões, changelog |
 
 ## Decisões que ficam, a não ser que sejam revistas de propósito

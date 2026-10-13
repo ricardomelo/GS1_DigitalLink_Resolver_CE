@@ -2,6 +2,19 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Continuous integration (backlog item 2.2)
+- **Development tests through pytest**: `dev-tests/test_programs.py` runs each of the fifteen programs and the
+  installer test as one pytest test (a subprocess; exit status and `PASS`/`FAIL`/`SKIP` lines); the
+  programs are unchanged and still run by hand. Markers `resolver`, `portal`, `e2e`, `home`, `install`;
+  each program's check count at the end and in the GitHub Actions run summary. **Strict mode**
+  (`DEV_TESTS_STRICT=1`): a missing variable, path or command, or a `SKIP` line, fails. Commit `d68a883`.
+- **GitHub Actions workflow** `.github/workflows/dev-tests.yml`: five jobs in parallel on every push and pull
+  request to `gs1br/develop` (not for documentation-only changes), in strict mode; the portal in Chromium
+  and the installer are informative at first. The composite action `.github/actions/dev-tests-setup` pins
+  Python 3.12, Node.js 24, `gs1encoder` 1.4.1, `epc-tds` 1.4.1, `ajv-dist` 8.17.1, GS1's resolver test suite
+  at `32597c1` and Docker Compose v2.29.7, and caches the engines, npm packages and Chromium. The empty
+  `.github/workflows/main.yml` is removed. Status badge in the README (both languages). Commit `d68a883`.
+
 ### Quick wins (backlog item 2.1)
 - **Portal session limits** (owner's decision of 13 October): the session ends after 30 minutes without
   use (`PORTAL_SESSION_IDLE_MINUTES`) and 12 hours after the sign-in whatever the use

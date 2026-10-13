@@ -225,6 +225,8 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Funcionalidade | O que faz | Desde |
 |---|---|---|
 | Testes de desenvolvimento | Resolver, suíte de testes de Resolver da GS1 rodando no Chromium contra o código do Resolver, decodificador de EPC em binário (conferido com o anexo E.3 do TDS e com a biblioteca `epc-tds`), API de cadastro, chaves, governança, planilhas, caracteres especiais, atributos de dados, verificador de links, portal de ponta a ponta no Chromium (desktop e celular), página inicial com nginx, instalador com simulações | `0733a3f` e seguintes |
+| Testes de desenvolvimento pelo pytest | `pytest dev-tests` roda todos os programas, por grupo (`-m resolver`, `portal`, `e2e`, `home`, `install`), com a contagem de verificações de cada programa; modo estrito para o CI | `d68a883` |
+| Integração contínua | O GitHub Actions roda os testes em cinco jobs paralelos a cada push e pull request para `gs1br/develop`; versões fixadas, engines e navegador em cache; selo de status no README | `d68a883` |
 | Screenshots | `dev-tests/docs/screenshots.py` regenera as imagens do README e do guia do portal nos dois idiomas | `f14d8c4`, sessão 4 |
 | Documentação | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e em português), documentação das extensões, changelog | `539bab0` e seguintes |
 

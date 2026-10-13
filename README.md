@@ -545,7 +545,8 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 Status on 13 October 2026. Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
-the quick wins (session limits, home page, community notice), is complete too. What was
+the quick wins (session limits, home page, community notice), and item 2.2, continuous integration (the
+development tests through pytest on GitHub Actions), are complete too. What was
 done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
 The items below are in the agreed order; sizes are relative (S, M, L). The order puts first what later items
 build on: the portal's data store and tenants come before the API, e-mail and analytics, which all need to
@@ -553,10 +554,9 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Technical foundations | 2.2 | **Continuous integration**: the development tests as pytest suites in a GitHub Actions workflow (engines cached) | M | — |
-| | 2.3 | **Architecture for scale and the portal's data in MongoDB**: an architecture decision record (stateless services, state in the database, background jobs outside the web process, more than one replica of each service); the portal's users, record metadata, journal, jobs and sign-in lockout moved from files and memory to a database of their own in the existing MongoDB, without changing the official resolver's collections; retention of the journal; migration of existing installations; backup and restore included | L | 2.2 |
+| Technical foundations | 2.3 | **Architecture for scale and the portal's data in MongoDB**: an architecture decision record (stateless services, state in the database, background jobs outside the web process, more than one replica of each service); the portal's users, record metadata, journal, jobs and sign-in lockout moved from files and memory to a database of their own in the existing MongoDB, without changing the official resolver's collections; retention of the journal; migration of existing installations; backup and restore included | L | — |
 | | 2.4 | **Tenants**: an organisation (tenant) owns its GS1 Company Prefixes, each prefix belonging to one tenant only; a server administrator creates tenants and assigns prefixes; a tenant administrator manages the tenant's users; every call checks the tenant on the server; audit trail per tenant; e-mail address per user; privacy by design (data minimisation, the server administrator's access to a tenant's data recorded in that tenant's audit trail) | L | 2.3 |
-| | 2.5 | **One source for the GS1 rules**: keys, qualifiers, formats and AI names derived from the GS1 Barcode Syntax Dictionary, both engines on one version, engine messages translated, dictionary updates proposed by a scheduled job; brings AIs (7041) and (8040)–(8043) | L | 2.2 |
+| | 2.5 | **One source for the GS1 rules**: keys, qualifiers, formats and AI names derived from the GS1 Barcode Syntax Dictionary, both engines on one version, engine messages translated, dictionary updates proposed by a scheduled job; brings AIs (7041) and (8040)–(8043) | L | — |
 | Platform services | 3.1 | **E-mail**: outgoing mail through an authenticated relay (settings in `.env`), invitations to new users, password recovery by single-use link, a notification framework with per-user preferences | M | 2.4 |
 | | 3.2 | **Tenant API and API keys**: a versioned API of the portal for records, labels and later analytics, described in OpenAPI, limited to the tenant's prefixes; keys created by the tenant administrator in the portal (random, stored only as a hash, shown once, with scopes, expiry, revocation, last use and rate limits); the official data entry API and its token stay internal | L | 2.4, 2.5 |
 | Resolution log and analytics | 4.1 | **Log of resolver requests** (key, qualifiers, data attribute AIs, link type, outcome and level, latency, language, device, referrer, EPC scheme), asynchronous, privacy by design, raw events with an expiry plus daily aggregates | L | 2.3 |

@@ -23,7 +23,7 @@ the next one started.
 | 5 — conformance review and 2.5.9 | 1 Oct | `324d85b` → `db8e342` and the documentation commits | clause-by-clause conformance review, registration model of Resolver 2.5.9 (informative batch and variant of a serial number), a default link above every record, resolution fixes (item 1.5) |
 | 6 — EPC binary strings | 2 Oct | `51a0da8` → `4b9a7be` and the documentation commits | `/eh…` and `/ex…` decompressed for every EPC scheme with a GS1 Digital Link (item 1.6), from the TDT 2.2 artefacts and TDS 2.3; the proxy's upstream name fixed (every resolution through nginx had been a 500 since 1.5); four more candidate errata; confirmed on staging |
 | 7 — GS1's resolver test suite | 2 Oct | `bc573c4` → `386a8c3` | GS1's own suite passes on staging (31 of 31), link types published in `https://ref.gs1.org/voc/` (F22), erratum E12, open backlog in the README |
-| 8 — backlog and quick wins | 13 Oct | `bc1c86b`, `1a1ca59` and the documentation commit | backlog reordered around tenants, e-mail, API keys and custom domains; 30-minute idle session with a warning and a 12-hour limit; syntax box removed from the home page; community notice |
+| 8 — backlog, quick wins, CI | 13 Oct | `bc1c86b`, `1a1ca59`, `d68a883` and the documentation commits | backlog reordered around tenants, e-mail, API keys and custom domains; 30-minute idle session with a warning and a 12-hour limit; syntax box removed from the home page; community notice; development tests through pytest and on GitHub Actions |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -208,12 +208,13 @@ without a record is a 404 (2.4.1). The open backlog is now listed in the README.
 Decisions of the owner: link types are published in `https://ref.gs1.org/voc/` (option B of F22); the
 behaviour under E12 is kept and becomes an erratum and an issue for the suite.
 
-## Session 8 — backlog reordered, quick wins (item 2.1)
+## Session 8 — backlog reordered, quick wins (item 2.1), continuous integration (item 2.2)
 
 | Commit | Change |
 |---|---|
 | `bc1c86b` | README backlog rewritten from the owner's notes of 13 October: quick wins, architecture for scale with the portal's data in MongoDB, tenants with server and tenant administrators, e-mail, a tenant API with API keys, analytics per tenant with export, the tenant's own domain in the QR code, Verified by GS1 on the landing page, a load test |
 | `1a1ca59` | portal: session ends after 30 minutes without use and 12 hours after the sign-in, warning two minutes before, renewal while the user works, shared between tabs; home page without the GS1 Digital Link syntax box; community notice in the README, the documentation and the footers; `test_session.py` |
+| `d68a883` | continuous integration (item 2.2): `dev-tests/test_programs.py` runs every test program through pytest, by group, with a strict mode; workflow `.github/workflows/dev-tests.yml` with five parallel jobs and a set-up action that pins every version; the empty `main.yml` removed; status badge |
 
 After a pause from 2 to 13 October the fork, the official project and GS1's suite had not changed. The
 owner's notes were assessed one by one: all were kept, some merged with existing items. The order puts the
@@ -229,6 +230,15 @@ sign-in, both configurable.
 Building the portal's syntax engine in the sandbox: the release archive could not be downloaded there, so
 the same tag was cloned with git and built with the script's steps (the script itself is unchanged).
 
+Continuous integration (item 2.2). The owner's decisions: a thin pytest layer over the existing programs
+(not a rewrite of their checks); five jobs in parallel; every job required except the portal in Chromium and
+the installer, which start as informative; a status badge in the README. Before the workflow was written the
+baseline was run again (`a6be2ad`: 194 and 215 checks, then every program), and the layer was proved able to
+fail: a deliberate change to the link checker made two checks fail and the layer reported them. The setup
+steps were also run with Python 3.12, a clean cache folder and the pinned npm versions, as on a runner: every
+program passed. The installer test, which needs root, was run as an ordinary user with password-less sudo.
+The run logs of GitHub Actions need a sign-in, so the first results come from the owner.
+
 
 
 | Area | 1.0.0 (session 1) | Now |
@@ -241,7 +251,7 @@ the same tag was cloned with git and built with the script's steps (the script i
 | Accounts | users from the command line, all equal | roles, prefixes, users screen, temporary passwords, history, audit trail |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
 | Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
-| Tests | 69 checks | 1,306 checks in 15 test programs (one of them GS1's own test suite), plus the installer test |
+| Tests | 69 checks | 1,306 checks in 15 test programs (one of them GS1's own test suite), plus the installer test; run through pytest and on GitHub Actions |
 | Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
 ## Decisions that stay unless deliberately revisited

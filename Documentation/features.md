@@ -228,6 +228,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Feature | What it does | Since |
 |---|---|---|
 | Development tests | Resolver, GS1's resolver test suite run in Chromium against the resolver code, EPC binary decoder (checked against TDS annex E.3 and the `epc-tds` library), data entry, keys, governance, spreadsheets, special characters, data attributes, link checker, portal end to end in Chromium (desktop and phone), home page through nginx, installer through shims | `0733a3f` and later |
+| Development tests through pytest | `pytest dev-tests` runs every program, by group (`-m resolver`, `portal`, `e2e`, `home`, `install`), with each program's check count; strict mode for CI | `d68a883` |
+| Continuous integration | GitHub Actions runs the tests in five parallel jobs on every push and pull request to `gs1br/develop`; pinned versions, cached engines and browser; status badge in the README | `d68a883` |
 | Screenshots | `dev-tests/docs/screenshots.py` regenerates the README and user guide images | `f14d8c4`, session 4 |
 | Documentation | README, user guide, features, history, developer guide, extensions documentation, changelog | `539bab0` and later |
 

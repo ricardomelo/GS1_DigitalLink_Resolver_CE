@@ -2,6 +2,38 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Tenants (backlog item 2.4)
+- **Architecture decision record** [ADR 0002](../adr/0002-tenants.md) (English and Portuguese): organisations
+  (tenants) that own GS1 Company Prefixes; the operator owns whatever no tenant holds; the operator's
+  administrators are the server administrators; read-only support access with a reason; an audit trail per
+  tenant; an e-mail address per user. Documentation only (step 1 of 3). Commit `4bb39cd`.
+- **Tenants on the server** (step 2 of 3): a `tenants` collection; a record belongs to the tenant whose prefix
+  starts its key, worked out on every request (nothing changes in the resolver's database); overlapping
+  prefixes between tenants, redundant prefixes within one and changes that would strand a user refused.
+  **Every call is limited to the scope of the request** (the user's tenant, an open support access, or the
+  operator), including the import worker before each record. **An installation without tenants behaves as
+  before**: existing users become the operator's, nothing is migrated. Commit `1590b7e`.
+- **Users per tenant**: a user belongs to one tenant (fixed at creation) or to the operator; a tenant
+  administrator manages his tenant's users only, inside its prefixes; an operator user cannot be limited to a
+  tenant's prefix; only server administrators count for the last-administrator rule. Optional, unique
+  **e-mail address** per user (not used before item 3.1, never in the journal). `create_user.py --tenant
+  --email`. Commit `1590b7e`.
+- **New API** `/portal/api/tenants` (GET, POST, PUT, DELETE) and `/portal/api/support` (POST, DELETE), server
+  administrators only; `/config` adds `accountRole`, `serverAdmin`, `tenant`, `support`; `/users` adds `tenant`,
+  `tenantName`, `email`. Commit `1590b7e`.
+- **Audit trail per tenant**: journal events carry `tenant` and `byOperator`; new actions `tenant-create`,
+  `tenant-update`, `tenant-remove`, `support-open`, `support-close`, `login-refused` (a user of a disabled
+  tenant). The History panel, the "changed by" columns and the last full link check are kept per scope. The
+  audit CSV adds `organisation` and `by_operator` at the end. Commit `1590b7e`.
+- **Screens** (step 3 of 3): **Organisations** (server administrators), support access with a banner, the
+  organisation column, selector and filter and an e-mail column in **Users**, the organisation in the account
+  menu, the organisation column and *operator* tag in the **Audit trail**. Commit `675b6ca`.
+- **Messages**: `access.prefix` and `access.prefixRow` now say the identifier is outside the user's reach
+  (organisation or prefixes); `users.lastAdmin` speaks of server administrators. Commit `675b6ca`.
+- **Tests**: `test_tenants.py` (82 checks, every protection mutation-checked; also the translations of both
+  languages); the portal in Chromium with organisations and support access (208 checks, 164 without the
+  engine). Commits `1590b7e`, `675b6ca`.
+
 ### Architecture for scale (backlog item 2.3)
 - **Architecture decision record** [ADR 0001](../adr/0001-portal-state-in-mongodb.md) (English and
   Portuguese): the portal's users, record metadata, journal, sign-in failures, jobs and caches move to a

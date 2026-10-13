@@ -180,6 +180,11 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Users screen | Create with a temporary password shown once, change role and prefixes, reset, disable, remove; at least one active administrator | `71b15f2` |
 | Record history | Every version saved through the portal, with restore | `71b15f2` |
 | Audit trail | Sign-ins, changes, imports, exports, administration; filters; CSV | `71b15f2` |
+| Organisations (tenants) | An organisation owns GS1 Company Prefixes (one organisation per prefix, no overlaps); its records and users are its own; the operator owns whatever belongs to no organisation, and an installation without organisations works as before ([ADR 0002](adr/0002-tenants.md)) | `1590b7e`, `675b6ca` |
+| Server administrator | The operator's administrators manage organisations and every user; an organisation's administrator only its users | `1590b7e`, `675b6ca` |
+| Support access | Read-only access of a server administrator to one organisation, with a reason recorded in its audit trail; a banner while it is open | `1590b7e`, `675b6ca` |
+| Audit trail per organisation | Each organisation sees its own trail; what the operator did to it is tagged; history and "changed by" per organisation | `1590b7e`, `675b6ca` |
+| E-mail per user | Optional, unique; for the e-mail features to come | `1590b7e`, `675b6ca` |
 | Journal | One event per document in the portal's database, included in the backup; kept by age per category (sign-ins 180 days, record changes and administration for ever by default; `PORTAL_JOURNAL_*_DAYS`) | `71b15f2`, `d783f3d` |
 
 ## Portal: robustness and security

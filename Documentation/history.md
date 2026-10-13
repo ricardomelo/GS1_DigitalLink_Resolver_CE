@@ -25,6 +25,7 @@ the next one started.
 | 7 — GS1's resolver test suite | 2 Oct | `bc573c4` → `386a8c3` | GS1's own suite passes on staging (31 of 31), link types published in `https://ref.gs1.org/voc/` (F22), erratum E12, open backlog in the README |
 | 8 — backlog, quick wins, CI | 13 Oct | `bc1c86b`, `1a1ca59`, `d68a883` and the documentation commits | backlog reordered around tenants, e-mail, API keys and custom domains; 30-minute idle session with a warning and a 12-hour limit; syntax box removed from the home page; community notice; development tests through pytest and on GitHub Actions |
 | 9 — architecture for scale | 13 Oct | ADR 0001, then three code deliveries (`d783f3d`, `a072e9d`, `20f3304`) and the documentation commits | item 2.3: the portal's state in MongoDB, background jobs in a worker service, replicas of every stateless service behind a proxy that finds them by itself; gunicorn in every web service; nginx 1.30 |
+| 10 — tenants | 13 Oct – | ADR 0002, then two code deliveries (`1590b7e`, `675b6ca`) and the documentation commit | item 2.4: organisations that own GS1 Company Prefixes, the server administrator, support access, an audit trail per organisation, an e-mail address per user |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -328,6 +329,36 @@ running under gunicorn. The first CI run of `c426dfd` was green except the proxy
 its first check: nginx from nginx.org's package keeps its temporary folders in `/var/cache/nginx`, which the
 runner's user cannot create; the test now keeps every temporary folder in its work folder (`3298da7`).
 
+## Session 10 — tenants (item 2.4)
+
+The owner started the session and left it to run while away, asking for the recommended option on every
+question. The fork was at `fd8f67c` and the baseline passed (1,350 checks outside the browser and 366 in
+it, as in CI). Reading the portal showed that one function, `allowed()`, already stood between every route
+and the records: limiting it to the tenant of the request would limit everything at once.
+
+The nine points of the item were settled on the recommended options and recorded in
+[ADR 0002](adr/0002-tenants.md) (step 1): a `tenants` collection with one tenant per user; the operator's
+administrators as server administrators, with no new role; read-only support access with a reason, recorded in
+the tenant's trail; overlapping prefixes refused; nothing migrated (today's users become the operator's, who owns
+whatever no tenant holds); ownership derived from the prefix; a `tenant` field on journal events; an optional,
+unique e-mail address; three deliveries. The operator as owner of the unassigned prefixes is what lets an
+installation update without any change: until the first tenant exists, every rule gives today's answer.
+
+| Commit | Change |
+|---|---|
+| `4bb39cd` | docs: ADR 0002 in both languages (step 1) |
+| `1590b7e` | step 2: `portal/tenants.py`; users with tenant and e-mail; `set_scope()` and `allowed()` by owner; the worker's check before each imported record; journal, history, record metadata and the last full link check per scope; tenants and support API; `create_user.py --tenant --email`; `test_tenants.py` |
+| `675b6ca` | step 3: Organisations screen, support access and its banner, organisation and e-mail in Users, organisation in the account menu and the audit trail; translations; e2e; user guides and images |
+
+Every protection of step 2 was mutation-checked: twelve changes to the code (ownership left out of `allowed()`,
+another tenant's users manageable, overlaps accepted, the worker's check removed, the operator's view of the
+audit trail widened, metadata shown to every scope, disabled tenants still signing in, support access able to
+write, tenant administrators counted as the last server administrator, a tenant user's prefixes unchecked, the
+History panel and the journal query without the tenant) each make `test_tenants.py` fail. The new queries also
+ran on FerretDB, as far as its known gaps allow. Mock-ups could not be shown before the screens were built, as the
+owner usually asks: the images of the finished screens (those of the user guide) were delivered for review before
+the update reaches staging. Not yet confirmed on staging nor in CI.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -337,10 +368,10 @@ runner's user cannot create; the test now keeps every temporary folder in its wo
 | Finding records | open one GTIN at a time | record list, text search, filters by key type, qualifier, author and link problems, code search, other records of a key |
 | Bulk work | none | XLSX/CSV export and two-step import |
 | Quality of targets | none | link checker in the editor, for every record and on import |
-| Accounts | users from the command line, all equal | roles, prefixes, users screen, temporary passwords, history, audit trail, in the portal's own database |
+| Accounts | users from the command line, all equal | roles, prefixes, organisations (tenants) with their own users and audit trail, a server administrator with support access, users screen, temporary passwords, history, audit trail, in the portal's own database |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
 | Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
-| Tests | 69 checks | 1,502 checks in 18 test programs (one of them GS1's own test suite), plus the installer test (68); run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
+| Tests | 69 checks | 1,602 checks in 19 test programs (one of them GS1's own test suite), plus the installer test (68); run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
 | Deployment | one container per service, Flask's built-in server, the proxy restarted by hand | any number of replicas of the four stateless services (set in `.env`), gunicorn in every web service, a proxy that follows replicas through Docker's DNS |
 | Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
@@ -352,7 +383,10 @@ runner's user cannot create; the test now keeps every temporary folder in its wo
 4. Validation mirrors the GS1 Barcode Syntax Engine; deliberate limits are documented.
 5. Resolver: an unknown `linkType` is a 404 (required by the standard); walk-up serial → batch → variant →
    key; query strings are passed on unchanged and never judged.
-6. Roles reader < editor < admin are checked on every call; GS1 Company Prefixes limit every screen.
+6. Roles reader < editor < admin are checked on every call; GS1 Company Prefixes limit every screen. A
+   record belongs to the tenant whose prefix starts its key, or to the operator; every call is limited to the
+   tenant of the request; the server administrator reaches a tenant's data only through recorded, read-only
+   support access ([ADR 0002](adr/0002-tenants.md)).
 7. The portal's data (users, record metadata, journal, sign-in failures, caches) lives in a database of
    its own in the installation's MongoDB, reached with a user limited to it, and is in the daily backup;
    the session key comes from `.env` ([ADR 0001](adr/0001-portal-state-in-mongodb.md); until session 9,
@@ -410,6 +444,10 @@ runner's user cannot create; the test now keeps every temporary folder in its wo
 - A tool from another packager behaves differently in small ways: Ubuntu's and nginx.org's nginx keep their
   temporary folders in different places. Reproduce the CI runner's conditions (the package's paths, a user who
   is not root) before blaming the code.
+- Before adding a dimension to access control, find the one place every route already passes through
+  (`allowed()`): changing it there limits every route at once, and the existing tests show nothing else moved.
+- A new owner for everything unassigned (the operator) lets a model arrive without a migration: until the first
+  tenant exists, every rule gives the old answer.
 
 ## Open items
 
@@ -420,5 +458,7 @@ runner's user cannot create; the test now keeps every temporary folder in its wo
   proxy (item 7.2).
 - An off-server backup copy and a restore rehearsal.
 - Review of the 216 Portuguese AI names; decision on the GS1 logo on the home page and resolver pages.
+- Item 2.4 on staging and in CI (session 10): the owner's push, the CI summary and the staging checks of the
+  update are pending.
 
 Next steps: the open backlog, in the agreed order, is in the README ([Open backlog](../README.md#open-backlog)).

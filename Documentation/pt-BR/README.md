@@ -87,7 +87,7 @@ O README original é mantido, sem mudanças, em [upstream-README.md](../upstream
 | Área | Acréscimo |
 |---|---|
 | **Portal** (`/portal/`) | Entrada com senha por usuário (com botão de mostrar/ocultar); editor para qualquer chave primária e qualificadores, com conferências GS1 enquanto se digita; destinos por tipo de link GS1, idioma e título; destino principal; etiquetas com QR Code (PNG/SVG) nas dimensões do guia *QR Codes powered by GS1*, com escolha de versão, correção de erros e texto legível, opcionalmente com atributos de dados GS1 Digital Link (validade, peso, preço…); lista de registros com busca e filtros por tipo de chave e qualificador; importação/exportação de planilhas (XLSX, CSV) com prévia; verificador de links |
-| **Governança** | Perfis (administrador, editor, leitor); acesso limitado a prefixos de empresa GS1 por usuário; tela de administração de usuários com senhas temporárias; histórico de cada cadastro com restauração; auditoria com filtros e exportação CSV |
+| **Governança** | Perfis (administrador, editor, leitor); organizações (tenants) donas de prefixos de empresa GS1, cada uma com seus usuários e sua auditoria, e um administrador do servidor com acesso de suporte só de leitura e registrado; acesso limitado a prefixos de empresa GS1 por usuário; tela de administração de usuários com senhas temporárias; histórico de cada cadastro com restauração; auditoria com filtros e exportação CSV |
 | **Chaves e qualificadores** | As 16 chaves primárias da URI Syntax §4.3 e todos os qualificadores da §4.4, com os formatos da §4.6, a ordem e os caminhos compostos da §4.9, validados como faz o GS1 Barcode Syntax Engine |
 | **Atributos de dados** | Todos os atributos de dados da URI Syntax §4.10 nos QR Codes, validados pelo GS1 Barcode Syntax Engine (formatos, dígitos verificadores, datas, listas de códigos e as regras de associação das General Specifications); repassados pelo Resolver aos destinos |
 | **Resolver** | Subida na hierarquia de qualificadores (série → lote → variante → chave), regras de 404, formas de `linkType`, `defaultLink`, linkset RFC 9264 válido no schema da GS1, JSON-LD sob pedido, o link padrão salvo quando a requisição indica uma versão de idioma, caminhos conferidos pelo GS1 Barcode Syntax Engine, valores com `%2F`, a query string repassada exatamente como enviada, EPC em binário (`/eh…`, `/ex…`) de etiquetas NFC descomprimido, páginas HTML em pt-BR / en-GB para navegadores |
@@ -250,9 +250,15 @@ en-GB) e pode ser trocada a qualquer momento.
   de cadastros, importações, exportações e administração de usuários, filtradas por usuário, período e
   identificador, com exportação CSV.
 
-Usuários, histórico e auditoria ficam no volume de configuração do portal, que o backup diário inclui.
-Usuários criados antes de existirem perfis viram administradores. A ferramenta de linha de comando também
-aceita perfis: `docker compose exec portal-service python create_user.py maria --role editor --prefixes 7891234`.
+Usuários, organizações, histórico e auditoria ficam no banco MongoDB próprio do portal, que o backup diário
+inclui. Usuários criados antes de existirem perfis viram administradores. A ferramenta de linha de comando também
+aceita perfis e organizações: `docker compose exec portal-service python create_user.py maria --role editor --prefixes 7891234`.
+
+- **Organizações** (administradores do servidor, menu do usuário → *Organizações*): uma instalação pode atender
+  várias organizações, cada uma dona dos seus prefixos de empresa GS1, com seus usuários e sua auditoria. Os
+  administradores do operador são administradores do servidor; só chegam aos cadastros de uma organização pelo
+  acesso de suporte, só de leitura e registrado na auditoria dela. Uma instalação sem organizações funciona como
+  antes ([ADR 0002](adr/0002-organizacoes.md)).
 
 ![Administração de usuários](../images/guide/pt-BR/users.png)
 
@@ -537,15 +543,16 @@ instalação de homologação). O item 2.1, os ajustes rápidos (limites da sess
 comunidade), o item 2.2, a integração contínua (os testes de desenvolvimento pelo pytest no GitHub
 Actions), e o item 2.3, a arquitetura para escala (os dados do portal no MongoDB, as tarefas em segundo plano
 num serviço worker, réplicas de todos os serviços sem estado; [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md)),
-também estão concluídos. O que foi feito está no [histórico](historico.md) e no
+e o item 2.4, os tenants (organizações donas de prefixos de empresa GS1, o administrador do servidor e o acesso
+de suporte, uma trilha de auditoria por organização; [ADR 0002](adr/0002-organizacoes.md)), também estão
+concluídos. O que foi feito está no [histórico](historico.md) e no
 [changelog](../extensions/CHANGELOG.md). Os itens abaixo seguem a ordem combinada; os tamanhos são relativos
 (P, M, G). A ordem põe primeiro aquilo em que os itens seguintes se apoiam: o armazenamento de dados do portal
 e os tenants vêm antes da API, do e-mail e dos analytics, que precisam saber de quem são os dados que tratam.
 
 | Fase | # | Item | Tam. | Depende de |
 |---|---|---|---|---|
-| Fundações técnicas | 2.4 | **Tenants**: uma organização (tenant) é dona dos seus prefixos de empresa GS1, cada prefixo pertencendo a um único tenant; um administrador do servidor cria tenants e atribui prefixos; um administrador do tenant gerencia os usuários do tenant; toda chamada confere o tenant no servidor; trilha de auditoria por tenant; e-mail por usuário; privacidade desde a concepção (minimização de dados, acesso do administrador do servidor aos dados de um tenant registrado na trilha de auditoria desse tenant) | G | 2.3 |
-| | 2.5 | **Uma fonte única para as regras GS1**: chaves, qualificadores, formatos e nomes de AIs derivados do GS1 Barcode Syntax Dictionary, os dois engines na mesma versão, mensagens do engine traduzidas, atualizações do dicionário propostas por uma tarefa agendada; traz os AIs (7041) e (8040)–(8043) | G | — |
+| Fundações técnicas | 2.5 | **Uma fonte única para as regras GS1**: chaves, qualificadores, formatos e nomes de AIs derivados do GS1 Barcode Syntax Dictionary, os dois engines na mesma versão, mensagens do engine traduzidas, atualizações do dicionário propostas por uma tarefa agendada; traz os AIs (7041) e (8040)–(8043) | G | — |
 | Serviços da plataforma | 3.1 | **E-mail**: envio por um relay autenticado (configurações no `.env`), convites para novos usuários, recuperação de senha por link de uso único, uma estrutura de notificações com preferências por usuário | M | 2.4 |
 | | 3.2 | **API do tenant e chaves de API**: uma API versionada do portal para cadastros, etiquetas e depois analytics, descrita em OpenAPI, limitada aos prefixos do tenant; chaves criadas pelo administrador do tenant no portal (aleatórias, guardadas só como hash, exibidas uma única vez, com escopos, validade, revogação, último uso e limites de taxa); a API de cadastro oficial e o seu token continuam internos | G | 2.4, 2.5 |
 | Log de resolução e analytics | 4.1 | **Log das requisições ao Resolver** (chave, qualificadores, AIs de atributos de dados, tipo de link, resultado e nível, latência, idioma, dispositivo, origem, esquema EPC), assíncrono, com privacidade desde a concepção, eventos brutos com prazo de expiração e agregados diários | G | 2.3 |

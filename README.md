@@ -95,7 +95,7 @@ the official Postman collection is at
 | Area | Addition |
 |---|---|
 | **Portal** (`/portal/`) | Sign-in with per-user passwords (with a show/hide button); editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; QR code labels (PNG/SVG) with the dimensions of the *QR Codes powered by GS1* guidelines, a choice of QR version, error correction and human readable text, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search and filters by key type and qualifier; spreadsheet import/export (XLSX, CSV) with preview; link checker |
-| **Governance** | Roles (administrator, editor, reader); access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords; history of every record with restore; audit trail with filters and CSV export |
+| **Governance** | Roles (administrator, editor, reader); organisations (tenants) that own GS1 Company Prefixes, each with its own users and audit trail, and a server administrator with recorded, read-only support access; access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords; history of every record with restore; audit trail with filters and CSV export |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, validated as the GS1 Barcode Syntax Engine does |
 | **Data attributes** | Every data attribute of URI Syntax §4.10 in QR codes, validated by the GS1 Barcode Syntax Engine (formats, check digits, dates, code lists and the association rules of the General Specifications); passed on by the resolver to the targets |
 | **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, the default link unless the request decides a language variant, request paths checked by the GS1 Barcode Syntax Engine, values with `%2F`, the query string passed on exactly as sent, EPC binary strings (`/eh…`, `/ex…`) from NFC tags decompressed, HTML pages in pt-BR / en-GB for browsers |
@@ -264,9 +264,16 @@ switched at any time.
   changes, imports, exports and user administration, filtered by user, period and identifier, with CSV
   export.
 
-Users, history and audit trail live in the portal's configuration volume, which the daily backup includes.
-Users created before roles existed become administrators. The command line tool accepts roles too:
+Users, organisations, history and audit trail live in the portal's own MongoDB database, which the daily
+backup includes. Users created before roles existed become administrators. The command line tool accepts roles
+and organisations too:
 `docker compose exec portal-service python create_user.py maria --role editor --prefixes 7891234`.
+
+- **Organisations** (server administrators, user menu → *Organisations*): an installation may serve several
+  organisations, each owning its GS1 Company Prefixes, with its own users and audit trail. The operator's
+  administrators are server administrators; they reach an organisation's records only through read-only support
+  access, recorded in its audit trail. An installation without organisations works as before
+  ([ADR 0002](Documentation/adr/0002-tenants.md)).
 
 <p align="center">
   <img src="Documentation/images/portal-users.png" alt="User administration with roles, prefixes and a temporary password" width="720">
@@ -589,7 +596,9 @@ fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging
 the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
 development tests through pytest on GitHub Actions), and item 2.3, the architecture for scale (the portal's
 data in MongoDB, background jobs in a worker service, replicas of every stateless service;
-[ADR 0001](Documentation/adr/0001-portal-state-in-mongodb.md)), are complete too. What was
+[ADR 0001](Documentation/adr/0001-portal-state-in-mongodb.md)), and item 2.4, tenants (organisations that own
+GS1 Company Prefixes, the server administrator and support access, an audit trail per organisation;
+[ADR 0002](Documentation/adr/0002-tenants.md)), are complete too. What was
 done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
 The items below are in the agreed order; sizes are relative (S, M, L). The order puts first what later items
 build on: the portal's data store and tenants come before the API, e-mail and analytics, which all need to
@@ -597,8 +606,7 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Technical foundations | 2.4 | **Tenants**: an organisation (tenant) owns its GS1 Company Prefixes, each prefix belonging to one tenant only; a server administrator creates tenants and assigns prefixes; a tenant administrator manages the tenant's users; every call checks the tenant on the server; audit trail per tenant; e-mail address per user; privacy by design (data minimisation, the server administrator's access to a tenant's data recorded in that tenant's audit trail) | L | 2.3 |
-| | 2.5 | **One source for the GS1 rules**: keys, qualifiers, formats and AI names derived from the GS1 Barcode Syntax Dictionary, both engines on one version, engine messages translated, dictionary updates proposed by a scheduled job; brings AIs (7041) and (8040)–(8043) | L | — |
+| Technical foundations | 2.5 | **One source for the GS1 rules**: keys, qualifiers, formats and AI names derived from the GS1 Barcode Syntax Dictionary, both engines on one version, engine messages translated, dictionary updates proposed by a scheduled job; brings AIs (7041) and (8040)–(8043) | L | — |
 | Platform services | 3.1 | **E-mail**: outgoing mail through an authenticated relay (settings in `.env`), invitations to new users, password recovery by single-use link, a notification framework with per-user preferences | M | 2.4 |
 | | 3.2 | **Tenant API and API keys**: a versioned API of the portal for records, labels and later analytics, described in OpenAPI, limited to the tenant's prefixes; keys created by the tenant administrator in the portal (random, stored only as a hash, shown once, with scopes, expiry, revocation, last use and rate limits); the official data entry API and its token stay internal | L | 2.4, 2.5 |
 | Resolution log and analytics | 4.1 | **Log of resolver requests** (key, qualifiers, data attribute AIs, link type, outcome and level, latency, language, device, referrer, EPC scheme), asynchronous, privacy by design, raw events with an expiry plus daily aggregates | L | 2.3 |

@@ -25,6 +25,7 @@ o próximo começar.
 | 7 — suíte de testes da GS1 | 02/10 | `bc573c4` → `386a8c3` | a própria suíte da GS1 aprovada na homologação (31 de 31), tipos de link publicados em `https://ref.gs1.org/voc/` (F22), errata E12, backlog em aberto no README |
 | 8 — backlog, ajustes rápidos, CI | 13/10 | `bc1c86b`, `1a1ca59`, `d68a883` e os commits de documentação | backlog reordenado em torno de tenants, e-mail, chaves de API e domínios próprios; sessão de 30 minutos sem uso com aviso e limite de 12 horas; quadro da sintaxe retirado da página inicial; aviso da comunidade; testes de desenvolvimento pelo pytest e no GitHub Actions |
 | 9 — arquitetura para escala | 13/10 | ADR 0001, depois três entregas de código (`d783f3d`, `a072e9d`, `20f3304`) e os commits de documentação | item 2.3: o estado do portal no MongoDB, as tarefas em segundo plano num serviço worker, réplicas de todos os serviços sem estado atrás de um proxy que as acha sozinho; gunicorn em todos os serviços web; nginx 1.30 |
+| 10 — tenants | 13/10 – | ADR 0002, depois duas entregas de código (`1590b7e`, `675b6ca`) e o commit de documentação | item 2.4: organizações donas de prefixos de empresa GS1, o administrador do servidor, acesso de suporte, uma trilha de auditoria por organização, um e-mail por usuário |
 
 Ao fim da sessão 4, o fork altera ou acrescenta 70 arquivos do projeto oficial (cerca de 16.000 linhas
 acrescentadas) e é coberto por 739 verificações nos testes de desenvolvimento, além do teste do
@@ -337,6 +338,38 @@ primeira verificação: o nginx do pacote do nginx.org guarda suas pastas tempor
 o usuário do runner não consegue criar; o teste agora mantém todas as pastas temporárias na sua pasta de
 trabalho (`3298da7`).
 
+## Sessão 10 — tenants (item 2.4)
+
+O responsável abriu a sessão e a deixou correr enquanto estava ausente, pedindo a opção recomendada em toda
+pergunta. O fork estava em `fd8f67c` e a linha de base passou (1.350 verificações fora do navegador e 366 nele,
+como no CI). A leitura do portal mostrou que uma única função, `allowed()`, já ficava entre todas as rotas e os
+cadastros: limitá-la ao tenant da requisição limitaria tudo de uma vez.
+
+Os nove pontos do item foram decididos pelas opções recomendadas e registrados no
+[ADR 0002](adr/0002-organizacoes.md) (etapa 1): uma coleção `tenants`, com um tenant por usuário; os
+administradores do operador como administradores do servidor, sem papel novo; acesso de suporte só de leitura,
+com motivo, registrado na trilha do tenant; prefixos sobrepostos recusados; nada migrado (os usuários de hoje
+passam a ser do operador, dono de tudo o que nenhum tenant tem); posse derivada do prefixo; um campo `tenant` nos
+eventos do diário; um e-mail opcional e único; três entregas. O operador como dono dos prefixos sem tenant é o que
+permite atualizar uma instalação sem mudança nenhuma: até existir o primeiro tenant, toda regra dá a resposta de
+hoje.
+
+| Commit | Mudança |
+|---|---|
+| `4bb39cd` | docs: ADR 0002 nos dois idiomas (etapa 1) |
+| `1590b7e` | etapa 2: `portal/tenants.py`; usuários com tenant e e-mail; `set_scope()` e `allowed()` pelo dono; a conferência do worker antes de cada cadastro importado; diário, histórico, metadados dos cadastros e a última verificação completa de links por escopo; API de tenants e de suporte; `create_user.py --tenant --email`; `test_tenants.py` |
+| `675b6ca` | etapa 3: tela Organizações, acesso de suporte e sua faixa, organização e e-mail em Usuários, organização no menu da conta e na auditoria; traduções; e2e; guias do usuário e imagens |
+
+Toda proteção da etapa 2 passou por teste de mutação: doze mudanças no código (a posse fora do `allowed()`,
+usuários de outro tenant gerenciáveis, sobreposições aceitas, a conferência do worker removida, a visão do
+operador na auditoria ampliada, metadados mostrados a todo escopo, tenants desativados ainda entrando, acesso de
+suporte podendo gravar, administradores de tenant contados como o último administrador do servidor, os prefixos de
+um usuário de tenant sem conferência, o painel Histórico e a consulta do diário sem o tenant) fazem o
+`test_tenants.py` falhar, cada uma. As consultas novas também rodaram no FerretDB, até onde suas lacunas conhecidas
+deixam. Não foi possível mostrar mock-ups antes de construir as telas, como o responsável costuma pedir: as imagens
+das telas prontas (as do guia do usuário) foram entregues para revisão antes de a atualização chegar à
+homologação. Ainda não confirmado na homologação nem no CI.
+
 ## Como as principais áreas evoluíram
 
 | Área | 1.0.0 (sessão 1) | Agora |
@@ -346,10 +379,10 @@ trabalho (`3298da7`).
 | Achar cadastros | abrir um GTIN por vez | lista de registros, busca por texto, filtros por tipo de chave, qualificador, autor e problemas de link, busca por código, outros cadastros da chave |
 | Trabalho em lote | nenhum | exportação XLSX/CSV e importação em duas etapas |
 | Qualidade dos destinos | nenhuma | verificador de links no editor, em todos os cadastros e na importação |
-| Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, tela de usuários, senhas temporárias, histórico, auditoria, no banco próprio do portal |
+| Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, organizações (tenants) com usuários e auditoria próprios, um administrador do servidor com acesso de suporte, tela de usuários, senhas temporárias, histórico, auditoria, no banco próprio do portal |
 | Instalação | manual, com patch | fork git, configuração em camadas, instalador para Ubuntu, backup |
 | Resolução | GTIN e lote, links comprimidos do Digital Link 1.1 | todas as chaves e qualificadores, as regras do Resolver 1.2.1, EPC em binário de etiquetas NFC (`/eh…`, `/ex…`) |
-| Testes | 69 verificações | 1.502 verificações em 18 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador (68); rodam pelo pytest e no GitHub Actions, o portal e seus workers de tarefas também num MongoDB real |
+| Testes | 69 verificações | 1.602 verificações em 19 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador (68); rodam pelo pytest e no GitHub Actions, o portal e seus workers de tarefas também num MongoDB real |
 | Implantação | um contêiner por serviço, servidor embutido do Flask, proxy reiniciado à mão | quantas réplicas se queira dos quatro serviços sem estado (definidas no `.env`), gunicorn em todos os serviços web, um proxy que acompanha as réplicas pelo DNS do Docker |
 | Documentação | README do pacote, documento de passagem | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e português), documentação das extensões, changelog |
 
@@ -362,7 +395,9 @@ trabalho (`3298da7`).
 5. Resolver: `linkType` desconhecido é 404 (exigido pelo padrão); subida série → lote → variante → chave;
    query strings repassadas sem mudança e nunca julgadas.
 6. Perfis leitor < editor < administrador conferidos em toda chamada; prefixos de empresa GS1 limitam
-   todas as telas.
+   todas as telas. Um cadastro pertence ao tenant cujo prefixo inicia sua chave, ou ao operador; toda chamada
+   fica limitada ao tenant da requisição; o administrador do servidor só chega aos dados de um tenant pelo acesso
+   de suporte, só de leitura e registrado ([ADR 0002](adr/0002-organizacoes.md)).
 7. Os dados do portal (usuários, metadados dos cadastros, diário, entradas recusadas, caches) ficam num
    banco próprio no MongoDB da instalação, acessado por um usuário limitado a ele, e entram no backup
    diário; a chave de sessão vem do `.env` ([ADR 0001](adr/0001-estado-do-portal-no-mongodb.md); até a
@@ -425,6 +460,10 @@ trabalho (`3298da7`).
 - Uma ferramenta de outro empacotador se comporta diferente em detalhes: o nginx do Ubuntu e o do nginx.org
   guardam as pastas temporárias em lugares diferentes. Reproduza as condições do runner do CI (os caminhos do
   pacote, um usuário que não é root) antes de culpar o código.
+- Antes de acrescentar uma dimensão ao controle de acesso, ache o único ponto por onde todas as rotas já passam
+  (`allowed()`): mudar ali limita todas as rotas de uma vez, e os testes existentes mostram que nada mais mudou.
+- Um dono novo para tudo o que não tem dono (o operador) permite chegar a um modelo sem migração: até existir o
+  primeiro tenant, toda regra dá a resposta antiga.
 
 ## Pendências
 
@@ -434,6 +473,8 @@ trabalho (`3298da7`).
 - A verificação final do instalador usa só o `/portal/healthz`; deveria também pedir algo ao Resolver pelo
   proxy (item 7.2).
 - Uma cópia do backup fora do servidor e um ensaio de restauração.
+- O item 2.4 na homologação e no CI (sessão 10): faltam o push do responsável, o resumo do CI e as conferências
+  da atualização na homologação.
 - Revisão dos 216 nomes de AIs em português; decisão sobre o logotipo GS1 na página inicial e nas páginas
   do Resolver.
 

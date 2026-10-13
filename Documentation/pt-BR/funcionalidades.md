@@ -177,6 +177,11 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Tela de usuários | Criar com senha temporária mostrada uma vez, mudar perfil e prefixos, redefinir senha, desativar, excluir; pelo menos um administrador ativo | `71b15f2` |
 | Histórico do cadastro | Toda versão salva pelo portal, com restauração | `71b15f2` |
 | Auditoria | Entradas, alterações, importações, exportações, administração; filtros; CSV | `71b15f2` |
+| Organizações (tenants) | Uma organização é dona de prefixos de empresa GS1 (uma organização por prefixo, sem sobreposição); os cadastros e usuários dela são só dela; o operador é dono do que não é de nenhuma organização, e uma instalação sem organizações funciona como antes ([ADR 0002](adr/0002-organizacoes.md)) | `1590b7e`, `675b6ca` |
+| Administrador do servidor | Os administradores do operador gerenciam as organizações e todos os usuários; o administrador de uma organização, só os usuários dela | `1590b7e`, `675b6ca` |
+| Acesso de suporte | Acesso só de leitura de um administrador do servidor a uma organização, com o motivo registrado na auditoria dela; uma faixa enquanto está aberto | `1590b7e`, `675b6ca` |
+| Auditoria por organização | Cada organização vê a sua trilha; o que o operador fez nela aparece marcado; histórico e "alterado por" por organização | `1590b7e`, `675b6ca` |
+| E-mail por usuário | Opcional, único; para as funcionalidades de e-mail que virão | `1590b7e`, `675b6ca` |
 | Diário | Um evento por documento no banco do portal, incluído no backup; guardado por idade, por categoria (entradas 180 dias, alterações de cadastros e administração para sempre por padrão; `PORTAL_JOURNAL_*_DAYS`) | `71b15f2`, `d783f3d` |
 
 ## Portal: robustez e segurança

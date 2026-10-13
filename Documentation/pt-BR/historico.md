@@ -243,7 +243,7 @@ limpa e as versões npm fixadas, como num runner: todos os programas passaram. O
 precisa de root, rodou como usuário comum com sudo sem senha. Os logs das execuções do GitHub Actions exigem
 login, então os primeiros resultados vêm do responsável.
 
-
+## Como as principais áreas evoluíram
 
 | Área | 1.0.0 (sessão 1) | Agora |
 |---|---|---|

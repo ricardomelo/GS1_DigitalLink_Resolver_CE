@@ -239,7 +239,7 @@ steps were also run with Python 3.12, a clean cache folder and the pinned npm ve
 program passed. The installer test, which needs root, was run as an ordinary user with password-less sudo.
 The run logs of GitHub Actions need a sign-in, so the first results come from the owner.
 
-
+## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|

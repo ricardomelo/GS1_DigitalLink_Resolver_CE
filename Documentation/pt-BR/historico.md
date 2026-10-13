@@ -24,6 +24,7 @@ o próximo começar.
 | 6 — EPC em binário | 02/10 | `51a0da8` → `4b9a7be` e os commits de documentação | `/eh…` e `/ex…` descomprimidos para todos os esquemas EPC que têm GS1 Digital Link (item 1.6), a partir dos artefatos do TDT 2.2 e do TDS 2.3; nome do upstream do proxy corrigido (toda resolução pelo nginx dava 500 desde o 1.5); mais quatro candidatos a errata; confirmado na homologação |
 | 7 — suíte de testes da GS1 | 02/10 | `bc573c4` → `386a8c3` | a própria suíte da GS1 aprovada na homologação (31 de 31), tipos de link publicados em `https://ref.gs1.org/voc/` (F22), errata E12, backlog em aberto no README |
 | 8 — backlog, ajustes rápidos, CI | 13/10 | `bc1c86b`, `1a1ca59`, `d68a883` e os commits de documentação | backlog reordenado em torno de tenants, e-mail, chaves de API e domínios próprios; sessão de 30 minutos sem uso com aviso e limite de 12 horas; quadro da sintaxe retirado da página inicial; aviso da comunidade; testes de desenvolvimento pelo pytest e no GitHub Actions |
+| 9 — arquitetura para escala | 13/10 – | ADR 0001, depois três entregas de código | item 2.3 em andamento: o estado do portal no MongoDB, tarefas em segundo plano num worker, réplicas |
 
 Ao fim da sessão 4, o fork altera ou acrescenta 70 arquivos do projeto oficial (cerca de 16.000 linhas
 acrescentadas) e é coberto por 739 verificações nos testes de desenvolvimento, além do teste do
@@ -242,6 +243,24 @@ falharem, e a camada as relatou. Os passos de preparação também rodaram com P
 limpa e as versões npm fixadas, como num runner: todos os programas passaram. O teste do instalador, que
 precisa de root, rodou como usuário comum com sudo sem senha. Os logs das execuções do GitHub Actions exigem
 login, então os primeiros resultados vêm do responsável.
+A primeira execução (Development tests #1, em `c7ca3aa`) passou em todos os jobs em 5 minutos e 42 segundos,
+sem cache, e cada programa relatou as mesmas contagens de verificações do ambiente de desenvolvimento.
+
+## Sessão 9 — arquitetura para escala e os dados do portal no MongoDB (item 2.3)
+
+O fork, o projeto oficial e a suíte da GS1 não mudaram desde a sessão 8; a linha de base passou (1.143
+verificações em 14 programas, como no CI). A leitura do portal confirmou onde fica seu estado e encontrou
+mais estado em memória do que o previsto (prévias de importação, a última verificação de todos os links, o
+cache do verificador). Mostrou também que os serviços oficiais do Resolver e da API de cadastro usam o
+servidor embutido do Flask e que todo serviço do Compose tem um nome de contêiner fixo, que o Compose não
+replica; os dois pontos ficam para a etapa 4.
+
+O responsável decidiu os oito pontos do item, todos nas opções recomendadas: um banco próprio do portal com
+usuário de permissões mínimas; tarefas em segundo plano numa coleção do MongoDB executadas por um contêiner
+worker; entradas recusadas e caches em coleções com índices TTL; a chave de sessão no `.env`; retenção do
+diário por idade, por categoria; migração automática no início; `mongomock` nos programas de teste mais um
+job do CI com MongoDB real; quatro entregas. Elas estão registradas no
+[ADR 0001](adr/0001-estado-do-portal-no-mongodb.md) (etapa 1).
 
 ## Como as principais áreas evoluíram
 

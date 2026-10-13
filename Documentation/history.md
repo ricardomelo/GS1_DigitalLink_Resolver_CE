@@ -24,6 +24,7 @@ the next one started.
 | 6 — EPC binary strings | 2 Oct | `51a0da8` → `4b9a7be` and the documentation commits | `/eh…` and `/ex…` decompressed for every EPC scheme with a GS1 Digital Link (item 1.6), from the TDT 2.2 artefacts and TDS 2.3; the proxy's upstream name fixed (every resolution through nginx had been a 500 since 1.5); four more candidate errata; confirmed on staging |
 | 7 — GS1's resolver test suite | 2 Oct | `bc573c4` → `386a8c3` | GS1's own suite passes on staging (31 of 31), link types published in `https://ref.gs1.org/voc/` (F22), erratum E12, open backlog in the README |
 | 8 — backlog, quick wins, CI | 13 Oct | `bc1c86b`, `1a1ca59`, `d68a883` and the documentation commits | backlog reordered around tenants, e-mail, API keys and custom domains; 30-minute idle session with a warning and a 12-hour limit; syntax box removed from the home page; community notice; development tests through pytest and on GitHub Actions |
+| 9 — architecture for scale | 13 Oct – | ADR 0001, then three code deliveries | item 2.3 in progress: the portal's state in MongoDB, background jobs in a worker, replicas |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -238,6 +239,23 @@ fail: a deliberate change to the link checker made two checks fail and the layer
 steps were also run with Python 3.12, a clean cache folder and the pinned npm versions, as on a runner: every
 program passed. The installer test, which needs root, was run as an ordinary user with password-less sudo.
 The run logs of GitHub Actions need a sign-in, so the first results come from the owner.
+The first run (Development tests #1, on `c7ca3aa`) was green in every job in 5 minutes 42 seconds, without a
+cache, and every program reported the same check counts as in the sandbox.
+
+## Session 9 — architecture for scale and the portal's data in MongoDB (item 2.3)
+
+The fork, the official project and GS1's suite were unchanged since session 8; the baseline passed (1,143
+checks in 14 programs, as in CI). Reading the portal confirmed where its state lives and found more of it in
+memory than expected (import previews, the latest full link check, the link checker's cache). It also showed
+that the official resolver and data entry services run Flask's built-in server and that every Compose
+service has a fixed container name, which Compose cannot scale; both are left to step 4.
+
+The owner decided the eight points of the item, all on the recommended options: a database of the portal's
+own with a least-privilege user; background jobs in a MongoDB collection run by a worker container; sign-in
+failures and caches in collections with TTL indexes; the session key in `.env`; journal retention by age
+per category; automatic migration at start-up; `mongomock` in the test programs plus a CI job against a
+real MongoDB; four deliveries. They are recorded in
+[ADR 0001](adr/0001-portal-state-in-mongodb.md) (step 1).
 
 ## How the main areas evolved
 

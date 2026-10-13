@@ -44,13 +44,14 @@ adds what an organisation needs to run one for its members:
 | [Developer guide](Documentation/developer-guide.md) | services, source files, portal API, data files, tests, how to extend |
 | [Conformance review](Documentation/conformance-review.md) | the branch against GS1 Digital Link URI Syntax 1.7 and GS1-Conformant Resolver 1.2.1, clause by clause |
 | [Extensions documentation](Documentation/extensions/README.md) · [Changelog](Documentation/extensions/CHANGELOG.md) | detailed rules and decisions · every change |
+| [Architecture decisions](Documentation/adr/0001-portal-state-in-mongodb.md) | ADR 0001: the portal's state in MongoDB, background jobs in a worker, replicas |
 
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).
 
 **Documentação em português do Brasil:** [Documentation/pt-BR](Documentation/pt-BR/README.md) — visão geral,
-instalação e operação, guia do portal, funcionalidades, histórico, guia do desenvolvedor e revisão de
-conformidade.
+instalação e operação, guia do portal, funcionalidades, histórico, guia do desenvolvedor, revisão de
+conformidade e decisões de arquitetura.
 
 ## Contents
 
@@ -554,7 +555,7 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Technical foundations | 2.3 | **Architecture for scale and the portal's data in MongoDB**: an architecture decision record (stateless services, state in the database, background jobs outside the web process, more than one replica of each service); the portal's users, record metadata, journal, jobs and sign-in lockout moved from files and memory to a database of their own in the existing MongoDB, without changing the official resolver's collections; retention of the journal; migration of existing installations; backup and restore included | L | — |
+| Technical foundations | 2.3 | **Architecture for scale and the portal's data in MongoDB**: an architecture decision record (stateless services, state in the database, background jobs outside the web process, more than one replica of each service); the portal's users, record metadata, journal, jobs and sign-in lockout moved from files and memory to a database of their own in the existing MongoDB, without changing the official resolver's collections; retention of the journal; migration of existing installations; backup and restore included. Decisions: [ADR 0001](Documentation/adr/0001-portal-state-in-mongodb.md) (step 1 of 4 done) | L | — |
 | | 2.4 | **Tenants**: an organisation (tenant) owns its GS1 Company Prefixes, each prefix belonging to one tenant only; a server administrator creates tenants and assigns prefixes; a tenant administrator manages the tenant's users; every call checks the tenant on the server; audit trail per tenant; e-mail address per user; privacy by design (data minimisation, the server administrator's access to a tenant's data recorded in that tenant's audit trail) | L | 2.3 |
 | | 2.5 | **One source for the GS1 rules**: keys, qualifiers, formats and AI names derived from the GS1 Barcode Syntax Dictionary, both engines on one version, engine messages translated, dictionary updates proposed by a scheduled job; brings AIs (7041) and (8040)–(8043) | L | — |
 | Platform services | 3.1 | **E-mail**: outgoing mail through an authenticated relay (settings in `.env`), invitations to new users, password recovery by single-use link, a notification framework with per-user preferences | M | 2.4 |
@@ -605,6 +606,7 @@ dev-tests/                      development tests (see above)
 Documentation/                  README.md (index), portal-user-guide.md, features.md, history.md,
                                 developer-guide.md, pt-BR/ (documentation in Portuguese),
                                 extensions/ (detailed documentation, changelog), images/ (README),
+                                adr/ (architecture decision records),
                                 images/guide/ (user guide, pt-BR/ in Portuguese), upstream-README.md
 tests/, useful_external_python_scripts/   official tests and conversion scripts
 ```

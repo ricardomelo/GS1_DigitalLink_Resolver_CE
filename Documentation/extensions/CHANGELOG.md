@@ -2,6 +2,14 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Architecture for scale (backlog item 2.3)
+- **Architecture decision record** [ADR 0001](../adr/0001-portal-state-in-mongodb.md) (English and
+  Portuguese): the portal's users, record metadata, journal, sign-in failures, jobs and caches move to a
+  database of its own in the existing MongoDB, reached with a least-privilege user created by a one-shot
+  `portal-db-init` service; imports and link checks run in a `portal-worker` container; the session key in
+  `.env`; journal retention by age per category; automatic migration of the files at start-up; replicas in
+  step 4. Documentation only (step 1 of 4).
+
 ### Continuous integration (backlog item 2.2)
 - **Development tests through pytest**: `dev-tests/test_programs.py` runs each of the fifteen programs and the
   installer test as one pytest test (a subprocess; exit status and `PASS`/`FAIL`/`SKIP` lines); the

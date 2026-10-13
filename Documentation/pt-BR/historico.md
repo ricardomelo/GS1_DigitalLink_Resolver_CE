@@ -262,6 +262,24 @@ diário por idade, por categoria; migração automática no início; `mongomock`
 job do CI com MongoDB real; quatro entregas. Elas estão registradas no
 [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md) (etapa 1).
 
+| Commit | Mudança |
+|---|---|
+| `f9c38a2` | docs: o título "Como as principais áreas evoluíram" restaurado nos dois históricos (perdido num commit de documentação da sessão 8) |
+| `076f19a` | ADR 0001 em inglês e português (etapa 1) |
+| `d783f3d` | etapa 2: `store.py`, usuários, metadados dos cadastros, diário com retenção, entradas recusadas e caches no MongoDB; `migrate.py`; `db_init.py` e o serviço `portal-db-init`; o instalador gera `PORTAL_DB_PASSWORD` e `PORTAL_SECRET_KEY`; `test_store.py`, `test_store_mongodb.py` e o job do CI num MongoDB real |
+
+Etapa 2. Três detalhes mudaram durante a construção, e o ADR 0001 foi alinhado: o usuário do portal é
+criado por um script Python na imagem do portal (`db_init.py`), para que o CI rode o mesmo script contra um
+MongoDB real; a regra que mantém o último administrador roda sob um documento de trava comum a todos os
+processos, porque um MongoDB sem replica set não tem transações entre documentos; e a retenção do diário
+conta dias inteiros a partir do fim do dia do evento, o que permite aplicar um valor alterado um dia por vez
+(o mongomock não calcula datas numa atualização). O ambiente de desenvolvimento não consegue baixar o
+MongoDB, então os programas rodam no mongomock ali e num contêiner de serviço `mongo:7` real no CI; o job do
+CI começa como informativo. Uma mutação proposital (sem trava nas alterações de usuários) passou de início
+pela verificação de remoção simultânea, porque o mongomock raramente intercala as duas threads; foi
+acrescentada uma verificação determinística (uma alteração espera enquanto outro processo segura a trava),
+que a pega.
+
 ## Como as principais áreas evoluíram
 
 | Área | 1.0.0 (sessão 1) | Agora |
@@ -271,10 +289,10 @@ job do CI com MongoDB real; quatro entregas. Elas estão registradas no
 | Achar cadastros | abrir um GTIN por vez | lista de registros, busca por texto, filtros por tipo de chave, qualificador, autor e problemas de link, busca por código, outros cadastros da chave |
 | Trabalho em lote | nenhum | exportação XLSX/CSV e importação em duas etapas |
 | Qualidade dos destinos | nenhuma | verificador de links no editor, em todos os cadastros e na importação |
-| Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, tela de usuários, senhas temporárias, histórico, auditoria |
+| Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, tela de usuários, senhas temporárias, histórico, auditoria, no banco próprio do portal |
 | Instalação | manual, com patch | fork git, configuração em camadas, instalador para Ubuntu, backup |
 | Resolução | GTIN e lote, links comprimidos do Digital Link 1.1 | todas as chaves e qualificadores, as regras do Resolver 1.2.1, EPC em binário de etiquetas NFC (`/eh…`, `/ex…`) |
-| Testes | 69 verificações | 1.306 verificações em 15 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador; rodam pelo pytest e no GitHub Actions |
+| Testes | 69 verificações | 1.364 verificações em 16 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador; rodam pelo pytest e no GitHub Actions, o portal também num MongoDB real |
 | Documentação | README do pacote, documento de passagem | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e português), documentação das extensões, changelog |
 
 ## Decisões que ficam, a não ser que sejam revistas de propósito
@@ -287,12 +305,14 @@ job do CI com MongoDB real; quatro entregas. Elas estão registradas no
    query strings repassadas sem mudança e nunca julgadas.
 6. Perfis leitor < editor < administrador conferidos em toda chamada; prefixos de empresa GS1 limitam
    todas as telas.
-7. Os arquivos do portal (`users.json`, `secret.key`, `records-meta.json`, `journal.jsonl`) ficam no
-   volume de configuração e entram no backup diário.
+7. Os dados do portal (usuários, metadados dos cadastros, diário, entradas recusadas, caches) ficam num
+   banco próprio no MongoDB da instalação, acessado por um usuário limitado a ele, e entram no backup
+   diário; a chave de sessão vem do `.env` ([ADR 0001](adr/0001-estado-do-portal-no-mongodb.md); até a
+   sessão 9, arquivos no volume de configuração).
 8. Etiquetas: X = 0,495 mm, texto de 2,2 mm, zona de silêncio de 4X; correção de erros exatamente como
    escolhida; sem marca GS1.
 9. Atributos de dados vão só para o QR Code e são validados pelo engine da GS1.
-10. Um único worker do gunicorn com threads.
+10. Um único worker do gunicorn com threads, até importações e verificações de links irem para um worker (etapa 3 do ADR 0001).
 11. O cadastro segue o Resolver 2.5.9: com número de série, lote e variante são qualificadores informativos
     do cadastro; todo cadastro qualificado deve ter acima dele o cadastro da chave.
 12. O EPC em binário é decodificado a partir dos artefatos do TDT da GS1, incluídos sem alteração;

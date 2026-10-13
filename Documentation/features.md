@@ -180,7 +180,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Users screen | Create with a temporary password shown once, change role and prefixes, reset, disable, remove; at least one active administrator | `71b15f2` |
 | Record history | Every version saved through the portal, with restore | `71b15f2` |
 | Audit trail | Sign-ins, changes, imports, exports, administration; filters; CSV | `71b15f2` |
-| Journal | `journal.jsonl` in the configuration volume, included in the backup | `71b15f2` |
+| Journal | One event per document in the portal's database, included in the backup; kept by age per category (sign-ins 180 days, record changes and administration for ever by default; `PORTAL_JOURNAL_*_DAYS`) | `71b15f2`, `d783f3d` |
 
 ## Portal: robustness and security
 
@@ -192,6 +192,9 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Special characters | ASCII digits only in identifiers; invisible characters removed; NFC text without control characters; addresses with spaces or line breaks refused; typed user names logged safely | `1b58bfd` |
 | Formula protection | CSV/XLSX exports and the audit CSV cannot run formulas in Excel | `1b58bfd` |
 | Large cells | A CSV cell above 128 KB is reported, not a server error | `9d12f9d` |
+| Portal data in its own database | Users, record metadata, journal, sign-in failures and the link checker's cache in the database `resolver_portal` of the installation's MongoDB, reached with a user that may use that database only; the resolver's database untouched | `d783f3d` |
+| Sign-in lockout for the whole installation | Five failures lock a user name or an address for 15 minutes in every portal replica and across restarts | `d783f3d` |
+| Last administrator kept | Changes of users are serialised by a lock shared by every process: the last enabled administrator cannot be removed or demoted, even by two administrators at once | `71b15f2`, `d783f3d` |
 
 ## Portal: languages and look
 
@@ -220,7 +223,10 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Ubuntu installer | `scripts/install.sh`: checks, questions, Docker, nginx + Certbot or an existing certificate or an external proxy, `.env` with generated secrets, start-up, backup cron; safe to re-run; `--non-interactive` | `e11f630` |
 | Installer hardening | Passwords with special characters; refuses a single quote in the first user's password | `3f1ff37` |
 | Proxy restart | Compose restarts the proxy when a service behind it is recreated | `5f8c7d7` |
-| Daily backup | MongoDB dump + portal configuration volume, 14 days kept, cron at 02:30 | `ba0c293` |
+| Daily backup | MongoDB dump (the portal's database included) + portal configuration volume, 14 days kept, cron at 02:30 | `ba0c293`, `d783f3d` |
+| Portal database user | The one-shot service `portal-db-init` creates the portal's MongoDB user, or brings its password up to date, at every start | `d783f3d` |
+| Move from the files of earlier versions | At its first start the portal imports `users.json`, `records-meta.json` and `journal.jsonl` into its database and keeps them as `*.migrated`; an interrupted import finishes at the next start | `d783f3d` |
+| Installer secrets for the portal | `PORTAL_DB_PASSWORD` and `PORTAL_SECRET_KEY` generated and kept on re-runs | `d783f3d` |
 | Health check | `/portal/healthz` | `126f507` |
 
 ## Development tests and documentation
@@ -228,8 +234,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Feature | What it does | Since |
 |---|---|---|
 | Development tests | Resolver, GS1's resolver test suite run in Chromium against the resolver code, EPC binary decoder (checked against TDS annex E.3 and the `epc-tds` library), data entry, keys, governance, spreadsheets, special characters, data attributes, link checker, portal end to end in Chromium (desktop and phone), home page through nginx, installer through shims | `0733a3f` and later |
-| Development tests through pytest | `pytest dev-tests` runs every program, by group (`-m resolver`, `portal`, `e2e`, `home`, `install`), with each program's check count; strict mode for CI | `d68a883` |
-| Continuous integration | GitHub Actions runs the tests in five parallel jobs on every push and pull request to `gs1br/develop`; pinned versions, cached engines and browser; status badge in the README | `d68a883` |
+| Development tests through pytest | `pytest dev-tests` runs every program, by group (`-m resolver`, `portal`, `e2e`, `home`, `install`, `database`), with each program's check count; strict mode for CI | `d68a883`, `d783f3d` |
+| Continuous integration | GitHub Actions runs the tests in six parallel jobs on every push and pull request to `gs1br/develop`, one of them on a real MongoDB 7 (service container); pinned versions, cached engines and browser; status badge in the README | `d68a883`, `d783f3d` |
 | Screenshots | `dev-tests/docs/screenshots.py` regenerates the README and user guide images | `f14d8c4`, session 4 |
 | Documentation | README, user guide, features, history, developer guide, extensions documentation, changelog | `539bab0` and later |
 

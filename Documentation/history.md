@@ -257,6 +257,23 @@ per category; automatic migration at start-up; `mongomock` in the test programs 
 real MongoDB; four deliveries. They are recorded in
 [ADR 0001](adr/0001-portal-state-in-mongodb.md) (step 1).
 
+| Commit | Change |
+|---|---|
+| `f9c38a2` | docs: the "How the main areas evolved" heading restored in both histories (lost in a session 8 documentation commit) |
+| `076f19a` | ADR 0001 in English and Portuguese (step 1) |
+| `d783f3d` | step 2: `store.py`, users, record metadata, journal with retention, sign-in failures and caches in MongoDB; `migrate.py`; `db_init.py` and the `portal-db-init` service; the installer generates `PORTAL_DB_PASSWORD` and `PORTAL_SECRET_KEY`; `test_store.py`, `test_store_mongodb.py` and the CI job on a real MongoDB |
+
+Step 2. Three details changed while it was built, and ADR 0001 was brought in line: the portal's user is
+made by a Python script in the portal's image (`db_init.py`), so that CI can run the same script against a
+real MongoDB; the rule that keeps the last administrator runs under a lock document shared by every process,
+because a standalone MongoDB has no multi-document transactions; and journal retention counts whole days
+from the end of an event's day, which lets a changed value be applied one day at a time (mongomock cannot
+compute dates in an update). The development sandbox cannot download MongoDB, so the programs run on
+mongomock there and on a real `mongo:7` service container in CI; the CI job starts as informative. A
+deliberate mutation (no lock around the changes of users) first passed the concurrent-removal check, since
+mongomock rarely interleaves the two threads; a deterministic check (a change waits while another process
+holds the lock) was added and catches it.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -266,10 +283,10 @@ real MongoDB; four deliveries. They are recorded in
 | Finding records | open one GTIN at a time | record list, text search, filters by key type, qualifier, author and link problems, code search, other records of a key |
 | Bulk work | none | XLSX/CSV export and two-step import |
 | Quality of targets | none | link checker in the editor, for every record and on import |
-| Accounts | users from the command line, all equal | roles, prefixes, users screen, temporary passwords, history, audit trail |
+| Accounts | users from the command line, all equal | roles, prefixes, users screen, temporary passwords, history, audit trail, in the portal's own database |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
 | Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
-| Tests | 69 checks | 1,306 checks in 15 test programs (one of them GS1's own test suite), plus the installer test; run through pytest and on GitHub Actions |
+| Tests | 69 checks | 1,364 checks in 16 test programs (one of them GS1's own test suite), plus the installer test; run through pytest and on GitHub Actions, the portal also on a real MongoDB |
 | Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
 ## Decisions that stay unless deliberately revisited
@@ -281,11 +298,13 @@ real MongoDB; four deliveries. They are recorded in
 5. Resolver: an unknown `linkType` is a 404 (required by the standard); walk-up serial → batch → variant →
    key; query strings are passed on unchanged and never judged.
 6. Roles reader < editor < admin are checked on every call; GS1 Company Prefixes limit every screen.
-7. Portal files (`users.json`, `secret.key`, `records-meta.json`, `journal.jsonl`) live in the
-   configuration volume and are in the daily backup.
+7. The portal's data (users, record metadata, journal, sign-in failures, caches) lives in a database of
+   its own in the installation's MongoDB, reached with a user limited to it, and is in the daily backup;
+   the session key comes from `.env` ([ADR 0001](adr/0001-portal-state-in-mongodb.md); until session 9,
+   files in the configuration volume).
 8. Labels: X = 0.495 mm, 2.2 mm text, 4X quiet zone; error correction exactly as chosen; no GS1 branding.
 9. Data attributes go only into the QR code and are validated by GS1's engine.
-10. One gunicorn worker with threads.
+10. One gunicorn worker with threads, until imports and link checks move to a worker (step 3 of ADR 0001).
 11. Registration follows Resolver 2.5.9: with a serial number, the batch and variant are informative
     qualifiers of the record; every qualified record should have its key's own record above it.
 12. EPC binary strings are decoded from GS1's TDT artefacts, shipped unchanged; key qualifiers from the tag

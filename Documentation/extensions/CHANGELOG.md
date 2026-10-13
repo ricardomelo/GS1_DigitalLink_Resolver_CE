@@ -8,7 +8,33 @@
   database of its own in the existing MongoDB, reached with a least-privilege user created by a one-shot
   `portal-db-init` service; imports and link checks run in a `portal-worker` container; the session key in
   `.env`; journal retention by age per category; automatic migration of the files at start-up; replicas in
-  step 4. Documentation only (step 1 of 4).
+  step 4. Documentation only (step 1 of 4). Commit `076f19a`.
+- **The portal's data in MongoDB** (step 2 of 4): users, record metadata, the journal, sign-in failures, the
+  link checker's cache and the last full link check move from the configuration volume and the worker's
+  memory to the database `PORTAL_DB_NAME` (default `resolver_portal`) of the installation's MongoDB
+  (`portal/store.py`). The public functions of `users.py`, `meta.py` and `journal.py` and every API answer
+  are unchanged. Commit `d783f3d`.
+- **Portal database user**: the one-shot Compose service `portal-db-init` (`portal/db_init.py`, the portal's
+  image) creates the user `PORTAL_DB_USERNAME` with `readWrite` on the portal's database only, or brings its
+  password and roles up to date, at every start; `portal-service` starts after it. The portal still gets no
+  root `MONGO_URI`. New settings `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD`,
+  `PORTAL_DB_HOST`, `PORTAL_DB_URI`. Commit `d783f3d`.
+- **Migration**: at the first start the portal imports `users.json`, `records-meta.json` and `journal.jsonl`
+  into empty collections, renames them `*.migrated` and logs the counts; an interrupted import finishes at
+  the next start without duplicates. Commit `d783f3d`.
+- **Sign-in lockout** shared by every replica and kept across restarts (`login_failures`, TTL 15 minutes).
+  **Changes of users** run under a lock shared by every process, so the last enabled administrator cannot
+  be removed by two administrators at once. Commit `d783f3d`.
+- **Journal retention** by age per category, from the end of the event's day: `PORTAL_JOURNAL_SESSION_DAYS`
+  (180), `PORTAL_JOURNAL_RECORD_DAYS` (0, for ever), `PORTAL_JOURNAL_ADMIN_DAYS` (0); a changed value is
+  applied to older events at the next start. Commit `d783f3d`.
+- **Session key**: the installer writes `PORTAL_SECRET_KEY` (and `PORTAL_DB_PASSWORD`) to `.env` and keeps
+  them on re-runs; without it the portal logs a warning and uses `secret.key` in the volume, enough for a
+  single replica. Commit `d783f3d`.
+- **Tests**: the portal programs run on `mongomock` (`PORTAL_DB_URI=mongomock://`) or on a real MongoDB
+  when `PORTAL_DB_URI` is set; `test_store.py` (58 checks); `test_store_mongodb.py` (the user's privileges,
+  `test_store.py` as that user, the TTL monitor); a sixth CI job, informative at first, with a `mongo:7`
+  service container; the installer test checks the new secrets (57 checks). Commit `d783f3d`.
 
 ### Continuous integration (backlog item 2.2)
 - **Development tests through pytest**: `dev-tests/test_programs.py` runs each of the fifteen programs and the

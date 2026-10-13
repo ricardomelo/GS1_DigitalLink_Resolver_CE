@@ -2,17 +2,21 @@
 Portal user store: the "users" collection of the portal's database (store.py), one document per account.
 
     {"_id": "maria", "hash": "<werkzeug hash>", "role": "editor", "prefixes": ["7891234"],
+     "tenant": "t-3f9a1c0b2e7d", "email": "maria@example.org",
      "disabled": false, "mustChange": false, "created": "…", "lastLogin": "…"}
 
 Roles, from least to most: reader (consults and exports), editor (also changes records), admin (also
-manages users and sees the audit trail). "prefixes" limits an account to identifiers of those GS1
-Company Prefixes (empty: every identifier). "mustChange" asks for a new password at the next sign-in
+manages users and sees the audit trail). "tenant" is the organisation the user belongs to (tenants.py,
+Documentation/adr/0002-tenants.md); without it the user is the operator's, and an operator administrator is a
+server administrator. "prefixes" limits an account to identifiers of those GS1 Company Prefixes (empty: every
+identifier of its tenant, or everything the operator holds); a tenant user's prefixes lie inside the tenant's.
+"email" is optional and unique in the installation. "mustChange" asks for a new password at the next sign-in
 (temporary passwords). Accounts imported from a users.json written before roles existed ({"name": "<hash>"})
 are read as admins (migrate.py).
 
 Writes run under a lock shared by every replica (store.lock), so two administrators acting at the same
-moment cannot both remove the last enabled administrator. Every lookup reads the database, so changes made
-from the command line (create_user.py) take effect at once.
+moment cannot both remove the last enabled server administrator. Every lookup reads the database, so changes
+made from the command line (create_user.py) take effect at once.
 """
 import hashlib
 import hmac
@@ -30,7 +34,10 @@ MIN_PASSWORD_LENGTH = 12
 ROLES = ("reader", "editor", "admin")
 USERNAME = re.compile(r"^[A-Za-z0-9._@\-]{3,64}$")
 PREFIX = re.compile(r"^\d{4,12}$", re.ASCII)   # ASCII digits only: \d alone would accept "７"
-FIELDS = ("hash", "role", "prefixes", "disabled", "mustChange", "created", "lastLogin")
+EMAIL = re.compile(r"^[^@\s\x00-\x1f\x7f]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+                   r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$")
+EMAIL_MAX = 254
+FIELDS = ("hash", "role", "prefixes", "tenant", "email", "disabled", "mustChange", "created", "lastLogin")
 # Hash of a random password, checked when the username does not exist so that response
 # times do not reveal which usernames are valid.
 _DUMMY_HASH = generate_password_hash(os.urandom(16).hex())
@@ -58,8 +65,8 @@ def _account(value) -> dict:
     """An account with every field present; plain hashes from before roles become administrators."""
     if isinstance(value, str):                     # before roles: every user was an administrator
         value = {"hash": value, "role": "admin"}
-    account = {"hash": "", "role": "admin", "prefixes": [], "disabled": False, "mustChange": False,
-               "created": None, "lastLogin": None}
+    account = {"hash": "", "role": "admin", "prefixes": [], "tenant": None, "email": None, "disabled": False,
+               "mustChange": False, "created": None, "lastLogin": None}
     account.update({k: v for k, v in value.items() if k in FIELDS})
     if account["role"] not in ROLES:
         account["role"] = "reader"
@@ -107,7 +114,7 @@ def fingerprint_matches(username: str, value: str | None) -> bool:
 
 
 @contextmanager
-def _locked():
+def locked():
     """The users lock (store.lock); StoreNotWritable when the database cannot be reached or written."""
     try:
         with store.lock("users"):
@@ -116,14 +123,64 @@ def _locked():
         raise StoreNotWritable(str(exc)) from exc
 
 
+def _stored(account: dict) -> dict:
+    """The fields of an account as stored: no "tenant" for the operator's users, no "email" when there is none
+    (so that queries for {"tenant": None} find both the users written before tenants existed and new ones)."""
+    return {k: account[k] for k in FIELDS if not (k in ("tenant", "email") and not account[k])}
+
+
 def _save(username: str, account: dict) -> None:
     """Writes one account (whole document)."""
-    _users().replace_one({"_id": username}, {k: account[k] for k in FIELDS}, upsert=True)
+    _users().replace_one({"_id": username}, _stored(account), upsert=True)
+
+
+def is_server_admin(account: dict | None) -> bool:
+    """Whether the account is a server administrator: an administrator of the operator (enabled or not)."""
+    return bool(account) and account["role"] == "admin" and not account.get("tenant")
 
 
 def _active_admins(accounts: dict[str, dict]) -> set[str]:
-    """Names of the enabled administrators."""
-    return {n for n, a in accounts.items() if a["role"] == "admin" and not a["disabled"]}
+    """Names of the enabled server administrators (administrators of the operator)."""
+    return {n for n, a in accounts.items() if is_server_admin(a) and not a["disabled"]}
+
+
+def clean_email(value) -> str | None:
+    """An e-mail address as stored (trimmed, lower case), None when empty; UserError when it is not one."""
+    email = str(value or "").strip().lower()
+    if not email:
+        return None
+    if len(email) > EMAIL_MAX or not EMAIL.match(email):
+        raise UserError("users.emailInvalid")
+    return email
+
+
+def _check_email(username: str, email: str | None) -> None:
+    """Refuses an address another user already has (call under the lock)."""
+    if email and _users().find_one({"email": email, "_id": {"$ne": username}}, {"_id": 1}):
+        raise UserError("users.emailExists")
+
+
+def _tenant_prefixes(tenant_id: str) -> list[str] | None:
+    """The prefixes of a tenant, or None when it does not exist (read directly: tenants.py imports this module)."""
+    doc = store.col("tenants").find_one({"_id": tenant_id}, {"prefixes": 1})
+    return None if doc is None else list(doc.get("prefixes") or [])
+
+
+def _check_scope(tenant_id: str | None, prefixes: list[str]) -> None:
+    """A tenant user's prefixes lie inside the tenant's; an operator user's may not lie inside a tenant's (he
+    would reach no record). Call under the lock."""
+    if tenant_id:
+        held = _tenant_prefixes(tenant_id)
+        if held is None:
+            raise UserError("users.tenantUnknown")
+        for prefix in prefixes:
+            if not any(prefix.startswith(t) for t in held):
+                raise UserError("users.prefixOutsideTenant", prefix=prefix)
+        return
+    for doc in store.col("tenants").find({}, {"name": 1, "prefixes": 1}):
+        for prefix in prefixes:
+            if any(prefix.startswith(t) for t in doc.get("prefixes") or []):
+                raise UserError("users.prefixOfTenant", prefix=prefix, tenant=doc.get("name", ""))
 
 
 def clean_prefixes(values) -> list[str]:
@@ -136,39 +193,53 @@ def clean_prefixes(values) -> list[str]:
 
 
 def set_password(username: str, password: str, must_change: bool = False, role: str | None = None,
-                 prefixes=None) -> None:
-    """Sets the password, creating the account when needed (role admin unless given)."""
-    with _locked():
-        account = get(username) or _account({"role": role or "admin", "created": _now()})
+                 prefixes=None, tenant: str | None = None, email=None) -> None:
+    """Sets the password, creating the account when needed (role admin unless given; the tenant only when
+    the account is created: an existing user keeps his)."""
+    with locked():
+        account = get(username)
+        if account is None:
+            account = _account({"role": role or "admin", "created": _now(), "tenant": tenant})
         account["hash"] = generate_password_hash(password)
         account["mustChange"] = must_change
         if role:
             account["role"] = role
         if prefixes is not None:
             account["prefixes"] = clean_prefixes(prefixes)
+        if email is not None:
+            account["email"] = clean_email(email)
+            _check_email(username, account["email"])
+        _check_scope(account["tenant"], account["prefixes"])
         _save(username, account)
 
 
-def create(username: str, password: str, role: str, prefixes=(), must_change: bool = True) -> None:
-    """Creates a user (name, role, prefixes); by default the password must be changed at the first sign-in."""
+def create(username: str, password: str, role: str, prefixes=(), must_change: bool = True,
+           tenant: str | None = None, email=None) -> None:
+    """Creates a user (name, role, prefixes, tenant, e-mail); by default the password must be changed at the
+    first sign-in. Without a tenant the user is the operator's."""
     if not USERNAME.match(username or ""):
         raise UserError("users.nameInvalid")
     if role not in ROLES:
         raise UserError("users.roleInvalid")
     prefixes = clean_prefixes(prefixes)
-    account = _account({"role": role, "prefixes": prefixes, "created": _now()})
+    account = _account({"role": role, "prefixes": prefixes, "created": _now(), "tenant": tenant or None,
+                        "email": clean_email(email)})
     account["hash"] = generate_password_hash(password)
     account["mustChange"] = must_change
-    with _locked():
+    with locked():
+        _check_scope(account["tenant"], prefixes)
+        _check_email(username, account["email"])
         try:
-            _users().insert_one({"_id": username, **{k: account[k] for k in FIELDS}})
+            _users().insert_one({"_id": username, **_stored(account)})
         except DuplicateKeyError:
             raise UserError("users.exists", user=username) from None
 
 
-def update(username: str, role: str | None = None, prefixes=None, disabled: bool | None = None) -> dict:
-    """Changes role, prefixes or state; the last active administrator cannot lose that status."""
-    with _locked():
+def update(username: str, role: str | None = None, prefixes=None, disabled: bool | None = None,
+           email=None) -> dict:
+    """Changes role, prefixes, e-mail ("" removes it) or state; the last active server administrator cannot
+    lose that status. The tenant never changes."""
+    with locked():
         accounts = load()
         account = accounts.get(username)
         if not account:
@@ -181,6 +252,10 @@ def update(username: str, role: str | None = None, prefixes=None, disabled: bool
             account["prefixes"] = clean_prefixes(prefixes)
         if disabled is not None:
             account["disabled"] = bool(disabled)
+        if email is not None:
+            account["email"] = clean_email(email)
+            _check_email(username, account["email"])
+        _check_scope(account["tenant"], account["prefixes"])
         if not _active_admins(accounts):
             raise UserError("users.lastAdmin")
         _save(username, account)
@@ -189,7 +264,7 @@ def update(username: str, role: str | None = None, prefixes=None, disabled: bool
 
 def remove(username: str) -> None:
     """Removes a user, keeping at least one enabled administrator."""
-    with _locked():
+    with locked():
         accounts = load()
         if username not in accounts:
             raise UserError("users.unknown", user=username)
@@ -210,4 +285,5 @@ def touch_login(username: str) -> None:
 def public(username: str, account: dict) -> dict:
     """What the administration screen shows (never the hash)."""
     return {"username": username, **{k: account[k] for k in
-                                     ("role", "prefixes", "disabled", "mustChange", "created", "lastLogin")}}
+                                     ("role", "prefixes", "tenant", "email", "disabled", "mustChange", "created",
+                                      "lastLogin")}}

@@ -5,13 +5,19 @@ full content of each version of a record so that it can be restored.
 One document per event in the "journal" collection of the portal's database (store.py), included in the
 daily backup with the rest of the database. Queries use indexes on the date, the record and the user.
 
-Event: {"at", "user", "action", "category", "anchor"?, "qpath"?, "doc"?, "detail"?, "expiresAt"?}
+Event: {"at", "user", "action", "category", "tenant"?, "byOperator"?, "anchor"?, "qpath"?, "doc"?, "detail"?,
+        "expiresAt"?}
   record actions: create, update, delete (doc = the record after the change, or before a deletion),
-  import (detail = counts); others: login, login-failed, logout, password-change, user-create,
-  user-update, user-reset, user-remove, export.
+  import (detail = counts); others: login, login-failed, login-refused, logout, password-change, user-create,
+  user-update, user-reset, user-remove, export, tenant-create, tenant-update, tenant-remove, support-open,
+  support-close.
+
+"tenant" is the tenant whose audit trail the event belongs to (Documentation/adr/0002-tenants.md, section 3.5);
+none for the operator, which is also what events written before tenants existed are. "byOperator" marks what an
+operator user (a server administrator) did to a tenant, so that the operator's trail shows it too.
 
 Retention by age, per category (Documentation/adr/0001-portal-state-in-mongodb.md, section 3.5):
-  PORTAL_JOURNAL_SESSION_DAYS  login, login-failed, logout                       default 180
+  PORTAL_JOURNAL_SESSION_DAYS  login, login-failed, login-refused, logout        default 180
   PORTAL_JOURNAL_RECORD_DAYS   create, update, delete, import                    default 0 (kept for ever)
   PORTAL_JOURNAL_ADMIN_DAYS    password-change, user-*, export and anything else  default 0 (kept for ever)
 An event is kept for the days of its category counted from the end of the day (UTC) it was made: expiresAt
@@ -31,13 +37,13 @@ log = logging.getLogger("portal.journal")
 
 RECORD_ACTIONS = ("create", "update", "delete")
 CATEGORIES = {
-    "session": ("login", "login-failed", "logout"),
+    "session": ("login", "login-failed", "login-refused", "logout"),
     "record": ("create", "update", "delete", "import"),
 }
 RETENTION_VARIABLES = {"session": ("PORTAL_JOURNAL_SESSION_DAYS", 180),
                        "record": ("PORTAL_JOURNAL_RECORD_DAYS", 0),
                        "admin": ("PORTAL_JOURNAL_ADMIN_DAYS", 0)}
-OUTPUT_FIELDS = ("at", "user", "action", "anchor", "qpath", "doc", "detail")
+OUTPUT_FIELDS = ("at", "user", "action", "tenant", "byOperator", "anchor", "qpath", "doc", "detail")
 
 
 def category(action: str) -> str:
@@ -100,19 +106,30 @@ def _output(doc: dict, with_doc: bool = True) -> dict:
     return event
 
 
-def for_record(anchor: str, qpath: str, limit: int = 20) -> list[dict]:
-    """The latest versions of one record, newest first."""
+def for_record(anchor: str, qpath: str, tenant: str | None = None, limit: int = 20) -> list[dict]:
+    """The latest versions of one record made while it belonged to `tenant` (None: the operator), newest first."""
     query = {"anchor": anchor, "action": {"$in": list(RECORD_ACTIONS)},
-             "qpath": qpath if qpath else {"$in": ["", None]}}
+             "qpath": qpath if qpath else {"$in": ["", None]}, "tenant": tenant}
     cursor = _journal().find(query).sort([("at", DESCENDING), ("_id", DESCENDING)]).limit(limit)
     return [_output(doc) for doc in cursor]
 
 
+def scope_query(tenant: str | None, operator_view: bool = False) -> dict:
+    """The events of one audit trail: a tenant's ({"tenant": id}); the operator's (no tenant) and, for the
+    server administrator (operator_view), what operator users did to tenants."""
+    if tenant:
+        return {"tenant": tenant}
+    if operator_view:
+        return {"$or": [{"tenant": None}, {"byOperator": True}]}
+    return {"tenant": None}
+
+
 def search(user: str | None = None, since: str | None = None, until: str | None = None,
-           text: str | None = None, allowed=None, limit: int = 500) -> list[dict]:
+           text: str | None = None, allowed=None, limit: int = 500, scope: dict | None = None) -> list[dict]:
     """Events newest first, without record contents. since/until are ISO dates (inclusive);
-    text matches the anchor, qualifiers, action or detail; allowed(anchor) filters records by permission."""
-    query: dict = {}
+    text matches the anchor, qualifiers, action or detail; allowed(anchor) filters records by permission;
+    scope (scope_query()) limits the events to one audit trail."""
+    query: dict = dict(scope or {})
     if user:
         query["user"] = user
     bounds = {}

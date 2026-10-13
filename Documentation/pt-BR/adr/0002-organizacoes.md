@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Situação | **Aceito** (13 de outubro de 2026). A implementar em três etapas: 1 (este registro), 2 (modelo de dados, verificações no servidor e auditoria), 3 (telas) |
+| Situação | **Aceito** (13 de outubro de 2026). Implementado em três etapas: 1 (este registro), 2 (modelo de dados, verificações no servidor e auditoria; seção 3.9), 3 (telas) |
 | Item do backlog | 2.4 — tenants |
 | Decidido por | o responsável pelo branch, que pediu a opção recomendada em cada ponto da seção 4 |
 | Inglês | [ADR 0002 in English](../../adr/0002-tenants.md) (versão de referência) |
@@ -183,6 +183,23 @@ Os mock-ups dessas telas são entregues com a etapa 3, antes de ela chegar à ho
 | `POST`, `DELETE /portal/api/support` | administrador do servidor | abrir e fechar o acesso de suporte |
 | `GET /portal/api/users` e as chamadas de usuários | os dois administradores | com o escopo de 3.2; campos `tenant` e `email` |
 | `GET /portal/api/config` | todos | acrescenta `tenant` (`{id, name}` ou nenhum), `serverAdmin`, `support` |
+
+### 3.9 Como implementado na etapa 2
+
+A etapa 2 segue as seções 3.1 a 3.6 e 3.8; detalhes definidos ao escrevê-la:
+- `set_scope()` em `portal/app.py` põe o escopo da seção 3.3 no `g` do Flask; o worker o chama para o usuário de
+  uma importação. A administração de usuários e a trilha de auditoria conferem o papel da **conta**
+  (`admin_required`), então um administrador do servidor em acesso de suporte continua gerenciando usuários;
+  tenants e acesso de suporte exigem um administrador do servidor (`server_admin_required`, `access.serverAdmin`).
+- Um cadastro que muda de dono recomeça seus metadados (`meta.touch()` os apaga quando o tenant guardado é outro),
+  então o novo dono nunca vê quem o alterou antes.
+- O motivo do suporte tem os caracteres invisíveis removidos e os espaços juntados antes de o tamanho ser conferido.
+- Um usuário do operador não pode ficar limitado a um prefixo dentro do de um tenant (`users.prefixOfTenant`): não
+  alcançaria nenhum cadastro. Um usuário de um tenant desconhecido é recusado (`users.tenantUnknown`).
+- A tentativa de entrada que falha de um usuário de tenant vai para a trilha do tenant (o nome digitado existe); as
+  outras, para a do operador.
+- O CSV da auditoria ganha duas colunas no fim, `organisation` e `by_operator`, para que programas que leem as seis
+  primeiras continuem funcionando.
 
 ## 4. Opções consideradas
 

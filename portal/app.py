@@ -36,6 +36,7 @@ import migrate
 import sheet
 import store
 import syntax
+import tenants
 import users
 import worker
 from gs1 import ValidationError
@@ -220,13 +221,22 @@ def session_ends_in() -> float:
     return session.get("since", time.time()) + SESSION_MAX_HOURS * 3600 - time.time()
 
 
+def tenant_blocked(account: dict | None) -> bool:
+    """Whether the account belongs to a tenant that was disabled or removed (its users cannot sign in, and their
+    sessions end at the next request)."""
+    if not account or not account.get("tenant"):
+        return False
+    tenant = tenants.get(account["tenant"])
+    return tenant is None or tenant["disabled"]
+
+
 def current_user() -> str | None:
     """Signed-in user of this session, or None. The session also carries a fingerprint of the account's
     password hash: a password change or reset ends every other session of that user. A session older than
     PORTAL_SESSION_MAX_HOURS ends whatever its use; the idle limit is checked with the cookie's signature.
     """
     username = session.get("user")
-    if username and users.fingerprint_matches(username, session.get("fp")):
+    if username and users.fingerprint_matches(username, session.get("fp")) and not tenant_blocked(users.get(username)):
         if "since" not in session:          # sessions opened before the limit existed start counting now
             session["since"] = int(time.time())
         if session_ends_in() > 0:
@@ -246,10 +256,31 @@ def current_user() -> str | None:
 MUST_CHANGE_ALLOWED = ("/portal/api/config", "/portal/api/password", "/portal/api/logout", "/portal/api/session")
 
 
+def set_scope(username: str, account: dict, support: str | None = None) -> None:
+    """The scope of a request (Documentation/adr/0002-tenants.md, section 3.3), from the account:
+      g.user, g.account_role, g.account_tenant  the account itself;
+      g.server_admin                            an administrator of the operator;
+      g.tenants                                 every tenant (read once per request);
+      g.tenant                                  whose records the request reaches: the user's tenant, the tenant
+                                                of an open support access, or None (the operator);
+      g.role, g.prefixes                        the role and the prefixes that apply (reader and the whole tenant
+                                                during support access);
+      g.support                                 the tenant of an open support access, or None."""
+    g.user = username
+    g.account_role, g.account_tenant = account.get("role", "reader"), account.get("tenant")
+    g.server_admin = users.is_server_admin(account)
+    g.tenants = tenants.load()
+    g.support = support if g.server_admin and any(t["id"] == support for t in g.tenants) else None
+    if g.support:
+        g.tenant, g.role, g.prefixes = g.support, "reader", []
+    else:
+        g.tenant, g.role, g.prefixes = g.account_tenant, g.account_role, account.get("prefixes", [])
+
+
 def require_login(view):
     """Session login. API calls get 401 with a message code; pages are redirected to the login page.
-    Sets g.user, g.role and g.prefixes from the account, re-read on every request, so role and prefix
-    changes apply at once."""
+    Sets the scope of the request (set_scope) from the account, re-read on every request, so role, prefix and
+    tenant changes apply at once."""
     @wraps(view)
     def wrapper(*args, **kwargs):
         username = current_user()
@@ -258,7 +289,9 @@ def require_login(view):
                 return message("auth.required", 401)
             return redirect("/portal/login?reason=expired" if session.get("was_logged_in") else "/portal/login")
         account = users.get(username) or {}
-        g.user, g.role, g.prefixes = username, account.get("role", "reader"), account.get("prefixes", [])
+        set_scope(username, account, session.get("support"))
+        if session.get("support") and not g.support:
+            session.pop("support", None)                # the tenant was removed meanwhile
         g.must_change = bool(account.get("mustChange"))
         if g.must_change and request.path.startswith("/portal/api/") and request.path not in MUST_CHANGE_ALLOWED:
             return message("password.mustChange", 403)
@@ -280,13 +313,38 @@ def role_required(role: str):
     return decorator
 
 
+def admin_required(view):
+    """Allows the view to administrators — of a tenant or of the operator (server administrators) — whatever the
+    scope of the request: a server administrator in support access still manages users. The view limits what
+    each one sees."""
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if g.account_role != "admin":
+            return message("access.role", 403, params={"role": "admin"})
+        return view(*args, **kwargs)
+    return wrapper
+
+
+def server_admin_required(view):
+    """Allows the view to server administrators (administrators of the operator) only."""
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not g.server_admin:
+            return message("access.serverAdmin", 403)
+        return view(*args, **kwargs)
+    return wrapper
+
+
 class AccessDenied(Exception):
-    """The record belongs to a GS1 Company Prefix outside the user's."""
+    """The record belongs to another tenant, or to a GS1 Company Prefix outside the user's."""
 
 
 def allowed(anchor: str) -> bool:
-    """Whether the signed-in user may see and change this anchor (GS1 Company Prefixes of the account)."""
-    return gs1.within_prefixes(anchor, getattr(g, "prefixes", None))
+    """Whether the signed-in user may see (and, with the role, change) this anchor: its owner is the scope of the
+    request (the user's tenant, the tenant of a support access, or the operator) and it lies in the user's own
+    GS1 Company Prefixes, if any."""
+    return (tenants.owner(anchor, getattr(g, "tenants", None) or []) == getattr(g, "tenant", None)
+            and gs1.within_prefixes(anchor, getattr(g, "prefixes", None)))
 
 
 def check_access(anchor: str) -> None:
@@ -295,10 +353,26 @@ def check_access(anchor: str) -> None:
         raise AccessDenied(anchor)
 
 
-def log_event(action: str, **fields) -> None:
-    """Journal entry (history and audit); a failure is logged, never shown to the user."""
+_SCOPE = object()
+
+
+def log_event(action: str, tenant=_SCOPE, actor_tenant=_SCOPE, **fields) -> None:
+    """Journal entry (history and audit); a failure is logged, never shown to the user.
+
+    tenant: whose audit trail the event belongs to (None: the operator's). By default the owner of the record
+    for record events, otherwise the scope of the request. actor_tenant: the tenant of the user who acted (by
+    default the account's); when an operator user acts on a tenant the event is marked byOperator."""
     try:
         user = fields.pop("user", None) or getattr(g, "user", None) or "-"
+        if tenant is _SCOPE:
+            tenant = (tenants.owner(fields["anchor"], getattr(g, "tenants", None) or tenants.load())
+                      if fields.get("anchor") else getattr(g, "tenant", None))
+        if actor_tenant is _SCOPE:
+            actor_tenant = getattr(g, "account_tenant", None)
+        if tenant:
+            fields["tenant"] = tenant
+            if not actor_tenant:
+                fields["byOperator"] = True
         journal.append(action, user, **fields)
     except (OSError, PyMongoError) as exc:
         log.warning("Journal not written (%s): %s", action, exc)
@@ -414,7 +488,7 @@ def record_change(anchor: str, pairs: list, doc: dict | None, action: str) -> No
         if action == "delete":
             meta.remove(anchor, qpath)
         else:
-            meta.touch(anchor, qpath, g.user)
+            meta.touch(anchor, qpath, g.user, getattr(g, "tenant", None))
     except (OSError, PyMongoError) as exc:
         log.warning("Record metadata not updated for %s: %s", meta.key(anchor, qpath), exc)
     log_event(action, anchor=anchor, qpath=qpath, doc=doc)
@@ -585,31 +659,40 @@ def login():
     wait = throttle.retry_after(*keys)
     if wait:
         return message("auth.locked", 429, params={"minutes": -(-wait // 60)})
+    account = users.get(username) if username else None
+    tenant = (account or {}).get("tenant")
     if not username or not users.verify(username, password):
         throttle.fail(*keys)
         typed = shown_username(username)
         audit.info("user=%s action=login-failed addr=%s", typed, client_address())
-        log_event("login-failed", user=typed, detail=client_address())
+        log_event("login-failed", user=typed, detail=client_address(), tenant=tenant, actor_tenant=tenant)
         time.sleep(0.5)
         return message("auth.invalid", 401)
+    if tenant_blocked(account):
+        audit.info("user=%s action=login-refused addr=%s", username, client_address())
+        log_event("login-refused", user=username, detail=client_address(), tenant=tenant, actor_tenant=tenant)
+        return message("auth.tenantDisabled", 403)
     throttle.clear(*keys)
     session.clear()
     session.permanent = True
     session.update(user=username, fp=users.fingerprint(username), was_logged_in=True, since=int(time.time()))
     audit.info("user=%s action=login addr=%s", username, client_address())
     users.touch_login(username)
-    log_event("login", user=username, detail=client_address())
+    log_event("login", user=username, detail=client_address(), tenant=tenant, actor_tenant=tenant)
     return message("auth.welcome", 200, user=username, mustChange=bool((users.get(username) or {}).get("mustChange")))
 
 
 @app.post("/portal/api/logout")
 def logout():
     """Ends the session and records it in the audit trail."""
-    username = session.get("user")
+    username, support = session.get("user"), session.get("support")
     session.clear()
     if username:
+        tenant = (users.get(username) or {}).get("tenant")
+        if support:
+            log_event("support-close", user=username, tenant=support, actor_tenant=None, detail="logout")
         audit.info("user=%s action=logout", username)
-        log_event("logout", user=username)
+        log_event("logout", user=username, tenant=tenant, actor_tenant=tenant)
     return message("auth.loggedOut")
 
 
@@ -639,7 +722,7 @@ def change_password():
         return message("password.storeReadOnly", 500)
     session["fp"] = users.fingerprint(g.user)   # keeps this session; every other session is signed out
     audit.info("user=%s action=password-change", g.user)
-    log_event("password-change")
+    log_event("password-change", tenant=g.account_tenant)
     return message("password.changed")
 
 
@@ -668,6 +751,8 @@ def config():
     """
     return jsonify(
         user=g.user, role=g.role, prefixes=g.prefixes, mustChange=g.must_change,
+        accountRole=g.account_role, serverAdmin=g.server_admin,
+        tenant=tenant_summary(g.account_tenant), support=tenant_summary(g.support),
         resolver=RESOLVER_PUBLIC_URL,
         linkTypes=[{"code": code, "group": group} for code, group, _ in gs1.LINK_TYPES],
         keys=[{"code": ai, "name": name, "qualifiers": gs1.key_qualifiers(ai),
@@ -682,6 +767,12 @@ def config():
         dataAttributes=syntax.ENGINE.describe(),
         session=session_info(),
     )
+
+
+def tenant_summary(tenant_id: str | None) -> dict | None:
+    """{"id", "name", "disabled"} of a tenant of this request, or None."""
+    tenant = next((t for t in getattr(g, "tenants", None) or [] if t["id"] == tenant_id), None) if tenant_id else None
+    return {"id": tenant["id"], "name": tenant["name"], "disabled": tenant["disabled"]} if tenant else None
 
 
 def session_info() -> dict:
@@ -719,7 +810,7 @@ def get_record():
         # What the editor's "other records of this key" list shows: qualifiers, description, number of
         # targets and the last change made through the portal
         other = describe_entry(entry)
-        info = (known.get(meta.key(anchor, other.get("path", ""))) or {}) if other["kind"] != "other" else {}
+        info = meta.visible(known.get(meta.key(anchor, other.get("path", ""))), g.tenant) if other["kind"] != "other" else {}
         other.update(description=entry.get("itemDescription") or "", links=len(entry.get("links") or []),
                      updatedAt=info.get("updatedAt"), updatedBy=info.get("updatedBy"))
         others.append(other)
@@ -890,7 +981,7 @@ def list_records():
             continue                      # keys the portal does not manage, or outside the user's prefixes
         entry = describe_entry(line)
         qpath = entry.get("path", "")
-        info = known.get(meta.key(anchor, qpath), {}) if entry["kind"] != "other" else {}
+        info = meta.visible(known.get(meta.key(anchor, qpath)), g.tenant) if entry["kind"] != "other" else {}
         records.append({
             "key": key[0], "value": key[1], "anchor": anchor, "kind": entry["kind"],
             "qualifiers": entry.get("qualifiers", []), "qpath": qpath,
@@ -1132,8 +1223,7 @@ def run_import_job(job: dict, reporter: "jobs.Reporter") -> None:
     plan = job["plan"]
     results = list(job.get("results") or [])[:job.get("done", 0)]
     with app.test_request_context():
-        g.user = user                                   # store_record logs and records who changed it
-        g.prefixes = (users.get(user) or {}).get("prefixes", [])
+        set_scope(user, users.get(user) or {})          # store_record logs and records who changed it
         for index in range(len(results), len(plan)):
             reporter.check_stop()                       # between records: a stopping worker hands the job back
             item = plan[index]
@@ -1142,6 +1232,9 @@ def run_import_job(job: dict, reporter: "jobs.Reporter") -> None:
             result = {"key": ai, "value": value, "qualifiers": [list(p) for p in pairs], "rows": item["rows"],
                       "description": item["doc"]["itemDescription"]}
             try:
+                # checked again here: a prefix may have changed hands, or the user lost it, since the preview
+                if not allowed(item["anchor"]):
+                    raise ValidationError("access.prefix")
                 result["action"] = "created" if store_record(item["anchor"], pairs, item["doc"]) else "updated"
             except (ValidationError, UpstreamError) as exc:
                 result.update(action="failed", code=exc.code, params=exc.params)
@@ -1190,16 +1283,21 @@ def import_status():
 
 
 # --------------------------------------------------------------------------- link checker
-def _last_full_check() -> dict:
-    """Result of the latest "check every record" (settings "lastFullCheck"), shown in the record list."""
-    value = store.get_setting("lastFullCheck") or {}
+def _full_check_setting(tenant: str | None) -> str:
+    """The setting that keeps the last "check every record" of a scope: one per tenant, one for the operator."""
+    return f"lastFullCheck:{tenant}" if tenant else "lastFullCheck"
+
+
+def _last_full_check(tenant: str | None) -> dict:
+    """Result of the latest "check every record" of a scope, shown in the record list."""
+    value = store.get_setting(_full_check_setting(tenant)) or {}
     # stored as pairs: record keys contain "/" and "." and are not used as field names
     return {**value, "records": dict(value.get("records") or [])} if value else {}
 
 
-def _save_last_full_check(value: dict) -> None:
-    """Keeps the result of a "check every record" for every replica."""
-    store.set_setting("lastFullCheck", {**value, "records": [[k, v] for k, v in value["records"].items()]})
+def _save_last_full_check(tenant: str | None, value: dict) -> None:
+    """Keeps the result of a "check every record" of a scope for every replica."""
+    store.set_setting(_full_check_setting(tenant), {**value, "records": [[k, v] for k, v in value["records"].items()]})
 
 
 MAX_CHECK_URLS = 5000
@@ -1240,7 +1338,7 @@ def run_link_job(job: dict, reporter: "jobs.Reporter") -> None:
                 by_record.setdefault(key, []).append(result)
         # record keys contain "/" and ".", so they are values, not field names
         fields["records"] = [{"record": key, "problems": found} for key, found in by_record.items()]
-        _save_last_full_check({"checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        _save_last_full_check(job.get("tenant"), {"checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                                "records": by_record, "urls": len(results), "user": job["user"]})
         audit.info("user=%s action=linkcheck urls=%d problems=%d", job["user"], len(results), len(problems))
     reporter.finish(**fields)
@@ -1269,7 +1367,7 @@ def start_link_job():
     if len(urls) > MAX_CHECK_URLS:
         raise ValidationError("linkcheck.tooMany", max=MAX_CHECK_URLS)
     # addresses contain "." and are values, not field names
-    token = jobs.create("linkcheck", g.user, "queued", len(urls), scope=scope,
+    token = jobs.create("linkcheck", g.user, "queued", len(urls), scope=scope, tenant=g.tenant,
                         urls=[{"url": url, "records": keys} for url, keys in urls.items()])
     worker.wake()
     return jsonify({"token": token, "total": len(urls)}), 202
@@ -1287,7 +1385,7 @@ def link_job_status(token):
     if job["state"] == "finished":
         out["problems"] = job.get("problems", [])
         if job["scope"] == "all":
-            out.update(_last_full_check())
+            out.update(_last_full_check(job.get("tenant")))
             out["records"] = {item["record"]: item["problems"] for item in job.get("records") or []}
     return jsonify(out)
 
@@ -1296,7 +1394,7 @@ def link_job_status(token):
 @require_login
 def last_link_check():
     """Result of the last check of every record, limited to the records the user may see."""
-    last = _last_full_check()
+    last = _last_full_check(g.tenant)
     if not last:
         return jsonify({})
     records = {k: v for k, v in last.get("records", {}).items() if allowed(k.split("|")[0])}
@@ -1310,94 +1408,245 @@ def temporary_password() -> str:
     return "".join(secrets.choice(alphabet) for _ in range(16))
 
 
+def tenant_name(tenant_id: str | None) -> str:
+    """The name of a tenant of this request ("" for the operator, the id for a tenant removed since)."""
+    if not tenant_id:
+        return ""
+    return next((t["name"] for t in getattr(g, "tenants", None) or [] if t["id"] == tenant_id), tenant_id)
+
+
+def managed_account(username: str) -> dict:
+    """The account an administrator acts upon: any account for a server administrator, the accounts of his own
+    tenant for a tenant administrator (any other answers "unknown user", so that names do not leak)."""
+    account = users.get(username)
+    if not account or (not g.server_admin and account.get("tenant") != g.account_tenant):
+        raise users.UserError("users.unknown", user=username)
+    return account
+
+
 @app.get("/portal/api/users")
 @require_login
-@role_required("admin")
+@admin_required
 def list_users():
-    """Every portal user without password hashes, and the roles (administrators)."""
-    return jsonify({"users": [users.public(name, account) for name, account in sorted(users.load().items())],
-                    "roles": list(users.ROLES)})
+    """The users an administrator manages, without password hashes: every user for a server administrator (with
+    the tenants, for the organisation column and selector), the tenant's users for a tenant administrator."""
+    accounts = sorted(users.load().items())
+    if not g.server_admin:
+        accounts = [(n, a) for n, a in accounts if a.get("tenant") == g.account_tenant]
+    return jsonify({"users": [{**users.public(name, account), "tenantName": tenant_name(account.get("tenant"))}
+                              for name, account in accounts],
+                    "roles": list(users.ROLES),
+                    "tenants": [{"id": t["id"], "name": t["name"], "prefixes": t["prefixes"]} for t in g.tenants]
+                               if g.server_admin else []})
 
 
 @app.post("/portal/api/users")
 @require_login
-@role_required("admin")
+@admin_required
 def create_user():
-    """Creates a user with a temporary password, shown once in the answer (administrators)."""
+    """Creates a user with a temporary password, shown once in the answer (administrators). A server
+    administrator chooses the tenant (none: the operator); a tenant administrator creates users of his tenant."""
     data = request.get_json(silent=True) or {}
     username = str(data.get("username", "")).strip()
+    tenant = (str(data.get("tenant") or "").strip() or None) if g.server_admin else g.account_tenant
     password = temporary_password()
-    users.create(username, password, str(data.get("role", "")), data.get("prefixes") or [])
-    audit.info("user=%s action=user-create target=%s role=%s", g.user, username, data.get("role"))
-    log_event("user-create", detail=f'{username} role={data.get("role")} prefixes={",".join(data.get("prefixes") or [])}')
+    users.create(username, password, str(data.get("role", "")), data.get("prefixes") or [], tenant=tenant,
+                 email=data.get("email"))
+    audit.info("user=%s action=user-create target=%s role=%s tenant=%s", g.user, username, data.get("role"), tenant or "-")
+    log_event("user-create", tenant=tenant,
+              detail=f'{username} role={data.get("role")} prefixes={",".join(data.get("prefixes") or [])}')
     return message("users.created", 201, params={"user": username}, password=password)
 
 
 @app.put("/portal/api/users/<username>")
 @require_login
-@role_required("admin")
+@admin_required
 def update_user(username):
-    """Changes the role, prefixes or status of a user; administrators cannot disable or demote themselves."""
+    """Changes the role, prefixes, e-mail or status of a user; administrators cannot disable or demote themselves."""
     data = request.get_json(silent=True) or {}
+    target = managed_account(username)
     if username == g.user and (data.get("disabled") or data.get("role") not in (None, "admin")):
         raise users.UserError("users.notSelf")          # an administrator cannot lock himself out
     account = users.update(username, role=data.get("role"), prefixes=data.get("prefixes"),
-                           disabled=data.get("disabled"))
+                           disabled=data.get("disabled"), email=data.get("email"))
     audit.info("user=%s action=user-update target=%s", g.user, username)
-    log_event("user-update", detail=f'{username} role={account["role"]} disabled={account["disabled"]} '
-                                    f'prefixes={",".join(account["prefixes"])}')
+    log_event("user-update", tenant=target.get("tenant"),
+              detail=f'{username} role={account["role"]} disabled={account["disabled"]} '
+                     f'prefixes={",".join(account["prefixes"])}')
     return message("users.updated", 200, params={"user": username})
 
 
 @app.post("/portal/api/users/<username>/reset")
 @require_login
-@role_required("admin")
+@admin_required
 def reset_user(username):
     """Gives a user a new temporary password (shown once) and ends the user's sessions (administrators)."""
-    if not users.get(username):
-        raise users.UserError("users.unknown", user=username)
+    target = managed_account(username)
     password = temporary_password()
     users.set_password(username, password, must_change=True)
     audit.info("user=%s action=user-reset target=%s", g.user, username)
-    log_event("user-reset", detail=username)
+    log_event("user-reset", tenant=target.get("tenant"), detail=username)
     return message("users.reset", 200, params={"user": username}, password=password)
 
 
 @app.delete("/portal/api/users/<username>")
 @require_login
-@role_required("admin")
+@admin_required
 def remove_user(username):
     """Removes a user; the user's changes stay in the journal (administrators)."""
     if username == g.user:
         raise users.UserError("users.notSelf")
+    target = managed_account(username)
     users.remove(username)
     audit.info("user=%s action=user-remove target=%s", g.user, username)
-    log_event("user-remove", detail=username)
+    log_event("user-remove", tenant=target.get("tenant"), detail=username)
     return message("users.removed", 200, params={"user": username})
+
+
+# --------------------------------------------------------------------------- tenants (server administrators)
+def record_owners() -> dict | None:
+    """How many records each tenant holds ({tenant id or None: count}), from the resolver's summary; None when
+    the resolver cannot be read (the tenants screen still works)."""
+    try:
+        status, body = resolver("GET", "/summary")
+    except UpstreamError:
+        return None
+    if status == 404:
+        return {}
+    if status != 200 or not isinstance(body, dict):
+        return None
+    counts: dict = {}
+    for line in body.get("data") or []:
+        anchor = line.get("anchor") or ""
+        if gs1.split_anchor(anchor):
+            owner = tenants.owner(anchor, g.tenants)
+            counts[owner] = counts.get(owner, 0) + 1
+    return counts
+
+
+@app.get("/portal/api/tenants")
+@require_login
+@server_admin_required
+def list_tenants():
+    """Every tenant with its number of users and records, and the records no tenant holds (the operator's)."""
+    members: dict = {}
+    for account in users.load().values():
+        if account.get("tenant"):
+            members[account["tenant"]] = members.get(account["tenant"], 0) + 1
+    owners = record_owners()
+    return jsonify({"tenants": [{**t, "users": members.get(t["id"], 0),
+                                 "records": None if owners is None else owners.get(t["id"], 0)} for t in g.tenants],
+                    "operatorRecords": None if owners is None else owners.get(None, 0),
+                    "support": g.support})
+
+
+@app.post("/portal/api/tenants")
+@require_login
+@server_admin_required
+def create_tenant():
+    """Creates a tenant with its GS1 Company Prefixes (server administrators)."""
+    data = request.get_json(silent=True) or {}
+    tenant = tenants.create(data.get("name"), data.get("prefixes") or [], g.user)
+    audit.info("user=%s action=tenant-create tenant=%s prefixes=%s", g.user, tenant["id"], ",".join(tenant["prefixes"]))
+    log_event("tenant-create", tenant=tenant["id"], detail=f'{tenant["name"]} prefixes={",".join(tenant["prefixes"])}')
+    return message("tenants.created", 201, params={"name": tenant["name"]}, tenant=tenant)
+
+
+@app.put("/portal/api/tenants/<tenant_id>")
+@require_login
+@server_admin_required
+def update_tenant(tenant_id):
+    """Renames a tenant, changes its prefixes, disables or enables it (server administrators)."""
+    data = request.get_json(silent=True) or {}
+    before, after = tenants.update(tenant_id, name=data.get("name"), prefixes=data.get("prefixes"),
+                                   disabled=data.get("disabled"))
+    changes = [f"{field}={','.join(after[field]) if field == 'prefixes' else after[field]}"
+               for field in ("name", "prefixes", "disabled") if before[field] != after[field]]
+    audit.info("user=%s action=tenant-update tenant=%s %s", g.user, tenant_id, " ".join(changes))
+    log_event("tenant-update", tenant=tenant_id, detail=" ".join(changes) or "-")
+    return message("tenants.updated", 200, params={"name": after["name"]})
+
+
+@app.delete("/portal/api/tenants/<tenant_id>")
+@require_login
+@server_admin_required
+def remove_tenant(tenant_id):
+    """Removes a tenant without users; its prefixes and records go back to the operator (server administrators)."""
+    tenant = tenants.remove(tenant_id)
+    if session.get("support") == tenant_id:
+        session.pop("support", None)
+    audit.info("user=%s action=tenant-remove tenant=%s", g.user, tenant_id)
+    log_event("tenant-remove", tenant=tenant_id, detail=f'{tenant["name"]} prefixes={",".join(tenant["prefixes"])}')
+    return message("tenants.removed", 200, params={"name": tenant["name"]})
+
+
+SUPPORT_REASON = (5, 200)
+
+
+@app.post("/portal/api/support")
+@require_login
+@server_admin_required
+def open_support():
+    """Opens read-only support access to one tenant, with a reason recorded in the tenant's audit trail
+    (Documentation/adr/0002-tenants.md, section 3.4). Opening another closes the first."""
+    data = request.get_json(silent=True) or {}
+    tenant = next((t for t in g.tenants if t["id"] == data.get("tenant")), None)
+    if not tenant:
+        raise users.UserError("tenants.unknown")
+    reason = " ".join(gs1.without_invisible(str(data.get("reason") or "")).split())
+    if not (SUPPORT_REASON[0] <= len(reason) <= SUPPORT_REASON[1]) or not reason.isprintable():
+        raise ValidationError("support.reason", min=SUPPORT_REASON[0], max=SUPPORT_REASON[1])
+    if g.support and g.support != tenant["id"]:
+        log_event("support-close", tenant=g.support, detail=f'switched to {tenant["name"]}')
+    session["support"] = tenant["id"]
+    audit.info("user=%s action=support-open tenant=%s", g.user, tenant["id"])
+    log_event("support-open", tenant=tenant["id"], detail=reason)
+    return message("support.opened", 200, params={"name": tenant["name"]})
+
+
+@app.delete("/portal/api/support")
+@require_login
+@server_admin_required
+def close_support():
+    """Closes support access (nothing to do when none is open)."""
+    if g.support:
+        audit.info("user=%s action=support-close tenant=%s", g.user, g.support)
+        log_event("support-close", tenant=g.support, detail="-")
+    session.pop("support", None)
+    return message("support.closed")
 
 
 @app.get("/portal/api/history")
 @require_login
 def record_history():
-    """The latest versions of one record, with their content, for the editor's History panel."""
+    """The latest versions of one record made while it belonged to the scope of the request, with their content,
+    for the editor's History panel."""
     anchor = request_key(request.args)
     check_access(anchor)
     pairs, _ = request_record(request.args, anchor)
-    versions = journal.for_record(anchor, gs1.qualifier_path(pairs, encode=False))
+    versions = journal.for_record(anchor, gs1.qualifier_path(pairs, encode=False), tenant=g.tenant)
     return jsonify({"versions": versions})
 
 
 def _audit_events():
-    """Journal events matching the audit filters of the request, limited to the user's prefixes."""
+    """Journal events matching the audit filters of the request, in the audit trail of the request's scope
+    (a tenant's; during support access the tenant's; for a server administrator the operator's and what operator
+    users did to tenants), limited to the user's own prefixes."""
     args = request.args
-    return journal.search(user=args.get("user") or None, since=args.get("from") or None,
-                          until=args.get("to") or None, text=args.get("q") or None,
-                          allowed=allowed, limit=min(int(args.get("limit", 500) or 500), 5000))
+    scope = journal.scope_query(g.tenant, operator_view=g.server_admin and not g.support)
+    events = journal.search(user=args.get("user") or None, since=args.get("from") or None,
+                            until=args.get("to") or None, text=args.get("q") or None,
+                            allowed=lambda anchor: gs1.within_prefixes(anchor, g.prefixes), scope=scope,
+                            limit=min(int(args.get("limit", 500) or 500), 5000))
+    for event in events:
+        if event.get("tenant"):
+            event["tenantName"] = tenant_name(event["tenant"])
+    return events
 
 
 @app.get("/portal/api/audit")
 @require_login
-@role_required("admin")
+@admin_required
 def audit_trail():
     """The audit trail as JSON, newest first (administrators)."""
     return jsonify({"events": _audit_events()})
@@ -1405,14 +1654,16 @@ def audit_trail():
 
 @app.get("/portal/api/audit.csv")
 @require_login
-@role_required("admin")
+@admin_required
 def audit_csv():
     """The audit trail as CSV for Excel (UTF-8 with BOM, ';', cells protected against formulas)."""
     out = io.StringIO()
     writer = csv.writer(out, delimiter=";", lineterminator="\r\n")
-    writer.writerow(["at", "user", "action", "anchor", "qualifiers", "detail"])
+    writer.writerow(["at", "user", "action", "anchor", "qualifiers", "detail", "organisation", "by_operator"])
     for event in _audit_events():                  # user names of failed sign-ins are typed by anyone
-        writer.writerow([sheet.protect(event.get(k, "")) for k in ("at", "user", "action", "anchor", "qpath", "detail")])
+        writer.writerow([sheet.protect(event.get(k, "")) for k in ("at", "user", "action", "anchor", "qpath", "detail",
+                                                                   "tenantName")]
+                        + ["yes" if event.get("byOperator") else ""])
     stamp = time.strftime("%Y%m%d-%H%M")
     return Response(("\ufeff" + out.getvalue()).encode("utf-8"), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="portal-audit-{stamp}.csv"'})

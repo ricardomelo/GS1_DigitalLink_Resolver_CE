@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (13 October 2026). To be implemented in three steps: 1 (this record), 2 (data model, server checks and audit), 3 (screens) |
+| Status | **Accepted** (13 October 2026). Implemented in three steps: 1 (this record), 2 (data model, server checks and audit; section 3.9), 3 (screens) |
 | Backlog item | 2.4 — tenants |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 |
 | Portuguese | [ADR 0002 em português](../pt-BR/adr/0002-organizacoes.md) |
@@ -182,6 +182,23 @@ Mock-ups of these screens are delivered with step 3 before it reaches staging.
 | `POST`, `DELETE /portal/api/support` | server administrator | open and close support access |
 | `GET /portal/api/users` and the user calls | both administrators | scoped as in 3.2; `tenant` and `email` fields |
 | `GET /portal/api/config` | everyone | adds `tenant` (`{id, name}` or none), `serverAdmin`, `support` |
+
+### 3.9 As implemented in step 2
+
+Step 2 follows sections 3.1 to 3.6 and 3.8; details settled while writing it:
+- `set_scope()` in `portal/app.py` puts the scope of section 3.3 on Flask's `g`; the worker calls it for the
+  user of an import. User administration and the audit trail check the role of the **account**
+  (`admin_required`), so a server administrator in support access still manages users; tenants and support
+  access need a server administrator (`server_admin_required`, `access.serverAdmin`).
+- A record that changes hands starts its metadata again (`meta.touch()` deletes it when the stored tenant differs),
+  so the new owner never sees who changed it before.
+- The support reason has invisible characters removed and spaces collapsed before its length is checked.
+- An operator user may not be limited to a prefix inside a tenant's (`users.prefixOfTenant`): he would reach no
+  record. A user of an unknown tenant is refused (`users.tenantUnknown`).
+- A tenant user's failed sign-in goes to the tenant's trail (the typed name exists); other failures to the
+  operator's.
+- The audit CSV gains two columns at the end, `organisation` and `by_operator`, so programs reading the first six
+  keep working.
 
 ## 4. Options considered
 

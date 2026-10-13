@@ -12,8 +12,8 @@ Connection, from the environment:
   PORTAL_DB_USERNAME, _PASSWORD       the portal's own user, created by db_init.py (the portal-db-init service)
   PORTAL_DB_NAME                      the database, also the user's authentication database
 
-Collections: users, record_meta, journal, login_failures, linkcheck_cache, settings, jobs and workers
-(jobs.py). The indexes are made at
+Collections: users, tenants (tenants.py), record_meta, journal, login_failures, linkcheck_cache, settings, jobs
+and workers (jobs.py). The indexes are made at
 the first use in each process (createIndex is allowed to the readWrite role). Dates are stored as BSON dates
 in UTC and come back as naive datetimes in UTC (pymongo's default).
 """
@@ -42,6 +42,7 @@ INDEXES = {
         ([("at", DESCENDING)], {}),
         ([("anchor", ASCENDING), ("qpath", ASCENDING), ("at", DESCENDING)], {}),
         ([("user", ASCENDING), ("at", DESCENDING)], {}),
+        ([("tenant", ASCENDING), ("at", DESCENDING)], {}),
         ([("category", ASCENDING)], {}),
         ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
     ],

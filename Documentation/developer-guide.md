@@ -104,6 +104,7 @@ portal/                          new: the link management portal
   linkcheck.py                   link checker with SSRF guard
   store.py                       the portal's database: connection, indexes, settings, shared lock
   users.py                       user store and roles
+  tenants.py                     tenants: organisations that own GS1 Company Prefixes (ADR 0002)
   meta.py                        who created and last changed each record
   journal.py                     history of records and audit trail, retention
   migrate.py                     one-off move of the files of earlier versions into the database
@@ -207,14 +208,14 @@ Organised in sections (comment lines `# ---- …`):
 | Section | Contents |
 |---|---|
 | configuration | environment, Flask settings (session cookie `gs1resolver_portal`, HttpOnly, SameSite=Lax, Secure over HTTPS, sliding expiry), loggers (`portal`, `portal.audit`); at start-up `migrate.run()`, `journal.apply_retention()`, then the first user from `PORTAL_ADMIN_*` |
-| authentication | `LoginThrottle` (5 failures → 15 minutes, per user name and per address, in the `login_failures` collection), `current_user()` with the password fingerprint, `require_login`, `role_required()`, `allowed()` / `check_access()` for prefixes, same-origin check for writes, security headers, error handlers |
+| authentication | `LoginThrottle` (5 failures → 15 minutes, per user name and per address, in the `login_failures` collection), `current_user()` with the password fingerprint and `tenant_blocked()`, `set_scope()` and `require_login`, `role_required()`, `admin_required`, `server_admin_required`, `allowed()` / `check_access()` (owner of the identifier = scope of the request, then the user's prefixes), `log_event()` (tenant and `byOperator` of each event), same-origin check for writes, security headers, error handlers |
 | resolver API client | `resolver()` (one API call with the token), `read_entries()`, `find_entry()`, `describe_entry()` (product, qualified or other), `record_change()` |
 | form → Resolver CE v3 | `request_key()`, `request_qualifiers()`, `build_document()` |
 | pages and assets | `/portal/`, `/portal/login`, static files (`PUBLIC_ASSETS` before sign-in, `PRIVATE_ASSETS` after) |
 | portal API | sign-in, sign-out, password, health, `/config`, `/record` (GET, POST, DELETE) with `store_record()`, `/records` |
 | spreadsheets | `/export`, `/import/preview`, `/import/apply`, `/import/status`, `run_import_job()` (run by the worker) |
 | link checker | `/links/check`, `/links/jobs`, `/links/jobs/{token}`, `/links/last`, `run_link_job()` (run by the worker) |
-| governance | `/users` (GET, POST, PUT, DELETE, reset), `/history`, `/audit`, `/audit.csv` |
+| governance | `/users` (GET, POST, PUT, DELETE, reset) with `managed_account()`; `/tenants` (GET, POST, PUT, DELETE) with `record_owners()`; `/support` (POST, DELETE); `/history`, `/audit`, `/audit.csv` |
 | labels | `qr_version()`, `qr_error_level()`, `/digital-link`, `/qrcode` |
 | background jobs | `JOB_RUNNERS` (job type → function for `worker.py`); the embedded worker when `PORTAL_WORKER=embedded` |
 
@@ -280,7 +281,7 @@ and separator detection), `map_header()` (column titles in any language, old `gt
 and refuses private, loopback and link-local addresses at each step, uses `HEAD` and falls back to `GET`
 without reading the body, reports HTTPS → HTTP downgrades. `check_many()` runs a thread pool with progress.
 
-### `store.py`, `users.py`, `meta.py`, `journal.py` — the portal's database
+### `store.py`, `users.py`, `tenants.py`, `meta.py`, `journal.py` — the portal's database
 
 `store.py` holds one MongoDB client per process (`store.db()`, created and indexed at the first call;
 `store.col(name)`), the connection settings (`PORTAL_DB_*`, or `PORTAL_DB_URI`; `mongomock://` for the
@@ -289,10 +290,23 @@ development tests), UTC dates (`now()`, `iso()`, `parse_iso()`), values in the `
 `lock:<name>` in `settings`; a lock older than `hold_seconds` is broken). `users.py` writes under the
 `users` lock, so two administrators cannot remove the last enabled one at the same moment; it also hashes
 passwords (Werkzeug), spends the same time for unknown users, and computes the session fingerprint.
-`meta.py` keeps creation and last change per record. `journal.py` stores one document per event with its
-category (`session`, `record`, `admin`) and `expiresAt`; `for_record()` and `search()` keep the output of the
-former `journal.jsonl` lines; `apply_retention()` updates `expiresAt` when `PORTAL_JOURNAL_*_DAYS` change.
-Section 8 lists the collections.
+`users.py` also keeps a user's tenant and e-mail address (`clean_email()`, unique), checks that a tenant
+user's prefixes lie inside the tenant's and an operator user's outside every tenant's (`_check_scope()`), and
+counts only operator administrators as server administrators (`is_server_admin()`). `tenants.py` creates,
+changes and removes tenants under the same `users` lock (the rules cross both collections:
+`_check_prefixes()`), and answers `owner(anchor, tenants)`, the tenant that holds an identifier's prefix
+([ADR 0002](adr/0002-tenants.md)). `meta.py` keeps creation and last change per record, with the tenant that
+made it (`visible()` hides it from other scopes). `journal.py` stores one document per event with its category
+(`session`, `record`, `admin`), its `tenant` and `byOperator`, and `expiresAt`; `for_record()` (per scope) and
+`search()` (with `scope_query()`) keep the output of the former `journal.jsonl` lines; `apply_retention()`
+updates `expiresAt` when `PORTAL_JOURNAL_*_DAYS` change. Section 8 lists the collections.
+
+**Scope of a request (ADR 0002).** `set_scope()` puts on `g` the account (`user`, `account_role`,
+`account_tenant`, `server_admin`), every tenant (`tenants`, read once per request) and what applies: `tenant`
+(the user's tenant, the tenant of an open support access, or `None` for the operator), `role` and `prefixes`
+(reader and the whole tenant during support access), `support`. `allowed()` admits an identifier whose owner
+is `g.tenant` and that lies in `g.prefixes`. The worker calls `set_scope()` for the user of an import and
+checks `allowed()` again before writing each record.
 
 ### `jobs.py`, `worker.py`
 
@@ -315,8 +329,9 @@ start; the files become `*.migrated`. `db_init.py` (the `portal-db-init` service
 
 ### `create_user.py`
 
-`docker compose exec portal-service python create_user.py <name> [--role …] [--prefixes …] [--remove]`
-creates a user or sets a password (asked twice), role and prefixes, or removes a user.
+`docker compose exec portal-service python create_user.py <name> [--role …] [--prefixes …] [--tenant …] [--email …] [--remove]`
+creates a user or sets a password (asked twice), role, prefixes and e-mail, or removes a user. `--tenant`
+(name or id) puts a new user in an organisation; without it the user is the operator's.
 
 ## 6. Portal front end (`portal/static/`)
 
@@ -351,15 +366,17 @@ case and accents). `parseCode()` reads a pasted GS1 Digital Link or bracketed el
 ## 7. Portal API
 
 Base `/portal/api`, session cookie, JSON. Writes need the portal's own `Origin` and a JSON body. Every
-call checks the role and limits identifiers to the user's GS1 Company Prefixes. Errors answer
-`{"code": "...", "params": {...}}`.
+call checks the role and limits identifiers to the scope of the request (the user's tenant, a support
+access, or the operator) and to the user's GS1 Company Prefixes. Errors answer `{"code": "...", "params": {...}}`.
+"admin" below means a tenant administrator or a server administrator; "server admin" an administrator of the
+operator.
 
 | Method and path | Role | Purpose |
 |---|---|---|
 | `POST /login` `{username, password}` | — | Sign in (429 `auth.locked` when throttled) |
 | `POST /logout` | — | Sign out |
 | `POST /password` `{currentPassword, newPassword}` | any | Change password; other sessions end |
-| `GET /config` | any | User, role, prefixes, resolver address, link types, keys with qualifiers and shapes, languages, import limits, data attributes, session limits (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`) |
+| `GET /config` | any | User, role (the one that applies), `accountRole`, `serverAdmin`, `tenant` and `support` (`{id, name, disabled}` or `null`), prefixes, resolver address, link types, keys with qualifiers and shapes, languages, import limits, data attributes, session limits (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`) |
 | `GET /session` | any (also while a new password is due) | Renews the session; answers the same session limits |
 | `GET /record?key=&value=&qualifiers=/10/L1` | reader | One record: `exists`, `description`, `links`, `defaultLinkType`, `sharedDefaultLinkType`, `digitalLink`, `otherEntries` (each with `informative`), `qualifiers` (the record's own), `informative` (typed) and `storedInformative`, `hasKeyRecord` |
 | `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}], keyRecord?}` | editor | Create (201) or replace (200); the first link is the default. With a serial number, 22 and 10 in `qualifiers` are stored as informative. `keyRecord: {mode: copy\|target, description, url}` also creates the key's own record first (`save.createdWithKey`, `keyRecordCreated`) |
@@ -370,9 +387,11 @@ call checks the role and limits identifiers to the user's GS1 Company Prefixes. 
 | `POST /import/apply` `{token, createKeyRecords?}` · `GET /import/status?token=` | editor | Queue a previewed import for the worker (with `createKeyRecords`, the keys' own records first); `state` (`queued`, `running`, `finished`, `failed`), `done`, `total`, `stalled`, `error`, and the results when finished |
 | `POST /links/check` `{urls}` | editor | Check addresses (editor) |
 | `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `GET /links/last` | editor · editor · reader | Background link check (status: `state` `queued`\|`running`\|`finished`\|`failed`, `done`, `total`, `stalled`, `error`) |
-| `GET /history?key=&value=&qualifiers=` | reader | Versions of a record, with content |
-| `GET /users` · `POST /users` · `PUT /users/{name}` · `POST /users/{name}/reset` · `DELETE /users/{name}` | admin | User administration; temporary passwords in the answer |
-| `GET /audit` · `GET /audit.csv` (`user`, `from`, `to`, `q`, `limit`) | admin | Audit trail |
+| `GET /history?key=&value=&qualifiers=` | reader | Versions of a record made in the scope of the request, with content |
+| `GET /users` · `POST /users` `{username, role, prefixes, email, tenant}` · `PUT /users/{name}` `{role, prefixes, email, disabled}` · `POST /users/{name}/reset` · `DELETE /users/{name}` | admin | User administration: a server admin manages every user (`tenant` chooses the organisation; the answer to GET adds `tenants`), a tenant administrator the users of his tenant; `tenantName` on each user; temporary passwords in the answer |
+| `GET /tenants` · `POST /tenants` `{name, prefixes}` · `PUT /tenants/{id}` `{name, prefixes, disabled}` · `DELETE /tenants/{id}` | server admin | Organisations; GET adds `users` and `records` per tenant and `operatorRecords` |
+| `POST /support` `{tenant, reason}` · `DELETE /support` | server admin | Open and close read-only support access to a tenant, recorded in its audit trail |
+| `GET /audit` · `GET /audit.csv` (`user`, `from`, `to`, `q`, `limit`) | admin | Audit trail of the scope: a tenant's; the operator's plus what operator users did to tenants; a tenant's during support access. Events carry `tenant`, `tenantName`, `byOperator`; the CSV adds `organisation` and `by_operator` |
 | `POST /digital-link` `{key, value, qualifiers, attributes:[{ai, value}]}` | reader | Digital Link with data attributes checked by the engine; nothing stored |
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&attr=AI:value` | reader | Label; headers `X-QR-Version`, `X-QR-Level`, `X-QR-Modules`; 422 `qr.tooSmall` / `qr.tooLong` |
 | `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable"}` |
@@ -384,14 +403,15 @@ Decisions and the reasons for them: [ADR 0001](adr/0001-portal-state-in-mongodb.
 
 | Collection | `_id` and content | Indexes |
 |---|---|---|
-| `users` | user name; `hash`, `role`, `prefixes`, `disabled`, `mustChange`, `created`, `lastLogin` | — |
-| `record_meta` | record key (GTIN records by the 14 digits, other keys by `AI/value`, plus the qualifier path); `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | — |
-| `journal` | ObjectId (`jsonl-<line>` for migrated events); `at` (date), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Record actions `create`, `update`, `delete` (with the record's content), `import`; others `login`, `login-failed`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove` | date; record + date; user + date; category; TTL on `expiresAt` |
+| `users` | user name; `hash`, `role`, `prefixes`, `tenant` (absent for the operator's users), `email` (optional), `disabled`, `mustChange`, `created`, `lastLogin` | — |
+| `tenants` | `t-` + 12 hexadecimal digits; `name`, `prefixes`, `disabled`, `created`, `createdBy` ([ADR 0002](adr/0002-tenants.md)) | — |
+| `record_meta` | record key (GTIN records by the 14 digits, other keys by `AI/value`, plus the qualifier path); `createdAt`, `createdBy`, `updatedAt`, `updatedBy`, `tenant` (absent for the operator) | — |
+| `journal` | ObjectId (`jsonl-<line>` for migrated events); `at` (date), `user`, `action`, `category`, `tenant` (absent for the operator), `byOperator`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Record actions `create`, `update`, `delete` (with the record's content), `import`; others `login`, `login-failed`, `login-refused`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`, `tenant-create`, `tenant-update`, `tenant-remove`, `support-open` (the reason in `detail`), `support-close` | date; record + date; user + date; tenant + date; category; TTL on `expiresAt` |
 | `login_failures` | `key` (`user:<name>` or `addr:<address>`), `at` | key + date; TTL 15 minutes on `at` |
 | `linkcheck_cache` | address; `result`, `expiresAt` | TTL on `expiresAt` |
 | `jobs` | token; `type` (`import`, `linkcheck`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `expiresAt`, `error`; imports `plan`, `keyRecords`, `results`; link checks `scope`, `urls` (`[{url, records}]`), `problems`, `records` (`[{record, problems}]`) | state + creation; TTL on `expiresAt` |
 | `workers` | worker name (`host:pid:mode`); `seen`, `mode`, `job` | TTL 10 minutes on `seen` |
-| `settings` | `lastFullCheck`, `journalRetention`, `migration`, and the `lock:<name>` documents | — |
+| `settings` | `lastFullCheck` (the operator's) and `lastFullCheck:<tenant>`, `journalRetention`, `migration`, and the `lock:<name>` documents | — |
 
 Journal retention: an event is kept for `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS` (0)
 or `PORTAL_JOURNAL_ADMIN_DAYS` (0) days from the end of the day it was made; 0 keeps it for ever.
@@ -520,6 +540,7 @@ run against it. Setup and commands are in
 | `portal/test_portal_config.py` | 13 | configuration and start-up, session limits |
 | `portal/test_session.py` | 30 | session limits (15 s idle in the test): server rules, warning, renewal on use, other tabs, absolute limit, both languages; community notice in the footer (about two minutes) |
 | `portal/test_store.py` | 58 | the portal's database layer: connection settings, indexes, the shared lock (also between two administrators at once), users, record metadata, journal and its retention, sign-in throttle, migration of the old files (also interrupted and resumed) |
+| `portal/test_tenants.py` | 78 | tenants ([ADR 0002](adr/0002-tenants.md)): an installation without tenants unchanged; tenants and their prefixes (names, overlaps, redundancy, operator users in the way); the operator's records and users; tenant administrators and their users; e-mail addresses; records, history, record list, export and imports per tenant, and the worker's check before each record; prefixes moving between owners; the audit trail per tenant and its CSV; support access; disabled and removed tenants; link check results per scope; ownership by key type; the command line |
 | `portal/test_jobs.py` | 70 | background jobs: states, expiry, atomic claim, ownership of writes, silent workers given back and failed after three attempts, the worker's announcement, `stalled`, the health check, the worker loop (errors, heartbeat, stop and hand-back, `JobLost`), the embedded worker and `PORTAL_WORKER`; imports through the API (queue, worker, journal, another user, a worker dying before and after writing a record, a failure); link checks through the API (every record, a list, a stop that cancels pending addresses) |
 | `portal/test_worker_processes.py` | 13 | `worker.py` as real processes on a real MongoDB (run by `test_store_mongodb.py`): two workers share the queue without taking a job twice; SIGTERM hands the job back and the other worker finishes it; after SIGKILL a new worker continues the job once its heartbeat is old |
 | `portal/test_store_mongodb.py` | 161 | on a real MongoDB (`PORTAL_TEST_MONGO_URI`, CI only): the user made by `db_init.py` and its privileges; `test_store.py`, `test_jobs.py` and `test_worker_processes.py` again as that user (their lines relayed); the TTL monitor, also for jobs and old worker announcements |

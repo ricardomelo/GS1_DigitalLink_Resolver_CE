@@ -107,6 +107,7 @@ portal/                          novo: o portal de gestão de links
   linkcheck.py                   verificador de links com proteção contra SSRF
   store.py                       o banco do portal: conexão, índices, configurações, trava compartilhada
   users.py                       cadastro de usuários e perfis
+  tenants.py                     tenants: organizações donas de prefixos de empresa GS1 (ADR 0002)
   meta.py                        quem criou e quem alterou por último cada cadastro
   journal.py                     histórico dos cadastros e auditoria, retenção
   migrate.py                     migração única dos arquivos das versões anteriores para o banco
@@ -213,14 +214,14 @@ Organizado em seções (linhas de comentário `# ---- …`):
 | Seção | Conteúdo |
 |---|---|
 | configuration | ambiente, configurações do Flask (cookie de sessão `gs1resolver_portal`, HttpOnly, SameSite=Lax, Secure em HTTPS, validade renovada a cada uso), loggers (`portal`, `portal.audit`); no início `migrate.run()`, `journal.apply_retention()` e depois o primeiro usuário por `PORTAL_ADMIN_*` |
-| authentication | `LoginThrottle` (5 falhas → 15 minutos, por usuário e por endereço, na coleção `login_failures`), `current_user()` com a impressão digital da senha, `require_login`, `role_required()`, `allowed()` / `check_access()` para os prefixos, conferência da origem nas gravações, cabeçalhos de segurança, tratadores de erro |
+| authentication | `LoginThrottle` (5 falhas → 15 minutos, por usuário e por endereço, na coleção `login_failures`), `current_user()` com a impressão digital da senha e `tenant_blocked()`, `set_scope()` e `require_login`, `role_required()`, `admin_required`, `server_admin_required`, `allowed()` / `check_access()` (dono do identificador = escopo da requisição, depois os prefixos do usuário), `log_event()` (tenant e `byOperator` de cada evento), conferência da origem nas gravações, cabeçalhos de segurança, tratadores de erro |
 | resolver API client | `resolver()` (uma chamada à API com o token), `read_entries()`, `find_entry()`, `describe_entry()` (produto, qualificado ou outro), `record_change()` |
 | form → Resolver CE v3 | `request_key()`, `request_qualifiers()`, `build_document()` |
 | pages and assets | `/portal/`, `/portal/login`, arquivos estáticos (`PUBLIC_ASSETS` antes de entrar, `PRIVATE_ASSETS` depois) |
 | portal API | entrar, sair, senha, saúde, `/config`, `/record` (GET, POST, DELETE) com `store_record()`, `/records` |
 | spreadsheets | `/export`, `/import/preview`, `/import/apply`, `/import/status`, `run_import_job()` (executada pelo worker) |
 | link checker | `/links/check`, `/links/jobs`, `/links/jobs/{token}`, `/links/last`, `run_link_job()` (executada pelo worker) |
-| governance | `/users` (GET, POST, PUT, DELETE, reset), `/history`, `/audit`, `/audit.csv` |
+| governance | `/users` (GET, POST, PUT, DELETE, reset) com `managed_account()`; `/tenants` (GET, POST, PUT, DELETE) com `record_owners()`; `/support` (POST, DELETE); `/history`, `/audit`, `/audit.csv` |
 | labels | `qr_version()`, `qr_error_level()`, `/digital-link`, `/qrcode` |
 | background jobs | `JOB_RUNNERS` (tipo de tarefa → função, para o `worker.py`); o worker embutido quando `PORTAL_WORKER=embedded` |
 
@@ -288,7 +289,7 @@ resolve cada host e recusa endereços privados, de loopback e link-local a cada 
 ao `GET` sem ler o corpo, aponta rebaixamentos de HTTPS para HTTP. `check_many()` usa um pool de threads
 com progresso.
 
-### `store.py`, `users.py`, `meta.py`, `journal.py` — o banco do portal
+### `store.py`, `users.py`, `tenants.py`, `meta.py`, `journal.py` — o banco do portal
 
 O `store.py` guarda um cliente do MongoDB por processo (`store.db()`, criado e indexado na primeira chamada;
 `store.col(nome)`), as configurações de conexão (`PORTAL_DB_*`, ou `PORTAL_DB_URI`; `mongomock://` nos
@@ -297,10 +298,24 @@ testes de desenvolvimento), datas em UTC (`now()`, `iso()`, `parse_iso()`), valo
 documento `lock:<nome>` em `settings`; uma trava mais velha que `hold_seconds` é quebrada). O `users.py`
 grava sob a trava `users`, para que dois administradores não removam o último administrador ativo no mesmo
 instante; também gera os hashes das senhas (Werkzeug), gasta o mesmo tempo para usuários inexistentes e
-calcula a impressão digital da sessão. O `meta.py` guarda criação e última alteração de cada cadastro. O
-`journal.py` grava um documento por evento, com sua categoria (`session`, `record`, `admin`) e `expiresAt`;
-`for_record()` e `search()` mantêm a saída das antigas linhas do `journal.jsonl`; `apply_retention()`
-atualiza o `expiresAt` quando `PORTAL_JOURNAL_*_DAYS` muda. A seção 8 lista as coleções.
+calcula a impressão digital da sessão. O `users.py` também guarda o tenant e o e-mail do usuário
+(`clean_email()`, único), confere que os prefixos de um usuário de tenant ficam dentro dos do tenant e os de um
+usuário do operador fora dos de qualquer tenant (`_check_scope()`), e só conta administradores do operador como
+administradores do servidor (`is_server_admin()`). O `tenants.py` cria, altera e remove tenants sob a mesma trava
+`users` (as regras cruzam as duas coleções: `_check_prefixes()`) e responde `owner(anchor, tenants)`, o tenant
+que tem o prefixo de um identificador ([ADR 0002](adr/0002-organizacoes.md)). O `meta.py` guarda criação e
+última alteração de cada cadastro, com o tenant que a fez (`visible()` a esconde dos outros escopos). O
+`journal.py` grava um documento por evento, com sua categoria (`session`, `record`, `admin`), seu `tenant` e
+`byOperator`, e `expiresAt`; `for_record()` (por escopo) e `search()` (com `scope_query()`) mantêm a saída das
+antigas linhas do `journal.jsonl`; `apply_retention()` atualiza o `expiresAt` quando `PORTAL_JOURNAL_*_DAYS`
+muda. A seção 8 lista as coleções.
+
+**Escopo de uma requisição (ADR 0002).** `set_scope()` põe em `g` a conta (`user`, `account_role`,
+`account_tenant`, `server_admin`), todos os tenants (`tenants`, lidos uma vez por requisição) e o que vale:
+`tenant` (o tenant do usuário, o tenant de um acesso de suporte aberto, ou `None` para o operador), `role` e
+`prefixes` (leitor e o tenant inteiro durante o acesso de suporte), `support`. `allowed()` admite um identificador
+cujo dono é `g.tenant` e que está em `g.prefixes`. O worker chama `set_scope()` para o usuário de uma importação
+e confere `allowed()` de novo antes de gravar cada cadastro.
 
 ### `jobs.py`, `worker.py`
 
@@ -323,8 +338,9 @@ seguinte; os arquivos viram `*.migrated`. O `db_init.py` (serviço `portal-db-in
 
 ### `create_user.py`
 
-`docker compose exec portal-service python create_user.py <nome> [--role …] [--prefixes …] [--remove]`
-cria um usuário ou define a senha (pedida duas vezes), o perfil e os prefixos, ou exclui um usuário.
+`docker compose exec portal-service python create_user.py <nome> [--role …] [--prefixes …] [--tenant …] [--email …] [--remove]`
+cria um usuário ou define a senha (pedida duas vezes), o perfil, os prefixos e o e-mail, ou exclui um usuário.
+`--tenant` (nome ou id) põe um usuário novo numa organização; sem ele o usuário é do operador.
 
 ## 6. Front-end do portal (`portal/static/`)
 
@@ -361,15 +377,17 @@ específico).
 ## 7. API do portal
 
 Base `/portal/api`, cookie de sessão, JSON. Gravações exigem a `Origin` do próprio portal e corpo JSON.
-Toda chamada confere o perfil e limita os identificadores aos prefixos de empresa GS1 do usuário. Erros
-respondem `{"code": "...", "params": {...}}`.
+Toda chamada confere o perfil e limita os identificadores ao escopo da requisição (o tenant do usuário, um
+acesso de suporte, ou o operador) e aos prefixos de empresa GS1 do usuário. Erros respondem
+`{"code": "...", "params": {...}}`. "Administrador" abaixo é um administrador de tenant ou do servidor;
+"adm. do servidor", um administrador do operador.
 
 | Método e caminho | Perfil | Para quê |
 |---|---|---|
 | `POST /login` `{username, password}` | — | Entrar (429 `auth.locked` quando bloqueado) |
 | `POST /logout` | — | Sair |
 | `POST /password` `{currentPassword, newPassword}` | qualquer | Trocar a senha; outras sessões são encerradas |
-| `GET /config` | qualquer | Usuário, perfil, prefixos, endereço do Resolver, tipos de link, chaves com qualificadores e combinações, idiomas, limites de importação, atributos de dados, limites da sessão (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`) |
+| `GET /config` | qualquer | Usuário, perfil (o que vale), `accountRole`, `serverAdmin`, `tenant` e `support` (`{id, name, disabled}` ou `null`), prefixos, endereço do Resolver, tipos de link, chaves com qualificadores e combinações, idiomas, limites de importação, atributos de dados, limites da sessão (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`) |
 | `GET /session` | qualquer (também enquanto uma nova senha é exigida) | Renova a sessão; responde os mesmos limites da sessão |
 | `GET /record?key=&value=&qualifiers=/10/L1` | leitor | Um cadastro: `exists`, `description`, `links`, `defaultLinkType`, `sharedDefaultLinkType`, `digitalLink`, `otherEntries` (cada um com `informative`), `qualifiers` (os do cadastro), `informative` (digitados) e `storedInformative`, `hasKeyRecord` |
 | `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}], keyRecord?}` | editor | Criar (201) ou substituir (200); o primeiro link é o principal. Com número de série, 22 e 10 em `qualifiers` são gravados como informativos. `keyRecord: {mode: copy\|target, description, url}` cria antes o cadastro da chave (`save.createdWithKey`, `keyRecordCreated`) |
@@ -380,9 +398,11 @@ respondem `{"code": "...", "params": {...}}`.
 | `POST /import/apply` `{token, createKeyRecords?}` · `GET /import/status?token=` | editor | Colocar na fila do worker uma importação conferida (com `createKeyRecords`, antes os cadastros das chaves); `state` (`queued`, `running`, `finished`, `failed`), `done`, `total`, `stalled`, `error` e, ao terminar, os resultados |
 | `POST /links/check` `{urls}` | editor | Verificar endereços (editor) |
 | `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `GET /links/last` | editor · editor · leitor | Verificação de links em segundo plano (estado: `state` `queued`\|`running`\|`finished`\|`failed`, `done`, `total`, `stalled`, `error`) |
-| `GET /history?key=&value=&qualifiers=` | leitor | Versões de um cadastro, com conteúdo |
-| `GET /users` · `POST /users` · `PUT /users/{nome}` · `POST /users/{nome}/reset` · `DELETE /users/{nome}` | administrador | Administração de usuários; senhas temporárias na resposta |
-| `GET /audit` · `GET /audit.csv` (`user`, `from`, `to`, `q`, `limit`) | administrador | Auditoria |
+| `GET /history?key=&value=&qualifiers=` | leitor | Versões de um cadastro feitas no escopo da requisição, com conteúdo |
+| `GET /users` · `POST /users` `{username, role, prefixes, email, tenant}` · `PUT /users/{nome}` `{role, prefixes, email, disabled}` · `POST /users/{nome}/reset` · `DELETE /users/{nome}` | administrador | Administração de usuários: o adm. do servidor gerencia todos os usuários (`tenant` escolhe a organização; a resposta do GET acrescenta `tenants`), o administrador de um tenant os usuários do seu tenant; `tenantName` em cada usuário; senhas temporárias na resposta |
+| `GET /tenants` · `POST /tenants` `{name, prefixes}` · `PUT /tenants/{id}` `{name, prefixes, disabled}` · `DELETE /tenants/{id}` | adm. do servidor | Organizações; o GET acrescenta `users` e `records` por tenant e `operatorRecords` |
+| `POST /support` `{tenant, reason}` · `DELETE /support` | adm. do servidor | Abrir e fechar o acesso de suporte, só leitura, a um tenant, registrado na trilha dele |
+| `GET /audit` · `GET /audit.csv` (`user`, `from`, `to`, `q`, `limit`) | administrador | Auditoria do escopo: a de um tenant; a do operador mais o que usuários do operador fizeram a tenants; a de um tenant durante o acesso de suporte. Os eventos levam `tenant`, `tenantName`, `byOperator`; o CSV acrescenta `organisation` e `by_operator` |
 | `POST /digital-link` `{key, value, qualifiers, attributes:[{ai, value}]}` | leitor | Digital Link com atributos de dados conferidos pelo engine; nada é gravado |
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&attr=AI:valor` | leitor | Etiqueta; cabeçalhos `X-QR-Version`, `X-QR-Level`, `X-QR-Modules`; 422 `qr.tooSmall` / `qr.tooLong` |
 | `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable"}` |
@@ -394,14 +414,15 @@ Decisões e seus motivos: [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md).
 
 | Coleção | `_id` e conteúdo | Índices |
 |---|---|---|
-| `users` | nome de usuário; `hash`, `role`, `prefixes`, `disabled`, `mustChange`, `created`, `lastLogin` | — |
-| `record_meta` | chave do cadastro (GTIN pelos 14 dígitos, as outras chaves por `AI/valor`, mais o caminho dos qualificadores); `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | — |
-| `journal` | ObjectId (`jsonl-<linha>` nos eventos migrados); `at` (data), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Ações de cadastro `create`, `update`, `delete` (com o conteúdo do cadastro), `import`; outras: `login`, `login-failed`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove` | data; cadastro + data; usuário + data; categoria; TTL em `expiresAt` |
+| `users` | nome de usuário; `hash`, `role`, `prefixes`, `tenant` (ausente nos usuários do operador), `email` (opcional), `disabled`, `mustChange`, `created`, `lastLogin` | — |
+| `tenants` | `t-` + 12 dígitos hexadecimais; `name`, `prefixes`, `disabled`, `created`, `createdBy` ([ADR 0002](adr/0002-organizacoes.md)) | — |
+| `record_meta` | chave do cadastro (GTIN pelos 14 dígitos, as outras chaves por `AI/valor`, mais o caminho dos qualificadores); `createdAt`, `createdBy`, `updatedAt`, `updatedBy`, `tenant` (ausente para o operador) | — |
+| `journal` | ObjectId (`jsonl-<linha>` nos eventos migrados); `at` (data), `user`, `action`, `category`, `tenant` (ausente para o operador), `byOperator`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Ações de cadastro `create`, `update`, `delete` (com o conteúdo do cadastro), `import`; outras: `login`, `login-failed`, `login-refused`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`, `tenant-create`, `tenant-update`, `tenant-remove`, `support-open` (o motivo em `detail`), `support-close` | data; cadastro + data; usuário + data; tenant + data; categoria; TTL em `expiresAt` |
 | `login_failures` | `key` (`user:<nome>` ou `addr:<endereço>`), `at` | chave + data; TTL de 15 minutos em `at` |
 | `linkcheck_cache` | endereço; `result`, `expiresAt` | TTL em `expiresAt` |
 | `jobs` | token; `type` (`import`, `linkcheck`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `expiresAt`, `error`; importações `plan`, `keyRecords`, `results`; verificações de links `scope`, `urls` (`[{url, records}]`), `problems`, `records` (`[{record, problems}]`) | estado + criação; TTL em `expiresAt` |
 | `workers` | nome do worker (`host:pid:modo`); `seen`, `mode`, `job` | TTL de 10 minutos em `seen` |
-| `settings` | `lastFullCheck`, `journalRetention`, `migration` e os documentos `lock:<nome>` | — |
+| `settings` | `lastFullCheck` (a do operador) e `lastFullCheck:<tenant>`, `journalRetention`, `migration` e os documentos `lock:<nome>` | — |
 
 Retenção do diário: um evento é guardado por `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS`
 (0) ou `PORTAL_JOURNAL_ADMIN_DAYS` (0) dias a partir do fim do dia em que aconteceu; 0 guarda para sempre.
@@ -538,6 +559,7 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `portal/test_portal_config.py` | 13 | configuração e inicialização, limites da sessão |
 | `portal/test_session.py` | 30 | limites da sessão (15 s sem uso no teste): regras do servidor, aviso, renovação pelo uso, outras abas, limite absoluto, os dois idiomas; aviso da comunidade no rodapé (cerca de dois minutos) |
 | `portal/test_store.py` | 58 | a camada de dados do portal: configurações de conexão, índices, a trava compartilhada (também entre dois administradores ao mesmo tempo), usuários, metadados dos cadastros, diário e retenção, bloqueio de entrada, migração dos arquivos antigos (também interrompida e retomada) |
+| `portal/test_tenants.py` | 78 | tenants ([ADR 0002](adr/0002-organizacoes.md)): uma instalação sem tenants igual a antes; tenants e seus prefixos (nomes, sobreposições, redundância, usuários do operador no caminho); os cadastros e usuários do operador; administradores de tenant e seus usuários; endereços de e-mail; cadastros, histórico, lista, exportação e importações por tenant, e a conferência do worker antes de cada cadastro; prefixos mudando de dono; a trilha de auditoria por tenant e seu CSV; acesso de suporte; tenants desativados e removidos; resultados da verificação de links por escopo; posse por tipo de chave; a linha de comando |
 | `portal/test_jobs.py` | 70 | tarefas em segundo plano: estados, validade, retirada atômica, posse das gravações, workers calados devolvidos e falha depois de três tentativas, o anúncio do worker, `stalled`, a verificação de saúde, o laço do worker (erros, sinal de vida, parada e devolução, `JobLost`), o worker embutido e `PORTAL_WORKER`; importações pela API (fila, worker, diário, outro usuário, um worker que morre antes e depois de gravar um cadastro, uma falha); verificações de links pela API (todos os cadastros, uma lista, uma parada que cancela os endereços pendentes) |
 | `portal/test_worker_processes.py` | 13 | o `worker.py` como processos reais num MongoDB real (rodado pelo `test_store_mongodb.py`): dois workers dividem a fila sem pegar a mesma tarefa duas vezes; o SIGTERM devolve a tarefa e o outro worker a termina; depois de um SIGKILL, um worker novo continua a tarefa quando o sinal de vida fica velho |
 | `portal/test_store_mongodb.py` | 161 | num MongoDB real (`PORTAL_TEST_MONGO_URI`, só no CI): o usuário criado pelo `db_init.py` e suas permissões; `test_store.py`, `test_jobs.py` e `test_worker_processes.py` de novo como esse usuário (com suas linhas repassadas); o monitor de TTL, também para tarefas e anúncios antigos de workers |

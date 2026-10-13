@@ -169,8 +169,12 @@ portal has no users. Further users, resets and removals:
 
 ```bash
 docker compose exec portal-service python create_user.py maria            # create or reset (asks twice)
+docker compose exec portal-service python create_user.py ana --role admin --tenant "Acme Foods"   # in an organisation
 docker compose exec portal-service python create_user.py maria --remove   # remove
 ```
+
+A user created without `--tenant` is the operator's; an administrator of the operator is a server
+administrator (see *Tenants* below).
 
 Users (with password hashes), record metadata and the journal live in the portal's own MongoDB database
 (`PORTAL_DB_NAME`, default `resolver_portal`), reached with a user that may read and write that database
@@ -249,14 +253,15 @@ Roles (checked by the server on every call; the interface hides what a role cann
 
 | Role | May |
 |---|---|
-| admin | everything, user administration, audit trail |
+| admin | everything, user administration, audit trail (of its tenant; of the operator for a server administrator) |
 | editor | create, change, delete records; import; link checks |
 | reader | consult, list, export, labels |
 
-- The `users` collection holds, per user: password hash, role, GS1 Company Prefixes, disabled, must-change
-  flag, creation and last sign-in. Users of a `users.json` from before roles (`{"name": "<hash>"}`) are
-  imported as administrators. Changes to users are serialised by a lock shared by every portal replica, so
-  the last enabled administrator can never be removed or demoted.
+- The `users` collection holds, per user: password hash, role, GS1 Company Prefixes, tenant (none for the
+  operator's users), e-mail address (optional, unique), disabled, must-change flag, creation and last sign-in.
+  Users of a `users.json` from before roles (`{"name": "<hash>"}`) are imported as administrators. Changes to
+  users are serialised by a lock shared by every portal replica, so the last enabled server administrator can
+  never be removed or demoted.
 - GS1 Company Prefixes (4-12 digits) limit a user to identifiers whose company part starts with one of
   them (`gs1.company_part`: after the indicator digit of GTIN-14 and ITIP, the extension digit of SSCC and
   the filler zero of GRAI). Records, lists, exports, imports, labels, history and link checks are filtered
@@ -265,15 +270,48 @@ Roles (checked by the server on every call; the interface hides what a role cann
   `/config`, `/password` and `/logout` until it sets its own password.
 - A password reset, disabling or removal ends the user's open sessions (session fingerprint).
 - The journal (the `journal` collection of the portal's database) records every event: `login`,
-  `login-failed`, `logout`, `password-change`, `create`, `update`, `delete` (with the record's content),
-  `import`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`. The editor's History panel
-  shows the last 20 versions of a record; the audit trail shows events without record contents.
+  `login-failed`, `login-refused`, `logout`, `password-change`, `create`, `update`, `delete` (with the
+  record's content), `import`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`,
+  `tenant-create`, `tenant-update`, `tenant-remove`, `support-open`, `support-close`, each with the tenant whose
+  trail it belongs to. The editor's History panel shows the last 20 versions of a record made in the scope of
+  the request; the audit trail shows events without record contents.
 - **Retention.** Events are kept by age, per category, counted from the end of the day they happened:
   sign-ins and sign-outs `PORTAL_JOURNAL_SESSION_DAYS` (default 180); record changes and imports
   `PORTAL_JOURNAL_RECORD_DAYS` (default 0, for ever); user administration, password changes and exports
   `PORTAL_JOURNAL_ADMIN_DAYS` (default 0, for ever). MongoDB deletes expired events itself (TTL index).
   A record can be restored only from versions still in the journal, so a limit on record changes also
   limits how far back a record can be restored. A changed value applies to older events at the next start.
+
+### Tenants
+
+An installation can serve several organisations ([ADR 0002](../adr/0002-tenants.md)). A **tenant** (an
+*organisation* on screen) owns GS1 Company Prefixes; **a record belongs to the tenant whose prefix starts its
+key**, worked out on every request (nothing is stored in the resolver's database). **The operator owns every
+record no tenant holds.**
+
+| Account | Reaches |
+|---|---|
+| user of a tenant | the tenant's records (or his own prefixes inside them), the tenant's users and audit trail if administrator |
+| user of the operator | the records no tenant holds (or his prefixes among them); the operator's administrators are **server administrators** |
+| server administrator | creates, renames, disables and removes tenants and assigns their prefixes; manages every user; reaches a tenant's records, history and audit trail only through **support access**: read only, opened with a reason (5 to 200 characters), recorded in the tenant's trail, closed when he leaves it or signs out |
+
+Rules, checked on the server:
+- a prefix belongs to one tenant at most; prefixes of different tenants may not overlap (`789835741` and
+  `7898357410` cannot belong to two), and a tenant may not hold a prefix covered by another of its own;
+- a tenant user's prefixes lie inside the tenant's; an operator user's may not lie inside a tenant's;
+- a prefix is not given to a tenant while an operator user is limited to a prefix inside it, nor taken from a
+  tenant while one of its users is;
+- a tenant with users cannot be removed; once removed, its prefixes and records go back to the operator;
+- a disabled tenant's users cannot sign in and their sessions end; its records still resolve and stay out of
+  the operator's reach;
+- a spreadsheet import checks each record again when it is written, so a prefix that changed hands since the
+  preview is not written (`access.prefix` in the result).
+
+Upgrading changes nothing until the first tenant is created: every existing user becomes a user of the operator.
+**Creating a tenant takes its records away from the operator's users, server administrators included.** Each
+tenant's last "check every record" result is its own. The record list shows who created or changed a record
+only to users of the tenant that made the change. E-mail addresses are not used yet (item 3.1) and are never
+written to the journal.
 
 ## Record list
 

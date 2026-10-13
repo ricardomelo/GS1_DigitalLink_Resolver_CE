@@ -24,7 +24,7 @@ o próximo começar.
 | 6 — EPC em binário | 02/10 | `51a0da8` → `4b9a7be` e os commits de documentação | `/eh…` e `/ex…` descomprimidos para todos os esquemas EPC que têm GS1 Digital Link (item 1.6), a partir dos artefatos do TDT 2.2 e do TDS 2.3; nome do upstream do proxy corrigido (toda resolução pelo nginx dava 500 desde o 1.5); mais quatro candidatos a errata; confirmado na homologação |
 | 7 — suíte de testes da GS1 | 02/10 | `bc573c4` → `386a8c3` | a própria suíte da GS1 aprovada na homologação (31 de 31), tipos de link publicados em `https://ref.gs1.org/voc/` (F22), errata E12, backlog em aberto no README |
 | 8 — backlog, ajustes rápidos, CI | 13/10 | `bc1c86b`, `1a1ca59`, `d68a883` e os commits de documentação | backlog reordenado em torno de tenants, e-mail, chaves de API e domínios próprios; sessão de 30 minutos sem uso com aviso e limite de 12 horas; quadro da sintaxe retirado da página inicial; aviso da comunidade; testes de desenvolvimento pelo pytest e no GitHub Actions |
-| 9 — arquitetura para escala | 13/10 – | ADR 0001, depois três entregas de código | item 2.3 em andamento: o estado do portal no MongoDB, tarefas em segundo plano num worker, réplicas |
+| 9 — arquitetura para escala | 13/10 – | ADR 0001, depois três entregas de código (`d783f3d`, `a072e9d`, …) | item 2.3 em andamento: o estado do portal no MongoDB e as tarefas em segundo plano num worker concluídos; réplicas em seguida |
 
 Ao fim da sessão 4, o fork altera ou acrescenta 70 arquivos do projeto oficial (cerca de 16.000 linhas
 acrescentadas) e é coberto por 739 verificações nos testes de desenvolvimento, além do teste do
@@ -267,6 +267,8 @@ job do CI com MongoDB real; quatro entregas. Elas estão registradas no
 | `f9c38a2` | docs: o título "Como as principais áreas evoluíram" restaurado nos dois históricos (perdido num commit de documentação da sessão 8) |
 | `076f19a` | ADR 0001 em inglês e português (etapa 1) |
 | `d783f3d` | etapa 2: `store.py`, usuários, metadados dos cadastros, diário com retenção, entradas recusadas e caches no MongoDB; `migrate.py`; `db_init.py` e o serviço `portal-db-init`; o instalador gera `PORTAL_DB_PASSWORD` e `PORTAL_SECRET_KEY`; `test_store.py`, `test_store_mongodb.py` e o job do CI num MongoDB real |
+| `d7644b1` | docs: a etapa 2 no changelog, nas funcionalidades e nos históricos |
+| `a072e9d` | etapa 3: `jobs.py` e `worker.py`; importações e verificações de links como tarefas; o serviço `portal-worker` e `PORTAL_WORKER`; mensagens de fila, de "não está em execução" e de falha no navegador; `worker` na verificação de saúde e nas conferências do instalador; `test_jobs.py`, `test_worker_processes.py`, cenários de e2e e do instalador |
 
 Etapa 2. Três detalhes mudaram durante a construção, e o ADR 0001 foi alinhado: o usuário do portal é
 criado por um script Python na imagem do portal (`db_init.py`), para que o CI rode o mesmo script contra um
@@ -278,7 +280,23 @@ MongoDB, então os programas rodam no mongomock ali e num contêiner de serviço
 CI começa como informativo. Uma mutação proposital (sem trava nas alterações de usuários) passou de início
 pela verificação de remoção simultânea, porque o mongomock raramente intercala as duas threads; foi
 acrescentada uma verificação determinística (uma alteração espera enquanto outro processo segura a trava),
-que a pega.
+que a pega. A etapa 2 foi confirmada no staging (2 usuários, 3 metadados de cadastro e 55 eventos do diário
+migrados), e o job do CI num MongoDB real passou nas suas 76 verificações na primeira execução.
+
+Etapa 3. O responsável decidiu os quatro pontos em aberto nas opções recomendadas: `PORTAL_WORKER=external`
+(o serviço `portal-worker`, sempre no Compose) ou `embedded` (uma thread do portal, para os testes e uma
+instalação sem o serviço); uma importação interrompida continua do primeiro cadastro não gravado; um worker
+até a etapa 4; sem botão de cancelar por enquanto. A implementação acrescentou, e o ADR 0001 agora registra:
+um limite de três tentativas por tarefa, para que uma tarefa que derruba seu worker não fique em ciclo;
+gravações que só valem se a tarefa ainda for do worker (`JobLost`); devolução imediata no SIGTERM; anúncios
+dos workers, para que o navegador diga que nenhum worker está rodando em vez de esperar calado, e para que a
+verificação de saúde e o instalador o informem; uma verificação de links que recomeça em vez de continuar (o
+cache responde o que já foi feito). Os programas que rodam importações usam o worker embutido; o
+`test_jobs.py` comanda os workers diretamente, e o `test_worker_processes.py` inicia o `worker.py` como
+processos que dividem uma fila, o que exige um MongoDB real: ele roda no job "database" do CI. No ambiente de
+desenvolvimento ele também foi rodado contra o FerretDB (um servidor compatível com o MongoDB sobre SQLite,
+baixado do GitHub) com os índices TTL desligados: passou, e uma mutação proposital (retirar também tarefas
+em execução) reprovou três das suas verificações.
 
 ## Como as principais áreas evoluíram
 
@@ -292,7 +310,7 @@ que a pega.
 | Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, tela de usuários, senhas temporárias, histórico, auditoria, no banco próprio do portal |
 | Instalação | manual, com patch | fork git, configuração em camadas, instalador para Ubuntu, backup |
 | Resolução | GTIN e lote, links comprimidos do Digital Link 1.1 | todas as chaves e qualificadores, as regras do Resolver 1.2.1, EPC em binário de etiquetas NFC (`/eh…`, `/ex…`) |
-| Testes | 69 verificações | 1.364 verificações em 16 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador; rodam pelo pytest e no GitHub Actions, o portal também num MongoDB real |
+| Testes | 69 verificações | 1.438 verificações em 17 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador; rodam pelo pytest e no GitHub Actions, o portal e seus workers de tarefas também num MongoDB real |
 | Documentação | README do pacote, documento de passagem | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e português), documentação das extensões, changelog |
 
 ## Decisões que ficam, a não ser que sejam revistas de propósito
@@ -312,7 +330,9 @@ que a pega.
 8. Etiquetas: X = 0,495 mm, texto de 2,2 mm, zona de silêncio de 4X; correção de erros exatamente como
    escolhida; sem marca GS1.
 9. Atributos de dados vão só para o QR Code e são validados pelo engine da GS1.
-10. Um único worker do gunicorn com threads, até importações e verificações de links irem para um worker (etapa 3 do ADR 0001).
+10. Importações e verificações de links são tarefas no banco do portal, executadas pelo serviço
+    `portal-worker`; nada no portal depende da memória de um processo. O portal ainda roda um único worker do
+    gunicorn com threads, até as réplicas (etapa 4 do ADR 0001).
 11. O cadastro segue o Resolver 2.5.9: com número de série, lote e variante são qualificadores informativos
     do cadastro; todo cadastro qualificado deve ter acima dele o cadastro da chave.
 12. O EPC em binário é decodificado a partir dos artefatos do TDT da GS1, incluídos sem alteração;
@@ -348,6 +368,11 @@ que a pega.
   divergência antes da execução do responsável.
 - Uma suíte de testes traz a leitura que os seus autores fazem do padrão: conferir cada falha com o texto
   antes de mudar o código (E12).
+- Quando o banco real não roda onde os testes são escritos, um substituto compatível ainda exercita o que o
+  mongomock não consegue (processos separados dividindo um banco), mas as lacunas dele precisam ser
+  separadas dos defeitos: o FerretDB 1.24 não tem índices TTL e recusa arrays aninhados, que o MongoDB aceita.
+- Um worker precisa dizer que está vivo: sem anúncios, uma tarefa na fila sem nenhum worker rodando espera
+  calada, e nada diz ao usuário ou ao instalador por quê.
 
 ## Pendências
 

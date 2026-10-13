@@ -153,7 +153,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Feature | What it does | Since |
 |---|---|---|
 | Export | XLSX (with Link types, Keys and Languages sheets) or CSV, one row per target, headers in the user's language | `429dce7` |
-| Two-step import | Preview with New / Changed / Unchanged / With errors and every wrong row explained, then apply in the background with progress | `429dce7`, `7339e3c` |
+| Two-step import | Preview with New / Changed / Unchanged / With errors and every wrong row explained, then apply in the background with progress; run by the job worker, so it survives a restart of the portal and continues after a restart of the worker; *In the queue…* while it waits | `429dce7`, `7339e3c`, `a072e9d` |
 | Never deletes | Records not in the file stay | `429dce7` |
 | Any BCP 47 language | `pt-BR`, `en-US`, `vi`, `und`… accepted and kept | `7339e3c` |
 | Limits per format | XLSX and CSV/TXT: 5,000 rows and 700 KB, shown in the dialog | `9d12f9d` |
@@ -166,7 +166,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Feature | What it does | Since |
 |---|---|---|
 | Check targets (editor) | After each save and on demand; result under each target | `0da20ee` |
-| Check links (every record) | Background job; summary kept; badge per record; *Only with problems* | `0da20ee` |
+| Check links (every record) | Background job, run by the job worker; summary kept; badge per record; *Only with problems* | `0da20ee`, `a072e9d` |
 | Import preview check | Optional, does not stop the import | `0da20ee` |
 | SSRF guard | Only public addresses are contacted, at every redirect | `0da20ee` |
 | Clear reasons | HTTP errors, blocked checks (401/403/429), unreachable, HTTPS downgrade, too many redirects, private address, invalid | `0da20ee` |
@@ -195,6 +195,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Portal data in its own database | Users, record metadata, journal, sign-in failures and the link checker's cache in the database `resolver_portal` of the installation's MongoDB, reached with a user that may use that database only; the resolver's database untouched | `d783f3d` |
 | Sign-in lockout for the whole installation | Five failures lock a user name or an address for 15 minutes in every portal replica and across restarts | `d783f3d` |
 | Last administrator kept | Changes of users are serialised by a lock shared by every process: the last enabled administrator cannot be removed or demoted, even by two administrators at once | `71b15f2`, `d783f3d` |
+| Background jobs in a worker | Imports and checks of many links are jobs in the portal's database, run one at a time by the `portal-worker` service; a stopped worker hands its job back at once, a dead one's job goes back to the queue after two minutes; an import continues where it was; a job interrupted three times fails, keeping what was done | `a072e9d` |
+| Job worker not running | The browser warns when a job has waited 15 seconds with no worker running, and says when a job failed | `a072e9d` |
 
 ## Portal: languages and look
 
@@ -227,13 +229,14 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Portal database user | The one-shot service `portal-db-init` creates the portal's MongoDB user, or brings its password up to date, at every start | `d783f3d` |
 | Move from the files of earlier versions | At its first start the portal imports `users.json`, `records-meta.json` and `journal.jsonl` into its database and keeps them as `*.migrated`; an interrupted import finishes at the next start | `d783f3d` |
 | Installer secrets for the portal | `PORTAL_DB_PASSWORD` and `PORTAL_SECRET_KEY` generated and kept on re-runs | `d783f3d` |
-| Health check | `/portal/healthz` | `126f507` |
+| Health check | `/portal/healthz`, with the job worker (`worker`: `ok` or `unavailable`); the installer warns when the worker does not report | `126f507`, `a072e9d` |
+| `portal-worker` service | The portal's image running the job worker; `PORTAL_WORKER=embedded` runs it as a thread of the portal for a set-up without the service | `a072e9d` |
 
 ## Development tests and documentation
 
 | Feature | What it does | Since |
 |---|---|---|
-| Development tests | Resolver, GS1's resolver test suite run in Chromium against the resolver code, EPC binary decoder (checked against TDS annex E.3 and the `epc-tds` library), data entry, keys, governance, spreadsheets, special characters, data attributes, link checker, portal end to end in Chromium (desktop and phone), home page through nginx, installer through shims | `0733a3f` and later |
+| Development tests | Resolver, GS1's resolver test suite run in Chromium against the resolver code, EPC binary decoder (checked against TDS annex E.3 and the `epc-tds` library), data entry, keys, governance, spreadsheets, special characters, data attributes, link checker, background jobs (also as worker processes on a real MongoDB), portal end to end in Chromium (desktop and phone), home page through nginx, installer through shims | `0733a3f` and later |
 | Development tests through pytest | `pytest dev-tests` runs every program, by group (`-m resolver`, `portal`, `e2e`, `home`, `install`, `database`), with each program's check count; strict mode for CI | `d68a883`, `d783f3d` |
 | Continuous integration | GitHub Actions runs the tests in six parallel jobs on every push and pull request to `gs1br/develop`, one of them on a real MongoDB 7 (service container); pinned versions, cached engines and browser; status badge in the README | `d68a883`, `d783f3d` |
 | Screenshots | `dev-tests/docs/screenshots.py` regenerates the README and user guide images | `f14d8c4`, session 4 |

@@ -35,6 +35,28 @@
   when `PORTAL_DB_URI` is set; `test_store.py` (58 checks); `test_store_mongodb.py` (the user's privileges,
   `test_store.py` as that user, the TTL monitor); a sixth CI job, informative at first, with a `mongo:7`
   service container; the installer test checks the new secrets (57 checks). Commit `d783f3d`.
+- **Background jobs in a worker** (step 3 of 4): spreadsheet imports and checks of many links are documents
+  of a `jobs` collection, run by a new Compose service, `portal-worker` (the portal's image, `python
+  worker.py`), instead of threads of the portal: a restart of the portal no longer loses them, and nothing in
+  the portal depends on the memory of one process. The web process only creates jobs and reads their state;
+  the browser API keeps its calls and answers, with a `failed` state, `stalled` and `error` added.
+  Commit `a072e9d`.
+- **Interrupted jobs**: a worker stopped by `docker compose stop` or an update finishes the record in hand and
+  hands its job back to the queue at once; a job of a worker that died goes back to the queue after two
+  minutes without a heartbeat. An import continues from the first record not written; a link check starts
+  again, the checker's cache answering what was done; after three interrupted attempts the job fails
+  (`job.interrupted`), keeping what was written. Commit `a072e9d`.
+- **Is the job worker running?** Workers announce themselves (`workers` collection); the browser says *In the
+  queue…* while a job waits, warns when it has waited 15 seconds with no worker running, and says when a job
+  failed; `GET /portal/healthz` adds `"worker": "ok" | "unavailable"`; the installer waits for the worker to
+  report and warns when it does not. Commit `a072e9d`.
+- **`PORTAL_WORKER`**: `external` (default, the `portal-worker` service) or `embedded` (a worker thread inside
+  the portal, for development tests and a set-up without that service). Commit `a072e9d`.
+- **Tests**: `test_jobs.py` (70 checks: queue, claims, ownership of writes, silent workers, the worker loop,
+  imports and link checks through the API); `test_worker_processes.py` (13 checks: worker processes sharing a
+  queue, SIGTERM and SIGKILL, on a real MongoDB, relayed by `test_store_mongodb.py`, now 161 checks); the
+  portal in Chromium with the worker stopped and a failing job (190 checks, 146 without the engine); the
+  installer with a worker that does not start (61 checks). Commit `a072e9d`.
 
 ### Continuous integration (backlog item 2.2)
 - **Development tests through pytest**: `dev-tests/test_programs.py` runs each of the fifteen programs and the

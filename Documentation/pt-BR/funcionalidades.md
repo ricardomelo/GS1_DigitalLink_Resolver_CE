@@ -150,7 +150,7 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Funcionalidade | O que faz | Desde |
 |---|---|---|
 | Exportação | XLSX (com as abas Tipos de link, Chaves e Idiomas) ou CSV, uma linha por destino, títulos no idioma do usuário | `429dce7` |
-| Importação em duas etapas | Prévia com Novos / Alterados / Sem mudança / Com erro e cada linha errada explicada; depois a gravação em segundo plano com progresso | `429dce7`, `7339e3c` |
+| Importação em duas etapas | Prévia com Novos / Alterados / Sem mudança / Com erro e cada linha errada explicada; depois a gravação em segundo plano com progresso; feita pelo worker de tarefas, então sobrevive a um reinício do portal e continua depois de um reinício do worker; *Na fila…* enquanto espera | `429dce7`, `7339e3c`, `a072e9d` |
 | Nunca exclui | Cadastros que não estão no arquivo continuam | `429dce7` |
 | Qualquer idioma BCP 47 | `pt-BR`, `en-US`, `vi`, `und`… aceitos e mantidos | `7339e3c` |
 | Limites por formato | XLSX e CSV/TXT: 5.000 linhas e 700 KB, mostrados na janela | `9d12f9d` |
@@ -163,7 +163,7 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Funcionalidade | O que faz | Desde |
 |---|---|---|
 | Verificar destinos (editor) | Depois de cada salvamento e sob demanda; resultado embaixo de cada destino | `0da20ee` |
-| Verificar links (todos os cadastros) | Tarefa em segundo plano; resumo guardado; aviso por cadastro; *Só com problemas* | `0da20ee` |
+| Verificar links (todos os cadastros) | Tarefa em segundo plano, feita pelo worker de tarefas; resumo guardado; aviso por cadastro; *Só com problemas* | `0da20ee`, `a072e9d` |
 | Verificação na prévia da importação | Opcional, não impede a importação | `0da20ee` |
 | Proteção contra SSRF | Só endereços públicos são contatados, a cada redirecionamento | `0da20ee` |
 | Motivos claros | Erros HTTP, verificação bloqueada (401/403/429), site fora do ar, rebaixamento de HTTPS, redirecionamentos demais, endereço privado, inválido | `0da20ee` |
@@ -192,6 +192,8 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Dados do portal em banco próprio | Usuários, metadados dos cadastros, diário, entradas recusadas e o cache do verificador de links no banco `resolver_portal` do MongoDB da instalação, acessado por um usuário que só pode usar esse banco; o banco do Resolver não é tocado | `d783f3d` |
 | Bloqueio de entrada para toda a instalação | Cinco falhas bloqueiam um nome de usuário ou um endereço por 15 minutos em todas as réplicas do portal e depois de reinícios | `d783f3d` |
 | Último administrador mantido | Alterações de usuários são serializadas por uma trava comum a todos os processos: o último administrador ativo não pode ser removido nem rebaixado, nem por dois administradores ao mesmo tempo | `71b15f2`, `d783f3d` |
+| Tarefas em segundo plano num worker | Importações e verificações de muitos links são tarefas no banco do portal, executadas uma por vez pelo serviço `portal-worker`; um worker parado devolve sua tarefa na hora, a de um worker que morreu volta à fila depois de dois minutos; uma importação continua de onde parou; uma tarefa interrompida três vezes falha, mantendo o que foi feito | `a072e9d` |
+| Worker de tarefas fora do ar | O navegador avisa quando uma tarefa espera 15 segundos sem nenhum worker em execução, e diz quando uma tarefa falhou | `a072e9d` |
 
 ## Portal: idiomas e aparência
 
@@ -224,13 +226,14 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Usuário do banco do portal | O serviço `portal-db-init`, que roda uma vez, cria o usuário MongoDB do portal, ou atualiza sua senha, a cada início | `d783f3d` |
 | Migração dos arquivos das versões anteriores | No primeiro início o portal importa `users.json`, `records-meta.json` e `journal.jsonl` para o seu banco e os guarda como `*.migrated`; uma importação interrompida termina no início seguinte | `d783f3d` |
 | Segredos do portal no instalador | `PORTAL_DB_PASSWORD` e `PORTAL_SECRET_KEY` gerados e mantidos quando o instalador roda de novo | `d783f3d` |
-| Verificação de saúde | `/portal/healthz` | `126f507` |
+| Verificação de saúde | `/portal/healthz`, com o worker de tarefas (`worker`: `ok` ou `unavailable`); o instalador avisa quando o worker não se apresenta | `126f507`, `a072e9d` |
+| Serviço `portal-worker` | A imagem do portal rodando o worker de tarefas; `PORTAL_WORKER=embedded` o roda como uma thread do portal, para uma instalação sem o serviço | `a072e9d` |
 
 ## Testes de desenvolvimento e documentação
 
 | Funcionalidade | O que faz | Desde |
 |---|---|---|
-| Testes de desenvolvimento | Resolver, suíte de testes de Resolver da GS1 rodando no Chromium contra o código do Resolver, decodificador de EPC em binário (conferido com o anexo E.3 do TDS e com a biblioteca `epc-tds`), API de cadastro, chaves, governança, planilhas, caracteres especiais, atributos de dados, verificador de links, portal de ponta a ponta no Chromium (desktop e celular), página inicial com nginx, instalador com simulações | `0733a3f` e seguintes |
+| Testes de desenvolvimento | Resolver, suíte de testes de Resolver da GS1 rodando no Chromium contra o código do Resolver, decodificador de EPC em binário (conferido com o anexo E.3 do TDS e com a biblioteca `epc-tds`), API de cadastro, chaves, governança, planilhas, caracteres especiais, atributos de dados, verificador de links, tarefas em segundo plano (também como processos de worker num MongoDB real), portal de ponta a ponta no Chromium (desktop e celular), página inicial com nginx, instalador com simulações | `0733a3f` e seguintes |
 | Testes de desenvolvimento pelo pytest | `pytest dev-tests` roda todos os programas, por grupo (`-m resolver`, `portal`, `e2e`, `home`, `install`, `database`), com a contagem de verificações de cada programa; modo estrito para o CI | `d68a883`, `d783f3d` |
 | Integração contínua | O GitHub Actions roda os testes em seis jobs paralelos a cada push e pull request para `gs1br/develop`, um deles num MongoDB 7 real (contêiner de serviço); versões fixadas, engines e navegador em cache; selo de status no README | `d68a883`, `d783f3d` |
 | Screenshots | `dev-tests/docs/screenshots.py` regenera as imagens do README e do guia do portal nos dois idiomas | `f14d8c4`, sessão 4 |

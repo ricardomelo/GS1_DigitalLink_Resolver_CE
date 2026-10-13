@@ -511,28 +511,37 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 
 ## Open backlog
 
-Status on 2 October 2026. Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+Status on 13 October 2026. Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). What was
 done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
-The items below are in the agreed order; sizes are relative (S, M, L).
+The items below are in the agreed order; sizes are relative (S, M, L). The order puts first what later items
+build on: the portal's data store and tenants come before the API, e-mail and analytics, which all need to
+know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Technical foundations | 2.1 | **Continuous integration**: the development tests as pytest suites in a GitHub Actions workflow (engines cached) | M | — |
-| | 2.2 | **One source for the GS1 rules**: keys, qualifiers, formats and AI names derived from the GS1 Barcode Syntax Dictionary, both engines on one version, engine messages translated, dictionary updates proposed by a scheduled job; brings AIs (7041) and (8040)–(8043) | L | 2.1 |
-| Resolution log | 3.1 | **Log of resolver requests** (key, qualifiers, data attribute AIs, link type, outcome and level, latency, language, device, referrer, EPC scheme), asynchronous, privacy by design, raw events with an expiry plus daily aggregates | L | — |
-| | 3.2 | **Rotation and archiving** of the portal's journal | S | 3.1 |
-| Portal home page and monitoring | 4.1 | **Home page after sign-in with indicators**: usage, resolution quality (404 for unknown codes first), record quality, operation, governance | L | 3.1 |
-| | 4.2 | **Monitoring and alerts**: resolver down (checked through the proxy), failed backup, spikes of 404, certificate expiry | M | 4.1 |
-| Label studio | 5.1 | **Alternative root for the QR code**, per installation or per GS1 Company Prefix, with an optional path stem (URI Syntax 4.11) | M | 2.2 |
+| Quick wins and technical foundations | 2.1 | **Quick wins**: the portal session ends after 30 minutes without use (warning before it ends, absolute limit per sign-in); the GS1 Digital Link syntax box removed from the home page; a clearer notice in the README, the documentation, the home page and the portal that this software and the official project are maintained by the community, not by GS1, and that whoever installs and operates it is responsible for its use | S | — |
+| | 2.2 | **Continuous integration**: the development tests as pytest suites in a GitHub Actions workflow (engines cached) | M | — |
+| | 2.3 | **Architecture for scale and the portal's data in MongoDB**: an architecture decision record (stateless services, state in the database, background jobs outside the web process, more than one replica of each service); the portal's users, record metadata, journal, jobs and sign-in lockout moved from files and memory to a database of their own in the existing MongoDB, without changing the official resolver's collections; retention of the journal; migration of existing installations; backup and restore included | L | 2.2 |
+| | 2.4 | **Tenants**: an organisation (tenant) owns its GS1 Company Prefixes, each prefix belonging to one tenant only; a server administrator creates tenants and assigns prefixes; a tenant administrator manages the tenant's users; every call checks the tenant on the server; audit trail per tenant; e-mail address per user; privacy by design (data minimisation, the server administrator's access to a tenant's data recorded in that tenant's audit trail) | L | 2.3 |
+| | 2.5 | **One source for the GS1 rules**: keys, qualifiers, formats and AI names derived from the GS1 Barcode Syntax Dictionary, both engines on one version, engine messages translated, dictionary updates proposed by a scheduled job; brings AIs (7041) and (8040)–(8043) | L | 2.2 |
+| Platform services | 3.1 | **E-mail**: outgoing mail through an authenticated relay (settings in `.env`), invitations to new users, password recovery by single-use link, a notification framework with per-user preferences | M | 2.4 |
+| | 3.2 | **Tenant API and API keys**: a versioned API of the portal for records, labels and later analytics, described in OpenAPI, limited to the tenant's prefixes; keys created by the tenant administrator in the portal (random, stored only as a hash, shown once, with scopes, expiry, revocation, last use and rate limits); the official data entry API and its token stay internal | L | 2.4, 2.5 |
+| Resolution log and analytics | 4.1 | **Log of resolver requests** (key, qualifiers, data attribute AIs, link type, outcome and level, latency, language, device, referrer, EPC scheme), asynchronous, privacy by design, raw events with an expiry plus daily aggregates | L | 2.3 |
+| | 4.2 | **Home page after sign-in with indicators**, each tenant seeing only its own prefixes and keys (the server administrator sees the whole installation): usage, resolution quality (404 for unknown codes first), record quality, operation, governance; export to Excel and CSV | L | 4.1, 2.4 |
+| | 4.3 | **Monitoring and alerts** by e-mail: resolver down (checked through the proxy), failed backup, spikes of 404, certificate expiry | M | 4.2, 3.1 |
+| | 4.4 | **Weekly summary by e-mail** per tenant | S | 4.2, 3.1 |
+| Custom domains and label studio | 5.1 | **The tenant's own domain in the QR code** (URI Syntax 4.11): domains registered per tenant and proved by a DNS record; default per prefix, chosen when the label is made (installation domain when none is set); either the domain points at the resolver (certificate issued per domain) or the tenant's server redirects to it keeping path and query string; a domain answers only for its tenant's prefixes; optional path stem | L | 2.4, 2.5 |
 | | 5.2 | **X-dimension choice and PDF export** | M | 5.1 |
 | | 5.3 | **QR code with EAN-13/UPC-A (and EAN-8/UPC-E)** for the transition to 2D, with the HRI rules of the GS1 General Specifications | M | 5.2 |
 | | 5.4 | **Every label format in one zip** | S | 5.3 |
-| Landing page | 6.1 | **Page of the item's links** as the default target: generated by the resolver, mobile first, an icon per link type, logo and colours per prefix, languages, clicks logged | L | 3.1, 5.1 |
-| Production | 7.1 | **Single sign-on** for the portal; per-role limits on exports | M | — |
+| Landing page | 6.1 | **Page of the item's links** as the default target: generated by the resolver, mobile first, an icon per link type, logo and colours per prefix, languages, clicks logged | L | 4.1, 5.1 |
+| | 6.2 | **Verified by GS1 on the landing page**: a link that looks the key up in Verified by GS1, for the key types the service accepts; on or off per installation and per tenant; shown on the page only, not added to the linkset (the link type `gs1:verificationService` denotes a GS1 Lightweight Messaging service, not a web page) | S | 6.1 |
+| Production | 7.1 | **Single sign-on** for the portal, per tenant; per-role limits on exports | M | 2.4 |
 | | 7.2 | **Production readiness**: rotation of secrets, installation on a clean machine (with a check through the proxy at the end), off-server backup copy and restore rehearsal, production domain checklist | M | — |
 | | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages, default link titles in the link's language (conformance review F21) | S | — |
+| | 7.4 | **Load test and scale-out rehearsal**: target load agreed, several replicas of the resolver and the portal, MongoDB replica set, results recorded | M | 2.3 |
 | Standards | 8.1 | **Errata and Work Requests to GS1**: E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
 
 Later, when convenient:

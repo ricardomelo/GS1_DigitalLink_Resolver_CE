@@ -1,0 +1,103 @@
+# Continuous integration: the development tests (dev-tests/README.md) on every push and pull request
+# to the development branch, in five jobs that run in parallel. Each job runs its group of programs
+# through the pytest layer (dev-tests/test_programs.py) in strict mode: a missing engine, browser or
+# tool fails the job instead of skipping checks.
+#
+# The portal in Chromium (e2e) and the installer start as informative jobs: a failure there is shown
+# but does not mark the run as failed, until they have proved stable on GitHub's runners.
+name: Development tests
+
+on:
+  push:
+    branches: [gs1br/develop]
+    paths-ignore: ["Documentation/**", "**/*.md"]
+  pull_request:
+    branches: [gs1br/develop]
+    paths-ignore: ["Documentation/**", "**/*.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEV_TESTS_STRICT: "1"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  resolver:
+    name: Resolver, EPC binary, data entry API, GS1 suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/dev-tests-setup
+        with:
+          npm: "true"
+          gs1-suite: "true"
+          playwright: "true"
+      - run: python -m pytest dev-tests -m resolver -ra
+        env:
+          DEV_TESTS_TITLE: Resolver, EPC binary, data entry API, GS1 suite
+
+  portal:
+    name: Portal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/dev-tests-setup
+        with:
+          npm: "true"
+          syntax-engine: "true"
+      - run: python -m pytest dev-tests -m portal -ra
+        env:
+          DEV_TESTS_TITLE: Portal
+
+  e2e:
+    name: Portal in Chromium (informative)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/dev-tests-setup
+        with:
+          syntax-engine: "true"
+          playwright: "true"
+      - run: python -m pytest dev-tests -m e2e -ra
+        env:
+          DEV_TESTS_TITLE: Portal in Chromium
+
+  home:
+    name: Home page and proxy (nginx)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/dev-tests-setup
+        with:
+          playwright: "true"
+          nginx: "true"
+      - run: python -m pytest dev-tests -m home -ra
+        env:
+          DEV_TESTS_TITLE: Home page and proxy
+
+  install:
+    name: Installer (informative)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/dev-tests-setup
+        with:
+          nginx: "true"
+          compose: "true"
+      # The installer test runs as root: the pytest layer calls it through password-less sudo.
+      - run: python -m pytest dev-tests -m install -ra
+        env:
+          DEV_TESTS_TITLE: Installer

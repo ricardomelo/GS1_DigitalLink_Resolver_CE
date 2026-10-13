@@ -23,6 +23,32 @@ repository root.
 
 | `install/test_install.sh` | The **installer** in eight scenarios (fresh Let's Encrypt, re-run, hand-written `.env` on an existing installation, own certificate, external proxy, interactive answers with invalid input, refusals, proxy left pointing at recreated services) with stand-ins for apt-get, systemctl, docker, certbot and curl; the written `.env` is checked with the real `docker compose config` and the nginx site with the real `nginx -t`. | Linux, root, nginx, openssl and a Docker Compose v2 binary (`COMPOSE_BIN`, default `/tmp/docker-compose`), then `sudo dev-tests/install/test_install.sh` |
 
+**Through pytest.** `test_programs.py` runs every program above as one pytest test, from the repository
+root, and `conftest.py` keeps pytest from importing the programs themselves. A program passes when it exits
+with status 0 and prints no `FAIL` line; a failure shows its `FAIL` lines and the end of its output; a
+program that only printed `SKIP` is skipped. The number of checks of each program is printed at the end.
+
+```bash
+pip install pytest
+python -m pytest dev-tests                            # every program; those missing a piece are skipped
+python -m pytest dev-tests -m "resolver or portal"    # groups: resolver, portal, e2e, home, install
+python -m pytest dev-tests -k gs1_suite               # one program (ids as in PROGRAMS)
+DEV_TESTS_STRICT=1 python -m pytest dev-tests         # missing variables, commands or SKIP lines fail
+```
+
+Groups: `resolver` = `test_resolver`, `test_gs1_suite`, `test_epc_binary`, `test_data_entry_api`; `portal` =
+the portal programs without a browser; `e2e` = `test_portal_e2e.py` with the engine and without it
+(`GS1_SYNTAX_ENGINE_DIR=/nonexistent`), `test_session.py`; `home`; `install` (through `sudo -n` when not
+root; `PATH` and `COMPOSE_BIN` are passed on). `DEV_TESTS_TIMEOUT` (seconds, default 1200) limits each
+program.
+
+**Continuous integration.** `.github/workflows/dev-tests.yml` runs one job per group on GitHub Actions on every
+push and pull request to `gs1br/develop`, with `DEV_TESTS_STRICT=1`; `e2e` and `install` are informative at
+first. `.github/actions/dev-tests-setup/action.yml` prepares the runner and holds every pinned version (Python
+3.12, Node.js 24, `gs1encoder` 1.4.1, `epc-tds` 1.4.1, `ajv-dist` 8.17.1, GS1's suite at `32597c1`, Docker
+Compose v2.29.7); the engines, npm packages and Chromium are cached. The check counts of each job are on the
+run's summary page.
+
 `resolver/linkset-schema.json` is a copy of https://ref.gs1.org/standards/resolver/linkset-schema.
 `resolver/description-file-schema.json` is a copy of https://ref.gs1.org/standards/resolver/description-file-schema
 (version 1.2.0).

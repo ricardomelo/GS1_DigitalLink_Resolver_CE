@@ -1,5 +1,7 @@
 # GS1 Digital Link Resolver CE — Expansion Pack
 
+[![Development tests](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml/badge.svg?branch=gs1br/develop)](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml)
+
 > **Important notice and disclaimer (from the official project).** This freely licensed open source
 > software is not maintained by GS1. Issues raised here may be answered by the community but will not be
 > handled by GS1 itself. Users of this software should not assume that it conforms fully to the published
@@ -515,6 +517,25 @@ mkdir -p /tmp/se && (cd /tmp/se && npm init -y && npm pkg set type=module && npm
 GS1_SYNTAX_ENGINE=/tmp/se python dev-tests/portal/test_keys.py
 ```
 
+Every program can also be run through pytest, by a thin layer (`dev-tests/test_programs.py`) that runs each
+one as a subprocess and prints the number of checks of each program at the end; the groups `resolver`,
+`portal`, `e2e`, `home` and `install` can be chosen with `-m`:
+
+```bash
+pip install pytest
+python -m pytest dev-tests                 # all (programs missing what they need are skipped)
+python -m pytest dev-tests -m resolver     # one group
+DEV_TESTS_STRICT=1 python -m pytest dev-tests -m portal   # as in CI: what is missing fails, not skips
+```
+
+**Continuous integration.** The workflow `.github/workflows/dev-tests.yml` runs the tests on GitHub Actions on
+every push and pull request to `gs1br/develop` (changes to documentation only do not start it), in five jobs
+in parallel: resolver (with EPC binary strings, the data entry API and GS1's suite), portal, portal in
+Chromium, home page through nginx, and installer. The portal in Chromium and the installer start as
+informative jobs: a failure there is shown but does not fail the run. The versions of Python, Node.js, the
+engines, GS1's suite and Docker Compose are pinned in `.github/actions/dev-tests-setup/action.yml`; engines,
+packages and the browser are cached. Each job's result, with its check counts, is on the run's summary page.
+
 The official integration test `tests/setup_test.py` needs the running stack and reads the token from
 `SESSION_TOKEN`. The screenshots of this README and of the user guide are produced by
 `dev-tests/docs/screenshots.py`.
@@ -580,6 +601,7 @@ portal/                         link management portal: app.py, gs1.py (keys, qu
                                 tools/build-syntax-engine.sh (GS1 Barcode Syntax Engine)
 scripts/                        install.sh, templates/ (nginx), resolver-backup.sh and its cron entry
 dev-tests/                      development tests (see above)
+.github/                        workflows/dev-tests.yml (continuous integration), actions/dev-tests-setup/
 Documentation/                  README.md (index), portal-user-guide.md, features.md, history.md,
                                 developer-guide.md, pt-BR/ (documentation in Portuguese),
                                 extensions/ (detailed documentation, changelog), images/ (README),

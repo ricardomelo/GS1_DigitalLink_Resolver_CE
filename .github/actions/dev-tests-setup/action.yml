@@ -1,0 +1,152 @@
+# Prepares a GitHub-hosted Ubuntu runner for the development tests (dev-tests/README.md) and exports
+# the variables the test programs read. Each job of .github/workflows/dev-tests.yml asks only for the
+# pieces its programs need. The versions are pinned here, in one place, so that a result does not change
+# without a deliberate update:
+#   * Python 3.12 and Node.js 24, as in the service images (web_server/Dockerfile, portal/Dockerfile);
+#   * gs1encoder (the resolver's GS1 Barcode Syntax Engine) on the release that
+#     portal/tools/build-syntax-engine.sh builds for the portal; keep the two in step;
+#   * epc-tds, the independent EPC library test_epc_binary.py compares with;
+#   * ajv-dist, the JSON schema validator GS1's resolver test suite loads in the browser;
+#   * GS1's resolver test suite at the commit the conformance review was made with;
+#   * Docker Compose v2, for the installer test's "docker compose config".
+name: Development test environment
+description: Python, Node.js, engines, browsers and tools for the development tests
+
+inputs:
+  npm:
+    description: Install gs1encoder, epc-tds and ajv-dist (sets GS1_SYNTAX_ENGINE, EPC_TDS, AJV_DIST)
+    default: "false"
+  syntax-engine:
+    description: Build the portal's GS1 Barcode Syntax Engine (sets GS1_SYNTAX_ENGINE_DIR)
+    default: "false"
+  playwright:
+    description: Install Chromium for Playwright, with its system libraries
+    default: "false"
+  gs1-suite:
+    description: Fetch GS1's resolver test suite at the pinned commit (sets GS1_RESOLVER_TESTSUITE)
+    default: "false"
+  nginx:
+    description: Install nginx (the service itself is stopped; the tests start their own)
+    default: "false"
+  compose:
+    description: Download a Docker Compose v2 binary (sets COMPOSE_BIN)
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Pinned versions and tool folder
+      shell: bash
+      run: |
+        {
+          echo "DEV_TOOLS=$HOME/.cache/dev-tests"
+          echo "GS1ENCODER_VERSION=1.4.1"
+          echo "EPC_TDS_VERSION=1.4.1"
+          echo "AJV_DIST_VERSION=8.17.1"
+          echo "GS1_TESTSUITE_COMMIT=32597c108ac1ecb9e90ce0081bb3a16e5a61e616"
+          echo "COMPOSE_VERSION=v2.29.7"
+        } >> "$GITHUB_ENV"
+
+    - uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+        cache: pip
+        cache-dependency-path: |
+          web_server/src/requirements.txt
+          portal/requirements.txt
+          data_entry_server/src/requirements.txt
+
+    - name: Python packages
+      shell: bash
+      run: |
+        python -m pip install -q -r web_server/src/requirements.txt -r portal/requirements.txt \
+          -r data_entry_server/src/requirements.txt pytest jsonschema playwright opencv-python-headless pillow
+        echo "PLAYWRIGHT_VERSION=$(python -m pip show playwright | sed -n 's/^Version: //p')" >> "$GITHUB_ENV"
+
+    - if: inputs.npm == 'true' || inputs.gs1-suite == 'true'
+      uses: actions/setup-node@v7
+      with:
+        node-version: "24"
+
+    - if: inputs.npm == 'true'
+      id: npm-cache
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cache/dev-tests/se
+          ~/.cache/dev-tests/et
+          ~/.cache/dev-tests/ajv
+        key: npm-${{ runner.os }}-node24-gs1encoder-${{ env.GS1ENCODER_VERSION }}-epctds-${{ env.EPC_TDS_VERSION }}-ajv-${{ env.AJV_DIST_VERSION }}
+
+    - if: inputs.npm == 'true' && steps.npm-cache.outputs.cache-hit != 'true'
+      name: npm packages
+      shell: bash
+      run: |
+        mkdir -p "$DEV_TOOLS/se" "$DEV_TOOLS/et" "$DEV_TOOLS/ajv"
+        (cd "$DEV_TOOLS/se" && npm init -y >/dev/null && npm pkg set type=module && npm install --no-fund --no-audit "gs1encoder@$GS1ENCODER_VERSION")
+        (cd "$DEV_TOOLS/et" && npm init -y >/dev/null && npm install --no-fund --no-audit "epc-tds@$EPC_TDS_VERSION")
+        (cd "$DEV_TOOLS/ajv" && npm init -y >/dev/null && npm install --no-fund --no-audit "ajv-dist@$AJV_DIST_VERSION")
+
+    - if: inputs.npm == 'true'
+      shell: bash
+      run: |
+        {
+          echo "GS1_SYNTAX_ENGINE=$DEV_TOOLS/se"
+          echo "EPC_TDS=$DEV_TOOLS/et"
+          echo "AJV_DIST=$DEV_TOOLS/ajv/node_modules/ajv-dist"
+        } >> "$GITHUB_ENV"
+
+    - if: inputs.syntax-engine == 'true'
+      id: engine-cache
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/dev-tests/gs1se
+        # The script pins the engine's release: a change to it builds the engine again.
+        key: gs1se-${{ runner.os }}-${{ hashFiles('portal/tools/build-syntax-engine.sh') }}
+
+    - if: inputs.syntax-engine == 'true' && steps.engine-cache.outputs.cache-hit != 'true'
+      name: Build the portal's GS1 Barcode Syntax Engine
+      shell: bash
+      run: bash portal/tools/build-syntax-engine.sh "$DEV_TOOLS/gs1se"
+
+    - if: inputs.syntax-engine == 'true'
+      shell: bash
+      run: echo "GS1_SYNTAX_ENGINE_DIR=$DEV_TOOLS/gs1se" >> "$GITHUB_ENV"
+
+    - if: inputs.playwright == 'true'
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}-chromium
+
+    - if: inputs.playwright == 'true'
+      name: Chromium for Playwright
+      shell: bash
+      # Downloads the browser only when the cache did not bring it; the system libraries are always installed.
+      run: python -m playwright install --with-deps chromium
+
+    - if: inputs.gs1-suite == 'true'
+      name: GS1's resolver test suite
+      shell: bash
+      run: |
+        git clone -q https://github.com/gs1/GS1DL-resolver-testsuite "$DEV_TOOLS/gs1-testsuite"
+        git -C "$DEV_TOOLS/gs1-testsuite" checkout -q "$GS1_TESTSUITE_COMMIT"
+        echo "GS1_RESOLVER_TESTSUITE=$DEV_TOOLS/gs1-testsuite" >> "$GITHUB_ENV"
+
+    - if: inputs.nginx == 'true'
+      name: nginx
+      shell: bash
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -y -q nginx
+        sudo systemctl stop nginx || true
+
+    - if: inputs.compose == 'true'
+      name: Docker Compose v2
+      shell: bash
+      run: |
+        mkdir -p "$DEV_TOOLS/bin"
+        curl -fsSL -o "$DEV_TOOLS/bin/docker-compose" \
+          "https://github.com/docker/compose/releases/download/$COMPOSE_VERSION/docker-compose-linux-x86_64"
+        chmod +x "$DEV_TOOLS/bin/docker-compose"
+        echo "COMPOSE_BIN=$DEV_TOOLS/bin/docker-compose" >> "$GITHUB_ENV"

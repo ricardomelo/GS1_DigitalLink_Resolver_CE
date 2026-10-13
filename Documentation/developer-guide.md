@@ -97,7 +97,9 @@ portal/                          new: the link management portal
   assets/fonts/                  Liberation Sans for the label text (OFL)
   Dockerfile, requirements.txt
 scripts/                         new: install.sh, templates/, resolver-backup.sh, resolver-backup.cron
-dev-tests/                       new: development tests and the screenshot script
+dev-tests/                       new: development tests, their pytest layer and the screenshot script
+.github/workflows/dev-tests.yml  new: continuous integration (development tests on GitHub Actions)
+.github/actions/dev-tests-setup/ new: runner set-up for the tests, with the pinned versions
 Documentation/                   README index, user guide, features, history, this guide,
                                  pt-BR/ (these documents in Portuguese), extensions/ (detailed
                                  documentation, changelog), images/, upstream-README.md
@@ -431,6 +433,28 @@ No Docker needed; each program exits with status 1 on a failure. Setup and comma
 | `portal/test_portal_e2e.py` | 186 | the portal in Chromium against `mock_data_entry.py`, desktop and phone; also run without the engine |
 | `home/test_home.py` | 55 | home page through a real nginx, no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts |
 | `install/test_install.sh` | — | installer through shims (Compose v2) |
+
+**pytest and continuous integration.** `dev-tests/test_programs.py` runs each program above as one pytest
+test (a subprocess from the repository root): exit status 0 without a `FAIL` line passes; otherwise the
+report shows the `FAIL` lines and the end of the output; a program that only printed `SKIP` is skipped.
+Markers group them: `resolver` (resolver, EPC binary, data entry, GS1 suite), `portal` (the portal programs
+without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`), `home`,
+`install` (run through password-less `sudo` when not root). `dev-tests/conftest.py` keeps the programs from
+being imported by pytest, registers the markers and prints the check counts of each program at the end (and
+in the GitHub Actions run summary). With `DEV_TESTS_STRICT=1` a program fails when an environment variable
+it needs is not set or names a missing path, when a command it needs is not on the PATH, or when it prints
+`SKIP`. To add a program: write it with `PASS`/`FAIL` lines and an exit status, add a `Program(...)` line to
+`PROGRAMS` (group, path, the variables and commands it needs), and a row to the table above.
+
+`.github/workflows/dev-tests.yml` runs one job per group in parallel on every push and pull request to
+`gs1br/develop` (not for changes to `Documentation/` or Markdown files only), in strict mode. `e2e` and
+`install` are informative (`continue-on-error`) until they prove stable. The composite action
+`.github/actions/dev-tests-setup` installs only what a job asks for and exports the variables: Python 3.12
+and Node.js 24 as in the images; `gs1encoder`, `epc-tds` and `ajv-dist` at pinned versions (cache keyed by
+the versions); the portal's engine built by `portal/tools/build-syntax-engine.sh` (cache keyed by the
+script, which pins the release); Chromium (cache keyed by the Playwright version); GS1's suite at commit
+`32597c1`; nginx; Docker Compose v2.29.7. Change a version there, in one place; keep `gs1encoder` on the
+release the script builds.
 
 `docs/screenshots.py` regenerates the images of the README and of the user guide, in English and in
 Portuguese, from the real portal with example data (GS1 logo hidden). Commit only images that really changed.

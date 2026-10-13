@@ -1,5 +1,7 @@
 # GS1 Digital Link Resolver CE — Expansion Pack (documentação em português)
 
+[![Testes de desenvolvimento](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml/badge.svg?branch=gs1br/develop)](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml)
+
 *English version: [README](../../README.md).*
 
 > **Aviso importante (do projeto oficial).** Este software livre e de código aberto não é mantido pela
@@ -466,6 +468,25 @@ GS1_SYNTAX_ENGINE_DIR=/tmp/gs1se python dev-tests/portal/test_data_attributes.py
 mkdir -p /tmp/se && (cd /tmp/se && npm init -y && npm pkg set type=module && npm install gs1encoder)
 GS1_SYNTAX_ENGINE=/tmp/se python dev-tests/portal/test_keys.py
 ```
+
+Todos os programas também rodam pelo pytest, por uma camada fina (`dev-tests/test_programs.py`) que executa
+cada um como subprocesso e mostra o número de verificações de cada programa ao final; os grupos `resolver`,
+`portal`, `e2e`, `home` e `install` podem ser escolhidos com `-m`:
+
+```bash
+pip install pytest
+python -m pytest dev-tests                 # todos (os que não têm o que precisam são pulados)
+python -m pytest dev-tests -m resolver     # um grupo
+DEV_TESTS_STRICT=1 python -m pytest dev-tests -m portal   # como no CI: o que falta é falha, não pulo
+```
+
+**Integração contínua.** O workflow `.github/workflows/dev-tests.yml` roda os testes no GitHub Actions a cada
+push e pull request para `gs1br/develop` (mudanças só de documentação não disparam), em cinco jobs paralelos:
+Resolver (com EPC binário, API de cadastro e a suíte da GS1), portal, portal no Chromium, página inicial com
+nginx e instalador. O portal no Chromium e o instalador começam como informativos: uma
+falha neles aparece, mas não reprova a execução. As versões de Python, Node.js, engines, suíte da GS1 e
+Docker Compose ficam fixadas em `.github/actions/dev-tests-setup/action.yml`; engines, pacotes e o navegador
+ficam em cache. O resultado de cada job, com a contagem de verificações, aparece no resumo da execução.
 
 As imagens do README e do guia do portal, nos dois idiomas, são geradas por `dev-tests/docs/screenshots.py`.
 

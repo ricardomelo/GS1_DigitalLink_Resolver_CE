@@ -2,21 +2,27 @@
 """
 Development test for the home page served at "/" (release 1.1.0).
 
-Runs the real frontend_proxy_server/nginx.conf in a local nginx (service host names replaced by
-mock upstreams, the image path replaced by frontend_proxy_server/home) and checks:
+Runs the real frontend_proxy_server/nginx.conf in a local nginx (Docker's DNS replaced by a small DNS
+server of the test that answers the service names with mock upstreams on 127.0.0.x, the image path
+replaced by frontend_proxy_server/home) and checks:
   * routing: "/" and its assets are served by nginx; every other path still reaches the resolver,
     the data entry API and the portal exactly as before;
+  * replicas (item 2.3, step 4): nginx starts while a service is missing and finds it later, shares
+    the requests among every address a service name has, follows replicas added and removed without a
+    restart, and skips a replica that has gone away;
   * the page in Chromium: menu links, language detection and switching (shared cookie/storage),
     resolver root taken from the address bar, operator name from /.well-known/gs1resolver,
     collapsible menu on a phone-sized screen, no Content Security Policy violations, and the
     English fallback without JavaScript.
 
-Requirements: nginx on the PATH, `pip install playwright && playwright install chromium`.
+Requirements: nginx 1.27.3 or later ("resolve" in upstream blocks; the proxy image runs 1.30) on the
+PATH or in NGINX_BIN, `pip install playwright && playwright install chromium`.
 Run from anywhere:  python dev-tests/home/test_home.py
 Exits with status 1 on any failure.
 """
 import http.server
 import json
+import struct
 import os
 import re
 import shutil
@@ -36,6 +42,11 @@ PACKAGE = Path(__file__).resolve().parents[2]
 NGINX_CONF = PACKAGE / "frontend_proxy_server" / "nginx.conf"
 HOME_DIR = PACKAGE / "frontend_proxy_server" / "home"
 MOUNT_PATH = "/usr/share/nginx/home"   # where the proxy image keeps the files
+
+NGINX = os.environ.get("NGINX_BIN", "nginx")
+RESOLVE_SINCE = (1, 27, 3)          # first open-source nginx with "resolve" in upstream blocks
+PORTS = {"web-service": 4000, "data-entry-service": 3000, "portal-service": 8000}   # as in nginx.conf
+UPSTREAM_NAMES = {"web-service": "resolver", "data-entry-service": "data-entry", "portal-service": "portal"}
 
 DESCRIPTION = {"name": "Test resolver", "resolverRoot": "https://id.example.org",
                "contact": {"fn": "Example Org", "hasURL": "https://www.example.org/"}}
@@ -69,37 +80,99 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-def mock_upstream(name: str) -> int:
-    """An upstream that answers every request with its own name and the path it received."""
+class StubDNS:
+    """A DNS server for nginx's "resolver": A records for the service names, changed while nginx runs,
+    as Docker's DNS changes when Compose adds or removes replicas. Other names: NXDOMAIN."""
 
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
-            if name == "resolver" and self.path.startswith("/api/.well-known/gs1resolver"):
-                body = json.dumps(DESCRIPTION).encode()
-                content_type = "application/json"
-            else:
-                body = json.dumps({"upstream": name, "path": self.path, "host": self.headers.get("Host")}).encode()
-                content_type = "application/json"
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+    def __init__(self) -> None:
+        self.records: dict[str, list[str]] = {}
+        self.queries = 0
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(("127.0.0.1", 0))
+        self.port = self.sock.getsockname()[1]
+        threading.Thread(target=self._serve, daemon=True).start()
 
-        def log_message(self, *args):
-            pass
+    def _serve(self) -> None:
+        while True:
+            try:
+                data, peer = self.sock.recvfrom(512)
+                self.sock.sendto(self.answer(data), peer)
+            except OSError:
+                return
 
-    port = free_port()
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    return port
+    def answer(self, query: bytes) -> bytes:
+        qid, _flags = struct.unpack("!HH", query[:4])
+        labels, i = [], 12
+        while query[i]:
+            labels.append(query[i + 1:i + 1 + query[i]].decode("ascii", "replace"))
+            i += 1 + query[i]
+        question = query[12:i + 5]                       # name, type, class
+        qtype = struct.unpack("!H", query[i + 1:i + 3])[0]
+        name = ".".join(labels).lower()
+        self.queries += 1
+        addresses = list(self.records.get(name, [])) if qtype == 1 else []
+        rcode = 0 if name in self.records else 3
+        header = struct.pack("!HHHHHH", qid, 0x8180 | rcode, 1, len(addresses), 0, 0)
+        answers = b"".join(struct.pack("!HHHIH", 0xC00C, 1, 1, 5, 4) + socket.inet_aton(a) for a in addresses)
+        return header + question + answers
 
 
-def start_nginx(workdir: Path) -> tuple[subprocess.Popen, int]:
-    ports = {"web-service:4000": mock_upstream("resolver"),
-             "data-entry-service:3000": mock_upstream("data-entry"),
-             "portal-service:8000": mock_upstream("portal")}
+class Replica:
+    """One replica of a service: an HTTP server on its own loopback address (127.0.0.x) and the service's
+    port, answering every request with the service's name, its own address and the path it received."""
+
+    def __init__(self, name: str, address: str, port: int) -> None:
+        self.address = address
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if name == "resolver" and self.path.startswith("/api/.well-known/gs1resolver"):
+                    body = json.dumps(DESCRIPTION).encode()
+                else:
+                    body = json.dumps({"upstream": name, "replica": address, "path": self.path,
+                                       "host": self.headers.get("Host")}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer((address, port), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def stop(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def nginx_version() -> tuple[int, ...]:
+    run = subprocess.run([NGINX, "-v"], capture_output=True, text=True)
+    found = re.search(r"nginx/(\d+)\.(\d+)\.(\d+)", run.stderr + run.stdout)
+    return tuple(int(x) for x in found.groups()) if found else ()
+
+
+def free_port_on(addresses: list[str]) -> int:
+    """A port that is free on every one of these loopback addresses."""
+    for _ in range(50):
+        port = free_port()
+        try:
+            for address in addresses:
+                with socket.socket() as s:
+                    s.bind((address, port))
+            return port
+        except OSError:
+            continue
+    raise RuntimeError("no common free port")
+
+
+def start_nginx(workdir: Path, dns: StubDNS, ports: dict[str, int]) -> tuple[subprocess.Popen, int]:
+    """nginx with the real configuration; the service names keep their names (the stub DNS answers them)
+    and get free ports; Docker's DNS becomes the stub, asked again after one second instead of ten."""
     listen = free_port()
+    (workdir / "logs").mkdir(exist_ok=True)           # nginx's built-in error log, before it reads the file
     conf = NGINX_CONF.read_text()
     conf = re.sub(r"^user\s+\S+;\n", "", conf, flags=re.M)
     conf = conf.replace("/var/log/nginx/error.log", str(workdir / "error.log"))
@@ -107,13 +180,14 @@ def start_nginx(workdir: Path) -> tuple[subprocess.Popen, int]:
     conf = conf.replace("/var/run/nginx.pid", str(workdir / "nginx.pid"))
     conf = conf.replace("listen 80;", f"listen 127.0.0.1:{listen};")
     conf = conf.replace(MOUNT_PATH, str(HOME_DIR))
-    for host, port in ports.items():
-        conf = conf.replace(host, f"127.0.0.1:{port}")
+    for service, port in ports.items():
+        conf = conf.replace(f"{service}:{PORTS[service]}", f"{service}:{port}")
+    conf = conf.replace("resolver 127.0.0.11 valid=10s", f"resolver 127.0.0.1:{dns.port} valid=1s")
     conf = conf.replace("http {", f"http {{\n    client_body_temp_path {workdir}/body;\n"
                                   f"    proxy_temp_path {workdir}/proxy;\n", 1)
     (workdir / "nginx.conf").write_text(conf)
-    subprocess.run(["nginx", "-t", "-q", "-c", str(workdir / "nginx.conf"), "-p", str(workdir)], check=True)
-    proc = subprocess.Popen(["nginx", "-c", str(workdir / "nginx.conf"), "-p", str(workdir), "-g", "daemon off;"])
+    subprocess.run([NGINX, "-t", "-q", "-c", str(workdir / "nginx.conf"), "-p", str(workdir)], check=True)
+    proc = subprocess.Popen([NGINX, "-c", str(workdir / "nginx.conf"), "-p", str(workdir), "-g", "daemon off;"])
     for _ in range(50):
         try:
             socket.create_connection(("127.0.0.1", listen), timeout=0.2).close()
@@ -191,6 +265,101 @@ def routing_checks(base: str) -> None:
     status, _, body = fetch(base + "/.well-known/gs1resolver")
     check(status == 200 and json.loads(body).get("contact", {}).get("fn") == "Example Org",
           "GET /.well-known/gs1resolver → resolver description file, unchanged")
+
+
+class Cluster:
+    """The replicas behind the proxy and the stub DNS that names them."""
+
+    def __init__(self, dns: StubDNS, ports: dict[str, int]) -> None:
+        self.dns, self.ports, self.replicas = dns, ports, {}
+
+    def add(self, service: str, address: str) -> None:
+        self.replicas[(service, address)] = Replica(UPSTREAM_NAMES[service], address, self.ports[service])
+        self.dns.records[service] = self.dns.records.get(service, []) + [address]
+
+    def forget(self, service: str, address: str) -> None:
+        """Takes the address out of the DNS answer (Compose removed the container's name)."""
+        self.dns.records[service] = [a for a in self.dns.records[service] if a != address]
+
+    def stop(self, service: str, address: str) -> None:
+        self.replicas.pop((service, address)).stop()
+
+
+def replicas_seen(base: str, path: str, count: int) -> tuple[list[str], list[int]]:
+    """The replica that answered each of `count` requests, and the statuses of those that failed."""
+    seen, errors = [], []
+    for _ in range(count):
+        status, _, body = fetch(base + path)
+        if status != 200:
+            errors.append(status)
+            continue
+        seen.append(json.loads(body).get("replica"))
+    return seen, errors
+
+
+def wait_for(predicate, seconds: float = 8.0) -> float | None:
+    """Seconds until predicate() held, or None."""
+    started = time.monotonic()
+    while time.monotonic() - started < seconds:
+        if predicate():
+            return time.monotonic() - started
+        time.sleep(0.2)
+    return None
+
+
+def startup_checks(base: str, cluster: Cluster) -> None:
+    """nginx was started while portal-service had no address (a service still starting, or stopped)."""
+    status, _, body = fetch(base + "/")
+    check(status == 200 and 'id="site-nav"' in body, "nginx starts while a service name has no address yet")
+    status, _, _ = fetch(base + "/portal/")
+    check(status in (502, 503), f"…and answers that service's paths with an error meanwhile ({status})")
+    # nginx asks the DNS in the background as it starts: the other services answer within moments.
+    took = wait_for(lambda: fetch(base + "/01/09506000134352")[0] == 200, 3)
+    check(took is not None, "…while the other services answer")
+    cluster.add("portal-service", "127.0.0.4")
+    took = wait_for(lambda: fetch(base + "/portal/")[0] == 200)
+    check(took is not None, "the service is found once its name has an address, without restarting nginx"
+          + (f" ({took:.1f} s)" if took is not None else ""))
+
+
+def replica_checks(base: str, cluster: Cluster) -> None:
+    resolve = "/01/09506000134352"
+    seen, errors = replicas_seen(base, resolve, 6)
+    check(not errors and set(seen) == {"127.0.0.2"}, "one replica of web-service: every request reaches it")
+
+    cluster.add("web-service", "127.0.0.5")
+    took = wait_for(lambda: "127.0.0.5" in replicas_seen(base, resolve, 4)[0])
+    check(took is not None, "a second replica of web-service is found without restarting nginx")
+    seen, errors = replicas_seen(base, resolve, 20)
+    check(not errors and seen.count("127.0.0.2") >= 8 and seen.count("127.0.0.5") >= 8,
+          f"two replicas share the requests ({seen.count('127.0.0.2')} / {seen.count('127.0.0.5')} of 20)")
+
+    cluster.add("web-service", "127.0.0.6")
+    took = wait_for(lambda: "127.0.0.6" in replicas_seen(base, resolve, 6)[0])
+    check(took is not None, "a third replica is added the same way (scale up)")
+
+    # Scale down: the containers stop before nginx has asked the DNS again; the requests that meet a
+    # stopped replica go on to another one (proxy_next_upstream), so none of them fails.
+    cluster.stop("web-service", "127.0.0.5")
+    cluster.stop("web-service", "127.0.0.6")
+    seen, errors = replicas_seen(base, resolve, 20)
+    check(not errors and set(seen) == {"127.0.0.2"},
+          "replicas stopped before the DNS changes: requests go to the remaining one, none fails"
+          + (f" (errors {errors})" if errors else ""))
+    cluster.forget("web-service", "127.0.0.5")
+    cluster.forget("web-service", "127.0.0.6")
+    time.sleep(2.5)                                       # longer than "valid" in the test configuration
+    seen, errors = replicas_seen(base, resolve, 10)
+    check(not errors and set(seen) == {"127.0.0.2"}, "after the DNS changes, the remaining replica answers alone")
+
+    for service, first, second, path in (("portal-service", "127.0.0.4", "127.0.0.7", "/portal/"),
+                                         ("data-entry-service", "127.0.0.3", "127.0.0.8", "/api/docs")):
+        cluster.add(service, second)
+        took = wait_for(lambda: second in replicas_seen(base, path, 4)[0])
+        seen, errors = replicas_seen(base, path, 10)
+        check(took is not None and not errors and set(seen) == {first, second},
+              f"two replicas of {service} share {path}")
+    check(cluster.dns.queries > 0, "nginx asked the DNS for the service names")
 
 
 def browser_checks(base: str, port: int, shots: Path) -> None:
@@ -320,16 +489,28 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
 
 
 def main() -> int:
-    if not shutil.which("nginx"):
-        print("nginx not found on the PATH")
+    if not shutil.which(NGINX):
+        print(f"FAIL nginx not found ({NGINX})")
+        return 1
+    version = nginx_version()
+    if version < RESOLVE_SINCE:
+        print(f"FAIL nginx {'.'.join(map(str, version)) or '?'} is too old: \"resolve\" in upstream blocks needs "
+              f"{'.'.join(map(str, RESOLVE_SINCE))} or later (set NGINX_BIN or install nginx from nginx.org)")
         return 1
     workdir = Path(tempfile.mkdtemp(prefix="home-test-"))
     shots = Path(os.environ.get("HOME_TEST_SCREENSHOTS", workdir / "screenshots"))
     shots.mkdir(parents=True, exist_ok=True)
-    proc, port = start_nginx(workdir)
+    dns = StubDNS()
+    ports = {service: free_port_on([f"127.0.0.{n}" for n in range(2, 10)]) for service in PORTS}
+    cluster = Cluster(dns, ports)
+    cluster.add("web-service", "127.0.0.2")
+    cluster.add("data-entry-service", "127.0.0.3")
+    proc, port = start_nginx(workdir, dns, ports)          # portal-service has no address yet
     try:
         base = f"http://127.0.0.1:{port}"
+        startup_checks(base, cluster)
         routing_checks(base)
+        replica_checks(base, cluster)
         browser_checks(base, port, shots)
     finally:
         proc.terminate()

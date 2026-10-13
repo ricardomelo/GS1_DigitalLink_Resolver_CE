@@ -15,14 +15,21 @@ services:
     networks:
       - resolver-internal-network
 
+  # The four services below may run as several replicas (containers) each: the number comes from .env
+  # (*_REPLICAS, default 1) and the number of server processes in each container from *_PROCESSES
+  # (default 2). They keep no state of their own, so they have no fixed container_name (Compose cannot
+  # replicate a service with one); the proxy finds every replica through Docker's DNS (nginx.conf).
   data-entry-service:
     build: './data_entry_server'
-    container_name: data-entry-server
     env_file:
       - path: .env.example
         required: true
       - path: .env          # installation values; overrides .env.example (never committed)
         required: false
+    environment:
+      WEB_CONCURRENCY: ${DATA_ENTRY_SERVICE_PROCESSES:-2}   # gunicorn processes in each container
+    deploy:
+      replicas: ${DATA_ENTRY_SERVICE_REPLICAS:-1}
     depends_on:
       - database-service
     restart: always
@@ -31,12 +38,15 @@ services:
 
   web-service:
     build: './web_server'
-    container_name: resolver-web-server
     env_file:
       - path: .env.example
         required: true
       - path: .env          # installation values; overrides .env.example (never committed)
         required: false
+    environment:
+      WEB_CONCURRENCY: ${WEB_SERVICE_PROCESSES:-2}   # gunicorn processes in each container
+    deploy:
+      replicas: ${WEB_SERVICE_REPLICAS:-1}
     depends_on:
       - database-service
     restart: always
@@ -62,7 +72,6 @@ services:
   portal-service:
     # Link management portal for non-technical users (served at /portal/ by the proxy)
     build: './portal'
-    container_name: resolver-portal
     env_file:
       - path: .env.example
         required: true
@@ -75,6 +84,9 @@ services:
       MONGO_URI: ""
       MONGO_INITDB_ROOT_USERNAME: ""
       MONGO_INITDB_ROOT_PASSWORD: ""
+      WEB_CONCURRENCY: ${PORTAL_SERVICE_PROCESSES:-2}   # gunicorn processes in each container
+    deploy:
+      replicas: ${PORTAL_SERVICE_REPLICAS:-1}
     volumes:
       - resolver-portal-config:/app/config
     depends_on:
@@ -89,7 +101,8 @@ services:
   portal-worker:
     # Runs the portal's background jobs (spreadsheet imports, link checks) from the jobs collection of the
     # portal's database; same image and settings as the portal, another command. It finishes the record in
-    # hand, hands its job back to the queue and stops on "docker compose stop" (stop_grace_period).
+    # hand, hands its job back to the queue and stops on "docker compose stop" (stop_grace_period). Each
+    # replica runs one job at a time; more replicas run more jobs in parallel.
     build: './portal'
     command: ["python", "worker.py"]
     env_file:
@@ -103,6 +116,8 @@ services:
       MONGO_URI: ""
       MONGO_INITDB_ROOT_USERNAME: ""
       MONGO_INITDB_ROOT_PASSWORD: ""
+    deploy:
+      replicas: ${PORTAL_WORKER_REPLICAS:-1}
     volumes:
       - resolver-portal-config:/app/config
     depends_on:
@@ -118,19 +133,12 @@ services:
   frontend-proxy-service:
     build: './frontend_proxy_server'
     container_name: frontend-proxy-server
-    # nginx resolves the upstream names once, at start-up. When Compose recreates one of these
-    # services it can come back with a new IP address, and the proxy would answer 502 until it is
-    # restarted; "restart: true" makes Compose restart the proxy whenever it updates a dependency.
+    # nginx asks Docker's DNS for the addresses of these services every 10 seconds ("resolve" in
+    # nginx.conf), so it follows recreated containers and added or removed replicas without a restart.
     depends_on:
-      web-service:
-        condition: service_started
-        restart: true
-      data-entry-service:
-        condition: service_started
-        restart: true
-      portal-service:
-        condition: service_started
-        restart: true
+      - web-service
+      - data-entry-service
+      - portal-service
     restart: always
     ports:
       - "${PROXY_BIND_ADDRESS:-0.0.0.0}:8080:80"

@@ -103,26 +103,26 @@ flowchart LR
     client["Leitor / navegador"] -->|HTTPS| edge["nginx do host + Certbot<br/>(TLS, porta 443)"]
     edge -->|"127.0.0.1:8080"| proxy["frontend-proxy-service<br/>nginx"]
     proxy -->|"/  e  /home/"| home["Página inicial<br/>(estática, na imagem do proxy)"]
-    proxy -->|"/{AI}/{valor}…"| web["web-service<br/>Resolver"]
-    proxy -->|"/api"| de["data-entry-service<br/>API REST + Swagger"]
-    proxy -->|"/portal/"| portal["portal-service<br/>portal de gestão de links"]
+    proxy -->|"/{AI}/{valor}…"| web["web-service ×n<br/>Resolver"]
+    proxy -->|"/api"| de["data-entry-service ×n<br/>API REST + Swagger"]
+    proxy -->|"/portal/"| portal["portal-service ×n<br/>portal de gestão de links"]
     portal -->|"token bearer"| de
     web --> db[("MongoDB<br/>database-service")]
     de --> db
     portal -->|"usuário próprio: usuários, histórico"| db
     init["portal-db-init<br/>(roda uma vez)"] -.->|"cria o usuário do portal"| db
-    worker["portal-worker<br/>importações, verificações de links"] -->|"tarefas"| db
+    worker["portal-worker ×n<br/>importações, verificações de links"] -->|"tarefas"| db
     worker -->|"token bearer"| de
 ```
 
-| Serviço | Contêiner | Papel | Publicado |
+| Serviço | Contêineres | Papel | Publicado |
 |---|---|---|---|
-| `frontend-proxy-service` | `frontend-proxy-server` | Encaminha `/`, `/api`, `/portal/` e todos os Digital Links; serve a página inicial | `${PROXY_BIND_ADDRESS}:8080` |
-| `web-service` | `resolver-web-server` | Resolve GS1 Digital Links (redirecionamentos, linksets, páginas HTML) | interno |
-| `data-entry-service` | `data-entry-server` | API REST para criar, ler, alterar e excluir cadastros | interno (via `/api`) |
-| `portal-service` | `resolver-portal` | Portal de gestão de links (Flask + front-end estático) | interno (via `/portal/`) |
-| `portal-db-init` | — | Cria ou atualiza o usuário do banco do portal e termina (roda a cada início) | — |
-| `portal-worker` | — | Executa as tarefas em segundo plano do portal (importações de planilhas, verificações de links) a partir do banco; a imagem do portal | — |
+| `frontend-proxy-service` | `frontend-proxy-server` | Encaminha `/`, `/api`, `/portal/` e todos os Digital Links a todas as réplicas dos serviços; serve a página inicial | `${PROXY_BIND_ADDRESS}:8080` |
+| `web-service` | `WEB_SERVICE_REPLICAS` (1) | Resolve GS1 Digital Links (redirecionamentos, linksets, páginas HTML) | interno |
+| `data-entry-service` | `DATA_ENTRY_SERVICE_REPLICAS` (1) | API REST para criar, ler, alterar e excluir cadastros | interno (via `/api`) |
+| `portal-service` | `PORTAL_SERVICE_REPLICAS` (1) | Portal de gestão de links (Flask + front-end estático) | interno (via `/portal/`) |
+| `portal-db-init` | um, a cada início | Cria ou atualiza o usuário do banco do portal e termina | — |
+| `portal-worker` | `PORTAL_WORKER_REPLICAS` (1) | Executa as tarefas em segundo plano do portal (importações de planilhas, verificações de links) a partir do banco; a imagem do portal | — |
 | `database-service` | `database-server` | MongoDB | `${DATABASE_BIND_ADDRESS}:27017` |
 
 O portal é um back-end entre o navegador e a API de cadastro: o token da API nunca chega ao navegador, e o
@@ -134,6 +134,14 @@ nunca é tocado ([ADR 0001](adr/0001-estado-do-portal-no-mongodb.md)). As import
 verificações de muitos links são tarefas nesse banco, executadas pelo `portal-worker`: continuam quando o
 portal reinicia, e uma tarefa interrompida por um reinício do worker continua de onde parou. Os detalhes estão no
 [guia do desenvolvedor](guia-do-desenvolvedor.md).
+
+Nenhum dos quatro serviços do meio da tabela guarda estado próprio, então cada um pode rodar em vários
+contêineres (réplicas); a quantidade fica no `.env` (um de cada, por padrão). O Compose os chama de
+`<projeto>-<serviço>-<n>`, por exemplo `gs1_digitallink_resolver_ce-web-service-2`. O proxy pergunta ao DNS
+do Docker os endereços de cada serviço a cada 10 segundos e reparte as requisições entre eles, então réplicas
+podem ser acrescentadas ou retiradas sem reiniciá-lo. Dentro de cada contêiner dos três serviços web, o
+gunicorn roda dois processos por padrão (`*_PROCESSES`). O banco e o proxy rodam uma vez só, com os nomes
+oficiais.
 
 ## O portal de gestão de links
 
@@ -448,6 +456,8 @@ da instalação, nunca versionados).
 | `PORTAL_WORKER` (`external`) | Onde rodam as importações e verificações de links: `external`, o serviço `portal-worker`; `embedded`, uma thread do próprio portal, para uma instalação sem esse serviço |
 | `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_COOKIE_SECURE` | Configurações opcionais do portal: minutos sem uso e horas depois da entrada até a sessão terminar, cookie Secure |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Endereços do host para as portas 8080 e 27017 (lidos pelo Compose só do `.env`) |
+| `WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`, `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS` (1) | Contêineres de cada serviço, de 1 a 20 (lidos pelo Compose só do `.env`; o instalador os grava) |
+| `WEB_SERVICE_PROCESSES`, `DATA_ENTRY_SERVICE_PROCESSES`, `PORTAL_SERVICE_PROCESSES` (2) | Processos do gunicorn em cada contêiner dos três serviços web (lidos pelo Compose só do `.env`) |
 
 ## Operação
 
@@ -460,7 +470,15 @@ docker compose exec portal-service python create_user.py maria --role editor   #
 docker compose logs -f portal-service | grep portal.audit
 docker compose logs --tail=60 portal-worker                      # importações e verificações de links (tarefas)
 sudo scripts/resolver-backup.sh                                  # backup agora (todos os bancos + volume do portal)
+# mais réplicas: mude, por exemplo, WEB_SERVICE_REPLICAS=2 no .env e depois
+docker compose up -d                                             # cria ou remove contêineres; o proxy acompanha em até 10 s
+docker compose ps                                                # uma linha por contêiner (…-web-service-1, …-web-service-2)
+docker compose build --pull frontend-proxy-service && docker compose up -d   # a última correção de segurança do nginx 1.30
 ```
+
+Defina o número de réplicas no `.env`, e não com `docker compose up --scale`: o próximo `docker compose up`
+(toda atualização) volta aos números do `.env`. Os logs de um serviço mostram todas as réplicas, cada linha
+com o nome do seu contêiner na frente.
 
 Os backups vão para `/var/backups/resolver` (14 dias). Restaure o banco com
 `mongorestore … --archive --gzip --drop` via `docker compose exec -T database-service` e depois rode
@@ -501,11 +519,11 @@ DEV_TESTS_STRICT=1 python -m pytest dev-tests -m portal   # como no CI: o que fa
 **Integração contínua.** O workflow `.github/workflows/dev-tests.yml` roda os testes no GitHub Actions a cada
 push e pull request para `gs1br/develop` (mudanças só de documentação não disparam), em seis jobs paralelos:
 Resolver (com EPC binário, API de cadastro e a suíte da GS1), portal, portal num MongoDB real (um contêiner
-de serviço `mongo:7`), portal no Chromium, página inicial com nginx e instalador. O portal no MongoDB, o
-portal no Chromium e o instalador começam como informativos: uma falha neles aparece, mas não reprova a
-execução. As versões de Python, Node.js, engines, suíte da GS1 e
-Docker Compose ficam fixadas em `.github/actions/dev-tests-setup/action.yml`; engines, pacotes e o navegador
-ficam em cache. O resultado de cada job, com a contagem de verificações, aparece no resumo da execução.
+de serviço `mongo:7`), portal no Chromium, página inicial com nginx e instalador. O portal no MongoDB é um
+job informativo: uma falha nele aparece, mas não reprova a execução (o portal no Chromium e o instalador
+começaram assim e são obrigatórios desde o item 2.3). O teste do proxy roda no nginx 1.30 do nginx.org,
+como na imagem do proxy. As versões de Python, Node.js, engines, suíte da GS1, Docker Compose e nginx ficam
+fixadas em `.github/actions/dev-tests-setup/action.yml`; engines, pacotes e o navegador ficam em cache. O resultado de cada job, com a contagem de verificações, aparece no resumo da execução.
 
 As imagens do README e do guia do portal, nos dois idiomas, são geradas por `dev-tests/docs/screenshots.py`.
 
@@ -515,16 +533,17 @@ Situação em 13 de outubro de 2026. A fase 1, a base de conformidade, está con
 cláusula, o modelo de cadastro do GS1-Conformant Resolver 2.5.9, um link padrão acima de todo cadastro, as
 correções de resolução, o EPC em binário e a própria suíte de testes de Resolver da GS1 (aprovada numa
 instalação de homologação). O item 2.1, os ajustes rápidos (limites da sessão, página inicial, aviso da
-comunidade), e o item 2.2, a integração contínua (os testes de desenvolvimento pelo pytest no GitHub
-Actions), também estão concluídos. O que foi feito está no [histórico](historico.md) e no
+comunidade), o item 2.2, a integração contínua (os testes de desenvolvimento pelo pytest no GitHub
+Actions), e o item 2.3, a arquitetura para escala (os dados do portal no MongoDB, as tarefas em segundo plano
+num serviço worker, réplicas de todos os serviços sem estado; [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md)),
+também estão concluídos. O que foi feito está no [histórico](historico.md) e no
 [changelog](../extensions/CHANGELOG.md). Os itens abaixo seguem a ordem combinada; os tamanhos são relativos
 (P, M, G). A ordem põe primeiro aquilo em que os itens seguintes se apoiam: o armazenamento de dados do portal
 e os tenants vêm antes da API, do e-mail e dos analytics, que precisam saber de quem são os dados que tratam.
 
 | Fase | # | Item | Tam. | Depende de |
 |---|---|---|---|---|
-| Fundações técnicas | 2.3 | **Arquitetura para escala e dados do portal no MongoDB**: um registro de decisão de arquitetura (serviços sem estado, estado no banco, tarefas em segundo plano fora do processo web, mais de uma réplica de cada serviço); usuários, metadados dos cadastros, diário, tarefas e bloqueio de login do portal saem de arquivos e da memória para um banco próprio no MongoDB existente, sem alterar as coleções do Resolver oficial; retenção do diário; migração das instalações existentes; backup e restauração incluídos. Decisões: [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md) (etapas 1 a 3 de 4 concluídas: o registro; usuários, metadados dos cadastros, diário, bloqueio de entrada e caches no MongoDB; importações e verificações de links como tarefas de um serviço worker) | G | — |
-| | 2.4 | **Tenants**: uma organização (tenant) é dona dos seus prefixos de empresa GS1, cada prefixo pertencendo a um único tenant; um administrador do servidor cria tenants e atribui prefixos; um administrador do tenant gerencia os usuários do tenant; toda chamada confere o tenant no servidor; trilha de auditoria por tenant; e-mail por usuário; privacidade desde a concepção (minimização de dados, acesso do administrador do servidor aos dados de um tenant registrado na trilha de auditoria desse tenant) | G | 2.3 |
+| Fundações técnicas | 2.4 | **Tenants**: uma organização (tenant) é dona dos seus prefixos de empresa GS1, cada prefixo pertencendo a um único tenant; um administrador do servidor cria tenants e atribui prefixos; um administrador do tenant gerencia os usuários do tenant; toda chamada confere o tenant no servidor; trilha de auditoria por tenant; e-mail por usuário; privacidade desde a concepção (minimização de dados, acesso do administrador do servidor aos dados de um tenant registrado na trilha de auditoria desse tenant) | G | 2.3 |
 | | 2.5 | **Uma fonte única para as regras GS1**: chaves, qualificadores, formatos e nomes de AIs derivados do GS1 Barcode Syntax Dictionary, os dois engines na mesma versão, mensagens do engine traduzidas, atualizações do dicionário propostas por uma tarefa agendada; traz os AIs (7041) e (8040)–(8043) | G | — |
 | Serviços da plataforma | 3.1 | **E-mail**: envio por um relay autenticado (configurações no `.env`), convites para novos usuários, recuperação de senha por link de uso único, uma estrutura de notificações com preferências por usuário | M | 2.4 |
 | | 3.2 | **API do tenant e chaves de API**: uma API versionada do portal para cadastros, etiquetas e depois analytics, descrita em OpenAPI, limitada aos prefixos do tenant; chaves criadas pelo administrador do tenant no portal (aleatórias, guardadas só como hash, exibidas uma única vez, com escopos, validade, revogação, último uso e limites de taxa); a API de cadastro oficial e o seu token continuam internos | G | 2.4, 2.5 |

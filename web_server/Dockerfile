@@ -28,4 +28,11 @@ ADD src /app/
 
 EXPOSE 4000
 
-CMD ["python", "-m", "main"]
+# gunicorn instead of Flask's built-in server, which is meant for development (deliberate change to the
+# official image; "python -m main" still starts the built-in server for development). WEB_CONCURRENCY is
+# the number of server processes (gunicorn reads it); docker-compose.yml sets it from .env. The application
+# factory is loaded directly, so that main.py's own signal handlers do not replace gunicorn's.
+# On "docker compose stop" the requests in hand finish within Docker's 10-second stop period
+# (--graceful-timeout 8); gunicorn's control socket is not used.
+ENV WEB_CONCURRENCY=2
+CMD ["gunicorn", "--threads", "8", "--bind", "0.0.0.0:4000", "--graceful-timeout", "8", "--no-control-socket", "--access-logfile", "-", "__init__:create_app()"]

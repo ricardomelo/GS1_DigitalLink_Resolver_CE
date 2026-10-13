@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (13 October 2026). Implementation in four steps: 1 (this record), 2 (the data in MongoDB) and 3 (the job worker) done |
+| Status | **Accepted** (13 October 2026). **Implemented** in four steps: 1 (this record), 2 (the data in MongoDB), 3 (the job worker) and 4 (replicas) |
 | Backlog item | 2.3 — architecture for scale and the portal's data in MongoDB |
 | Decided by | the owner of the branch, on the options set out in section 4 |
 | Portuguese | [ADR 0001 em português](../pt-BR/adr/0001-estado-do-portal-no-mongodb.md) |
@@ -212,6 +212,45 @@ in once more.
   built-in server to gunicorn (also a deliberate change to official code), and the default number of
   replicas of each service.
 
+**As implemented in step 4** (the owner's choices, all as recommended, and what the implementation found):
+- **Container names**: removed from the three replicable services that had one (`web-service`,
+  `data-entry-service`, `portal-service`; `portal-worker` never had one). `database-service` and
+  `frontend-proxy-service` cannot be replicated (one MongoDB; the proxy publishes port 8080) and keep their
+  official names, the smallest change to official code. Scripts and documents already used service names
+  (`docker compose exec|logs <service>`, which act on the first replica or on all of them).
+- **Replica counts in `.env`** (`WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`,
+  `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS`; Compose's `deploy.replicas`, default 1), because
+  `docker compose up --scale` is forgotten at the next `docker compose up` — every update. The installer
+  writes the four keys (not asked: 1, the environment or the existing `.env`; 1 to 20).
+- **gunicorn in every web service**: `web-service` and `data-entry-service` leave Flask's built-in server for
+  gunicorn (deliberate change to the official images, `gunicorn` added to their requirements); the
+  application factory is loaded directly (`__init__:create_app()`) so that `main.py`'s own SIGTERM handler
+  does not replace gunicorn's; `python -m main` still starts the built-in server for development. The
+  portal moves from one process to `WEB_CONCURRENCY`. Each image sets `WEB_CONCURRENCY=2`, which
+  `docker-compose.yml` takes from `WEB_SERVICE_PROCESSES`, `DATA_ENTRY_SERVICE_PROCESSES` and
+  `PORTAL_SERVICE_PROCESSES`; eight threads per process; `--graceful-timeout 8` so that requests in hand
+  finish inside Docker's 10-second stop period; gunicorn 26's control socket is turned off (unused, and it
+  would be written to the home folder of the image's user); request lines go to the log, as the built-in
+  server's did.
+- **The proxy finds replicas by itself**: section 3.8 assumed nginx's start-up lookup and the restart by
+  `depends_on … restart: true`; that sees only the replicas that existed when nginx started and misses any
+  added later. Instead every upstream is a block with `server <service>:<port> resolve` in a shared `zone`,
+  and `resolver 127.0.0.11 valid=10s` asks Docker's DNS again every 10 seconds. nginx shares requests among
+  the replicas in turn, goes on to another when one refuses the connection, starts even while a service is
+  down, and no longer needs restarting when a service is recreated (the `restart: true` lines are gone; the
+  installer's one-off proxy restart stays as a safety net). `resolve` in upstream blocks needs open-source
+  nginx 1.27.3 or later, so the proxy image moves from `nginx:1.25.1-alpine` to `nginx:1.30-alpine`, the
+  stable branch, which also brings the security releases since 2023 (deliberate change to the official
+  image). The URI handling of decision 7 is unchanged: `proxy_pass` still names an upstream block, not a
+  variable.
+- **The fallback session key under concurrent starts**: with several gunicorn processes, two of them could
+  create `secret.key` at the same moment and one read the file before the other had written it, signing
+  sessions with an empty key. `_secret_key()` now writes the key to a file of its own and links it to the
+  final name (only the first link succeeds); an empty key file stops the portal with a message. Replicas on
+  one host share the key through the volume; on several hosts `PORTAL_SECRET_KEY` is required, as decided.
+- **CI**: the jobs `e2e` and `install` become required; `database` stays informative. The proxy test needs
+  nginx 1.27.3 or later, so its job installs nginx 1.30.5 from nginx.org (Ubuntu 24.04 ships 1.24).
+
 ## 4. Options considered
 
 | Point | Chosen | Not chosen |
@@ -256,6 +295,8 @@ Worse, and how it is contained:
 | `PORTAL_JOURNAL_RECORD_DAYS` | 0 | section 3.5 |
 | `PORTAL_JOURNAL_ADMIN_DAYS` | 0 | section 3.5 |
 | `PORTAL_WORKER` (step 3) | `external` | section 3.3: the `portal-worker` service, or `embedded` |
+| `WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`, `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS` (step 4) | 1 (read by Compose from `.env`) | section 3.8: containers of each service |
+| `WEB_SERVICE_PROCESSES`, `DATA_ENTRY_SERVICE_PROCESSES`, `PORTAL_SERVICE_PROCESSES` (step 4) | 2 (read by Compose from `.env`) | section 3.8: gunicorn processes per container |
 
 The installer carries existing values over unchanged and adds the new keys to `.env`.
 
@@ -266,4 +307,4 @@ The installer carries existing values over unchanged and adds the new keys to `.
 | 1 | this record (English and Portuguese) | none (documentation) |
 | 2 | `portal/store.py`, users, record metadata, journal with retention, sign-in failures and caches in MongoDB; `portal-db-init`; migration; installer; tests with `mongomock`; CI job with `mongo:7`; documentation | the old files become `*.migrated`; users, history and audit unchanged in the portal; sign-in lockout works |
 | 3 | `jobs` collection and the `portal-worker` service; imports and link checks through it | an import and a "check every record" complete, also across a restart of the portal; an import interrupted by a restart of the worker finishes |
-| 4 | replicas in Compose, without fixed container names; the points of section 3.8 | two replicas of each service answer; the usual resolution checks pass |
+| 4 | replicas in Compose, without fixed container names; the points of section 3.8 (as implemented there) | two replicas of each service answer; the usual resolution checks pass |

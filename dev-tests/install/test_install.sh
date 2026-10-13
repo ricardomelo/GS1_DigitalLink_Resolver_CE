@@ -141,6 +141,9 @@ check "A: nginx site enabled" "[[ -L $SB/nginx/sites-enabled/gs1resolver ]]"
 check "A: nginx -t passed" "grep -q '^nginx -t' $SB/state/calls"
 check "A: certbot called for the domain" "grep -q 'certbot --nginx -d id.example.org --non-interactive --agree-tos -m ops@example.org --redirect' $SB/state/calls"
 check "A: nginx and certbot packages requested" "grep -q 'apt-get install -y.*certbot python3-certbot-nginx' $SB/state/calls"
+check "A: one replica of each service written to .env" "[[ \$(envval WEB_SERVICE_REPLICAS)\$(envval DATA_ENTRY_SERVICE_REPLICAS)\$(envval PORTAL_SERVICE_REPLICAS)\$(envval PORTAL_WORKER_REPLICAS) == 1111 ]]"
+check "A: Compose reads the replica counts" "[[ \$(compose_cfg | grep -c 'replicas: 1') == 4 ]]"
+check "A: replicas in the summary" "grep -q 'Replicas *resolver 1, data entry API 1, portal 1, job worker 1' $SB/state/out"
 check "A: backup cron points at the repository" "grep -q \"root $SB/repo/scripts/resolver-backup.sh\" $SB/state/cron"
 A_TOKEN=$(envval SESSION_TOKEN); A_PWD=$(envval MONGO_INITDB_ROOT_PASSWORD)
 A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY)
@@ -148,13 +151,16 @@ A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY)
 # ------------------------------------------------------------------------------ B. re-run
 echo "--- B. second run on the same installation"
 echo "PORTAL_SESSION_IDLE_MINUTES='20'" >> "$SB/repo/.env"
+sed -i "s/^WEB_SERVICE_REPLICAS=.*/WEB_SERVICE_REPLICAS='2'/" "$SB/repo/.env"
 : > "$SB/state/calls"
-run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org; rc=$?
+run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org PORTAL_WORKER_REPLICAS=3; rc=$?
 check "B: exit status 0" "[[ $rc == 0 ]]"
 check "B: secrets kept" "[[ \$(envval SESSION_TOKEN) == $A_TOKEN && \$(envval MONGO_INITDB_ROOT_PASSWORD) == $A_PWD ]]"
 check "B: portal database password and session key kept" "[[ \$(envval PORTAL_DB_PASSWORD) == $A_PORTAL_DB && \$(envval PORTAL_SECRET_KEY) == $A_KEY ]]"
 check "B: settings kept from .env (operator)" "[[ \$(envval RESOLVER_ORG_NAME) == 'Example Org' ]]"
 check "B: unmanaged setting carried over" "grep -q \"^PORTAL_SESSION_IDLE_MINUTES='20'\" $SB/repo/.env"
+check "B: replica count kept from .env; another taken from the environment" "[[ \$(envval WEB_SERVICE_REPLICAS) == 2 && \$(envval PORTAL_WORKER_REPLICAS) == 3 && \$(envval PORTAL_SERVICE_REPLICAS) == 1 ]]"
+check "B: Compose scales the services as written" "[[ \$(compose_cfg | grep -c 'replicas: 2') == 1 && \$(compose_cfg | grep -c 'replicas: 3') == 1 ]]"
 check "B: previous .env backed up with mode 600" "ls $SB/repo/.env.bak-* >/dev/null && [[ \$(stat -c %a \$(ls $SB/repo/.env.bak-* | head -n 1)) == 600 ]]"
 check "B: existing portal users detected, no first user" "grep -q 'existing users are kept' $SB/state/out && [[ -z \$(envval PORTAL_ADMIN_PASSWORD) ]]"
 check "B: site with certificate kept, certbot not called" "! grep -q '^certbot' $SB/state/calls"
@@ -244,6 +250,11 @@ new_sandbox
 run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org PORTAL_ADMIN_PASSWORD="it's a long password"; rc=$?
 check "G: password with a single quote refused" "[[ $rc != 0 ]] && grep -q 'Single quotes' $SB/state/out && grep -q 'PORTAL_ADMIN_PASSWORD: invalid password' $SB/state/out"
 check "G: nothing written for the refused password" "[[ ! -e $SB/repo/.env ]]"
+
+run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org PORTAL_SERVICE_REPLICAS=0; rc=$?
+check "G: zero replicas refused" "[[ $rc != 0 ]] && grep -q 'PORTAL_SERVICE_REPLICAS: invalid value' $SB/state/out && [[ ! -e $SB/repo/.env ]]"
+run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org WEB_SERVICE_REPLICAS=two; rc=$?
+check "G: a replica count that is not a number refused" "[[ $rc != 0 ]] && grep -q 'WEB_SERVICE_REPLICAS: invalid value' $SB/state/out"
 
 # ------------------------------------------------------------------------------ H. stale proxy
 echo "--- H. proxy still pointing at the old containers (502) after the services were recreated"

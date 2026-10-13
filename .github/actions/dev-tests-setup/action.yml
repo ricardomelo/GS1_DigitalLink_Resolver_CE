@@ -8,7 +8,9 @@
 #   * epc-tds, the independent EPC library test_epc_binary.py compares with;
 #   * ajv-dist, the JSON schema validator GS1's resolver test suite loads in the browser;
 #   * GS1's resolver test suite at the commit the conformance review was made with;
-#   * Docker Compose v2, for the installer test's "docker compose config".
+#   * Docker Compose v2, for the installer test's "docker compose config";
+#   * nginx from nginx.org on the stable branch of the proxy image (frontend_proxy_server/Dockerfile), for
+#     the proxy test: "resolve" in upstream blocks needs 1.27.3 or later, and Ubuntu 24.04 ships 1.24.
 name: Development test environment
 description: Python, Node.js, engines, browsers and tools for the development tests
 
@@ -26,7 +28,10 @@ inputs:
     description: Fetch GS1's resolver test suite at the pinned commit (sets GS1_RESOLVER_TESTSUITE)
     default: "false"
   nginx:
-    description: Install nginx (the service itself is stopped; the tests start their own)
+    description: Install Ubuntu's nginx (the service itself is stopped; the tests start their own)
+    default: "false"
+  nginx-org:
+    description: Install nginx from nginx.org at the pinned version, for the proxy configuration (service stopped)
     default: "false"
   compose:
     description: Download a Docker Compose v2 binary (sets COMPOSE_BIN)
@@ -45,6 +50,7 @@ runs:
           echo "AJV_DIST_VERSION=8.17.1"
           echo "GS1_TESTSUITE_COMMIT=32597c108ac1ecb9e90ce0081bb3a16e5a61e616"
           echo "COMPOSE_VERSION=v2.29.7"
+          echo "NGINX_VERSION=1.30.5"
         } >> "$GITHUB_ENV"
 
     - uses: actions/setup-python@v7
@@ -140,6 +146,19 @@ runs:
         sudo apt-get update -q
         sudo apt-get install -y -q nginx
         sudo systemctl stop nginx || true
+
+    - if: inputs.nginx-org == 'true'
+      name: nginx from nginx.org
+      shell: bash
+      run: |
+        curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor \
+          | sudo tee /usr/share/keyrings/nginx-archive-keyring.gpg >/dev/null
+        echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] https://nginx.org/packages/ubuntu $(lsb_release -cs) nginx" \
+          | sudo tee /etc/apt/sources.list.d/nginx.list >/dev/null
+        sudo apt-get update -q
+        sudo apt-get install -y -q "nginx=$NGINX_VERSION-1~$(lsb_release -cs)"
+        sudo systemctl stop nginx || true
+        nginx -v
 
     - if: inputs.compose == 'true'
       name: Docker Compose v2

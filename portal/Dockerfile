@@ -32,4 +32,8 @@ USER portal
 
 EXPOSE 8000
 # The portal-worker service runs the same image with "python worker.py" (docker-compose.yml).
-CMD ["gunicorn", "--workers", "1", "--threads", "8", "--bind", "0.0.0.0:8000", "--access-logfile", "-", "app:app"]
+# WEB_CONCURRENCY is the number of gunicorn processes; docker-compose.yml sets it from .env. Since the
+# portal keeps its state in MongoDB (ADR 0001), any number of processes and replicas share it.
+# Requests in hand finish within Docker's 10-second stop period; gunicorn's control socket is not used.
+ENV WEB_CONCURRENCY=2
+CMD ["gunicorn", "--threads", "8", "--bind", "0.0.0.0:8000", "--graceful-timeout", "8", "--no-control-socket", "--access-logfile", "-", "app:app"]

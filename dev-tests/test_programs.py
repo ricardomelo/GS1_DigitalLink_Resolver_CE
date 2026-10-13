@@ -73,6 +73,7 @@ PROGRAMS = [
     Program("session", "e2e", "portal/test_session.py"),
     Program("home", "home", "home/test_home.py", needs_cmd=("nginx",)),
     Program("install", "install", "install/test_install.sh", ("COMPOSE_BIN",), ("nginx", "openssl"), root=True),
+    Program("deploy", "install", "install/test_deploy.py", ("COMPOSE_BIN",), ("ps",)),
 ]
 
 

@@ -36,6 +36,10 @@ A second service from the same image, `portal-worker`, runs the long tasks (spre
 many links): the portal stores them as jobs in its database and the worker claims and runs them, so a
 restart of the portal does not stop them.
 
+Every service in the middle of the diagram, and the worker, can run as several containers (replicas, set in
+`.env`); the proxy finds each one through Docker's DNS and shares the requests among them (see
+*Replicas* under [Operations](#operations)).
+
 ### Why a back end rather than an HTML page calling the API directly
 
 Resolver CE behaves in ways that a naive form would turn into bad data:
@@ -66,10 +70,12 @@ Every service loads `.env.example` and then `.env` if it exists; a value in `.en
 | `RESOLVER_PUBLIC_URL` | portal (printed links, Origin check, cookie flag) | empty → `https://FQDN` | usually empty |
 | `PORTAL_ADMIN_USERNAME`, `PORTAL_ADMIN_PASSWORD` | portal, first user only | `admin` / `change-me-please` | chosen at installation |
 | `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD` | portal, portal-db-init | `resolver_portal` (all three) | random password (installer) |
-| `PORTAL_SECRET_KEY` | portal (session cookies) | empty → `secret.key` in the volume | random (installer); required with several portal replicas |
+| `PORTAL_SECRET_KEY` | portal (session cookies) | empty → `secret.key` in the volume | random (installer); required when the portal's replicas run on more than one Docker host |
 | `PORTAL_JOURNAL_SESSION_DAYS`, `PORTAL_JOURNAL_RECORD_DAYS`, `PORTAL_JOURNAL_ADMIN_DAYS` | portal (journal retention) | 180, 0, 0 (0 = for ever) | as the operator's policy requires |
 | `PORTAL_WORKER` | portal (where background jobs run) | `external` (the `portal-worker` service) | `external`; `embedded` (a thread of the portal) only for a set-up without `portal-worker` |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Docker Compose (**only from `.env`**) | `0.0.0.0` | `127.0.0.1` behind a TLS proxy |
+| `WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`, `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS` | Docker Compose (**only from `.env`**): containers of each service | 1 | as the load requires (1 to 20; the installer writes them) |
+| `WEB_SERVICE_PROCESSES`, `DATA_ENTRY_SERVICE_PROCESSES`, `PORTAL_SERVICE_PROCESSES` | Docker Compose (**only from `.env`**): gunicorn processes per container (`WEB_CONCURRENCY`) | 2 | about two per CPU core the service may use (gunicorn advises 2 × cores + 1 in all) |
 
 Rules worth knowing:
 
@@ -170,7 +176,8 @@ Users (with password hashes), record metadata and the journal live in the portal
 (`PORTAL_DB_NAME`, default `resolver_portal`), reached with a user that may read and write that database
 only; the one-shot `portal-db-init` service creates that user, or updates its password, at every start.
 The session key is `PORTAL_SECRET_KEY` from `.env`; without it, `secret.key` in the named volume
-`resolver-portal-config`, which the image initialises with the right owner. The reasons for this design
+`resolver-portal-config`, which the image initialises with the right owner and which every portal process
+and replica on the same Docker host shares. The reasons for this design
 are in [ADR 0001](../adr/0001-portal-state-in-mongodb.md).
 
 **Moving from the files of earlier versions.** Earlier versions kept `users.json`, `records-meta.json` and
@@ -471,7 +478,9 @@ the checker cannot be used to probe the server's own network.
   session of that account.
 - Sessions are signed with `PORTAL_SECRET_KEY` (written to `.env` by the installer; every portal replica
   must share it). Without it, a `secret.key` created automatically in the `resolver-portal-config` volume is
-  used, which is enough for a single portal replica. Changing the key signs everybody out.
+  used; every process and replica on the same Docker host mounts that volume and reads the same key (the
+  file is written under another name and then linked, so processes starting together never read it half
+  written). Changing the key signs everybody out.
 - Environment settings: `PORTAL_SESSION_IDLE_MINUTES` (default 30), `PORTAL_SESSION_MAX_HOURS` (default 12),
   `PORTAL_COOKIE_SECURE` (default: on when the public address is `https://`, off for plain-HTTP
   development). `PORTAL_SESSION_HOURS`, the former sliding limit, is ignored with a warning in the log.
@@ -844,6 +853,37 @@ Audit trail (who changed what):
 docker compose logs -f portal-service | grep portal.audit
 # ... user=maria action=update anchor=/01/07891234567895 lot=L2026A links=3 removed=1
 ```
+
+### Replicas
+
+`web-service`, `data-entry-service`, `portal-service` and `portal-worker` keep no state of their own (the
+resolver's records and the portal's data are in MongoDB), so each can run as several containers. Set the
+number in `.env` and apply it:
+```bash
+sed -i "s/^WEB_SERVICE_REPLICAS=.*/WEB_SERVICE_REPLICAS='2'/" .env   # or edit the file
+docker compose up -d                       # adds or removes containers of the changed services only
+docker compose ps                          # …-web-service-1, …-web-service-2, …
+```
+- **The proxy follows by itself.** nginx asks Docker's DNS for every replica's address again every 10
+  seconds (`resolve` in `nginx.conf`) and shares the requests among them in turn; a request that meets a
+  replica being stopped goes on to another. It no longer needs restarting when a service is recreated, and
+  it starts even when a service is still down (that service's paths answer 502 until it is up).
+- **Use `.env`, not `--scale`.** `docker compose up -d --scale web-service=3` works, but the next
+  `docker compose up -d` (every update) goes back to the numbers in `.env`.
+- **Processes and replicas.** Inside each container gunicorn runs `*_PROCESSES` processes (default 2) with
+  eight threads each. On one server, more processes and more replicas both use more CPU cores; replicas also
+  let one container be recreated while the others answer, and are what spreads a service over several
+  servers later (item 7.4).
+- **Job workers.** Each `portal-worker` replica runs one job at a time; more replicas run more imports and
+  link checks in parallel. Two replicas never take the same job.
+- **Names and commands.** Containers are named `<project>-<service>-<n>` (the project is the folder's name
+  in lower case); only `database-server` and `frontend-proxy-server` keep fixed names. Use service names in
+  commands: `docker compose logs portal-service` shows every replica (each line prefixed with its
+  container), `docker compose exec portal-service …` runs in the first replica (`--index 2` for another).
+- **Session key.** With several portal replicas on one host the fallback `secret.key` is shared through the
+  volume; on several hosts set `PORTAL_SECRET_KEY` (the installer always does).
+- **The proxy image** follows nginx's 1.30 branch (`nginx:1.30-alpine`); `docker compose build --pull
+  frontend-proxy-service && docker compose up -d` takes its latest security release.
 
 To offer more link types, add a row to `LINK_TYPES` in `portal/gs1.py` and its labels to every locale in
 `portal/static/i18n.js`, then run `docker compose up -d --build portal-service portal-worker` (the worker

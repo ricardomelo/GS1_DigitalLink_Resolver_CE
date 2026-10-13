@@ -114,26 +114,26 @@ flowchart LR
     client["Scanner / browser"] -->|HTTPS| edge["Host nginx + Certbot<br/>(TLS, port 443)"]
     edge -->|"127.0.0.1:8080"| proxy["frontend-proxy-service<br/>nginx"]
     proxy -->|"/  and  /home/"| home["Home page<br/>(static, in the proxy image)"]
-    proxy -->|"/{AI}/{value}…"| web["web-service<br/>resolver"]
-    proxy -->|"/api"| de["data-entry-service<br/>REST API + Swagger"]
-    proxy -->|"/portal/"| portal["portal-service<br/>link management portal"]
+    proxy -->|"/{AI}/{value}…"| web["web-service ×n<br/>resolver"]
+    proxy -->|"/api"| de["data-entry-service ×n<br/>REST API + Swagger"]
+    proxy -->|"/portal/"| portal["portal-service ×n<br/>link management portal"]
     portal -->|"bearer token"| de
     web --> db[("MongoDB<br/>database-service")]
     de --> db
     portal -->|"own user: users, history"| db
     init["portal-db-init<br/>(one-shot)"] -.->|"creates the portal's user"| db
-    worker["portal-worker<br/>imports, link checks"] -->|"jobs"| db
+    worker["portal-worker ×n<br/>imports, link checks"] -->|"jobs"| db
     worker -->|"bearer token"| de
 ```
 
-| Service | Container | Role | Published |
+| Service | Containers | Role | Published |
 |---|---|---|---|
-| `frontend-proxy-service` | `frontend-proxy-server` | Routes `/`, `/api`, `/portal/` and every Digital Link; serves the home page | `${PROXY_BIND_ADDRESS}:8080` |
-| `web-service` | `resolver-web-server` | Resolves GS1 Digital Links (redirects, linksets, HTML pages) | internal |
-| `data-entry-service` | `data-entry-server` | REST API to create, read, update and delete records | internal (via `/api`) |
-| `portal-service` | `resolver-portal` | Link management portal (Flask + static front end) | internal (via `/portal/`) |
-| `portal-db-init` | — | Creates or updates the portal's database user, then exits (runs at every start) | — |
-| `portal-worker` | — | Runs the portal's background jobs (spreadsheet imports, link checks) from its database; the portal's image | — |
+| `frontend-proxy-service` | `frontend-proxy-server` | Routes `/`, `/api`, `/portal/` and every Digital Link to every replica of the services; serves the home page | `${PROXY_BIND_ADDRESS}:8080` |
+| `web-service` | `WEB_SERVICE_REPLICAS` (1) | Resolves GS1 Digital Links (redirects, linksets, HTML pages) | internal |
+| `data-entry-service` | `DATA_ENTRY_SERVICE_REPLICAS` (1) | REST API to create, read, update and delete records | internal (via `/api`) |
+| `portal-service` | `PORTAL_SERVICE_REPLICAS` (1) | Link management portal (Flask + static front end) | internal (via `/portal/`) |
+| `portal-db-init` | one, at every start | Creates or updates the portal's database user, then exits | — |
+| `portal-worker` | `PORTAL_WORKER_REPLICAS` (1) | Runs the portal's background jobs (spreadsheet imports, link checks) from its database; the portal's image | — |
 | `database-service` | `database-server` | MongoDB | `${DATABASE_BIND_ADDRESS}:27017` |
 
 The portal is a back end between the browser and the data entry API: the API token never reaches the
@@ -144,6 +144,13 @@ reached with a user that may use that database only; the resolver's database is 
 ([ADR 0001](Documentation/adr/0001-portal-state-in-mongodb.md)). Spreadsheet imports and checks of many links
 are jobs in that database, run by `portal-worker`: they go on when the portal restarts, and a job interrupted
 by a worker restart continues where it was.
+
+None of the four services in the middle of the table keeps state of its own, so each can run as several
+containers (replicas); their number is set in `.env` (one of each by default). Compose names them
+`<project>-<service>-<n>`, for example `gs1_digitallink_resolver_ce-web-service-2`. The proxy asks Docker's
+DNS for the addresses of each service every 10 seconds and shares the requests among them, so replicas can
+be added or removed without restarting it. Inside each container of the three web services, gunicorn runs
+two processes by default (`*_PROCESSES`). The database and the proxy run once, under their official names.
 
 ## The link management portal
 
@@ -482,6 +489,8 @@ never committed).
 | `PORTAL_WORKER` (`external`) | Where imports and link checks run: `external`, the `portal-worker` service; `embedded`, a thread of the portal, for a set-up without that service |
 | `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_COOKIE_SECURE` | Optional portal settings: minutes without use and hours after the sign-in before the session ends, Secure cookie |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Host addresses of ports 8080 and 27017 (read by Compose from `.env` only) |
+| `WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`, `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS` (1) | Containers of each service, 1 to 20 (read by Compose from `.env` only; the installer writes them) |
+| `WEB_SERVICE_PROCESSES`, `DATA_ENTRY_SERVICE_PROCESSES`, `PORTAL_SERVICE_PROCESSES` (2) | gunicorn processes in each container of the three web services (read by Compose from `.env` only) |
 
 ## Operation
 
@@ -494,7 +503,15 @@ docker compose exec portal-service python create_user.py maria --role editor   #
 docker compose logs -f portal-service | grep portal.audit
 docker compose logs --tail=60 portal-worker                      # imports and link checks (background jobs)
 sudo scripts/resolver-backup.sh                                  # backup now (every database + portal volume)
+# more replicas: change e.g. WEB_SERVICE_REPLICAS=2 in .env, then
+docker compose up -d                                             # adds or removes containers; the proxy follows within 10 s
+docker compose ps                                                # one line per container (…-web-service-1, …-web-service-2)
+docker compose build --pull frontend-proxy-service && docker compose up -d   # the latest nginx 1.30 security release
 ```
+
+Set the number of replicas in `.env`, not with `docker compose up --scale`: the next `docker compose up`
+(every update) goes back to the numbers in `.env`. The logs of a service show every replica, each line
+prefixed with its container's name.
 
 Backups go to `/var/backups/resolver` (14 days). Restore the database with
 `mongorestore … --archive --gzip --drop` through `docker compose exec -T database-service`, then run
@@ -522,8 +539,9 @@ replaced by `mongomock`; CI also runs them on a real MongoDB):
 | `portal/test_session.py` | Session limits, the warning before the end, renewal while the user works, other tabs; the community notice |
 | `portal/test_store.py`, `test_store_mongodb.py` | The portal's database: users and the shared lock, record metadata, journal and retention, sign-in lockout, migration of older files; on a real MongoDB, the portal user's privileges and expiry by MongoDB |
 | `portal/test_jobs.py`, `test_worker_processes.py` | Background jobs: the queue, claims, heartbeats, workers that stop or die, imports and link checks through the worker; on a real MongoDB, worker processes sharing the queue |
-| `home/test_home.py` | Home page (with the community notice) and proxy routes through the real nginx configuration, including the Host header each service receives |
+| `home/test_home.py` | Home page (with the community notice) and proxy routes through the real nginx configuration, including the Host header each service receives; replicas found through a stub DNS, added and removed while nginx runs |
 | `install/test_install.sh` | Installer in nine scenarios, with the real `docker compose config` and `nginx -t` |
+| `install/test_deploy.py` | Replicas and processes in `docker-compose.yml`, the proxy's run-time name resolution, each image's gunicorn command started locally, the portal's fallback session key under concurrent starts |
 
 ```bash
 pip install -r web_server/src/requirements.txt -r portal/requirements.txt jsonschema playwright opencv-python-headless mongomock
@@ -552,9 +570,10 @@ DEV_TESTS_STRICT=1 python -m pytest dev-tests -m portal   # as in CI: what is mi
 every push and pull request to `gs1br/develop` (changes to documentation only do not start it), in six jobs
 in parallel: resolver (with EPC binary strings, the data entry API and GS1's suite), portal, portal on a
 real MongoDB (a `mongo:7` service container), portal in Chromium, home page through nginx, and installer.
-The portal on MongoDB, the portal in Chromium and the installer start as informative jobs: a failure there
-is shown but does not fail the run. The versions of Python, Node.js, the
-engines, GS1's suite and Docker Compose are pinned in `.github/actions/dev-tests-setup/action.yml`; engines,
+The portal on MongoDB is an informative job: a failure there is shown but does not fail the run (the
+portal in Chromium and the installer started that way too and are required since item 2.3). The proxy test
+runs on nginx 1.30 from nginx.org, as in the proxy image. The versions of Python, Node.js, the engines,
+GS1's suite, Docker Compose and nginx are pinned in `.github/actions/dev-tests-setup/action.yml`; engines,
 packages and the browser are cached. Each job's result, with its check counts, is on the run's summary page.
 
 The official integration test `tests/setup_test.py` needs the running stack and reads the token from
@@ -566,8 +585,10 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 Status on 13 October 2026. Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
-the quick wins (session limits, home page, community notice), and item 2.2, continuous integration (the
-development tests through pytest on GitHub Actions), are complete too. What was
+the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
+development tests through pytest on GitHub Actions), and item 2.3, the architecture for scale (the portal's
+data in MongoDB, background jobs in a worker service, replicas of every stateless service;
+[ADR 0001](Documentation/adr/0001-portal-state-in-mongodb.md)), are complete too. What was
 done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
 The items below are in the agreed order; sizes are relative (S, M, L). The order puts first what later items
 build on: the portal's data store and tenants come before the API, e-mail and analytics, which all need to
@@ -575,8 +596,7 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Technical foundations | 2.3 | **Architecture for scale and the portal's data in MongoDB**: an architecture decision record (stateless services, state in the database, background jobs outside the web process, more than one replica of each service); the portal's users, record metadata, journal, jobs and sign-in lockout moved from files and memory to a database of their own in the existing MongoDB, without changing the official resolver's collections; retention of the journal; migration of existing installations; backup and restore included. Decisions: [ADR 0001](Documentation/adr/0001-portal-state-in-mongodb.md) (steps 1 to 3 of 4 done: the record; users, record metadata, journal, sign-in lockout and caches in MongoDB; imports and link checks as jobs run by a worker service) | L | — |
-| | 2.4 | **Tenants**: an organisation (tenant) owns its GS1 Company Prefixes, each prefix belonging to one tenant only; a server administrator creates tenants and assigns prefixes; a tenant administrator manages the tenant's users; every call checks the tenant on the server; audit trail per tenant; e-mail address per user; privacy by design (data minimisation, the server administrator's access to a tenant's data recorded in that tenant's audit trail) | L | 2.3 |
+| Technical foundations | 2.4 | **Tenants**: an organisation (tenant) owns its GS1 Company Prefixes, each prefix belonging to one tenant only; a server administrator creates tenants and assigns prefixes; a tenant administrator manages the tenant's users; every call checks the tenant on the server; audit trail per tenant; e-mail address per user; privacy by design (data minimisation, the server administrator's access to a tenant's data recorded in that tenant's audit trail) | L | 2.3 |
 | | 2.5 | **One source for the GS1 rules**: keys, qualifiers, formats and AI names derived from the GS1 Barcode Syntax Dictionary, both engines on one version, engine messages translated, dictionary updates proposed by a scheduled job; brings AIs (7041) and (8040)–(8043) | L | — |
 | Platform services | 3.1 | **E-mail**: outgoing mail through an authenticated relay (settings in `.env`), invitations to new users, password recovery by single-use link, a notification framework with per-user preferences | M | 2.4 |
 | | 3.2 | **Tenant API and API keys**: a versioned API of the portal for records, labels and later analytics, described in OpenAPI, limited to the tenant's prefixes; keys created by the tenant administrator in the portal (random, stored only as a hash, shown once, with scopes, expiry, revocation, last use and rate limits); the official data entry API and its token stay internal | L | 2.4, 2.5 |
@@ -611,7 +631,7 @@ Later, when convenient:
 
 ```
 .env.example                    configuration defaults (committed); .env holds installation values
-docker-compose.yml              the services (seven, one of them run once at start)
+docker-compose.yml              the services (seven: one run once at start, four with replicas)
 data_entry_server/              data entry API (official, with /summary and token on /index)
 web_server/                     resolver (official, with conformance fixes and HTML pages)
 database_server/                MongoDB image (official)

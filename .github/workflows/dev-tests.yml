@@ -3,9 +3,9 @@
 # through the pytest layer (dev-tests/test_programs.py) in strict mode: a missing engine, browser or
 # tool fails the job instead of skipping checks.
 #
-# The portal in Chromium (e2e), the installer and the portal on a real MongoDB start as informative jobs:
-# a failure there is shown but does not mark the run as failed, until they have proved stable on GitHub's
-# runners.
+# The portal on a real MongoDB is still an informative job: a failure there is shown but does not mark the
+# run as failed, until it has proved stable on GitHub's runners. The portal in Chromium (e2e) and the
+# installer started that way too and became required in item 2.3, step 4.
 name: Development tests
 
 on:
@@ -91,10 +91,9 @@ jobs:
           DEV_TESTS_TITLE: Portal on a real MongoDB
 
   e2e:
-    name: Portal in Chromium (informative)
+    name: Portal in Chromium
     runs-on: ubuntu-24.04
     timeout-minutes: 40
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/dev-tests-setup
@@ -114,16 +113,15 @@ jobs:
       - uses: ./.github/actions/dev-tests-setup
         with:
           playwright: "true"
-          nginx: "true"
+          nginx-org: "true"
       - run: python -m pytest dev-tests -m home -ra
         env:
           DEV_TESTS_TITLE: Home page and proxy
 
   install:
-    name: Installer (informative)
+    name: Installer and deployment
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/dev-tests-setup
@@ -133,4 +131,4 @@ jobs:
       # The installer test runs as root: the pytest layer calls it through password-less sudo.
       - run: python -m pytest dev-tests -m install -ra
         env:
-          DEV_TESTS_TITLE: Installer
+          DEV_TESTS_TITLE: Installer and deployment

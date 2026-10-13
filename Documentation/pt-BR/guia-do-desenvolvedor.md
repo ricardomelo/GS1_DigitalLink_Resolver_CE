@@ -63,6 +63,13 @@ Os nomes de arquivos, funções, variáveis e mensagens aparecem como estão no 
 - **frontend-proxy-service** (oficial, alterado) encaminha os caminhos acima e serve a página inicial.
 - **database-service** (oficial) é o MongoDB.
 
+**Réplicas.** web-service, data-entry-service, portal-service e portal-worker não guardam estado próprio, então
+cada um roda em `*_REPLICAS` contêineres (`.env`, padrão 1; o `deploy.replicas` do Compose), sem
+`container_name` fixo. Os três serviços web rodam o gunicorn com `WEB_CONCURRENCY` processos de oito threads
+cada (`*_PROCESSES` no `.env`, padrão 2). O proxy acha todas as réplicas pelo DNS do Docker, consultado de novo
+a cada 10 segundos (`resolve` nos blocos upstream do `nginx.conf`, nginx 1.30); o banco e o proxy rodam uma
+vez só, com os nomes de contêiner oficiais ([ADR 0001](adr/0001-estado-do-portal-no-mongodb.md), etapa 4).
+
 O Resolver e o portal validam com o **GS1 Barcode Syntax Engine**: o Resolver pelo pacote Node oficial
 `gs1encoder` (toda requisição), o portal pela biblioteca C e pelo binding Python da GS1 (atributos de
 dados). As regras de chaves e qualificadores do próprio portal espelham o engine e são comparadas com ele
@@ -75,7 +82,7 @@ alterações.
 
 ```
 .env.example                     padrões de configuração (versionado); o .env guarda os valores da instalação
-docker-compose.yml               sete serviços; .env lido por todos; endereços de bind; volumes nomeados
+docker-compose.yml               sete serviços (quatro com réplicas); .env lido por todos; endereços de bind; volumes nomeados
 data_entry_server/src/
   data_entry_namespace.py        /summary, token no /index, BearerAuth no Swagger
   data_entry_logic.py            read_summary()
@@ -123,19 +130,20 @@ tests/, useful_external_python_scripts/   oficiais
 
 ## 3. Serviços e configuração
 
-| Serviço | Build | Porta | Volumes |
-|---|---|---|---|
-| `database-service` | `database_server/` | `${DATABASE_BIND_ADDRESS:-0.0.0.0}:27017` | dados do banco |
-| `data-entry-service` | `data_entry_server/` | interna 3000 | — |
-| `web-service` | `web_server/` | interna 4000 | — |
-| `portal-db-init` | `portal/` (`python db_init.py`, roda uma vez a cada início) | — | — |
-| `portal-service` | `portal/` (dois estágios: syntax engine, aplicação) | interna 8000 | `resolver-portal-config:/app/config` |
-| `portal-worker` | `portal/` (`python worker.py`) | — | `resolver-portal-config:/app/config` |
-| `frontend-proxy-service` | `frontend_proxy_server/` | `${PROXY_BIND_ADDRESS:-0.0.0.0}:8080` | — |
+| Serviço | Build | Porta | Volumes | Contêineres |
+|---|---|---|---|---|
+| `database-service` | `database_server/` | `${DATABASE_BIND_ADDRESS:-0.0.0.0}:27017` | dados do banco | 1 (`database-server`) |
+| `data-entry-service` | `data_entry_server/` (gunicorn) | interna 3000 | — | `DATA_ENTRY_SERVICE_REPLICAS` |
+| `web-service` | `web_server/` (gunicorn) | interna 4000 | — | `WEB_SERVICE_REPLICAS` |
+| `portal-db-init` | `portal/` (`python db_init.py`, roda uma vez a cada início) | — | — | 1 |
+| `portal-service` | `portal/` (dois estágios: syntax engine, aplicação; gunicorn) | interna 8000 | `resolver-portal-config:/app/config` | `PORTAL_SERVICE_REPLICAS` |
+| `portal-worker` | `portal/` (`python worker.py`) | — | `resolver-portal-config:/app/config` | `PORTAL_WORKER_REPLICAS` |
+| `frontend-proxy-service` | `frontend_proxy_server/` (nginx 1.30) | `${PROXY_BIND_ADDRESS:-0.0.0.0}:8080` | — | 1 (`frontend-proxy-server`) |
 
 Todos os serviços leem o `.env.example` e depois o `.env` (Compose ≥ 2.24, `required: false`), então o
-`.env` guarda só o que a instalação muda. Os endereços de bind são lidos pelo próprio Compose, só do
-`.env`. As variáveis estão descritas no `.env.example` e na seção *Configuration* do README; o portal
+`.env` guarda só o que a instalação muda. Os endereços de bind, as quantidades de réplicas (`*_REPLICAS`) e
+as de processos (`*_PROCESSES`, passadas aos contêineres como `WEB_CONCURRENCY`) são lidos pelo próprio
+Compose, só do `.env`. As variáveis estão descritas no `.env.example` e na seção *Configuration* do README; o portal
 também lê `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD`, `PORTAL_DB_HOST` (ou `PORTAL_DB_URI`),
 `PORTAL_JOURNAL_*_DAYS`, `PORTAL_SESSION_IDLE_MINUTES`, `PORTAL_SESSION_MAX_HOURS`, `PORTAL_SECRET_KEY`,
 `PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT`, `PORTAL_WORKER` e `PORTAL_CONFIG_DIR` (e `PORTAL_*_FILE`, os
@@ -218,8 +226,9 @@ Organizado em seções (linhas de comentário `# ---- …`):
 
 Erros são exceções com um código de mensagem: `gs1.ValidationError` (422), `AccessDenied` (403),
 `users.UserError` (422), `UpstreamError` (502/503, detalhe só no log). Desde a etapa 3 do ADR 0001 nada no
-portal depende da memória de um processo; ele ainda roda um único worker do gunicorn, com threads, até a
-etapa 4 (réplicas).
+portal depende da memória de um processo: o gunicorn roda `WEB_CONCURRENCY` processos (dois por padrão) com
+oito threads cada, em cada réplica. O `_secret_key()` grava o `secret.key` reserva num arquivo próprio e o liga
+ao nome final, então processos que iniciam juntos leem todos uma mesma chave completa.
 
 ### `gs1.py` — regras GS1
 
@@ -398,8 +407,8 @@ Retenção do diário: um evento é guardado por `PORTAL_JOURNAL_SESSION_DAYS` (
 (0) ou `PORTAL_JOURNAL_ADMIN_DAYS` (0) dias a partir do fim do dia em que aconteceu; 0 guarda para sempre.
 
 O volume `resolver-portal-config` (`/app/config`, no backup diário) guarda o `secret.key`, a chave de sessão
-usada quando `PORTAL_SECRET_KEY` não está definida, e os arquivos das versões anteriores renomeados
-`*.migrated`.
+usada quando `PORTAL_SECRET_KEY` não está definida (comum a todos os processos e réplicas do portal no mesmo
+host Docker, que montam o mesmo volume), e os arquivos das versões anteriores renomeados `*.migrated`.
 
 ## 9. Mudanças no Resolver (`web_server/`)
 
@@ -487,14 +496,22 @@ O `nginx.conf` serve `/` e `/home/…` a partir da imagem, envia os caminhos `/`
 original, `proxy_pass http://resolver-web/api$request_uri`, para o `%2F` e a query string chegarem como
 foram enviados; o nome do upstream é também o cabeçalho Host que o servidor web recebe, então precisa ser um
 nome de host válido), `/api` e
-`/swaggerui` ao data-entry-service e `/portal/` ao portal-service (com `/portal` → `/portal/`). O
+`/swaggerui` ao data-entry-service e `/portal/` ao portal-service (com `/portal` → `/portal/`). Cada
+serviço é um bloco upstream (`resolver-web`, `data-entry`, `portal`) cujo servidor é o nome do serviço com
+`resolve` e uma `zone` compartilhada: o nginx pergunta ao DNS do Docker (`resolver 127.0.0.11 valid=10s`) o
+endereço de cada réplica, de novo a cada 10 segundos, reparte as requisições entre elas em turnos e passa a
+outra réplica quando uma recusa a conexão. Ele inicia mesmo quando um serviço ainda não tem endereço (os
+caminhos desse serviço respondem 502 até ter). Isso exige o nginx 1.27.3 ou posterior; a imagem é
+`nginx:1.30-alpine` (recompilada com `docker compose build --pull` para receber uma nova correção de
+segurança do ramo 1.30). O
 `home/home.js` lê o operador em `/.well-known/gs1resolver` e compartilha a escolha de idioma com o portal.
 
 ## 12. Scripts (`scripts/`)
 
 - `install.sh`: instalador para Ubuntu 22.04/24.04 (verificações, perguntas com os valores anteriores como
   padrão, Docker, nginx do host com Certbot ou certificado existente ou proxy externo, `.env` com segredos
-  gerados, inicialização, cron de backup). Pode ser rodado de novo; `--non-interactive` lê todas as
+  gerados e as quantidades de réplicas — não perguntadas; 1, o ambiente ou o `.env` existente, de 1 a 20 —,
+  inicialização, cron de backup). Pode ser rodado de novo; `--non-interactive` lê todas as
   respostas de variáveis de ambiente. Os modelos do site nginx ficam em `templates/`.
 - `resolver-backup.sh` + `resolver-backup.cron`: dump do MongoDB pelo contêiner (todos os bancos, o do
   portal incluído) e arquivo do volume do portal, 14 dias guardados.
@@ -526,15 +543,16 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `portal/test_store_mongodb.py` | 161 | num MongoDB real (`PORTAL_TEST_MONGO_URI`, só no CI): o usuário criado pelo `db_init.py` e suas permissões; `test_store.py`, `test_jobs.py` e `test_worker_processes.py` de novo como esse usuário (com suas linhas repassadas); o monitor de TTL, também para tarefas e anúncios antigos de workers |
 | `portal/test_registration.py` | 26 | §2.5.9 pela API do portal: qualificadores informativos (salvar, abrir, histórico, lista, exportar, importar), cadastros contra a regra 2, o cadastro da chave ao salvar e ao importar |
 | `portal/test_portal_e2e.py` | 190 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular, com um worker embutido (também parado: as mensagens de fila e de "não está em execução", uma tarefa que falha); também roda sem o engine (146) |
-| `home/test_home.py` | 55 | página inicial com um nginx real, sem o quadro da sintaxe, aviso da comunidade; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug |
-| `install/test_install.sh` | 61 | instalador com simulações (Compose v2), incluindo um portal cujo worker de tarefas não sobe |
+| `home/test_home.py` | 68 | página inicial com um nginx real (1.27.3 ou posterior: `NGINX_BIN` ou o PATH), sem o quadro da sintaxe, aviso da comunidade; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug; réplicas por um servidor DNS simulado que responde os nomes dos serviços com endereços `127.0.0.x`: o nginx inicia quando um serviço não tem endereço e o acha depois, reparte as requisições entre duas réplicas, acompanha uma terceira acrescentada e duas retiradas sem reiniciar, e nenhuma requisição falha enquanto réplicas param |
+| `install/test_install.sh` | 68 | instalador com simulações (Compose v2), incluindo um portal cujo worker de tarefas não sobe; quantidades de réplicas gravadas, mantidas, tomadas do ambiente e recusadas quando inválidas |
+| `install/test_deploy.py` | 51 | `docker compose config` das réplicas e quantidades de processos (padrões, valores do `.env`, um valor recusado, nomes mantidos pelo banco e pelo proxy); a versão do nginx da imagem do proxy e o `resolve` em todos os upstreams; o `CMD` gunicorn de cada imagem iniciado localmente (três processos, uma resposta, a requisição no log, parada limpa com SIGTERM em até 10 s); a chave de sessão reserva do portal com seis processos iniciando juntos e oito threads enquanto gravá-la é lento |
 
 **pytest e integração contínua.** O `dev-tests/test_programs.py` roda cada programa acima como um teste
 pytest (um subprocesso a partir da raiz do repositório): status 0 sem linha `FAIL` passa; caso contrário, o
 relatório mostra as linhas `FAIL` e o fim da saída; um programa que só imprimiu `SKIP` é pulado. Marcadores
 os agrupam: `resolver` (Resolver, EPC binário, API de cadastro, suíte da GS1), `portal` (os programas do
 portal sem navegador), `e2e` (`test_portal_e2e.py` com e sem o engine, `test_session.py`), `home`, `install`
-(rodado por `sudo` sem senha quando não se é root), `database` (`test_store_mongodb.py`). O `dev-tests/conftest.py` impede que o pytest importe os
+(o instalador por `sudo` sem senha quando não se é root, e o `test_deploy.py`), `database` (`test_store_mongodb.py`). O `dev-tests/conftest.py` impede que o pytest importe os
 programas, registra os marcadores e imprime ao final a contagem de verificações de cada programa (e também
 no resumo da execução do GitHub Actions). Com `DEV_TESTS_STRICT=1`, um programa falha quando uma variável de
 ambiente de que precisa não está definida ou aponta para um caminho inexistente (`needs_env`), quando uma
@@ -545,13 +563,14 @@ variáveis e comandos de que precisa) e uma linha à tabela acima.
 
 O `.github/workflows/dev-tests.yml` roda um job por grupo, em paralelo, a cada push e pull request para
 `gs1br/develop` (não para mudanças só em `Documentation/` ou em arquivos Markdown), em modo estrito. O job
-`database` sobe um contêiner de serviço `mongo:7` e roda nele os grupos `portal` e `database`. `e2e`,
-`install` e `database` são informativos (`continue-on-error`) até provarem estabilidade. A action composta
+`database` sobe um contêiner de serviço `mongo:7` e roda nele os grupos `portal` e `database`. O `database` é
+informativo (`continue-on-error`) até provar estabilidade; `e2e` e `install` começaram assim e são
+obrigatórios desde a etapa 4 do item 2.3. A action composta
 `.github/actions/dev-tests-setup` instala só o que o job pede e exporta as variáveis: Python 3.12 e Node.js 24
 como nas imagens; `gs1encoder`, `epc-tds` e `ajv-dist` em versões fixadas (cache pela versão); o engine do
 portal compilado pelo `portal/tools/build-syntax-engine.sh` (cache pelo script, que fixa o release); o
-Chromium (cache pela versão do Playwright); a suíte da GS1 no commit `32597c1`; nginx; Docker Compose
-v2.29.7. Mude uma versão ali, num lugar só; mantenha o `gs1encoder` no release que o script compila.
+Chromium (cache pela versão do Playwright); a suíte da GS1 no commit `32597c1`; o nginx do Ubuntu para o instalador e o
+nginx 1.30.5 do nginx.org para o teste do proxy; Docker Compose v2.29.7. Mude uma versão ali, num lugar só; mantenha o `gs1encoder` no release que o script compila.
 
 O `docs/screenshots.py` regenera as imagens do README e do guia do portal em inglês e em português a partir
 do portal real, com dados de exemplo (logotipo GS1 oculto). Versione só as imagens que realmente mudaram.

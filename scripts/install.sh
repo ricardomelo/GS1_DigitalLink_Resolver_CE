@@ -29,7 +29,9 @@
 #   RESOLVER_CONTACT_LOCALITY, RESOLVER_CONTACT_REGION, RESOLVER_CONTACT_POSTCODE,
 #   RESOLVER_CONTACT_COUNTRY, RESOLVER_CONTACT_TELEPHONE, PORTAL_ADMIN_USERNAME,
 #   PORTAL_ADMIN_PASSWORD (empty: generated), INSTALL_BACKUP_CRON (yes | no),
-#   INSTALL_DOCKER_GROUP_USER (user to add to the docker group; empty: none)
+#   INSTALL_DOCKER_GROUP_USER (user to add to the docker group; empty: none),
+#   WEB_SERVICE_REPLICAS, DATA_ENTRY_SERVICE_REPLICAS, PORTAL_SERVICE_REPLICAS, PORTAL_WORKER_REPLICAS
+#   (containers of each service, 1–20; not asked: default 1, or the value in the existing .env)
 # =================================================================================================
 set -Eeuo pipefail
 umask 077
@@ -41,6 +43,9 @@ ENV_FILE="$REPO_DIR/.env"
 PROXY_PORT=8080
 MIN_COMPOSE_VERSION="2.24.0"
 MIN_PASSWORD_LENGTH=12
+MAX_REPLICAS=20
+# Services that may run as several containers (docker-compose.yml, deploy.replicas), with their .env keys.
+REPLICA_KEYS="WEB_SERVICE_REPLICAS DATA_ENTRY_SERVICE_REPLICAS PORTAL_SERVICE_REPLICAS PORTAL_WORKER_REPLICAS"
 # Paths below can be redirected for testing.
 LOG_FILE="${INSTALL_LOG_FILE:-/var/log/gs1-resolver-install.log}"
 NGINX_AVAILABLE="${INSTALL_NGINX_AVAILABLE:-/etc/nginx/sites-available}"
@@ -185,6 +190,9 @@ valid_readable_file() { [[ -r $1 ]] || { warn "File not found or not readable: $
 valid_bind_address() {
   [[ $1 == 0.0.0.0 || $1 == 127.0.0.1 || $1 =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || { warn "Enter an IPv4 address such as 127.0.0.1 or 0.0.0.0."; return 1; }
 }
+valid_replicas() {
+  [[ $1 =~ ^[1-9][0-9]?$ ]] && (( $1 <= MAX_REPLICAS )) || { warn "Enter a number of replicas from 1 to $MAX_REPLICAS."; return 1; }
+}
 valid_yes_no() { [[ $1 == yes || $1 == no ]] || { warn "Answer yes or no."; return 1; }; }
 valid_user_or_empty() { [[ -z $1 ]] || id -u "$1" >/dev/null 2>&1 || { warn "No such user: $1"; return 1; }; }
 
@@ -197,7 +205,8 @@ MANAGED_KEYS=" MONGO_INITDB_ROOT_USERNAME MONGO_INITDB_ROOT_PASSWORD MONGO_URI S
   RESOLVER_ORG_NAME RESOLVER_ORG_URL RESOLVER_CONTACT_STREET RESOLVER_CONTACT_LOCALITY RESOLVER_CONTACT_REGION
   RESOLVER_CONTACT_POSTCODE RESOLVER_CONTACT_COUNTRY RESOLVER_CONTACT_TELEPHONE PORTAL_ADMIN_USERNAME
   PORTAL_ADMIN_PASSWORD PORTAL_DB_PASSWORD PORTAL_SECRET_KEY PROXY_BIND_ADDRESS DATABASE_BIND_ADDRESS TLS_MODE
-  CERTBOT_EMAIL TLS_CERT_FILE TLS_KEY_FILE "
+  CERTBOT_EMAIL TLS_CERT_FILE TLS_KEY_FILE WEB_SERVICE_REPLICAS DATA_ENTRY_SERVICE_REPLICAS
+  PORTAL_SERVICE_REPLICAS PORTAL_WORKER_REPLICAS "
 
 # Reads KEY=VALUE lines of an existing .env (quotes removed) into EXISTING.
 load_existing_env() {
@@ -255,6 +264,9 @@ write_env() {
     printf '\n# Read by Docker Compose itself\n'
     env_line PROXY_BIND_ADDRESS "$PROXY_BIND_ADDRESS"
     env_line DATABASE_BIND_ADDRESS "127.0.0.1"
+    printf '# Containers of each service; change a number and run "docker compose up -d" (see the README).\n'
+    local replicas
+    for replicas in $REPLICA_KEYS; do env_line "$replicas" "${!replicas}"; done
     printf '\n# Installer choices (not used by the services)\n'
     env_line TLS_MODE "$TLS_MODE"
     env_line CERTBOT_EMAIL "${CERTBOT_EMAIL-}"
@@ -441,6 +453,12 @@ collect_settings() {
   done
   # The development default of .env.example is not a real domain.
   [[ ${FQDN-} == localhost ]] && FQDN=""
+  # Replicas are not asked: one of each, unless the environment or the existing .env says otherwise.
+  for var in $REPLICA_KEYS; do
+    preset "$var"
+    [[ -n ${!var-} ]] || printf -v "$var" '%s' 1
+    valid_replicas "${!var}" || die "$var: invalid value '${!var}' (a number from 1 to $MAX_REPLICAS)."
+  done
 
   printf '\n    %sResolver address%s\n' "$C_BOLD" "$C_OFF"
   ask FQDN "Domain name of the resolver (e.g. id.example.org)" "" valid_fqdn
@@ -559,6 +577,8 @@ summary_before() {
   printf '      HTTPS            %s\n' "$TLS_MODE"
   printf '      Port %s        published on %s\n' "$PROXY_PORT" "$PROXY_BIND_ADDRESS"
   printf '      Operator         %s\n' "$RESOLVER_ORG_NAME"
+  printf '      Replicas         resolver %s, data entry API %s, portal %s, job worker %s\n' \
+    "$WEB_SERVICE_REPLICAS" "$DATA_ENTRY_SERVICE_REPLICAS" "$PORTAL_SERVICE_REPLICAS" "$PORTAL_WORKER_REPLICAS"
   if (( PORTAL_HAS_USERS )); then
     printf '      Portal users     existing users kept\n'
   else

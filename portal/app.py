@@ -83,21 +83,37 @@ PRIVATE_ASSETS = {"app.js"}
 
 def _secret_key() -> bytes:
     """PORTAL_SECRET_KEY if set (the installer writes one to .env; every replica must share it); otherwise a
-    random key created once in the config volume, which serves an installation with a single portal replica."""
+    random key created once in the config volume, which serves the portal's processes and replicas on one
+    Docker host (they share the volume).
+
+    Several processes start at once (gunicorn's workers, replicas), so the file appears complete or not at
+    all: the key is written to a file of this process's own and then linked to the final name, which fails
+    for every process but the first. Reading a file another process had created but not yet written would
+    sign sessions with an empty key."""
     if os.environ.get("PORTAL_SECRET_KEY"):
         return os.environ["PORTAL_SECRET_KEY"].encode()
     path = os.path.join(CONFIG_DIR, "secret.key")
-    try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w") as fh:
-            fh.write(secrets.token_hex(32))
-    except FileExistsError:
-        pass
-    except OSError as exc:
-        raise RuntimeError(f"Cannot create {path} ({exc}). "
-                           "/app/config must be writable by uid 10001 (the portal-config volume).") from exc
+    if not os.path.exists(path):
+        draft = f"{path}.{os.getpid()}.{secrets.token_hex(4)}"
+        try:
+            fd = os.open(draft, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w") as fh:
+                fh.write(secrets.token_hex(32))
+            try:
+                os.link(draft, path)
+            except FileExistsError:
+                pass                                   # another process was first: use its key
+            finally:
+                os.unlink(draft)
+        except OSError as exc:
+            raise RuntimeError(f"Cannot create {path} ({exc}). "
+                               "/app/config must be writable by uid 10001 (the portal-config volume).") from exc
     with open(path, encoding="utf-8") as fh:
-        return fh.read().strip().encode()
+        key = fh.read().strip()
+    if not key:
+        raise RuntimeError(f"{path} is empty: delete it (a new key is made at the next start) "
+                           "or set PORTAL_SECRET_KEY in .env.")
+    return key.encode()
 
 
 app = Flask(__name__, static_folder=None)
@@ -113,8 +129,8 @@ app.config.update(
     SESSION_REFRESH_EACH_REQUEST=True,   # sliding expiry: the cookie's signed time is renewed on every request
 )
 if not os.environ.get("PORTAL_SECRET_KEY"):
-    log.warning("PORTAL_SECRET_KEY is not set: sessions are signed with %s, which works for one portal "
-                "replica only.", os.path.join(CONFIG_DIR, "secret.key"))
+    log.warning("PORTAL_SECRET_KEY is not set: sessions are signed with %s, which works only while every "
+                "portal process shares that volume (one Docker host).", os.path.join(CONFIG_DIR, "secret.key"))
 
 
 def _bootstrap_admin() -> None:

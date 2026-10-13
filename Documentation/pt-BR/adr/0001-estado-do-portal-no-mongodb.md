@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Situação | **Aceito** (13 de outubro de 2026). Implementação em quatro etapas: 1 (este registro), 2 (os dados no MongoDB) e 3 (o worker de tarefas) concluídas |
+| Situação | **Aceito** (13 de outubro de 2026). **Implementado** em quatro etapas: 1 (este registro), 2 (os dados no MongoDB), 3 (o worker de tarefas) e 4 (réplicas) |
 | Item do backlog | 2.3 — arquitetura para escala e os dados do portal no MongoDB |
 | Decidido por | o responsável pelo branch, sobre as opções da seção 4 |
 | Inglês | [ADR 0001 in English](../../adr/0001-portal-state-in-mongodb.md) (versão de referência) |
@@ -219,6 +219,48 @@ primeira vez, todos entram de novo uma vez.
   embutido do Flask para o gunicorn (também mudança deliberada no código oficial), e o número padrão de
   réplicas de cada serviço.
 
+**Como ficou na etapa 4** (as escolhas do responsável, todas as recomendadas, e o que a
+implementação encontrou):
+- **Nomes de contêiner**: retirados dos três serviços replicáveis que tinham um (`web-service`,
+  `data-entry-service`, `portal-service`; o `portal-worker` nunca teve). `database-service` e
+  `frontend-proxy-service` não podem ser replicados (um único MongoDB; o proxy publica a porta 8080) e mantêm
+  os nomes oficiais, a menor mudança no código oficial. Scripts e documentos já usavam nomes de serviço
+  (`docker compose exec|logs <serviço>`, que agem na primeira réplica ou em todas).
+- **Quantidade de réplicas no `.env`** (`WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`,
+  `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS`; o `deploy.replicas` do Compose, padrão 1), porque o
+  `docker compose up --scale` é esquecido no próximo `docker compose up` — toda atualização. O instalador
+  grava as quatro chaves (não perguntadas: 1, o ambiente ou o `.env` existente; de 1 a 20).
+- **gunicorn em todos os serviços web**: `web-service` e `data-entry-service` deixam o servidor embutido do
+  Flask pelo gunicorn (mudança deliberada nas imagens oficiais, `gunicorn` acrescentado aos requirements);
+  a fábrica da aplicação é carregada direto (`__init__:create_app()`) para que o tratador de SIGTERM do
+  `main.py` não substitua o do gunicorn; `python -m main` continua iniciando o servidor embutido para
+  desenvolvimento. O portal passa de um processo para `WEB_CONCURRENCY`. Cada imagem define
+  `WEB_CONCURRENCY=2`, que o `docker-compose.yml` toma de `WEB_SERVICE_PROCESSES`,
+  `DATA_ENTRY_SERVICE_PROCESSES` e `PORTAL_SERVICE_PROCESSES`; oito threads por processo;
+  `--graceful-timeout 8` para que as requisições em andamento terminem dentro dos 10 segundos de parada do
+  Docker; o socket de controle do gunicorn 26 fica desligado (sem uso, e seria gravado na pasta pessoal do
+  usuário da imagem); as linhas das requisições vão para o log, como no servidor embutido.
+- **O proxy acha as réplicas sozinho**: a seção 3.8 supunha a consulta do nginx no início e o reinício pelo
+  `depends_on … restart: true`; isso só vê as réplicas que existiam quando o nginx iniciou e perde as
+  acrescentadas depois. Em vez disso, cada upstream é um bloco com `server <serviço>:<porta> resolve` numa
+  `zone` compartilhada, e `resolver 127.0.0.11 valid=10s` pergunta de novo ao DNS do Docker a cada 10
+  segundos. O nginx reparte as requisições entre as réplicas em turnos, passa a outra quando uma recusa a
+  conexão, inicia mesmo com um serviço fora do ar e não precisa mais ser reiniciado quando um serviço é
+  recriado (as linhas `restart: true` saíram; o reinício único do proxy pelo instalador fica como rede de
+  segurança). `resolve` em blocos upstream exige o nginx aberto 1.27.3 ou posterior, então a imagem do proxy
+  passa de `nginx:1.25.1-alpine` para `nginx:1.30-alpine`, o ramo estável, que também traz as correções de
+  segurança desde 2023 (mudança deliberada na imagem oficial). O tratamento da URI da decisão 7 não muda: o
+  `proxy_pass` continua nomeando um bloco upstream, não uma variável.
+- **A chave de sessão reserva com inícios simultâneos**: com vários processos do gunicorn, dois deles podiam
+  criar o `secret.key` no mesmo instante e um ler o arquivo antes de o outro gravá-lo, assinando sessões com
+  uma chave vazia. O `_secret_key()` agora grava a chave num arquivo próprio e o liga ao nome final (só a
+  primeira ligação dá certo); um arquivo de chave vazio interrompe o portal com uma mensagem. Réplicas num
+  mesmo host compartilham a chave pelo volume; em vários hosts a `PORTAL_SECRET_KEY` é obrigatória, como
+  decidido.
+- **CI**: os jobs `e2e` e `install` passam a obrigatórios; o `database` continua informativo. O teste do
+  proxy precisa do nginx 1.27.3 ou posterior, então o job dele instala o nginx 1.30.5 do nginx.org (o Ubuntu
+  24.04 traz o 1.24).
+
 ## 4. Opções consideradas
 
 | Ponto | Escolhida | Não escolhidas |
@@ -263,6 +305,8 @@ Pior, e como fica contido:
 | `PORTAL_JOURNAL_RECORD_DAYS` | 0 | seção 3.5 |
 | `PORTAL_JOURNAL_ADMIN_DAYS` | 0 | seção 3.5 |
 | `PORTAL_WORKER` (etapa 3) | `external` | seção 3.3: o serviço `portal-worker`, ou `embedded` |
+| `WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`, `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS` (etapa 4) | 1 (lidas pelo Compose do `.env`) | seção 3.8: contêineres de cada serviço |
+| `WEB_SERVICE_PROCESSES`, `DATA_ENTRY_SERVICE_PROCESSES`, `PORTAL_SERVICE_PROCESSES` (etapa 4) | 2 (lidas pelo Compose do `.env`) | seção 3.8: processos do gunicorn por contêiner |
 
 O instalador mantém os valores existentes e acrescenta as chaves novas ao `.env`.
 
@@ -273,4 +317,4 @@ O instalador mantém os valores existentes e acrescenta as chaves novas ao `.env
 | 1 | este registro (inglês e português) | nenhuma (documentação) |
 | 2 | `portal/store.py`, usuários, metadados dos cadastros, diário com retenção, entradas recusadas e caches no MongoDB; `portal-db-init`; migração; instalador; testes com `mongomock`; job do CI com `mongo:7`; documentação | os arquivos antigos viram `*.migrated`; usuários, histórico e auditoria iguais no portal; o bloqueio de entrada funciona |
 | 3 | coleção `jobs` e o serviço `portal-worker`; importações e verificações de links por ele | uma importação e uma "verificar todos os cadastros" terminam, inclusive com o portal reiniciado no meio; uma importação interrompida por um reinício do worker termina |
-| 4 | réplicas no Compose, sem nomes fixos de contêiner; os pontos da seção 3.8 | duas réplicas de cada serviço respondem; as verificações de resolução de sempre passam |
+| 4 | réplicas no Compose, sem nomes fixos de contêiner; os pontos da seção 3.8 (como implementados lá) | duas réplicas de cada serviço respondem; as verificações de resolução de sempre passam |

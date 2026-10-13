@@ -197,6 +197,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Last administrator kept | Changes of users are serialised by a lock shared by every process: the last enabled administrator cannot be removed or demoted, even by two administrators at once | `71b15f2`, `d783f3d` |
 | Background jobs in a worker | Imports and checks of many links are jobs in the portal's database, run one at a time by the `portal-worker` service; a stopped worker hands its job back at once, a dead one's job goes back to the queue after two minutes; an import continues where it was; a job interrupted three times fails, keeping what was done | `a072e9d` |
 | Job worker not running | The browser warns when a job has waited 15 seconds with no worker running, and says when a job failed | `a072e9d` |
+| Replicas | The resolver, the data entry API, the portal and the job worker can each run as several containers (`*_REPLICAS` in `.env`); the proxy finds them through Docker's DNS every 10 seconds and shares the requests, skipping a replica that is stopping | `20f3304` |
+| Fallback session key | Without `PORTAL_SECRET_KEY`, every portal process and replica on one host reads one complete `secret.key`, also when they start at the same moment | `126f507`, `20f3304` |
 
 ## Portal: languages and look
 
@@ -224,7 +226,9 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Bind addresses | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` keep ports 8080 and 27017 off the network behind a TLS proxy | `d51e398` |
 | Ubuntu installer | `scripts/install.sh`: checks, questions, Docker, nginx + Certbot or an existing certificate or an external proxy, `.env` with generated secrets, start-up, backup cron; safe to re-run; `--non-interactive` | `e11f630` |
 | Installer hardening | Passwords with special characters; refuses a single quote in the first user's password | `3f1ff37` |
-| Proxy restart | Compose restarts the proxy when a service behind it is recreated | `5f8c7d7` |
+| Proxy follows the services | nginx 1.30 asks Docker's DNS for every service's replicas every 10 seconds: recreated, added or removed containers need no proxy restart, and the proxy starts while a service is down (until `20f3304`: Compose restarted the proxy when a service behind it was recreated) | `5f8c7d7`, `20f3304` |
+| Servers | gunicorn in the resolver, the data entry API and the portal, with `*_PROCESSES` processes per container (default 2) | `20f3304` |
+| Replicas in the installer | The installer writes the replica counts to `.env` (1 of each unless the environment or the existing `.env` says otherwise) | `20f3304` |
 | Daily backup | MongoDB dump (the portal's database included) + portal configuration volume, 14 days kept, cron at 02:30 | `ba0c293`, `d783f3d` |
 | Portal database user | The one-shot service `portal-db-init` creates the portal's MongoDB user, or brings its password up to date, at every start | `d783f3d` |
 | Move from the files of earlier versions | At its first start the portal imports `users.json`, `records-meta.json` and `journal.jsonl` into its database and keeps them as `*.migrated`; an interrupted import finishes at the next start | `d783f3d` |
@@ -236,9 +240,9 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 
 | Feature | What it does | Since |
 |---|---|---|
-| Development tests | Resolver, GS1's resolver test suite run in Chromium against the resolver code, EPC binary decoder (checked against TDS annex E.3 and the `epc-tds` library), data entry, keys, governance, spreadsheets, special characters, data attributes, link checker, background jobs (also as worker processes on a real MongoDB), portal end to end in Chromium (desktop and phone), home page through nginx, installer through shims | `0733a3f` and later |
+| Development tests | Resolver, GS1's resolver test suite run in Chromium against the resolver code, EPC binary decoder (checked against TDS annex E.3 and the `epc-tds` library), data entry, keys, governance, spreadsheets, special characters, data attributes, link checker, background jobs (also as worker processes on a real MongoDB), portal end to end in Chromium (desktop and phone), home page and replicas through nginx, installer through shims, deployment (Compose, gunicorn) | `0733a3f` and later |
 | Development tests through pytest | `pytest dev-tests` runs every program, by group (`-m resolver`, `portal`, `e2e`, `home`, `install`, `database`), with each program's check count; strict mode for CI | `d68a883`, `d783f3d` |
-| Continuous integration | GitHub Actions runs the tests in six parallel jobs on every push and pull request to `gs1br/develop`, one of them on a real MongoDB 7 (service container); pinned versions, cached engines and browser; status badge in the README | `d68a883`, `d783f3d` |
+| Continuous integration | GitHub Actions runs the tests in six parallel jobs on every push and pull request to `gs1br/develop`, one of them on a real MongoDB 7 (service container), the proxy test on nginx 1.30; pinned versions, cached engines and browser; status badge in the README | `d68a883`, `d783f3d`, `20f3304` |
 | Screenshots | `dev-tests/docs/screenshots.py` regenerates the README and user guide images | `f14d8c4`, session 4 |
 | Documentation | README, user guide, features, history, developer guide, extensions documentation, changelog | `539bab0` and later |
 

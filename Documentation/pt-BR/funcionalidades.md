@@ -194,6 +194,8 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Último administrador mantido | Alterações de usuários são serializadas por uma trava comum a todos os processos: o último administrador ativo não pode ser removido nem rebaixado, nem por dois administradores ao mesmo tempo | `71b15f2`, `d783f3d` |
 | Tarefas em segundo plano num worker | Importações e verificações de muitos links são tarefas no banco do portal, executadas uma por vez pelo serviço `portal-worker`; um worker parado devolve sua tarefa na hora, a de um worker que morreu volta à fila depois de dois minutos; uma importação continua de onde parou; uma tarefa interrompida três vezes falha, mantendo o que foi feito | `a072e9d` |
 | Worker de tarefas fora do ar | O navegador avisa quando uma tarefa espera 15 segundos sem nenhum worker em execução, e diz quando uma tarefa falhou | `a072e9d` |
+| Réplicas | O Resolver, a API de cadastro, o portal e o worker de tarefas podem rodar cada um em vários contêineres (`*_REPLICAS` no `.env`); o proxy os acha pelo DNS do Docker a cada 10 segundos e reparte as requisições, pulando uma réplica que está parando | `20f3304` |
+| Chave de sessão reserva | Sem `PORTAL_SECRET_KEY`, todos os processos e réplicas do portal num mesmo host leem um mesmo `secret.key` completo, também quando iniciam no mesmo instante | `126f507`, `20f3304` |
 
 ## Portal: idiomas e aparência
 
@@ -221,7 +223,9 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Endereços de bind | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` tiram as portas 8080 e 27017 da rede atrás de um proxy TLS | `d51e398` |
 | Instalador para Ubuntu | `scripts/install.sh`: verificações, perguntas, Docker, nginx + Certbot ou certificado existente ou proxy externo, `.env` com segredos gerados, inicialização, cron de backup; pode ser rodado de novo; `--non-interactive` | `e11f630` |
 | Instalador mais robusto | Senhas com caracteres especiais; recusa aspas simples na senha do primeiro usuário | `3f1ff37` |
-| Reinício do proxy | O Compose reinicia o proxy quando um serviço atrás dele é recriado | `5f8c7d7` |
+| Proxy acompanha os serviços | O nginx 1.30 pergunta ao DNS do Docker as réplicas de cada serviço a cada 10 segundos: contêineres recriados, acrescentados ou retirados não exigem reiniciar o proxy, e o proxy inicia com um serviço fora do ar (até `20f3304`: o Compose reiniciava o proxy quando um serviço atrás dele era recriado) | `5f8c7d7`, `20f3304` |
+| Servidores | gunicorn no Resolver, na API de cadastro e no portal, com `*_PROCESSES` processos por contêiner (padrão 2) | `20f3304` |
+| Réplicas no instalador | O instalador grava as quantidades de réplicas no `.env` (1 de cada, salvo se o ambiente ou o `.env` existente disserem outra coisa) | `20f3304` |
 | Backup diário | Dump do MongoDB (o banco do portal incluído) + volume de configuração do portal, 14 dias guardados, cron às 02:30 | `ba0c293`, `d783f3d` |
 | Usuário do banco do portal | O serviço `portal-db-init`, que roda uma vez, cria o usuário MongoDB do portal, ou atualiza sua senha, a cada início | `d783f3d` |
 | Migração dos arquivos das versões anteriores | No primeiro início o portal importa `users.json`, `records-meta.json` e `journal.jsonl` para o seu banco e os guarda como `*.migrated`; uma importação interrompida termina no início seguinte | `d783f3d` |
@@ -233,9 +237,9 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 
 | Funcionalidade | O que faz | Desde |
 |---|---|---|
-| Testes de desenvolvimento | Resolver, suíte de testes de Resolver da GS1 rodando no Chromium contra o código do Resolver, decodificador de EPC em binário (conferido com o anexo E.3 do TDS e com a biblioteca `epc-tds`), API de cadastro, chaves, governança, planilhas, caracteres especiais, atributos de dados, verificador de links, tarefas em segundo plano (também como processos de worker num MongoDB real), portal de ponta a ponta no Chromium (desktop e celular), página inicial com nginx, instalador com simulações | `0733a3f` e seguintes |
+| Testes de desenvolvimento | Resolver, suíte de testes de Resolver da GS1 rodando no Chromium contra o código do Resolver, decodificador de EPC em binário (conferido com o anexo E.3 do TDS e com a biblioteca `epc-tds`), API de cadastro, chaves, governança, planilhas, caracteres especiais, atributos de dados, verificador de links, tarefas em segundo plano (também como processos de worker num MongoDB real), portal de ponta a ponta no Chromium (desktop e celular), página inicial e réplicas com nginx, instalador com simulações, implantação (Compose, gunicorn) | `0733a3f` e seguintes |
 | Testes de desenvolvimento pelo pytest | `pytest dev-tests` roda todos os programas, por grupo (`-m resolver`, `portal`, `e2e`, `home`, `install`, `database`), com a contagem de verificações de cada programa; modo estrito para o CI | `d68a883`, `d783f3d` |
-| Integração contínua | O GitHub Actions roda os testes em seis jobs paralelos a cada push e pull request para `gs1br/develop`, um deles num MongoDB 7 real (contêiner de serviço); versões fixadas, engines e navegador em cache; selo de status no README | `d68a883`, `d783f3d` |
+| Integração contínua | O GitHub Actions roda os testes em seis jobs paralelos a cada push e pull request para `gs1br/develop`, um deles num MongoDB 7 real (contêiner de serviço), o teste do proxy no nginx 1.30; versões fixadas, engines e navegador em cache; selo de status no README | `d68a883`, `d783f3d`, `20f3304` |
 | Screenshots | `dev-tests/docs/screenshots.py` regenera as imagens do README e do guia do portal nos dois idiomas | `f14d8c4`, sessão 4 |
 | Documentação | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e em português), documentação das extensões, changelog | `539bab0` e seguintes |
 

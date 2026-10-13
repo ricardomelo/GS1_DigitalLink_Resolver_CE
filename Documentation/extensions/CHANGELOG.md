@@ -57,6 +57,39 @@
   queue, SIGTERM and SIGKILL, on a real MongoDB, relayed by `test_store_mongodb.py`, now 161 checks); the
   portal in Chromium with the worker stopped and a failing job (190 checks, 146 without the engine); the
   installer with a worker that does not start (61 checks). Commit `a072e9d`.
+- **Replicas** (step 4 of 4): `web-service`, `data-entry-service`, `portal-service` and `portal-worker` run as
+  `WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`, `PORTAL_SERVICE_REPLICAS` and `PORTAL_WORKER_REPLICAS`
+  containers (`.env`, default 1; Compose's `deploy.replicas`). **Deliberate change to official code**: the
+  fixed `container_name` of `web-service`, `data-entry-service` and `portal-service` is removed (Compose cannot
+  replicate a service with one; containers are now `<project>-<service>-<n>`); the database and the proxy
+  keep theirs. Commit `20f3304`.
+- **gunicorn in the resolver and the data entry API** (**deliberate change to the official images**): both
+  leave Flask's built-in server for gunicorn 26.2 (`__init__:create_app()`, so `main.py`'s SIGTERM handler
+  does not replace gunicorn's; `python -m main` still starts the built-in server for development), with
+  `WEB_CONCURRENCY` processes of eight threads (default 2, from `WEB_SERVICE_PROCESSES` and
+  `DATA_ENTRY_SERVICE_PROCESSES`), requests finishing within Docker's stop period, request lines in the log.
+  The portal moves from one gunicorn process to `WEB_CONCURRENCY` (`PORTAL_SERVICE_PROCESSES`, default 2).
+  Commit `20f3304`.
+- **The proxy follows replicas by itself**: each service is an upstream block with `resolve` in a shared zone,
+  and nginx asks Docker's DNS again every 10 seconds; requests are shared among the replicas, a replica that
+  refuses the connection is skipped, nginx starts while a service is down, and it is no longer restarted when
+  a service is recreated (the `depends_on … restart: true` lines are removed). **Deliberate change to the
+  official image**: `nginx:1.25.1-alpine` → `nginx:1.30-alpine` (`resolve` needs 1.27.3 or later; the 1.30
+  stable branch also carries the security releases since 2023). The raw request URI to the resolver is
+  unchanged. Commit `20f3304`.
+- **Fix: the portal's fallback session key under concurrent starts.** Without `PORTAL_SECRET_KEY`, two
+  processes starting at once could read `secret.key` before it was written and sign sessions with an empty
+  key; the key is now written under another name and linked into place, and an empty file stops the portal
+  with a message. Commit `20f3304`.
+- **Installer**: writes the four replica counts to `.env` (not asked: 1, the environment or the existing
+  `.env`; 1 to 20, anything else refused) and shows them in the summary. Commit `20f3304`.
+- **CI**: the jobs *Portal in Chromium* and *Installer and deployment* are required (no longer
+  `continue-on-error`); the proxy test runs on nginx 1.30.5 from nginx.org. Commit `20f3304`.
+- **Tests**: `test_home.py` with a stub DNS server and replica upstreams on `127.0.0.x` (68 checks: start
+  without a service's address, two replicas sharing requests, scale up and down without a restart, no failed
+  request while replicas stop); `test_install.sh` with the replica counts (68); a new `test_deploy.py` (51:
+  `docker compose config`, the proxy configuration, each image's gunicorn command started locally, the
+  session key under concurrent starts). Commit `20f3304`.
 
 ### Continuous integration (backlog item 2.2)
 - **Development tests through pytest**: `dev-tests/test_programs.py` runs each of the fifteen programs and the

@@ -24,7 +24,7 @@ the next one started.
 | 6 — EPC binary strings | 2 Oct | `51a0da8` → `4b9a7be` and the documentation commits | `/eh…` and `/ex…` decompressed for every EPC scheme with a GS1 Digital Link (item 1.6), from the TDT 2.2 artefacts and TDS 2.3; the proxy's upstream name fixed (every resolution through nginx had been a 500 since 1.5); four more candidate errata; confirmed on staging |
 | 7 — GS1's resolver test suite | 2 Oct | `bc573c4` → `386a8c3` | GS1's own suite passes on staging (31 of 31), link types published in `https://ref.gs1.org/voc/` (F22), erratum E12, open backlog in the README |
 | 8 — backlog, quick wins, CI | 13 Oct | `bc1c86b`, `1a1ca59`, `d68a883` and the documentation commits | backlog reordered around tenants, e-mail, API keys and custom domains; 30-minute idle session with a warning and a 12-hour limit; syntax box removed from the home page; community notice; development tests through pytest and on GitHub Actions |
-| 9 — architecture for scale | 13 Oct – | ADR 0001, then three code deliveries (`d783f3d`, `a072e9d`, …) | item 2.3 in progress: the portal's state in MongoDB and background jobs in a worker done; replicas next |
+| 9 — architecture for scale | 13 Oct | ADR 0001, then three code deliveries (`d783f3d`, `a072e9d`, `20f3304`) and the documentation commits | item 2.3: the portal's state in MongoDB, background jobs in a worker service, replicas of every stateless service behind a proxy that finds them by itself; gunicorn in every web service; nginx 1.30 |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -264,6 +264,8 @@ real MongoDB; four deliveries. They are recorded in
 | `d783f3d` | step 2: `store.py`, users, record metadata, journal with retention, sign-in failures and caches in MongoDB; `migrate.py`; `db_init.py` and the `portal-db-init` service; the installer generates `PORTAL_DB_PASSWORD` and `PORTAL_SECRET_KEY`; `test_store.py`, `test_store_mongodb.py` and the CI job on a real MongoDB |
 | `d7644b1` | docs: step 2 in the changelog, features and histories |
 | `a072e9d` | step 3: `jobs.py` and `worker.py`; imports and link checks as jobs; the `portal-worker` service and `PORTAL_WORKER`; queue, "not running" and failure messages in the browser; `worker` in the health check and in the installer's checks; `test_jobs.py`, `test_worker_processes.py`, e2e and installer scenarios |
+| `f1e4577` | docs: step 3 in the changelog, features and histories |
+| `20f3304` | step 4: replicas (`deploy.replicas` from `.env`, no fixed `container_name` on the replicable services); gunicorn in the resolver and the data entry API, `WEB_CONCURRENCY` processes everywhere; nginx 1.30 with `resolve` in every upstream; the portal's fallback session key safe under concurrent starts; replica counts in the installer; e2e and installer jobs required; `test_deploy.py`, replicas in `test_home.py` and `test_install.sh` |
 
 Step 2. Three details changed while it was built, and ADR 0001 was brought in line: the portal's user is
 made by a Python script in the portal's image (`db_init.py`), so that CI can run the same script against a
@@ -289,7 +291,29 @@ programs that run imports use the embedded worker; `test_jobs.py` drives workers
 `test_worker_processes.py` starts `worker.py` as processes sharing a queue, which needs a real MongoDB: it runs
 in the CI job "database". In the sandbox it was also run against FerretDB (a MongoDB-compatible server on
 SQLite, downloaded from GitHub) with TTL indexes switched off: it passed, and a deliberate mutation (claiming
-running jobs too) failed three of its checks.
+running jobs too) failed three of its checks. Step 3 was confirmed on staging: the worker announced itself,
+the health check reported it, *Check links* and an import of the exported spreadsheet finished, a check
+waited with the "not running" warning while the worker was stopped and completed once it was started again;
+the CI run of `f1e4577` was green in all six jobs (161 checks on the real MongoDB).
+
+Step 4. The owner chose, all as recommended: nginx 1.30 finding replicas by itself; gunicorn in every web
+service; replica counts in `.env`, one of each by default; the e2e and installer jobs required now, the
+real-MongoDB job informative a little longer. Only the three replicable services that had a fixed container
+name lost it; the database and the proxy, which cannot be replicated, keep their official names. Reading the
+configuration showed that the plan of the ADR (nginx looking the names up at start-up, restarted by Compose
+when a service is recreated) would serve replicas that existed when the proxy started but never one added
+later, and that `--scale` is forgotten at the next update; hence `resolve` in the upstream blocks, which
+needs nginx 1.27.3 or later and moved the proxy image from 1.25.1 to the 1.30 stable branch, and the counts
+in `.env`, which the installer now writes. Running several gunicorn processes exposed a race in the portal's
+fallback `secret.key` (a process could read the file another had created but not yet written, and sign
+sessions with an empty key): the key is now written under another name and linked into place. Concurrent
+starts of six processes did not reproduce the race; a deterministic check (eight threads asking while
+writing the key is slow) fails on the earlier code and passes now. The proxy test runs the real
+configuration on nginx 1.30 (built from source in the sandbox, from nginx.org in CI) with a small DNS server
+of its own that answers the service names with replicas on `127.0.0.x`, and `test_deploy.py` starts each
+image's gunicorn command. A rehearsal in the sandbox put two gunicorn replicas of the resolver and of the
+data entry API behind that proxy: requests were shared evenly; the records themselves could not be stored,
+because FerretDB refuses keys containing a dot, which the official records use.
 
 ## How the main areas evolved
 
@@ -303,7 +327,8 @@ running jobs too) failed three of its checks.
 | Accounts | users from the command line, all equal | roles, prefixes, users screen, temporary passwords, history, audit trail, in the portal's own database |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
 | Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
-| Tests | 69 checks | 1,438 checks in 17 test programs (one of them GS1's own test suite), plus the installer test; run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
+| Tests | 69 checks | 1,502 checks in 18 test programs (one of them GS1's own test suite), plus the installer test (68); run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
+| Deployment | one container per service, Flask's built-in server, the proxy restarted by hand | any number of replicas of the four stateless services (set in `.env`), gunicorn in every web service, a proxy that follows replicas through Docker's DNS |
 | Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
 ## Decisions that stay unless deliberately revisited
@@ -322,8 +347,10 @@ running jobs too) failed three of its checks.
 8. Labels: X = 0.495 mm, 2.2 mm text, 4X quiet zone; error correction exactly as chosen; no GS1 branding.
 9. Data attributes go only into the QR code and are validated by GS1's engine.
 10. Imports and link checks are jobs in the portal's database, run by the `portal-worker` service; nothing in
-    the portal depends on the memory of one process. The portal still runs one gunicorn worker with threads
-    until replicas (step 4 of ADR 0001).
+    the portal depends on the memory of one process. The resolver, the data entry API, the portal and the
+    worker run as `*_REPLICAS` containers set in `.env`, the web services under gunicorn with several
+    processes; the proxy finds the replicas through Docker's DNS; the database and the proxy run once
+    (ADR 0001, step 4).
 11. Registration follows Resolver 2.5.9: with a serial number, the batch and variant are informative
     qualifiers of the record; every qualified record should have its key's own record above it.
 12. EPC binary strings are decoded from GS1's TDT artefacts, shipped unchanged; key qualifiers from the tag
@@ -334,7 +361,9 @@ running jobs too) failed three of its checks.
 ## Lessons learnt
 
 - Test with data created by other tools; official example records exposed assumptions.
-- nginx resolves upstream names at start-up: the proxy must restart when a service is recreated.
+- nginx resolves upstream names at start-up: the proxy must restart when a service is recreated. Since
+  session 9 it asks Docker's DNS again every 10 seconds (`resolve`, nginx 1.27.3 or later), which also finds
+  replicas added after it started; a restart would not have.
 - `docker compose restart` keeps the old environment; use `up -d` after editing `.env`.
 - The syntax engine refuses some combinations the URI grammar allows (22 on ITIP): check with the engine.
 - The GS1 §4.10 grammar has a typing error (`shipToaAdd…` for (4302)/(4303)).
@@ -356,9 +385,15 @@ running jobs too) failed three of its checks.
   changing the code (E12).
 - When the real database cannot run where the tests are written, a compatible stand-in can still exercise
   what mongomock cannot (separate processes sharing one database), but its own gaps must be told apart from
-  defects: FerretDB 1.24 has no TTL indexes and refuses nested arrays, which MongoDB accepts.
+  defects: FerretDB 1.24 has no TTL indexes and refuses nested arrays and keys containing a dot, which
+  MongoDB accepts.
 - A worker must say that it is alive: without announcements, a job queued with no worker running waits in
   silence, and nothing tells the user or the installer why.
+- A file that other processes may read at the same moment must appear complete: write it under another name
+  and link or rename it into place. To test such a race, make the slow part slower in the test rather than
+  hoping concurrent starts will meet.
+- Check a plan against the way it will be operated: restarting the proxy when a service is recreated works
+  for one container per service, not for a container added beside the others.
 
 ## Open items
 

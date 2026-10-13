@@ -24,7 +24,7 @@ o próximo começar.
 | 6 — EPC em binário | 02/10 | `51a0da8` → `4b9a7be` e os commits de documentação | `/eh…` e `/ex…` descomprimidos para todos os esquemas EPC que têm GS1 Digital Link (item 1.6), a partir dos artefatos do TDT 2.2 e do TDS 2.3; nome do upstream do proxy corrigido (toda resolução pelo nginx dava 500 desde o 1.5); mais quatro candidatos a errata; confirmado na homologação |
 | 7 — suíte de testes da GS1 | 02/10 | `bc573c4` → `386a8c3` | a própria suíte da GS1 aprovada na homologação (31 de 31), tipos de link publicados em `https://ref.gs1.org/voc/` (F22), errata E12, backlog em aberto no README |
 | 8 — backlog, ajustes rápidos, CI | 13/10 | `bc1c86b`, `1a1ca59`, `d68a883` e os commits de documentação | backlog reordenado em torno de tenants, e-mail, chaves de API e domínios próprios; sessão de 30 minutos sem uso com aviso e limite de 12 horas; quadro da sintaxe retirado da página inicial; aviso da comunidade; testes de desenvolvimento pelo pytest e no GitHub Actions |
-| 9 — arquitetura para escala | 13/10 – | ADR 0001, depois três entregas de código (`d783f3d`, `a072e9d`, …) | item 2.3 em andamento: o estado do portal no MongoDB e as tarefas em segundo plano num worker concluídos; réplicas em seguida |
+| 9 — arquitetura para escala | 13/10 | ADR 0001, depois três entregas de código (`d783f3d`, `a072e9d`, `20f3304`) e os commits de documentação | item 2.3: o estado do portal no MongoDB, as tarefas em segundo plano num serviço worker, réplicas de todos os serviços sem estado atrás de um proxy que as acha sozinho; gunicorn em todos os serviços web; nginx 1.30 |
 
 Ao fim da sessão 4, o fork altera ou acrescenta 70 arquivos do projeto oficial (cerca de 16.000 linhas
 acrescentadas) e é coberto por 739 verificações nos testes de desenvolvimento, além do teste do
@@ -269,6 +269,8 @@ job do CI com MongoDB real; quatro entregas. Elas estão registradas no
 | `d783f3d` | etapa 2: `store.py`, usuários, metadados dos cadastros, diário com retenção, entradas recusadas e caches no MongoDB; `migrate.py`; `db_init.py` e o serviço `portal-db-init`; o instalador gera `PORTAL_DB_PASSWORD` e `PORTAL_SECRET_KEY`; `test_store.py`, `test_store_mongodb.py` e o job do CI num MongoDB real |
 | `d7644b1` | docs: a etapa 2 no changelog, nas funcionalidades e nos históricos |
 | `a072e9d` | etapa 3: `jobs.py` e `worker.py`; importações e verificações de links como tarefas; o serviço `portal-worker` e `PORTAL_WORKER`; mensagens de fila, de "não está em execução" e de falha no navegador; `worker` na verificação de saúde e nas conferências do instalador; `test_jobs.py`, `test_worker_processes.py`, cenários de e2e e do instalador |
+| `f1e4577` | docs: etapa 3 no changelog, nas funcionalidades e nos históricos |
+| `20f3304` | etapa 4: réplicas (`deploy.replicas` a partir do `.env`, sem `container_name` fixo nos serviços replicáveis); gunicorn no Resolver e na API de cadastro, `WEB_CONCURRENCY` processos em todos; nginx 1.30 com `resolve` em todos os upstreams; a chave de sessão reserva do portal segura com inícios simultâneos; quantidades de réplicas no instalador; jobs e2e e do instalador obrigatórios; `test_deploy.py`, réplicas no `test_home.py` e no `test_install.sh` |
 
 Etapa 2. Três detalhes mudaram durante a construção, e o ADR 0001 foi alinhado: o usuário do portal é
 criado por um script Python na imagem do portal (`db_init.py`), para que o CI rode o mesmo script contra um
@@ -296,7 +298,30 @@ cache responde o que já foi feito). Os programas que rodam importações usam o
 processos que dividem uma fila, o que exige um MongoDB real: ele roda no job "database" do CI. No ambiente de
 desenvolvimento ele também foi rodado contra o FerretDB (um servidor compatível com o MongoDB sobre SQLite,
 baixado do GitHub) com os índices TTL desligados: passou, e uma mutação proposital (retirar também tarefas
-em execução) reprovou três das suas verificações.
+em execução) reprovou três das suas verificações. A etapa 3 foi confirmada na homologação: o worker se
+apresentou, a verificação de saúde o informou, *Verificar links* e uma importação da planilha exportada
+terminaram, uma verificação esperou com o aviso de "fora do ar" enquanto o worker estava parado e terminou
+quando ele voltou; a execução do CI do `f1e4577` ficou verde nos seis jobs (161 verificações no MongoDB real).
+
+Etapa 4. O responsável escolheu, tudo nas opções recomendadas: nginx 1.30 achando as réplicas sozinho;
+gunicorn em todos os serviços web; quantidades de réplicas no `.env`, uma de cada por padrão; os jobs e2e e
+do instalador obrigatórios já, o do MongoDB real informativo mais um tempo. Só os três serviços replicáveis
+que tinham nome fixo de contêiner o perderam; o banco e o proxy, que não podem ser replicados, mantêm os nomes
+oficiais. A leitura da configuração mostrou que o plano do ADR (o nginx consultando os nomes na
+inicialização, reiniciado pelo Compose quando um serviço é recriado) atenderia as réplicas que existiam
+quando o proxy iniciou, mas nunca uma acrescentada depois, e que o `--scale` é esquecido na atualização
+seguinte; daí o `resolve` nos blocos upstream, que exige o nginx 1.27.3 ou posterior e levou a imagem do proxy
+do 1.25.1 ao ramo estável 1.30, e as quantidades no `.env`, que o instalador agora grava. Rodar vários
+processos do gunicorn expôs uma condição de corrida no `secret.key` reserva do portal (um processo podia ler
+o arquivo que outro criara mas ainda não gravara, e assinar sessões com uma chave vazia): a chave agora é
+gravada com outro nome e ligada ao nome final. Inícios simultâneos de seis processos não reproduziram a
+corrida; uma verificação determinística (oito threads pedindo a chave enquanto gravá-la é lento) reprova o
+código anterior e passa agora. O teste do proxy roda a configuração real no nginx 1.30 (compilado do código
+no ambiente de desenvolvimento, do nginx.org no CI) com um pequeno servidor DNS próprio, que responde os nomes
+dos serviços com réplicas em `127.0.0.x`, e o `test_deploy.py` inicia o comando gunicorn de cada imagem. Um
+ensaio no ambiente de desenvolvimento pôs duas réplicas gunicorn do Resolver e da API de cadastro atrás desse
+proxy: as requisições foram repartidas por igual; os cadastros em si não puderam ser gravados, porque o
+FerretDB recusa chaves com ponto, que os cadastros oficiais usam.
 
 ## Como as principais áreas evoluíram
 
@@ -310,7 +335,8 @@ em execução) reprovou três das suas verificações.
 | Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, tela de usuários, senhas temporárias, histórico, auditoria, no banco próprio do portal |
 | Instalação | manual, com patch | fork git, configuração em camadas, instalador para Ubuntu, backup |
 | Resolução | GTIN e lote, links comprimidos do Digital Link 1.1 | todas as chaves e qualificadores, as regras do Resolver 1.2.1, EPC em binário de etiquetas NFC (`/eh…`, `/ex…`) |
-| Testes | 69 verificações | 1.438 verificações em 17 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador; rodam pelo pytest e no GitHub Actions, o portal e seus workers de tarefas também num MongoDB real |
+| Testes | 69 verificações | 1.502 verificações em 18 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador (68); rodam pelo pytest e no GitHub Actions, o portal e seus workers de tarefas também num MongoDB real |
+| Implantação | um contêiner por serviço, servidor embutido do Flask, proxy reiniciado à mão | quantas réplicas se queira dos quatro serviços sem estado (definidas no `.env`), gunicorn em todos os serviços web, um proxy que acompanha as réplicas pelo DNS do Docker |
 | Documentação | README do pacote, documento de passagem | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e português), documentação das extensões, changelog |
 
 ## Decisões que ficam, a não ser que sejam revistas de propósito
@@ -331,8 +357,10 @@ em execução) reprovou três das suas verificações.
    escolhida; sem marca GS1.
 9. Atributos de dados vão só para o QR Code e são validados pelo engine da GS1.
 10. Importações e verificações de links são tarefas no banco do portal, executadas pelo serviço
-    `portal-worker`; nada no portal depende da memória de um processo. O portal ainda roda um único worker do
-    gunicorn com threads, até as réplicas (etapa 4 do ADR 0001).
+    `portal-worker`; nada no portal depende da memória de um processo. O Resolver, a API de cadastro, o portal
+    e o worker rodam em `*_REPLICAS` contêineres definidos no `.env`, os serviços web no gunicorn com vários
+    processos; o proxy acha as réplicas pelo DNS do Docker; o banco e o proxy rodam uma vez só (ADR 0001,
+    etapa 4).
 11. O cadastro segue o Resolver 2.5.9: com número de série, lote e variante são qualificadores informativos
     do cadastro; todo cadastro qualificado deve ter acima dele o cadastro da chave.
 12. O EPC em binário é decodificado a partir dos artefatos do TDT da GS1, incluídos sem alteração;
@@ -345,7 +373,8 @@ em execução) reprovou três das suas verificações.
 
 - Testar com dados criados por outras ferramentas; os cadastros de exemplo oficiais revelaram suposições.
 - O nginx resolve os nomes dos upstreams na inicialização: o proxy precisa reiniciar quando um serviço é
-  recriado.
+  recriado. Desde a sessão 9 ele pergunta de novo ao DNS do Docker a cada 10 segundos (`resolve`, nginx 1.27.3
+  ou posterior), o que também acha réplicas acrescentadas depois que ele iniciou; um reinício não acharia.
 - `docker compose restart` mantém o ambiente antigo; use `up -d` depois de editar o `.env`.
 - O syntax engine recusa algumas combinações que a gramática da URI permite (22 no ITIP): conferir com o
   engine.
@@ -370,9 +399,15 @@ em execução) reprovou três das suas verificações.
   antes de mudar o código (E12).
 - Quando o banco real não roda onde os testes são escritos, um substituto compatível ainda exercita o que o
   mongomock não consegue (processos separados dividindo um banco), mas as lacunas dele precisam ser
-  separadas dos defeitos: o FerretDB 1.24 não tem índices TTL e recusa arrays aninhados, que o MongoDB aceita.
+  separadas dos defeitos: o FerretDB 1.24 não tem índices TTL e recusa arrays aninhados e chaves com ponto, que
+  o MongoDB aceita.
 - Um worker precisa dizer que está vivo: sem anúncios, uma tarefa na fila sem nenhum worker rodando espera
   calada, e nada diz ao usuário ou ao instalador por quê.
+- Um arquivo que outros processos podem ler no mesmo instante precisa aparecer completo: grave-o com outro
+  nome e ligue ou renomeie para o lugar. Para testar uma corrida assim, deixe a parte lenta mais lenta no
+  teste em vez de esperar que inícios simultâneos se encontrem.
+- Confira um plano contra a forma como ele vai ser operado: reiniciar o proxy quando um serviço é recriado
+  funciona com um contêiner por serviço, não com um contêiner acrescentado ao lado dos outros.
 
 ## Pendências
 

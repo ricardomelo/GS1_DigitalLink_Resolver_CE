@@ -800,6 +800,96 @@ with sync_playwright() as p:
     check("audit trail view", "User created" in audit_text and "reader1" in audit_text and "Password changed" in audit_text,
           audit_text[:300])
 
+    # Organisations (tenants, Documentation/adr/0002-tenants.md): the server administrator, a tenant administrator,
+    # support access
+    confirmations = []
+
+    def accept_dialog(dialog):
+        confirmations.append(dialog.message)
+        dialog.accept()
+    page.on("dialog", accept_dialog)
+    page.click("#user-button")
+    check("server administrator: Organisations in the menu, named in the account menu",
+          page.is_visible("#menu-tenants") and page.inner_text("#user-tenant") == "Server administrator")
+    page.click("#menu-tenants"); page.wait_for_timeout(800)
+    check("organisations view: none yet, every record the operator's", page.is_visible("#tenants-view")
+          and page.is_visible("#tenants-empty") and "the operator's" in page.inner_text("#tenants-operator"),
+          page.inner_text("#tenants-operator"))
+    page.fill("#new-tenant-name", "Acme Foods"); page.fill("#new-tenant-prefixes", "7898357")
+    page.click("#tenants-create button[type=submit]"); page.wait_for_timeout(900)
+    row = page.inner_text("#tenants-body")
+    check("organisation created after confirming; its records counted", "Organisation Acme Foods created." in page.inner_text("#tenants-status")
+          and "7898357" in page.input_value("#tenants-body tr input[data-field=prefixes]") and confirmations
+          and "Acme Foods" in confirmations[-1], (row, confirmations))
+    page.fill("#new-tenant-name", "Beta"); page.fill("#new-tenant-prefixes", "78983574")
+    page.click("#tenants-create button[type=submit]"); page.wait_for_timeout(700)
+    check("an overlapping prefix is refused with the reason", "overlaps 7898357, which belongs to the organisation Acme Foods"
+          in page.inner_text("#tenants-status"), page.inner_text("#tenants-status"))
+    page.goto(BASE + "#records"); page.wait_for_timeout(900)
+    check("the operator no longer lists the organisation's records", "07898357410015" not in page.inner_text("#records-body"))
+    page.goto(BASE + "#users"); page.wait_for_timeout(900)
+    tenant_id = page.eval_on_selector("#new-user-tenant", "s => [...s.options].find(o => o.text === 'Acme Foods').value")
+    page.fill("#new-user-name", "acme-admin"); page.select_option("#new-user-tenant", tenant_id)
+    page.select_option("#new-user-role", "admin"); page.fill("#new-user-email", "Admin@Acme.Example")
+    page.click("#users-create button[type=submit]"); page.wait_for_timeout(800)
+    acme_temp = page.inner_text("#temp-password-value")
+    acme_row = page.inner_text("#users-body tr:has-text('acme-admin')")
+    check("user created in the organisation, with an e-mail address", len(acme_temp) == 16 and "Acme Foods" in acme_row
+          and page.input_value("#users-body tr:has-text('acme-admin') input[type=email]") == "admin@acme.example", acme_row)
+    page.select_option("#users-tenant-filter", tenant_id); page.wait_for_timeout(200)
+    check("users filtered by organisation", page.inner_text("#users-body").count("Acme Foods") == 1
+          and "tester" not in page.inner_text("#users-body"))
+    page.goto(BASE + "#tenants"); page.wait_for_timeout(800)
+    check("an organisation with users cannot be removed", page.is_disabled("#tenants-body tr:first-child button.btn-danger-ghost"))
+    page.click("#tenants-body tr:first-child button:has-text('Support access')"); page.wait_for_timeout(300)
+    page.fill("#support-reason", "abc"); page.click("#support-open"); page.wait_for_timeout(500)
+    check("support access needs a reason", "Write a reason of 5 to 200 characters." in page.inner_text("#support-msg"))
+    page.fill("#support-reason", "Ticket 42: wrong target"); page.click("#support-open"); page.wait_for_timeout(1500)
+    check("support access: banner, the organisation's records, read only",
+          page.is_visible("#support-banner") and "Support access to Acme Foods" in page.inner_text("#support-text")
+          and "07898357410015" in page.inner_text("#records-body") and page.get_attribute("body", "data-role") == "reader",
+          page.inner_text("#support-text"))
+    page.goto(BASE + "#audit"); page.wait_for_timeout(900)
+    check("support access: the organisation's audit trail, the reason recorded",
+          "Support access opened" in page.inner_text("#audit-body") and "Ticket 42: wrong target" in page.inner_text("#audit-body")
+          and not page.is_visible("th.audit-tenant-col"))
+    page.click("#support-leave"); page.wait_for_timeout(1500)
+    check("support access ended: back to the organisations, no banner", not page.is_visible("#support-banner")
+          and page.is_visible("#tenants-view"))
+    page.goto(BASE + "#audit"); page.wait_for_timeout(900)
+    check("server administrator's audit trail: the organisation column, the operator's actions marked",
+          page.is_visible("th.audit-tenant-col") and "Acme Foods" in page.inner_text("#audit-body")
+          and page.query_selector("#audit-body .by-operator") is not None)
+    page.remove_listener("dialog", accept_dialog)
+
+    acme_ctx = browser.new_context(locale="pt-BR", viewport={"width": 1280, "height": 900})
+    acme = acme_ctx.new_page()
+    acme.goto(BASE); acme.fill("#username", "acme-admin"); acme.fill("#password", acme_temp)
+    acme.click("#login-submit"); acme.wait_for_timeout(1000)
+    acme.fill("#current-password", acme_temp); acme.fill("#new-password", "acme-admin-password")
+    acme.fill("#confirm-password", "acme-admin-password"); acme.click("#password-save"); acme.wait_for_timeout(700)
+    acme.click("#password-cancel"); acme.wait_for_timeout(200)
+    acme.click("#user-button")
+    check("tenant administrator: his organisation in the account menu, no Organisations",
+          acme.inner_text("#user-tenant") == "Organização: Acme Foods" and not acme.is_visible("#menu-tenants")
+          and acme.is_visible("#menu-users"), acme.inner_text("#user-tenant"))
+    acme.goto(BASE + "#records"); acme.wait_for_timeout(900)
+    check("tenant administrator: the organisation's records only", "07898357410015" in acme.inner_text("#records-body")
+          and "09506000134352" not in acme.inner_text("#records-body"))
+    acme.goto(BASE + "#users"); acme.wait_for_timeout(900)
+    check("tenant administrator: his organisation's users only, no organisation column or selector",
+          acme.inner_text("#users-body").strip().startswith("acme-admin") and "tester" not in acme.inner_text("#users-body")
+          and not acme.is_visible("#new-user-tenant") and acme.is_visible("#new-user-email"))
+    acme.goto(BASE + "#audit"); acme.wait_for_timeout(900)
+    audit_acme = acme.inner_text("#audit-body")
+    check("tenant administrator: the support access in his trail, marked as the operator's",
+          "Acesso de suporte aberto" in audit_acme and "Ticket 42: wrong target" in audit_acme
+          and acme.query_selector("#audit-body .by-operator") is not None and "Pallet" not in audit_acme, audit_acme[:400])
+    acme.goto(BASE + "#tenants"); acme.wait_for_timeout(500)
+    check("tenant administrator: the organisations address shows the editor", not acme.is_visible("#tenants-view")
+          and acme.is_visible("#editor-view"))
+    acme_ctx.close()
+
     page.hover("#user-button"); page.wait_for_timeout(200)
     check("user menu on hover", page.is_visible("#menu-logout"))
     check("logo and menu link to the resolver home page",

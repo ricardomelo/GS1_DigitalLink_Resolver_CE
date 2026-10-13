@@ -73,6 +73,11 @@ trabalha com todos os identificadores do Resolver.
 O leitor vê o editor com todos os campos bloqueados e o aviso *Seu perfil é de leitura: você pode
 consultar e exportar, mas não alterar.*
 
+**Organizações.** Uma instalação pode atender várias organizações, cada uma dona dos seus prefixos de empresa GS1
+(seção 14). Um usuário pertence a uma organização, ou ao operador que mantém a instalação, e só vê os cadastros
+dessa organização (ou os do operador: os que não são de nenhuma organização). O menu da conta mostra o nome da
+organização; os administradores do operador veem ali *Administrador do servidor*.
+
 ## 3. Entrar, idioma e senha
 
 ![Página de entrada](../images/guide/pt-BR/sign-in.png)
@@ -518,8 +523,49 @@ trocá-la no primeiro acesso.
 - **Desativar** / **Reativar** — um usuário desativado não consegue entrar, e a conta é mantida;
 - **Excluir** — apaga a conta; as alterações do usuário continuam no histórico e na auditoria.
 
-Você não pode desativar, rebaixar ou excluir o seu próprio usuário, e o portal sempre mantém pelo menos um
-administrador ativo. Usuários criados antes de existirem perfis são administradores.
+Cada usuário pode ter um **E-mail** (opcional, único; ainda não é usado). Você não pode desativar, rebaixar ou
+excluir o seu próprio usuário, e o portal sempre mantém pelo menos um administrador do servidor ativo. Usuários
+criados antes de existirem perfis são administradores.
+
+**Quais usuários você vê.** O administrador de uma organização vê e gerencia só os usuários da sua organização.
+Um administrador do servidor (um administrador do operador) vê todos os usuários, com uma coluna e um filtro
+**Organização**, e escolhe a **Organização** de cada usuário novo (*Operador (administração do servidor)* para os
+usuários do próprio operador). A organização de um usuário nunca muda.
+
+### Organizações (administradores do servidor)
+
+![Organizações](../images/guide/pt-BR/organisations.png)
+
+**Organizações** (menu do usuário, administradores do servidor) lista as organizações que usam a instalação, com
+seus prefixos de empresa GS1, número de usuários e de cadastros, e situação. Abaixo da tabela, o número de
+cadastros que não pertencem a nenhuma organização (os do operador).
+
+- **Criar uma organização**: um **nome** e seus **prefixos de empresa GS1**, depois **Criar organização**, e
+  confirme. Em seguida, crie o primeiro administrador dela em **Usuários**. Cada prefixo pertence a uma só
+  organização: um prefixo que se sobrepõe ao de outra organização é recusado, com o nome dela.
+- **Salvar** um nome ou prefixos novos (com confirmação: os cadastros mudam de dono na hora). Um prefixo ao qual um
+  usuário da organização está limitado não pode ser retirado antes.
+- **Desativar** / **Reativar**: os usuários de uma organização desativada não conseguem entrar e as sessões deles
+  terminam; os cadastros continuam resolvendo.
+- **Excluir**: só uma organização sem usuários; os prefixos e os cadastros dela voltam para o operador, e a trilha
+  de auditoria dela é mantida.
+
+**Criar uma organização tira os cadastros dela dos usuários do operador, inclusive de você.** Você só volta a
+vê-los, sem poder alterá-los, pelo acesso de suporte.
+
+### Acesso de suporte
+
+![Acesso de suporte](../images/guide/pt-BR/support-dialog.png)
+
+Para ajudar uma organização, clique em **Acesso de suporte** na linha dela, escreva o **motivo** (de 5 a 200
+caracteres, por exemplo o número de um chamado) e clique em **Abrir acesso de suporte**. O motivo fica registrado
+na auditoria da organização, que os administradores dela leem.
+
+![Faixa do acesso de suporte](../images/guide/pt-BR/support-banner.png)
+
+Enquanto ele está aberto, uma faixa mostra o nome da organização; você vê os cadastros dela, o histórico, as
+etiquetas e a auditoria, e pode exportá-los, mas não pode alterar nada. **Encerrar acesso** (ou sair do portal)
+fecha o acesso, e isso também fica registrado.
 
 ## 15. Administração: auditoria
 
@@ -533,6 +579,12 @@ Filtre por **Usuário**, por data (**De**, **Até**) e por **Identificador ou te
 *import*…) e clique em **Filtrar**. **Exportar CSV** baixa os mesmos eventos para o Excel. Um
 administrador limitado a alguns prefixos de empresa GS1 vê só os eventos de cadastros desses prefixos.
 
+Cada organização tem a sua trilha de auditoria: os administradores dela veem só os eventos dela. O que o
+administrador do servidor fez na organização (usuários, prefixos, acesso de suporte) aparece com a marca
+*operador*. O administrador do servidor vê a trilha do operador, com uma coluna **Organização** e tudo o que os
+usuários do operador fizeram nas organizações; a trilha inteira de uma organização, só durante o acesso de
+suporte.
+
 ## 16. Mensagens e o que fazer
 
 | Mensagem | O que fazer |
@@ -543,7 +595,9 @@ administrador limitado a alguns prefixos de empresa GS1 vê só os eventos de ca
 | *Você mudou o código. Clique em Abrir cadastro para ver os destinos dele.* | Clique em **Abrir cadastro**; os passos 2 e 3 são liberados. |
 | *Este identificador tem outros cadastros (…) que abrem primeiro em …* | Mantenha o tipo principal compartilhado no primeiro destino (seção 5). |
 | *Os destinos N e M têm o mesmo tipo e idioma.* | Troque o idioma de um deles ou remova um. |
-| *Este identificador não pertence aos prefixos de empresa GS1 do seu usuário.* | Peça a um administrador para incluir o prefixo no seu usuário. |
+| *Este identificador está fora do que o seu usuário alcança (a organização ou os prefixos de empresa GS1 dele).* | O identificador é de outra organização, ou de um prefixo que o seu usuário não tem: fale com um administrador. |
+| *A organização do seu usuário está desativada. Procure o administrador do servidor.* | A organização foi desativada pelo administrador do servidor. |
+| *O prefixo N se sobrepõe a M, que é da organização X.* | Cada prefixo pertence a uma só organização: confira o prefixo com a GS1. |
 | *Seu perfil não permite esta ação.* | Peça a um administrador o perfil de editor. |
 | *O conteúdo não cabe na versão N com correção L.* | Escolha uma versão maior ou *Automática*, uma correção menor ou menos atributos. |
 | *O Resolver não respondeu.* | Tente de novo em alguns minutos; se continuar, avise o administrador. |
@@ -565,6 +619,12 @@ administrador limitado a alguns prefixos de empresa GS1 vê só os eventos de ca
 - **GS1 Digital Link** — um endereço da web que carrega chaves de identificação GS1.
 - **HRI (human readable interpretation)** — o texto impresso junto ao código.
 - **Prefixo de empresa GS1** — os primeiros dígitos de um identificador, atribuídos pela GS1 a uma empresa.
+- **Organização** — uma empresa ou outra entidade que usa a instalação e é dona de prefixos de empresa GS1; os
+  cadastros e usuários dela são só dela.
+- **Operador** — quem mantém a instalação; é dono dos cadastros que não são de nenhuma organização. Os
+  administradores dele são os **administradores do servidor**.
+- **Acesso de suporte** — o acesso, só de leitura, de um administrador do servidor a uma organização, com um motivo
+  registrado na auditoria dela.
 - **Qualificador** — um valor que restringe uma chave: variante, lote, número de série, extensão do GLN…
 - **Resolver** — o serviço que responde aos GS1 Digital Links e leva as pessoas aos destinos cadastrados.
 - **Tipo de link** — do que trata um destino, segundo o vocabulário web da GS1 (`gs1:pip`,

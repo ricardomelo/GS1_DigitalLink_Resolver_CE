@@ -482,7 +482,9 @@ dialog::backdrop { background: rgba(0, 30, 74, .45); }
 
 /* ---------------------------------------------------------------- roles and governance */
 body[data-role="reader"] .needs-editor { display: none !important; }
-body:not([data-role="admin"]) .needs-admin { display: none !important; }
+body:not([data-account-role="admin"]) .needs-admin { display: none !important; }
+body:not([data-server-admin="true"]) .needs-server-admin { display: none !important; }
+body:not([data-operator-view="true"]) .audit-tenant-col { display: none !important; }
 .read-only-note { margin-top: .75rem; }
 .history-panel { margin-top: 1.5rem; border-top: 1px solid var(--line); padding-top: 1rem; }
 .history-panel h3 { margin: 0 0 .5rem; font-size: 1rem; color: var(--gs1-blue); }
@@ -504,11 +506,40 @@ body:not([data-role="admin"]) .needs-admin { display: none !important; }
 .temp-password p { margin: 0; flex-basis: 100%; }
 .temp-password code { font-size: 1.1rem; letter-spacing: .05em; }
 .users-table select, .users-table input { min-height: 2.25rem; padding: .25rem .5rem; font-size: .875rem; }
-.users-table select { min-width: 9.5rem; }
+.users-table select { min-width: 8.5rem; }
+#users-body input:not([type="email"]) { width: 7.5rem; }
 .users-table .user-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
 .users-table .user-actions .btn { min-height: 2rem; padding: .25rem .7rem; font-size: .8125rem; }
 .users-table tr.is-disabled td:not(:last-child) { opacity: .55; }
 .audit-table td { font-size: .875rem; }
+.audit-table .by-operator { display: inline-block; margin-left: .35rem; padding: 0 .4rem; border-radius: 999px;
+                            background: #E8EEF7; color: var(--gs1-blue); font-size: .75rem; font-weight: 600; }
+
+/* ---------------------------------------------------------------- organisations (tenants) and support access */
+.menu-user .menu-tenant { margin-top: .25rem; color: var(--ink); font-weight: 500; }
+.users-email { flex: 1 1 16rem; max-width: 30rem; }
+.users-email input { width: 100%; }
+.users-table input[type="email"] { min-width: 10rem; }
+.users-table th.count { text-align: right; }
+.tenants-name { flex: 1 1 14rem; }
+.tenants-name input { width: 100%; }
+.list-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: .5rem 1rem; }
+.list-head h2 { margin-bottom: .5rem; }
+.list-filter { display: flex; align-items: center; gap: .5rem; margin: 0 0 .5rem; font-size: .875rem; }
+.list-filter select { min-height: 2.25rem; padding: .25rem .5rem; font-size: .875rem; }
+.tenants-table input[data-field="name"] { min-width: 11rem; }
+.tenants-table input[data-field="prefixes"] { min-width: 12rem; }
+.tenants-table td.count { font-variant-numeric: tabular-nums; }
+@media (min-width: 721px) { .tenants-table td.count { text-align: right; } }
+.support-banner { background: #FFF1D6; border-bottom: 1px solid #F0C36D; color: #5C3A00; }
+.support-banner[hidden] { display: none; }
+.support-inner { max-width: 76rem; margin: 0 auto; padding: .6rem clamp(1rem, 4vw, 2rem); display: flex; flex-wrap: wrap; align-items: center;
+                 gap: .5rem 1rem; font-weight: 500; }
+.support-inner svg { flex: none; color: #9A5B00; }
+.support-inner span { flex: 1 1 18rem; }
+.support-inner .btn { min-height: 2.25rem; padding: .3rem .9rem; font-size: .875rem; background: #fff; }
+.support-dialog { width: min(36rem, calc(100vw - 2rem)); }
+.support-dialog input { width: 100%; }
 .btn-danger-ghost { background: #fff; border-color: var(--line); color: var(--action); }
 .btn-danger-ghost:hover { border-color: var(--action); }
 

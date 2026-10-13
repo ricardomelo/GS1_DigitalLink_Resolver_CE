@@ -125,6 +125,7 @@ def save_element(page, name, selector, pad=12, extra_height=0):
 
 os.makedirs(OUT, exist_ok=True)
 import syntax  # noqa: E402 — tells whether the GS1 Barcode Syntax Engine is available (GS1_SYNTAX_ENGINE_DIR)
+import tenants  # noqa: E402 — organisations for the guide's images
 
 
 def sign_in(browser, locale, viewport=None):
@@ -288,7 +289,32 @@ def guide_images(locale: str, folder: str, description: str, own_copies: bool) -
         page.goto(BASE); page.wait_for_timeout(700)
         page.click("#user-button"); page.click("#menu-options"); page.wait_for_timeout(400)
         save_element(page, f"{folder}/password.png", "#options-dialog", pad=4)
+        page.click("#options-close")
+
+        # Organisations and support access (last: an organisation takes its records away from maria)
+        tenant_images(page, folder, locale)
         browser.close()
+
+
+def tenant_images(page, folder: str, locale: str) -> None:
+    """The organisations screen, the support access dialog and its banner (Documentation/adr/0002-tenants.md).
+    The organisations are made once, with prefixes no example record uses, plus one tenant administrator."""
+    if not tenants.find("Acme Foods"):
+        acme = tenants.create("Acme Foods", ["7895555"], "maria")
+        tenants.create("Beta Drinks", ["7896666", "7897777"], "maria")
+        users.create("ana.acme", "acme-temporary-pw1", "admin", tenant=acme["id"], email="ana@acme.example",
+                     must_change=False)
+        for value, description in (("07895555000017", "Acme coffee 500 g"), ("07895555000024", "Acme tea 250 g")):
+            mock_data_entry.upsert({"anchor": f"/01/{value}", "itemDescription": description, "defaultLinktype": "gs1:pip",
+                                    "links": [pip(f"https://acme.example/{value}")]})
+    page.goto(BASE + "#tenants"); page.wait_for_timeout(900)
+    save(page, f"{folder}/organisations.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1000})
+    page.click("#tenants-body tr:first-child button.btn-ghost >> nth=1"); page.wait_for_timeout(300)
+    page.fill("#support-reason", "Chamado 42: destino errado" if locale == "pt-BR" else "Ticket 42: wrong target")
+    save_element(page, f"{folder}/support-dialog.png", "#support-dialog", pad=4)
+    page.click("#support-open"); page.wait_for_timeout(1500)
+    save(page, f"{folder}/support-banner.png", clip={"x": 0, "y": 0, "width": 1280, "height": 720})
+    page.click("#support-leave"); page.wait_for_timeout(1200)
 
 
 guide_images("en-GB", "guide", "Organic açaí 500 g — batch L2026A", own_copies=False)

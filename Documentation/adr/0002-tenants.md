@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (13 October 2026). Implemented in three steps: 1 (this record), 2 (data model, server checks and audit; section 3.9), 3 (screens) |
+| Status | **Accepted** (13 October 2026). Implemented in three steps: 1 (this record), 2 (data model, server checks and audit; section 3.9), 3 (screens; section 3.10) |
 | Backlog item | 2.4 — tenants |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 |
 | Portuguese | [ADR 0002 em português](../pt-BR/adr/0002-organizacoes.md) |
@@ -199,6 +199,17 @@ Step 2 follows sections 3.1 to 3.6 and 3.8; details settled while writing it:
   operator's.
 - The audit CSV gains two columns at the end, `organisation` and `by_operator`, so programs reading the first six
   keep working.
+
+### 3.10 As implemented in step 3
+
+The screens follow section 3.7. Creating an organisation, changing its prefixes, disabling and removing it ask
+for confirmation; *Remove* is disabled while the organisation has users. Support access opens from the
+organisation's row in a dialog that asks for the reason and starts the page again in the organisation's scope;
+*End support access* in the banner returns to the organisations. The users list of a server administrator has an
+organisation filter; in the audit trail, events done by the operator to an organisation carry the tag
+*operator* in both administrators' views. The owner was away when step 3 was built: the images of the screens
+(the user guide's) were delivered for review before the update reaches staging, instead of mock-ups before the
+work.
 
 ## 4. Options considered
 

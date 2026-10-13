@@ -30,7 +30,8 @@
           </button>
           <div class="menu" id="user-menu-panel">
             <div class="menu-panel" role="menu">
-              <div class="menu-user"><small data-i18n="menu.signedInAs"></small><strong id="user-name"></strong></div>
+              <div class="menu-user"><small data-i18n="menu.signedInAs"></small><strong id="user-name"></strong>
+                <small class="menu-tenant" id="user-tenant" hidden></small></div>
               <a class="menu-item" role="menuitem" href="/" id="menu-home">
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 3 2 11.5h3V21h5.5v-6h3v6H19v-9.5h3L12 3Z"/></svg>
                 <span data-i18n="menu.home"></span>
@@ -42,6 +43,10 @@
               <a class="menu-item needs-admin" role="menuitem" href="#users" id="menu-users">
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-7 1.7-7 4.5V20h14v-2.5C16 14.7 12.3 13 9 13Zm7.5-2a3.5 3.5 0 1 0-1-6.9 5.9 5.9 0 0 1 0 6.8c.3.1.6.1 1 .1Zm1.4 2.2A5.6 5.6 0 0 1 20 17.5V20h2v-2.5c0-2-1.8-3.5-4.1-4.3Z"/></svg>
                 <span data-i18n="menu.users"></span>
+              </a>
+              <a class="menu-item needs-server-admin" role="menuitem" href="#tenants" id="menu-tenants">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 21V5l7-3v5l11 3v11H3Zm2-2h3v-3H5v3Zm0-5h3v-3H5v3Zm0-5h3V6.5L5 7.8V9Zm5 10h3v-3h-3v3Zm0-5h3v-3h-3v3Zm5 5h4v-3h-4v3Zm0-5h4v-3h-4v3Z"/></svg>
+                <span data-i18n="menu.tenants"></span>
               </a>
               <a class="menu-item needs-admin" role="menuitem" href="#audit" id="menu-audit">
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 2.1 5l-1.4 1.4A9 9 0 1 0 13 3Zm-1 5v5l4.3 2.5.7-1.2-3.5-2.1V8H12Z"/></svg>
@@ -61,6 +66,15 @@
       </div>
     </div>
   </header>
+
+  <!-- Read-only support access of a server administrator to an organisation (Documentation/adr/0002-tenants.md) -->
+  <div class="support-banner" id="support-banner" role="status" hidden>
+    <div class="support-inner">
+      <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Zm-1 14-4-4 1.4-1.4 2.6 2.6 5.6-5.6L18 9l-7 7Z"/></svg>
+      <span id="support-text"></span>
+      <button type="button" class="btn btn-ghost" id="support-leave" data-i18n="support.leave"></button>
+    </div>
+  </div>
 
   <section class="hero">
     <div class="hero-inner">
@@ -430,6 +444,10 @@
           <label for="new-user-name" data-i18n="users.name"></label>
           <input id="new-user-name" autocomplete="off" maxlength="64">
         </div>
+        <div class="needs-server-admin">
+          <label for="new-user-tenant" data-i18n="users.tenant"></label>
+          <select id="new-user-tenant"></select>
+        </div>
         <div>
           <label for="new-user-role" data-i18n="users.role"></label>
           <select id="new-user-role"></select>
@@ -438,9 +456,14 @@
           <label for="new-user-prefixes" data-i18n="users.prefixes"></label>
           <input id="new-user-prefixes" autocomplete="off" data-i18n-attr="placeholder:users.prefixesPlaceholder">
         </div>
+        <div class="users-email">
+          <label for="new-user-email" data-i18n="users.email"></label>
+          <input id="new-user-email" type="email" autocomplete="off" maxlength="254" data-i18n-attr="placeholder:users.emailPlaceholder">
+        </div>
         <button type="submit" class="btn btn-primary" data-i18n="users.create"></button>
       </form>
       <p class="field-msg" data-i18n="users.prefixesHint"></p>
+      <p class="field-msg needs-server-admin" data-i18n="users.tenantHint"></p>
       <div class="status" id="users-status" role="status" aria-live="polite" hidden></div>
       <div class="temp-password" id="temp-password" hidden>
         <p id="temp-password-text"></p>
@@ -448,14 +471,20 @@
         <button type="button" class="btn btn-ghost" id="temp-password-copy" data-i18n="users.copy"></button>
       </div>
 
-      <h2 data-i18n="users.listTitle"></h2>
+      <div class="list-head">
+        <h2 data-i18n="users.listTitle"></h2>
+        <label class="needs-server-admin list-filter"><span data-i18n="users.tenantFilter"></span>
+          <select id="users-tenant-filter"></select></label>
+      </div>
       <div class="table-wrap">
         <table class="records-table users-table">
           <thead>
             <tr>
               <th scope="col" data-i18n="users.name"></th>
+              <th scope="col" class="needs-server-admin" data-i18n="users.tenant"></th>
               <th scope="col" data-i18n="users.role"></th>
               <th scope="col" data-i18n="users.prefixes"></th>
+              <th scope="col" data-i18n="users.email"></th>
               <th scope="col" data-i18n="users.state"></th>
               <th scope="col" data-i18n="users.lastLogin"></th>
               <th scope="col" data-i18n="users.actions"></th>
@@ -466,6 +495,63 @@
       </div>
     </section>
   </main>
+
+  <!-- Organisations (server administrators; Documentation/adr/0002-tenants.md) -->
+  <main class="records-main" id="tenants-view" hidden>
+    <section class="sheet">
+      <h2 data-i18n="tenants.createTitle"></h2>
+      <form class="users-create" id="tenants-create" novalidate>
+        <div class="tenants-name">
+          <label for="new-tenant-name" data-i18n="tenants.name"></label>
+          <input id="new-tenant-name" autocomplete="off" maxlength="80">
+        </div>
+        <div class="users-prefixes">
+          <label for="new-tenant-prefixes" data-i18n="tenants.prefixes"></label>
+          <input id="new-tenant-prefixes" autocomplete="off" data-i18n-attr="placeholder:tenants.prefixesPlaceholder">
+        </div>
+        <button type="submit" class="btn btn-primary" data-i18n="tenants.create"></button>
+      </form>
+      <p class="field-msg" data-i18n="tenants.hint"></p>
+      <p class="field-msg is-warn" data-i18n="tenants.warning"></p>
+      <div class="status" id="tenants-status" role="status" aria-live="polite" hidden></div>
+
+      <h2 data-i18n="tenants.listTitle"></h2>
+      <div class="table-wrap">
+        <table class="records-table users-table tenants-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="tenants.name"></th>
+              <th scope="col" data-i18n="tenants.prefixes"></th>
+              <th scope="col" class="count" data-i18n="tenants.users"></th>
+              <th scope="col" class="count" data-i18n="tenants.records"></th>
+              <th scope="col" data-i18n="users.state"></th>
+              <th scope="col" data-i18n="users.actions"></th>
+            </tr>
+          </thead>
+          <tbody id="tenants-body"></tbody>
+        </table>
+      </div>
+      <p class="records-empty" id="tenants-empty" data-i18n="tenants.none" hidden></p>
+      <p class="field-msg" id="tenants-operator" aria-live="polite"></p>
+    </section>
+  </main>
+
+  <!-- Support access: the reason is recorded in the organisation's audit trail -->
+  <dialog class="support-dialog" id="support-dialog" aria-labelledby="support-title">
+    <div class="dialog-head">
+      <h2 id="support-title" data-i18n="support.title"></h2>
+    </div>
+    <form class="dialog-body" id="support-form" novalidate>
+      <p id="support-intro"></p>
+      <label for="support-reason" data-i18n="support.reason.label"></label>
+      <input id="support-reason" autocomplete="off" maxlength="200" data-i18n-attr="placeholder:support.reason.placeholder">
+      <p class="field-msg is-error" id="support-msg" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="support-cancel" data-i18n="options.cancel"></button>
+        <button type="submit" class="btn btn-primary" id="support-open" data-i18n="support.open"></button>
+      </div>
+    </form>
+  </dialog>
 
   <!-- Audit trail (administrators) -->
   <main class="records-main" id="audit-view" hidden>
@@ -497,6 +583,7 @@
             <tr>
               <th scope="col" data-i18n="audit.when"></th>
               <th scope="col" data-i18n="audit.user"></th>
+              <th scope="col" class="audit-tenant-col" data-i18n="audit.tenant"></th>
               <th scope="col" data-i18n="audit.action"></th>
               <th scope="col" data-i18n="audit.record"></th>
               <th scope="col" data-i18n="audit.detail"></th>

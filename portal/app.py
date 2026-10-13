@@ -1563,7 +1563,7 @@ def update_tenant(tenant_id):
     changes = [f"{field}={','.join(after[field]) if field == 'prefixes' else after[field]}"
                for field in ("name", "prefixes", "disabled") if before[field] != after[field]]
     audit.info("user=%s action=tenant-update tenant=%s %s", g.user, tenant_id, " ".join(changes))
-    log_event("tenant-update", tenant=tenant_id, detail=" ".join(changes) or "-")
+    log_event("tenant-update", tenant=tenant_id, detail=" ".join(changes) or None)
     return message("tenants.updated", 200, params={"name": after["name"]})
 
 
@@ -1611,7 +1611,7 @@ def close_support():
     """Closes support access (nothing to do when none is open)."""
     if g.support:
         audit.info("user=%s action=support-close tenant=%s", g.user, g.support)
-        log_event("support-close", tenant=g.support, detail="-")
+        log_event("support-close", tenant=g.support)
     session.pop("support", None)
     return message("support.closed")
 

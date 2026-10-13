@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Situação | **Aceito** (13 de outubro de 2026). Implementado em três etapas: 1 (este registro), 2 (modelo de dados, verificações no servidor e auditoria; seção 3.9), 3 (telas) |
+| Situação | **Aceito** (13 de outubro de 2026). Implementado em três etapas: 1 (este registro), 2 (modelo de dados, verificações no servidor e auditoria; seção 3.9), 3 (telas; seção 3.10) |
 | Item do backlog | 2.4 — tenants |
 | Decidido por | o responsável pelo branch, que pediu a opção recomendada em cada ponto da seção 4 |
 | Inglês | [ADR 0002 in English](../../adr/0002-tenants.md) (versão de referência) |
@@ -200,6 +200,17 @@ A etapa 2 segue as seções 3.1 a 3.6 e 3.8; detalhes definidos ao escrevê-la:
   outras, para a do operador.
 - O CSV da auditoria ganha duas colunas no fim, `organisation` e `by_operator`, para que programas que leem as seis
   primeiras continuem funcionando.
+
+### 3.10 Como implementado na etapa 3
+
+As telas seguem a seção 3.7. Criar uma organização, mudar seus prefixos, desativá-la e excluí-la pedem
+confirmação; *Excluir* fica desabilitado enquanto a organização tem usuários. O acesso de suporte é aberto na
+linha da organização, num diálogo que pede o motivo e recomeça a página no escopo da organização; *Encerrar acesso*,
+na faixa, volta para as organizações. A lista de usuários do administrador do servidor tem um filtro por
+organização; na auditoria, os eventos feitos pelo operador numa organização levam a marca *operador* na visão dos
+dois administradores. O responsável estava ausente quando a etapa 3 foi feita: as imagens das telas (as do guia
+do usuário) foram entregues para revisão antes de a atualização chegar à homologação, em vez de mock-ups antes do
+trabalho.
 
 ## 4. Opções consideradas
 

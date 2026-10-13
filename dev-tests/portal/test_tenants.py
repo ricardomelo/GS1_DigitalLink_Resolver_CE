@@ -381,5 +381,29 @@ check("command line: a new user created in a tenant; an existing user keeps his"
 check("tenants.find by name ignoring case, or by id", tenants.find(" ACME foods ")["id"] == acme["id"]
       and tenants.find(delta["id"])["name"] == "Delta" and tenants.find("nobody") is None)
 
+# ------------------------------------------------------------------ messages in both languages
+import re  # noqa: E402
+
+STATIC = os.path.join(PORTAL, "static")
+catalogue_js = open(os.path.join(STATIC, "i18n.js"), encoding="utf-8").read()
+blocks = re.split(r'\n    "(?:pt-BR|en-GB)": \{', catalogue_js)[1:]
+pt_keys, en_keys = (set(re.findall(r'^      "([^"]+)":', b, re.M)) for b in blocks[:2])
+# the Portuguese names of the GS1 Application Identifiers ("ai.…") exist in pt-BR only: English uses the GS1 Barcode
+# Syntax Dictionary's own titles
+check("both languages have the same messages", {k for k in pt_keys ^ en_keys if not k.startswith("ai.")} == set(),
+      sorted(k for k in pt_keys ^ en_keys if not k.startswith("ai.")))
+page_keys = set(re.findall(r'data-i18n="([^"]+)"', open(os.path.join(STATIC, "index.html"), encoding="utf-8").read()))
+page_keys |= {k.split(":", 1)[1] for attr in re.findall(r'data-i18n-attr="([^"]+)"',
+                                                         open(os.path.join(STATIC, "index.html"), encoding="utf-8").read())
+              for k in attr.split(";")}
+check("every message of the page is translated", page_keys <= pt_keys, sorted(page_keys - pt_keys))
+server_codes = set(re.findall(r'(?:UserError|ValidationError|message)\("((?:tenants|users|support|access|auth)\.[A-Za-z.]+)"',
+                              "".join(open(os.path.join(PORTAL, f), encoding="utf-8").read()
+                                      for f in ("app.py", "users.py", "tenants.py"))))
+check("every message code of the server is translated", server_codes <= pt_keys and len(server_codes) > 25,
+      sorted(server_codes - pt_keys))
+actions = {"login-refused", "tenant-create", "tenant-update", "tenant-remove", "support-open", "support-close"}
+check("every new journal action has a name", {f"audit.action.{a}" for a in actions} <= pt_keys)
+
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

@@ -1243,18 +1243,22 @@ const records = { all: [], loaded: false };
 
 function isRecordsView() { return location.hash === "#records"; }
 
-const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit" };
+const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants" };
 
-/* Shows the editor, the record list, the user administration or the audit trail, following the
-   address (#records, #users, #audit), so the browser's back button and bookmarks work. */
+/* Shows the editor, the record list, the user administration, the organisations or the audit trail, following
+   the address (#records, #users, #tenants, #audit), so the browser's back button and bookmarks work. Users and the
+   audit trail follow the account's role (a server administrator in support access is a reader of records but
+   still an administrator); organisations are for server administrators. */
 function applyView() {
   let view = VIEWS[location.hash] || "editor";
-  if ((view === "users" || view === "audit") && CONFIG && CONFIG.role !== "admin") view = "editor";
+  if ((view === "users" || view === "audit") && CONFIG && CONFIG.accountRole !== "admin") view = "editor";
+  if (view === "tenants" && CONFIG && !CONFIG.serverAdmin) view = "editor";
   $("#editor-view").hidden = view !== "editor";
   $("#records-view").hidden = view !== "records";
   $("#users-view").hidden = view !== "users";
+  $("#tenants-view").hidden = view !== "tenants";
   $("#audit-view").hidden = view !== "audit";
-  const titles = { editor: "intro", records: "records", users: "users", audit: "audit" };
+  const titles = { editor: "intro", records: "records", users: "users", audit: "audit", tenants: "tenants" };
   I18N.set($("#hero-title"), `${titles[view]}.title`);
   I18N.set($("#hero-lede"), `${titles[view]}.lede`);
   const link = $("#hero-link");
@@ -1262,6 +1266,7 @@ function applyView() {
   I18N.set(link, view === "editor" ? "records.link" : "records.back");
   if (view === "records") loadRecords();
   if (view === "users" && CONFIG) loadUsers();
+  if (view === "tenants" && CONFIG) loadTenants();
   if (view === "audit" && CONFIG) loadAudit();
 }
 
@@ -1368,6 +1373,35 @@ function roleSelect(value) {
   return select;
 }
 
+const people = { all: [], tenants: [] };
+
+/* An <option> whose text follows the language (data-i18n). */
+function i18nOption(key, value, params) {
+  const option = new Option("", value);
+  option.dataset.i18n = key;
+  if (params) option.dataset.i18nParams = JSON.stringify(params);
+  option.textContent = t(key, params);
+  return option;
+}
+
+/* The organisation selector of the new-user form and the organisation filter of the list (server
+   administrators): the operator, then every organisation by name. */
+function fillTenantSelectors() {
+  const box = $("#new-user-tenant"), filter = $("#users-tenant-filter");
+  const chosen = box.value, filtered = filter.value;
+  box.replaceChildren(i18nOption("users.operator", ""), ...people.tenants.map(tn => new Option(tn.name, tn.id)));
+  box.value = people.tenants.some(tn => tn.id === chosen) ? chosen : "";
+  filter.replaceChildren(i18nOption("users.anyTenant", "*"), i18nOption("users.operatorName", ""),
+                         ...people.tenants.map(tn => new Option(tn.name, tn.id)));
+  filter.value = filtered === "" || people.tenants.some(tn => tn.id === filtered) ? filtered : "*";
+}
+
+function renderUsers() {
+  const filter = $("#users-tenant-filter").value;
+  const shown = CONFIG.serverAdmin && filter !== "*" ? people.all.filter(u => (u.tenant || "") === filter) : people.all;
+  $("#users-body").replaceChildren(...shown.map(userRow));
+}
+
 async function loadUsers() {
   const roleBox = $("#new-user-role");
   if (!roleBox.options.length) {
@@ -1375,9 +1409,13 @@ async function loadUsers() {
     roleBox.replaceChildren(...template.options);
     roleBox.value = "editor";
   }
+  if (!$("#users-tenant-filter").options.length) $("#users-tenant-filter").add(i18nOption("users.anyTenant", "*"));
   try {
-    const { users } = await api("GET", "users");
-    $("#users-body").replaceChildren(...users.map(userRow));
+    const data = await api("GET", "users");
+    people.all = data.users;
+    people.tenants = data.tenants || [];
+    if (CONFIG.serverAdmin) fillTenantSelectors();
+    renderUsers();
   } catch (e) {
     usersStatus("error", e.code, e.params);
   }
@@ -1394,6 +1432,7 @@ function userRow(u) {
     return td;
   };
   cell("users.name", u.username + (u.username === CONFIG.user ? " " + t("users.you") : ""));
+  cell("users.tenant", u.tenant ? u.tenantName : t("users.operatorName")).classList.add("needs-server-admin");
   const role = roleSelect(u.role);
   role.setAttribute("aria-label", t("users.role"));
   cell("users.role", role);
@@ -1402,6 +1441,12 @@ function userRow(u) {
   prefixes.setAttribute("aria-label", t("users.prefixes"));
   prefixes.placeholder = t("users.allPrefixes");
   cell("users.prefixes", prefixes);
+  const email = document.createElement("input");
+  email.type = "email"; email.maxLength = 254; email.autocomplete = "off";
+  email.value = u.email || "";
+  email.setAttribute("aria-label", t("users.email"));
+  email.placeholder = t("users.emailPlaceholder");
+  cell("users.email", email);
   cell("users.state", t(u.disabled ? "users.disabled" : u.mustChange ? "users.mustChange" : "users.active"));
   cell("users.lastLogin", formatWhen(u.lastLogin));
   const actions = document.createElement("div");
@@ -1413,7 +1458,8 @@ function userRow(u) {
     b.addEventListener("click", handler);
     actions.append(b);
   };
-  button("users.save", () => saveUser(u.username, { role: role.value, prefixes: prefixesFrom(prefixes.value) }), "btn-secondary");
+  button("users.save", () => saveUser(u.username, { role: role.value, prefixes: prefixesFrom(prefixes.value),
+                                                    email: email.value.trim() }), "btn-secondary");
   if (u.username !== CONFIG.user) {                // your own password: user menu → Options
     button("users.resetPassword", () => resetUser(u.username));
     button(u.disabled ? "users.enable" : "users.disable", () => saveUser(u.username, { disabled: !u.disabled }));
@@ -1429,12 +1475,15 @@ async function createUser(event) {
   try {
     const result = await api("POST", "users", {
       username: $("#new-user-name").value.trim(), role: $("#new-user-role").value,
-      prefixes: prefixesFrom($("#new-user-prefixes").value),
+      prefixes: prefixesFrom($("#new-user-prefixes").value), email: $("#new-user-email").value.trim(),
+      ...(CONFIG.serverAdmin ? { tenant: $("#new-user-tenant").value } : {}),
     });
     usersStatus("ok", "users.created", result.params);
     showTemporaryPassword("users.tempPasswordNew", result.params.user, result.password);
+    const tenant = $("#new-user-tenant").value;            // several users of one organisation in a row
     $("#users-create").reset();
     $("#new-user-role").value = "editor";
+    $("#new-user-tenant").value = tenant;
     loadUsers();
   } catch (e) {
     usersStatus("error", e.code, e.params);
@@ -1474,6 +1523,153 @@ async function removeUser(username) {
   }
 }
 
+/* ------------------------------------------------------------------ organisations (server administrators) */
+function tenantsStatus(kind, key, params) {
+  const box = $("#tenants-status");
+  box.hidden = !key;
+  box.className = "status" + (kind ? " is-" + kind : "");
+  if (key) I18N.set(box, key, params);
+}
+
+async function loadTenants() {
+  try {
+    const data = await api("GET", "tenants");
+    $("#tenants-body").replaceChildren(...data.tenants.map(tenantRow));
+    $("#tenants-empty").hidden = data.tenants.length > 0;
+    if (data.operatorRecords === null) I18N.set($("#tenants-operator"), "tenants.recordsUnavailable");
+    else I18N.set($("#tenants-operator"), "tenants.operatorRecords", { count: data.operatorRecords });
+  } catch (e) {
+    tenantsStatus("error", e.code, e.params);
+  }
+}
+
+function tenantRow(tn) {
+  const tr = document.createElement("tr");
+  if (tn.disabled) tr.className = "is-disabled";
+  const cell = (label, content) => {
+    const td = document.createElement("td");
+    td.dataset.label = t(label);
+    if (content instanceof Node) td.append(content); else td.textContent = content;
+    tr.append(td);
+    return td;
+  };
+  const input = (field, value, label) => {
+    const el = document.createElement("input");
+    el.value = value; el.autocomplete = "off"; el.dataset.field = field;
+    el.setAttribute("aria-label", t(label));
+    return el;
+  };
+  const name = input("name", tn.name, "tenants.name");
+  name.maxLength = 80;
+  cell("tenants.name", name);
+  const prefixes = input("prefixes", tn.prefixes.join(", "), "tenants.prefixes");
+  cell("tenants.prefixes", prefixes);
+  cell("tenants.users", String(tn.users)).classList.add("count");
+  cell("tenants.records", tn.records === null ? "—" : String(tn.records)).classList.add("count");
+  cell("users.state", t(tn.disabled ? "users.disabled" : "users.active"));
+  const actions = document.createElement("div");
+  actions.className = "user-actions";
+  const button = (key, handler, cls = "btn-ghost") => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn " + cls;
+    I18N.set(b, key);
+    b.addEventListener("click", handler);
+    actions.append(b);
+    return b;
+  };
+  button("users.save", () => saveTenant(tn, { name: name.value, prefixes: prefixesFrom(prefixes.value) }), "btn-secondary");
+  button(tn.disabled ? "users.enable" : "users.disable", () => toggleTenant(tn));
+  button("tenants.support", () => openSupport(tn));
+  const remove = button("users.remove", () => removeTenant(tn), "btn-danger-ghost");
+  if (tn.users) {                                    // only an organisation without users can be removed
+    remove.disabled = true;
+    remove.title = t("tenants.notEmptyHint");
+  }
+  cell("users.actions", actions);
+  return tr;
+}
+
+async function createTenant(event) {
+  event.preventDefault();
+  const name = $("#new-tenant-name").value.trim(), prefixes = prefixesFrom($("#new-tenant-prefixes").value);
+  if (prefixes.length && !confirm(t("tenants.confirmCreate", { name, prefixes: prefixes.join(", ") }))) return;
+  try {
+    const result = await api("POST", "tenants", { name, prefixes });
+    tenantsStatus("ok", result.code, result.params);
+    $("#tenants-create").reset();
+    loadTenants();
+  } catch (e) {
+    tenantsStatus("error", e.code, e.params);
+  }
+}
+
+async function saveTenant(tn, changes) {
+  const same = changes.prefixes.slice().sort().join(",") === tn.prefixes.join(",");
+  if (!same && !confirm(t("tenants.confirmPrefixes", { name: tn.name }))) return;
+  await tenantCall("PUT", tn, same ? { name: changes.name } : changes);
+}
+
+async function toggleTenant(tn) {
+  if (!tn.disabled && !confirm(t("tenants.confirmDisable", { name: tn.name }))) return;
+  await tenantCall("PUT", tn, { disabled: !tn.disabled });
+}
+
+async function removeTenant(tn) {
+  if (!confirm(t("tenants.confirmRemove", { name: tn.name }))) return;
+  await tenantCall("DELETE", tn);
+}
+
+async function tenantCall(method, tn, body) {
+  try {
+    const result = await api(method, "tenants/" + encodeURIComponent(tn.id), body);
+    tenantsStatus("ok", result.code, result.params);
+    loadTenants();
+  } catch (e) {
+    tenantsStatus("error", e.code, e.params);
+  }
+}
+
+/* ------------------------------------------------------------------ support access */
+let supportTenant = null;
+
+function openSupport(tn) {
+  supportTenant = tn;
+  I18N.set($("#support-intro"), "support.intro", { name: tn.name });
+  $("#support-reason").value = "";
+  I18N.set($("#support-msg"), null);
+  $("#support-dialog").showModal();
+  $("#support-reason").focus();
+}
+
+async function startSupport(event) {
+  event.preventDefault();
+  try {
+    await api("POST", "support", { tenant: supportTenant.id, reason: $("#support-reason").value });
+  } catch (e) {
+    I18N.set($("#support-msg"), e.code, e.params);
+    return;
+  }
+  location.href = BASE + "#records";               // the page starts again in the organisation's scope
+  location.reload();
+}
+
+async function endSupport() {
+  try { await api("DELETE", "support"); } catch { /* the page starts again anyway */ }
+  location.href = BASE + "#tenants";
+  location.reload();
+}
+
+/* The account menu names the user's organisation (or says he is a server administrator); a banner shows an
+   open support access. */
+function showTenant() {
+  const label = $("#user-tenant");
+  label.hidden = !(CONFIG.tenant || CONFIG.serverAdmin);
+  if (CONFIG.tenant) I18N.set(label, "menu.tenant", { name: CONFIG.tenant.name });
+  else if (CONFIG.serverAdmin) I18N.set(label, "menu.serverAdmin");
+  $("#support-banner").hidden = !CONFIG.support;
+  if (CONFIG.support) I18N.set($("#support-text"), "support.banner", { name: CONFIG.support.name });
+}
+
 /* ------------------------------------------------------------------ audit trail */
 function auditQuery() {
   const params = new URLSearchParams();
@@ -1498,12 +1694,19 @@ async function loadAudit(event) {
     const { events } = await api("GET", "audit?" + auditQuery());
     $("#audit-body").replaceChildren(...events.map(e => {
       const tr = document.createElement("tr");
-      const values = [formatWhen(e.at), e.user, t("audit.action." + e.action),
+      const values = [formatWhen(e.at), e.user, e.tenantName || t("users.operatorName"), t("audit.action." + e.action),
                       e.anchor ? e.anchor + (e.qpath || "") : "", e.detail || ""];
       values.forEach((v, i) => {
         const td = document.createElement("td");
-        if (i === 3) td.className = "code";
+        if (i === 2) td.className = "audit-tenant-col";
+        if (i === 4) td.className = "code";
         td.textContent = v;
+        if (i === 1 && e.byOperator) {               // done by the operator (a server administrator) to this organisation
+          const tag = document.createElement("span");
+          tag.className = "by-operator";
+          I18N.set(tag, "audit.byOperator");
+          td.append(tag);
+        }
         tr.append(td);
       });
       return tr;
@@ -2588,7 +2791,7 @@ function setupUserMenu() {
   });
   document.addEventListener("click", e => { if (!menu.contains(e.target)) close(false); });
   $("#menu-options").addEventListener("click", () => { close(false); openOptions(); });
-  ["#menu-records", "#menu-users", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", () => close(false)));
+  ["#menu-records", "#menu-users", "#menu-tenants", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", () => close(false)));
   $("#menu-logout").addEventListener("click", signOut);
 }
 
@@ -2703,6 +2906,11 @@ async function init() {
   $("#users-create").addEventListener("submit", createUser);
   $("#temp-password-copy").addEventListener("click", () => navigator.clipboard?.writeText($("#temp-password-value").textContent));
   $("#audit-filters").addEventListener("submit", loadAudit);
+  $("#users-tenant-filter").addEventListener("change", renderUsers);
+  $("#tenants-create").addEventListener("submit", createTenant);
+  $("#support-form").addEventListener("submit", startSupport);
+  $("#support-cancel").addEventListener("click", () => $("#support-dialog").close());
+  $("#support-leave").addEventListener("click", endSupport);
   $("#audit-csv").addEventListener("click", downloadAudit);
   $("#records-problems").addEventListener("change", renderRecords);
   $("#records-check").addEventListener("click", checkAllLinks);
@@ -2740,6 +2948,10 @@ async function init() {
     return;
   }
   document.body.dataset.role = CONFIG.role;
+  document.body.dataset.accountRole = CONFIG.accountRole;
+  document.body.dataset.serverAdmin = String(Boolean(CONFIG.serverAdmin));
+  document.body.dataset.operatorView = String(Boolean(CONFIG.serverAdmin && !CONFIG.support));
+  showTenant();
   SessionClock.start(CONFIG.session);
   setupAttributes();
   fillKeyTypes();

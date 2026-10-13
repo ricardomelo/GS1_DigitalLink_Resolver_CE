@@ -75,6 +75,11 @@ user works with every identifier on the resolver.
 Readers see the editor with every field read-only and the note *Your role is read-only: you can consult
 and export, but not change.*
 
+**Organisations.** An installation may serve several organisations, each owning its GS1 Company Prefixes
+(section 14). A user belongs to one organisation, or to the operator that runs the installation, and sees only
+that organisation's records (or the operator's: those that belong to no organisation). The account menu shows
+the organisation's name; the operator's administrators see *Server administrator* there.
+
 ## 3. Signing in, language and password
 
 ![Sign-in page](images/guide/sign-in.png)
@@ -508,8 +513,49 @@ temporary password to be changed*) and last sign-in. For each one:
 - **Disable** / **Enable** — a disabled user cannot sign in, and keeps the account;
 - **Remove** — deletes the account; the user's changes stay in the history and audit trail.
 
-You cannot disable, demote or remove your own user, and the portal always keeps at least one active
-administrator. Users created before roles existed are administrators.
+Each user may have an **E-mail** address (optional, unique; not used yet). You cannot disable, demote or remove
+your own user, and the portal always keeps at least one active server administrator. Users created before roles
+existed are administrators.
+
+**Which users you see.** An organisation's administrator sees and manages the users of his organisation only.
+A server administrator (an administrator of the operator) sees every user, with an **Organisation** column and a
+filter, and chooses the **Organisation** of each new user (*Operator (server administration)* for the operator's
+own users). A user's organisation never changes.
+
+### Organisations (server administrators)
+
+![Organisations](images/guide/organisations.png)
+
+**Organisations** (user menu, server administrators) lists the organisations that use the installation, with
+their GS1 Company Prefixes, number of users and records, and status. Below the table, the number of records that
+belong to no organisation (the operator's).
+
+- **Create an organisation**: a **name** and its **GS1 Company Prefixes**, then **Create organisation**, and
+  confirm. Then create its first administrator in **Users**. Each prefix belongs to one organisation only: a
+  prefix that overlaps another organisation's is refused, naming it.
+- **Save** a new name or new prefixes (confirmed: records change owner at once). A prefix one of the
+  organisation's users is limited to cannot be taken away first.
+- **Disable** / **Enable**: a disabled organisation's users cannot sign in and their sessions end; its records
+  still resolve.
+- **Remove**: only an organisation without users; its prefixes and records go back to the operator, and its audit
+  trail is kept.
+
+**Creating an organisation takes its records away from the operator's users, you included.** You see them again,
+without changing them, only through support access.
+
+### Support access
+
+![Support access](images/guide/support-dialog.png)
+
+To help an organisation, select **Support access** on its row, write the **reason** (5 to 200 characters, e.g. a
+ticket number) and **Open support access**. The reason is recorded in the organisation's audit trail, which its
+administrators read.
+
+![Support access banner](images/guide/support-banner.png)
+
+While it is open, a banner names the organisation; you see its records, their history, labels and its audit
+trail, and you can export them, but you cannot change anything. **End support access** (or signing out) closes
+it, and that is recorded too.
 
 ## 15. Administration: audit trail
 
@@ -523,6 +569,11 @@ Filter by **User**, by date (**From**, **To**) and by **Identifier or text** (a 
 then **Filter**. **Export CSV** downloads the same events for Excel. An administrator limited to some GS1
 Company Prefixes sees only the record events of those prefixes.
 
+Each organisation has its own audit trail: its administrators see only its events. What the server
+administrator did to the organisation (its users, its prefixes, support access) is shown with the tag
+*operator*. The server administrator sees the operator's trail, with an **Organisation** column and everything
+the operator's users did to organisations; an organisation's whole trail only during support access.
+
 ## 16. Messages and what to do
 
 | Message | What to do |
@@ -533,7 +584,9 @@ Company Prefixes sees only the record events of those prefixes.
 | *You changed the code. Select Open record to see its targets.* | Select **Open record**; steps 2 and 3 unlock. |
 | *This identifier has other records (…) that open … first.* | Keep the shared default type as the first target (section 5). |
 | *Targets N and M have the same type and language.* | Change the language of one of them, or remove one. |
-| *This identifier does not belong to the GS1 Company Prefixes of your user.* | Ask an administrator to add the prefix to your user. |
+| *This identifier is outside what your user can reach (its organisation or GS1 Company Prefixes).* | The identifier belongs to another organisation, or to a prefix your user is not given: ask an administrator. |
+| *Your user's organisation is disabled. Contact the server administrator.* | The organisation was disabled by the server administrator. |
+| *Prefix N overlaps M, which belongs to the organisation X.* | Each prefix belongs to one organisation only: check the prefix with GS1. |
 | *Your role does not allow this action.* | Ask an administrator for the editor role. |
 | *The content does not fit version N with correction L.* | Choose a higher version or *Automatic*, a lower correction, or fewer attributes. |
 | *The resolver did not respond.* | Try again in a few minutes; if it persists, tell the administrator. |
@@ -549,6 +602,12 @@ Company Prefixes sees only the record events of those prefixes.
 - **Default target** — the target that opens when the code is scanned without asking for a specific type.
 - **Element string** — the bracketed form printed under barcodes: `(01)09506000134352(10)L2026A`.
 - **GS1 Company Prefix** — the first digits of an identifier, allocated by GS1 to a company.
+- **Organisation** — a company or other body that uses the installation and owns GS1 Company Prefixes; its
+  records and users are its own.
+- **Operator** — whoever runs the installation; owns the records that belong to no organisation. Its
+  administrators are the **server administrators**.
+- **Support access** — a server administrator's read-only access to one organisation, with a reason recorded in
+  its audit trail.
 - **GS1 Digital Link** — a web address that carries GS1 identification keys.
 - **HRI (human readable interpretation)** — the text printed with a code.
 - **Link type** — what a target is about, from the GS1 Web Vocabulary (`gs1:pip`, `gs1:instructions`…).

@@ -87,8 +87,12 @@ portal não tem recuperação de senha por conta própria.
   a ficar oculta quando o formulário é enviado.
 - **Muitas tentativas.** Depois de 5 senhas erradas, a conta (e o computador de onde vieram) precisa
   esperar 15 minutos para tentar de novo.
-- **Sessão.** Você continua conectado por 8 horas depois da última ação (o administrador pode mudar esse
-  prazo). Quando a sessão termina, o portal pede para entrar de novo.
+- **Sessão.** A sessão termina após 30 minutos sem uso e, de qualquer forma, 12 horas depois da entrada
+  (o administrador pode mudar os dois prazos). Digitar, clicar e rolar a página contam como uso, mesmo antes
+  de salvar. Dois minutos antes do fim, uma janela faz a contagem regressiva: escolha **Continuar conectado**
+  para seguir ou **Sair**. Perto do limite de 12 horas a janela não prolonga a sessão: salve o que estiver
+  fazendo e entre de novo. Quando a sessão termina, o portal pede para entrar de novo; as outras abas do
+  portal compartilham a mesma sessão.
 - **Idioma.** O menu de idioma, no alto à direita, troca entre Português (Brasil) e English (UK) na hora,
   sem perder o que foi digitado. O portal começa no idioma do navegador e lembra a sua escolha; as páginas
   do próprio Resolver e a página inicial seguem a mesma escolha.

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Portal start-up configuration: public address and cookie flag derived from the environment, and the
-first user created from PORTAL_ADMIN_USERNAME / PORTAL_ADMIN_PASSWORD only while the store is empty.
+Portal start-up configuration: public address and cookie flag derived from the environment, session
+limits, and the first user created from PORTAL_ADMIN_USERNAME / PORTAL_ADMIN_PASSWORD only while the store
+is empty.
 
 Each case imports portal/app.py in a fresh interpreter with its own environment.
   pip install -r portal/requirements.txt
@@ -16,7 +17,9 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORTAL = os.environ.get("PORTAL_DIR", os.path.join(HERE, "..", "..", "portal"))
 PROBE = ("import json, app, users; print(json.dumps({'url': app.RESOLVER_PUBLIC_URL, 'origin': app.PORTAL_ORIGIN,"
-         " 'secure': app.COOKIE_SECURE, 'users': sorted(users.load())}))")
+         " 'secure': app.COOKIE_SECURE, 'users': sorted(users.load()),"
+         " 'idle': app.SESSION_IDLE_MINUTES, 'max': app.SESSION_MAX_HOURS, 'warn': app.SESSION_WARNING_SECONDS,"
+         " 'lifetime': app.app.permanent_session_lifetime.total_seconds()}))")
 failures = []
 
 
@@ -51,6 +54,17 @@ check("http address → cookie without Secure", out and out["secure"] is False, 
 
 out, _ = run({"RESOLVER_PUBLIC_URL": "http://localhost:8080", "PORTAL_COOKIE_SECURE": "true"})
 check("PORTAL_COOKIE_SECURE overrides the default", out and out["secure"] is True, out)
+
+out, err = run({"FQDN": "id.example.org"})
+check("session defaults: 30 minutes without use, 12 hours in all, warning 2 minutes before",
+      out and out["idle"] == 30 and out["max"] == 12 and out["warn"] == 120 and out["lifetime"] == 1800, out)
+check("no warning about the old session setting when it is not set", "PORTAL_SESSION_HOURS" not in err, err[-200:])
+
+out, err = run({"FQDN": "id.example.org", "PORTAL_SESSION_IDLE_MINUTES": "4", "PORTAL_SESSION_MAX_HOURS": "1.5",
+                "PORTAL_SESSION_HOURS": "8"})
+check("session limits from the environment; warning a quarter of a short idle limit",
+      out and out["idle"] == 4 and out["max"] == 1.5 and out["warn"] == 60 and out["lifetime"] == 240, out)
+check("PORTAL_SESSION_HOURS is ignored with a warning", "PORTAL_SESSION_HOURS is no longer read" in err, err[-200:])
 
 out, err = run({})
 check("no FQDN and no RESOLVER_PUBLIC_URL → refuses to start", out is None and "FQDN" in err, err[-200:])

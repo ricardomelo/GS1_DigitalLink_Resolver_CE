@@ -7,6 +7,13 @@
 > GS1. Quem usa este software não deve supor que ele esteja totalmente conforme o padrão publicado
 > [GS1-Conformant Resolver](https://ref.gs1.org/standards/resolver/).
 
+> **Software da comunidade; o operador é o responsável.** Tanto o GS1 Resolver Community Edition oficial
+> quanto este fork são mantidos pelas suas comunidades de colaboradores, não pela GS1 nem por qualquer
+> Organização-Membro GS1. O software é fornecido "no estado em que se encontra", sem garantias ou condições
+> de qualquer tipo (Apache License 2.0, seções 7 e 8). Quem instala e opera uma instalação é o único
+> responsável por ela e pelo seu uso: a sua segurança e disponibilidade, os cadastros e links que ela
+> publica e a conformidade deles com os padrões GS1.
+
 Este repositório é um fork do
 [**GS1 Resolver Community Edition v3**](https://github.com/gs1/GS1_DigitalLink_Resolver_CE) oficial (a partir
 do commit [`bf885fd`](https://github.com/gs1/GS1_DigitalLink_Resolver_CE/commit/bf885fdf4888f0395229478bf6b50342c1f761a8)),
@@ -195,7 +202,8 @@ para sondar a rede do próprio servidor. Sites que respondem "200" para páginas
 não podem ser detectados.
 
 **Usuários e sessões** — senha por usuário (hashes scrypt com sal), bloqueio da entrada depois de falhas
-repetidas, sessões de 8 horas renovadas a cada uso. A interface segue o idioma do navegador (pt-BR ou
+repetidas, sessões que terminam após 30 minutos sem uso (com aviso antes) e no máximo 12 horas depois da
+entrada. A interface segue o idioma do navegador (pt-BR ou
 en-GB) e pode ser trocada a qualquer momento.
 
 ### Governança
@@ -421,7 +429,7 @@ da instalação, nunca versionados).
 | `RESOLVER_TERMS_URL` | Opcional: os termos de uso do operador, publicados como `termsOfUse` no arquivo de descrição (omitido quando vazio) |
 | `RESOLVER_PUBLIC_URL` | Endereço público do portal quando não é `https://FQDN` (por exemplo, desenvolvimento) |
 | `PORTAL_ADMIN_USERNAME`, `PORTAL_ADMIN_PASSWORD` | Primeiro usuário do portal, criado só enquanto não há nenhum |
-| `PORTAL_SESSION_HOURS`, `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE` | Configurações opcionais do portal |
+| `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE` | Configurações opcionais do portal: minutos sem uso e horas depois da entrada até a sessão terminar, chave da sessão, cookie Secure |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Endereços do host para as portas 8080 e 27017 (lidos pelo Compose só do `.env`) |
 
 ## Operação

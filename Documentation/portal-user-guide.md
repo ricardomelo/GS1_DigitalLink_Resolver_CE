@@ -89,8 +89,11 @@ resolver administrator: the portal has no self-service password reset.
   the form is sent.
 - **Too many attempts.** After 5 wrong passwords the account (and the computer they came from) waits
   15 minutes before trying again.
-- **Session.** You stay signed in for 8 hours after your last action (the administrator can change this).
-  When the session ends the portal asks you to sign in again.
+- **Session.** The session ends after 30 minutes without use, and 12 hours after you signed in in any case
+  (the administrator can change both). Typing, clicking and scrolling count as use, even before you save.
+  Two minutes before the end a window counts down: choose **Stay signed in** to carry on, or **Sign out**.
+  Near the 12-hour limit the window cannot extend the session: save your work and sign in again. When the
+  session ends the portal asks you to sign in again; other tabs of the portal share the same session.
 - **Language.** The language menu at the top right switches between Português (Brasil) and English (UK)
   at once, without losing what you typed. The portal starts in the language of your browser and
   remembers your choice; the resolver's own pages and the home page follow the same choice.

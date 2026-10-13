@@ -1,5 +1,8 @@
 # Documentation
 
+The software is maintained by its community, not by GS1 or any GS1 Member Organisation; whoever operates
+an installation is responsible for its use (see the notice at the top of the [README](../README.md)).
+
 | Document | For whom | What it holds |
 |---|---|---|
 | [README](../README.md) | everyone | what the project is, architecture, API reference, installation, configuration, operation |

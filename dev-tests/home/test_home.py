@@ -222,8 +222,11 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
         check(page.locator("html").get_attribute("lang") == "pt-BR", "Portuguese system → pt-BR")
         check(page.locator("h1").inner_text() == "Resolver GS1 Digital Link", "hero title in Portuguese")
         check(page.locator("#site-nav a[href='/portal/']").inner_text() == "Cadastro de links", "menu text in Portuguese")
-        check(page.locator("#resolver-root-full").inner_text() == f"http://127.0.0.1:{port}",
-              "resolver root taken from the address bar")
+        check(page.locator(".syntax, #resolver-root").count() == 0 and page.locator("main aside").count() == 0,
+              "no GS1 Digital Link syntax box on the home page")
+        check("não pela GS1 nem por qualquer Organização-Membro GS1" in page.locator("#notice").inner_text()
+              and "responsável pelo seu uso" in page.locator("#notice").inner_text(),
+              "footer notice in Portuguese: community software, operator responsible")
         operator_link = page.locator("#operator-name a")
         check(operator_link.count() == 1 and operator_link.get_attribute("href") == "https://www.example.org/"
               and operator_link.evaluate("a => a.firstChild.textContent") == "Example Org"
@@ -270,8 +273,9 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
         page.route(re.compile(r"https://fonts\.(googleapis|gstatic)\.com/.*"),
                    lambda route: route.fulfill(status=200, body="", content_type="text/css"))
         page.goto(f"http://localhost:{port}/")
-        check(page.locator("#resolver-root").inner_text() == f"http://localhost:{port}",
-              "another host name → the page shows that host (domain independent)")
+        check("not by GS1 or any GS1 Member Organisation" in page.locator("#notice").inner_text()
+              and page.locator("h1").inner_text() == "GS1 Digital Link resolver",
+              "another host name → same page, footer notice in English")
         context.close()
 
         # English system but Portuguese chosen earlier on the resolver pages (cookie only)

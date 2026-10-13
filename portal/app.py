@@ -51,7 +51,11 @@ CONFIG_DIR = os.environ.get("PORTAL_CONFIG_DIR", "/app/config")
 # so that plain-HTTP development (RESOLVER_PUBLIC_URL=http://localhost:8080) works without extra settings.
 COOKIE_SECURE = os.environ.get("PORTAL_COOKIE_SECURE", "").strip().lower() not in ("false", "0", "no") \
     if os.environ.get("PORTAL_COOKIE_SECURE", "").strip() else PORTAL_ORIGIN.startswith("https://")
-SESSION_HOURS = float(os.environ.get("PORTAL_SESSION_HOURS", "8"))
+# A session ends after PORTAL_SESSION_IDLE_MINUTES without use (sliding expiry) and, in any case,
+# PORTAL_SESSION_MAX_HOURS after the sign-in. The page warns SESSION_WARNING_SECONDS before either end.
+SESSION_IDLE_MINUTES = max(0.1, float(os.environ.get("PORTAL_SESSION_IDLE_MINUTES", "30")))
+SESSION_MAX_HOURS = max(SESSION_IDLE_MINUTES / 60, float(os.environ.get("PORTAL_SESSION_MAX_HOURS", "12")))
+SESSION_WARNING_SECONDS = min(120.0, SESSION_IDLE_MINUTES * 60 / 4)
 MAX_LOGIN_FAILURES = 5
 LOCKOUT_SECONDS = 15 * 60
 UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "15"))
@@ -65,6 +69,9 @@ if not SESSION_TOKEN:
     raise RuntimeError("SESSION_TOKEN is not set: the portal would be unable to authenticate with the resolver.")
 if not RESOLVER_PUBLIC_URL:
     raise RuntimeError("Set FQDN (or RESOLVER_PUBLIC_URL): the portal needs the resolver's public address.")
+if os.environ.get("PORTAL_SESSION_HOURS", "").strip():
+    log.warning("PORTAL_SESSION_HOURS is no longer read: use PORTAL_SESSION_IDLE_MINUTES (default 30) and "
+                "PORTAL_SESSION_MAX_HOURS (default 12).")
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 PUBLIC_ASSETS = {"app.css", "i18n.js", "login.js", "password.js", "gs1-logo.png", "favicon.png"}   # needed by the login page
@@ -98,8 +105,8 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SECURE=COOKIE_SECURE,
     SESSION_COOKIE_SAMESITE="Lax",
-    PERMANENT_SESSION_LIFETIME=timedelta(hours=SESSION_HOURS),
-    SESSION_REFRESH_EACH_REQUEST=True,   # sliding expiry: the session lasts SESSION_HOURS after the last use
+    PERMANENT_SESSION_LIFETIME=timedelta(minutes=SESSION_IDLE_MINUTES),
+    SESSION_REFRESH_EACH_REQUEST=True,   # sliding expiry: the cookie's signed time is renewed on every request
 )
 if not users.is_writable():
     log.warning("The users file is read-only for the portal: password changes will fail. "
@@ -191,19 +198,35 @@ def client_address() -> str:
     return request.access_route[0] if request.access_route else (request.remote_addr or "?")
 
 
+def session_ends_in() -> float:
+    """Seconds left before the session reaches PORTAL_SESSION_MAX_HOURS after its sign-in."""
+    return session.get("since", time.time()) + SESSION_MAX_HOURS * 3600 - time.time()
+
+
 def current_user() -> str | None:
     """Signed-in user of this session, or None. The session also carries a fingerprint of the account's
-    password hash: a password change or reset ends every other session of that user.
+    password hash: a password change or reset ends every other session of that user. A session older than
+    PORTAL_SESSION_MAX_HOURS ends whatever its use; the idle limit is checked with the cookie's signature.
     """
     username = session.get("user")
     if username and users.fingerprint_matches(username, session.get("fp")):
-        return username
+        if "since" not in session:          # sessions opened before the limit existed start counting now
+            session["since"] = int(time.time())
+        if session_ends_in() > 0:
+            return username
+        session.clear()
+        session["was_logged_in"] = True     # the sign-in page explains that the session has ended
+        audit.info("user=%s action=session-limit", username)
+        return None
+    ended = session.get("was_logged_in")
     session.clear()
+    if ended:
+        session["was_logged_in"] = True     # keeps the reason for the sign-in page
     return None
 
 
 # Calls allowed while the account must set a new password (temporary password)
-MUST_CHANGE_ALLOWED = ("/portal/api/config", "/portal/api/password", "/portal/api/logout")
+MUST_CHANGE_ALLOWED = ("/portal/api/config", "/portal/api/password", "/portal/api/logout", "/portal/api/session")
 
 
 def require_login(view):
@@ -555,7 +578,7 @@ def login():
     throttle.clear(*keys)
     session.clear()
     session.permanent = True
-    session.update(user=username, fp=users.fingerprint(username), was_logged_in=True)
+    session.update(user=username, fp=users.fingerprint(username), was_logged_in=True, since=int(time.time()))
     audit.info("user=%s action=login addr=%s", username, client_address())
     users.touch_login(username)
     log_event("login", user=username, detail=client_address())
@@ -634,7 +657,23 @@ def config():
         languages=gs1.LANGUAGES,
         importLimits=sheet.limits(),
         dataAttributes=syntax.ENGINE.describe(),
+        session=session_info(),
     )
+
+
+def session_info() -> dict:
+    """The session limits the page counts down from: idle limit, warning time, time left before the
+    absolute limit and that limit in hours (seconds are relative, so the browser's clock does not matter)."""
+    return {"idleSeconds": round(SESSION_IDLE_MINUTES * 60), "warningSeconds": round(SESSION_WARNING_SECONDS),
+            "endsIn": max(0, round(session_ends_in())), "maxHours": SESSION_MAX_HOURS}
+
+
+@app.get("/portal/api/session")
+@require_login
+def keep_alive():
+    """Renews the session after the user has worked in the page without calling the server (typing, reading)
+    or chose to stay signed in when warned; answers the same limits as the configuration."""
+    return jsonify(session_info())
 
 
 @app.get("/portal/api/record")

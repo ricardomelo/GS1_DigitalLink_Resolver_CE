@@ -383,6 +383,20 @@
     </div>
   </dialog>
 
+  <dialog id="session-dialog" class="session-dialog" aria-labelledby="session-title" aria-describedby="session-text">
+    <div class="dialog-head">
+      <h2 id="session-title" data-i18n="session.title"></h2>
+    </div>
+    <div class="dialog-body">
+      <p id="session-text" role="timer" aria-live="off"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="session-signout" data-i18n="session.signOut"></button>
+        <button type="button" class="btn btn-ghost" id="session-close" data-i18n="options.close" hidden></button>
+        <button type="button" class="btn btn-primary" id="session-continue" data-i18n="session.continue"></button>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="options-dialog" aria-labelledby="options-title">
     <div class="dialog-head">
       <h2 id="options-title" data-i18n="options.title"></h2>
@@ -493,6 +507,10 @@
       </div>
     </section>
   </main>
+
+  <footer class="site-footer">
+    <p class="notice" id="notice" data-i18n="footer.notice"></p>
+  </footer>
 
   <dialog id="import-dialog" class="import-dialog" aria-labelledby="import-title">
     <div class="dialog-head">

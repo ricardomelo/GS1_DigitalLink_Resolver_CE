@@ -120,7 +120,7 @@ tests/, useful_external_python_scripts/   oficiais
 Todos os serviços leem o `.env.example` e depois o `.env` (Compose ≥ 2.24, `required: false`), então o
 `.env` guarda só o que a instalação muda. Os endereços de bind são lidos pelo próprio Compose, só do
 `.env`. As variáveis estão descritas no `.env.example` e na seção *Configuration* do README; o portal
-também lê `PORTAL_SESSION_HOURS`, `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT`
+também lê `PORTAL_SESSION_IDLE_MINUTES`, `PORTAL_SESSION_MAX_HOURS`, `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT`
 e, nos testes, os caminhos `PORTAL_*_FILE` / `PORTAL_CONFIG_DIR`.
 
 ## 4. Fluxos das requisições
@@ -299,7 +299,8 @@ respondem `{"code": "...", "params": {...}}`.
 | `POST /login` `{username, password}` | — | Entrar (429 `auth.locked` quando bloqueado) |
 | `POST /logout` | — | Sair |
 | `POST /password` `{currentPassword, newPassword}` | qualquer | Trocar a senha; outras sessões são encerradas |
-| `GET /config` | qualquer | Usuário, perfil, prefixos, endereço do Resolver, tipos de link, chaves com qualificadores e combinações, idiomas, limites de importação, atributos de dados |
+| `GET /config` | qualquer | Usuário, perfil, prefixos, endereço do Resolver, tipos de link, chaves com qualificadores e combinações, idiomas, limites de importação, atributos de dados, limites da sessão (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`) |
+| `GET /session` | qualquer (também enquanto uma nova senha é exigida) | Renova a sessão; responde os mesmos limites da sessão |
 | `GET /record?key=&value=&qualifiers=/10/L1` | leitor | Um cadastro: `exists`, `description`, `links`, `defaultLinkType`, `sharedDefaultLinkType`, `digitalLink`, `otherEntries` (cada um com `informative`), `qualifiers` (os do cadastro), `informative` (digitados) e `storedInformative`, `hasKeyRecord` |
 | `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}], keyRecord?}` | editor | Criar (201) ou substituir (200); o primeiro link é o principal. Com número de série, 22 e 10 em `qualifiers` são gravados como informativos. `keyRecord: {mode: copy\|target, description, url}` cria antes o cadastro da chave (`save.createdWithKey`, `keyRecordCreated`) |
 | `DELETE /record?key=&value=&qualifiers=` | editor | Excluir um cadastro, mantendo os outros da chave |
@@ -414,8 +415,7 @@ original, `proxy_pass http://resolver-web/api$request_uri`, para o `%2F` e a que
 foram enviados; o nome do upstream é também o cabeçalho Host que o servidor web recebe, então precisa ser um
 nome de host válido), `/api` e
 `/swaggerui` ao data-entry-service e `/portal/` ao portal-service (com `/portal` → `/portal/`). O
-`home/home.js` lê o operador em `/.well-known/gs1resolver`, pega a raiz do Resolver da barra de endereços e
-compartilha a escolha de idioma com o portal.
+`home/home.js` lê o operador em `/.well-known/gs1resolver` e compartilha a escolha de idioma com o portal.
 
 ## 12. Scripts (`scripts/`)
 
@@ -443,10 +443,11 @@ Não precisam de Docker; cada programa termina com status 1 em caso de falha. Pr
 | `portal/test_special_chars.py` | 57 | caracteres especiais |
 | `portal/test_data_attributes.py` | 83 | atributos de dados, famílias decimais, opções do QR (precisa de `GS1_SYNTAX_ENGINE_DIR`) |
 | `portal/test_linkcheck.py` | 16 | verificador de links, proteção contra SSRF |
-| `portal/test_portal_config.py` | 9 | configuração e inicialização |
+| `portal/test_portal_config.py` | 13 | configuração e inicialização, limites da sessão |
+| `portal/test_session.py` | 30 | limites da sessão (15 s sem uso no teste): regras do servidor, aviso, renovação pelo uso, outras abas, limite absoluto, os dois idiomas; aviso da comunidade no rodapé (cerca de dois minutos) |
 | `portal/test_registration.py` | 26 | §2.5.9 pela API do portal: qualificadores informativos (salvar, abrir, histórico, lista, exportar, importar), cadastros contra a regra 2, o cadastro da chave ao salvar e ao importar |
 | `portal/test_portal_e2e.py` | 186 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular; também roda sem o engine |
-| `home/test_home.py` | 54 | página inicial com um nginx real; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug |
+| `home/test_home.py` | 55 | página inicial com um nginx real, sem o quadro da sintaxe, aviso da comunidade; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug |
 | `install/test_install.sh` | — | instalador com simulações (Compose v2) |
 
 O `docs/screenshots.py` regenera as imagens do README e do guia do portal em inglês e em português a partir

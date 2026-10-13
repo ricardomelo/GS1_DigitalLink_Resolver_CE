@@ -411,8 +411,22 @@ the checker cannot be used to probe the server's own network.
 ## Sign-in, sessions and passwords
 
 - `/portal/login` is a sign-in page (no more browser pop-up). A successful sign-in sets a session cookie
-  (`gs1resolver_portal`: HttpOnly, Secure, SameSite=Lax, path `/portal`) valid for 8 hours after the last
-  use; afterwards the user is sent back to the sign-in page with a "session ended" message.
+  (`gs1resolver_portal`: HttpOnly, Secure, SameSite=Lax, path `/portal`). The session ends after 30
+  minutes without use (`PORTAL_SESSION_IDLE_MINUTES`) and, whatever the use, 12 hours after the sign-in
+  (`PORTAL_SESSION_MAX_HOURS`); afterwards the user is sent back to the sign-in page with a "session ended"
+  message.
+  - Idle limit: the cookie's signed time is renewed by every request and checked against the idle limit
+    (`PERMANENT_SESSION_LIFETIME`). Absolute limit: the session keeps its sign-in time (`since`); a request
+    after the limit clears it (audit log line `action=session-limit`). Sessions opened before the limit
+    existed start counting at their next request.
+  - The page mirrors both limits (`SessionClock` in `static/app.js`, from `session` in
+    `GET /portal/api/config`, with relative seconds so the browser's clock does not matter). Every answered
+    call renews the idle limit; key presses, clicks, scrolling and touches without server calls count as
+    use too, and the page then calls `GET /portal/api/session` quietly (at most every 5 minutes, or a third
+    of a short idle limit). Other tabs share the time of the last call through `localStorage`.
+  - Two minutes before either end (a quarter of a short idle limit) a dialog appears: before the idle end
+    it offers **Stay signed in** (or Esc) and **Sign out**; before the absolute end it explains that a new
+    sign-in is needed, and can only be closed. At the end the page goes to the sign-in page.
 - Every password field (sign-in, password change) has an eye button that shows or hides what is typed
   (`static/password.js`, `aria-pressed`, labelled in the user's language). The field is hidden again when
   its form is submitted, so password managers still see a password field. The script is one of the few
@@ -425,8 +439,12 @@ the checker cannot be used to probe the server's own network.
   session of that account.
 - Sessions are signed with `secret.key` in the portal's configuration volume, created automatically on first start. Deleting that file
   (in the `resolver-portal-config` volume) and restarting signs everybody out. `PORTAL_SECRET_KEY` in the environment takes precedence.
-- Environment settings: `PORTAL_SESSION_HOURS` (default 8), `PORTAL_COOKIE_SECURE` (default: on when the
-  public address is `https://`, off for plain-HTTP development).
+- Environment settings: `PORTAL_SESSION_IDLE_MINUTES` (default 30), `PORTAL_SESSION_MAX_HOURS` (default 12),
+  `PORTAL_COOKIE_SECURE` (default: on when the public address is `https://`, off for plain-HTTP
+  development). `PORTAL_SESSION_HOURS`, the former sliding limit, is ignored with a warning in the log.
+- The sign-in page and the portal end with a notice in the footer: the software is maintained by its
+  community, not by GS1 or any GS1 Member Organisation, and whoever operates the installation is
+  responsible for its use (`footer.notice`).
 - The audit trail records `login`, `login-failed`, `logout` and `password-change` alongside the record
   changes.
 
@@ -442,14 +460,18 @@ the checker cannot be used to probe the server's own network.
 | GS1 Global | https://www.gs1.org/ |
 | Source code (GitHub) | https://github.com/gs1/GS1_DigitalLink_Resolver_CE |
 
+Below the menu: cards for the portal and the resolver API, and GS1 references. The footer names the
+operator and carries the community notice (the software is maintained by its community, not by GS1 or any
+GS1 Member Organisation; whoever operates the installation is responsible for its use). The box that
+showed the shape of a GS1 Digital Link was removed in session 8.
+
 **Way back.** The GS1 logo on the portal and on the resolver's pages, and the portal's user menu ("Home
 page"), lead back to `/`.
 
 **Domain independent.** Links to this installation are root-relative (`/portal/`, `/api/docs`,
-`/.well-known/gs1resolver`), the resolver root shown in the example link is read from the address bar,
-and the operator's name in the footer comes from `contact.fn` in the resolver description file, linked to
-`contact.hasURL` (`RESOLVER_ORG_URL`) when that is an `http(s)` address, as in the footer of the resolver's
-pages; any other address leaves the name as plain text. Nothing
+`/.well-known/gs1resolver`), and the operator's name in the footer comes from `contact.fn` in the
+resolver description file, linked to `contact.hasURL` (`RESOLVER_ORG_URL`) when that is an `http(s)`
+address, as in the footer of the resolver's pages; any other address leaves the name as plain text. Nothing
 in the page names a domain or an organisation, so another installation needs no edits.
 
 **What `/` showed before.** Upstream, the proxy sends `/` to the web server's API root, which is

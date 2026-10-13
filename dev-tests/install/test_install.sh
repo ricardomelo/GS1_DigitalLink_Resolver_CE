@@ -141,13 +141,13 @@ A_TOKEN=$(envval SESSION_TOKEN); A_PWD=$(envval MONGO_INITDB_ROOT_PASSWORD)
 
 # ------------------------------------------------------------------------------ B. re-run
 echo "--- B. second run on the same installation"
-echo "PORTAL_SESSION_HOURS='12'" >> "$SB/repo/.env"
+echo "PORTAL_SESSION_IDLE_MINUTES='20'" >> "$SB/repo/.env"
 : > "$SB/state/calls"
 run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org; rc=$?
 check "B: exit status 0" "[[ $rc == 0 ]]"
 check "B: secrets kept" "[[ \$(envval SESSION_TOKEN) == $A_TOKEN && \$(envval MONGO_INITDB_ROOT_PASSWORD) == $A_PWD ]]"
 check "B: settings kept from .env (operator)" "[[ \$(envval RESOLVER_ORG_NAME) == 'Example Org' ]]"
-check "B: unmanaged setting carried over" "grep -q \"^PORTAL_SESSION_HOURS='12'\" $SB/repo/.env"
+check "B: unmanaged setting carried over" "grep -q \"^PORTAL_SESSION_IDLE_MINUTES='20'\" $SB/repo/.env"
 check "B: previous .env backed up with mode 600" "ls $SB/repo/.env.bak-* >/dev/null && [[ \$(stat -c %a \$(ls $SB/repo/.env.bak-* | head -n 1)) == 600 ]]"
 check "B: existing portal users detected, no first user" "grep -q 'existing users are kept' $SB/state/out && [[ -z \$(envval PORTAL_ADMIN_PASSWORD) ]]"
 check "B: site with certificate kept, certbot not called" "! grep -q '^certbot' $SB/state/calls"

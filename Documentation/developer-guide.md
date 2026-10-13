@@ -117,7 +117,7 @@ tests/, useful_external_python_scripts/   official
 Every service reads `.env.example` and then `.env` (Compose ≥ 2.24, `required: false`), so `.env` holds
 only what an installation changes. The bind addresses are read by Compose itself, from `.env` only. The
 variables are described in `.env.example` and in the README's *Configuration* section; the portal also
-reads `PORTAL_SESSION_HOURS`, `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT` and,
+reads `PORTAL_SESSION_IDLE_MINUTES`, `PORTAL_SESSION_MAX_HOURS`, `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT` and,
 for tests, the `PORTAL_*_FILE` / `PORTAL_CONFIG_DIR` paths.
 
 ## 4. Request flows
@@ -288,7 +288,8 @@ call checks the role and limits identifiers to the user's GS1 Company Prefixes. 
 | `POST /login` `{username, password}` | — | Sign in (429 `auth.locked` when throttled) |
 | `POST /logout` | — | Sign out |
 | `POST /password` `{currentPassword, newPassword}` | any | Change password; other sessions end |
-| `GET /config` | any | User, role, prefixes, resolver address, link types, keys with qualifiers and shapes, languages, import limits, data attributes |
+| `GET /config` | any | User, role, prefixes, resolver address, link types, keys with qualifiers and shapes, languages, import limits, data attributes, session limits (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`) |
+| `GET /session` | any (also while a new password is due) | Renews the session; answers the same session limits |
 | `GET /record?key=&value=&qualifiers=/10/L1` | reader | One record: `exists`, `description`, `links`, `defaultLinkType`, `sharedDefaultLinkType`, `digitalLink`, `otherEntries` (each with `informative`), `qualifiers` (the record's own), `informative` (typed) and `storedInformative`, `hasKeyRecord` |
 | `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}], keyRecord?}` | editor | Create (201) or replace (200); the first link is the default. With a serial number, 22 and 10 in `qualifiers` are stored as informative. `keyRecord: {mode: copy\|target, description, url}` also creates the key's own record first (`save.createdWithKey`, `keyRecordCreated`) |
 | `DELETE /record?key=&value=&qualifiers=` | editor | Delete one record, keeping the others of the key |
@@ -395,8 +396,8 @@ The table of every behaviour change, with the clause of the standard, is in the 
 `proxy_pass http://resolver-web/api$request_uri`, so that `%2F` and the query string arrive as sent; the upstream's
 name is also the Host header the web server receives, so it must be a valid host name), `/api` and
 `/swaggerui` to data-entry-service, and `/portal/` to portal-service (with `/portal` → `/portal/`).
-`home/home.js` reads the operator from `/.well-known/gs1resolver`, takes the resolver root from the address
-bar, and shares the language choice with the portal.
+`home/home.js` reads the operator from `/.well-known/gs1resolver` and shares the language choice with the
+portal.
 
 ## 12. Scripts (`scripts/`)
 
@@ -424,10 +425,11 @@ No Docker needed; each program exits with status 1 on a failure. Setup and comma
 | `portal/test_special_chars.py` | 57 | special characters |
 | `portal/test_data_attributes.py` | 83 | data attributes, decimal families, QR options (needs `GS1_SYNTAX_ENGINE_DIR`) |
 | `portal/test_linkcheck.py` | 16 | link checker, SSRF guard |
-| `portal/test_portal_config.py` | 9 | configuration and start-up |
+| `portal/test_portal_config.py` | 13 | configuration and start-up, session limits |
+| `portal/test_session.py` | 30 | session limits (15 s idle in the test): server rules, warning, renewal on use, other tabs, absolute limit, both languages; community notice in the footer (about two minutes) |
 | `portal/test_registration.py` | 26 | §2.5.9 through the portal API: informative qualifiers (save, open, history, list, export, import), records against rule 2, the key's own record when saving and importing |
 | `portal/test_portal_e2e.py` | 186 | the portal in Chromium against `mock_data_entry.py`, desktop and phone; also run without the engine |
-| `home/test_home.py` | 54 | home page through a real nginx; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts |
+| `home/test_home.py` | 55 | home page through a real nginx, no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts |
 | `install/test_install.sh` | — | installer through shims (Compose v2) |
 
 `docs/screenshots.py` regenerates the images of the README and of the user guide, in English and in

@@ -7,6 +7,7 @@
  *
  * Sections, in order:
  *   API ............................ api(): JSON calls to /portal/api/*, errors as ApiError(code, params)
+ *   session clock .................. SessionClock: idle and absolute limits, warning, renewal on use
  *   GS1 rules, primary keys ........ readKey(): live validation of the identifier (URI Syntax 4.3)
  *   key qualifiers ................. fields per key, readQualifiers(): formats, shapes, order (4.4, 4.6, 4.9)
  *   label preview .................. renderPreview(): Digital Link, QR code image, options, downloads
@@ -60,6 +61,7 @@ async function api(method, path, body) {
   }
   let data = null;
   try { data = await res.json(); } catch { /* response without JSON */ }
+  if (res.status !== 401) SessionClock.contact();   // every answered call renews the session on the server
   if (res.status === 401 && data && data.code === "auth.required") {
     location.replace("login?reason=expired");   // session ended (timeout, sign-out elsewhere, password changed)
     throw new ApiError("auth.required");
@@ -70,6 +72,110 @@ async function api(method, path, body) {
   }
   return data;
 }
+
+/* ------------------------------------------------------------------ session clock
+   The server ends a session after a period without calls (idle limit) and, whatever the use, some hours
+   after the sign-in (absolute limit). This clock mirrors both so the page can warn before either end:
+   - every answered call renews the idle limit (SessionClock.contact, called by api());
+   - typing, clicking or scrolling without calling the server counts as use too: a quiet call renews the
+     session once the last one is a few minutes old;
+   - other tabs of the portal share the time of the last call through localStorage;
+   - near the end a dialog offers to stay signed in (idle) or explains that a new sign-in is needed
+     (absolute); at the end the page goes to the sign-in page. */
+const SessionClock = (() => {
+  const STORE = "gs1resolver.portal.lastContact";
+  const state = { idleMs: 0, warnMs: 0, endAt: 0, maxHours: 0, lastContact: Date.now(), lastActivity: 0,
+                  renewing: false, timer: null, shown: null, dismissedLimit: false };
+
+  function share() {
+    try { localStorage.setItem(STORE, String(state.lastContact)); } catch { /* storage blocked: this tab only */ }
+  }
+  function contact() {
+    state.lastContact = Date.now();
+    share();
+    if (state.shown === "idle") hide();
+  }
+  function configure(info) {
+    if (!info) return;
+    state.idleMs = info.idleSeconds * 1000;
+    state.warnMs = info.warningSeconds * 1000;
+    state.endAt = Date.now() + info.endsIn * 1000;
+    state.maxHours = info.maxHours;
+  }
+  function start(info) {
+    configure(info);
+    contact();
+    const activity = () => { state.lastActivity = Date.now(); };
+    ["pointerdown", "keydown", "wheel", "touchstart"].forEach(type =>
+      document.addEventListener(type, activity, { capture: true, passive: true }));
+    window.addEventListener("storage", e => {
+      if (e.key === STORE && Number(e.newValue) > state.lastContact) {
+        state.lastContact = Number(e.newValue);
+        if (state.shown === "idle") hide();
+      }
+    });
+    $("#session-continue").addEventListener("click", renew);
+    $("#session-signout").addEventListener("click", signOut);
+    $("#session-close").addEventListener("click", () => { state.dismissedLimit = true; hide(); });
+    $("#session-dialog").addEventListener("cancel", e => {   // Esc: stay signed in, or close the limit notice
+      e.preventDefault();
+      if (state.shown === "idle") renew(); else { state.dismissedLimit = true; hide(); }
+    });
+    state.timer = setInterval(tick, 1000);
+  }
+  async function renew() {
+    if (state.renewing) return;
+    state.renewing = true;
+    try { configure(await api("GET", "session")); } catch { /* 401 already leads to the sign-in page */ }
+    finally { state.renewing = false; }
+  }
+  function clock(ms) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }
+  function show(kind, left) {
+    const dialog = $("#session-dialog");
+    if (kind === "idle") I18N.set($("#session-text"), "session.idle", { time: clock(left) });
+    else I18N.set($("#session-text"), "session.limit", { time: clock(left), hours: state.maxHours });
+    if (state.shown !== kind) {
+      $("#session-continue").hidden = kind !== "idle";
+      $("#session-close").hidden = kind === "idle";
+      state.shown = kind;
+      if (!dialog.open) dialog.showModal();
+      (kind === "idle" ? $("#session-continue") : $("#session-close")).focus();
+    }
+  }
+  function hide() {
+    state.shown = null;
+    const dialog = $("#session-dialog");
+    if (dialog.open) dialog.close();
+  }
+  function tick() {
+    if (!state.idleMs) return;
+    const now = Date.now();
+    const idleLeft = state.lastContact + state.idleMs - now;
+    const limitLeft = state.endAt - now;
+    if (Math.min(idleLeft, limitLeft) <= 0) {
+      clearInterval(state.timer);
+      location.replace("login?reason=expired");
+      return;
+    }
+    // Work in the page without server calls: renew quietly before the warning would appear.
+    if (!state.shown && state.lastActivity > state.lastContact
+        && now - state.lastContact > Math.min(5 * 60 * 1000, state.idleMs / 3)) {
+      renew();
+      return;
+    }
+    if (limitLeft <= state.warnMs && limitLeft <= idleLeft) {
+      if (!state.dismissedLimit || state.shown === "limit") show("limit", limitLeft);
+    } else if (idleLeft <= state.warnMs) {
+      show("idle", idleLeft);
+    } else if (state.shown === "idle") {
+      hide();
+    }
+  }
+  return { start, contact };
+})();
 
 /* ------------------------------------------------------------------ GS1 rules (mirror of the back end, for instant feedback only) */
 function checkDigit(body) {
@@ -2612,6 +2718,7 @@ async function init() {
     return;
   }
   document.body.dataset.role = CONFIG.role;
+  SessionClock.start(CONFIG.session);
   setupAttributes();
   fillKeyTypes();
   onKeyTypeChange();

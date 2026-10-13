@@ -116,7 +116,7 @@ a.ext::after {
 .home-layout {
   max-width: var(--wide); margin: -3.5rem auto 0; position: relative;
   display: grid; gap: 1.5rem; align-items: start;
-  grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+  grid-template-columns: minmax(0, 1fr);
   padding: 0 var(--gutter) 3rem;
 }
 .sheet {
@@ -153,30 +153,13 @@ h2 { font-size: 1.25rem; font-weight: 500; color: var(--gs1-blue); margin: .1rem
 .btn-primary { background: var(--action); border-color: var(--action); color: #fff; }
 .card:hover .btn-primary { background: var(--action-dark); border-color: var(--action-dark); }
 
-/* ---------------------------------------------------------------- syntax panel */
-.syntax h2 { font-size: 1.0625rem; }
-.uri {
-  margin: 0 0 1rem; padding: .75rem .9rem; border-radius: 4px; background: var(--page);
-  font-size: .875rem; line-height: 1.5; overflow-wrap: break-word; color: var(--ink);
-}
-.uri-root { color: var(--muted); }
-.uri-ai { color: var(--gs1-blue); font-weight: 600; }
-.uri-key { color: var(--action); }
-.syntax-legend { margin: 0 0 1rem; display: grid; gap: .4rem; font-size: .875rem; }
-.syntax-legend div { display: grid; grid-template-columns: 3rem minmax(0, 1fr); gap: .5rem; }
-.syntax-legend dt { color: var(--gs1-blue); font-weight: 600; }
-.syntax-legend dd { margin: 0; color: var(--text); }
-.syntax-root { margin: 0 0 .75rem; font-size: .875rem; color: var(--muted); }
-.syntax-root code { display: block; color: var(--ink); font-size: .875rem; overflow-wrap: anywhere; }
-.syntax-note { margin: 0; font-size: .875rem; }
-
 /* ---------------------------------------------------------------- footer */
 .site-footer { text-align: center; font-size: .8125rem; color: var(--muted); padding: 0 1rem 2rem; }
 .site-footer p { margin: 0; }
+.site-footer .notice { margin: .5rem auto 0; max-width: 46rem; line-height: 1.5; }
 
 /* ---------------------------------------------------------------- responsive (declared last) */
 @media (max-width: 960px) {
-  .home-layout { grid-template-columns: minmax(0, 1fr); }
   .cards-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {

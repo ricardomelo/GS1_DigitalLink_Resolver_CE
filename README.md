@@ -5,6 +5,13 @@
 > handled by GS1 itself. Users of this software should not assume that it conforms fully to the published
 > [GS1-Conformant Resolver standard](https://ref.gs1.org/standards/resolver/).
 
+> **Community software; the operator is responsible.** Both the official GS1 Resolver Community Edition
+> and this fork are maintained by their communities of contributors, not by GS1 or any GS1 Member
+> Organisation. The software is provided "as is", without warranties or conditions of any kind (Apache
+> License 2.0, sections 7 and 8).
+> Whoever installs and operates an installation is solely responsible for it and for its use: its security
+> and availability, the records and links it serves, and their conformance to the GS1 standards.
+
 This repository is a fork of the official
 [**GS1 Resolver Community Edition v3**](https://github.com/gs1/GS1_DigitalLink_Resolver_CE) (based on commit
 [`bf885fd`](https://github.com/gs1/GS1_DigitalLink_Resolver_CE/commit/bf885fdf4888f0395229478bf6b50342c1f761a8))
@@ -210,7 +217,8 @@ that do not answer, redirects from HTTPS to HTTP and endless redirects; sites th
 server's own network. Sites that answer "200" for missing pages ("soft 404") cannot be detected.
 
 **Users and sessions** — per-user passwords (salted scrypt hashes), sign-in lockout after repeated
-failures, 8-hour sliding sessions. The interface follows the browser's language (pt-BR or en-GB) and can be
+failures, sessions that end after 30 minutes without use (with a warning before) and 12 hours after the
+sign-in at the latest. The interface follows the browser's language (pt-BR or en-GB) and can be
 switched at any time.
 
 ### Governance
@@ -335,7 +343,8 @@ checks the user's role and GS1 Company Prefixes.
 | Operation | Purpose |
 |---|---|
 | `POST /login`, `POST /logout`, `POST /password` | Sign in, sign out, change password |
-| `GET /config` | Resolver address, link types, languages, keys and their qualifier shapes, import limits, data attributes |
+| `GET /config` | Resolver address, link types, languages, keys and their qualifier shapes, import limits, data attributes, session limits |
+| `GET /session` | Renews the session (used by the page while the user works without server calls) |
 | `GET /record?key=&value=&qualifiers=` | Read one record (and the other records of the key) |
 | `POST /record` | Create or replace one record (`key`, `value`, `qualifiers`, `description`, `links`) |
 | `DELETE /record?key=&value=&qualifiers=` | Delete one record, keeping the others of the key |
@@ -454,7 +463,7 @@ never committed).
 | `RESOLVER_TERMS_URL` | Optional: the operator's terms of use, published as `termsOfUse` in the description file (left out when empty) |
 | `RESOLVER_PUBLIC_URL` | Portal's public address when it is not `https://FQDN` (e.g. development) |
 | `PORTAL_ADMIN_USERNAME`, `PORTAL_ADMIN_PASSWORD` | First portal user, created only while there are none |
-| `PORTAL_SESSION_HOURS`, `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE` | Optional portal settings |
+| `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_SECRET_KEY`, `PORTAL_COOKIE_SECURE` | Optional portal settings: minutes without use and hours after the sign-in before the session ends, session key, Secure cookie |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Host addresses of ports 8080 and 27017 (read by Compose from `.env` only) |
 
 ## Operation
@@ -490,7 +499,8 @@ The tests in [`dev-tests/`](dev-tests/README.md) run without Docker or MongoDB:
 | `portal/test_governance.py` | Roles, prefixes, user administration, temporary passwords, history, audit trail |
 | `portal/test_data_attributes.py` | Data attributes: syntax engine and dictionary, every refusal, the API and QR codes, the portal without the engine |
 | `portal/test_sheet.py`, `test_special_chars.py`, `test_linkcheck.py`, `test_portal_config.py` | Spreadsheets, special characters, link checker, start-up configuration |
-| `home/test_home.py` | Home page and proxy routes through the real nginx configuration, including the Host header each service receives |
+| `portal/test_session.py` | Session limits, the warning before the end, renewal while the user works, other tabs; the community notice |
+| `home/test_home.py` | Home page (with the community notice) and proxy routes through the real nginx configuration, including the Host header each service receives |
 | `install/test_install.sh` | Installer in eight scenarios, with the real `docker compose config` and `nginx -t` |
 
 ```bash

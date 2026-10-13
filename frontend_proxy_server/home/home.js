@@ -49,12 +49,8 @@
       "card.gs1.text": "A organização que desenvolve e mantém os padrões GS1 de identificação, códigos de barras e compartilhamento de dados.",
       "card.github.title": "GS1 Resolver CE no GitHub",
       "card.github.text": "Código aberto (Apache 2.0) do Resolver usado por este serviço.",
-      "syntax.title": "Como é um GS1 Digital Link",
-      "syntax.gtin": "GTIN, o identificador do produto (14 dígitos)",
-      "syntax.lot": "Lote (opcional)",
-      "syntax.rootLabel": "Raiz deste Resolver",
-      "syntax.description": "Arquivo de descrição do Resolver",
       "footer.operatedBy": "Operado por",
+      "footer.notice": "Software mantido pela sua comunidade, não pela GS1 nem por qualquer Organização-Membro GS1. Quem opera esta instalação é responsável pelo seu uso.",
     },
     "en-GB": {
       "locale.name": "English (UK)",
@@ -82,12 +78,8 @@
       "card.gs1.text": "The organisation that develops and maintains the GS1 identification, barcode and data sharing standards.",
       "card.github.title": "GS1 Resolver CE on GitHub",
       "card.github.text": "Open-source code (Apache 2.0) of the resolver behind this service.",
-      "syntax.title": "What a GS1 Digital Link looks like",
-      "syntax.gtin": "GTIN, the product identifier (14 digits)",
-      "syntax.lot": "Batch or lot (optional)",
-      "syntax.rootLabel": "Root of this resolver",
-      "syntax.description": "Resolver description file",
       "footer.operatedBy": "Operated by",
+      "footer.notice": "Software maintained by its community, not by GS1 or any GS1 Member Organisation. Whoever operates this installation is responsible for its use.",
     },
   };
 
@@ -148,14 +140,6 @@
     select.value = locale;
     select.hidden = false;
     select.addEventListener("change", () => setLocale(select.value));
-  }
-
-  /* ---------------------------------------------------------------- resolver root */
-  // Taken from the address bar, so the page never needs editing for a new domain.
-  function showResolverRoot() {
-    const root = location.origin;
-    $("#resolver-root").textContent = root;
-    $("#resolver-root-full").textContent = root;
   }
 
   /* ---------------------------------------------------------------- operator */
@@ -223,7 +207,6 @@
   document.addEventListener("DOMContentLoaded", () => {
     apply();
     initLocalePicker();
-    showResolverRoot();
     initNavToggle();
     showOperator();
   });

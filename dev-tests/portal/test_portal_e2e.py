@@ -26,13 +26,16 @@ os.environ.update(DATA_ENTRY_URL=f"http://127.0.0.1:{DATA_ENTRY_PORT}/api", SESS
                   PORTAL_ORIGIN=f"http://127.0.0.1:{PORT}", PORTAL_COOKIE_SECURE="false",
                   RESOLVER_PUBLIC_URL="https://id.example.org")
 os.environ.setdefault("PORTAL_DB_URI", "mongomock://")   # a real MongoDB when PORTAL_DB_URI is set
+os.environ["PORTAL_WORKER"] = "embedded"               # imports and link checks run in a thread of the portal
 sys.path[:0] = [HERE, PORTAL]
 
 import mock_data_entry  # noqa: E402
 import users  # noqa: E402
 users.set_password("tester", "a-long-test-password")
 import app as portal  # noqa: E402
+import jobs  # noqa: E402
 import linkcheck  # noqa: E402
+import worker  # noqa: E402
 import syntax  # noqa: E402,F401 — portal.syntax.ENGINE tells whether data attributes are offered
 
 
@@ -245,6 +248,28 @@ with sync_playwright() as p:
           and "Targets with problems: 1" in page.inner_text("#links-check-msg"), (notes, page.inner_text("#links-check-msg")))
     page.goto(BASE + "#records"); page.wait_for_timeout(700)
     check("last check shown again after reloading", "Records with problems: 1" in page.inner_text("#records-check-msg"))
+
+    # Background jobs (portal-worker): waiting in the queue, no worker running, a worker coming back, a failure
+    portal.EMBEDDED_WORKER.stop(); page.wait_for_timeout(1500)
+    jobs.STALLED_SECONDS, stalled_after = 2, jobs.STALLED_SECONDS
+    page.click("#records-check"); page.wait_for_timeout(1000)
+    check("job waiting for the worker: queue message", "In the queue" in page.inner_text("#records-check-msg"),
+          page.inner_text("#records-check-msg"))
+    page.wait_for_timeout(2500)
+    msg = page.query_selector("#records-check-msg")
+    check("job waiting long with no worker running: warning", "job worker is not running" in msg.inner_text()
+          and "warn-text" in msg.get_attribute("class"), (msg.inner_text(), msg.get_attribute("class")))
+    restarted = worker.start_embedded(portal.JOB_RUNNERS); page.wait_for_timeout(2500)
+    check("a worker that starts takes the waiting job and it finishes",
+          "Records with problems: 1" in page.inner_text("#records-check-msg"), page.inner_text("#records-check-msg"))
+    jobs.STALLED_SECONDS = stalled_after
+    real_runner = portal.JOB_RUNNERS["linkcheck"]
+    portal.JOB_RUNNERS["linkcheck"] = lambda job, reporter: 1 / 0
+    page.click("#records-check"); page.wait_for_timeout(2500)
+    check("a job that fails: the browser stops waiting and says so",
+          "unexpected error" in page.inner_text("#records-check-msg") and page.is_enabled("#records-check"),
+          page.inner_text("#records-check-msg"))
+    portal.JOB_RUNNERS["linkcheck"] = real_runner
 
     page.click("#records-import"); page.wait_for_timeout(200)
     page.check("#import-checklinks")

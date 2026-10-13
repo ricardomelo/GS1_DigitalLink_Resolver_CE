@@ -32,6 +32,9 @@ Interfaces are available in Brazilian Portuguese and British English.
 
 One additional service (`portal-service`, Flask + gunicorn) serves the page **and** bridges to the API.
 The resolver token stays on the server; the browser talks to `/portal/api/*` with a simple JSON document.
+A second service from the same image, `portal-worker`, runs the long tasks (spreadsheet imports, checks of
+many links): the portal stores them as jobs in its database and the worker claims and runs them, so a
+restart of the portal does not stop them.
 
 ### Why a back end rather than an HTML page calling the API directly
 
@@ -65,6 +68,7 @@ Every service loads `.env.example` and then `.env` if it exists; a value in `.en
 | `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD` | portal, portal-db-init | `resolver_portal` (all three) | random password (installer) |
 | `PORTAL_SECRET_KEY` | portal (session cookies) | empty → `secret.key` in the volume | random (installer); required with several portal replicas |
 | `PORTAL_JOURNAL_SESSION_DAYS`, `PORTAL_JOURNAL_RECORD_DAYS`, `PORTAL_JOURNAL_ADMIN_DAYS` | portal (journal retention) | 180, 0, 0 (0 = for ever) | as the operator's policy requires |
+| `PORTAL_WORKER` | portal (where background jobs run) | `external` (the `portal-worker` service) | `external`; `embedded` (a thread of the portal) only for a set-up without `portal-worker` |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Docker Compose (**only from `.env`**) | `0.0.0.0` | `127.0.0.1` behind a TLS proxy |
 
 Rules worth knowing:
@@ -360,7 +364,11 @@ number and the reason, e.g. a GTIN that Excel turned into scientific notation). 
 *Import records* is confirmed; records with errors are skipped. Each record in the file replaces the
 record on the resolver entirely, as a save in the editor does; records that are not in the file are not
 touched (import never deletes). The import runs in the background with a progress counter, records who
-made each change, and writes one audit line (`action=import created=… updated=… failed=…`).
+made each change, and writes one audit line (`action=import created=… updated=… failed=…`). It is a job run
+by the `portal-worker` service: while it waits its turn the page says it is in the queue, and after about
+15 seconds with no worker running it warns that the job worker is not running. If the worker stops in the
+middle (an update, a restart), the next worker continues from the first record not yet written; a job
+interrupted three times stops with a message, keeping what was written.
 
 **Limits per file** — set in `FORMATS` in `portal/sheet.py`, sent to the browser in `GET /portal/api/config`
 (`importLimits`), shown in the import dialog and checked by the browser before sending and again by the
@@ -410,8 +418,9 @@ HTTPS access to the Internet):
   normally, or the problem. A problem never stops a save.
 - **Record list** — *Check links* checks every target of every record in the background (with a
   progress counter), marks the records with problems (⚠ and the count; hovering lists the addresses)
-  and offers *Only with problems*. The latest result is kept until the portal restarts and is shown
-  again when the list opens; opening a marked record checks its targets in the editor.
+  and offers *Only with problems*. The check is a job of the `portal-worker` service, like an import. The
+  latest result is kept in the portal's database and shown again when the list opens; opening a marked
+  record checks its targets in the editor.
 - **Spreadsheet import** — the optional *Also check that the addresses answer* lists the rows whose
   addresses have problems; they do not stop the import.
 
@@ -819,10 +828,16 @@ After every installation or update, check the resolver **through the proxy** as 
 which reaches the web server directly (item 1.5 broke every resolution through the proxy while
 `/portal/healthz` stayed `ok`):
 ```bash
-curl -s http://127.0.0.1:8080/portal/healthz                                  # {"portal":"ok","resolver":"ok"}
+curl -s http://127.0.0.1:8080/portal/healthz                                  # {"portal":"ok","resolver":"ok","worker":"ok"}
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver    # 200
 curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' http://127.0.0.1:8080/01/<a registered GTIN>   # 307 …
 ```
+
+`"worker":"unavailable"` means no job worker has reported in the last 30 seconds: the portal works, but
+imports and link checks wait in the queue. See `docker compose logs --tail=60 portal-worker`. The worker
+finishes the record in hand and hands its job back when it is stopped (`docker compose stop` or an update);
+a worker that is killed leaves its job to the next one after two minutes. Jobs and their results are kept for
+30 minutes after they end.
 
 Audit trail (who changed what):
 ```bash
@@ -831,7 +846,8 @@ docker compose logs -f portal-service | grep portal.audit
 ```
 
 To offer more link types, add a row to `LINK_TYPES` in `portal/gs1.py` and its labels to every locale in
-`portal/static/i18n.js`, then run `docker compose up -d --build portal-service`.
+`portal/static/i18n.js`, then run `docker compose up -d --build portal-service portal-worker` (the worker
+runs imports with the same rules).
 
 ## Hardening
 
@@ -878,7 +894,7 @@ A backup taken before the portal used its database holds the portal's data in th
 `records-meta.json`, `journal.jsonl`) and none in the database dump. To restore such a backup, restore both,
 remove the portal's database (`docker compose exec database-service sh -c 'mongosh -u
 "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin resolver_portal
---eval "db.dropDatabase()"'`) and run `docker compose up -d --force-recreate portal-db-init portal-service`: the
+--eval "db.dropDatabase()"'`) and run `docker compose up -d --force-recreate portal-db-init portal-service portal-worker`: the
 files are imported again at the start.
 Keep a copy of the archives on another machine as well.
 

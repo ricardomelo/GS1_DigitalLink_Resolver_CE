@@ -18,9 +18,7 @@ import json
 import logging
 import os
 import secrets
-import threading
 import time
-import uuid
 from datetime import timedelta
 from functools import wraps
 
@@ -29,6 +27,7 @@ from flask import Flask, Response, g, jsonify, redirect, request, send_from_dire
 from pymongo.errors import PyMongoError
 
 import gs1
+import jobs
 import journal
 import label
 import linkcheck
@@ -38,6 +37,7 @@ import sheet
 import store
 import syntax
 import users
+import worker
 from gs1 import ValidationError
 
 # --------------------------------------------------------------------------- configuration
@@ -629,12 +629,18 @@ def change_password():
 
 @app.get("/portal/healthz")
 def healthz():
-    """Health check for Compose and monitoring: the portal is up and whether the resolver answers."""
+    """Health check for Compose and monitoring: the portal is up, whether the resolver answers and whether a
+    job worker is running (jobs.WORKER_ALIVE_SECONDS)."""
     try:
         status, _ = resolver("GET", "/heartbeat")
     except UpstreamError:
         status = 0
-    return jsonify(portal="ok", resolver="ok" if status == 200 else "unavailable"), 200
+    try:
+        workers = jobs.workers_alive()
+    except PyMongoError:
+        workers = 0
+    return jsonify(portal="ok", resolver="ok" if status == 200 else "unavailable",
+                   worker="ok" if workers else "unavailable"), 200
 
 
 # --------------------------------------------------------------------------- portal API
@@ -935,19 +941,6 @@ def export_records():
         "Content-Disposition": f'attachment; filename="resolver-links-{stamp}.{ext}"'})
 
 
-IMPORTS: dict[str, dict] = {}          # token → prepared import (single worker: memory is shared)
-IMPORTS_LOCK = threading.Lock()
-IMPORT_TTL = 30 * 60
-
-
-def _forget_old_imports() -> None:
-    """Drops import previews older than IMPORT_TTL."""
-    now = time.time()
-    with IMPORTS_LOCK:
-        for token in [t for t, job in IMPORTS.items() if now - job["created"] > IMPORT_TTL]:
-            IMPORTS.pop(token, None)
-
-
 def _row_of(record: dict, position) -> int:
     """Spreadsheet row of a record's target at a 1-based position (for error messages); first row otherwise."""
     try:
@@ -974,8 +967,7 @@ def _same_record(target: dict, doc: dict) -> bool:
 @role_required("editor")
 def import_preview():
     """Reads a spreadsheet, validates every record with the editor's rules and compares it with the
-    resolver. Nothing is written; the valid records are kept for /import/apply under a token."""
-    _forget_old_imports()
+    resolver. Nothing is written; the valid records are kept for /import/apply as a prepared job (jobs.py)."""
     data = request.get_json(silent=True) or {}
     try:
         content = base64.b64decode(data.get("content") or "", validate=True)
@@ -1099,11 +1091,8 @@ def import_preview():
         anchor = gs1.anchor_for(item["key"], item["value"]) if item.get("action") in ("create", "update") else None
         if anchor in key_records:
             item["noKeyRecord"] = True
-    token = uuid.uuid4().hex
-    with IMPORTS_LOCK:
-        IMPORTS[token] = {"user": g.user, "created": time.time(), "plan": plan, "state": "ready",
-                          "keyRecords": list(key_records.values()),
-                          "done": 0, "total": len(plan), "results": []}
+    token = jobs.create("import", g.user, "prepared", len(plan), plan=_storable_plan(plan),
+                        keyRecords=_storable_plan(key_records.values()), results=[])
     counts = {action: sum(1 for i in report if i["action"] == action)
               for action in ("create", "update", "unchanged", "error")}
     errors.sort(key=lambda e: e["row"])
@@ -1113,73 +1102,78 @@ def import_preview():
                                           for k in key_records.values()]})
 
 
-def _run_import(token: str, user: str) -> None:
-    """Background thread: writes the records of a confirmed import one by one with the editor's call
-    sequence, counting created, updated and failed records.
+def _storable_plan(plan) -> list[dict]:
+    """An import plan as stored in its job: qualifier pairs as lists (BSON has no tuples)."""
+    return [{**item, "pairs": [list(p) for p in item["pairs"]]} for item in plan]
+
+
+def run_import_job(job: dict, reporter: "jobs.Reporter") -> None:
+    """Worker: writes the records of a confirmed import one by one with the editor's call sequence, from the
+    first one not yet done (a job interrupted by a worker that stopped continues where it was; writing a
+    record again is safe: the data entry API ends in the same state). Logs the import when done.
     """
-    job = IMPORTS[token]
+    user = job["user"]
+    plan = job["plan"]
+    results = list(job.get("results") or [])[:job.get("done", 0)]
     with app.test_request_context():
         g.user = user                                   # store_record logs and records who changed it
         g.prefixes = (users.get(user) or {}).get("prefixes", [])
-        created = updated = failed = 0
-        for item in job["plan"]:
+        for index in range(len(results), len(plan)):
+            reporter.check_stop()                       # between records: a stopping worker hands the job back
+            item = plan[index]
+            pairs = [tuple(p) for p in item["pairs"]]
             ai, value = gs1.split_anchor(item["anchor"])
-            result = {"key": ai, "value": value, "qualifiers": [list(p) for p in item["pairs"]], "rows": item["rows"],
+            result = {"key": ai, "value": value, "qualifiers": [list(p) for p in pairs], "rows": item["rows"],
                       "description": item["doc"]["itemDescription"]}
             try:
-                result["action"] = "created" if store_record(item["anchor"], item["pairs"], item["doc"]) else "updated"
-                created += result["action"] == "created"
-                updated += result["action"] == "updated"
+                result["action"] = "created" if store_record(item["anchor"], pairs, item["doc"]) else "updated"
             except (ValidationError, UpstreamError) as exc:
                 result.update(action="failed", code=exc.code, params=exc.params)
-                failed += 1
-            job["results"].append(result)
-            job["done"] += 1
-        audit.info("user=%s action=import created=%d updated=%d failed=%d", user, created, updated, failed)
-        log_event("import", detail=f"created={created} updated={updated} failed={failed}")
-    job["state"] = "finished"
-    job["created"] = time.time()                       # keep the result for IMPORT_TTL from now
+            reporter.record(index + 1, result)
+            results.append(result)
+        counts = {a: sum(1 for r in results if r["action"] == a) for a in ("created", "updated", "failed")}
+        audit.info("user=%s action=import created=%d updated=%d failed=%d", user,
+                   counts["created"], counts["updated"], counts["failed"])
+        log_event("import", detail="created={created} updated={updated} failed={failed}".format(**counts))
+    reporter.finish()
 
 
 @app.post("/portal/api/import/apply")
 @require_login
 @role_required("editor")
 def import_apply():
-    """Starts writing a previewed import (by its token); the browser then polls /import/status."""
+    """Queues a previewed import (by its token) for the worker; the browser then polls /import/status."""
     data = request.get_json(silent=True) or {}
     token = data.get("token", "")
-    with IMPORTS_LOCK:
-        job = IMPORTS.get(token)
-        if not job or job["user"] != g.user:
-            raise ValidationError("import.expired")
-        if job["state"] != "ready":
-            raise ValidationError("import.alreadyApplied")
-        if data.get("createKeyRecords") and job.get("keyRecords"):
-            # the keys' own records go first (section 2.5.9: a default link above every qualified record)
-            job["plan"] = job["keyRecords"] + job["plan"]
-            job["total"] = len(job["plan"])
-        job["state"] = "running"
-    threading.Thread(target=_run_import, args=(token, g.user), daemon=True).start()
-    return jsonify({"token": token, "total": job["total"]}), 202
+    job = jobs.get(token, g.user, "import")
+    if not job:
+        raise ValidationError("import.expired")
+    if job["state"] != "prepared":
+        raise ValidationError("import.alreadyApplied")
+    plan = job["plan"]
+    if data.get("createKeyRecords") and job.get("keyRecords"):
+        # the keys' own records go first (section 2.5.9: a default link above every qualified record)
+        plan = job["keyRecords"] + plan
+    queued = jobs.queue_prepared(token, g.user, plan=plan, total=len(plan))
+    if not queued:                                      # applied (or expired) by another request meanwhile
+        raise ValidationError("import.alreadyApplied" if jobs.get(token, g.user, "import") else "import.expired")
+    worker.wake()
+    return jsonify({"token": token, "total": queued["total"]}), 202
 
 
 @app.get("/portal/api/import/status")
 @require_login
 @role_required("editor")
 def import_status():
-    """Progress of an import and, when finished, the result of every record."""
-    job = IMPORTS.get(request.args.get("token", ""))
-    if not job or job["user"] != g.user:
+    """Progress of an import and, when finished, the result of every record. "stalled" tells a job waiting in
+    the queue with no worker running."""
+    job = jobs.get(request.args.get("token", ""), g.user, "import")
+    if not job or job["state"] == "prepared":
         raise ValidationError("import.expired")
-    return jsonify({"state": job["state"], "done": job["done"], "total": job["total"],
-                    "results": job["results"] if job["state"] == "finished" else []})
+    return jsonify({**jobs.status(job), "results": job.get("results", []) if job["state"] == "finished" else []})
 
 
 # --------------------------------------------------------------------------- link checker
-LINK_JOBS: dict[str, dict] = {}
-LINK_JOBS_LOCK = threading.Lock()
-
-
 def _last_full_check() -> dict:
     """Result of the latest "check every record" (settings "lastFullCheck"), shown in the record list."""
     value = store.get_setting("lastFullCheck") or {}
@@ -1205,42 +1199,44 @@ def check_links():
     return jsonify({"results": [results[u] for u in dict.fromkeys(urls) if u in results]})
 
 
-def _run_link_job(token: str) -> None:
-    """Background thread of a link check: checks every address once and maps problems back to records
-    (scope "all") or to the addresses sent (editor and import preview).
+def run_link_job(job: dict, reporter: "jobs.Reporter") -> None:
+    """Worker: checks every address of a link check once and maps problems back to records (scope "all")
+    or to the addresses sent (editor and import preview). An interrupted check starts again from the first
+    address; the checker's cache (CACHE_SECONDS) answers the ones already checked.
     """
-    job = LINK_JOBS[token]
+    urls = {item["url"]: item["records"] for item in job["urls"]}
+    last = [0.0]
 
     def progress(done, total):
-        job["done"], job["total"] = done, total
+        reporter.check_stop()
+        now = time.monotonic()
+        if done == total or now - last[0] >= 1:          # at most one write a second
+            reporter.progress(done, total)
+            last[0] = now
 
-    results = linkcheck.check_many(list(job["urls"]), progress)
+    results = linkcheck.check_many(list(urls), progress)
     problems = {u: r for u, r in results.items() if not r["ok"]}
+    fields = {"problems": list(problems.values())}
     if job["scope"] == "all":
         by_record = {}
         for url, result in problems.items():
-            for key in job["urls"][url]:
+            for key in urls[url]:
                 by_record.setdefault(key, []).append(result)
-        job["records"] = by_record
+        # record keys contain "/" and ".", so they are values, not field names
+        fields["records"] = [{"record": key, "problems": found} for key, found in by_record.items()]
         _save_last_full_check({"checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                                "records": by_record, "urls": len(results), "user": job["user"]})
         audit.info("user=%s action=linkcheck urls=%d problems=%d", job["user"], len(results), len(problems))
-    job["problems"] = list(problems.values())
-    job["state"] = "finished"
-    job["created"] = time.time()
+    reporter.finish(**fields)
 
 
 @app.post("/portal/api/links/jobs")
 @require_login
 @role_required("editor")
 def start_link_job():
-    """Checks many targets in the background: every record's ("scope": "all") or a list of URLs
+    """Queues a check of many targets for the worker: every record's ("scope": "all") or a list of URLs
     (spreadsheet import preview). Poll /links/jobs/<token>."""
     data = request.get_json(silent=True) or {}
-    now = time.time()
-    with LINK_JOBS_LOCK:
-        for old in [t for t, j in LINK_JOBS.items() if now - j["created"] > IMPORT_TTL]:
-            LINK_JOBS.pop(old, None)
     if data.get("scope") == "all":
         urls: dict[str, list[str]] = {}
         for line in summary_with_links():
@@ -1256,11 +1252,10 @@ def start_link_job():
         scope = "list"
     if len(urls) > MAX_CHECK_URLS:
         raise ValidationError("linkcheck.tooMany", max=MAX_CHECK_URLS)
-    token = uuid.uuid4().hex
-    with LINK_JOBS_LOCK:
-        LINK_JOBS[token] = {"user": g.user, "created": now, "state": "running", "scope": scope,
-                            "urls": urls, "done": 0, "total": len(urls)}
-    threading.Thread(target=_run_link_job, args=(token,), daemon=True).start()
+    # addresses contain "." and are values, not field names
+    token = jobs.create("linkcheck", g.user, "queued", len(urls), scope=scope,
+                        urls=[{"url": url, "records": keys} for url, keys in urls.items()])
+    worker.wake()
     return jsonify({"token": token, "total": len(urls)}), 202
 
 
@@ -1269,15 +1264,15 @@ def start_link_job():
 @role_required("editor")
 def link_job_status(token):
     """Progress of a link check and, when finished, its problems."""
-    job = LINK_JOBS.get(token)
-    if not job or job["user"] != g.user:
+    job = jobs.get(token, g.user, "linkcheck")
+    if not job:
         raise ValidationError("linkcheck.expired")
-    out = {"state": job["state"], "done": job["done"], "total": job["total"]}
+    out = jobs.status(job)
     if job["state"] == "finished":
-        out["problems"] = job["problems"]
+        out["problems"] = job.get("problems", [])
         if job["scope"] == "all":
             out.update(_last_full_check())
-            out["records"] = job.get("records", {})
+            out["records"] = {item["record"]: item["problems"] for item in job.get("records") or []}
     return jsonify(out)
 
 
@@ -1477,3 +1472,11 @@ def qrcode():
                         headers={"Content-Disposition": f'attachment; filename="{filename}.png"', **qr_headers})
     headers = {"Content-Disposition": f'attachment; filename="{filename}.svg"'} if download_format == "svg" else {}
     return Response(label.render_svg(options), mimetype="image/svg+xml", headers={**headers, **qr_headers})
+
+
+# --------------------------------------------------------------------------- background jobs
+# What the worker runs for each type of job (worker.py). With PORTAL_WORKER=embedded a worker thread runs
+# them inside this process; otherwise the portal-worker service does.
+JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job}
+EMBEDDED_WORKER = (worker.start_embedded(JOB_RUNNERS)
+                   if worker.mode() == "embedded" and not worker.IN_WORKER_PROCESS else None)

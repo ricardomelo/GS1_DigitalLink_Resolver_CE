@@ -1,7 +1,8 @@
 """
 The portal's database layer against a real MongoDB, as installations run it: the user made by db_init.py
-(the portal-db-init service) and what it may do, test_store.py run again as that user, and MongoDB's TTL
-monitor deleting expired documents. mongomock cannot show any of this.
+(the portal-db-init service) and what it may do, test_store.py and test_jobs.py run again as that user,
+worker.py as real processes sharing the queue (test_worker_processes.py), and MongoDB's TTL monitor deleting
+expired documents. mongomock cannot show any of this.
 
 Needs PORTAL_TEST_MONGO_URI: a MongoDB 7 connection with the right to create users (root). The continuous
 integration starts a mongo:7 service container for it (.github/workflows/dev-tests.yml, job "database").
@@ -103,18 +104,19 @@ try:
     check("db_init refuses an empty password", db_init(PORTAL_DB_PASSWORD="").returncode == 1)
     check("db_init without MONGO_URI fails", db_init(PORTAL_DB_PASSWORD=second, MONGO_URI="").returncode == 1)
 
-    # ---------------------------------------------------------------- test_store.py as the portal's user
+    # ---------------------------------------------------------------- programs run again as the portal's user
     env = {k: v for k, v in os.environ.items() if not k.startswith("PORTAL_DB_")}
     env.update(PORTAL_DB_URI=user_uri(second), PORTAL_DB_NAME=NAME)
-    store_run = subprocess.run([sys.executable, os.path.join(HERE, "test_store.py")], env=env,
-                               capture_output=True, text=True, timeout=600)
-    lines = store_run.stdout.splitlines()
-    for line in lines:
-        if line.startswith(("PASS ", "FAIL ")):
-            print(line[:5] + "real MongoDB: " + line[5:])
-    passed = sum(line.startswith("PASS ") for line in lines)
-    check("test_store.py passes on a real MongoDB as the portal's user",
-          store_run.returncode == 0 and passed > 50, store_run.stderr[-800:])
+    for program, minimum in (("test_store.py", 50), ("test_jobs.py", 60), ("test_worker_processes.py", 10)):
+        run = subprocess.run([sys.executable, os.path.join(HERE, program)], env=env, capture_output=True, text=True,
+                             timeout=900)
+        lines = run.stdout.splitlines()
+        for line in lines:
+            if line.startswith(("PASS ", "FAIL ")):
+                print(line[:5] + "real MongoDB: " + line[5:])
+        passed = sum(line.startswith("PASS ") for line in lines)
+        check(f"{program} passes on a real MongoDB as the portal's user",
+              run.returncode == 0 and passed > minimum, (passed, run.stderr[-800:]))
 
     # ---------------------------------------------------------------- MongoDB's TTL monitor
     sys.path[:0] = [PORTAL]
@@ -126,15 +128,20 @@ try:
     store.col("journal").insert_one({"_id": "ttl-probe", "at": now, "user": "x", "action": "login",
                                      "category": "session", "expiresAt": now - timedelta(minutes=1)})
     store.col("linkcheck_cache").insert_one({"_id": "ttl-probe", "result": {}, "expiresAt": now - timedelta(minutes=1)})
+    store.col("jobs").insert_one({"_id": "ttl-probe", "type": "linkcheck", "state": "finished", "created": now,
+                                  "expiresAt": now - timedelta(minutes=1)})
+    store.col("workers").insert_one({"_id": "ttl-probe", "seen": now - timedelta(seconds=store.WORKER_RECORD_SECONDS + 60)})
     store.col("journal").insert_one({"_id": "ttl-keep", "at": now, "user": "x", "action": "create", "category": "record"})
     deadline = time.monotonic() + 150                     # the monitor runs every 60 seconds
-    left = 3
+    probed = ("login_failures", "journal", "linkcheck_cache", "jobs", "workers")
+    left = len(probed)
     while time.monotonic() < deadline:
-        left = sum(store.col(c).count_documents({"_id": "ttl-probe"}) for c in ("login_failures", "journal", "linkcheck_cache"))
+        left = sum(store.col(c).count_documents({"_id": "ttl-probe"}) for c in probed)
         if not left:
             break
         time.sleep(5)
-    check("TTL: expired sign-in failures, journal events and cached results are deleted by MongoDB", left == 0, left)
+    check("TTL: expired sign-in failures, journal events, cached results, jobs and old worker announcements are "
+          "deleted by MongoDB", left == 0, left)
     check("TTL: an event without expiresAt is kept", store.col("journal").count_documents({"_id": "ttl-keep"}) == 1)
 finally:
     try:

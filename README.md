@@ -122,6 +122,8 @@ flowchart LR
     de --> db
     portal -->|"own user: users, history"| db
     init["portal-db-init<br/>(one-shot)"] -.->|"creates the portal's user"| db
+    worker["portal-worker<br/>imports, link checks"] -->|"jobs"| db
+    worker -->|"bearer token"| de
 ```
 
 | Service | Container | Role | Published |
@@ -131,6 +133,7 @@ flowchart LR
 | `data-entry-service` | `data-entry-server` | REST API to create, read, update and delete records | internal (via `/api`) |
 | `portal-service` | `resolver-portal` | Link management portal (Flask + static front end) | internal (via `/portal/`) |
 | `portal-db-init` | — | Creates or updates the portal's database user, then exits (runs at every start) | — |
+| `portal-worker` | — | Runs the portal's background jobs (spreadsheet imports, link checks) from its database; the portal's image | — |
 | `database-service` | `database-server` | MongoDB | `${DATABASE_BIND_ADDRESS}:27017` |
 
 The portal is a back end between the browser and the data entry API: the API token never reaches the
@@ -138,7 +141,9 @@ browser, and the portal reads before writing to use the API's operations safely 
 DELETE removes links, the default link type is shared by all records of a key). Its own data (users, record
 metadata, history and audit trail) is in a database of its own in the same MongoDB, `resolver_portal`,
 reached with a user that may use that database only; the resolver's database is never touched
-([ADR 0001](Documentation/adr/0001-portal-state-in-mongodb.md)).
+([ADR 0001](Documentation/adr/0001-portal-state-in-mongodb.md)). Spreadsheet imports and checks of many links
+are jobs in that database, run by `portal-worker`: they go on when the portal restarts, and a job interrupted
+by a worker restart continues where it was.
 
 ## The link management portal
 
@@ -365,7 +370,7 @@ checks the user's role and GS1 Company Prefixes.
 | `GET /history?key=&value=&qualifiers=` | Versions of a record (with content) |
 | `GET /users`, `POST /users`, `PUT /users/{name}`, `POST /users/{name}/reset`, `DELETE /users/{name}` | User administration (administrators) |
 | `GET /audit`, `GET /audit.csv` (`user`, `from`, `to`, `q`) | Audit trail (administrators) |
-| `GET /portal/healthz` | Health of the portal and of its access to the API |
+| `GET /portal/healthz` | Health of the portal, of its access to the API and of its job worker (`worker`: `ok` or `unavailable`) |
 
 ## System requirements
 
@@ -441,7 +446,7 @@ sudo FQDN=id.example.org TLS_MODE=letsencrypt CERTBOT_EMAIL=ops@example.org \
    ```
 
 4. **Start.** `docker compose up -d --build`, then check `curl -s http://127.0.0.1:8080/portal/healthz`
-   (`{"portal":"ok","resolver":"ok"}`) and a request that reaches the resolver through the proxy:
+   (`{"portal":"ok","resolver":"ok","worker":"ok"}`) and a request that reaches the resolver through the proxy:
    `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver` (`200`). The
    health check reaches the web server directly, without the proxy's resolver route.
 5. **HTTPS.** Put a TLS reverse proxy in front of `127.0.0.1:8080`. With nginx: copy
@@ -474,6 +479,7 @@ never committed).
 | `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD` | The portal's own database and user (created by `portal-db-init`); the installer generates the password |
 | `PORTAL_SECRET_KEY` | Key that signs the portal's sessions; every portal replica must share it (the installer generates it; empty: a key kept in the portal's volume) |
 | `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS` (0), `PORTAL_JOURNAL_ADMIN_DAYS` (0) | Days the journal keeps sign-ins, record changes and administration events (0 = for ever) |
+| `PORTAL_WORKER` (`external`) | Where imports and link checks run: `external`, the `portal-worker` service; `embedded`, a thread of the portal, for a set-up without that service |
 | `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_COOKIE_SECURE` | Optional portal settings: minutes without use and hours after the sign-in before the session ends, Secure cookie |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Host addresses of ports 8080 and 27017 (read by Compose from `.env` only) |
 
@@ -481,11 +487,12 @@ never committed).
 
 ```bash
 git pull && docker compose up -d --build                         # update
-curl -s http://127.0.0.1:8080/portal/healthz                     # {"portal":"ok","resolver":"ok"}
+curl -s http://127.0.0.1:8080/portal/healthz                     # {"portal":"ok","resolver":"ok","worker":"ok"}
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver   # 200: resolver through the proxy
 docker compose exec portal-service python create_user.py maria --role editor   # add or reset a user
 # who changed what: user menu → Audit trail (administrators), or the container log:
 docker compose logs -f portal-service | grep portal.audit
+docker compose logs --tail=60 portal-worker                      # imports and link checks (background jobs)
 sudo scripts/resolver-backup.sh                                  # backup now (every database + portal volume)
 ```
 
@@ -514,8 +521,9 @@ replaced by `mongomock`; CI also runs them on a real MongoDB):
 | `portal/test_sheet.py`, `test_special_chars.py`, `test_linkcheck.py`, `test_portal_config.py` | Spreadsheets, special characters, link checker, start-up configuration |
 | `portal/test_session.py` | Session limits, the warning before the end, renewal while the user works, other tabs; the community notice |
 | `portal/test_store.py`, `test_store_mongodb.py` | The portal's database: users and the shared lock, record metadata, journal and retention, sign-in lockout, migration of older files; on a real MongoDB, the portal user's privileges and expiry by MongoDB |
+| `portal/test_jobs.py`, `test_worker_processes.py` | Background jobs: the queue, claims, heartbeats, workers that stop or die, imports and link checks through the worker; on a real MongoDB, worker processes sharing the queue |
 | `home/test_home.py` | Home page (with the community notice) and proxy routes through the real nginx configuration, including the Host header each service receives |
-| `install/test_install.sh` | Installer in eight scenarios, with the real `docker compose config` and `nginx -t` |
+| `install/test_install.sh` | Installer in nine scenarios, with the real `docker compose config` and `nginx -t` |
 
 ```bash
 pip install -r web_server/src/requirements.txt -r portal/requirements.txt jsonschema playwright opencv-python-headless mongomock
@@ -567,7 +575,7 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Technical foundations | 2.3 | **Architecture for scale and the portal's data in MongoDB**: an architecture decision record (stateless services, state in the database, background jobs outside the web process, more than one replica of each service); the portal's users, record metadata, journal, jobs and sign-in lockout moved from files and memory to a database of their own in the existing MongoDB, without changing the official resolver's collections; retention of the journal; migration of existing installations; backup and restore included. Decisions: [ADR 0001](Documentation/adr/0001-portal-state-in-mongodb.md) (steps 1 and 2 of 4 done: the record; users, record metadata, journal, sign-in lockout and caches in MongoDB) | L | — |
+| Technical foundations | 2.3 | **Architecture for scale and the portal's data in MongoDB**: an architecture decision record (stateless services, state in the database, background jobs outside the web process, more than one replica of each service); the portal's users, record metadata, journal, jobs and sign-in lockout moved from files and memory to a database of their own in the existing MongoDB, without changing the official resolver's collections; retention of the journal; migration of existing installations; backup and restore included. Decisions: [ADR 0001](Documentation/adr/0001-portal-state-in-mongodb.md) (steps 1 to 3 of 4 done: the record; users, record metadata, journal, sign-in lockout and caches in MongoDB; imports and link checks as jobs run by a worker service) | L | — |
 | | 2.4 | **Tenants**: an organisation (tenant) owns its GS1 Company Prefixes, each prefix belonging to one tenant only; a server administrator creates tenants and assigns prefixes; a tenant administrator manages the tenant's users; every call checks the tenant on the server; audit trail per tenant; e-mail address per user; privacy by design (data minimisation, the server administrator's access to a tenant's data recorded in that tenant's audit trail) | L | 2.3 |
 | | 2.5 | **One source for the GS1 rules**: keys, qualifiers, formats and AI names derived from the GS1 Barcode Syntax Dictionary, both engines on one version, engine messages translated, dictionary updates proposed by a scheduled job; brings AIs (7041) and (8040)–(8043) | L | — |
 | Platform services | 3.1 | **E-mail**: outgoing mail through an authenticated relay (settings in `.env`), invitations to new users, password recovery by single-use link, a notification framework with per-user preferences | M | 2.4 |
@@ -603,14 +611,15 @@ Later, when convenient:
 
 ```
 .env.example                    configuration defaults (committed); .env holds installation values
-docker-compose.yml              the five services
+docker-compose.yml              the services (seven, one of them run once at start)
 data_entry_server/              data entry API (official, with /summary and token on /index)
 web_server/                     resolver (official, with conformance fixes and HTML pages)
 database_server/                MongoDB image (official)
 frontend_proxy_server/          nginx: routes, home page (home/), portal
 portal/                         link management portal: app.py, gs1.py (keys, qualifiers), label.py,
                                 sheet.py, linkcheck.py, users.py (roles), journal.py (history, audit),
-                                meta.py, syntax.py (data attributes), static/ (HTML, CSS, JS, i18n),
+                                meta.py, store.py (database), jobs.py and worker.py (background jobs),
+                                syntax.py (data attributes), static/ (HTML, CSS, JS, i18n),
                                 tools/build-syntax-engine.sh (GS1 Barcode Syntax Engine)
 scripts/                        install.sh, templates/ (nginx), resolver-backup.sh and its cron entry
 dev-tests/                      development tests (see above)

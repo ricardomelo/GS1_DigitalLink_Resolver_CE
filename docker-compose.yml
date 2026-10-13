@@ -86,6 +86,35 @@ services:
     networks:
       - resolver-internal-network
 
+  portal-worker:
+    # Runs the portal's background jobs (spreadsheet imports, link checks) from the jobs collection of the
+    # portal's database; same image and settings as the portal, another command. It finishes the record in
+    # hand, hands its job back to the queue and stops on "docker compose stop" (stop_grace_period).
+    build: './portal'
+    command: ["python", "worker.py"]
+    env_file:
+      - path: .env.example
+        required: true
+      - path: .env          # installation values; overrides .env.example (never committed)
+        required: false
+    environment:
+      DATA_ENTRY_URL: http://data-entry-service:3000/api
+      PORTAL_WORKER: external
+      MONGO_URI: ""
+      MONGO_INITDB_ROOT_USERNAME: ""
+      MONGO_INITDB_ROOT_PASSWORD: ""
+    volumes:
+      - resolver-portal-config:/app/config
+    depends_on:
+      data-entry-service:
+        condition: service_started
+      portal-db-init:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+    restart: always
+    networks:
+      - resolver-internal-network
+
   frontend-proxy-service:
     build: './frontend_proxy_server'
     container_name: frontend-proxy-server

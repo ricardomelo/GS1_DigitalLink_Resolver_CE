@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Situação | **Aceito** (13 de outubro de 2026). Implementação em quatro etapas: 1 (este registro) e 2 (os dados no MongoDB) concluídas |
+| Situação | **Aceito** (13 de outubro de 2026). Implementação em quatro etapas: 1 (este registro), 2 (os dados no MongoDB) e 3 (o worker de tarefas) concluídas |
 | Item do backlog | 2.3 — arquitetura para escala e os dados do portal no MongoDB |
 | Decidido por | o responsável pelo branch, sobre as opções da seção 4 |
 | Inglês | [ADR 0001 in English](../../adr/0001-portal-state-in-mongodb.md) (versão de referência) |
@@ -103,7 +103,8 @@ um `container_name` fixo, que o Compose não aceita replicar.
 | `record_meta` | chave do cadastro (`meta.key()`) | `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | — |
 | `journal` | ObjectId (`jsonl-<linha>` quando migrado) | `at` (data), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt` | `{at: -1}`; `{anchor, qpath, at: -1}`; `{user, at: -1}`; `{category}`; TTL em `expiresAt` |
 | `login_failures` | ObjectId | `key` (nome de usuário ou endereço), `at` (data) | `{key, at}`; TTL em `at`, 15 minutos |
-| `jobs` | token | `type` (`import`, `linkcheck`), `user`, `state`, `created`, `heartbeat`, `worker`, `done`, `total`, `plan`, `results`, `expiresAt` | `{state, created}`; TTL em `expiresAt` |
+| `jobs` | token | `type` (`import`, `linkcheck`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `error`, `expiresAt`; importações `plan`, `keyRecords`, `results`; verificações de links `scope`, `urls`, `problems`, `records` | `{state, created}`; TTL em `expiresAt` |
+| `workers` (etapa 3) | nome do worker (`host:pid:modo`) | `seen`, `mode`, `job` | TTL em `seen`, 10 minutos |
 | `linkcheck_cache` | endereço | `result`, `expiresAt` | TTL em `expiresAt` |
 | `settings` | nome | `value` (`lastFullCheck`, `journalRetention`, `migration`); documentos de trava `lock:<nome>` | — |
 
@@ -134,6 +135,29 @@ Observações:
 - **Expiração**: `expiresAt` = 30 minutos depois da prévia ou do fim da tarefa, como hoje.
 - **Escala**: uma tarefa por vez em cada worker; mais workers, mais tarefas em paralelo. O verificador de
   links mantém suas oito threads dentro de uma tarefa.
+
+**Como ficou na etapa 3** (as escolhas do responsável nos pontos em aberto, todas as recomendadas, e detalhes
+que a implementação acrescentou):
+- **Onde as tarefas rodam**: `PORTAL_WORKER=external` (padrão) — o serviço `portal-worker`, a imagem do
+  portal rodando `python worker.py`, sempre presente no `docker-compose.yml`; `embedded` — uma thread de
+  worker dentro do processo do portal, para os testes de desenvolvimento e uma instalação sem esse serviço. Um
+  worker por padrão; suas réplicas se decidem junto com as outras na etapa 4. Sem botão de cancelar por
+  enquanto (um item posterior do backlog).
+- **Uma importação interrompida continua** do primeiro cadastro não gravado. Depois de três retiradas da
+  mesma tarefa (`attempts`), a tarefa de um worker calado falha com `job.interrupted` em vez de voltar à fila,
+  para que uma tarefa que derruba seu worker não fique em ciclo para sempre; o que foi gravado fica. **Uma
+  verificação de links recomeça** do primeiro endereço: seus resultados não são guardados um a um, e o cache
+  do verificador (10 minutos) responde os endereços já conferidos.
+- **Posse das gravações**: toda gravação de uma tarefa em execução só vale se a tarefa ainda for daquele
+  worker; um worker que só estava lento, e cuja tarefa foi dada a outro, percebe (`JobLost`) e a larga.
+- **Parada limpa**: no SIGTERM (`docker compose stop`, uma atualização) o worker termina o cadastro em mãos e
+  devolve a tarefa à fila na hora, sem esperar os dois minutos; o serviço tem 30 segundos de tolerância.
+- **Há um worker rodando?** Os workers se anunciam numa coleção `workers` a cada 10 segundos. Uma tarefa na
+  fila há 15 segundos sem nenhum worker visto nos últimos 30 é informada como `stalled`, e o navegador avisa
+  que o processador de tarefas não está em execução em vez de esperar calado; o `GET /portal/healthz` ganha
+  `worker` (`ok` ou `unavailable`), e o instalador avisa quando o worker não se apresenta.
+- **Validade das tarefas não terminadas**: uma tarefa na fila ou em execução expira depois de um dia, uma
+  rede de segurança para tarefas que ninguém vai terminar.
 
 ### 3.4 Bloqueio de entrada e caches
 
@@ -223,8 +247,8 @@ Pior, e como fica contido:
 - mais peças (`portal-db-init`, `portal-worker`): ambas usam imagens que a instalação já constrói;
 - o worker consulta o MongoDB uma vez por segundo quando parado: uma consulta indexada, desprezível;
 - `mongomock` não é o MongoDB: o job do CI com `mongo:7` real cobre índices TTL, as permissões do usuário e
-  a migração; ele é informativo até provar estabilidade. O ambiente de desenvolvimento não roda MongoDB, então o primeiro resultado real desse job vem
-  do GitHub Actions.
+  a migração e processos de worker dividindo a fila; ele é informativo até provar estabilidade. O ambiente de
+  desenvolvimento não roda MongoDB, então o primeiro resultado real desse job vem do GitHub Actions.
 
 ## 6. Configuração acrescentada
 
@@ -238,6 +262,7 @@ Pior, e como fica contido:
 | `PORTAL_JOURNAL_SESSION_DAYS` | 180 | seção 3.5 |
 | `PORTAL_JOURNAL_RECORD_DAYS` | 0 | seção 3.5 |
 | `PORTAL_JOURNAL_ADMIN_DAYS` | 0 | seção 3.5 |
+| `PORTAL_WORKER` (etapa 3) | `external` | seção 3.3: o serviço `portal-worker`, ou `embedded` |
 
 O instalador mantém os valores existentes e acrescenta as chaves novas ao `.env`.
 
@@ -247,5 +272,5 @@ O instalador mantém os valores existentes e acrescenta as chaves novas ao `.env
 |---|---|---|
 | 1 | este registro (inglês e português) | nenhuma (documentação) |
 | 2 | `portal/store.py`, usuários, metadados dos cadastros, diário com retenção, entradas recusadas e caches no MongoDB; `portal-db-init`; migração; instalador; testes com `mongomock`; job do CI com `mongo:7`; documentação | os arquivos antigos viram `*.migrated`; usuários, histórico e auditoria iguais no portal; o bloqueio de entrada funciona |
-| 3 | coleção `jobs` e o serviço `portal-worker`; importações e verificações de links por ele | uma importação e uma "verificar todos os cadastros" terminam, inclusive com o portal reiniciado no meio |
+| 3 | coleção `jobs` e o serviço `portal-worker`; importações e verificações de links por ele | uma importação e uma "verificar todos os cadastros" terminam, inclusive com o portal reiniciado no meio; uma importação interrompida por um reinício do worker termina |
 | 4 | réplicas no Compose, sem nomes fixos de contêiner; os pontos da seção 3.8 | duas réplicas de cada serviço respondem; as verificações de resolução de sempre passam |

@@ -456,6 +456,12 @@ qualificadores formam um cadastro; a coluna **Principal** indica o destino que a
 4. **Importar cadastros (n)** grava os cadastros válidos; os que têm erro são ignorados. Corrija a planilha
    e importe de novo para incluí-los.
 
+A importação é feita pelo processador de tarefas do Resolver, então continua mesmo que você feche a página.
+Enquanto outra importação ou verificação de links estiver rodando, a janela mostra *Na fila…* até chegar a
+vez dela. Se ela disser que o processador de tarefas não está em execução, avise o administrador do Resolver:
+a importação começa assim que o processador voltar. Se o processador for reiniciado no meio, a importação
+continua de onde parou.
+
 Uma série é escrita como na etiqueta — `(22)V1(10)B42(21)S1` — e importada do mesmo jeito: o cadastro é o
 da série, e variante e lote ficam guardados nele como informação. Quando uma importação muda o lote de uma
 série que já existe, a prévia mostra o lote que ela tinha (*antes: …*).
@@ -481,7 +487,8 @@ O verificador de links pergunta a cada endereço se ele responde, sem mudar nada
 - **Todos os cadastros** — **Verificar links** na lista de registros confere todos os destinos em segundo
   plano; o resumo (*Última verificação de links: … Cadastros com problema: 2.*) fica até a próxima
   verificação, um aviso marca cada cadastro com problema e **Só com problemas** os filtra. Abrir um desses
-  cadastros confere os destinos dele de novo.
+  cadastros confere os destinos dele de novo. Como uma importação, a verificação pode esperar *Na fila…* a
+  vez dela.
 - **Prévia da importação** — a opção na janela de importação.
 
 Problemas apontados: uma resposta de erro (404, 500…), um site que recusa verificação automática (abra o

@@ -452,6 +452,11 @@ record; the **Default** column marks the target that opens first.
 4. **Import records (n)** writes the valid records; records with errors are skipped. Correct the
    spreadsheet and import it again to include them.
 
+The import is done by the resolver's job processor, so it goes on if you close the page. While another
+import or link check is running, the dialog says *In the queue…* until its turn comes. If it says that the
+job processor is not running, tell the resolver's administrator: the import starts as soon as the processor
+is back. If the processor is restarted in the middle, the import continues where it was.
+
 A serial number is written as in the label — `(22)V1(10)B42(21)S1` — and imported the same way: the
 record is the serial number's, and the variant and batch are kept with it as information. When an import
 changes the batch of an existing serial number, the preview shows the one it had (*before: …*).
@@ -476,7 +481,7 @@ The link checker asks each address whether it answers, without changing anything
 - **Every record** — **Check links** in the record list checks all the targets in the background; the
   summary (*Last link check: … Records with problems: 2.*) stays until the next check, a badge marks each
   record with problems, and **Only with problems** filters them. Opening such a record checks its
-  targets again.
+  targets again. Like an import, the check may wait *In the queue…* for its turn.
 - **Import preview** — the option in the import dialog.
 
 Problems reported: an error answer (404, 500…), a site that refuses automatic checks (open the address

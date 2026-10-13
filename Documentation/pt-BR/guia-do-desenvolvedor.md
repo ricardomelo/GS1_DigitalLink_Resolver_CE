@@ -44,7 +44,7 @@ Os nomes de arquivos, funções, variáveis e mensagens aparecem como estão no 
                                                   data-entry-service:3000/api
  web-service ─┐
  data-entry ──┼──► database-service (MongoDB 27017): resolver_ce (cadastros), resolver_portal (portal)
- portal ──────┘    o portal com usuário próprio, readWrite só em resolver_portal
+ portal ──────┘    o portal e o portal-worker com usuário próprio, readWrite só em resolver_portal
 ```
 
 - **web-service** (oficial, alterado) responde às URIs GS1 Digital Link: redirecionamentos, linksets,
@@ -57,6 +57,9 @@ Os nomes de arquivos, funções, variáveis e mensagens aparecem como estão no 
   cadastros, diário, entradas recusadas, caches) ficam num banco próprio, `resolver_portal`, acessado por um
   usuário próprio ([ADR 0001](adr/0001-estado-do-portal-no-mongodb.md)).
 - **portal-db-init** (novo, roda uma vez) cria ou atualiza esse usuário e termina; o portal sobe depois dele.
+- **portal-worker** (novo) executa as tarefas em segundo plano do portal (importações de planilhas,
+  verificações de links) a partir da coleção `jobs`: a imagem do portal com `python worker.py`. O processo web
+  só enfileira tarefas e lê seu estado, então nenhuma tarefa depende do processo que a aceitou.
 - **frontend-proxy-service** (oficial, alterado) encaminha os caminhos acima e serve a página inicial.
 - **database-service** (oficial) é o MongoDB.
 
@@ -72,7 +75,7 @@ alterações.
 
 ```
 .env.example                     padrões de configuração (versionado); o .env guarda os valores da instalação
-docker-compose.yml               cinco serviços; .env lido por todos; endereços de bind; volumes nomeados
+docker-compose.yml               sete serviços; .env lido por todos; endereços de bind; volumes nomeados
 data_entry_server/src/
   data_entry_namespace.py        /summary, token no /index, BearerAuth no Swagger
   data_entry_logic.py            read_summary()
@@ -100,6 +103,8 @@ portal/                          novo: o portal de gestão de links
   meta.py                        quem criou e quem alterou por último cada cadastro
   journal.py                     histórico dos cadastros e auditoria, retenção
   migrate.py                     migração única dos arquivos das versões anteriores para o banco
+  jobs.py                        tarefas em segundo plano: estados, retirada, sinal de vida, o anúncio do worker
+  worker.py                      o worker de tarefas (serviço portal-worker, ou uma thread com PORTAL_WORKER=embedded)
   db_init.py                     cria o usuário do banco do portal (serviço portal-db-init)
   create_user.py                 administração de usuários pela linha de comando
   static/                        index.html, login.html, app.js, login.js, password.js, i18n.js, app.css
@@ -125,6 +130,7 @@ tests/, useful_external_python_scripts/   oficiais
 | `web-service` | `web_server/` | interna 4000 | — |
 | `portal-db-init` | `portal/` (`python db_init.py`, roda uma vez a cada início) | — | — |
 | `portal-service` | `portal/` (dois estágios: syntax engine, aplicação) | interna 8000 | `resolver-portal-config:/app/config` |
+| `portal-worker` | `portal/` (`python worker.py`) | — | `resolver-portal-config:/app/config` |
 | `frontend-proxy-service` | `frontend_proxy_server/` | `${PROXY_BIND_ADDRESS:-0.0.0.0}:8080` | — |
 
 Todos os serviços leem o `.env.example` e depois o `.env` (Compose ≥ 2.24, `required: false`), então o
@@ -132,8 +138,10 @@ Todos os serviços leem o `.env.example` e depois o `.env` (Compose ≥ 2.24, `r
 `.env`. As variáveis estão descritas no `.env.example` e na seção *Configuration* do README; o portal
 também lê `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD`, `PORTAL_DB_HOST` (ou `PORTAL_DB_URI`),
 `PORTAL_JOURNAL_*_DAYS`, `PORTAL_SESSION_IDLE_MINUTES`, `PORTAL_SESSION_MAX_HOURS`, `PORTAL_SECRET_KEY`,
-`PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT` e `PORTAL_CONFIG_DIR` (e `PORTAL_*_FILE`, os arquivos que a
-migração lê). Só o `portal-db-init` recebe o `MONGO_URI` root; o do portal fica vazio.
+`PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT`, `PORTAL_WORKER` e `PORTAL_CONFIG_DIR` (e `PORTAL_*_FILE`, os
+arquivos que a migração lê). Só o `portal-db-init` recebe o `MONGO_URI` root; o do portal e o do worker ficam
+vazios. O worker tem as configurações do portal (ele importa o `app.py` e faz a mesma inicialização, o que é
+seguro sob as travas compartilhadas).
 
 ## 4. Fluxos das requisições
 
@@ -164,16 +172,29 @@ string da própria requisição.
 e regrava as outras entradas com `POST /api/new`; se isso falhar, o documento original é restaurado.
 
 **Importar uma planilha.** `POST /import/preview` lê o arquivo (`sheet.py`), valida cada linha com as
-regras do editor, compara com o Resolver e guarda o plano em memória sob um token (30 minutos).
-`POST /import/apply` executa o plano numa thread em segundo plano com `store_record()`; o navegador
-acompanha por `GET /import/status`.
+regras do editor, compara com o Resolver e guarda o plano como uma tarefa `prepared` (30 minutos).
+`POST /import/apply` a coloca na fila; um worker a retira e o `run_import_job()` grava os cadastros um a um
+com `store_record()`, guardando cada resultado logo em seguida; o navegador acompanha por
+`GET /import/status`.
 
-**Verificar links.** `POST /links/check` (editor) ou `POST /links/jobs` (todos os cadastros, prévia da
-importação) iniciam uma tarefa em segundo plano; `linkcheck.check_many()` confere cada endereço uma vez;
-`GET /links/jobs/{token}` informa o progresso e os problemas; a última verificação completa fica no banco
-(configuração `lastFullCheck`) para `GET /links/last`. Os planos de importação e o progresso das tarefas
-continuam na memória do único worker do gunicorn até a etapa 3 do
-[ADR 0001](adr/0001-estado-do-portal-no-mongodb.md) levá-los para um worker.
+**Verificar links.** `POST /links/check` confere de uma vez os poucos destinos de um cadastro.
+`POST /links/jobs` (todos os cadastros, prévia da importação) coloca uma tarefa na fila; o `run_link_job()` do
+worker confere cada endereço uma vez com `linkcheck.check_many()`; `GET /links/jobs/{token}` informa o
+progresso e os problemas; a última verificação completa fica no banco (configuração `lastFullCheck`) para
+`GET /links/last`.
+
+**Uma tarefa em segundo plano** ([ADR 0001](adr/0001-estado-do-portal-no-mongodb.md), seção 3.3). Estados
+`prepared` → `queued` → `running` → `finished` ou `failed`. O worker devolve à fila as tarefas de workers
+calados (`requeue_stale()`: sinal de vida com mais de dois minutos; depois de três tentativas a tarefa falha
+com `job.interrupted`), retira atomicamente a tarefa mais antiga da fila (`claim()`) e a executa enquanto uma
+thread renova o sinal de vida a cada 10 segundos. Toda gravação de uma tarefa em execução (`Reporter`) só vale
+se a tarefa ainda for daquele worker; senão, `JobLost`, e o worker a larga. Uma importação continua do
+primeiro cadastro não feito (gravar um cadastro de novo é seguro); uma verificação de links recomeça, e o
+cache responde o que já foi conferido. No SIGTERM o worker termina o cadastro em mãos e devolve a tarefa à
+fila na hora (`release()`). Uma tarefa na fila há 15 segundos sem nenhum worker anunciado nos últimos 30 é
+informada como `stalled`, e o navegador avisa que o processador de tarefas não está em execução. Com
+`PORTAL_WORKER=embedded` uma thread de worker roda dentro do processo do portal (testes de desenvolvimento,
+instalação mínima); o portal a acorda quando coloca uma tarefa na fila.
 
 ## 5. Back-end do portal (`portal/`)
 
@@ -189,15 +210,16 @@ Organizado em seções (linhas de comentário `# ---- …`):
 | form → Resolver CE v3 | `request_key()`, `request_qualifiers()`, `build_document()` |
 | pages and assets | `/portal/`, `/portal/login`, arquivos estáticos (`PUBLIC_ASSETS` antes de entrar, `PRIVATE_ASSETS` depois) |
 | portal API | entrar, sair, senha, saúde, `/config`, `/record` (GET, POST, DELETE) com `store_record()`, `/records` |
-| spreadsheets | `/export`, `/import/preview`, `/import/apply`, `/import/status`, `_run_import()` |
-| link checker | `/links/check`, `/links/jobs`, `/links/jobs/{token}`, `/links/last`, `_run_link_job()` |
+| spreadsheets | `/export`, `/import/preview`, `/import/apply`, `/import/status`, `run_import_job()` (executada pelo worker) |
+| link checker | `/links/check`, `/links/jobs`, `/links/jobs/{token}`, `/links/last`, `run_link_job()` (executada pelo worker) |
 | governance | `/users` (GET, POST, PUT, DELETE, reset), `/history`, `/audit`, `/audit.csv` |
 | labels | `qr_version()`, `qr_error_level()`, `/digital-link`, `/qrcode` |
+| background jobs | `JOB_RUNNERS` (tipo de tarefa → função, para o `worker.py`); o worker embutido quando `PORTAL_WORKER=embedded` |
 
 Erros são exceções com um código de mensagem: `gs1.ValidationError` (422), `AccessDenied` (403),
-`users.UserError` (422), `UpstreamError` (502/503, detalhe só no log). Importações e verificações de
-links ainda ficam em memória; por isso o portal roda um único worker do gunicorn, com threads, até a etapa 3
-do ADR 0001.
+`users.UserError` (422), `UpstreamError` (502/503, detalhe só no log). Desde a etapa 3 do ADR 0001 nada no
+portal depende da memória de um processo; ele ainda roda um único worker do gunicorn, com threads, até a
+etapa 4 (réplicas).
 
 ### `gs1.py` — regras GS1
 
@@ -271,6 +293,17 @@ calcula a impressão digital da sessão. O `meta.py` guarda criação e última 
 `for_record()` e `search()` mantêm a saída das antigas linhas do `journal.jsonl`; `apply_retention()`
 atualiza o `expiresAt` quando `PORTAL_JOURNAL_*_DAYS` muda. A seção 8 lista as coleções.
 
+### `jobs.py`, `worker.py`
+
+O `jobs.py` é a fila: `create()`, `get()` (a tarefa do usuário, de um tipo, não expirada), `queue_prepared()`,
+`status()` (estado, progresso, `stalled`, `error`) e, para os workers, `announce()` / `withdraw()` /
+`workers_alive()`, `requeue_stale()`, `claim()`, `Reporter` (`beat()`, `progress()`, `record()`,
+`check_stop()`, `finish()`), `release()`, `fail()`. Os tempos são constantes no início (`HEARTBEAT_SECONDS` 10,
+`STALE_SECONDS` 120, `MAX_ATTEMPTS` 3, `WORKER_ALIVE_SECONDS` 30, `STALLED_SECONDS` 15, validades de 30 minutos
+e de um dia). O `worker.py` tem `Worker` (`run_once()`, `loop()`, `stop()`), `start_embedded()`, `wake()` e
+`main()` (o serviço: SIGTERM e SIGINT o param depois do item em mãos); `IN_WORKER_PROCESS` impede que o
+`app.py` inicie um worker embutido dentro do processo do worker.
+
 ### `migrate.py`, `db_init.py`
 
 `migrate.run(config_dir)` leva `users.json`, `records-meta.json` e `journal.jsonl` para coleções vazias uma
@@ -335,15 +368,15 @@ respondem `{"code": "...", "params": {...}}`.
 | `GET /records` | leitor | Todos os cadastros com tipo, qualificadores, `informative`, descrição, tipo principal, número de links, criado/alterado por e quando, `noKeyRecord`, `breaksRules` |
 | `POST /export` `{format: xlsx\|csv, labels}` | leitor | Planilha com todos os cadastros |
 | `POST /import/preview` `{filename, data (base64), labels, checkLinks}` | editor | Validação e comparação; `token`, `records` (com `informative`, `informativeBefore`, `noKeyRecord`), `errors`, `counts`, `links`, `keysWithoutRecord` |
-| `POST /import/apply` `{token, createKeyRecords?}` · `GET /import/status?token=` | editor | Gravar uma importação conferida (com `createKeyRecords`, antes os cadastros das chaves); progresso e resultados |
+| `POST /import/apply` `{token, createKeyRecords?}` · `GET /import/status?token=` | editor | Colocar na fila do worker uma importação conferida (com `createKeyRecords`, antes os cadastros das chaves); `state` (`queued`, `running`, `finished`, `failed`), `done`, `total`, `stalled`, `error` e, ao terminar, os resultados |
 | `POST /links/check` `{urls}` | editor | Verificar endereços (editor) |
-| `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `GET /links/last` | editor · editor · leitor | Verificação de links em segundo plano |
+| `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `GET /links/last` | editor · editor · leitor | Verificação de links em segundo plano (estado: `state` `queued`\|`running`\|`finished`\|`failed`, `done`, `total`, `stalled`, `error`) |
 | `GET /history?key=&value=&qualifiers=` | leitor | Versões de um cadastro, com conteúdo |
 | `GET /users` · `POST /users` · `PUT /users/{nome}` · `POST /users/{nome}/reset` · `DELETE /users/{nome}` | administrador | Administração de usuários; senhas temporárias na resposta |
 | `GET /audit` · `GET /audit.csv` (`user`, `from`, `to`, `q`, `limit`) | administrador | Auditoria |
 | `POST /digital-link` `{key, value, qualifiers, attributes:[{ai, value}]}` | leitor | Digital Link com atributos de dados conferidos pelo engine; nada é gravado |
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&attr=AI:valor` | leitor | Etiqueta; cabeçalhos `X-QR-Version`, `X-QR-Level`, `X-QR-Modules`; 422 `qr.tooSmall` / `qr.tooLong` |
-| `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable"}` |
+| `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable"}` |
 
 ## 8. Dados do portal
 
@@ -357,6 +390,8 @@ Decisões e seus motivos: [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md).
 | `journal` | ObjectId (`jsonl-<linha>` nos eventos migrados); `at` (data), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Ações de cadastro `create`, `update`, `delete` (com o conteúdo do cadastro), `import`; outras: `login`, `login-failed`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove` | data; cadastro + data; usuário + data; categoria; TTL em `expiresAt` |
 | `login_failures` | `key` (`user:<nome>` ou `addr:<endereço>`), `at` | chave + data; TTL de 15 minutos em `at` |
 | `linkcheck_cache` | endereço; `result`, `expiresAt` | TTL em `expiresAt` |
+| `jobs` | token; `type` (`import`, `linkcheck`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `expiresAt`, `error`; importações `plan`, `keyRecords`, `results`; verificações de links `scope`, `urls` (`[{url, records}]`), `problems`, `records` (`[{record, problems}]`) | estado + criação; TTL em `expiresAt` |
+| `workers` | nome do worker (`host:pid:modo`); `seen`, `mode`, `job` | TTL de 10 minutos em `seen` |
 | `settings` | `lastFullCheck`, `journalRetention`, `migration` e os documentos `lock:<nome>` | — |
 
 Retenção do diário: um evento é guardado por `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS`
@@ -486,11 +521,13 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `portal/test_portal_config.py` | 13 | configuração e inicialização, limites da sessão |
 | `portal/test_session.py` | 30 | limites da sessão (15 s sem uso no teste): regras do servidor, aviso, renovação pelo uso, outras abas, limite absoluto, os dois idiomas; aviso da comunidade no rodapé (cerca de dois minutos) |
 | `portal/test_store.py` | 58 | a camada de dados do portal: configurações de conexão, índices, a trava compartilhada (também entre dois administradores ao mesmo tempo), usuários, metadados dos cadastros, diário e retenção, bloqueio de entrada, migração dos arquivos antigos (também interrompida e retomada) |
-| `portal/test_store_mongodb.py` | 76 | num MongoDB real (`PORTAL_TEST_MONGO_URI`, só no CI): o usuário criado pelo `db_init.py` e suas permissões, o `test_store.py` de novo como esse usuário, o monitor de TTL |
+| `portal/test_jobs.py` | 70 | tarefas em segundo plano: estados, validade, retirada atômica, posse das gravações, workers calados devolvidos e falha depois de três tentativas, o anúncio do worker, `stalled`, a verificação de saúde, o laço do worker (erros, sinal de vida, parada e devolução, `JobLost`), o worker embutido e `PORTAL_WORKER`; importações pela API (fila, worker, diário, outro usuário, um worker que morre antes e depois de gravar um cadastro, uma falha); verificações de links pela API (todos os cadastros, uma lista, uma parada que cancela os endereços pendentes) |
+| `portal/test_worker_processes.py` | 13 | o `worker.py` como processos reais num MongoDB real (rodado pelo `test_store_mongodb.py`): dois workers dividem a fila sem pegar a mesma tarefa duas vezes; o SIGTERM devolve a tarefa e o outro worker a termina; depois de um SIGKILL, um worker novo continua a tarefa quando o sinal de vida fica velho |
+| `portal/test_store_mongodb.py` | 161 | num MongoDB real (`PORTAL_TEST_MONGO_URI`, só no CI): o usuário criado pelo `db_init.py` e suas permissões; `test_store.py`, `test_jobs.py` e `test_worker_processes.py` de novo como esse usuário (com suas linhas repassadas); o monitor de TTL, também para tarefas e anúncios antigos de workers |
 | `portal/test_registration.py` | 26 | §2.5.9 pela API do portal: qualificadores informativos (salvar, abrir, histórico, lista, exportar, importar), cadastros contra a regra 2, o cadastro da chave ao salvar e ao importar |
-| `portal/test_portal_e2e.py` | 186 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular; também roda sem o engine |
+| `portal/test_portal_e2e.py` | 190 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular, com um worker embutido (também parado: as mensagens de fila e de "não está em execução", uma tarefa que falha); também roda sem o engine (146) |
 | `home/test_home.py` | 55 | página inicial com um nginx real, sem o quadro da sintaxe, aviso da comunidade; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug |
-| `install/test_install.sh` | 57 | instalador com simulações (Compose v2) |
+| `install/test_install.sh` | 61 | instalador com simulações (Compose v2), incluindo um portal cujo worker de tarefas não sobe |
 
 **pytest e integração contínua.** O `dev-tests/test_programs.py` roda cada programa acima como um teste
 pytest (um subprocesso a partir da raiz do repositório): status 0 sem linha `FAIL` passa; caso contrário, o

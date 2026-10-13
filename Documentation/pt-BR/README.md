@@ -111,6 +111,8 @@ flowchart LR
     de --> db
     portal -->|"usuário próprio: usuários, histórico"| db
     init["portal-db-init<br/>(roda uma vez)"] -.->|"cria o usuário do portal"| db
+    worker["portal-worker<br/>importações, verificações de links"] -->|"tarefas"| db
+    worker -->|"token bearer"| de
 ```
 
 | Serviço | Contêiner | Papel | Publicado |
@@ -120,6 +122,7 @@ flowchart LR
 | `data-entry-service` | `data-entry-server` | API REST para criar, ler, alterar e excluir cadastros | interno (via `/api`) |
 | `portal-service` | `resolver-portal` | Portal de gestão de links (Flask + front-end estático) | interno (via `/portal/`) |
 | `portal-db-init` | — | Cria ou atualiza o usuário do banco do portal e termina (roda a cada início) | — |
+| `portal-worker` | — | Executa as tarefas em segundo plano do portal (importações de planilhas, verificações de links) a partir do banco; a imagem do portal | — |
 | `database-service` | `database-server` | MongoDB | `${DATABASE_BIND_ADDRESS}:27017` |
 
 O portal é um back-end entre o navegador e a API de cadastro: o token da API nunca chega ao navegador, e o
@@ -127,7 +130,9 @@ portal lê antes de gravar para usar as operações da API com segurança (POST 
 remove links, o tipo do destino principal é compartilhado por todos os cadastros de uma chave). Os dados
 do próprio portal (usuários, metadados dos cadastros, histórico e auditoria) ficam num banco próprio no
 mesmo MongoDB, `resolver_portal`, acessado por um usuário que só pode usar esse banco; o banco do Resolver
-nunca é tocado ([ADR 0001](adr/0001-estado-do-portal-no-mongodb.md)). Os detalhes estão no
+nunca é tocado ([ADR 0001](adr/0001-estado-do-portal-no-mongodb.md)). As importações de planilhas e as
+verificações de muitos links são tarefas nesse banco, executadas pelo `portal-worker`: continuam quando o
+portal reinicia, e uma tarefa interrompida por um reinício do worker continua de onde parou. Os detalhes estão no
 [guia do desenvolvedor](guia-do-desenvolvedor.md).
 
 ## O portal de gestão de links
@@ -406,7 +411,7 @@ sudo FQDN=id.example.org TLS_MODE=letsencrypt CERTBOT_EMAIL=ops@example.org \
    ```
 
 4. **Iniciar.** `docker compose up -d --build` e depois confira
-   `curl -s http://127.0.0.1:8080/portal/healthz` (`{"portal":"ok","resolver":"ok"}`) e uma requisição que
+   `curl -s http://127.0.0.1:8080/portal/healthz` (`{"portal":"ok","resolver":"ok","worker":"ok"}`) e uma requisição que
    chega ao Resolver pelo proxy: `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver`
    (`200`). A verificação de saúde fala direto com o servidor web, sem passar pela rota do Resolver no proxy.
 5. **HTTPS.** Coloque um proxy reverso TLS na frente de `127.0.0.1:8080`. Com nginx: copie
@@ -440,6 +445,7 @@ da instalação, nunca versionados).
 | `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD` | Banco e usuário próprios do portal (criado pelo `portal-db-init`); o instalador gera a senha |
 | `PORTAL_SECRET_KEY` | Chave que assina as sessões do portal; todas as réplicas do portal precisam compartilhá-la (o instalador a gera; vazia: uma chave guardada no volume do portal) |
 | `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS` (0), `PORTAL_JOURNAL_ADMIN_DAYS` (0) | Dias que o diário guarda entradas, alterações de cadastros e eventos de administração (0 = para sempre) |
+| `PORTAL_WORKER` (`external`) | Onde rodam as importações e verificações de links: `external`, o serviço `portal-worker`; `embedded`, uma thread do próprio portal, para uma instalação sem esse serviço |
 | `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_COOKIE_SECURE` | Configurações opcionais do portal: minutos sem uso e horas depois da entrada até a sessão terminar, cookie Secure |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Endereços do host para as portas 8080 e 27017 (lidos pelo Compose só do `.env`) |
 
@@ -447,11 +453,12 @@ da instalação, nunca versionados).
 
 ```bash
 git pull && docker compose up -d --build                         # atualizar
-curl -s http://127.0.0.1:8080/portal/healthz                     # {"portal":"ok","resolver":"ok"}
+curl -s http://127.0.0.1:8080/portal/healthz                     # {"portal":"ok","resolver":"ok","worker":"ok"}
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver   # 200: Resolver pelo proxy
 docker compose exec portal-service python create_user.py maria --role editor   # incluir ou redefinir um usuário
 # quem alterou o quê: menu do usuário → Auditoria (administradores), ou o log do contêiner:
 docker compose logs -f portal-service | grep portal.audit
+docker compose logs --tail=60 portal-worker                      # importações e verificações de links (tarefas)
 sudo scripts/resolver-backup.sh                                  # backup agora (todos os bancos + volume do portal)
 ```
 
@@ -516,7 +523,7 @@ e os tenants vêm antes da API, do e-mail e dos analytics, que precisam saber de
 
 | Fase | # | Item | Tam. | Depende de |
 |---|---|---|---|---|
-| Fundações técnicas | 2.3 | **Arquitetura para escala e dados do portal no MongoDB**: um registro de decisão de arquitetura (serviços sem estado, estado no banco, tarefas em segundo plano fora do processo web, mais de uma réplica de cada serviço); usuários, metadados dos cadastros, diário, tarefas e bloqueio de login do portal saem de arquivos e da memória para um banco próprio no MongoDB existente, sem alterar as coleções do Resolver oficial; retenção do diário; migração das instalações existentes; backup e restauração incluídos. Decisões: [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md) (etapas 1 e 2 de 4 concluídas: o registro; usuários, metadados dos cadastros, diário, bloqueio de entrada e caches no MongoDB) | G | — |
+| Fundações técnicas | 2.3 | **Arquitetura para escala e dados do portal no MongoDB**: um registro de decisão de arquitetura (serviços sem estado, estado no banco, tarefas em segundo plano fora do processo web, mais de uma réplica de cada serviço); usuários, metadados dos cadastros, diário, tarefas e bloqueio de login do portal saem de arquivos e da memória para um banco próprio no MongoDB existente, sem alterar as coleções do Resolver oficial; retenção do diário; migração das instalações existentes; backup e restauração incluídos. Decisões: [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md) (etapas 1 a 3 de 4 concluídas: o registro; usuários, metadados dos cadastros, diário, bloqueio de entrada e caches no MongoDB; importações e verificações de links como tarefas de um serviço worker) | G | — |
 | | 2.4 | **Tenants**: uma organização (tenant) é dona dos seus prefixos de empresa GS1, cada prefixo pertencendo a um único tenant; um administrador do servidor cria tenants e atribui prefixos; um administrador do tenant gerencia os usuários do tenant; toda chamada confere o tenant no servidor; trilha de auditoria por tenant; e-mail por usuário; privacidade desde a concepção (minimização de dados, acesso do administrador do servidor aos dados de um tenant registrado na trilha de auditoria desse tenant) | G | 2.3 |
 | | 2.5 | **Uma fonte única para as regras GS1**: chaves, qualificadores, formatos e nomes de AIs derivados do GS1 Barcode Syntax Dictionary, os dois engines na mesma versão, mensagens do engine traduzidas, atualizações do dicionário propostas por uma tarefa agendada; traz os AIs (7041) e (8040)–(8043) | G | — |
 | Serviços da plataforma | 3.1 | **E-mail**: envio por um relay autenticado (configurações no `.env`), convites para novos usuários, recuperação de senha por link de uso único, uma estrutura de notificações com preferências por usuário | M | 2.4 |

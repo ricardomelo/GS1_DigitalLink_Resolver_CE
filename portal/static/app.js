@@ -1902,16 +1902,31 @@ function showLinkCheck(last) {
   I18N.set(msg, "records.checked", { date, count: Object.keys(linkCheck.last.records).length });
 }
 
-/* Background job shared by the record list (every record) and the import preview (a list of URLs). */
+/* What to show while a background job waits for the job worker: "in the queue", or a warning when it has
+   waited long with no worker running ("stalled"); null once it runs. */
+function jobWaitKey(status) {
+  if (status?.state !== "queued") return null;
+  return status.stalled ? "job.stalled" : "job.queued";
+}
+
+/* Background job shared by the record list (every record) and the import preview (a list of URLs).
+   onProgress(done, total, status) is called on every poll; a failed job throws its error code. */
 async function runLinkJob(body, onProgress) {
   const job = await api("POST", "links/jobs", body);
-  onProgress(0, job.total);
+  onProgress(0, job.total, { state: "queued" });
   for (;;) {
     await new Promise(resolve => setTimeout(resolve, 800));
     const status = await api("GET", "links/jobs/" + job.token);
     if (status.state === "finished") return status;
-    onProgress(status.done, status.total);
+    if (status.state === "failed") throw new ApiError(status.error || "job.failed");
+    onProgress(status.done, status.total, status);
   }
+}
+
+/* A progress message, or the queue message while the job waits; a stalled job is shown as a warning. */
+function showJobProgress(msg, key, done, total, status) {
+  msg.className = "field-msg" + (status?.stalled ? " warn-text" : "");
+  I18N.set(msg, jobWaitKey(status) || key, { done, total });
 }
 
 async function checkAllLinks() {
@@ -1920,7 +1935,8 @@ async function checkAllLinks() {
   button.disabled = true;
   msg.className = "field-msg";
   try {
-    const status = await runLinkJob({ scope: "all" }, (done, total) => I18N.set(msg, "records.checking", { done, total }));
+    const status = await runLinkJob({ scope: "all" },
+      (done, total, job) => showJobProgress(msg, "records.checking", done, total, job));
     showLinkCheck(status);
     renderRecords();
   } catch (e) {
@@ -2006,7 +2022,7 @@ async function checkImportLinks(links) {
   msg.className = "field-msg";
   try {
     const status = await runLinkJob({ urls: links.map(l => l.url) },
-      (done, total) => I18N.set(msg, "import.linksChecking", { done, total }));
+      (done, total, job) => showJobProgress(msg, "import.linksChecking", done, total, job));
     const bad = Object.fromEntries(status.problems.map(p => [p.url, p]));
     const items = links.filter(l => bad[l.url]).map(l => {
       const li = document.createElement("li");
@@ -2157,7 +2173,7 @@ async function applyImport() {
   try {
     const started = await api("POST", "import/apply", { token: importState.token,
       createKeyRecords: !$("#import-keys").hidden && $("#import-createkeys").checked });
-    importStatus(null, "import.running", { done: 0, total: started.total });
+    importStatus(null, "job.queued", { done: 0, total: started.total });
     importState.polling = setInterval(pollImport, 700);
   } catch (e) {
     importStatus("error", e.code, e.params);
@@ -2173,8 +2189,14 @@ async function pollImport() {
     importStatus("error", e.code, e.params);
     return;
   }
+  if (status.state === "failed") {
+    clearInterval(importState.polling);
+    importStatus("error", status.error || "job.failed");
+    return;
+  }
   if (status.state !== "finished") {
-    importStatus(null, "import.running", { done: status.done, total: status.total });
+    importStatus(status.stalled ? "warn" : null, jobWaitKey(status) || "import.running",
+                 { done: status.done, total: status.total });
     return;
   }
   clearInterval(importState.polling);

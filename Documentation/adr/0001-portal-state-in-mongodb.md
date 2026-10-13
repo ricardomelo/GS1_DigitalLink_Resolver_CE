@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (13 October 2026). Implementation in four steps: 1 (this record) and 2 (the data in MongoDB) done |
+| Status | **Accepted** (13 October 2026). Implementation in four steps: 1 (this record), 2 (the data in MongoDB) and 3 (the job worker) done |
 | Backlog item | 2.3 — architecture for scale and the portal's data in MongoDB |
 | Decided by | the owner of the branch, on the options set out in section 4 |
 | Portuguese | [ADR 0001 em português](../pt-BR/adr/0001-estado-do-portal-no-mongodb.md) |
@@ -101,7 +101,8 @@ built-in server (`python -m main` → `app.run()`), and every service in `docker
 | `record_meta` | record key (`meta.key()`) | `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | — |
 | `journal` | ObjectId (`jsonl-<line>` when migrated) | `at` (date), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt` | `{at: -1}`; `{anchor, qpath, at: -1}`; `{user, at: -1}`; `{category}`; TTL on `expiresAt` |
 | `login_failures` | ObjectId | `key` (user name or address), `at` (date) | `{key, at}`; TTL on `at`, 15 minutes |
-| `jobs` | token | `type` (`import`, `linkcheck`), `user`, `state`, `created`, `heartbeat`, `worker`, `done`, `total`, `plan`, `results`, `expiresAt` | `{state, created}`; TTL on `expiresAt` |
+| `jobs` | token | `type` (`import`, `linkcheck`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `error`, `expiresAt`; imports `plan`, `keyRecords`, `results`; link checks `scope`, `urls`, `problems`, `records` | `{state, created}`; TTL on `expiresAt` |
+| `workers` (step 3) | worker name (`host:pid:mode`) | `seen`, `mode`, `job` | TTL on `seen`, 10 minutes |
 | `linkcheck_cache` | address | `result`, `expiresAt` | TTL on `expiresAt` |
 | `settings` | name | `value` (`lastFullCheck`, `journalRetention`, `migration`); lock documents `lock:<name>` | — |
 
@@ -129,6 +130,29 @@ Notes:
 - **Expiry**: `expiresAt` = 30 minutes after the preview or after the end of the job, as today.
 - **Scale**: one job at a time per worker; more workers give more parallel jobs. The link checker keeps its
   eight threads inside a job.
+
+**As implemented in step 3** (the owner's choices on the open points, all as recommended, and details the
+implementation added):
+- **Where jobs run**: `PORTAL_WORKER=external` (default) — the `portal-worker` service, the portal's image
+  running `python worker.py`, always present in `docker-compose.yml`; `embedded` — a worker thread inside the
+  portal process, for the development tests and a set-up without that service. One worker by default; its
+  replicas are decided with the others in step 4. No cancel button for now (a later backlog item).
+- **An interrupted import continues** from the first record not written. After three claims of the same job
+  (`attempts`) a silent worker's job fails with `job.interrupted` instead of going back to the queue, so a job
+  that kills its worker cannot loop for ever; what was written stays. **A link check starts again** from the
+  first address: its results are not stored one by one, and the checker's cache (10 minutes) answers the
+  addresses already checked.
+- **Ownership of writes**: every write of a running job is conditional on the job still belonging to that
+  worker; a worker that was only slow, and whose job was given to another, finds out (`JobLost`) and lets go.
+- **A clean stop**: on SIGTERM (`docker compose stop`, an update) the worker finishes the record in hand and
+  hands the job back to the queue at once, without waiting for the two minutes; the service has a 30-second
+  grace period.
+- **Is a worker running?** Workers announce themselves in a `workers` collection every 10 seconds. A job
+  queued for 15 seconds while no worker has been seen for 30 is reported `stalled`, and the browser says that
+  the job worker is not running instead of waiting in silence; `GET /portal/healthz` adds `worker`
+  (`ok` or `unavailable`), and the installer warns when the worker does not report.
+- **Expiry of unfinished jobs**: a queued or running job expires after a day, a safety net for jobs nobody
+  will finish.
 
 ### 3.4 Sign-in throttling and caches
 
@@ -215,8 +239,9 @@ Worse, and how it is contained:
 - more moving parts (`portal-db-init`, `portal-worker`): both use images the installation already builds;
 - the worker polls MongoDB once a second when idle: one indexed query, negligible;
 - `mongomock` is not MongoDB: the CI job against a real `mongo:7` covers TTL indexes, the user's
-  privileges and the migration; it is informative until it has proved stable. The development sandbox cannot run MongoDB, so that job's first real result
-  comes from GitHub Actions.
+  privileges, the migration and worker processes sharing the queue; it is informative until it has proved
+  stable. The development sandbox cannot run MongoDB, so that job's first real result comes from GitHub
+  Actions.
 
 ## 6. Configuration added
 
@@ -230,6 +255,7 @@ Worse, and how it is contained:
 | `PORTAL_JOURNAL_SESSION_DAYS` | 180 | section 3.5 |
 | `PORTAL_JOURNAL_RECORD_DAYS` | 0 | section 3.5 |
 | `PORTAL_JOURNAL_ADMIN_DAYS` | 0 | section 3.5 |
+| `PORTAL_WORKER` (step 3) | `external` | section 3.3: the `portal-worker` service, or `embedded` |
 
 The installer carries existing values over unchanged and adds the new keys to `.env`.
 
@@ -239,5 +265,5 @@ The installer carries existing values over unchanged and adds the new keys to `.
 |---|---|---|
 | 1 | this record (English and Portuguese) | none (documentation) |
 | 2 | `portal/store.py`, users, record metadata, journal with retention, sign-in failures and caches in MongoDB; `portal-db-init`; migration; installer; tests with `mongomock`; CI job with `mongo:7`; documentation | the old files become `*.migrated`; users, history and audit unchanged in the portal; sign-in lockout works |
-| 3 | `jobs` collection and the `portal-worker` service; imports and link checks through it | an import and a "check every record" complete, also across a restart of the portal |
+| 3 | `jobs` collection and the `portal-worker` service; imports and link checks through it | an import and a "check every record" complete, also across a restart of the portal; an import interrupted by a restart of the worker finishes |
 | 4 | replicas in Compose, without fixed container names; the points of section 3.8 | two replicas of each service answer; the usual resolution checks pass |

@@ -48,6 +48,7 @@ NGINX_ENABLED="${INSTALL_NGINX_ENABLED:-/etc/nginx/sites-enabled}"
 CRON_FILE="${INSTALL_CRON_FILE:-/etc/cron.d/resolver-backup}"
 SITE_NAME="gs1resolver"
 HEALTH_TIMEOUT="${INSTALL_HEALTH_TIMEOUT:-240}"
+WORKER_TIMEOUT="${INSTALL_WORKER_TIMEOUT:-60}"
 PROXY_RESTART_AFTER="${INSTALL_PROXY_RESTART_AFTER:-30}"
 
 NON_INTERACTIVE=0
@@ -623,6 +624,18 @@ start_services() {
     sleep 5; waited=$(( waited + 5 ))
   done
   ok "Services running"
+  # The portal answers without its job worker, but imports and link checks would wait in the queue.
+  local worker_waited=0
+  until [[ $answer == *'"worker":"ok"'* ]]; do
+    if (( worker_waited >= WORKER_TIMEOUT )); then
+      warn "The portal's job worker is not running: spreadsheet imports and link checks wait in the queue."
+      warn "See: docker compose logs portal-worker"
+      break
+    fi
+    sleep 5; worker_waited=$(( worker_waited + 5 ))
+    answer=$(curl -fsS --max-time 5 "http://127.0.0.1:$PROXY_PORT/portal/healthz" 2>/dev/null || true)
+  done
+  [[ $answer == *'"worker":"ok"'* ]] && ok "Job worker running"
   if (( ! PORTAL_HAS_USERS )) && [[ -n $PORTAL_ADMIN_PASSWORD ]]; then
     local count
     count=$(compose exec -T portal-service python -c 'import users; print(len(users.load()))' 2>>"$LOG_FILE" || true)

@@ -270,6 +270,7 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .status { margin-top: 1.5rem; padding: .9rem 1rem; border-radius: 4px; font-weight: 500; white-space: pre-line; }
 .status.is-ok { background: #E7F4EC; color: var(--ok); border: 1px solid #A8D5BC; }
 .status.is-error { background: #FDECEA; color: var(--err); border: 1px solid #F3B8B1; }
+.status.is-warn { background: #FFF4E0; color: #9A5B00; border: 1px solid #F0D09A; }
 
 /* ---------------------------------------------------------------- label (preview) */
 /* The label block sits under the form, across the page: QR code, its information and buttons on the

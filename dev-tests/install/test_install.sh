@@ -67,7 +67,9 @@ EOF
 #!/bin/bash
 args="$*"
 case $args in
-  *healthz*) [[ -e STATE/proxy-stale ]] && exit 22; echo '{"portal":"ok","resolver":"ok"}' ;;
+  *healthz*) [[ -e STATE/proxy-stale ]] && exit 22
+             if [[ -e STATE/worker-down ]]; then echo '{"portal":"ok","resolver":"ok","worker":"unavailable"}'
+             else echo '{"portal":"ok","resolver":"ok","worker":"ok"}'; fi ;;
   *http_code*) printf 200 ;;
   *gs1resolver*) echo '{"resolverRoot": "https://x"}' ;;
   *) exit 22 ;;
@@ -106,7 +108,7 @@ run_installer() {   # extra environment as arguments; answers (if any) on stdin
   env -i PATH="$SB/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME=/root TERM=dumb \
     INSTALL_LOG_FILE="$SB/state/install.log" INSTALL_NGINX_AVAILABLE="$SB/nginx/sites-available" \
     INSTALL_NGINX_ENABLED="$SB/nginx/sites-enabled" INSTALL_CRON_FILE="$SB/state/cron" \
-    INSTALL_HEALTH_TIMEOUT=30 INSTALL_PROXY_RESTART_AFTER=5 INSTALL_DOCKER_GROUP_USER= "$@" \
+    INSTALL_HEALTH_TIMEOUT=30 INSTALL_PROXY_RESTART_AFTER=5 INSTALL_WORKER_TIMEOUT=5 INSTALL_DOCKER_GROUP_USER= "$@" \
     bash "$SB/repo/scripts/install.sh" ${INSTALLER_ARGS:---non-interactive} > "$SB/state/out" 2>&1
 }
 
@@ -127,6 +129,7 @@ check "A: MONGO_URI matches the password" "[[ \$(envval MONGO_URI) == mongodb://
 check "A: API token generated (64 hex)" "[[ \$(envval SESSION_TOKEN) =~ ^[0-9a-f]{64}$ ]]"
 check "A: portal database password generated (48 hex)" "[[ \$(envval PORTAL_DB_PASSWORD) =~ ^[0-9a-f]{48}$ ]]"
 check "A: portal session key generated (64 hex)" "[[ \$(envval PORTAL_SECRET_KEY) =~ ^[0-9a-f]{64}$ ]]"
+check "A: job worker reported running" "grep -q 'Job worker running' $SB/state/out"
 check "A: first-user password cleared after start" "[[ -z \$(envval PORTAL_ADMIN_PASSWORD) && \$(envval PORTAL_ADMIN_USERNAME) == admin ]]"
 check "A: generated password shown once in the summary" "grep -Eq 'First portal user: +admin +/ +[0-9a-f]{20}' $SB/state/out"
 A_ADMIN=$(grep -Eo 'First portal user: +admin +/ +[0-9a-f]{20}' "$SB/state/out" | grep -Eo '[0-9a-f]{20}$')
@@ -252,6 +255,15 @@ run_installer SUDO_USER=nobody; rc=$?
 check "H: exit status 0" "[[ $rc == 0 ]]"
 check "H: proxy restarted once" "[[ \$(grep -c 'compose restart frontend-proxy-service' $SB/state/calls) == 1 ]]"
 check "H: .env and its backup keep the sudo user as owner" "[[ \$(stat -c %U $SB/repo/.env) == nobody && \$(stat -c %U \$(ls $SB/repo/.env.bak-* | head -n 1)) == nobody ]]"
+
+# ------------------------------------------------------------------------------ I. job worker
+echo "--- I. the portal answers but its job worker does not"
+new_sandbox
+touch "$SB/state/worker-down"
+run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org; rc=$?
+check "I: exit status 0 (the portal works; only background jobs wait)" "[[ $rc == 0 ]]"
+check "I: warning naming the portal-worker log" "grep -q 'job worker is not running' $SB/state/out && grep -q 'docker compose logs portal-worker' $SB/state/out"
+check "I: no 'Job worker running' line" "! grep -q 'Job worker running' $SB/state/out"
 
 echo
 echo "$PASS passed, $FAIL failed"

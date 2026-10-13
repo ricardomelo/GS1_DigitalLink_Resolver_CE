@@ -43,7 +43,7 @@ For installation and configuration see the [README](../README.md); for using the
                                               data-entry-service:3000/api
  web-service ─┐
  data-entry ──┼──► database-service (MongoDB 27017): resolver_ce (records), resolver_portal (portal)
- portal ──────┘    the portal with its own user, readWrite on resolver_portal only
+ portal ──────┘    the portal and portal-worker with its own user, readWrite on resolver_portal only
 ```
 
 - **web-service** (official, changed) answers GS1 Digital Link URIs: redirects, linksets, HTML pages.
@@ -55,6 +55,9 @@ For installation and configuration see the [README](../README.md); for using the
   sign-in failures, caches) is in a database of its own, `resolver_portal`, reached with its own user
   ([ADR 0001](adr/0001-portal-state-in-mongodb.md)).
 - **portal-db-init** (new, one-shot) creates or updates that user, then exits; the portal starts after it.
+- **portal-worker** (new) runs the portal's background jobs (spreadsheet imports, link checks) from the
+  `jobs` collection: the portal's image with `python worker.py`. The web process only queues jobs and reads
+  their state, so no job depends on the process that accepted it.
 - **frontend-proxy-service** (official, changed) routes the paths above and serves the home page.
 - **database-service** (official) is MongoDB.
 
@@ -69,7 +72,7 @@ Files added by the fork are marked **new**; the others are official files with c
 
 ```
 .env.example                     configuration defaults (committed); .env holds installation values
-docker-compose.yml               five services; .env loaded by every service; bind addresses; named volumes
+docker-compose.yml               seven services; .env loaded by every service; bind addresses; named volumes
 data_entry_server/src/
   data_entry_namespace.py        /summary, token on /index, BearerAuth in Swagger
   data_entry_logic.py            read_summary()
@@ -97,6 +100,8 @@ portal/                          new: the link management portal
   meta.py                        who created and last changed each record
   journal.py                     history of records and audit trail, retention
   migrate.py                     one-off move of the files of earlier versions into the database
+  jobs.py                        background jobs: states, claim, heartbeat, the worker's announcement
+  worker.py                      the job worker (portal-worker service, or a thread with PORTAL_WORKER=embedded)
   db_init.py                     creates the portal's database user (portal-db-init service)
   create_user.py                 command-line user administration
   static/                        index.html, login.html, app.js, login.js, password.js, i18n.js, app.css
@@ -122,6 +127,7 @@ tests/, useful_external_python_scripts/   official
 | `web-service` | `web_server/` | internal 4000 | — |
 | `portal-db-init` | `portal/` (`python db_init.py`, runs once at each start) | — | — |
 | `portal-service` | `portal/` (two stages: syntax engine, application) | internal 8000 | `resolver-portal-config:/app/config` |
+| `portal-worker` | `portal/` (`python worker.py`) | — | `resolver-portal-config:/app/config` |
 | `frontend-proxy-service` | `frontend_proxy_server/` | `${PROXY_BIND_ADDRESS:-0.0.0.0}:8080` | — |
 
 Every service reads `.env.example` and then `.env` (Compose ≥ 2.24, `required: false`), so `.env` holds
@@ -129,8 +135,10 @@ only what an installation changes. The bind addresses are read by Compose itself
 variables are described in `.env.example` and in the README's *Configuration* section; the portal also
 reads `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD`, `PORTAL_DB_HOST` (or `PORTAL_DB_URI`),
 `PORTAL_JOURNAL_*_DAYS`, `PORTAL_SESSION_IDLE_MINUTES`, `PORTAL_SESSION_MAX_HOURS`, `PORTAL_SECRET_KEY`,
-`PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT` and `PORTAL_CONFIG_DIR` (and `PORTAL_*_FILE`, the files
-the migration reads). `portal-db-init` alone receives the root `MONGO_URI`; the portal's is blanked.
+`PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT`, `PORTAL_WORKER` and `PORTAL_CONFIG_DIR` (and
+`PORTAL_*_FILE`, the files the migration reads). `portal-db-init` alone receives the root `MONGO_URI`; the
+portal's and the worker's are blanked. The worker has the portal's settings (it imports `app.py` and runs the
+same start-up, which is safe under the shared locks).
 
 ## 4. Request flows
 
@@ -160,15 +168,26 @@ own query string.
 and writes the other entries back with `POST /api/new`; if that fails, the original document is restored.
 
 **A spreadsheet import.** `POST /import/preview` reads the file (`sheet.py`), validates every row with the
-editor's rules, compares with the resolver and keeps the plan in memory under a token (30 minutes).
-`POST /import/apply` runs the plan in a background thread with `store_record()`; the browser polls
-`GET /import/status`.
+editor's rules, compares with the resolver and keeps the plan as a `prepared` job (30 minutes).
+`POST /import/apply` queues it; a worker claims it and `run_import_job()` writes the records one by one with
+`store_record()`, storing each result as it goes; the browser polls `GET /import/status`.
 
-**A link check.** `POST /links/check` (editor) or `POST /links/jobs` (every record, import preview) start a
-background job; `linkcheck.check_many()` checks each address once; `GET /links/jobs/{token}` reports
-progress and problems; the last full check is kept in the database (settings `lastFullCheck`) for
-`GET /links/last`. Import plans and job progress are still in the memory of the single gunicorn worker
-until step 3 of [ADR 0001](adr/0001-portal-state-in-mongodb.md) moves them to a worker.
+**A link check.** `POST /links/check` checks the few targets of one record at once. `POST /links/jobs` (every
+record, import preview) queues a job; the worker's `run_link_job()` checks each address once with
+`linkcheck.check_many()`; `GET /links/jobs/{token}` reports progress and problems; the last full check is
+kept in the database (settings `lastFullCheck`) for `GET /links/last`.
+
+**A background job** ([ADR 0001](adr/0001-portal-state-in-mongodb.md), section 3.3). States `prepared` →
+`queued` → `running` → `finished` or `failed`. The worker gives the jobs of silent workers back to the queue
+(`requeue_stale()`: heartbeat older than two minutes; after three attempts the job fails with
+`job.interrupted`), claims the oldest queued job atomically (`claim()`), and runs it while a thread renews the
+heartbeat every 10 seconds. Every write of a running job (`Reporter`) is conditional on the job still being
+that worker's; otherwise `JobLost` and the worker lets go. An import continues from the first record not
+done (writing a record again is safe); a link check starts again, its cache answering what was done. On
+SIGTERM the worker finishes the record in hand and hands the job back at once (`release()`). A queued job
+that has waited 15 seconds with no worker announced in the last 30 is reported `stalled`, and the browser
+says that the job worker is not running. With `PORTAL_WORKER=embedded` a worker thread runs inside the
+portal process (development tests, a minimal installation); the portal wakes it when it queues a job.
 
 ## 5. Portal back end (`portal/`)
 
@@ -184,15 +203,16 @@ Organised in sections (comment lines `# ---- …`):
 | form → Resolver CE v3 | `request_key()`, `request_qualifiers()`, `build_document()` |
 | pages and assets | `/portal/`, `/portal/login`, static files (`PUBLIC_ASSETS` before sign-in, `PRIVATE_ASSETS` after) |
 | portal API | sign-in, sign-out, password, health, `/config`, `/record` (GET, POST, DELETE) with `store_record()`, `/records` |
-| spreadsheets | `/export`, `/import/preview`, `/import/apply`, `/import/status`, `_run_import()` |
-| link checker | `/links/check`, `/links/jobs`, `/links/jobs/{token}`, `/links/last`, `_run_link_job()` |
+| spreadsheets | `/export`, `/import/preview`, `/import/apply`, `/import/status`, `run_import_job()` (run by the worker) |
+| link checker | `/links/check`, `/links/jobs`, `/links/jobs/{token}`, `/links/last`, `run_link_job()` (run by the worker) |
 | governance | `/users` (GET, POST, PUT, DELETE, reset), `/history`, `/audit`, `/audit.csv` |
 | labels | `qr_version()`, `qr_error_level()`, `/digital-link`, `/qrcode` |
+| background jobs | `JOB_RUNNERS` (job type → function for `worker.py`); the embedded worker when `PORTAL_WORKER=embedded` |
 
 Errors are exceptions carrying a message code: `gs1.ValidationError` (422), `AccessDenied` (403),
-`users.UserError` (422), `UpstreamError` (502/503, detail logged only). Imports and link-check jobs still
-live in memory, which is why the portal runs a single gunicorn worker with threads until step 3 of
-ADR 0001.
+`users.UserError` (422), `UpstreamError` (502/503, detail logged only). Since step 3 of ADR 0001 nothing in
+the portal depends on the memory of one process; it still runs one gunicorn worker with threads until step 4
+(replicas).
 
 ### `gs1.py` — GS1 rules
 
@@ -264,6 +284,17 @@ category (`session`, `record`, `admin`) and `expiresAt`; `for_record()` and `sea
 former `journal.jsonl` lines; `apply_retention()` updates `expiresAt` when `PORTAL_JOURNAL_*_DAYS` change.
 Section 8 lists the collections.
 
+### `jobs.py`, `worker.py`
+
+`jobs.py` is the queue: `create()`, `get()` (the user's job of a type, not expired), `queue_prepared()`,
+`status()` (state, progress, `stalled`, `error`), and for workers `announce()` / `withdraw()` /
+`workers_alive()`, `requeue_stale()`, `claim()`, `Reporter` (`beat()`, `progress()`, `record()`,
+`check_stop()`, `finish()`), `release()`, `fail()`. Timings are constants at the top (`HEARTBEAT_SECONDS` 10,
+`STALE_SECONDS` 120, `MAX_ATTEMPTS` 3, `WORKER_ALIVE_SECONDS` 30, `STALLED_SECONDS` 15, expiries 30 minutes
+and one day). `worker.py` has `Worker` (`run_once()`, `loop()`, `stop()`), `start_embedded()`, `wake()` and
+`main()` (the service: SIGTERM and SIGINT stop it after the item in hand); `IN_WORKER_PROCESS` keeps
+`app.py` from starting an embedded worker inside the worker process.
+
 ### `migrate.py`, `db_init.py`
 
 `migrate.run(config_dir)` moves `users.json`, `records-meta.json` and `journal.jsonl` into empty collections
@@ -326,15 +357,15 @@ call checks the role and limits identifiers to the user's GS1 Company Prefixes. 
 | `GET /records` | reader | Every record with kind, qualifiers, `informative`, description, default link type, number of links, created/updated by and when, `noKeyRecord`, `breaksRules` |
 | `POST /export` `{format: xlsx\|csv, labels}` | reader | Spreadsheet of every record |
 | `POST /import/preview` `{filename, data (base64), labels, checkLinks}` | editor | Validation and comparison; `token`, `records` (with `informative`, `informativeBefore`, `noKeyRecord`), `errors`, `counts`, `links`, `keysWithoutRecord` |
-| `POST /import/apply` `{token, createKeyRecords?}` · `GET /import/status?token=` | editor | Write a previewed import (with `createKeyRecords`, the keys' own records first); progress and results |
+| `POST /import/apply` `{token, createKeyRecords?}` · `GET /import/status?token=` | editor | Queue a previewed import for the worker (with `createKeyRecords`, the keys' own records first); `state` (`queued`, `running`, `finished`, `failed`), `done`, `total`, `stalled`, `error`, and the results when finished |
 | `POST /links/check` `{urls}` | editor | Check addresses (editor) |
-| `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `GET /links/last` | editor · editor · reader | Background link check |
+| `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `GET /links/last` | editor · editor · reader | Background link check (status: `state` `queued`\|`running`\|`finished`\|`failed`, `done`, `total`, `stalled`, `error`) |
 | `GET /history?key=&value=&qualifiers=` | reader | Versions of a record, with content |
 | `GET /users` · `POST /users` · `PUT /users/{name}` · `POST /users/{name}/reset` · `DELETE /users/{name}` | admin | User administration; temporary passwords in the answer |
 | `GET /audit` · `GET /audit.csv` (`user`, `from`, `to`, `q`, `limit`) | admin | Audit trail |
 | `POST /digital-link` `{key, value, qualifiers, attributes:[{ai, value}]}` | reader | Digital Link with data attributes checked by the engine; nothing stored |
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&attr=AI:value` | reader | Label; headers `X-QR-Version`, `X-QR-Level`, `X-QR-Modules`; 422 `qr.tooSmall` / `qr.tooLong` |
-| `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable"}` |
+| `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable"}` |
 
 ## 8. Portal data
 
@@ -348,6 +379,8 @@ Decisions and the reasons for them: [ADR 0001](adr/0001-portal-state-in-mongodb.
 | `journal` | ObjectId (`jsonl-<line>` for migrated events); `at` (date), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Record actions `create`, `update`, `delete` (with the record's content), `import`; others `login`, `login-failed`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove` | date; record + date; user + date; category; TTL on `expiresAt` |
 | `login_failures` | `key` (`user:<name>` or `addr:<address>`), `at` | key + date; TTL 15 minutes on `at` |
 | `linkcheck_cache` | address; `result`, `expiresAt` | TTL on `expiresAt` |
+| `jobs` | token; `type` (`import`, `linkcheck`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `expiresAt`, `error`; imports `plan`, `keyRecords`, `results`; link checks `scope`, `urls` (`[{url, records}]`), `problems`, `records` (`[{record, problems}]`) | state + creation; TTL on `expiresAt` |
+| `workers` | worker name (`host:pid:mode`); `seen`, `mode`, `job` | TTL 10 minutes on `seen` |
 | `settings` | `lastFullCheck`, `journalRetention`, `migration`, and the `lock:<name>` documents | — |
 
 Journal retention: an event is kept for `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS` (0)
@@ -469,11 +502,13 @@ run against it. Setup and commands are in
 | `portal/test_portal_config.py` | 13 | configuration and start-up, session limits |
 | `portal/test_session.py` | 30 | session limits (15 s idle in the test): server rules, warning, renewal on use, other tabs, absolute limit, both languages; community notice in the footer (about two minutes) |
 | `portal/test_store.py` | 58 | the portal's database layer: connection settings, indexes, the shared lock (also between two administrators at once), users, record metadata, journal and its retention, sign-in throttle, migration of the old files (also interrupted and resumed) |
-| `portal/test_store_mongodb.py` | 76 | on a real MongoDB (`PORTAL_TEST_MONGO_URI`, CI only): the user made by `db_init.py` and its privileges, `test_store.py` again as that user, the TTL monitor |
+| `portal/test_jobs.py` | 70 | background jobs: states, expiry, atomic claim, ownership of writes, silent workers given back and failed after three attempts, the worker's announcement, `stalled`, the health check, the worker loop (errors, heartbeat, stop and hand-back, `JobLost`), the embedded worker and `PORTAL_WORKER`; imports through the API (queue, worker, journal, another user, a worker dying before and after writing a record, a failure); link checks through the API (every record, a list, a stop that cancels pending addresses) |
+| `portal/test_worker_processes.py` | 13 | `worker.py` as real processes on a real MongoDB (run by `test_store_mongodb.py`): two workers share the queue without taking a job twice; SIGTERM hands the job back and the other worker finishes it; after SIGKILL a new worker continues the job once its heartbeat is old |
+| `portal/test_store_mongodb.py` | 161 | on a real MongoDB (`PORTAL_TEST_MONGO_URI`, CI only): the user made by `db_init.py` and its privileges; `test_store.py`, `test_jobs.py` and `test_worker_processes.py` again as that user (their lines relayed); the TTL monitor, also for jobs and old worker announcements |
 | `portal/test_registration.py` | 26 | §2.5.9 through the portal API: informative qualifiers (save, open, history, list, export, import), records against rule 2, the key's own record when saving and importing |
-| `portal/test_portal_e2e.py` | 186 | the portal in Chromium against `mock_data_entry.py`, desktop and phone; also run without the engine |
+| `portal/test_portal_e2e.py` | 190 | the portal in Chromium against `mock_data_entry.py`, desktop and phone, with an embedded worker (also stopped: the queue and "not running" messages, a job that fails); also run without the engine (146) |
 | `home/test_home.py` | 55 | home page through a real nginx, no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts |
-| `install/test_install.sh` | 57 | installer through shims (Compose v2) |
+| `install/test_install.sh` | 61 | installer through shims (Compose v2), including a portal whose job worker does not start |
 
 **pytest and continuous integration.** `dev-tests/test_programs.py` runs each program above as one pytest
 test (a subprocess from the repository root): exit status 0 without a `FAIL` line passes; otherwise the

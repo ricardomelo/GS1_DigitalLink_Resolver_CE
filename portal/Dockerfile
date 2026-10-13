@@ -17,7 +17,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py gs1.py journal.py label.py linkcheck.py users.py meta.py sheet.py syntax.py create_user.py \
-     store.py migrate.py db_init.py ./
+     store.py migrate.py db_init.py jobs.py worker.py ./
 COPY assets ./assets
 COPY static ./static
 
@@ -31,4 +31,5 @@ VOLUME /app/config
 USER portal
 
 EXPOSE 8000
+# The portal-worker service runs the same image with "python worker.py" (docker-compose.yml).
 CMD ["gunicorn", "--workers", "1", "--threads", "8", "--bind", "0.0.0.0:8000", "--access-logfile", "-", "app:app"]

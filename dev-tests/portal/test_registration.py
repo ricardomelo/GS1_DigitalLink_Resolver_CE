@@ -33,6 +33,7 @@ os.environ.update(DATA_ENTRY_URL=f"http://127.0.0.1:{DATA_ENTRY_PORT}/api", SESS
                   PORTAL_ORIGIN="http://localhost", PORTAL_COOKIE_SECURE="false",
                   RESOLVER_PUBLIC_URL="https://id.example.org")
 os.environ.setdefault("PORTAL_DB_URI", "mongomock://")   # a real MongoDB when PORTAL_DB_URI is set
+os.environ["PORTAL_WORKER"] = "embedded"               # imports and link checks run in a thread of the portal
 sys.path[:0] = [HERE, PORTAL]
 
 import mock_data_entry  # noqa: E402

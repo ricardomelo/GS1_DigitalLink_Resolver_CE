@@ -183,10 +183,18 @@ def start_nginx(workdir: Path, dns: StubDNS, ports: dict[str, int]) -> tuple[sub
     for service, port in ports.items():
         conf = conf.replace(f"{service}:{PORTS[service]}", f"{service}:{port}")
     conf = conf.replace("resolver 127.0.0.11 valid=10s", f"resolver 127.0.0.1:{dns.port} valid=1s")
-    conf = conf.replace("http {", f"http {{\n    client_body_temp_path {workdir}/body;\n"
-                                  f"    proxy_temp_path {workdir}/proxy;\n", 1)
+    # Every temporary folder in the work folder: a build's defaults (/var/lib/nginx on Ubuntu,
+    # /var/cache/nginx in nginx.org's packages) cannot be created by a user who is not root.
+    temp = "".join(f"    {kind}_temp_path {workdir}/{kind};\n"
+                   for kind in ("client_body", "proxy", "fastcgi", "uwsgi", "scgi"))
+    conf = conf.replace("http {", "http {\n" + temp, 1)
     (workdir / "nginx.conf").write_text(conf)
-    subprocess.run([NGINX, "-t", "-q", "-c", str(workdir / "nginx.conf"), "-p", str(workdir)], check=True)
+    test = subprocess.run([NGINX, "-t", "-q", "-c", str(workdir / "nginx.conf"), "-p", str(workdir)],
+                          capture_output=True, text=True)
+    if test.returncode:
+        message = " / ".join(line for line in test.stderr.splitlines() if "[alert]" not in line)
+        check(False, f"nginx accepts the configuration ({message})")
+        raise SystemExit(1)
     proc = subprocess.Popen([NGINX, "-c", str(workdir / "nginx.conf"), "-p", str(workdir), "-g", "daemon off;"])
     for _ in range(50):
         try:

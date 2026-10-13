@@ -66,7 +66,8 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 
 | Funcionalidade | O que faz | Desde |
 |---|---|---|
-| Página de entrada | Usuário e senha, cookie de sessão (HttpOnly, SameSite, Secure em HTTPS), validade renovada a cada uso (`PORTAL_SESSION_HOURS`, padrão 8 horas) | `126f507` |
+| Página de entrada | Usuário e senha, cookie de sessão (HttpOnly, SameSite, Secure em HTTPS) | `126f507` |
+| Limites da sessão | A sessão termina após 30 minutos sem uso e 12 horas depois da entrada (`PORTAL_SESSION_IDLE_MINUTES`, `PORTAL_SESSION_MAX_HOURS`); uma janela faz a contagem dos dois últimos minutos e oferece *Continuar conectado*; digitar, clicar e rolar contam como uso; as abas compartilham a sessão | `1a1ca59` |
 | Limite de tentativas | 5 falhas → 15 minutos de espera, por nome de usuário e por endereço | `126f507` |
 | Troca de senha | Janela Opções; exige a senha atual; pelo menos 12 caracteres; encerra as outras sessões | `126f507` |
 | Impressão digital da sessão | Trocar ou redefinir a senha encerra todas as outras sessões da conta | `126f507` |
@@ -202,7 +203,8 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 
 | Funcionalidade | O que faz | Desde |
 |---|---|---|
-| Página inicial em `/` | O que é o Resolver, como usar, links para o portal e para a documentação da API; operador lido do arquivo de descrição | `ec1f1d7` |
+| Página inicial em `/` | O que é o Resolver, como usar, links para o portal e para a documentação da API; operador lido do arquivo de descrição (o quadro da sintaxe GS1 Digital Link saiu no `1a1ca59`) | `ec1f1d7` |
+| Aviso da comunidade | Rodapé da página inicial, da página de entrada e do portal, e o README: mantido pela comunidade, não pela GS1 nem por qualquer Organização-Membro GS1; o operador é responsável pelo uso | `1a1ca59` |
 | Link do operador | O nome do operador leva a `RESOLVER_ORG_URL` | `cc72145` |
 | Navegação | Logotipo → página inicial; *Página inicial* no menu do usuário do portal | `a49f24d` |
 

@@ -474,15 +474,15 @@ As imagens do README e do guia do portal, nos dois idiomas, são geradas por `de
 Situação em 13 de outubro de 2026. A fase 1, a base de conformidade, está concluída: a revisão cláusula a
 cláusula, o modelo de cadastro do GS1-Conformant Resolver 2.5.9, um link padrão acima de todo cadastro, as
 correções de resolução, o EPC em binário e a própria suíte de testes de Resolver da GS1 (aprovada numa
-instalação de homologação). O que foi feito está no [histórico](historico.md) e no
+instalação de homologação). O item 2.1, os ajustes rápidos (limites da sessão, página inicial, aviso da
+comunidade), também está concluído. O que foi feito está no [histórico](historico.md) e no
 [changelog](../extensions/CHANGELOG.md). Os itens abaixo seguem a ordem combinada; os tamanhos são relativos
 (P, M, G). A ordem põe primeiro aquilo em que os itens seguintes se apoiam: o armazenamento de dados do portal
 e os tenants vêm antes da API, do e-mail e dos analytics, que precisam saber de quem são os dados que tratam.
 
 | Fase | # | Item | Tam. | Depende de |
 |---|---|---|---|---|
-| Ajustes rápidos e fundações técnicas | 2.1 | **Ajustes rápidos**: a sessão do portal termina após 30 minutos sem uso (aviso antes do fim, limite absoluto por login); o quadro da sintaxe GS1 Digital Link sai da página inicial; aviso mais claro no README, na documentação, na página inicial e no portal de que este software e o projeto oficial são mantidos pela comunidade, não pela GS1, e de que quem instala e opera é responsável pelo uso | P | — |
-| | 2.2 | **Integração contínua**: os testes de desenvolvimento como suítes pytest num workflow do GitHub Actions (engines em cache) | M | — |
+| Fundações técnicas | 2.2 | **Integração contínua**: os testes de desenvolvimento como suítes pytest num workflow do GitHub Actions (engines em cache) | M | — |
 | | 2.3 | **Arquitetura para escala e dados do portal no MongoDB**: um registro de decisão de arquitetura (serviços sem estado, estado no banco, tarefas em segundo plano fora do processo web, mais de uma réplica de cada serviço); usuários, metadados dos cadastros, diário, tarefas e bloqueio de login do portal saem de arquivos e da memória para um banco próprio no MongoDB existente, sem alterar as coleções do Resolver oficial; retenção do diário; migração das instalações existentes; backup e restauração incluídos | G | 2.2 |
 | | 2.4 | **Tenants**: uma organização (tenant) é dona dos seus prefixos de empresa GS1, cada prefixo pertencendo a um único tenant; um administrador do servidor cria tenants e atribui prefixos; um administrador do tenant gerencia os usuários do tenant; toda chamada confere o tenant no servidor; trilha de auditoria por tenant; e-mail por usuário; privacidade desde a concepção (minimização de dados, acesso do administrador do servidor aos dados de um tenant registrado na trilha de auditoria desse tenant) | G | 2.3 |
 | | 2.5 | **Uma fonte única para as regras GS1**: chaves, qualificadores, formatos e nomes de AIs derivados do GS1 Barcode Syntax Dictionary, os dois engines na mesma versão, mensagens do engine traduzidas, atualizações do dicionário propostas por uma tarefa agendada; traz os AIs (7041) e (8040)–(8043) | G | 2.2 |

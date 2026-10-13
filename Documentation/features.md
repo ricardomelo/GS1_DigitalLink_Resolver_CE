@@ -69,7 +69,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 
 | Feature | What it does | Since |
 |---|---|---|
-| Sign-in page | Username and password, session cookie (HttpOnly, SameSite, Secure over HTTPS), sliding expiry (`PORTAL_SESSION_HOURS`, default 8) | `126f507` |
+| Sign-in page | Username and password, session cookie (HttpOnly, SameSite, Secure over HTTPS) | `126f507` |
+| Session limits | The session ends after 30 minutes without use and 12 hours after the sign-in (`PORTAL_SESSION_IDLE_MINUTES`, `PORTAL_SESSION_MAX_HOURS`); a dialog counts down the last two minutes and offers *Stay signed in*; typing, clicks and scrolling count as use; tabs share the session | `1a1ca59` |
 | Throttling | 5 failures → 15 minutes wait, per user name and per address | `126f507` |
 | Password change | Options dialog; current password required; at least 12 characters; other sessions signed out | `126f507` |
 | Session fingerprint | A password change or reset ends every other session of the account | `126f507` |
@@ -205,7 +206,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 
 | Feature | What it does | Since |
 |---|---|---|
-| Home page at `/` | What the resolver is, how to use it, links to the portal and API docs; operator from the description file | `ec1f1d7` |
+| Home page at `/` | What the resolver is, how to use it, links to the portal and API docs; operator from the description file (the GS1 Digital Link syntax box was removed in `1a1ca59`) | `ec1f1d7` |
+| Community notice | Footer of the home page, the sign-in page and the portal, and the README: maintained by the community, not by GS1 or any GS1 Member Organisation; the operator is responsible for the use | `1a1ca59` |
 | Operator link | The operator's name links to `RESOLVER_ORG_URL` | `cc72145` |
 | Navigation | Logo → home page; *Home page* in the portal's user menu | `a49f24d` |
 

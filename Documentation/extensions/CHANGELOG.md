@@ -2,6 +2,26 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Quick wins (backlog item 2.1)
+- **Portal session limits** (owner's decision of 13 October): the session ends after 30 minutes without
+  use (`PORTAL_SESSION_IDLE_MINUTES`) and 12 hours after the sign-in whatever the use
+  (`PORTAL_SESSION_MAX_HOURS`). The idle limit is the cookie's signed time, renewed by every request; the
+  absolute limit is the sign-in time kept in the session (`since`; older sessions count from their next
+  request). The page mirrors both (`SessionClock` in `app.js`): key presses, clicks, scrolling and touches
+  count as use and renew the session quietly through the new `GET /portal/api/session`; tabs share the
+  last call through `localStorage`; two minutes before the end a dialog counts down and offers *Stay signed
+  in* (idle) or explains that a new sign-in is needed (absolute). `GET /portal/api/config` carries
+  `session`. **`PORTAL_SESSION_HOURS` (8-hour sliding limit) is no longer read**; the portal logs a warning
+  when it is set. A page request that finds the session over now shows the "session ended" reason too.
+  Commit `1a1ca59`.
+- **Home page**: the box showing the shape of a GS1 Digital Link is removed; one column. Commit `1a1ca59`.
+- **Community notice** in the README (both languages), the documentation index and the footers of the home
+  page, the sign-in page and the portal: the software and the official project are maintained by their
+  communities, not by GS1 or any GS1 Member Organisation; whoever operates an installation is responsible
+  for its use. Commit `1a1ca59`.
+- Tests: new `dev-tests/portal/test_session.py` (30 checks); `test_portal_config.py` 13; `test_home.py` 55.
+- Backlog reordered in the README (both languages) from the owner's notes of 13 October. Commit `bc1c86b`.
+
 ### GS1's resolver test suite (backlog item 1.4)
 - **Staging passes every test** of GS1's own suite (https://ref.gs1.org/test-suites/resolver/, Resolver
   1.2.1): 31 of 31 on a GTIN whose default link has a Portuguese and an English version, 2 October 2026,

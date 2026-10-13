@@ -22,6 +22,8 @@ the next one started.
 | 4 — search and documentation | 30 Sep – 1 Oct | `f4f3071` and the documentation commits | filters by key type and qualifier, code search, user guide, feature list, this history, developer guide, docstrings, Portuguese version |
 | 5 — conformance review and 2.5.9 | 1 Oct | `324d85b` → `db8e342` and the documentation commits | clause-by-clause conformance review, registration model of Resolver 2.5.9 (informative batch and variant of a serial number), a default link above every record, resolution fixes (item 1.5) |
 | 6 — EPC binary strings | 2 Oct | `51a0da8` → `4b9a7be` and the documentation commits | `/eh…` and `/ex…` decompressed for every EPC scheme with a GS1 Digital Link (item 1.6), from the TDT 2.2 artefacts and TDS 2.3; the proxy's upstream name fixed (every resolution through nginx had been a 500 since 1.5); four more candidate errata; confirmed on staging |
+| 7 — GS1's resolver test suite | 2 Oct | `bc573c4` → `386a8c3` | GS1's own suite passes on staging (31 of 31), link types published in `https://ref.gs1.org/voc/` (F22), erratum E12, open backlog in the README |
+| 8 — backlog and quick wins | 13 Oct | `bc1c86b`, `1a1ca59` and the documentation commit | backlog reordered around tenants, e-mail, API keys and custom domains; 30-minute idle session with a warning and a 12-hour limit; syntax box removed from the home page; community notice |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -206,6 +208,27 @@ without a record is a 404 (2.4.1). The open backlog is now listed in the README.
 Decisions of the owner: link types are published in `https://ref.gs1.org/voc/` (option B of F22); the
 behaviour under E12 is kept and becomes an erratum and an issue for the suite.
 
+## Session 8 — backlog reordered, quick wins (item 2.1)
+
+| Commit | Change |
+|---|---|
+| `bc1c86b` | README backlog rewritten from the owner's notes of 13 October: quick wins, architecture for scale with the portal's data in MongoDB, tenants with server and tenant administrators, e-mail, a tenant API with API keys, analytics per tenant with export, the tenant's own domain in the QR code, Verified by GS1 on the landing page, a load test |
+| `1a1ca59` | portal: session ends after 30 minutes without use and 12 hours after the sign-in, warning two minutes before, renewal while the user works, shared between tabs; home page without the GS1 Digital Link syntax box; community notice in the README, the documentation and the footers; `test_session.py` |
+
+After a pause from 2 to 13 October the fork, the official project and GS1's suite had not changed. The
+owner's notes were assessed one by one: all were kept, some merged with existing items. The order puts the
+portal's data store and tenants before the API, e-mail and analytics, because all three need to know whose
+data they handle. Two notes were narrowed: the Verified by GS1 link goes on the landing page only, since the
+link type `gs1:verificationService` denotes a GS1 Lightweight Messaging service, not a web page; and a
+tenant's own domain answers only for that tenant's prefixes, after a DNS proof that the domain is theirs.
+
+Decisions of the owner: the notice names no organisation ("not by GS1 or any GS1 Member Organisation");
+the session ends after 30 minutes without use, with a warning two minutes before and a 12-hour limit per
+sign-in, both configurable.
+
+Building the portal's syntax engine in the sandbox: the release archive could not be downloaded there, so
+the same tag was cloned with git and built with the script's steps (the script itself is unchanged).
+
 
 
 | Area | 1.0.0 (session 1) | Now |
@@ -218,7 +241,7 @@ behaviour under E12 is kept and becomes an erratum and an issue for the suite.
 | Accounts | users from the command line, all equal | roles, prefixes, users screen, temporary passwords, history, audit trail |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
 | Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
-| Tests | 69 checks | 1,271 checks in 14 test programs (one of them GS1's own test suite), plus the installer test |
+| Tests | 69 checks | 1,306 checks in 15 test programs (one of them GS1's own test suite), plus the installer test |
 | Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
 ## Decisions that stay unless deliberately revisited

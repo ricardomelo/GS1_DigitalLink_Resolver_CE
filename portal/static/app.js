@@ -185,13 +185,17 @@ function checkDigit(body) {
 }
 
 /* ------------------------------------------------------------------ primary identification keys
-   GS1 Digital Link URI Syntax 1.7, section 4.3. The same rules as portal/gs1.py (which the server
-   applies again): live feedback while typing. */
+   GS1 Digital Link URI Syntax 1.7, section 4.3. The same rules as portal/gs1.py (which the server applies
+   again), for live feedback while typing: the server describes each key's check, each qualifier's pattern and
+   the qualifier order in CONFIG.rules, built from the GS1 Barcode Syntax Dictionary (ADR 0003), so nothing
+   here repeats a length or a format. */
 const CSET82 = "!\"%&'()*+,-./0123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz";
 const CSET32 = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const PRIMES = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97];
-const NUMERIC_KEYS = { "414": 13, "417": 13, "8017": 18, "8018": 18, "00": 18, "402": 17 };
-const ALNUM = /^[A-Za-z0-9.\-]+$/;
+const NUMERIC_KINDS = ["gtin", "numeric", "itip", "digitsSerial"];      // keys of digits only (gs1.NUMERIC_KINDS)
+const rules = () => CONFIG?.rules || { keys: {}, qualifiers: {}, order: [], keyChars: "A-Za-z0-9.\\-", cset39Chars: "0-9A-Z\\-" };
+const keyRule = ai => rules().keys[ai] || { kind: "none" };
+const alnumPattern = () => new RegExp(`^[${rules().keyChars}]+$`);
 
 function gmnPair(body) {
   let sum = 0;
@@ -209,25 +213,27 @@ function checkNumeric(value, length) {
   return Number(value.at(-1)) === expected ? null : fail("key.checkDigit", { expected });
 }
 
-function checkAlnum(value, max, pattern = ALNUM, code = "key.chars") {
+function checkAlnum(value, max, pattern = alnumPattern(), code = "key.chars") {
   if (value.length > max) return fail("key.tooLong", { max });
   if (!pattern.test(value)) return fail(code);
   if (value.length < 4 || !/^\d{4}/.test(value)) return fail("key.companyPrefix");
   return null;
 }
 
-function checkWithSerial(value, serialMax, filler = "") {
+function checkWithSerial(value, baseLength, serialMax, filler = "") {
   let body = value;
   if (filler) {
     if (!value.startsWith(filler)) return fail("key.graiZero");
     body = value.slice(filler.length);
   }
-  const base = body.slice(0, 13), serial = body.slice(13);
-  if (base.length < 13 || !/^\d+$/.test(base)) return { ok: false, key: "key.baseDigits", params: { length: 13 } };
+  const base = body.slice(0, baseLength), serial = body.slice(baseLength);
+  if (base.length < baseLength || !/^\d+$/.test(base)) {
+    return { ok: false, key: "key.baseDigits", params: { length: baseLength } };
+  }
   const expected = checkDigit(base.slice(0, -1));
   if (Number(base.at(-1)) !== expected) return fail("key.checkDigit", { expected });
   if (serial.length > serialMax) return fail("key.serialTooLong", { max: serialMax });
-  if (serial && !ALNUM.test(serial)) return fail("key.chars");
+  if (serial && !alnumPattern().test(serial)) return fail("key.chars");
   return null;
 }
 
@@ -258,53 +264,54 @@ function readKey() {
     return { ok: true, ai, value: digits.padStart(14, "0"), key: "gtin.valid" };
   }
   if (!raw) return { ok: false, ai, key: `key.${ai}.hint` };
-  const value = ai in NUMERIC_KEYS || ["8006", "255"].includes(ai) ? raw.replace(/[.\-]/g, "") : raw;
+  const rule = keyRule(ai);
+  const value = NUMERIC_KINDS.includes(rule.kind) ? raw.replace(/[.\-]/g, "") : raw;
   let problem = null;
-  if (ai in NUMERIC_KEYS) problem = checkNumeric(value, NUMERIC_KEYS[ai]);
-  else if (ai === "8006") {
+  if (rule.kind === "numeric") problem = checkNumeric(value, rule.length);
+  else if (rule.kind === "itip") {
+    const length = rule.base + rule.extra, half = rule.extra / 2;
     if (!/^\d+$/.test(value)) problem = fail("key.digitsOnly");
-    else if (value.length !== 18) problem = { ok: false, key: "key.length", params: { expected: 18, length: value.length } };
+    else if (value.length !== length) problem = { ok: false, key: "key.length", params: { expected: length, length: value.length } };
     else {
-      const expected = checkDigit(value.slice(0, 13));
-      if (Number(value[13]) !== expected) problem = fail("key.checkDigit", { expected });
+      const expected = checkDigit(value.slice(0, rule.base - 1));
+      if (Number(value[rule.base - 1]) !== expected) problem = fail("key.checkDigit", { expected });
       else {
-        const piece = Number(value.slice(14, 16)), total = Number(value.slice(16, 18));
+        const piece = Number(value.slice(rule.base, rule.base + half)), total = Number(value.slice(rule.base + half));
         if (!piece || !total || piece > total) problem = fail("key.itipPiece");
       }
     }
-  } else if (ai === "8013") {
-    problem = checkAlnum(value, 25);
+  } else if (rule.kind === "gmn") {
+    problem = checkAlnum(value, rule.max);
     if (!problem && (value.length < 3 || value.slice(-2) !== gmnPair(value.slice(0, -2)))) {
       problem = fail("key.gmnPair", { expected: value.length < 3 ? "" : gmnPair(value.slice(0, -2)) });
     }
-  } else if (ai === "8010") problem = checkAlnum(value, 30, /^[0-9A-Z\-]+$/, "key.cpidChars");
-  else if (ai === "401" || ai === "8004") problem = checkAlnum(value, 30);
-  else if (ai === "255") {
+  } else if (rule.kind === "cpid") problem = checkAlnum(value, rule.max, new RegExp(`^[${rules().cset39Chars}]+$`), "key.cpidChars");
+  else if (rule.kind === "alnum") problem = checkAlnum(value, rule.max);
+  else if (rule.kind === "digitsSerial") {
     if (!/^\d+$/.test(value)) problem = fail("key.digitsOnly");
-    else if (value.length < 13 || value.length > 25) {
-      problem = { ok: false, key: "key.lengthRange", params: { min: 13, max: 25, length: value.length } };
+    else if (value.length < rule.min || value.length > rule.max) {
+      problem = { ok: false, key: "key.lengthRange", params: { min: rule.min, max: rule.max, length: value.length } };
     } else {
-      const expected = checkDigit(value.slice(0, 12));
-      if (Number(value[12]) !== expected) problem = fail("key.checkDigit", { expected });
+      const expected = checkDigit(value.slice(0, rule.base - 1));
+      if (Number(value[rule.base - 1]) !== expected) problem = fail("key.checkDigit", { expected });
     }
-  } else if (ai === "253") problem = checkWithSerial(value, 17);
-  else if (ai === "8003") problem = checkWithSerial(value, 16, "0");
+  } else if (rule.kind === "withSerial") problem = checkWithSerial(value, rule.base, rule.serialMax, rule.filler);
   if (problem) return { ...problem, ai };
   return { ok: true, ai, value, key: "key.valid" };
 }
 
 /* ------------------------------------------------------------------ key qualifiers
    URI Syntax 1.7, sections 4.4 (which AIs), 4.6 (formats) and 4.9 (order). The shapes (the qualifiers
-   allowed together, and which are required) come from the server configuration (gs1.KEY_SHAPES). */
-const QUAL_ORDER = ["22", "10", "21", "235", "8011", "254", "7040", "8020", "8019"];
-const QCHARS = "[A-Za-z0-9._\\-]";
-const QUAL_FORMATS = {
-  "22": [new RegExp(`^${QCHARS}{1,20}$`), 20], "10": [new RegExp(`^${QCHARS}{1,20}$`), 20],
-  "21": [new RegExp(`^${QCHARS}{1,20}$`), 20], "235": [new RegExp(`^${QCHARS}{1,28}$`), 28],
-  "8011": [/^[1-9]\d{0,11}$/, 12], "254": [new RegExp(`^${QCHARS}{1,20}$`), 20],
-  "7040": [/^\d[A-Za-z0-9._\-]{2}[A-Za-z0-9_\-]$/, 4], "8020": [new RegExp(`^${QCHARS}{1,25}$`), 25],
-  "8019": [/^\d{1,10}$/, 10],
-};
+   allowed together, and which are required), the order and each qualifier's pattern and maximum length come
+   from the server configuration (gs1.KEY_SHAPES, gs1.browser_rules()). */
+const qualOrder = () => rules().order;
+const qualFormats = {};
+function qualFormat(q) {
+  const rule = rules().qualifiers[q];
+  if (!rule) return [/^$/, 0];
+  qualFormats[q] ||= [new RegExp(rule.pattern), rule.max];
+  return qualFormats[q];
+}
 
 function keyConfig(ai) {
   return (CONFIG?.keys || []).find(k => k.code === ai) || { qualifiers: [], shapes: [[]] };
@@ -339,7 +346,7 @@ function buildQualifierFields() {
     input.id = "q-" + q;
     input.className = "code";
     input.autocomplete = "off";
-    input.maxLength = QUAL_FORMATS[q][1];
+    input.maxLength = qualFormat(q)[1];
     input.inputMode = ["8011", "8019"].includes(q) ? "numeric" : "text";
     input.addEventListener("input", onIdentityChange);
     input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); openRecord(); } });
@@ -360,7 +367,7 @@ function readQualifiers() {
     const q = field.dataset.ai;
     const value = $("input", field).value.replace(INVISIBLE, "").trim();
     if (!value) continue;
-    if (!QUAL_FORMATS[q][0].test(value)) return { ok: false, error: true, key: "qualifier.invalid", params: { ai: q } };
+    if (!qualFormat(q)[0].test(value)) return { ok: false, error: true, key: "qualifier.invalid", params: { ai: q } };
     given[q] = value;
   }
   const names = Object.keys(given);
@@ -374,7 +381,7 @@ function readQualifiers() {
   const missing = keyConfig(ai).shapes.flatMap(shape => names.every(q => shape.some(x => x.ai === q))
     ? shape.filter(x => x.required && !(x.ai in given)).map(x => x.ai) : []);
   if (missing.length) return { ok: false, key: "qualifier.required", params: { ai: missing[0] } };
-  const order = q => QUAL_ORDER.indexOf(q);
+  const order = q => qualOrder().indexOf(q);
   return { ok: false, error: true, key: "qualifier.combination",
            params: { given: names.sort((a, b) => order(a) - order(b)).map(q => `(${q})`).join(" + ") } };
 }
@@ -985,7 +992,7 @@ function onKeyTypeChange() {
   I18N.set($("#key-label"), ai === "01" ? "gtin.label" : `key.${ai}.label`);
   input.setAttribute("data-i18n-attr", `placeholder:${ai === "01" ? "gtin.placeholder" : `key.${ai}.placeholder`}`);
   input.placeholder = t(ai === "01" ? "gtin.placeholder" : `key.${ai}.placeholder`);
-  const numeric = ai === "01" || ai in NUMERIC_KEYS || ["8006", "255"].includes(ai);
+  const numeric = NUMERIC_KINDS.includes(keyRule(ai).kind);
   input.inputMode = numeric ? "numeric" : "text";
   // room for the spaces and hyphens people type between digit groups
   input.maxLength = ai === "01" ? 20 : numeric ? 34 : 40;
@@ -1095,7 +1102,7 @@ function renderOthers(entries) {
   I18N.set($("#others-title"), "others.title", { count: othersState.entries.length, key: t(`key.${readKey().ai}.short`) });
   // Filter: every key qualifier present in the list
   const present = [...new Set(othersState.entries.flatMap(e => [...(e.qualifiers || []), ...(e.informative || [])].map(([q]) => q)))]
-    .sort((a, b) => QUAL_ORDER.indexOf(a) - QUAL_ORDER.indexOf(b));
+    .sort((a, b) => qualOrder().indexOf(a) - qualOrder().indexOf(b));
   const filter = $("#others-filter");
   const previous = filter.value;
   filter.replaceChildren(new Option(t("others.filter.all"), ""),
@@ -1807,7 +1814,7 @@ function fillQualifierFilter() {
   });
   select.replaceChildren(new Option(t("records.qualifier.any"), ""),
     ...(counts.none ? [filterOption("none", t("records.qualifier.none"), counts.none)] : []),
-    ...QUAL_ORDER.filter(q => counts[q]).map(q => filterOption(q, t(`qual.${q}.label`), counts[q])),
+    ...qualOrder().filter(q => counts[q]).map(q => filterOption(q, t(`qual.${q}.label`), counts[q])),
     ...(counts.other ? [filterOption("other", t("records.qualifier.other"), counts.other)] : []));
   keepChoice(select, previous);
 }

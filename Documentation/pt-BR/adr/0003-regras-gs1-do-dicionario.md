@@ -118,6 +118,24 @@ regenera os dois arquivos numa pasta de trabalho, compara com os do repositório
 (`portal/tools/dictionary_diff.py`), roda o grupo portal dos testes de desenvolvimento com ela e abre uma issue com
 o resumo. Permissões: `contents: read`, `issues: write`. Nunca altera o branch.
 
+### 3.6 Como implementado nas etapas 2 e 3
+
+- A etapa 2 pôs a versão no `docker-compose.yml` e os argumentos de build no lugar; a tarefa semanal veio com a
+  etapa 3, porque precisa do gerador e da comparação (`portal/tools/dictionary_diff.py`), que também diz se o portal
+  consegue montar suas regras com o dicionário novo. A tarefa usa a versão nova na sua própria cópia do repositório
+  (o valor do compose reescrito ali), de modo que a ação de preparação do CI compila e instala essa versão sem
+  mudança; só versões numeradas contam (o repositório também tem tags antigas com datas).
+- O `gs1dict.py` reúne o leitor do texto e do arquivo; o `gs1_dictionary.json` tem um AI por linha. A imagem do
+  portal copia todo `*.json` de `portal/` com os módulos (o `test_deploy.py` sobe o portal a partir dos arquivos da
+  imagem).
+- Além da seção 3.2: o navegador também deixou de repetir tamanhos e formatos. O `/config` manda `rules`
+  (`gs1.browser_rules()`: a conferência de cada chave como um tipo e seus números, o padrão e o tamanho máximo de
+  cada qualificador, a ordem), e o `app.js` confere a partir delas; um Pay-to GLN (415), que não tinha conferência
+  ao vivo no navegador, passou a ter. Os nomes dos qualificadores em `QUALIFIER_FORMATS` agora são os títulos do
+  dicionário (não aparecem na tela).
+- As formas de duas chaves ficaram escritas de outro jeito e aceitam exatamente os mesmos cadastros: 417 e 8004
+  eram "sozinhas, ou com 7040 obrigatório" e agora são "7040 opcional", como o dicionário escreve.
+
 ## 4. Opções consideradas
 
 | Ponto | Escolhida (recomendada) | Não escolhidas |

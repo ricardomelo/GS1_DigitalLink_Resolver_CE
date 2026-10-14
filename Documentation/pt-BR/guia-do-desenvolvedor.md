@@ -118,7 +118,11 @@ portal/                          novo: o portal de gestão de links
   db_init.py                     cria o usuário do banco do portal (serviço portal-db-init)
   create_user.py                 administração de usuários pela linha de comando
   static/                        index.html, login.html, app.js, login.js, password.js, i18n.js, app.css
+  gs1dict.py                     o GS1 Barcode Syntax Dictionary: leitor do texto e do gs1_dictionary.json (ADR 0003)
+  gs1_dictionary.json            o dicionário da versão do engine no docker-compose.yml, gerado
   tools/build-syntax-engine.sh   compila o engine (biblioteca C + binding Python)
+  tools/gen_dictionary.py        escreve (ou confere com --check) o gs1_dictionary.json a partir de um engine
+  tools/dictionary_diff.py       o que muda entre dois dicionários gerados (a issue semanal)
   assets/fonts/                  Liberation Sans para o texto da etiqueta (OFL)
   Dockerfile, requirements.txt
 scripts/                         novo: install.sh, templates/, resolver-backup.sh, resolver-backup.cron
@@ -235,12 +239,21 @@ ao nome final, então processos que iniciam juntos leem todos uma mesma chave co
 
 ### `gs1.py` — regras GS1
 
-- `PRIMARY_KEYS`: AI → (nome, validador) para as 16 chaves primárias da URI Syntax 1.7 §4.3. Os
-  validadores são montados com funções pequenas: `_numeric_key(length)`, `_with_serial(base, serial_max,
-  filler)`, `_alnum_key(maximum)`, `_itip`, `_gmn` (par de caracteres, `gmn_check_pair()`), `_cpid`,
-  `_gcn`, `_gtin` (`normalise_gtin()`, qualquer tamanho → 14 dígitos).
+- **Montadas a partir do dicionário** ([ADR 0003](adr/0003-regras-gs1-do-dicionario.md)): o `_build()` lê o
+  `gs1_dictionary.json` (`gs1dict.load()`) na importação. `PRIMARY_KEYS`: AI → (nome, validador) para todo AI com
+  `dlpkey` (as 16 chaves da URI Syntax 1.7 §4.3), na ordem e com os nomes curtos de
+  `PORTAL_EXCEPTIONS["key_names"]` (uma chave que um dicionário posterior acrescente vem por último, com o título
+  dele). O `key_validator()` escolhe o validador pela forma dos componentes da chave e seus linters
+  (`_numeric_key`, `_itip`, `_digits_with_serial`, `_with_serial`, `_alnum_key`, `_gmn` com `gmn_check_pair()`,
+  `_cpid`, `_gtin` para `short_gtin`), com os tamanhos do dicionário, e lhe dá um `.spec` que o navegador repete. O
+  `qualifier_pattern()` monta o padrão de cada qualificador pelos seus componentes. Só `KNOWN_LINTERS` são aceitos:
+  qualquer outro levanta `gs1dict.DictionaryError` na importação.
+- `PORTAL_EXCEPTIONS`: o que o portal faz diferente de propósito, cada item com o motivo (conjuntos de caracteres
+  de chaves, qualificadores e CPID; ITIP sem 22; GTINs curtos; nomes das chaves). `browser_rules()`: as
+  conferências, padrões, tamanhos máximos e a ordem enviados ao navegador no `/config` (`rules`).
 - `KEY_SHAPES`: para cada chave, os conjuntos alternativos de qualificadores permitidos juntos e quais são
-  obrigatórios; `QUALIFIER_FORMATS` e `QUALIFIER_ORDER`, `normalise_qualifiers()` (formato, combinação e a
+  obrigatórios (do `dlpkey`: uma alternativa posterior se distingue pelo primeiro qualificador; um qualificador
+  no `req` da chave é obrigatório); `QUALIFIER_FORMATS` e `QUALIFIER_ORDER`, `normalise_qualifiers()` (formato, combinação e a
   ordem da §4.9), `parse_qualifier_text()` (`(10)L1(21)S1` ou `/10/L1/21/S1`), `is_valid_qualifier_set()`,
   `qualifier_list()` / `pairs_from()` (Resolver CE `[{AI: valor}]` ↔ pares), `qualifier_path()`,
   `qualifiers_match()`.
@@ -367,8 +380,10 @@ chave, params)` define um; `t(chave, params)` devolve um texto. O idioma vem da 
 respostas do servidor trazem códigos (`save.updated`, `key.checkDigit`…) com parâmetros, renderizados pelo
 mesmo catálogo.
 
-**Validação.** `readKey()` e `readQualifiers()` repetem as regras do servidor para dar retorno imediato; o
-servidor confere de novo e é a autoridade.
+**Validação.** `readKey()` e `readQualifiers()` repetem as regras do servidor para dar retorno imediato, a partir
+das conferências, padrões, tamanhos e da ordem que o servidor manda em `CONFIG.rules` (`gs1.browser_rules()`,
+montado do dicionário); nada no `app.js` repete um tamanho ou um formato. O servidor confere de novo e é a
+autoridade.
 
 **Lista de registros.** `loadRecords()` busca `/records` uma vez; `renderRecords()` filtra no navegador por
 tipo de chave (`#records-key`), qualificador (`qualifierMatches()`), autor, problemas de link e texto
@@ -552,6 +567,7 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `resolver/test_epc_binary.py` | 163 | decodificador de EPC em binário: exemplos do EPCB, todos os vetores do anexo E.3 do TDS 2.3 (`eh` e `ex`), dados +AIDC, hostnames `++`, recusas, RE3, artefatos do TDT contra o seu schema; 800 EPCs aleatórios comparados com o `epc-tds` quando `EPC_TDS` está definido (162 sem ele) |
 | `resolver/test_gs1_suite.py` | 215 | suíte de testes de Resolver da GS1, com o JavaScript sem alteração no Chromium, contra o código do web server por HTTP; uma versão em Python do seu `tester.php`; sete cenários; precisa de `GS1_RESOLVER_TESTSUITE` e `AJV_DIST` (pulado sem eles) |
 | `resolver/test_data_entry_api.py` | 53 | token em toda operação protegida; regras de cadastro do §2.5.9 e qualificadores informativos |
+| `portal/test_dictionary.py` | 29 | as regras GS1 do dicionário (ADR 0003): o `gs1_dictionary.json` exatamente o que o dicionário da versão fixada dá, o leitor, chaves, formas, ordem e formatos montados dele com as exceções do portal, um formato maior ou uma chave nova sem código, um linter ou forma desconhecidos parando a montagem, as regras enviadas ao navegador, os AIs (7041) e (8040)–(8043), a comparação da issue semanal |
 | `portal/test_keys.py` | 138 | chaves e qualificadores, comparados com o GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | perfis, prefixos, usuários, histórico, auditoria |
 | `portal/test_sheet.py` | 43 | planilhas, limites por formato |
@@ -566,10 +582,10 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `portal/test_worker_processes.py` | 13 | o `worker.py` como processos reais num MongoDB real (rodado pelo `test_store_mongodb.py`): dois workers dividem a fila sem pegar a mesma tarefa duas vezes; o SIGTERM devolve a tarefa e o outro worker a termina; depois de um SIGKILL, um worker novo continua a tarefa quando o sinal de vida fica velho |
 | `portal/test_store_mongodb.py` | 161 | num MongoDB real (`PORTAL_TEST_MONGO_URI`, só no CI): o usuário criado pelo `db_init.py` e suas permissões; `test_store.py`, `test_jobs.py` e `test_worker_processes.py` de novo como esse usuário (com suas linhas repassadas); o monitor de TTL, também para tarefas e anúncios antigos de workers |
 | `portal/test_registration.py` | 26 | §2.5.9 pela API do portal: qualificadores informativos (salvar, abrir, histórico, lista, exportar, importar), cadastros contra a regra 2, o cadastro da chave ao salvar e ao importar |
-| `portal/test_portal_e2e.py` | 208 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular, com um worker embutido (também parado: as mensagens de fila e de "não está em execução", uma tarefa que falha); organizações, um administrador de tenant e o acesso de suporte nos dois idiomas; também roda sem o engine (164) |
+| `portal/test_portal_e2e.py` | 210 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular, com um worker embutido (também parado: as mensagens de fila e de "não está em execução", uma tarefa que falha); organizações, um administrador de tenant e o acesso de suporte nos dois idiomas; também roda sem o engine (164) |
 | `home/test_home.py` | 68 | página inicial com um nginx real (1.27.3 ou posterior: `NGINX_BIN` ou o PATH), sem o quadro da sintaxe, aviso da comunidade; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug; réplicas por um servidor DNS simulado que responde os nomes dos serviços com endereços `127.0.0.x`: o nginx inicia quando um serviço não tem endereço e o acha depois, reparte as requisições entre duas réplicas, acompanha uma terceira acrescentada e duas retiradas sem reiniciar, e nenhuma requisição falha enquanto réplicas param |
 | `install/test_install.sh` | 68 | instalador com simulações (Compose v2), incluindo um portal cujo worker de tarefas não sobe; quantidades de réplicas gravadas, mantidas, tomadas do ambiente e recusadas quando inválidas |
-| `install/test_deploy.py` | 58 | `docker compose config` das réplicas e quantidades de processos (padrões, valores do `.env`, um valor recusado, nomes mantidos pelo banco e pelo proxy); a versão do nginx da imagem do proxy e o `resolve` em todos os upstreams; o `CMD` gunicorn de cada imagem iniciado localmente (três processos, uma resposta, a requisição no log, parada limpa com SIGTERM em até 10 s); a chave de sessão reserva do portal com seis processos iniciando juntos e oito threads enquanto gravá-la é lento; o portal iniciado a partir dos arquivos que as linhas `COPY` do seu Dockerfile põem na imagem, entre eles todo módulo e arquivo de dados de `portal/`; uma versão do engine, só no `docker-compose.yml`, passada a toda imagem (ADR 0003) |
+| `install/test_deploy.py` | 59 | `docker compose config` das réplicas e quantidades de processos (padrões, valores do `.env`, um valor recusado, nomes mantidos pelo banco e pelo proxy); a versão do nginx da imagem do proxy e o `resolve` em todos os upstreams; o `CMD` gunicorn de cada imagem iniciado localmente (três processos, uma resposta, a requisição no log, parada limpa com SIGTERM em até 10 s); a chave de sessão reserva do portal com seis processos iniciando juntos e oito threads enquanto gravá-la é lento; o portal iniciado a partir dos arquivos que as linhas `COPY` do seu Dockerfile põem na imagem, entre eles todo módulo e arquivo de dados de `portal/`; uma versão do engine, só no `docker-compose.yml`, passada a toda imagem (ADR 0003) |
 
 **pytest e integração contínua.** O `dev-tests/test_programs.py` roda cada programa acima como um teste
 pytest (um subprocesso a partir da raiz do repositório): status 0 sem linha `FAIL` passa; caso contrário, o
@@ -584,6 +600,11 @@ variável que não é caminho não está definida (`needs_var`), quando um coman
 PATH, ou quando imprime `SKIP`. Para acrescentar um programa: escreva-o com linhas
 `PASS`/`FAIL` e status de saída, acrescente uma linha `Program(...)` a `PROGRAMS` (grupo, caminho, as
 variáveis e comandos de que precisa) e uma linha à tabela acima.
+
+Um segundo workflow, `.github/workflows/engine-update.yml` (semanal, às segundas 09:37 UTC, e sob demanda), abre
+uma issue quando o GS1 Barcode Syntax Engine tem versão mais nova que `x-gs1-syntax-engine`: usa a versão nova na
+sua própria cópia, regenera o dicionário, compara (`tools/dictionary_diff.py`), roda o grupo `portal` e escreve os
+dois na issue; uma issue por versão; nunca faz push (`contents: read`, `issues: write`).
 
 O `.github/workflows/dev-tests.yml` roda um job por grupo, em paralelo, a cada push e pull request para
 `gs1br/develop` (não para mudanças só em `Documentation/` ou em arquivos Markdown), em modo estrito. O job
@@ -612,10 +633,11 @@ param=…)` e acrescente `meu.codigo` aos dois idiomas.
 **Um tipo de link.** Acrescente uma linha a `LINK_TYPES` no `gs1.py` e o nome e a descrição em `linkTypes`
 nos dois idiomas; considere o `activeLinkTypes` em `web_server/src/public/gs1resolver.json`.
 
-**Uma chave primária ou um qualificador** (numa versão futura do padrão). Acrescente o validador a
-`PRIMARY_KEYS`, as combinações a `KEY_SHAPES` e os formatos a `QUALIFIER_FORMATS` no `gs1.py`; espelhe no
-`app.js` (`NUMERIC_KEYS`, `readKey()`, `QUAL_ORDER`, `QUAL_FORMATS`); acrescente os textos `key.<AI>.*` /
-`qual.<AI>.*`; amplie o `dev-tests/portal/test_keys.py` e compare com o engine.
+**Uma chave primária ou um qualificador** (de um dicionário posterior). Vêm com o dicionário: atualize o engine
+(abaixo) e regenere o `gs1_dictionary.json`. Só é preciso código quando o formato novo tem uma forma ou um linter
+que o `key_validator()` / `qualifier_pattern()` não conhecem (a montagem para e diz qual; a issue semanal também):
+acrescente a conferência no `gs1.py` e o tipo do `.spec` no `readKey()` do `app.js`. Acrescente os textos
+`key.<AI>.*` / `qual.<AI>.*` e um nome em `PORTAL_EXCEPTIONS["key_names"]`; amplie o `dev-tests/portal/test_keys.py`.
 
 **Um endpoint da API.** Acrescente a rota na seção certa do `app.py` com `@require_login` e, para
 gravações, `@role_required("editor")`; chame `check_access()` para cada identificador; responda com
@@ -628,9 +650,14 @@ na versão em inglês e no README.
 TDS 14.5 que `_component()` não conheça; um esquema `++`, só de uma entrada em `PLUS_PLUS` enquanto o TDT
 não tiver artefato para ele. Acrescente o vetor do anexo E do TDS ao `test_epc_binary.py`.
 
-**O syntax engine.** Mude a versão num lugar só, `x-gs1-syntax-engine` no `docker-compose.yml`; toda imagem, o
-script de build, o CI e os testes a seguem (o `test_deploy.py` falha quando algo guarda uma versão própria). Rode
-todos os testes e, no servidor, `docker compose up -d --build`.
+**O syntax engine.** A tarefa semanal *GS1 Barcode Syntax Engine update check*
+(`.github/workflows/engine-update.yml`) abre uma issue quando há versão mais nova, com o que muda no dicionário e o
+resultado dos testes do portal. Para atualizar, mude a versão num lugar só, `x-gs1-syntax-engine` no
+`docker-compose.yml`; compile o engine (`portal/tools/build-syntax-engine.sh <pasta>`), regenere o dicionário
+(`python portal/tools/gen_dictionary.py <pasta>`), rode todos os testes e faça o commit dos dois; no servidor,
+`docker compose up -d --build`. Toda imagem, o script de build, o CI e os testes seguem a versão única (o
+`test_deploy.py` falha quando algo guarda uma versão própria; o `test_dictionary.py`, quando o arquivo foi feito de
+outra).
 
 ## 15. Convenções
 

@@ -800,6 +800,16 @@ with sync_playwright() as p:
     check("audit trail view", "User created" in audit_text and "reader1" in audit_text and "Password changed" in audit_text,
           audit_text[:300])
 
+    # The browser's checks come from the server (GS1 Barcode Syntax Dictionary, ADR 0003): a Pay-to GLN (415), which
+    # had no live check before, and the length of a qualifier field
+    page.goto(BASE); page.wait_for_timeout(600)
+    page.select_option("#key-type", "415"); page.fill("#key-value", "5060000000005"); page.wait_for_timeout(200)
+    check("live check of a Pay-to GLN from the server's rules", "check digit" in page.inner_text("#key-msg").lower(),
+          page.inner_text("#key-msg"))
+    page.select_option("#key-type", "01"); page.wait_for_timeout(200)
+    check("qualifier fields take their length from the dictionary (TPX 235: 28)",
+          page.get_attribute("#q-235", "maxlength") == "28", page.get_attribute("#q-235", "maxlength"))
+
     # Organisations (tenants, Documentation/adr/0002-tenants.md): the server administrator, a tenant administrator,
     # support access
     confirmations = []

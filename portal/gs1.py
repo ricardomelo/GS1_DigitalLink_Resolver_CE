@@ -13,6 +13,8 @@ import re
 import unicodedata
 from urllib.parse import quote, urlparse
 
+import gs1dict
+
 
 class ValidationError(Exception):
     """User input error. `code` is a key in the front-end message catalogue."""
@@ -150,22 +152,50 @@ def normalise_gtin(raw: str) -> str:
 
 
 # --------------------------------------------------------------------------- primary identification keys
-# GS1 Digital Link URI Syntax 1.7, section 4.3, with the value formats of section 4.5 and the checks of
-# the GS1 General Specifications as applied by the GS1 Barcode Syntax Engine (the library the resolver
-# uses to validate every request): check digits, GMN check-character pair, GS1 Company Prefix at the
-# start of alphanumeric keys, ITIP piece/total, GRAI filler zero.
+# GS1 Digital Link URI Syntax 1.7, section 4.3, with the value formats of section 4.5 and the checks of the GS1
+# General Specifications as the GS1 Barcode Syntax Engine applies them (the library the resolver uses to validate
+# every request): check digits, GMN check-character pair, GS1 Company Prefix at the start of alphanumeric keys,
+# ITIP piece/total, GRAI filler zero.
 #
-# Key qualifiers (section 4.4) and the paths of section 4.9 are described by KEY_SHAPES below.
-#
-# Alphanumeric values use a conservative subset of the 82-character set: letters, digits, full stop and
-# hyphen. "_" is excluded because the data entry service turns "/" into "_" in document ids, and the
-# other symbols would need percent-encoding in the URI.
+# The keys, their formats, their qualifiers and the order of the path come from the GS1 Barcode Syntax Dictionary
+# of the engine release written in docker-compose.yml (gs1_dictionary.json, ADR 0003): the primary keys are the
+# AIs with "dlpkey"; each key's validator is chosen from the shape of its components and their linters, with the
+# lengths of the dictionary. What the portal deliberately does differently is in PORTAL_EXCEPTIONS below. A key or
+# qualifier whose format the portal cannot check makes this module fail at import (gs1dict.DictionaryError), so a
+# new dictionary release that brings one is caught by the tests instead of being accepted unchecked.
 
 _CSET82 = "!\"%&'()*+,-./0123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz"
 _CSET32 = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 _PRIMES = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97]
-_ALNUM = re.compile(r"^[A-Za-z0-9.\-]+$")
-_CPID_CHARS = re.compile(r"^[0-9A-Z\-]+$")
+
+# What the portal does differently from the dictionary, on purpose. Each entry says why.
+PORTAL_EXCEPTIONS = {
+    # Alphanumeric values of keys (CSET 82 in the dictionary): letters, digits, full stop and hyphen. "_" is
+    # excluded because the data entry service turns "/" into "_" in document ids; the other symbols would need
+    # percent-encoding in the URI.
+    "key_chars": r"A-Za-z0-9.\-",
+    # Alphanumeric values of key qualifiers (CSET 82): letters, digits, ".", "_" and "-".
+    "qualifier_chars": r"A-Za-z0-9._\-",
+    # CPID (8010, CSET 39 in the dictionary): digits, capital letters and "-"; the portal leaves out "#" and "/".
+    "cset39_chars": r"0-9A-Z\-",
+    # ITIP (8006) is offered with 10 and 21 only: the dictionary also lists 22, but the GS1 Barcode Syntax Engine
+    # refuses 22 without 01 (an association rule of the GS1 General Specifications), so such a record could never
+    # be resolved (conformance review, erratum E2).
+    "qualifiers_left_out": {"8006": {"22"}},
+    # GTIN (01): GTIN-8, GTIN-12 and GTIN-13 are accepted as typed and stored as GTIN-14 (a convenience of the
+    # portal's forms; the URI always carries 14 digits).
+    "short_gtin": {"01"},
+    # Short names of the keys and the order of the menu, as GS1 Digital Link URI Syntax 1.7 section 4.3 lists them
+    # (the dictionary's titles are the element strings' data titles: "LOC No.", "PAY TO"). A key the dictionary
+    # adds later comes last, under its dictionary title.
+    "key_names": {"01": "GTIN", "8006": "ITIP", "8013": "GMN", "8010": "CPID", "414": "GLN", "415": "Pay-to GLN",
+                  "417": "Party GLN", "8017": "GSRNP", "8018": "GSRN", "255": "GCN", "00": "SSCC", "253": "GDTI",
+                  "401": "GINC", "402": "GSIN", "8003": "GRAI", "8004": "GIAI"},
+}
+_ALNUM = re.compile(rf"^[{PORTAL_EXCEPTIONS['key_chars']}]+$")
+_CPID_CHARS = re.compile(rf"^[{PORTAL_EXCEPTIONS['cset39_chars']}]+$")
+# Linters the portal checks itself (the engine has about 40; these are the ones keys and qualifiers use).
+KNOWN_LINTERS = {"csum", "csumalpha", "gcppos1", "gcppos2", "zero", "pieceoftotal", "nozeroprefix", "importeridx"}
 
 
 def gmn_check_pair(body: str) -> str:
@@ -196,7 +226,7 @@ def _alnum(value: str, maximum: int, pattern=_ALNUM, code="key.chars") -> None:
     if not pattern.match(value):
         raise ValidationError(code)
     if not ascii_digits(value[:4]) or len(value) < 4:
-        raise ValidationError("key.companyPrefix")      # must start with a GS1 Company Prefix
+        raise ValidationError("key.companyPrefix")      # must start with a GS1 Company Prefix (linter gcppos1)
 
 
 def _numeric_key(length: int):
@@ -208,46 +238,54 @@ def _numeric_key(length: int):
     return check
 
 
-def _itip(value: str) -> str:
+def _itip(base: int, extra: int):
     """ITIP (8006): GTIN-14 with its check digit, then piece and total, piece from 1 to total."""
-    _digits(value, 18)
-    _check_digit(value[:14])
-    piece, total = int(value[14:16]), int(value[16:18])
-    if piece == 0 or total == 0 or piece > total:
-        raise ValidationError("key.itipPiece")
-    return value
+    def check(value: str) -> str:
+        _digits(value, base + extra)
+        _check_digit(value[:base])
+        half = extra // 2
+        piece, total = int(value[base:base + half]), int(value[base + half:])
+        if piece == 0 or total == 0 or piece > total:
+            raise ValidationError("key.itipPiece")
+        return value
+    return check
 
 
-def _gmn(value: str) -> str:
+def _gmn(maximum: int):
     """GMN (8013): alphanumeric with the check-character pair of the GS1 General Specifications."""
-    _alnum(value, 25)
-    if len(value) < 3:
-        raise ValidationError("key.gmnPair", expected="")
-    expected = gmn_check_pair(value[:-2])
-    if value[-2:] != expected:
-        raise ValidationError("key.gmnPair", expected=expected)
-    return value
+    def check(value: str) -> str:
+        _alnum(value, maximum)
+        if len(value) < 3:
+            raise ValidationError("key.gmnPair", expected="")
+        expected = gmn_check_pair(value[:-2])
+        if value[-2:] != expected:
+            raise ValidationError("key.gmnPair", expected=expected)
+        return value
+    return check
 
 
-def _cpid(value: str) -> str:
-    """CPID (8010): digits, capital letters and '-' after a GS1 Company Prefix (the portal leaves out the
-    '#' and '/' of character set 39)."""
-    _alnum(value, 30, _CPID_CHARS, "key.cpidChars")
-    return value
+def _cpid(maximum: int):
+    """CPID (8010): character set 39 after a GS1 Company Prefix (see PORTAL_EXCEPTIONS)."""
+    def check(value: str) -> str:
+        _alnum(value, maximum, _CPID_CHARS, "key.cpidChars")
+        return value
+    return check
 
 
-def _gcn(value: str) -> str:
-    """GCN (255): GCN-13 with its check digit and an optional serial, 13 to 25 digits."""
-    if not ascii_digits(value):
-        raise ValidationError("key.digitsOnly")
-    if not 13 <= len(value) <= 25:
-        raise ValidationError("key.lengthRange", min=13, max=25, length=len(value))
-    _check_digit(value[:13])
-    return value
+def _digits_with_serial(base: int, minimum: int, maximum: int):
+    """GCN (255): a numeric base with its check digit and an optional numeric serial, minimum to maximum digits."""
+    def check(value: str) -> str:
+        if not ascii_digits(value):
+            raise ValidationError("key.digitsOnly")
+        if not minimum <= len(value) <= maximum:
+            raise ValidationError("key.lengthRange", min=minimum, max=maximum, length=len(value))
+        _check_digit(value[:base])
+        return value
+    return check
 
 
 def _with_serial(prefix_length: int, serial_max: int, filler: str = ""):
-    """13 digits with a check digit, then an optional serial (GDTI, GRAI)."""
+    """A numeric base with a check digit, then an optional alphanumeric serial (GDTI; GRAI after its filler)."""
     def check(value: str) -> str:
         """Checks a key made of a numeric base with check digit and an optional serial."""
         body = value
@@ -280,61 +318,113 @@ def _gtin(value: str) -> str:
     return normalise_gtin(value)
 
 
-# code: (short name, validator)
-PRIMARY_KEYS: dict[str, tuple[str, object]] = {
-    "01": ("GTIN", _gtin),
-    "8006": ("ITIP", _itip),
-    "8013": ("GMN", _gmn),
-    "8010": ("CPID", _cpid),
-    "414": ("GLN", _numeric_key(13)),
-    "415": ("Pay-to GLN", _numeric_key(13)),
-    "417": ("Party GLN", _numeric_key(13)),
-    "8017": ("GSRNP", _numeric_key(18)),
-    "8018": ("GSRN", _numeric_key(18)),
-    "255": ("GCN", _gcn),
-    "00": ("SSCC", _numeric_key(18)),
-    "253": ("GDTI", _with_serial(13, 17)),
-    "401": ("GINC", _alnum_key(30)),
-    "402": ("GSIN", _numeric_key(17)),
-    "8003": ("GRAI", _with_serial(13, 16, filler="0")),
-    "8004": ("GIAI", _alnum_key(30)),
-}
+def _shape(components: list[dict]) -> list[tuple]:
+    """A key's components as (type, min, max, optional, linters) for matching."""
+    return [(c["type"], c["min"], c["max"], c["optional"], frozenset(c["linters"])) for c in components]
 
-# --------------------------------------------------------------------------- key qualifiers
-# Section 4.4 (which AIs), 4.6 (formats) and 4.9 (path order). Each key has one or more "shapes": the
-# qualifiers allowed together, in path order, and whether each is required. A record uses exactly one
-# shape. Compound paths of 4.9 are shapes with a required qualifier: UPUI = 01 + 235, EOID = 417 + 7040,
-# FID = 414 + 7040, MID = 8004 + 7040; 415 always needs 8020.
-#
-# ITIP (8006) is offered with 10 and 21 only: the grammar of 4.9 also allows 22, but the GS1 Barcode
-# Syntax Engine the resolver uses refuses 22 without 01 (GS1 General Specifications association rule),
-# so such a record could never be resolved.
-KEY_SHAPES: dict[str, list[list[tuple[str, bool]]]] = {
-    "01": [[("22", False), ("10", False), ("21", False)], [("235", True)]],
-    "8006": [[("10", False), ("21", False)]],
-    "8010": [[("8011", False)]],
-    "414": [[("254", False)], [("7040", True)]],
-    "415": [[("8020", True)]],
-    "417": [[], [("7040", True)]],
-    "8017": [[("8019", False)]],
-    "8018": [[("8019", False)]],
-    "8004": [[], [("7040", True)]],
-}
-QUALIFIER_ORDER = ["22", "10", "21", "235", "8011", "254", "7040", "8020", "8019"]
 
-_QCHARS = r"[A-Za-z0-9._\-]"
-QUALIFIER_FORMATS: dict[str, tuple[str, re.Pattern]] = {
-    # AI: (name, pattern) — alphanumerics limited to letters, digits, ".", "_" and "-"
-    "22": ("CPV", re.compile(rf"^{_QCHARS}{{1,20}}$")),
-    "10": ("LOT", re.compile(rf"^{_QCHARS}{{1,20}}$")),
-    "21": ("SER", re.compile(rf"^{_QCHARS}{{1,20}}$")),
-    "235": ("TPX", re.compile(rf"^{_QCHARS}{{1,28}}$")),
-    "8011": ("CPID SERIAL", re.compile(r"^[1-9]\d{0,11}$", re.ASCII)),          # no leading zero
-    "254": ("GLN EXTENSION", re.compile(rf"^{_QCHARS}{{1,20}}$")),
-    "7040": ("UIC EXT", re.compile(r"^\d[A-Za-z0-9._\-]{2}[A-Za-z0-9_\-]$", re.ASCII)),   # last: importer index
-    "8020": ("REF NO", re.compile(rf"^{_QCHARS}{{1,25}}$")),
-    "8019": ("SRIN", re.compile(r"^\d{1,10}$", re.ASCII)),
-}
+def _spec(check, **spec):
+    """A validator with the description the browser repeats the check from (GET /portal/api/config)."""
+    check.spec = spec
+    return check
+
+
+def key_validator(ai: str, components: list[dict]):
+    """The validator of a primary key, chosen from the shape of its components in the dictionary, with
+    `.spec`, the same check described for the browser ({"kind": "numeric", "length": 13}, …).
+    Raises gs1dict.DictionaryError for a shape the portal cannot check."""
+    shape = _shape(components)
+    unknown = {linter for *_, linters in shape for linter in linters} - KNOWN_LINTERS
+    if unknown:
+        raise gs1dict.DictionaryError(f"key {ai}: linters {sorted(unknown)} not checked by the portal")
+    kinds = [(t, opt) for t, _, _, opt, _ in shape]
+    if ai in PORTAL_EXCEPTIONS["short_gtin"] and kinds == [("N", False)]:
+        return _spec(_gtin, kind="gtin")
+    if kinds == [("N", False)] and shape[0][1] == shape[0][2] and "csum" in shape[0][4]:
+        return _spec(_numeric_key(shape[0][2]), kind="numeric", length=shape[0][2])     # GLN, SSCC, GSRN, GSIN
+    if kinds == [("N", False), ("N", False)] and "csum" in shape[0][4] and "pieceoftotal" in shape[1][4]:
+        return _spec(_itip(shape[0][2], shape[1][2]), kind="itip", base=shape[0][2], extra=shape[1][2])
+    if kinds == [("N", False), ("N", True)] and "csum" in shape[0][4]:
+        base, maximum = shape[0][2], shape[0][2] + shape[1][2]                             # GCN
+        return _spec(_digits_with_serial(base, base, maximum), kind="digitsSerial", base=base, min=base, max=maximum)
+    if kinds == [("N", False), ("X", True)] and "csum" in shape[0][4]:
+        return _spec(_with_serial(shape[0][2], shape[1][2]), kind="withSerial", base=shape[0][2],
+                     serialMax=shape[1][2], filler="")                            # GDTI
+    if kinds == [("N", False), ("N", False), ("X", True)] and "zero" in shape[0][4] and shape[0][2] == 1 \
+            and "csum" in shape[1][4]:
+        return _spec(_with_serial(shape[1][2], shape[2][2], filler="0"), kind="withSerial", base=shape[1][2],
+                     serialMax=shape[2][2], filler="0")                           # GRAI
+    if kinds == [("X", False)] and "gcppos1" in shape[0][4]:
+        if "csumalpha" in shape[0][4]:
+            return _spec(_gmn(shape[0][2]), kind="gmn", max=shape[0][2])  # GMN
+        return _spec(_alnum_key(shape[0][2]), kind="alnum", max=shape[0][2])  # GINC, GIAI
+    if kinds == [("Y", False)] and "gcppos1" in shape[0][4]:
+        return _spec(_cpid(shape[0][2]), kind="cpid", max=shape[0][2])  # CPID
+    raise gs1dict.DictionaryError(f"key {ai}: format {components} not checked by the portal")
+
+
+def qualifier_pattern(ai: str, components: list[dict]) -> re.Pattern:
+    """The pattern of a key qualifier's value, from its components in the dictionary (see PORTAL_EXCEPTIONS).
+    Raises gs1dict.DictionaryError for a format the portal cannot check."""
+    parts = []
+    for c in components:
+        linters = set(c["linters"]) - {"nozeroprefix", "importeridx"}
+        if linters:
+            raise gs1dict.DictionaryError(f"qualifier {ai}: linters {sorted(linters)} not checked by the portal")
+        if c["type"] == "N":
+            first = "[1-9]" if "nozeroprefix" in c["linters"] else None
+            if first:
+                parts.append(f"{first}\\d{{{max(c['min'] - 1, 0)},{c['max'] - 1}}}")
+            else:
+                parts.append(f"\\d{{{c['min']},{c['max']}}}")
+        elif c["type"] == "X":
+            chars = r"A-Za-z0-9_\-" if "importeridx" in c["linters"] else PORTAL_EXCEPTIONS["qualifier_chars"]
+            parts.append(f"[{chars}]{{{c['min']},{c['max']}}}")
+        else:
+            raise gs1dict.DictionaryError(f"qualifier {ai}: type {c['type']} not checked by the portal")
+        if c["optional"]:
+            parts[-1] = f"(?:{parts[-1]})?"
+    return re.compile("^" + "".join(parts) + "$", re.ASCII)
+
+
+def _build(data: dict):
+    """PRIMARY_KEYS, KEY_SHAPES, QUALIFIER_ORDER and QUALIFIER_FORMATS from the dictionary."""
+    ais = data["ais"]
+    names = PORTAL_EXCEPTIONS["key_names"]
+    keys = [ai for ai in names if "dlpkey" in ais.get(ai, {})] + sorted(
+        ai for ai, entry in ais.items() if "dlpkey" in entry and ai not in names)
+    primary = {ai: (names.get(ai, ais[ai]["title"]), key_validator(ai, ais[ai]["components"])) for ai in keys}
+    shapes, order = {}, []
+    for ai in keys:
+        left_out = PORTAL_EXCEPTIONS["qualifiers_left_out"].get(ai, set())
+        required = {q for instance in ais[ai]["req"] for group in instance for q in group if len(instance) == 1}
+        alternatives = [[q for q in seq if q not in left_out] for seq in ais[ai]["dlpkey"]]
+        result = []
+        for index, sequence in enumerate(alternatives):
+            # the first sequence may be empty (the key alone); a later one is told apart by its first qualifier
+            shape = [(q, q in required or (index > 0 and position == 0)) for position, q in enumerate(sequence)]
+            result.append(shape)
+            order.extend(q for q in sequence if q not in order)
+        if result != [[]]:
+            shapes[ai] = result
+    formats = {q: (ais[q]["title"], qualifier_pattern(q, ais[q]["components"])) for q in order}
+    return primary, shapes, order, formats
+
+
+PRIMARY_KEYS, KEY_SHAPES, QUALIFIER_ORDER, QUALIFIER_FORMATS = _build(gs1dict.load())
+NUMERIC_KINDS = {"gtin", "numeric", "itip", "digitsSerial"}      # keys of digits only: "." and "-" are dropped
+
+
+def browser_rules() -> dict:
+    """The rules the browser repeats for live feedback (GET /portal/api/config), from the same tables: each key's
+    check, each qualifier's pattern and maximum length, the qualifier order and the portal's character sets."""
+    return {"keys": {ai: dict(validator.spec) for ai, (_, validator) in PRIMARY_KEYS.items()},
+            "qualifiers": {q: {"pattern": pattern.pattern, "max": sum(c["max"] for c in gs1dict.load()["ais"][q]["components"])}
+                           for q, (_, pattern) in QUALIFIER_FORMATS.items()},
+            "order": list(QUALIFIER_ORDER),
+            "keyChars": PORTAL_EXCEPTIONS["key_chars"], "cset39Chars": PORTAL_EXCEPTIONS["cset39_chars"],
+            "release": DICTIONARY_RELEASE}
+DICTIONARY_RELEASE = gs1dict.load()["release"]
 
 
 def key_qualifiers(ai: str) -> list[str]:
@@ -445,7 +535,7 @@ def normalise_key(ai: str, raw) -> str:
     value = re.sub(r"\s", "", without_invisible(raw))
     if not value:
         raise ValidationError("gtin.required" if ai == "01" else "key.required")
-    if ai in ("01", "414", "417", "8017", "8018", "00", "402", "8006", "255"):
+    if PRIMARY_KEYS[ai][1].spec["kind"] in NUMERIC_KINDS:
         value = value.replace(".", "").replace("-", "")     # separators people type in numbers
     return PRIMARY_KEYS[ai][1](value)
 

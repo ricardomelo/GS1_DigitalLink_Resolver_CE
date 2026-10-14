@@ -762,6 +762,7 @@ def config():
                                if ai in gs1.INFORMATIVE_QUALIFIERS else None),
                "keyLevel": gs1.has_key_level(ai)}
               for ai, (name, _) in gs1.PRIMARY_KEYS.items()],
+        rules=gs1.browser_rules(),
         languages=gs1.LANGUAGES,
         importLimits=sheet.limits(),
         dataAttributes=syntax.ENGINE.describe(),

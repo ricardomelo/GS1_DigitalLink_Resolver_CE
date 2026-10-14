@@ -10,9 +10,10 @@ them in the QR code it draws. The resolver passes the query string on to the tar
 About 200 AIs, each with its own format, check digits, date and code-list rules, and the association
 rules of the GS1 General Specifications (section 4.13: invalid pairs, mandatory associations) apply.
 Rather than reproduce them, the portal asks the GS1 Barcode Syntax Engine, the reference implementation
-the resolver also uses, through its Python binding. The engine and the GS1 Barcode Syntax Dictionary
-(names and formats of the AIs, shown in the editor) come from the same pinned release, built by
-tools/build-syntax-engine.sh into GS1_SYNTAX_ENGINE_DIR.
+the resolver also uses, through its Python binding, built by tools/build-syntax-engine.sh into
+GS1_SYNTAX_ENGINE_DIR. The AIs on offer, their titles and formats, and the AIs that belong in each key's path come
+from gs1_dictionary.json (gs1dict.py), generated from the dictionary of the same release (the one written in
+docker-compose.yml; ADR 0003); a different engine release is logged.
 
 Without the engine the portal works as before and simply does not offer data attributes.
 """
@@ -25,6 +26,7 @@ import sys
 import threading
 
 import gs1
+import gs1dict
 from gs1 import ValidationError
 
 log = logging.getLogger("portal.syntax")
@@ -35,8 +37,6 @@ ENGINE_DIR = os.environ.get("GS1_SYNTAX_ENGINE_DIR", "/opt/gs1-syntax-engine")
 MAX_ATTRIBUTES = 100
 _DECIMAL_SEPARATORS = re.compile(r"[.,]")
 
-_FLAG_CHARS = set("*!?\"$%&'()+,-./:;<=>@[\\]^_`{|}~")
-_COMPONENT = re.compile(r"^(\[)?([NXYZ])(\.\.)?(\d+)\]?(?:,(.*))?$")     # "N6,yymmd0", "[X..17]", "[N3],iso3166"
 
 
 class Engine:
@@ -75,14 +75,17 @@ class Engine:
         self._encoder = gs1encoders.GS1Encoder()
         self._errors = (gs1encoders.GS1EncoderParameterException, gs1encoders.GS1EncoderDigitalLinkException,
                         gs1encoders.GS1EncoderGeneralException)
-        with open(os.path.join(self.directory, "gs1-syntax-dictionary.txt"), encoding="utf-8") as fh:
-            self.attributes, self.path_ais = parse_dictionary(fh.read())
+        dictionary = gs1dict.load()
+        self.attributes, self.path_ais = gs1dict.data_attributes(dictionary), gs1dict.path_ais(dictionary)
         self.families = decimal_families(self.attributes)
         try:
             with open(os.path.join(self.directory, "RELEASE"), encoding="utf-8") as fh:
                 self.release = fh.read().strip()
         except OSError:
             self.release = None
+        if self.release != dictionary["release"]:
+            log.warning("GS1 Barcode Syntax Engine %s, but gs1_dictionary.json is of %s: build the engine of the "
+                        "release in docker-compose.yml", self.release, dictionary["release"])
         self.available = True
 
     def describe(self) -> dict:
@@ -232,32 +235,10 @@ def _escape(value: str) -> str:
 
 def parse_dictionary(text: str) -> tuple[dict[str, dict], dict[str, set[str]]]:
     """The AIs permitted as GS1 Digital Link data attributes (flag "?") with their title and format
-    components, and for every primary key the AIs that belong in its path (dlpkey qualifiers)."""
-    attributes, path_ais = {}, {}
-    for line in text.splitlines():
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        body, _, title = line.partition("#")
-        tokens = body.split()
-        ais, rest = tokens[0], tokens[1:]
-        flags = rest.pop(0) if rest and set(rest[0]) <= _FLAG_CHARS else ""
-        components, attrs = [], []
-        for token in rest:
-            if token.startswith(("req=", "ex=", "dlpkey")) or "=" in token and not token.startswith("["):
-                attrs.append(token)
-            else:
-                components.append(token)
-        codes = _expand(ais)
-        for token in attrs:
-            if token == "dlpkey" or token.startswith("dlpkey="):
-                qualifiers = {q for alternative in token.partition("=")[2].split("|") for q in alternative.split(",") if q}
-                for code in codes:
-                    path_ais.setdefault(code, set()).update(qualifiers)
-        if "?" in flags:
-            parsed = [_component(c) for c in components]
-            for code in codes:
-                attributes[code] = {"ai": code, "title": title.strip(), "components": parsed}
-    return attributes, path_ais
+    components, and for every primary key the AIs that belong in its path (dlpkey qualifiers), from the text of a
+    GS1 Barcode Syntax Dictionary (the portal itself reads gs1_dictionary.json)."""
+    data = gs1dict.parse(text)
+    return gs1dict.data_attributes(data), gs1dict.path_ais(data)
 
 
 def decimal_families(attributes: dict[str, dict]) -> dict[str, dict]:
@@ -272,25 +253,6 @@ def decimal_families(attributes: dict[str, dict]) -> dict[str, dict]:
             family["members"].append(code)
             family["decimals"] = max(family["decimals"], int(code[3]))
     return families
-
-
-def _expand(ais: str) -> list[str]:
-    """AIs of a Syntax Dictionary range ("3100-3105" → 3100, 3101, …)."""
-    if "-" not in ais:
-        return [ais]
-    first, last = ais.split("-")
-    return [str(n).zfill(len(first)) for n in range(int(first), int(last) + 1)]
-
-
-def _component(token: str) -> dict:
-    """ "N6,yymmd0" → {type N, min 6, max 6, linters [yymmd0]}; "[X..17]" → optional, 1..17."""
-    match = _COMPONENT.match(token)
-    if not match:
-        return {"type": "X", "min": 1, "max": 90, "optional": False, "linters": []}
-    opening, kind, variable, length, linters = match.groups()
-    length = int(length)
-    return {"type": kind, "min": 1 if variable else length, "max": length, "optional": bool(opening),
-            "linters": [x for x in (linters or "").split(",") if x]}
 
 
 ENGINE = Engine(ENGINE_DIR)

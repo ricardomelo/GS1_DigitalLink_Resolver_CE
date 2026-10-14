@@ -114,6 +114,22 @@ files into a work folder, compares them with the committed ones (`portal/tools/d
 portal group of the development tests against it, and opens an issue with the summary. Permissions: `contents:
 read`, `issues: write`. It never changes the branch.
 
+### 3.6 As implemented in steps 2 and 3
+
+- Step 2 put the release in `docker-compose.yml` and the build arguments in place; the weekly job came with step 3,
+  because it needs the generator and the comparison (`portal/tools/dictionary_diff.py`), which also says whether the
+  portal can build its rules from the new dictionary. The job uses the new release in its own copy of the
+  repository (the compose value rewritten there), so the CI set-up action builds and installs it unchanged; only
+  numbered releases count (the repository also has old date tags).
+- `gs1dict.py` holds the parser and the reader; `gs1_dictionary.json` has one AI per line. The portal image copies
+  every `*.json` of `portal/` with its modules (`test_deploy.py` starts the portal from the image's files).
+- Beyond section 3.2: the browser no longer repeats lengths and formats either. `/config` sends `rules`
+  (`gs1.browser_rules()`: each key's check as a kind and its numbers, each qualifier's pattern and maximum length,
+  the order), and `app.js` checks from them; a Pay-to GLN (415), which had no live check in the browser, now has
+  one. The qualifiers' names in `QUALIFIER_FORMATS` are now the dictionary's titles (they are not shown).
+- Two keys' shapes are written differently and accept exactly the same records: 417 and 8004 were "alone, or with
+  7040 required" and are now "7040 optional", as the dictionary writes them.
+
 ## 4. Options considered
 
 | Point | Chosen (recommended) | Not chosen |

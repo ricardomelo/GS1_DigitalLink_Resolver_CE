@@ -5,7 +5,6 @@
 | Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (keys, the API and its description on the server), 3 (the API keys screen) |
 | Backlog item | 3.2 — tenant API and API keys |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 |
-| Portuguese | [ADR 0005 em português](../pt-BR/adr/0005-api-das-organizacoes.md) |
 
 ## 1. Context
 

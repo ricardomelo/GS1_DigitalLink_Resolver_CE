@@ -1,7 +1,5 @@
 # Conformance review
 
-*Versão em português: [Revisão de conformidade](pt-BR/revisao-de-conformidade.md).*
-
 A clause-by-clause review of this branch against the two GS1 standards it implements:
 
 - **GS1 Digital Link Standard: URI Syntax**, release 1.7.0 (ratified, August 2026) — "URI Syntax" below;

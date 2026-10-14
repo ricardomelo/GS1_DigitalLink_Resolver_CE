@@ -2,6 +2,14 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Documentation in English only
+- The Brazilian Portuguese documentation is removed: `Documentation/pt-BR/` (overview, user guide, features, history,
+  developer guide, conformance review, ADRs 0001–0006) and the Portuguese screenshots
+  (`Documentation/images/guide/pt-BR/`). Readers of other languages can use their browser's translation. The links to
+  them are gone from the README, the documentation index, the English documents and the ADRs;
+  `dev-tests/docs/screenshots.py` makes the English images only. **The software is unchanged**: the portal, the
+  resolver's pages, the home page and the e-mail messages stay in Brazilian Portuguese and British English.
+
 ### Backlog
 - Item 4.4, a weekly summary by e-mail per organisation, removed from the open backlog in the README (both
   languages) at the owner's request, 14 October. No other item depended on it.

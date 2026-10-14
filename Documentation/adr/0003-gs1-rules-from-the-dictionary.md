@@ -5,7 +5,6 @@
 | Status | **Accepted** (13 October 2026) and **implemented** in four steps: 1 (this record), 2 (one engine release), 3 (rules generated from the dictionary, the weekly check), 4 (engine messages translated, new AIs named); see section 3.6 |
 | Backlog item | 2.5 — one source for the GS1 rules |
 | Decided by | the owner of the branch, on the options of section 4 (all four recommended) |
-| Portuguese | [ADR 0003 em português](../pt-BR/adr/0003-regras-gs1-do-dicionario.md) |
 
 ## 1. Context
 

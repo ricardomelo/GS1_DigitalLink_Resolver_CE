@@ -5,7 +5,6 @@
 | Status | **Accepted** (13 October 2026). **Implemented** in four steps: 1 (this record), 2 (the data in MongoDB), 3 (the job worker) and 4 (replicas) |
 | Backlog item | 2.3 — architecture for scale and the portal's data in MongoDB |
 | Decided by | the owner of the branch, on the options set out in section 4 |
-| Portuguese | [ADR 0001 em português](../pt-BR/adr/0001-estado-do-portal-no-mongodb.md) |
 
 ## 1. Context
 

@@ -54,10 +54,6 @@ adds what an organisation needs to run one for its members:
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).
 
-**Documentação em português do Brasil:** [Documentation/pt-BR](Documentation/pt-BR/README.md) — visão geral,
-instalação e operação, guia do portal, funcionalidades, histórico, guia do desenvolvedor, revisão de
-conformidade e decisões de arquitetura.
-
 ## Contents
 
 1. [The original project](#the-original-project)
@@ -672,7 +668,6 @@ Later, when convenient:
 - Export only the filtered records; bookmarkable filters.
 - A way to fix records registered before rule 2 of 2.5.9 was enforced (today they are only flagged).
 - Data entry API: check values with the engine, not only the structure (rest of finding F11).
-- A Portuguese version of the extensions documentation.
 
 ## Repository layout
 
@@ -692,10 +687,9 @@ scripts/                        install.sh, templates/ (nginx), resolver-backup.
 dev-tests/                      development tests (see above)
 .github/                        workflows/dev-tests.yml (continuous integration), actions/dev-tests-setup/
 Documentation/                  README.md (index), portal-user-guide.md, features.md, history.md,
-                                developer-guide.md, pt-BR/ (documentation in Portuguese),
-                                extensions/ (detailed documentation, changelog), images/ (README),
-                                adr/ (architecture decision records),
-                                images/guide/ (user guide, pt-BR/ in Portuguese), upstream-README.md
+                                developer-guide.md, extensions/ (detailed documentation, changelog),
+                                images/ (README), adr/ (architecture decision records),
+                                images/guide/ (user guide), upstream-README.md
 tests/, useful_external_python_scripts/   official tests and conversion scripts
 ```
 

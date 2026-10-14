@@ -5,7 +5,6 @@
 | Status | **Accepted** (14 October 2026). Implemented in three steps: 1 (this record), 2 (sending, single-use links, notifications and their settings on the server; section 3.8), 3 (screens; section 3.9) |
 | Backlog item | 3.1 — e-mail |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 while he was away |
-| Portuguese | [ADR 0004 em português](../pt-BR/adr/0004-e-mail.md) |
 
 ## 1. Context
 

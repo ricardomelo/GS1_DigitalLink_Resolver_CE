@@ -8,8 +8,6 @@ with the docstrings in the code, which describe each function, and with the
 For installation and configuration see the [README](../README.md); for using the portal, the
 [user guide](portal-user-guide.md).
 
-*Versão em português: [guia do desenvolvedor](pt-BR/guia-do-desenvolvedor.md).*
-
 ## Contents
 
 1. [Architecture](#1-architecture)
@@ -139,8 +137,8 @@ dev-tests/                       new: development tests, their pytest layer and 
 .github/workflows/dev-tests.yml  new: continuous integration (development tests on GitHub Actions)
 .github/actions/dev-tests-setup/ new: runner set-up for the tests, with the pinned versions
 Documentation/                   README index, user guide, features, history, this guide,
-                                 pt-BR/ (these documents in Portuguese), extensions/ (detailed
-                                 documentation, changelog), images/, upstream-README.md
+                                 extensions/ (detailed documentation, changelog), images/,
+                                 upstream-README.md
 tests/, useful_external_python_scripts/   official
 ```
 
@@ -772,8 +770,7 @@ the versions, `gs1encoder`'s read from `docker-compose.yml`); the portal's engin
 Compose v2.29.7. Change a version there, in one place; the engine's release is not there but in
 `docker-compose.yml`.
 
-`docs/screenshots.py` regenerates the images of the README and of the user guide, in English and in
-Portuguese, from the real portal with example data (GS1 logo hidden). The e-mail images (`mail_images()`) are made with e-mail
+`docs/screenshots.py` regenerates the images of the README and of the user guide, in English, from the real portal with example data (GS1 logo hidden). The e-mail images (`mail_images()`) are made with e-mail
 switched on for them only, against the relay of `fake_smtp.py`. Commit only images that really changed.
 
 ## 14. How to extend
@@ -824,4 +821,5 @@ follow the one release (`test_deploy.py` fails when something holds a release of
 - Secrets never printed or committed; `.env.example` holds development defaults only.
 - One topic per commit, with a message explaining why; every test passes before delivery.
 - Docstrings on every function written for the fork; the official functions keep their original form.
-- Documents that exist in both languages (`Documentation/` and `Documentation/pt-BR/`) change together.
+- Documentation in British English only; the interface's texts (`i18n.js`, `mailtexts.py`, `web_pages.py`) stay in
+  pt-BR and en-GB.

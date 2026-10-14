@@ -9,8 +9,6 @@ The work was done in six working sessions between 22 September and 2 October 202
 installation of the resolver run by the maintainer. Every increment was tested on that installation before
 the next one started.
 
-*Versão em português: [histórico](pt-BR/historico.md).*
-
 ## Timeline
 
 | Session | Dates (2026) | Delivery | Result |
@@ -148,7 +146,7 @@ hidden.
 | `f4f3071` | record list filters by primary key type and key qualifier, with counts; a pasted GS1 Digital Link or bracketed element string finds the exact record and the related ones |
 | `d11c369` | "one other record" in the singular under *Open record* |
 | `52a1087` | docstrings for every function written for the fork; map of `app.js` |
-| documentation | [portal user guide](portal-user-guide.md) with screenshots, [features](features.md), this history, [developer guide](developer-guide.md), documentation index, README; then all of it in Brazilian Portuguese ([pt-BR](pt-BR/README.md)), with screenshots in Portuguese |
+| documentation | [portal user guide](portal-user-guide.md) with screenshots, [features](features.md), this history, [developer guide](developer-guide.md), documentation index, README; then all of it in Brazilian Portuguese, with screenshots in Portuguese (removed on 14 October) |
 
 "Key attributes" in the request was read as the key qualifiers of the standard: data attributes are never
 stored, so they cannot be filtered.
@@ -496,6 +494,13 @@ stand-in `docker` and checks the dump's options (62 checks).
 **Backlog, 14 October.** The owner removed item 4.4, a weekly summary by e-mail per organisation, from the open
 backlog. No item depended on it, so nothing else moved; item 4.3, monitoring and alerts by e-mail, stays.
 
+**Documentation in English only, 14 October.** The owner dropped the Brazilian Portuguese documentation
+(`Documentation/pt-BR/`, the six ADRs in Portuguese and the Portuguese screenshots of the user guide): keeping every
+document in two languages doubled the work of each delivery, and readers of other languages can use the translation
+built into their browser. The portal, the resolver's pages, the home page and the e-mail messages keep Brazilian
+Portuguese and British English, as before. The commits and sessions above that mention the Portuguese documents
+describe them as they were.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -512,7 +517,7 @@ backlog. No item depended on it, so nothing else moved; item 4.3, monitoring and
 | Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
 | Tests | 69 checks | 2,133 checks in 28 test programs (one of them GS1's own test suite), plus the installer test (87); run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
 | Deployment | one container per service, Flask's built-in server, the proxy restarted by hand | any number of replicas of the four stateless services (set in `.env`), gunicorn in every web service, a proxy that follows replicas through Docker's DNS |
-| Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
+| Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English; also in Portuguese until 14 October), extensions documentation, changelog |
 
 ## Decisions that stay unless deliberately revisited
 
@@ -554,6 +559,8 @@ backlog. No item depended on it, so nothing else moved; item 4.3, monitoring and
 16. The resolver records each request it answers, in the background and without anything that identifies the person
     who scanned; raw events expire, daily counts per key last; whose events they are is decided at query time from the
     key ([ADR 0006](adr/0006-resolver-request-log.md)).
+17. The documentation is written in British English only; the software's own texts (portal, resolver pages, home
+    page, e-mail) stay in Brazilian Portuguese and British English.
 
 ## Lessons learnt
 

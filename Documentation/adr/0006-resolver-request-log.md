@@ -5,7 +5,6 @@
 | Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (the log on the server: capture in the resolver, daily aggregates and reading in the portal, the tenant API's calls), 3 (the *Requests* screen) |
 | Backlog item | 4.1 — log of resolver requests |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 |
-| Portuguese | [ADR 0006 em português](../pt-BR/adr/0006-registro-de-requisicoes.md) |
 
 ## 1. Context
 

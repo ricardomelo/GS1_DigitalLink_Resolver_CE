@@ -1,7 +1,6 @@
 """
 Produces the screenshots used by README.md (Documentation/images/*.png) and by the portal user guide in
-English (Documentation/images/guide/*.png) and in Brazilian Portuguese (Documentation/images/guide/pt-BR/)
-from the real portal and home page, with example data and no network access. The GS1 logo is hidden in the images (it is a GS1
+English (Documentation/images/guide/*.png) from the real portal and home page, with example data and no network access. The GS1 logo is hidden in the images (it is a GS1
 trademark and the images illustrate the software, not an endorsement). Run it again after visual changes.
 
   pip install -r portal/requirements.txt playwright pillow && playwright install chromium
@@ -212,10 +211,9 @@ with sync_playwright() as p:
     browser.close()
 
 
-def guide_images(locale: str, folder: str, description: str, own_copies: bool) -> None:
-    """Every image of the portal user guide in one language (Documentation/portal-user-guide.md and
-    Documentation/pt-BR/guia-do-portal.md). With own_copies the images the English guide borrows from the
-    README (attributes, record list, import, users) are written too, in this language."""
+def guide_images(locale: str, folder: str, description: str) -> None:
+    """Every image of the portal user guide (Documentation/portal-user-guide.md). The guide borrows the images of
+    the attributes, the record list, the import and the users from the README's."""
     os.makedirs(os.path.join(OUT, folder), exist_ok=True)
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -245,13 +243,10 @@ def guide_images(locale: str, folder: str, description: str, own_copies: bool) -
         open_record(page, "09506000134376", {"22": "V1", "10": "B42", "21": "S1001"})
         save_element(page, f"{folder}/label-panel.png", ".label-panel")
         save_element(page, f"{folder}/step1-serial.png", "section.step:first-of-type")
-        if own_copies and syntax.ENGINE.available:
-            add_attributes(page)
-            save_element(page, f"{folder}/attributes.png", ".label-panel", pad=8)
 
         # Saving a batch of a GTIN without a record of its own (section 2.5.9), and copying targets
         open_record(page, "09506000134901", {"10": "L1"})
-        page.fill("#description", "Chá verde 250 g — lote L1" if locale == "pt-BR" else "Green tea 250 g — batch L1")
+        page.fill("#description", "Green tea 250 g — batch L1")
         page.fill(".link-row .url", "https://brand.example/tea/L1"); page.click("#description")
         page.click("#save"); page.wait_for_timeout(500)
         save_element(page, f"{folder}/key-record-dialog.png", "#keyrecord-dialog", pad=4)
@@ -264,8 +259,6 @@ def guide_images(locale: str, folder: str, description: str, own_copies: bool) -
 
         # Record list: filters and code search (the link check of the README pass is still shown)
         page.goto(BASE + "#records"); page.wait_for_timeout(900)
-        if own_copies:
-            save(page, f"{folder}/records.png", clip={"x": 0, "y": 0, "width": 1280, "height": 900})
         page.select_option("#records-key", "01"); page.select_option("#records-qualifier", "10"); page.wait_for_timeout(200)
         save_element(page, f"{folder}/records-filters.png", "#records-view .sheet")
         page.click("#records-clear")
@@ -276,13 +269,6 @@ def guide_images(locale: str, folder: str, description: str, own_copies: bool) -
         page.click("#records-alert-show"); page.wait_for_timeout(200)
         save_element(page, f"{folder}/records-status.png", "#records-view .sheet")
         page.click("#records-clear")
-        if own_copies:
-            page.click("#records-import"); page.wait_for_timeout(200)
-            page.set_input_files("#import-file", import_file()); page.wait_for_timeout(1500)
-            save(page, f"{folder}/import.png")
-            page.click("#import-cancel")
-            page.goto(BASE + "#users"); page.wait_for_timeout(900)
-            save(page, f"{folder}/users.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1000})
 
         # Administration and options
         page.goto(BASE + "#audit"); page.wait_for_timeout(900)
@@ -314,7 +300,7 @@ def tenant_images(page, folder: str, locale: str) -> None:
     page.goto(BASE + "#tenants"); page.wait_for_timeout(900)
     save(page, f"{folder}/organisations.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1000})
     page.click("#tenants-body tr:first-child button.btn-ghost >> nth=1"); page.wait_for_timeout(300)
-    page.fill("#support-reason", "Chamado 42: destino errado" if locale == "pt-BR" else "Ticket 42: wrong target")
+    page.fill("#support-reason", "Ticket 42: wrong target")
     save_element(page, f"{folder}/support-dialog.png", "#support-dialog", pad=4)
     page.click("#support-open"); page.wait_for_timeout(1500)
     save(page, f"{folder}/support-banner.png", clip={"x": 0, "y": 0, "width": 1280, "height": 720})
@@ -379,7 +365,7 @@ def apikey_images(browser, folder: str, locale: str) -> None:
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(1000)
     page.goto(BASE + "#apikeys"); page.wait_for_timeout(900)
-    page.fill("#new-apikey-name", "ERP" if locale == "en-GB" else "Integração ERP")
+    page.fill("#new-apikey-name", "ERP")
     page.check("#apikeys-create input[value='records:write']")
     page.click("#apikeys-create button[type=submit]"); page.wait_for_timeout(1200)
     save(page, f"{folder}/api-keys.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1100})
@@ -444,8 +430,7 @@ def requests_images(browser, folder: str, locale: str) -> None:
     ctx.close()
 
 
-guide_images("en-GB", "guide", "Organic açaí 500 g — batch L2026A", own_copies=False)
-guide_images("pt-BR", "guide/pt-BR", "Açaí orgânico 500 g — lote L2026A", own_copies=True)
+guide_images("en-GB", "guide", "Organic açaí 500 g — batch L2026A")
 
 # Home page
 with sync_playwright() as p:
@@ -453,7 +438,4 @@ with sync_playwright() as p:
     page = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900}).new_page()
     page.goto(f"http://127.0.0.1:{HOME_PORT}/"); page.wait_for_timeout(800)
     save(page, "home.png")
-    page = browser.new_context(locale="pt-BR", viewport={"width": 1280, "height": 900}).new_page()
-    page.goto(f"http://127.0.0.1:{HOME_PORT}/"); page.wait_for_timeout(800)
-    save(page, "guide/pt-BR/home.png")
     browser.close()

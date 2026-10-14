@@ -9,8 +9,6 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 [developer guide](developer-guide.md). Design decisions and details:
 [extensions documentation](extensions/README.md).
 
-*Versão em português: [funcionalidades](pt-BR/funcionalidades.md).*
-
 ## Contents
 
 - [Resolver (public resolution)](#resolver-public-resolution)

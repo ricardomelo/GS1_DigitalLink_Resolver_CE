@@ -5,7 +5,6 @@
 | Status | **Accepted** (13 October 2026). Implemented in three steps: 1 (this record), 2 (data model, server checks and audit; section 3.9), 3 (screens; section 3.10) |
 | Backlog item | 2.4 — tenants |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 |
-| Portuguese | [ADR 0002 em português](../pt-BR/adr/0002-organizacoes.md) |
 
 ## 1. Context
 

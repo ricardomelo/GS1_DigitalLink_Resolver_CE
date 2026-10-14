@@ -9,8 +9,6 @@ English version.
 For installation and operation see the [README](../README.md); for how the portal works inside see the
 [developer guide](developer-guide.md).
 
-*Versão em português: [guia do portal](pt-BR/guia-do-portal.md).*
-
 ## Contents
 
 1. [What the portal does](#1-what-the-portal-does)

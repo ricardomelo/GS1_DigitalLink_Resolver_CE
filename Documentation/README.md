@@ -17,6 +17,7 @@ an installation is responsible for its use (see the notice at the top of the [RE
 | [Tenants](adr/0002-tenants.md) | maintainers, developers, operators | ADR 0002: organisations that own GS1 Company Prefixes, the server administrator, support access, an audit trail per tenant |
 | [GS1 rules from the dictionary](adr/0003-gs1-rules-from-the-dictionary.md) | maintainers, developers | ADR 0003: one source for the GS1 rules (the GS1 Barcode Syntax Dictionary), one engine release, engine messages translated, a weekly update check |
 | [E-mail](adr/0004-e-mail.md) | maintainers, developers, operators | ADR 0004: outgoing mail through an authenticated relay, invitations, password recovery by single-use link, notifications with per-user preferences |
+| [Tenant API](adr/0005-tenant-api.md) | maintainers, developers, operators | ADR 0005: the portal's versioned API for organisations' systems, API keys created by administrators (scopes, prefixes, expiry, hash only), a request limit per key, OpenAPI description |
 | [Official README](upstream-README.md) | — | the README of the official GS1 Resolver CE, kept for reference |
 | [Development tests](../dev-tests/README.md) | developers | how to set up and run the tests |
 | [Documentação em português](pt-BR/README.md) | Portuguese readers | overview, installation and operation, plus the user guide, features, history, developer guide, conformance review and architecture decisions in Brazilian Portuguese |

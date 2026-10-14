@@ -48,6 +48,7 @@ adds what an organisation needs to run one for its members:
 | [Tenants](Documentation/adr/0002-tenants.md) | ADR 0002: organisations that own GS1 Company Prefixes, support access, an audit trail per tenant |
 | [GS1 rules from the dictionary](Documentation/adr/0003-gs1-rules-from-the-dictionary.md) | ADR 0003: one source for the GS1 rules, one engine release, engine messages translated |
 | [E-mail](Documentation/adr/0004-e-mail.md) | ADR 0004: an authenticated relay, invitations, password recovery, notifications |
+| [Tenant API](Documentation/adr/0005-tenant-api.md) | ADR 0005: a versioned API of the portal for organisations, API keys with scopes, expiry and a request limit |
 
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).

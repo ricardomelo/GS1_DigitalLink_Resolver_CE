@@ -48,6 +48,7 @@ uma organização precisa para operar um Resolver para os seus associados:
 | [Regras GS1 do dicionário](adr/0003-regras-gs1-do-dicionario.md) | mantenedores, desenvolvedores | ADR 0003: uma fonte única para as regras GS1 (o GS1 Barcode Syntax Dictionary), uma versão do motor, mensagens do motor traduzidas, uma verificação semanal de atualizações |
 | [E-mail](adr/0004-e-mail.md) | mantenedores, desenvolvedores, operadores | ADR 0004: e-mail de saída por um relay autenticado, convites, recuperação de senha por link de uso único, notificações com preferências por usuário |
 | [API das organizações](adr/0005-api-das-organizacoes.md) | mantenedores, desenvolvedores, operadores | ADR 0005: a API versionada do portal para os sistemas das organizações, chaves de API criadas pelos administradores (escopos, prefixos, validade, só o hash), um limite de requisições por chave, descrição OpenAPI |
+| [Registro de requisições](adr/0006-registro-de-requisicoes.md) | mantenedores, desenvolvedores, operadores | ADR 0006: o Resolver registra cada requisição de resolução de forma assíncrona e sem dados pessoais (nenhum endereço, nenhum User-Agent, nenhum número de série), eventos brutos com expiração, agregados diários por chave feitos pelo worker, atribuição às organizações na hora da consulta, as chamadas da API das organizações |
 
 Em inglês ficam também a [documentação detalhada das extensões](../extensions/README.md), o
 [changelog](../extensions/CHANGELOG.md) e o [README oficial](../upstream-README.md). O índice de todos os

@@ -49,6 +49,7 @@ adds what an organisation needs to run one for its members:
 | [GS1 rules from the dictionary](Documentation/adr/0003-gs1-rules-from-the-dictionary.md) | ADR 0003: one source for the GS1 rules, one engine release, engine messages translated |
 | [E-mail](Documentation/adr/0004-e-mail.md) | ADR 0004: an authenticated relay, invitations, password recovery, notifications |
 | [Tenant API](Documentation/adr/0005-tenant-api.md) | ADR 0005: a versioned API of the portal for organisations, API keys with scopes, expiry and a request limit |
+| [Request log](Documentation/adr/0006-resolver-request-log.md) | ADR 0006: the resolver records each request without personal data, daily aggregates per key, each organisation seeing its own |
 
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).

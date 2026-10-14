@@ -7,4 +7,5 @@ pillow>=10.4,<13
 openpyxl>=3.1,<4
 pymongo>=4.16,<5
 dnspython>=2.6,<3   # the DNS proof of the organisations' own domains (domains.py)
+pyjwt[crypto]>=2.8,<3   # single sign-on: ID tokens verified with the provider's keys (sso.py)
 tzdata>=2024.1   # time zones for the daily request counts (PORTAL_TIME_ZONE), whatever the image holds

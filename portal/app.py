@@ -44,6 +44,7 @@ import notify
 import overview
 import requestlog
 import sheet
+import sso
 import store
 import syntax
 import tenants
@@ -315,7 +316,8 @@ def require_login(view):
         set_scope(username, account, session.get("support"))
         if session.get("support") and not g.support:
             session.pop("support", None)                # the tenant was removed meanwhile
-        g.must_change = bool(account.get("mustChange"))
+        # a temporary password matters only to who signs in with it, not after single sign-on (ADR 0012)
+        g.must_change = bool(account.get("mustChange")) and session.get("via") != "sso"
         if g.must_change and request.path.startswith("/portal/api/") and request.path not in MUST_CHANGE_ALLOWED:
             return message("password.mustChange", 403)
         return view(*args, **kwargs)
@@ -346,6 +348,43 @@ def admin_required(view):
             return message("access.role", 403, params={"role": "admin"})
         return view(*args, **kwargs)
     return wrapper
+
+
+# Per-role limits on exports (backlog item 7.1): PORTAL_EXPORT_LIMITS = "reader:0,editor:20000" — the most rows (records,
+# requests) one export of a role may hold, 0 for none; a role not named, and administrators, have no limit.
+def _export_limits(text: str) -> dict[str, int]:
+    limits = {}
+    for part in text.split(","):
+        role, _, number = part.strip().partition(":")
+        if not part.strip():
+            continue
+        if role.strip() not in users.ROLES or not number.strip().isdigit():
+            log.warning("PORTAL_EXPORT_LIMITS: %r ignored (role:number, the role one of %s)", part, ", ".join(users.ROLES))
+            continue
+        limits[role.strip()] = int(number)
+    return limits
+
+
+EXPORT_LIMITS = _export_limits(os.environ.get("PORTAL_EXPORT_LIMITS", ""))
+
+
+def export_limit() -> int | None:
+    """The most rows an export of this request may hold (None: no limit). The limit is the role's in the request's
+    scope; administrators of the account (and server administrators, also during support access) have none."""
+    if g.account_role == "admin":
+        return None
+    return EXPORT_LIMITS.get(g.role)
+
+
+def export_refused(rows: int | None = None):
+    """A refusal when the role may not export, or not this many rows (None: allowed). Recorded in the journal."""
+    limit = export_limit()
+    if limit is None or (limit and (rows is None or rows <= limit)):
+        return None
+    log_event("export-refused", detail=f"role={g.role} rows={'-' if rows is None else rows} limit={limit}")
+    if limit == 0:
+        return message("export.notAllowed", 403, params={"role": g.role})
+    return message("export.tooMany", 422, params={"max": limit, "rows": rows})
 
 
 def server_admin_required(view):
@@ -715,15 +754,30 @@ def login():
         audit.info("user=%s action=login-refused addr=%s", username, client_address())
         log_event("login-refused", user=username, detail=client_address(), tenant=tenant, actor_tenant=tenant)
         return message("auth.tenantDisabled", 403)
+    if sso.password_off_for(account):
+        # the organisation signs its people in with its own provider (ADR 0012); the password was right, so saying
+        # so tells nothing to someone who did not know it
+        throttle.clear(*keys)
+        audit.info("user=%s action=login-refused addr=%s reason=sso-only", username, client_address())
+        log_event("login-refused", user=username, detail=f"{client_address()} password sign-in off (single sign-on)",
+                  tenant=tenant, actor_tenant=tenant)
+        return message("auth.ssoRequired", 403)
     throttle.clear(*keys)
+    open_session(username, data.get("language"), client_address())
+    return message("auth.welcome", 200, user=username, mustChange=bool((users.get(username) or {}).get("mustChange")))
+
+
+def open_session(username: str, language, detail: str) -> None:
+    """Signs the user in on this browser (password or single sign-on): a new session bound to the account's password
+    fingerprint, the audit trail and the journal."""
+    tenant = (users.get(username) or {}).get("tenant")
     session.clear()
     session.permanent = True
     session.update(user=username, fp=users.fingerprint(username), was_logged_in=True, since=int(time.time()))
     audit.info("user=%s action=login addr=%s", username, client_address())
     users.touch_login(username)
-    users.note_language(username, data.get("language"))     # the language of his messages, until he chooses one
-    log_event("login", user=username, detail=client_address(), tenant=tenant, actor_tenant=tenant)
-    return message("auth.welcome", 200, user=username, mustChange=bool((users.get(username) or {}).get("mustChange")))
+    users.note_language(username, language)     # the language of his messages, until he chooses one
+    log_event("login", user=username, detail=detail, tenant=tenant, actor_tenant=tenant)
 
 
 @app.post("/portal/api/logout")
@@ -775,7 +829,7 @@ def change_password():
 @app.get("/portal/api/login/options")
 def login_options():
     """What the sign-in page offers besides the password: recovery by e-mail when mail is on."""
-    return jsonify(passwordRecovery=mail.enabled())
+    return jsonify(passwordRecovery=mail.enabled(), sso=sso.any_enabled())
 
 
 def _link_params(purpose: str, token: str) -> dict:
@@ -813,7 +867,7 @@ def forgot_password():
     throttle.fail(*keys)
     username = users.find_login(typed)
     account = users.get(username) if username else None
-    if account and account.get("email") and notify.reachable(account):
+    if account and account.get("email") and notify.reachable(account) and not sso.password_off_for(account):
         language = account.get("language") or data.get("language")
         if send_link(username, "reset", "password-recovery", language=language):
             tenant = account.get("tenant")
@@ -923,6 +977,7 @@ def config():
                  "verified": [{"domain": d["_id"], "url": domains.base_url(d), "defaultFor": d.get("defaultFor") or []}
                               for d in domains.verified(g.tenant)]},
         preferences=preferences_of(users.get(g.user) or {}),
+        exportLimit=export_limit(),
     )
 
 
@@ -1239,6 +1294,9 @@ def export_records():
                         "qualifiers": gs1.join_informative(entry.get("qualifiers", []), entry.get("informative", [])),
                         "description": line.get("itemDescription") or "",
                         "defaultLinkType": line.get("defaultLinktype"), "links": line.get("links") or []})
+    refused = export_refused(len(records))
+    if refused:
+        return refused
     rows = sheet.export_rows(records)
     stamp = time.strftime("%Y%m%d-%H%M")
     audit.info("user=%s action=export format=%s records=%d rows=%d", g.user, data.get("format"), len(records), len(rows))
@@ -2031,11 +2089,19 @@ def requests_csv():
     """The resolver requests matching the filters as CSV for Excel (UTF-8 with BOM, ';', cells protected against
     formulas), at most requestlog.MAX_EXPORT rows. A journal event: the export of the log."""
     scope, whole = request_log_scope()
+    refused = export_refused()            # a role that may not export at all: before reading anything
+    if refused:
+        return refused
+    limit = export_limit()
     try:
-        found = requestlog.list_events(request.args, scope, limit=requestlog.MAX_EXPORT,
+        found = requestlog.list_events(request.args, scope,
+                                       limit=requestlog.MAX_EXPORT if limit is None else min(requestlog.MAX_EXPORT, limit + 1),
                                        organisations=g.tenants if whole else None)
     except PyMongoError as exc:
         return _log_unavailable(exc)
+    refused = export_refused(len(found["events"]))
+    if refused:
+        return refused
     out = io.StringIO()
     writer = csv.writer(out, delimiter=";", lineterminator="\r\n")
     columns = REQUEST_CSV_COLUMNS + (["organisation"] if whole else [])
@@ -2250,6 +2316,119 @@ def remove_branding(prefix):
     return message("branding.removed", 200, params={"prefix": doc["_id"]})
 
 
+# --------------------------------------------------------------------------- single sign-on (ADR 0012)
+SSO_CALLBACK = PORTAL_ORIGIN + "/portal/sso/callback"
+
+
+@app.errorhandler(sso.SsoError)
+def on_sso_error(err):
+    return message(err.code, 422)
+
+
+@app.post("/portal/api/sso/start")
+def sso_start():
+    """The provider's address for the e-mail typed on the sign-in page (Documentation/adr/0012-single-sign-on.md)."""
+    data = request.get_json(silent=True) or {}
+    # not throttled: nothing secret is checked here, and a whole office signing in at nine shares one address
+    url = sso.start(str(data.get("email", "")), SSO_CALLBACK, session)
+    session["sso"]["language"] = str(data.get("language") or "")[:10]
+    return jsonify(url=url)
+
+
+@app.get("/portal/sso/callback")
+def sso_callback():
+    """The provider's answer: signed in and on to the portal, or back to the sign-in page with the reason."""
+    language = (session.get("sso") or {}).get("language")
+    scope = (session.get("sso") or {}).get("scope")
+    try:
+        username, doc = sso.finish(request.args, SSO_CALLBACK, session)
+    except sso.SsoError as err:
+        tenant = sso.tenant_of(scope) if scope else None
+        audit.info("user=- action=login-failed addr=%s reason=%s", client_address(), err.code)
+        log_event("login-failed", user=shown_username(err.detail if "@" in err.detail else ""),
+                  detail=f"{client_address()} single sign-on: {err.code} {err.detail}"[:300],
+                  tenant=tenant, actor_tenant=tenant)
+        if scope and err.code != "sso.expired":
+            sso.note(scope, False, err.code, err.detail)
+        session.pop("sso", None)
+        return redirect("/portal/login?sso=" + err.code.split(".", 1)[1])
+    account = users.get(username)
+    if tenant_blocked(account):
+        log_event("login-refused", user=username, detail=f"{client_address()} single sign-on",
+                  tenant=account.get("tenant"), actor_tenant=account.get("tenant"))
+        return redirect("/portal/login?sso=tenantDisabled")
+    sso.note(doc["_id"], True)
+    open_session(username, language, f"{client_address()} single sign-on {urlparse_host(doc['issuer'])}")
+    session["via"] = "sso"
+    return redirect("/portal/#overview")
+
+
+def urlparse_host(url: str) -> str:
+    return requests.utils.urlparse(url).hostname or url
+
+
+def sso_scope_allowed(scope: str) -> bool:
+    """Whose configuration the request may change: the account's own scope; a server administrator (outside support
+    access) any organisation's and the operator's."""
+    if g.support:
+        return False
+    if g.server_admin:
+        return scope == sso.OPERATOR or tenants.get(scope) is not None
+    return scope == sso.scope_id(g.account_tenant)
+
+
+@app.get("/portal/api/sso")
+@require_login
+@admin_required
+def list_sso():
+    every = bool(g.server_admin and not g.support)
+    own = sso.scope_id(g.support or g.account_tenant)
+    names = {t["id"]: t["name"] for t in g.tenants}
+    configs = [{**sso.public(d), "organisation": names.get(d["_id"])} for d in sso.load(own, every)]
+    return jsonify(configs=configs, scope=own, every=every, readOnly=bool(g.support), callback=SSO_CALLBACK,
+                   organisations=[{"id": t["id"], "name": t["name"]} for t in g.tenants] if every else [],
+                   insecure=sso.insecure_allowed())
+
+
+@app.put("/portal/api/sso/<scope>")
+@require_login
+@admin_required
+def save_sso(scope):
+    if g.support:
+        raise ReadOnlySupport()
+    if not sso_scope_allowed(scope):
+        return message("sso.scopeOutside", 403)
+    doc = sso.save(scope, request.get_json(silent=True) or {}, g.user)
+    tenant = sso.tenant_of(scope)
+    log_event("sso-save", tenant=tenant, detail=f'issuer={doc.get("issuer") or "-"} domains={",".join(doc.get("domains") or [])} '
+              f'enabled={doc.get("enabled")} passwordOff={doc.get("passwordOff")}')
+    return message("sso.saved", 200, item=sso.public(doc))
+
+
+@app.delete("/portal/api/sso/<scope>")
+@require_login
+@admin_required
+def remove_sso(scope):
+    if g.support:
+        raise ReadOnlySupport()
+    if not sso_scope_allowed(scope):
+        return message("sso.scopeOutside", 403)
+    if not sso.remove(scope):
+        return message("sso.unknown", 404)
+    log_event("sso-remove", tenant=sso.tenant_of(scope), detail=scope)
+    return message("sso.removed")
+
+
+@app.post("/portal/api/sso/<scope>/test")
+@require_login
+@admin_required
+def test_sso(scope):
+    if not (sso_scope_allowed(scope) or scope == sso.scope_id(g.support)):
+        return message("sso.scopeOutside", 403)
+    result = sso.test(scope)
+    return message(result.pop("code"), 200, result=result)
+
+
 # --------------------------------------------------------------------------- overview (ADR 0007)
 @app.errorhandler(overview.PeriodError)
 def on_period_error(err):
@@ -2323,6 +2502,9 @@ def get_overview():
 def export_overview():
     """The overview's figures as XLSX (one sheet per list) or CSV (one row per figure); the browser sends the labels
     in the user's language. A journal event: overview-export."""
+    refused = export_refused()            # figures, not rows: only a role that may not export at all is refused
+    if refused:
+        return refused
     data = request.get_json(silent=True) or {}
     labels = data.get("labels") if isinstance(data.get("labels"), dict) else {}
     labels = {str(k): str(v) for k, v in labels.items()}

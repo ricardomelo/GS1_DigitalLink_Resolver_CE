@@ -5,7 +5,7 @@
    token is in the fragment of the address so that it never reaches a server log
    (Documentation/adr/0004-e-mail.md). */
 const $ = sel => document.querySelector(sel);
-const FORMS = ["#login-form", "#forgot-form", "#link-form"];
+const FORMS = ["#login-form", "#forgot-form", "#link-form", "#sso-form"];
 let linkToken = null;
 let minLength = 12;
 
@@ -75,13 +75,41 @@ async function signIn(event) {
 }
 
 /* ------------------------------------------------------------------ password recovery */
-async function recoveryOffered() {
+async function loginOptions() {
   try {
     const res = await fetch("api/login/options", { credentials: "same-origin", headers: { Accept: "application/json" } });
-    const data = await res.json();
-    return Boolean(data.passwordRecovery);
+    return await res.json();
   } catch {
-    return false;
+    return {};
+  }
+}
+
+/* ------------------------------------------------------------------ single sign-on (ADR 0012) */
+function openSso() {
+  showForm("#sso-form");
+  const typed = $("#username").value.trim();
+  if (typed.includes("@")) $("#sso-email").value = typed;
+  $("#sso-email").focus();
+}
+
+async function ssoStart(event) {
+  event.preventDefault();
+  const email = $("#sso-email").value.trim();
+  if (!email.includes("@")) {
+    showStatus("error", "sso.emailInvalid", null, "#sso-status");
+    $("#sso-email").focus();
+    return;
+  }
+  try {
+    const { res, data } = await busy($("#sso-submit"), "login.ssoGoing", "login.ssoSubmit",
+                                     () => post("api/sso/start", { email, language: I18N.locale }));
+    if (res.ok && data.url) {
+      location.assign(data.url);
+      return;
+    }
+    showStatus("error", data.code || "error.unexpected", data.params || { status: res.status }, "#sso-status");
+  } catch {
+    showStatus("error", "error.network", null, "#sso-status");
   }
 }
 
@@ -172,12 +200,17 @@ const reason = new URLSearchParams(location.search).get("reason");
 if (reason === "expired") showStatus("error", "login.expired");
 if (reason === "signedOut") showStatus("ok", "login.signedOut");
 if (reason === "passwordChanged") showStatus("ok", "login.passwordChanged");
+const ssoReason = new URLSearchParams(location.search).get("sso");   // the provider's round trip ended here
+if (ssoReason && /^[A-Za-z]+$/.test(ssoReason)) showStatus("error", "sso." + ssoReason);
 $("#login-form").addEventListener("submit", signIn);
 $("#forgot-form").addEventListener("submit", forgot);
 $("#link-form").addEventListener("submit", setPassword);
 $("#forgot-open").addEventListener("click", openForgot);
 $("#forgot-back").addEventListener("click", backToSignIn);
 $("#link-back").addEventListener("click", backToSignIn);
+$("#sso-open").addEventListener("click", openSso);
+$("#sso-back").addEventListener("click", backToSignIn);
+$("#sso-form").addEventListener("submit", ssoStart);
 const LINK = /^#(invite|reset)=([A-Za-z0-9_-]{20,100})$/;
 const link = LINK.exec(location.hash);
 if (link) openLink(link[1], link[2]);
@@ -191,7 +224,9 @@ window.addEventListener("hashchange", () => {
     openLink(pasted[1], pasted[2]);
   }
 });
-recoveryOffered().then(offered => {
+loginOptions().then(options => {
+  const offered = Boolean(options.passwordRecovery);
   $("#forgot-open").hidden = !offered;
+  $("#sso-open").hidden = !options.sso;
   I18N.set($("#login-help"), offered ? "login.helpRecovery" : "login.help");
 });

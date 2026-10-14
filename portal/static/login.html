@@ -45,7 +45,19 @@
       <input id="password" name="password" type="password" autocomplete="current-password" required>
       <button type="submit" class="btn btn-primary" id="login-submit" data-i18n="login.submit"></button>
       <p class="auth-forgot"><button type="button" class="link-button" id="forgot-open" hidden data-i18n="login.forgot"></button></p>
+      <!-- Single sign-on (Documentation/adr/0012-single-sign-on.md): shown when an organisation has it on -->
+      <button type="button" class="btn btn-ghost auth-sso" id="sso-open" hidden data-i18n="login.ssoOpen"></button>
       <p class="auth-note" id="login-help" data-i18n="login.help"></p>
+    </form>
+
+    <form class="auth-card" id="sso-form" novalidate hidden>
+      <h2 data-i18n="login.ssoTitle"></h2>
+      <p class="auth-lede" data-i18n="login.ssoLede"></p>
+      <div id="sso-status" class="status" role="status" aria-live="polite" hidden></div>
+      <label for="sso-email" data-i18n="login.ssoEmail"></label>
+      <input id="sso-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="254" required>
+      <button type="submit" class="btn btn-primary" id="sso-submit" data-i18n="login.ssoSubmit"></button>
+      <p class="auth-forgot"><button type="button" class="link-button" id="sso-back" data-i18n="login.back"></button></p>
     </form>
 
     <!-- Password recovery by e-mail (shown when the installation has e-mail; Documentation/adr/0004-e-mail.md) -->

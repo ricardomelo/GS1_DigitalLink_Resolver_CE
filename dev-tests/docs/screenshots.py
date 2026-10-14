@@ -287,6 +287,7 @@ def guide_images(locale: str, folder: str, description: str) -> None:
         apikey_images(browser, folder, locale)
         domain_images(browser, folder, locale)
         item_page_images(browser, folder, locale)
+        sso_images(browser, folder, locale)
         requests_images(browser, folder, locale)
         browser.close()
 
@@ -449,6 +450,23 @@ def item_page_images(browser, folder: str, locale: str) -> None:
     page.set_content(html); page.wait_for_timeout(400)
     save(page, f"{folder}/item-page-phone.png", full=True)
     ctx.close()
+
+
+def sso_images(browser, folder: str, locale: str) -> None:
+    """The Organisation sign-in screen with the operator's configuration (Documentation/adr/0012-single-sign-on.md);
+    removed afterwards, so that the sign-in page of the other pictures stays as it was."""
+    import sso
+    sso.save("operator", {"issuer": "https://login.brand.example/realms/staff", "clientId": "resolver-portal",
+                          "clientSecret": "example-secret", "domains": ["brand.example"], "enabled": True}, "maria")
+    ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1000})
+    page = ctx.new_page()
+    page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+    page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
+    page.click("#login-submit"); page.wait_for_timeout(1000)
+    page.goto(BASE + "#sso"); page.wait_for_timeout(900)
+    save(page, f"{folder}/sso.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1000})
+    ctx.close()
+    sso.remove("operator")
 
 
 def seed_requests() -> None:

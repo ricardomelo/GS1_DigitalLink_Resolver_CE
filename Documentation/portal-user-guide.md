@@ -91,6 +91,10 @@ menu, or the portal's address itself, opens the editor. If you have no account, 
 forgotten your password, use **Forgotten your password?** when the page offers it (installations with e-mail,
 below); otherwise ask the administrator for a new temporary password.
 
+- **Organisation account (single sign-on).** When your organisation has set it up, **Sign in with your
+  organisation's account** asks for your work e-mail and takes you to your organisation's sign-in page (Microsoft,
+  Google…); you come back signed in. Your portal user must already exist with that e-mail — ask your administrator
+  otherwise. If your organisation has switched password sign-in off, the portal tells you to use this button.
 - **Temporary password.** A new account, or one whose password an administrator has reset, starts with a
   temporary password. After signing in the portal asks you to set your own password before going on.
 - **Show the password.** The eye button inside a password field shows what you typed; it hides again when
@@ -593,6 +597,25 @@ existed are administrators.
 A server administrator (an administrator of the operator) sees every user, with an **Organisation** column and a
 filter, and chooses the **Organisation** of each new user (*Operator (server administration)* for the operator's
 own users). A user's organisation never changes.
+
+### Organisation sign-in (administrators)
+
+![Organisation sign-in](images/guide/sso.png)
+
+**Organisation sign-in** (user menu, administrators) lets your users sign in with the account they already have at
+your organisation (Microsoft Entra ID, Google Workspace, Okta, Keycloak — any OpenID Connect provider):
+
+1. At your provider, register the portal as a web application with the **return address** the screen shows.
+2. Here, enter the provider's **Issuer**, the **Client ID** and the **Client secret** it gave you, and your
+   organisation's **E-mail domains** (for example `company.com`). Tick **On** and select **Save**; then **Test the
+   provider**. The secret is never shown again: leave the field empty to keep it.
+3. Each user signs in with **Sign in with your organisation's account** and their work e-mail. Only people who already
+   have a portal user with that e-mail get in, with the role and prefixes you gave them.
+4. Once it works, you may tick **Switch password sign-in off for the organisation's users**. A server administrator can
+   always sign in with a password and switch it back on, for example if your provider is down.
+
+The card shows the last sign-in and the last failure (with its reason). A server administrator sees every
+organisation's configuration and sets up the operator's own; during support access the screen is read only.
 
 ### API keys (administrators)
 

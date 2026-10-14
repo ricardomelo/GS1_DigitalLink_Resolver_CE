@@ -54,6 +54,7 @@ adds what an organisation needs to run one for its members:
 | [Label studio](Documentation/adr/0010-label-studio.md) | ADR 0010: label sizes, PDF, an EAN/UPC beside the QR code, every format in one zip |
 | [The organisation's own domain](Documentation/adr/0009-tenant-domains.md) | ADR 0009: domains proved by DNS, default per prefix, the resolver answering on them for their organisation only, certificates on the host |
 | [Monitoring and alerts](Documentation/adr/0008-monitoring-and-alerts.md) | ADR 0008: the worker checks the resolver, the backup, the certificate and spikes of 404, and e-mails the administrators |
+| [Single sign-on](Documentation/adr/0012-single-sign-on.md) | ADR 0012: each organisation's OpenID Connect provider for its users' sign-in, password sign-in off per organisation, per-role limits on exports |
 | [The item's page](Documentation/adr/0011-item-page.md) | ADR 0011: the resolver's page of an item's links as the default target, branded per prefix, clicks logged, Verified by GS1 |
 
 This README covers the overview, the API, installation and operation. The index of every document is
@@ -100,7 +101,7 @@ the official Postman collection is at
 | Area | Addition |
 |---|---|
 | **Portal** (`/portal/`) | Sign-in with per-user passwords (with a show/hide button); editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; QR code labels (SVG, PNG, PDF, or all three in a ZIP) with the dimensions of the *QR Codes powered by GS1* guidelines, sizes from 80 to 200 %, an optional EAN-13, UPC-A, EAN-8 or UPC-E beside the QR code for the transition to 2D, a choice of QR version, error correction and human readable text, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search and filters by key type and qualifier; spreadsheet import/export (XLSX, CSV) with preview; link checker |
-| **Governance** | Roles (administrator, editor, reader); organisations (tenants) that own GS1 Company Prefixes, each with its own users and audit trail, and a server administrator with recorded, read-only support access; access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords or, with an e-mail relay, invitations by e-mail; API keys for the organisations' own systems (tenant API); password recovery by e-mail; security notices; history of every record with restore; audit trail with filters and CSV export |
+| **Governance** | Roles (administrator, editor, reader); organisations (tenants) that own GS1 Company Prefixes, each with its own users and audit trail, and a server administrator with recorded, read-only support access; access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords or, with an e-mail relay, invitations by e-mail; API keys for the organisations' own systems (tenant API); password recovery by e-mail; security notices; history of every record with restore; audit trail with filters and CSV export; single sign-on with each organisation's own identity provider (OpenID Connect), password sign-in off per organisation; per-role limits on exports ([ADR 0012](Documentation/adr/0012-single-sign-on.md)) |
 | **Own domains** | An organisation's own domain in its QR codes (URI Syntax §4.11), with an optional path stem: proved by a DNS TXT record, default per GS1 Company Prefix or chosen on the label; either pointing at the resolver (which then answers on it for that organisation's codes only, certificates by `scripts/custom-domains.sh`) or redirected by the organisation's own server ([ADR 0009](Documentation/adr/0009-tenant-domains.md)) |
 | **Item page** | A page of all the links of an item as the default target of its code: made by the resolver, mobile first, an icon per link type, the visitor's language first, the logo and colours of the brand of each GS1 Company Prefix (uploaded in the portal), page views and clicks counted apart from scans, and a link to Verified by GS1 for GTINs and GLNs when the installation switches it on ([ADR 0011](Documentation/adr/0011-item-page.md)) |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, built from the GS1 Barcode Syntax Dictionary of the engine release every service uses |
@@ -399,6 +400,7 @@ checks the user's role and GS1 Company Prefixes.
 | `GET /audit`, `GET /audit.csv` (`user`, `from`, `to`, `q`) | Audit trail (administrators) |
 | `GET /portal/healthz` | Health of the portal, of its access to the API and of its job worker (`worker`: `ok` or `unavailable`); whether e-mail is configured (`mail`: `on` or `off`) |
 | `GET /keys`, `POST /keys`, `DELETE /keys/{id}` | API keys of the tenant API (administrators, for their own organisation or the operator) |
+| `POST /sso/start` `{email}`, `GET /portal/sso/callback` · `GET /sso`, `PUT /sso/{scope}`, `DELETE /sso/{scope}`, `POST /sso/{scope}/test` | Single sign-on: the provider's address for an e-mail, the provider's answer · each organisation's OpenID Connect configuration (administrators; server administrators every one) |
 | `GET /branding`, `PUT /branding/{prefix}`, `DELETE /branding/{prefix}`, `GET /branding/{prefix}/logo` | Brands of the item's page per GS1 Company Prefix (administrators; `*` the installation's default, server administrators) |
 
 ### Tenant API (`/portal/api/v1`, API key)
@@ -535,6 +537,7 @@ never committed).
 | `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS` (0), `PORTAL_JOURNAL_ADMIN_DAYS` (0) | Days the journal keeps sign-ins, record changes and administration events (0 = for ever) |
 | `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`, `PORTAL_MAIL_SECURITY` (`starttls`), `PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM` | The portal's e-mail relay ([ADR 0004](Documentation/adr/0004-e-mail.md)): invitations, password recovery, security notices; empty host: e-mail off. Port 587 (STARTTLS) or 465 (TLS); the installer asks for them; details and a test command in [the extensions documentation](Documentation/extensions/README.md#e-mail) |
 | `PORTAL_API_RATE_PER_MINUTE` (120), `PORTAL_API_KEY_MAX_DAYS` (365) | The tenant API: requests per key and minute; the longest validity of an API key |
+| `PORTAL_EXPORT_LIMITS`, `PORTAL_SSO_ALLOW_INSECURE` | The most rows one export of a role may hold, e.g. `reader:0,editor:20000` (0: none; administrators and roles not named: no limit); `1` accepts identity providers on `http` or private addresses ([ADR 0012](Documentation/adr/0012-single-sign-on.md)) |
 | `RESOLVER_LOG_DAYS` (90), `RESOLVER_LOG_COUNTRY_HEADER` | The log of resolver requests ([ADR 0006](Documentation/adr/0006-resolver-request-log.md)): days each event (and each call of the tenant API) is kept, 0 switches it off; a header with a two-letter country set by a proxy in front (empty: no country) |
 | `RESOLVER_VERIFIED_BY_GS1_URL` | The item's page ([ADR 0011](Documentation/adr/0011-item-page.md)): the Verified by GS1 address for a GTIN or GLN, a template with `{key}` (`gtin`, `gln`) and `{value}`; empty (default): no link |
 | `PORTAL_TIME_ZONE` (UTC), `PORTAL_STATS_DAYS` (800) | The days of the daily request counts (an IANA name; the installer writes the server's) and how long the counts are kept |
@@ -643,7 +646,7 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 
 ## Open backlog
 
-Status on 14 October 2026 (items 4.2 to 6.2 done in session 14). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+Status on 14 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
 the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
@@ -667,7 +670,9 @@ resolver through the proxy, the backup, the certificate, spikes of 404;
 code ([ADR 0009](Documentation/adr/0009-tenant-domains.md)), and items 5.2 to 5.4, the label studio (sizes, PDF, an
 EAN/UPC beside the QR code, every format in a zip; [ADR 0010](Documentation/adr/0010-label-studio.md)), and items
 6.1 and 6.2, the item's page (the resolver's page of an item's links as the default target, branded per prefix, with
-Verified by GS1; [ADR 0011](Documentation/adr/0011-item-page.md)), are complete too. What was
+Verified by GS1; [ADR 0011](Documentation/adr/0011-item-page.md)), and item 7.1, single sign-on per organisation
+with OpenID Connect and per-role limits on exports ([ADR 0012](Documentation/adr/0012-single-sign-on.md)), are
+complete too. What was
 done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
 The items below are in the agreed order; sizes are relative (S, M, L). The order puts first what later items
 build on: the portal's data store and tenants come before the API, e-mail and analytics, which all need to
@@ -675,8 +680,7 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Production | 7.1 | **Single sign-on** for the portal, per tenant; per-role limits on exports | M | 2.4 |
-| | 7.2 | **Production readiness**, on the servers: an installation on a clean machine, the off-server copy set up, a restore rehearsal, the staging secrets rotated and the [production checklist](Documentation/extensions/README.md#going-to-production) worked through (the scripts and the installer's final check of a scan through the proxy are done) | S | — |
+| Production | 7.2 | **Production readiness**, on the servers: an installation on a clean machine, the off-server copy set up, a restore rehearsal, the staging secrets rotated and the [production checklist](Documentation/extensions/README.md#going-to-production) worked through (the scripts and the installer's final check of a scan through the proxy are done) | S | — |
 | | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages (default link titles in the link's language, conformance review F21: done) | S | — |
 | | 7.4 | **Load test and scale-out rehearsal** on staging with `dev-tests/load/load_test.py` (done): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded ([procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)) | S | 2.3 |
 | Standards | 8.1 | **Errata and Work Requests to GS1**: E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |

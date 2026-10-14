@@ -332,11 +332,11 @@ check("configuration: mail on, the user's preferences", cfg["mail"] == {"enabled
       and cfg["preferences"] == {"email": "root@example.org", "language": "pt-BR", "languageChosen": False,
                                  "notify": {"jobs": False, "alerts": True}}, cfg.get("preferences"))
 check("sign-in page: recovery offered", portal.app.test_client().get("/portal/api/login/options").get_json()
-      == {"passwordRecovery": True})
+      == {"passwordRecovery": True, "sso": False})
 check("health check: mail on", portal.app.test_client().get("/portal/healthz").get_json()["mail"] == "on")
 mail_env(PORTAL_MAIL_HOST="")
 check("mail off: no recovery, health check says off", portal.app.test_client().get("/portal/api/login/options").get_json()
-      == {"passwordRecovery": False} and portal.app.test_client().get("/portal/healthz").get_json()["mail"] == "off")
+      == {"passwordRecovery": False, "sso": False} and portal.app.test_client().get("/portal/healthz").get_json()["mail"] == "off")
 r = portal.app.test_client().post("/portal/api/password/forgot", json={"login": "root"}, headers=addr())
 check("mail off: recovery refused", r.status_code == 404 and code(r) == "password.recoveryOff")
 r = root.post("/portal/api/users", json={"username": "nomail", "role": "editor", "email": "nomail@example.org",

@@ -509,6 +509,7 @@ dialog::backdrop { background: rgba(0, 30, 74, .45); }
 
 /* ---------------------------------------------------------------- roles and governance */
 body[data-role="reader"] .needs-editor { display: none !important; }
+body[data-export="off"] .needs-export { display: none !important; }
 body:not([data-account-role="admin"]) .needs-admin { display: none !important; }
 body:not([data-server-admin="true"]) .needs-server-admin { display: none !important; }
 body:not([data-mail="on"]) .needs-mail { display: none !important; }
@@ -708,6 +709,11 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .domains-help summary { cursor: pointer; color: var(--gs1-blue); font-weight: 600; }
 .opt-domain select { max-width: 100%; }
 .domain-card .user-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+/* Sign-in with the organisation's account (ADR 0012) */
+.sso-callback code { word-break: break-all; background: var(--page); padding: .1rem .35rem; border-radius: 3px; }
+.sso-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: .6rem 1rem; margin: .6rem 0; }
+.sso-form label.domain-field input { width: 100%; min-width: 0; }
+.sso-form .choice { align-self: end; }
 /* The item's page: brands (ADR 0011) */
 .branding-form .brand-colours { display: flex; flex-direction: row; gap: 1rem; align-items: end; }
 .brand-colours label { display: flex; flex-direction: column; gap: .2rem; }

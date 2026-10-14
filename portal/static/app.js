@@ -1304,7 +1304,7 @@ function isRecordsView() { return location.hash === "#records"; }
 
 const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants", "#apikeys": "apikeys",
                 "#requests": "requests", "#overview": "overview", "#domains": "domains",
-                "#branding": "branding" };
+                "#branding": "branding", "#sso": "sso" };
 
 /* Shows the editor, the record list, the user administration, the organisations or the audit trail, following
    the address (#records, #users, #tenants, #audit), so the browser's back button and bookmarks work. Users and the
@@ -1313,7 +1313,7 @@ const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#t
 function applyView() {
   let view = VIEWS[location.hash] || "editor";
   if ((view === "users" || view === "audit" || view === "apikeys" || view === "domains"
-       || view === "branding") && CONFIG
+       || view === "branding" || view === "sso") && CONFIG
       && CONFIG.accountRole !== "admin") view = "editor";
   if (view === "tenants" && CONFIG && !CONFIG.serverAdmin) view = "editor";
   $("#editor-view").hidden = view !== "editor";
@@ -1326,10 +1326,11 @@ function applyView() {
   $("#overview-view").hidden = view !== "overview";
   $("#domains-view").hidden = view !== "domains";
   $("#branding-view").hidden = view !== "branding";
+  $("#sso-view").hidden = view !== "sso";
   if (view !== "apikeys") forgetNewKey();
   const titles = { editor: "intro", records: "records", users: "users", audit: "audit", tenants: "tenants",
                    apikeys: "apikeys", requests: "requests", overview: "overview", domains: "domains",
-                   branding: "branding" };
+                   branding: "branding", sso: "sso" };
   I18N.set($("#hero-title"), `${titles[view]}.title`);
   I18N.set($("#hero-lede"), `${titles[view]}.lede`);
   const link = $("#hero-link");
@@ -1344,6 +1345,7 @@ function applyView() {
   if (view === "overview" && CONFIG) loadOverview();
   if (view === "domains" && CONFIG) loadDomains();
   if (view === "branding" && CONFIG) loadBranding();
+  if (view === "sso" && CONFIG) loadSso();
 }
 
 /* ------------------------------------------------------------------ roles */
@@ -2056,8 +2058,24 @@ async function loadRequests(event, more = false) {
   }
 }
 
-function downloadRequests() {
-  location.href = BASE + "api/requests.csv?" + requestsQuery().toString();
+async function downloadRequests() {
+  try {
+    const res = await fetch(BASE + "api/requests.csv?" + requestsQuery().toString(), { credentials: "same-origin" });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      I18N.set($("#requests-count"), body.code || "error.unexpected", body.params || { status: res.status });
+      return;
+    }
+    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "resolver-requests.csv";
+    const a = el("a");
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } catch (e) {
+    I18N.set($("#requests-count"), "error.network");
+  }
 }
 
 async function loadApiCalls(event, more = false) {
@@ -2222,6 +2240,128 @@ async function refreshDomainConfig() {
     CONFIG.domains = fresh.domains;
     fillDomainOption();
   } catch { /* the next page load will have it */ }
+}
+
+/* ------------------------------------------------------------------ single sign-on (Documentation/adr/0012-single-sign-on.md)
+   The organisation's OpenID Connect provider: issuer, client ID and secret (write-only), e-mail domains, on or off,
+   password sign-in off. Administrators see their organisation's; a server administrator every one and the operator's;
+   support access is read only. */
+const ssoState = { data: null, extra: [] };
+
+function ssoStatus(kind, key, params) {
+  const box = $("#sso-status");
+  box.hidden = !key;
+  box.className = "status" + (kind ? " is-" + kind : "");
+  if (key) I18N.set(box, key, params);
+}
+
+async function loadSso() {
+  try {
+    ssoState.data = await api("GET", "sso");
+    renderSso();
+  } catch (e) {
+    ssoStatus("error", e.code, e.params);
+  }
+}
+
+function ssoScopeName(scope) {
+  if (scope === "operator") return t("sso.operator");
+  const org = (ssoState.data.organisations || []).find(o => o.id === scope);
+  return org ? org.name : (CONFIG.tenant && CONFIG.tenant.id === scope ? CONFIG.tenant.name
+                           : CONFIG.support && CONFIG.support.id === scope ? CONFIG.support.name : scope);
+}
+
+function renderSso() {
+  const data = ssoState.data;
+  if (!data) return;
+  I18N.set($("#sso-scope"), data.every ? "sso.scopeEvery" : "sso.scope", { who: ssoScopeName(data.scope) });
+  $("#sso-readonly").hidden = !data.readOnly;
+  $("#sso-callback").textContent = data.callback;
+  const configs = [...data.configs];
+  const scopes = new Set(configs.map(c => c.scope));
+  if (!data.every && !scopes.has(data.scope) && !data.readOnly) configs.push({ scope: data.scope, blank: true });
+  ssoState.extra.filter(s => !scopes.has(s)).forEach(s => configs.push({ scope: s, blank: true }));
+  $("#sso-list").replaceChildren(...configs.map(ssoCard));
+  $("#sso-empty").hidden = configs.length > 0;
+  $("#sso-add").hidden = !data.every;
+  if (data.every) {
+    const taken = new Set(configs.map(c => c.scope));
+    const choices = [{ id: "operator", name: t("sso.operator") }, ...data.organisations].filter(o => !taken.has(o.id));
+    $("#sso-add-scope").replaceChildren(...choices.map(o => new Option(o.name, o.id)));
+    $("#sso-add").hidden = choices.length === 0;
+  }
+}
+
+function ssoCard(c) {
+  const editable = !ssoState.data.readOnly;
+  const card = el("article", "domain-card" + (c.enabled ? " is-verified" : ""));
+  card.dataset.scope = c.scope;
+  const head = el("div", "domain-head");
+  head.append(el("strong", "domain-name", ssoScopeName(c.scope)));
+  if (!c.blank) {
+    head.append(el("span", "badge " + (c.enabled ? "badge-created" : "badge-unchanged"), t(c.enabled ? "sso.on" : "sso.off")));
+    head.append(el("span", "badge badge-update", t(c.secretSet ? "sso.secretSet" : "sso.secretMissing")));
+    if (c.passwordOff) head.append(el("span", "badge badge-unchanged", t("sso.passwordOffBadge")));
+  }
+  card.append(head);
+  if (c.lastLogin) card.append(el("p", "field-msg", t("sso.lastLogin", { when: formatWhen(c.lastLogin) })));
+  if (c.lastError) card.append(el("p", "field-msg is-error", t("sso.lastError", {
+    message: t(c.lastError.code) + (c.lastError.detail ? ` (${c.lastError.detail})` : ""), when: formatWhen(c.lastError.at) })));
+  const form = el("form", "sso-form");
+  form.noValidate = true;
+  const field = (labelKey, input, hintKey, params) => {
+    const l = el("label", "domain-field");
+    l.append(el("span", "", t(labelKey)), input);
+    if (hintKey) l.append(el("small", "muted", t(hintKey, params)));
+    return l;
+  };
+  const input = (cls, value, type = "text") => { const i = el("input"); i.className = cls; i.type = type; i.value = value || "";
+                                                 i.disabled = !editable; i.autocomplete = "off"; i.spellcheck = false; return i; };
+  const issuer = input("sso-issuer", c.issuer, "url");
+  const clientId = input("sso-client-id", c.clientId);
+  const secret = input("sso-secret", "", "password");
+  secret.autocomplete = "new-password";
+  secret.placeholder = c.secretSet ? t("sso.secretKeep") : "";
+  const domainsInput = input("sso-domains", (c.domains || []).join(", "));
+  const check = (cls, checked, key) => { const l = el("label", "choice"); const b = el("input"); b.type = "checkbox";
+                                         b.className = cls; b.checked = Boolean(checked); b.disabled = !editable;
+                                         l.append(b, " ", el("span", "", t(key))); return l; };
+  form.append(field("sso.issuer", issuer, "sso.issuerHint", { issuer: c.issuer || "https://…" }),
+              field("sso.clientId", clientId), field("sso.clientSecret", secret),
+              field("sso.domains", domainsInput, "sso.domainsHint"),
+              check("sso-enabled", c.enabled, "sso.enabled"), check("sso-password-off", c.passwordOff, "sso.passwordOff"));
+  card.append(form);
+  card.append(el("p", "field-msg", t("sso.passwordOffHint")));
+  const actions = el("div", "user-actions");
+  const button = (key, cls, fn) => { const b = el("button", "btn " + cls, t(key)); b.type = "button"; b.addEventListener("click", fn); actions.append(b); };
+  if (editable) {
+    button("sso.save", "btn-primary", () => ssoCall("PUT", c.scope, "", {
+      issuer: issuer.value.trim(), clientId: clientId.value.trim(), clientSecret: secret.value, domains: domainsInput.value,
+      enabled: $(".sso-enabled", form).checked, passwordOff: $(".sso-password-off", form).checked }));
+  }
+  if (!c.blank) {
+    button("sso.test", "btn-ghost", () => ssoCall("POST", c.scope, "/test", {}));
+    if (editable) button("sso.remove", "btn-danger-ghost", () => {
+      if (confirm(t("sso.confirmRemove"))) ssoCall("DELETE", c.scope, "");
+    });
+  }
+  card.append(actions);
+  return card;
+}
+
+async function ssoCall(method, scope, suffix, body) {
+  try {
+    const result = await api(method, "sso/" + encodeURIComponent(scope) + suffix, body);
+    const failed = suffix === "/test" && result.result && !result.result.ok;
+    ssoStatus(failed ? "error" : "ok", result.code,
+              failed ? { ...result.params, detail: result.result.detail } : result.params);
+    if (suffix !== "/test") {
+      ssoState.extra = ssoState.extra.filter(s => s !== scope);
+      loadSso();
+    }
+  } catch (e) {
+    ssoStatus("error", e.code, e.params);
+  }
 }
 
 /* ------------------------------------------------------------------ the item's page (Documentation/adr/0011-item-page.md)
@@ -3724,7 +3864,7 @@ function setupUserMenu() {
   menu.addEventListener("mouseleave", () => menu.classList.remove("is-dismissed"));
   $("#menu-options").addEventListener("click", () => { dismiss(); openOptions(); });
   ["#menu-overview", "#menu-editor", "#menu-records", "#menu-requests", "#menu-users", "#menu-tenants", "#menu-domains",
-   "#menu-branding", "#menu-apikeys", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", dismiss));
+   "#menu-branding", "#menu-sso", "#menu-apikeys", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", dismiss));
   $("#menu-logout").addEventListener("click", signOut);
 }
 
@@ -3905,6 +4045,12 @@ async function init() {
   $("#overview-days").addEventListener("change", () => loadOverview());
   $("#domains-create").addEventListener("submit", createDomain);
   $("#branding-form").addEventListener("submit", saveBranding);
+  $("#sso-add").addEventListener("submit", e => {
+    e.preventDefault();
+    ssoState.extra.push($("#sso-add-scope").value);
+    renderSso();
+  });
+  document.addEventListener("localechange", () => { if (ssoState.data && !$("#sso-view").hidden) renderSso(); });
   document.addEventListener("localechange", () => { if (brandingState.data && !$("#branding-view").hidden) renderBranding(); });
   $("#opt-domain").addEventListener("change", renderPreview);
   document.addEventListener("localechange", () => { if (domainsState.data && !$("#domains-view").hidden) renderDomains(); });
@@ -3949,6 +4095,7 @@ async function init() {
   document.body.dataset.role = CONFIG.role;
   document.body.dataset.accountRole = CONFIG.accountRole;
   document.body.dataset.serverAdmin = String(Boolean(CONFIG.serverAdmin));
+  document.body.dataset.export = CONFIG.exportLimit === 0 ? "off" : "on";   // PORTAL_EXPORT_LIMITS (item 7.1)
   document.body.dataset.operatorView = String(Boolean(CONFIG.serverAdmin && !CONFIG.support));
   document.body.dataset.mail = CONFIG.mail?.enabled ? "on" : "off";
   showTenant();

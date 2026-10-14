@@ -2,6 +2,10 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Backlog
+- Item 4.4, a weekly summary by e-mail per organisation, removed from the open backlog in the README (both
+  languages) at the owner's request, 14 October. No other item depended on it.
+
 ### Log of resolver requests (backlog item 4.1)
 - **Architecture decision record** [ADR 0006](../adr/0006-resolver-request-log.md) (English and Portuguese): the
   resolver records each resolution request itself, asynchronously and without personal data; raw events with an

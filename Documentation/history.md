@@ -493,6 +493,9 @@ stopped without a message of its own, leaving a partial file. `c1b3f78` puts the
 and bounded by its expiry), reports `ERROR`, removes the partial file, and `test_deploy.py` now runs the script with a
 stand-in `docker` and checks the dump's options (62 checks).
 
+**Backlog, 14 October.** The owner removed item 4.4, a weekly summary by e-mail per organisation, from the open
+backlog. No item depended on it, so nothing else moved; item 4.3, monitoring and alerts by e-mail, stays.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

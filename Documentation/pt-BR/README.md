@@ -596,7 +596,6 @@ e os tenants vêm antes da API, do e-mail e dos analytics, que precisam saber de
 |---|---|---|---|---|
 | Log de resolução e analytics | 4.2 | **Página inicial pós-login com indicadores**, cada tenant vendo só os seus prefixos e chaves (o administrador do servidor vê a instalação inteira): uso, qualidade da resolução (primeiro os 404 de códigos desconhecidos), qualidade dos cadastros, operação, governança; exportação para Excel e CSV | G | 4.1, 2.4 |
 | | 4.3 | **Monitoramento e alertas** por e-mail: Resolver fora do ar (verificado pelo proxy), falha de backup, picos de 404, vencimento do certificado | M | 4.2, 3.1 |
-| | 4.4 | **Resumo semanal por e-mail** por tenant | P | 4.2, 3.1 |
 | Domínios próprios e estúdio de etiquetas | 5.1 | **O domínio do próprio tenant no QR Code** (URI Syntax 4.11): domínios cadastrados por tenant e comprovados por um registro DNS; padrão por prefixo, escolhido ao gerar a etiqueta (domínio da instalação quando não houver); ou o domínio aponta para o Resolver (certificado emitido por domínio) ou o servidor do tenant redireciona para ele mantendo caminho e query string; um domínio só responde pelos prefixos do seu tenant; caminho-base opcional | G | 2.4, 2.5 |
 | | 5.2 | **Escolha da dimensão X e exportação em PDF** | M | 5.1 |
 | | 5.3 | **QR Code com EAN-13/UPC-A (e EAN-8/UPC-E)** para a transição ao 2D, com as regras de texto legível das GS1 General Specifications | M | 5.2 |

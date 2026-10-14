@@ -651,7 +651,6 @@ know whose data they handle.
 |---|---|---|---|---|
 | Resolution log and analytics | 4.2 | **Home page after sign-in with indicators**, each tenant seeing only its own prefixes and keys (the server administrator sees the whole installation): usage, resolution quality (404 for unknown codes first), record quality, operation, governance; export to Excel and CSV | L | 4.1, 2.4 |
 | | 4.3 | **Monitoring and alerts** by e-mail: resolver down (checked through the proxy), failed backup, spikes of 404, certificate expiry | M | 4.2, 3.1 |
-| | 4.4 | **Weekly summary by e-mail** per tenant | S | 4.2, 3.1 |
 | Custom domains and label studio | 5.1 | **The tenant's own domain in the QR code** (URI Syntax 4.11): domains registered per tenant and proved by a DNS record; default per prefix, chosen when the label is made (installation domain when none is set); either the domain points at the resolver (certificate issued per domain) or the tenant's server redirects to it keeping path and query string; a domain answers only for its tenant's prefixes; optional path stem | L | 2.4, 2.5 |
 | | 5.2 | **X-dimension choice and PDF export** | M | 5.1 |
 | | 5.3 | **QR code with EAN-13/UPC-A (and EAN-8/UPC-E)** for the transition to 2D, with the HRI rules of the GS1 General Specifications | M | 5.2 |

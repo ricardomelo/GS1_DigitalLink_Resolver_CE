@@ -507,6 +507,10 @@ parava sem mensagem própria, deixando um arquivo pela metade. `c1b3f78` devolve
 limitado pela expiração), avisa `ERROR`, apaga o arquivo pela metade, e o `test_deploy.py` agora roda o script com um
 `docker` substituto e confere as opções do dump (62 verificações).
 
+**Backlog, 14 de outubro.** O responsável retirou do backlog em aberto o item 4.4, um resumo semanal por e-mail
+para cada organização. Nenhum item dependia dele, então nada mais mudou de lugar; o item 4.3, monitoramento e alertas
+por e-mail, continua.
+
 ## Como as principais áreas evoluíram
 
 | Área | 1.0.0 (sessão 1) | Agora |

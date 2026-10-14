@@ -3,6 +3,10 @@
 ## Unreleased (branch gs1br/develop)
 
 ### Tenants (backlog item 2.4)
+- **Fix: `tenants.py` in the portal image.** `portal/Dockerfile` copied the portal's modules by name and left
+  out `tenants.py`, so the portal of `1590b7e` would not have started in a container. The image now copies every
+  module at the top of `portal/`, and `test_deploy.py` starts the portal from the files the image would hold.
+  Found before the update reached staging.
 - **Architecture decision record** [ADR 0002](../adr/0002-tenants.md) (English and Portuguese): organisations
   (tenants) that own GS1 Company Prefixes; the operator owns whatever no tenant holds; the operator's
   administrators are the server administrators; read-only support access with a reason; an audit trail per

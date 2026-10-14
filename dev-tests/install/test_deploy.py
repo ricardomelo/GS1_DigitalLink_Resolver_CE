@@ -13,7 +13,10 @@ Checks, without Docker:
     address changed to a free local port: it runs WEB_CONCURRENCY processes, answers, logs the request,
     and stops cleanly on SIGTERM within Docker's stop period;
   * the portal's fallback session key (secret.key, when PORTAL_SECRET_KEY is not set): processes starting
-    at the same moment all end up with the same, complete key.
+    at the same moment all end up with the same, complete key;
+  * the portal image's files: the portal server is started from a folder assembled by the COPY instructions
+    of portal/Dockerfile (not from the source folder), and every module and data file of portal/ is in it,
+    so a file left out of the image fails here rather than on a server.
 
 Requirements: COMPOSE_BIN (a Docker Compose v2 binary), the Python packages of the three services
 (gunicorn among them), mongomock. The resolver's servers run without MongoDB here: only answers that need
@@ -134,6 +137,37 @@ def proxy_checks() -> None:
 
 
 # --------------------------------------------------------------------------- servers
+def image_tree(dockerfile: Path, context: Path) -> Path:
+    """A folder with the files the COPY instructions of a Dockerfile put in its working directory (copies
+    from another build stage left out), to start a server as the image would."""
+    text = re.sub(r"\\\n\s*", " ", dockerfile.read_text())
+    tree = Path(tempfile.mkdtemp(prefix="deploy-image-"))
+    for line in text.splitlines():
+        parts = shlex.split(line.strip())
+        if not parts or parts[0] != "COPY" or any(p.startswith("--from") for p in parts):
+            continue
+        *sources, target = [p for p in parts[1:] if not p.startswith("--")]
+        destination = tree / target.removeprefix("/app/").removeprefix("./").lstrip("/")
+        for source in sources:
+            for path in sorted(context.glob(source)):
+                if path.is_dir():
+                    shutil.copytree(path, destination if not target.endswith("/") or len(sources) == 1
+                                    else destination / path.name, dirs_exist_ok=True)
+                else:
+                    destination.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(path, destination / path.name)
+    return tree
+
+
+def image_files_checks(tree: Path) -> None:
+    """Every Python module and JSON data file at the top of portal/ is in the image."""
+    wanted = sorted(p.name for p in (REPO / "portal").iterdir() if p.suffix in (".py", ".json"))
+    missing = [name for name in wanted if not (tree / name).exists()]
+    check(not missing, f"portal image: every module and data file of portal/ is copied ({len(wanted)})", missing)
+    check((tree / "static" / "app.js").exists() and (tree / "assets").is_dir(),
+          "portal image: static files and assets are copied")
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -284,13 +318,16 @@ def main() -> int:
                   "/api/swagger.json", lambda body: "paths" in json.loads(body),
                   {"MONGO_URI": no_db, "SESSION_TOKEN": "tok"})
     config = tempfile.mkdtemp(prefix="deploy-portal-")
-    server_checks("portal-service", REPO / "portal" / "Dockerfile", REPO / "portal", "/portal/healthz",
+    portal_tree = image_tree(REPO / "portal" / "Dockerfile", REPO / "portal")
+    image_files_checks(portal_tree)
+    server_checks("portal-service", REPO / "portal" / "Dockerfile", portal_tree, "/portal/healthz",
                   lambda body: json.loads(body).get("portal") == "ok",
                   {"SESSION_TOKEN": "tok", "FQDN": "id.example.org", "PORTAL_CONFIG_DIR": config,
                    "PORTAL_DB_URI": os.environ.get("PORTAL_DB_URI") or "mongomock://",
                    "PORTAL_DB_NAME": f"devtest_deploy_portal_{os.getpid()}",
                    "PORTAL_SECRET_KEY": "deploy-test-key", "DATA_ENTRY_URL": "http://127.0.0.1:9/api"})
     shutil.rmtree(config, ignore_errors=True)
+    shutil.rmtree(portal_tree, ignore_errors=True)
     secret_key_checks()
     failed = [label for ok, label in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} checks passed")

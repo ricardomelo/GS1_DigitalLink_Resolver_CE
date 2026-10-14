@@ -16,8 +16,9 @@ COPY --from=syntax-engine /opt/gs1-syntax-engine /opt/gs1-syntax-engine
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py gs1.py journal.py label.py linkcheck.py users.py meta.py sheet.py syntax.py create_user.py \
-     store.py migrate.py db_init.py jobs.py worker.py ./
+# Every module at the top of portal/ (a list of names once left a new module out of the image; the
+# development test test_deploy.py starts the portal from the files these lines copy).
+COPY *.py ./
 COPY assets ./assets
 COPY static ./static
 

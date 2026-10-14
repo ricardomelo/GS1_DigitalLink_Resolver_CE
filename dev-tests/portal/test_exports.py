@@ -117,6 +117,11 @@ r = export(edu, "records")
 check("an editor (limit 2) refused 3 records, with the numbers", r.status_code == 422 and code(r) == "export.tooMany"
       and r.get_json()["params"] == {"max": 2, "rows": 3}, r.get_json())
 check("…the overview's figures are not rows: allowed", export(edu, "overview").status_code == 200)
+one = f"/01/{gtin('0789123452001')}|"
+r = edu.post("/portal/api/export", json={"format": "csv", "labels": {}, "only": [one]}, headers=ORIGIN)
+body = r.get_data(as_text=True)
+check("…a filtered list's export (\"only\": the records shown) within the limit: only those records",
+      r.status_code == 200 and gtin("0789123452001") in body and gtin("0789123452002") not in body, (r.status_code, body[:200]))
 check("…requests within the limit: allowed", export(edu, "requests").status_code == 200)
 EVENTS = requestlog.events()
 now = store.now()

@@ -1300,7 +1300,7 @@ function setPublished(published) {
 /* ------------------------------------------------------------------ record list (#records) */
 const records = { all: [], loaded: false };
 
-function isRecordsView() { return location.hash === "#records"; }
+function isRecordsView() { return location.hash.split("?")[0] === "#records"; }
 
 const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants", "#apikeys": "apikeys",
                 "#requests": "requests", "#overview": "overview", "#domains": "domains",
@@ -1311,7 +1311,7 @@ const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#t
    audit trail follow the account's role (a server administrator in support access is a reader of records but
    still an administrator); organisations are for server administrators. */
 function applyView() {
-  let view = VIEWS[location.hash] || "editor";
+  let view = VIEWS[location.hash.split("?")[0]] || "editor";      // "#records?key=01&…": the list's filters
   if ((view === "users" || view === "audit" || view === "apikeys" || view === "domains"
        || view === "branding" || view === "sso") && CONFIG
       && CONFIG.accountRole !== "admin") view = "editor";
@@ -2786,6 +2786,7 @@ async function loadRecords() {
     records.loaded = true;
     fillFilters();
     try { showLinkCheck(await api("GET", "links/last")); } catch { /* optional */ }
+    filtersFromAddress();
     renderRecords();
     $("#records-search").focus();
   } catch (e) {
@@ -2819,6 +2820,39 @@ function fillStateFilter() {
   keepChoice(select, previous);
   $("#records-alert").hidden = !nokey;
   if (nokey) I18N.set($("#records-alert-text"), nokey === 1 ? "records.alert.one" : "records.alert.many", { count: nokey });
+}
+
+/* The list's filters in the address (#records?text=…&key=01&qualifier=…&user=…&state=…&problems=1), so that a
+   filtered list can be bookmarked or sent to a colleague. */
+const FILTER_FIELDS = { text: "#records-search", key: "#records-key", qualifier: "#records-qualifier",
+                        user: "#records-user", state: "#records-state" };
+
+function filtersFromAddress() {
+  const params = new URLSearchParams(location.hash.split("?")[1] || "");
+  if (![...params.keys()].length) return;
+  const set = (name, value) => {
+    const field = $(FILTER_FIELDS[name]);
+    if (field.tagName === "SELECT" && ![...field.options].some(o => o.value === value)) return;
+    field.value = value;
+  };
+  set("text", params.get("text") || "");
+  set("key", params.get("key") || "");
+  fillQualifierFilter();                                 // the qualifiers offered follow the key type
+  for (const name of ["qualifier", "user", "state"]) set(name, params.get(name) || "");
+  $("#records-problems").checked = params.get("problems") === "1" && !$("#records-problems-wrap").hidden;
+}
+
+function filtersToAddress() {
+  if (!isRecordsView()) return;
+  const params = new URLSearchParams();
+  for (const [name, selector] of Object.entries(FILTER_FIELDS)) {
+    const value = $(selector).value.trim();
+    if (value) params.set(name, value);
+  }
+  if ($("#records-problems").checked) params.set("problems", "1");
+  const query = params.toString();
+  const wanted = "#records" + (query ? "?" + query : "");
+  if (location.hash !== wanted) history.replaceState(null, "", location.pathname + location.search + wanted);
 }
 
 function fillFilters() {
@@ -3088,6 +3122,13 @@ function renderRecords() {
   empty.hidden = shown.length > 0;
   if (!shown.length) I18N.set(empty, records.all.length ? "records.noMatch" : "records.none");
   I18N.set($("#records-count"), "records.count", { shown: shown.length, total: records.all.length });
+  records.shown = shown;
+  filtersToAddress();
+  // the spreadsheet holds what the list shows: every record, or only the filtered ones
+  const filtered = filtersActive();
+  for (const id of ["#records-export-xlsx", "#records-export-csv"]) {
+    $(id).title = filtered ? t("records.exportFiltered", { count: shown.length }) : "";
+  }
 }
 
 /* Opens a record of the list in the editor. */
@@ -3237,7 +3278,8 @@ async function exportSheet(format) {
     const res = await fetch(BASE + "api/export", {
       method: "POST", credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ format, labels: sheetLabels() }),
+      body: JSON.stringify({ format, labels: sheetLabels(),
+                             only: filtersActive() ? (records.shown || []).map(r => `${r.anchor}|${r.qpath || ""}`) : undefined }),
     });
     if (!res.ok) {
       let data = null;

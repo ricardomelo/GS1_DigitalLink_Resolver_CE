@@ -1283,10 +1283,14 @@ def export_records():
     header labels and reference texts in the user's language."""
     data = request.get_json(silent=True) or {}
     labels = data.get("labels") or {}
+    # "only": the records a filtered list shows (anchor|qualifier path), else every record in reach
+    only = {str(i) for i in data["only"][:200_000]} if isinstance(data.get("only"), list) else None
     records = []
     for line in summary_with_links():
         entry = describe_entry(line)
         if entry["kind"] == "other" or not allowed(line["anchor"]):
+            continue
+        if only is not None and f'{line["anchor"]}|{entry.get("path", "")}' not in only:
             continue
         ai, value = gs1.split_anchor(line["anchor"])
         # the spreadsheet writes the qualifiers of the record's GS1 Digital Link, informative ones included

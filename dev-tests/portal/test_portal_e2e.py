@@ -416,6 +416,16 @@ with sync_playwright() as p:
           shown() == 7 and "Serial SER1" in page.inner_text("#records-body"), shown())
     page.fill("#records-search", "l2026-09"); page.wait_for_timeout(150)
     check("qualifier filter and text search together", shown() == 6, shown())
+    address = page.url
+    check("the filters are in the address (a bookmark keeps them)", address.endswith("#records?text=l2026-09&key=01&qualifier=21"),
+          address)
+    with page.expect_request("**/api/export") as sent:
+        page.click("#records-export-csv")
+    only = (sent.value.post_data_json or {}).get("only") or []
+    check("a filtered list exports only the records it shows", len(only) == 6 and all("|/" in i for i in only), only[:2])
+    page.goto(BASE); page.wait_for_timeout(300); page.goto(address); page.wait_for_timeout(1200)
+    check("…and opening the address again shows the same list", shown() == 6 and page.input_value("#records-search")
+          == "l2026-09" and page.input_value("#records-qualifier") == "21", (shown(), page.url))
     page.select_option("#records-qualifier", "other"); page.fill("#records-search", ""); page.wait_for_timeout(150)
     check("qualifier filter: records created elsewhere with qualifiers the portal does not manage",
           shown() == 1 and "{lotnumber}" in page.inner_text("#records-body"), shown())

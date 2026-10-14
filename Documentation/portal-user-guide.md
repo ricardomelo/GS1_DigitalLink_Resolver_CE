@@ -462,6 +462,9 @@ ignored (*acai* finds *Açaí*).
   ![Records without their key's record](images/guide/records-status.png)
 - **Only with problems** — after a link check, only the records whose targets had problems.
 
+The filters and the search text go into the page's address (`…/portal/#records?key=01&qualifier=10`): bookmark it, or
+send it to a colleague, to open the same list again. The exports follow the filters (section 12).
+
 **Clear search and filters** appears while any of them is in use. The count line shows how many records
 are shown out of the total (*Records: 4 of 9*).
 
@@ -486,8 +489,8 @@ of the identifier alone lists every record of that identifier.
 
 ### Export
 
-**Export spreadsheet (Excel)** or **Export CSV** downloads every record you may see, one row per target,
-with the column titles in your language:
+**Export spreadsheet (Excel)** or **Export CSV** downloads every record you may see — or, while filters are on, only
+the records the list shows —, one row per target, with the column titles in your language:
 
 | Column | Content |
 |---|---|

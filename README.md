@@ -390,7 +390,7 @@ checks the user's role and GS1 Company Prefixes.
 | `POST /record` | Create or replace one record (`key`, `value`, `qualifiers`, `description`, `links`, `landingPage`) |
 | `DELETE /record?key=&value=&qualifiers=` | Delete one record, keeping the others of the key |
 | `GET /records` | Every record with its change history |
-| `POST /export` | XLSX or CSV of every record |
+| `POST /export` | XLSX or CSV of every record, or of the records a filtered list shows (`only`) |
 | `POST /import/preview`, `POST /import/apply`, `GET /import/status` | Spreadsheet import: check, confirm, progress |
 | `POST /links/check`, `POST /links/jobs`, `GET /links/jobs/{token}`, `GET /links/last` | Link checker |
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&attr=AI:value…` | QR code label, optionally with data attributes; headers `X-QR-Version`, `X-QR-Level`, `X-QR-Modules` |
@@ -691,7 +691,6 @@ Later, when convenient:
   the engine, and EPC binary strings (`eh…`, `ex…`, hexadecimal) read from an RFID reader.
 - An EPC/NFC label option: a record's SGTIN as `eh…`/`ex…` for programming NFC or hybrid tags (needs an
   encoder).
-- Export only the filtered records; bookmarkable filters.
 - A way to fix records registered before rule 2 of 2.5.9 was enforced (today they are only flagged).
 - Data entry API: check values with the engine, not only the structure (rest of finding F11).
 

@@ -134,6 +134,193 @@ def backup_checks() -> None:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def backup_copy_checks() -> None:
+    """The off-server copy of each run (BACKUP_COPY_TO, item 7.2) with stand-in docker and rsync."""
+    script = REPO / "scripts" / "resolver-backup.sh"
+    for outcome in ("copied", "copy fails", "from .env", "off"):
+        work = Path(tempfile.mkdtemp(prefix="backup-copy-test-"))
+        bin_dir, backups, recorded, copied = work / "bin", work / "backups", work / "recorded", work / "rsync"
+        bin_dir.mkdir()
+        (bin_dir / "docker").write_text("#!/bin/sh\ncase \"$*\" in *mongosh*) echo \"$*\" >> " + str(recorded)
+                                        + " ;; *mongodump*) printf ARCHIVE ;; *) exit 0 ;; esac\n")
+        (bin_dir / "rsync").write_text(f'#!/bin/sh\necho "$*" >> {copied}\n'
+                                       + ("exit 23\n" if outcome == "copy fails" else "exit 0\n"))
+        for f in bin_dir.iterdir():
+            f.chmod(0o755)
+        env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
+               "BACKUP_DIR": str(backups)}
+        env.pop("BACKUP_COPY_TO", None)
+        if outcome in ("copied", "copy fails"):
+            env["BACKUP_COPY_TO"] = "backup@vault.example.org:/srv/resolver/"
+        elif outcome == "from .env":
+            (work / ".env").write_text("BACKUP_COPY_TO='/mnt/offsite/resolver'\n")
+        run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60, env=env)
+        calls = copied.read_text() if copied.exists() else ""
+        noted = recorded.read_text() if recorded.exists() else ""
+        archives = sorted(backups.glob("resolver-*.archive.gz"))
+        if outcome == "copied":
+            check(run.returncode == 0 and " OK " in run.stdout and archives and str(archives[0]) in calls
+                  and calls.strip().endswith("backup@vault.example.org:/srv/resolver/") and "--chmod=F600" in calls,
+                  "backup copy: each run's archive copied to BACKUP_COPY_TO (one slash, files private)",
+                  (run.returncode, calls, run.stdout[-200:]))
+        elif outcome == "copy fails":
+            check(run.returncode == 1 and "ERROR: the off-server copy" in run.stdout and archives
+                  and "BACKUP_OK=0" in noted and "BACKUP_ERROR=the off-server copy failed" in noted,
+                  "backup copy: a failed copy fails the run, keeps the local archive and is recorded",
+                  (run.returncode, run.stdout[-200:], noted[-200:]))
+        elif outcome == "from .env":
+            check(run.returncode == 0 and calls.strip().endswith("/mnt/offsite/resolver/"),
+                  "backup copy: the destination read from .env (cron runs without it in the environment)", calls)
+        else:
+            check(run.returncode == 0 and not calls, "backup copy: nothing copied without BACKUP_COPY_TO", calls)
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def rehearsal_checks() -> None:
+    """scripts/restore-rehearsal.sh (item 7.2) with a stand-in docker: a throw-away container without network, the
+    archive given to mongorestore, the counts compared, the container removed; refusals."""
+    script = REPO / "scripts" / "restore-rehearsal.sh"
+    text = script.read_text()
+    found = re.search(r"COUNT_JS='(.*?)'\n", text, re.S)
+    node = shutil.which("node")
+    if node and found:
+        js = Path(tempfile.mkdtemp()) / "count.js"
+        js.write_text("const db = {adminCommand() { return {databases: []}; }, getSiblingDB() {}};\n"
+                      "const print = console.log;\n" + found.group(1))
+        syntax = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+        check(syntax.returncode == 0, "rehearsal: the counting script is valid JavaScript", syntax.stderr[-300:])
+    else:
+        check(bool(found), "rehearsal: the counting script is found")
+    restored_ok = "resolver_ce.gs1resolver 120\nresolver_portal.users 4\nresolver_portal.journal 900"
+    live = "resolver_ce.gs1resolver 125\nresolver_portal.users 4\nresolver_portal.journal 950\nresolver_log.requests 10"
+    for case, restored, restore_exit in (("good", restored_ok, 0), ("no users", "resolver_ce.gs1resolver 120", 0),
+                                         ("restore fails", restored_ok, 1), ("no archive", restored_ok, 0)):
+        work = Path(tempfile.mkdtemp(prefix="rehearsal-test-"))
+        bin_dir, backups, calls, given = work / "bin", work / "backups", work / "calls", work / "stdin"
+        bin_dir.mkdir()
+        backups.mkdir()
+        (bin_dir / "docker").write_text(f"""#!/bin/bash
+echo "$*" >> {calls}
+case "$*" in
+  "compose images -q database-service") echo sha256:dbimage ;;
+  *mongorestore*) cat > {given}; exit {restore_exit} ;;
+  "exec resolver-restore-rehearsal mongosh --quiet --eval db.runCommand"*) exit 0 ;;
+  "exec resolver-restore-rehearsal mongosh"*) cat {work / "restored"} ;;
+  "compose exec -T"*) cat {work / "live"} ;;
+  *) exit 0 ;;
+esac
+""")
+        (bin_dir / "docker").chmod(0o755)
+        (work / "restored").write_text(restored + "\n")
+        (work / "live").write_text(live + "\n")
+        if case != "no archive":
+            (backups / "resolver-2026-10-13_0230.archive.gz").write_text("OLDER")
+            newest = backups / "resolver-2026-10-14_0230.archive.gz"
+            newest.write_text("NEWEST-ARCHIVE")
+            os.utime(backups / "resolver-2026-10-13_0230.archive.gz", (1, 1))
+        run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60,
+                             env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
+                                  "BACKUP_DIR": str(backups), "REHEARSAL_WAIT_SECONDS": "4"})
+        log = calls.read_text() if calls.exists() else ""
+        if case == "good":
+            check(run.returncode == 0 and "OK: the archive restores" in run.stdout,
+                  "rehearsal: a good archive restores (OK, status 0)", (run.returncode, run.stdout[-400:]))
+            check(given.exists() and given.read_text() == "NEWEST-ARCHIVE", "rehearsal: the newest archive by default")
+            check("run -d --name resolver-restore-rehearsal --network none sha256:dbimage" in log,
+                  "rehearsal: a throw-away container of the database's image, without network", log[:300])
+            check(log.strip().splitlines()[-1] == "rm -f resolver-restore-rehearsal",
+                  "rehearsal: the container is removed at the end", log[-200:])
+            check(re.search(r"resolver_ce\.gs1resolver\s+120\s+125", run.stdout)
+                  and re.search(r"resolver_log\.requests\s+-\s+10", run.stdout),
+                  "rehearsal: restored and live counts side by side", run.stdout[-500:])
+        elif case == "no users":
+            check(run.returncode == 1 and "MISSING: resolver_portal.users" in run.stdout,
+                  "rehearsal: an archive without the portal's users fails", (run.returncode, run.stdout[-300:]))
+        elif case == "restore fails":
+            check(run.returncode == 1 and "ERROR: mongorestore could not restore" in run.stdout
+                  and "rm -f resolver-restore-rehearsal" in log.strip().splitlines()[-1],
+                  "rehearsal: a failed restore fails, the container still removed", (run.returncode, run.stdout[-300:]))
+        else:
+            check(run.returncode == 1 and "ERROR: no archive" in run.stdout and "run -d" not in log,
+                  "rehearsal: no archive, no container", (run.returncode, run.stdout[-300:]))
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def rotation_checks() -> None:
+    """scripts/rotate-secrets.sh (item 7.2) with a stand-in docker: new values in .env, the old ones kept aside, the
+    MongoDB root password changed in the database first and given on standard input, nothing secret printed."""
+    script = REPO / "scripts" / "rotate-secrets.sh"
+    old = {"SESSION_TOKEN": "a" * 64, "PORTAL_SECRET_KEY": "b" * 64, "PORTAL_DB_PASSWORD": "c" * 48,
+           "MONGO_INITDB_ROOT_PASSWORD": "p@ss:w0rd!xyz"}
+    env_text = ("MONGO_INITDB_ROOT_USERNAME=resolveradmin\n"
+                f"MONGO_INITDB_ROOT_PASSWORD='{old['MONGO_INITDB_ROOT_PASSWORD']}'\n"
+                "MONGO_URI='mongodb://resolveradmin:p%40ss%3Aw0rd%21xyz@database-service:27017'\n"
+                f"SESSION_TOKEN='{old['SESSION_TOKEN']}'\nPORTAL_SECRET_KEY='{old['PORTAL_SECRET_KEY']}'\n"
+                f"PORTAL_DB_PASSWORD='{old['PORTAL_DB_PASSWORD']}'\nFQDN='id.example.org'\n")
+
+    def rotate(args, database_accepts=True):
+        work = Path(tempfile.mkdtemp(prefix="rotate-test-"))
+        bin_dir, calls, stdin = work / "bin", work / "calls", work / "stdin"
+        bin_dir.mkdir()
+        (bin_dir / "docker").write_text(f"""#!/bin/bash
+echo "$*" >> {calls}
+case "$*" in
+  *changeUserPassword*) cat > {stdin}; exit {0 if database_accepts else 1} ;;
+  *) exit 0 ;;
+esac
+""")
+        (bin_dir / "docker").chmod(0o755)
+        (work / ".env").write_text(env_text)
+        (work / ".env").chmod(0o600)
+        run = subprocess.run(["bash", str(script), *args], capture_output=True, text=True, timeout=60,
+                             env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work)})
+        new = dict(line.split("=", 1) for line in (work / ".env").read_text().splitlines() if "=" in line)
+        new = {k: v.strip("'") for k, v in new.items()}
+        backups = list(work.glob(".env.bak-*"))
+        result = (run, new, backups, calls.read_text() if calls.exists() else "",
+                  stdin.read_text() if stdin.exists() else "", work)
+        return result
+
+    run, new, backups, calls, given, work = rotate([])
+    check(run.returncode == 0 and all(new[k] != v for k, v in old.items()),
+          "rotation: every secret gets a new value", (run.returncode, run.stdout[-300:]))
+    check(re.fullmatch(r"[0-9a-f]{64}", new["SESSION_TOKEN"]) and re.fullmatch(r"[0-9a-f]{64}", new["PORTAL_SECRET_KEY"])
+          and re.fullmatch(r"[0-9a-f]{48}", new["PORTAL_DB_PASSWORD"])
+          and re.fullmatch(r"[0-9a-f]{48}", new["MONGO_INITDB_ROOT_PASSWORD"]),
+          "rotation: the installer's lengths (64 and 48 hexadecimal digits)")
+    check(new["MONGO_URI"] == f"mongodb://resolveradmin:{new['MONGO_INITDB_ROOT_PASSWORD']}@database-service:27017",
+          "rotation: MONGO_URI follows the new root password (an old percent-encoded one replaced)", new["MONGO_URI"])
+    check(given.strip() == new["MONGO_INITDB_ROOT_PASSWORD"] and new["MONGO_INITDB_ROOT_PASSWORD"] not in calls,
+          "rotation: the database's password changed first, given on standard input, never on a command line")
+    check(calls.strip().splitlines()[-1] == "compose up -d", "rotation: the services recreated at the end", calls[-200:])
+    check(len(backups) == 1 and oct(backups[0].stat().st_mode & 0o777) == "0o600"
+          and backups[0].read_text() == env_text and oct((work / ".env").stat().st_mode & 0o777) == "0o600",
+          "rotation: the previous .env kept (mode 600), the new one still 600")
+    printed = run.stdout + run.stderr
+    check(not any(v in printed for v in list(old.values()) + [new[k] for k in old]),
+          "rotation: no secret printed, old or new", printed[-300:])
+    check(new["FQDN"] == "id.example.org" and new["MONGO_INITDB_ROOT_USERNAME"] == "resolveradmin"
+          and sum(1 for line in (work / ".env").read_text().splitlines() if line.startswith("SESSION_TOKEN=")) == 1,
+          "rotation: other settings kept, each secret on one line")
+    shutil.rmtree(work, ignore_errors=True)
+    run, new, backups, calls, given, work = rotate(["token", "session"])
+    check(run.returncode == 0 and new["SESSION_TOKEN"] != old["SESSION_TOKEN"]
+          and new["PORTAL_DB_PASSWORD"] == old["PORTAL_DB_PASSWORD"]
+          and new["MONGO_INITDB_ROOT_PASSWORD"] == old["MONGO_INITDB_ROOT_PASSWORD"] and "changeUserPassword" not in calls,
+          "rotation: only the secrets named", run.stdout[-300:])
+    shutil.rmtree(work, ignore_errors=True)
+    run, new, backups, calls, given, work = rotate(["mongo"], database_accepts=False)
+    check(run.returncode == 1 and new["MONGO_INITDB_ROOT_PASSWORD"] == old["MONGO_INITDB_ROOT_PASSWORD"]
+          and "p%40ss" in new["MONGO_URI"] and "compose up -d" not in calls and "SKIPPED mongo" in run.stdout,
+          "rotation: the database refusing the change leaves .env's password alone (status 1)",
+          (run.returncode, run.stdout[-300:]))
+    shutil.rmtree(work, ignore_errors=True)
+    run, new, backups, calls, given, work = rotate(["everything"])
+    check(run.returncode == 2 and not backups and new["SESSION_TOKEN"] == old["SESSION_TOKEN"],
+          "rotation: an unknown name refused before anything changes", run.stdout[-200:])
+    shutil.rmtree(work, ignore_errors=True)
+
+
 # --------------------------------------------------------------------------- the organisations' own domains
 def domains_script_checks() -> None:
     """scripts/custom-domains.sh (Documentation/adr/0009-tenant-domains.md) with stand-in docker, nginx, systemctl and
@@ -479,6 +666,9 @@ def main() -> int:
         return 1
     compose_checks()
     backup_checks()
+    backup_copy_checks()
+    rehearsal_checks()
+    rotation_checks()
     domains_script_checks()
     release_checks()
     proxy_checks()

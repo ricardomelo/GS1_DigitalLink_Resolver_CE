@@ -541,6 +541,7 @@ never committed).
 | `PORTAL_MONITOR_MINUTES` (5), `PORTAL_MONITOR_URL`, `PORTAL_MONITOR_PROBE`, `PORTAL_MONITOR_BACKUP_HOURS` (26), `PORTAL_MONITOR_TLS_HOST` (`FQDN`), `PORTAL_MONITOR_CERT_DAYS` (21), `PORTAL_ALERT_404_MIN` (20), `PORTAL_ALERT_404_FACTOR` (3) | Monitoring and alerts by e-mail ([ADR 0008](Documentation/adr/0008-monitoring-and-alerts.md)): how often the worker checks (0: off), the resolver's address through the proxy and a registered code to try, the longest time without a good backup, the certificate's host and days of warning, what makes a spike of 404 |
 | `PORTAL_WORKER` (`external`) | Where imports and link checks run: `external`, the `portal-worker` service; `embedded`, a thread of the portal, for a set-up without that service |
 | `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_COOKIE_SECURE` | Optional portal settings: minutes without use and hours after the sign-in before the session ends, Secure cookie |
+| `BACKUP_COPY_TO` | An rsync destination (`user@host:/path`, or a mounted folder) to which each daily backup is copied; empty: no copy ([Documentation/extensions/README.md](Documentation/extensions/README.md#daily-backup)) |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Host addresses of ports 8080 and 27017 (read by Compose from `.env` only) |
 | `WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`, `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS` (1) | Containers of each service, 1 to 20 (read by Compose from `.env` only; the installer writes them) |
 | `WEB_SERVICE_PROCESSES`, `DATA_ENTRY_SERVICE_PROCESSES`, `PORTAL_SERVICE_PROCESSES` (2) | gunicorn processes in each container of the three web services (read by Compose from `.env` only) |
@@ -556,6 +557,8 @@ docker compose exec portal-service python create_user.py maria --role editor   #
 docker compose logs -f portal-service | grep portal.audit
 docker compose logs --tail=60 portal-worker                      # imports and link checks (background jobs)
 sudo scripts/resolver-backup.sh                                  # backup now (every database + portal volume)
+sudo scripts/restore-rehearsal.sh                                # prove the newest backup restores (a throw-away container)
+sudo scripts/rotate-secrets.sh                                   # new secrets in .env and in MongoDB; services recreated
 # more replicas: change e.g. WEB_SERVICE_REPLICAS=2 in .env, then
 docker compose up -d                                             # adds or removes containers; the proxy follows within 10 s
 docker compose ps                                                # one line per container (…-web-service-1, …-web-service-2)
@@ -570,8 +573,9 @@ Backups go to `/var/backups/resolver` (14 days). Restore the database with
 `mongorestore … --archive --gzip --drop` through `docker compose exec -T database-service`, then run
 `docker compose up -d` (the portal's database user gets the password in `.env` again); the portal's volume
 holds only the fallback session key and copies of older files. The exact commands are in
-[Documentation/extensions/README.md](Documentation/extensions/README.md#daily-backup). Keep copies on
-another machine.
+[Documentation/extensions/README.md](Documentation/extensions/README.md#daily-backup). Set `BACKUP_COPY_TO` to keep
+copies on another machine. Before going live, work through the
+[production checklist](Documentation/extensions/README.md#going-to-production).
 
 ## Development and tests
 
@@ -672,7 +676,7 @@ know whose data they handle.
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
 | Production | 7.1 | **Single sign-on** for the portal, per tenant; per-role limits on exports | M | 2.4 |
-| | 7.2 | **Production readiness**: rotation of secrets, installation on a clean machine (with a check through the proxy at the end), off-server backup copy and restore rehearsal, production domain checklist | M | — |
+| | 7.2 | **Production readiness**, on the servers: an installation on a clean machine, the off-server copy set up, a restore rehearsal, the staging secrets rotated and the [production checklist](Documentation/extensions/README.md#going-to-production) worked through (the scripts and the installer's final check of a scan through the proxy are done) | S | — |
 | | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages, default link titles in the link's language (conformance review F21) | S | — |
 | | 7.4 | **Load test and scale-out rehearsal**: target load agreed, several replicas of the resolver and the portal, MongoDB replica set, results recorded | M | 2.3 |
 | Standards | 8.1 | **Errata and Work Requests to GS1**: E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
@@ -702,7 +706,8 @@ portal/                         link management portal: app.py, gs1.py (keys, qu
                                 syntax.py (data attributes), static/ (HTML, CSS, JS, i18n),
                                 tools/build-syntax-engine.sh (GS1 Barcode Syntax Engine)
 scripts/                        install.sh, templates/ (nginx), resolver-backup.sh and its cron entry,
-                                custom-domains.sh (sites and certificates of organisations' own domains)
+                                custom-domains.sh (sites and certificates of organisations' own domains),
+                                restore-rehearsal.sh, rotate-secrets.sh
 dev-tests/                      development tests (see above)
 .github/                        workflows/dev-tests.yml (continuous integration), actions/dev-tests-setup/
 CLAUDE.md, .claude/             conventions and the session start hook for Claude Code cloud sessions

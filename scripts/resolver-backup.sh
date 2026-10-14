@@ -8,6 +8,12 @@
 #
 # Run it from the repository (no copy needed):  sudo scripts/resolver-backup.sh
 # Scheduled by scripts/resolver-backup.cron. Settings can be overridden from the environment.
+#
+# Off-server copy (item 7.2): with BACKUP_COPY_TO (in .env or the environment) set to an rsync destination — e.g.
+# backup@vault.example.org:/srv/resolver or a mounted /mnt/offsite/resolver — each run's files are copied there too;
+# a copy that fails makes the run fail (ERROR, status 1, recorded for the monitoring), so that it is noticed. The
+# destination keeps what it receives: its own retention is the destination's business. scripts/restore-rehearsal.sh
+# checks that an archive restores.
 set -euo pipefail
 
 # Repository root (where docker-compose.yml lives): by default the parent of this script's folder.
@@ -19,6 +25,9 @@ umask 077
 mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
 STAMP="$(date +%F_%H%M)"
 cd "$RESOLVER_DIR"
+if [ -z "${BACKUP_COPY_TO:-}" ]; then
+  BACKUP_COPY_TO="$(sed -n "s/^BACKUP_COPY_TO=['\"]\{0,1\}\([^'\"]*\)['\"]\{0,1\}$/\1/p" .env.example .env 2>/dev/null | tail -1 || true)"
+fi
 
 # The result of each run, for the portal's monitoring (Documentation/adr/0008-monitoring-and-alerts.md): written as the
 # setting "backup.last" of the portal's database with mongosh inside the database container (the credentials stay in
@@ -64,5 +73,14 @@ find "$BACKUP_DIR" \( -name 'resolver-*.archive.gz' -o -name 'portal-config-*.ta
   -mtime +"$RETENTION_DAYS" -delete
 find "$BACKUP_DIR" -name '*.tmp' -mtime +1 -delete     # left by a run that was killed
 SIZE="$(du -h "$DB_ARCHIVE" | cut -f1)"
+if [ -n "$BACKUP_COPY_TO" ]; then
+  COPY=("$DB_ARCHIVE")
+  [ -f "$PORTAL_ARCHIVE" ] && COPY+=("$PORTAL_ARCHIVE")
+  if ! rsync -a --chmod=F600 --timeout=600 "${COPY[@]}" "${BACKUP_COPY_TO%/}/"; then
+    echo "$(date -Is) ERROR: the off-server copy to $BACKUP_COPY_TO failed (rsync's message above); the local backup $DB_ARCHIVE is kept"
+    record 0 "$DB_ARCHIVE" "$SIZE" "the off-server copy failed"; exit 1
+  fi
+  echo "$(date -Is) copied to $BACKUP_COPY_TO"
+fi
 echo "$(date -Is) OK $DB_ARCHIVE $SIZE $PORTAL_ARCHIVE"
 record 1 "$DB_ARCHIVE" "$SIZE" ""

@@ -70,6 +70,7 @@ case $args in
   *healthz*) [[ -e STATE/proxy-stale ]] && exit 22
              if [[ -e STATE/worker-down ]]; then echo '{"portal":"ok","resolver":"ok","worker":"unavailable"}'
              else echo '{"portal":"ok","resolver":"ok","worker":"ok"}'; fi ;;
+  *http_code*/01/*) if [[ -e STATE/resolver-down ]]; then printf 502; else printf 404; fi ;;
   *http_code*) printf 200 ;;
   *gs1resolver*) echo '{"resolverRoot": "https://x"}' ;;
   *) exit 22 ;;
@@ -146,6 +147,8 @@ check "A: Compose reads the replica counts" "[[ \$(compose_cfg | grep -c 'replic
 check "A: replicas in the summary" "grep -q 'Replicas *resolver 1, data entry API 1, portal 1, job worker 1' $SB/state/out"
 check "A: no e-mail relay asked for: e-mail off" "[[ -z \$(envval PORTAL_MAIL_HOST) && -z \$(envval PORTAL_MAIL_PASSWORD) ]] && grep -q 'E-mail relay *none (e-mail off)' $SB/state/out"
 check "A: time zone of the daily request counts written (the server's, else UTC)" "[[ -n \$(envval PORTAL_TIME_ZONE) ]] && compose_cfg | grep -q \"PORTAL_TIME_ZONE: \$(envval PORTAL_TIME_ZONE)\" && grep -q 'Time zone *'\$(envval PORTAL_TIME_ZONE) $SB/state/out"
+check "A: a scan through the proxy checked at the end (404: not registered, but the resolver answered)" "grep -q 'https://id.example.org/01/09506000134352 → 404 (a scan reaches the resolver' $SB/state/out"
+check "A: the portal checked through HTTPS at the end" "grep -q 'https://id.example.org/portal/ answers' $SB/state/out"
 check "A: backup cron points at the repository" "grep -q \"root $SB/repo/scripts/resolver-backup.sh\" $SB/state/cron"
 A_TOKEN=$(envval SESSION_TOKEN); A_PWD=$(envval MONGO_INITDB_ROOT_PASSWORD)
 A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY)
@@ -302,6 +305,14 @@ run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org; r
 check "I: exit status 0 (the portal works; only background jobs wait)" "[[ $rc == 0 ]]"
 check "I: warning naming the portal-worker log" "grep -q 'job worker is not running' $SB/state/out && grep -q 'docker compose logs portal-worker' $SB/state/out"
 check "I: no 'Job worker running' line" "! grep -q 'Job worker running' $SB/state/out"
+
+# ------------------------------------------------------------------------------ K. resolver down behind the proxy
+echo "--- K. the portal answers but a scan gets 502 through the proxy"
+new_sandbox
+touch "$SB/state/resolver-down"
+run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org; rc=$?
+check "K: exit status 0 (a warning, as the other final checks)" "[[ $rc == 0 ]]"
+check "K: the warning names the code, the answer and the log to read" "grep -q '/01/09506000134352 → 502: a scan does not reach the resolver' $SB/state/out && grep -q 'docker compose logs web-service' $SB/state/out"
 
 # ------------------------------------------------------------------------------ J. e-mail relay
 echo "--- J. e-mail relay: TLS, kept on a second run, switched off"

@@ -55,6 +55,7 @@ NGINX_ENABLED="${INSTALL_NGINX_ENABLED:-/etc/nginx/sites-enabled}"
 CRON_FILE="${INSTALL_CRON_FILE:-/etc/cron.d/resolver-backup}"
 SITE_NAME="gs1resolver"
 HEALTH_TIMEOUT="${INSTALL_HEALTH_TIMEOUT:-240}"
+CHECK_CODE="${INSTALL_CHECK_CODE:-/01/09506000134352}"   # a GS1 Digital Link path for the final check of a scan
 WORKER_TIMEOUT="${INSTALL_WORKER_TIMEOUT:-60}"
 PROXY_RESTART_AFTER="${INSTALL_PROXY_RESTART_AFTER:-30}"
 
@@ -803,6 +804,18 @@ final_checks() {
     ok "$base/.well-known/gs1resolver answers"
   else
     warn "$base/.well-known/gs1resolver did not answer as expected"
+  fi
+  # A scan through the whole chain (HTTPS, the host's nginx, the proxy, the resolver, its database): GS1's example GTIN
+  # answers 307 when registered and 404 when not; anything else (502, 504, no answer) means a link of the chain is down.
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H 'Accept: application/json' "$base$CHECK_CODE" || true)
+  case $code in
+    307|300|200|404) ok "$base$CHECK_CODE → $code (a scan reaches the resolver and its database)" ;;
+    *) warn "$base$CHECK_CODE → ${code:-no answer}: a scan does not reach the resolver (see: docker compose logs web-service)" ;;
+  esac
+  if curl -fsS --max-time 10 "$base/portal/healthz" 2>/dev/null | grep -q '"resolver":"ok"'; then
+    ok "$base/portal/ answers and reaches the data entry API"
+  else
+    warn "$base/portal/healthz did not answer as expected"
   fi
 }
 

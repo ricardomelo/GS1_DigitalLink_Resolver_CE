@@ -46,6 +46,7 @@ uma organização precisa para operar um Resolver para os seus associados:
 | [Decisões de arquitetura](adr/0001-estado-do-portal-no-mongodb.md) | mantenedores, desenvolvedores, operadores | ADR 0001: o estado do portal no MongoDB, tarefas em segundo plano num worker, mais de uma réplica |
 | [Organizações (tenants)](adr/0002-organizacoes.md) | mantenedores, desenvolvedores, operadores | ADR 0002: organizações donas de prefixos de empresa GS1, o administrador do servidor, acesso de suporte, uma trilha de auditoria por tenant |
 | [Regras GS1 do dicionário](adr/0003-regras-gs1-do-dicionario.md) | mantenedores, desenvolvedores | ADR 0003: uma fonte única para as regras GS1 (o GS1 Barcode Syntax Dictionary), uma versão do motor, mensagens do motor traduzidas, uma verificação semanal de atualizações |
+| [E-mail](adr/0004-e-mail.md) | mantenedores, desenvolvedores, operadores | ADR 0004: e-mail de saída por um relay autenticado, convites, recuperação de senha por link de uso único, notificações com preferências por usuário |
 
 Em inglês ficam também a [documentação detalhada das extensões](../extensions/README.md), o
 [changelog](../extensions/CHANGELOG.md) e o [README oficial](../upstream-README.md). O índice de todos os

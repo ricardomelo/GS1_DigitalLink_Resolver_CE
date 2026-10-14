@@ -26,6 +26,7 @@ o próximo começar.
 | 8 — backlog, ajustes rápidos, CI | 13/10 | `bc1c86b`, `1a1ca59`, `d68a883` e os commits de documentação | backlog reordenado em torno de tenants, e-mail, chaves de API e domínios próprios; sessão de 30 minutos sem uso com aviso e limite de 12 horas; quadro da sintaxe retirado da página inicial; aviso da comunidade; testes de desenvolvimento pelo pytest e no GitHub Actions |
 | 9 — arquitetura para escala | 13/10 | ADR 0001, depois três entregas de código (`d783f3d`, `a072e9d`, `20f3304`) e os commits de documentação | item 2.3: o estado do portal no MongoDB, as tarefas em segundo plano num serviço worker, réplicas de todos os serviços sem estado atrás de um proxy que as acha sozinho; gunicorn em todos os serviços web; nginx 1.30 |
 | 10 — tenants | 13/10 | ADR 0002, depois duas entregas de código (`1590b7e`, `675b6ca`), o commit de documentação e uma correção (`7c10048`) | item 2.4: organizações donas de prefixos de empresa GS1, o administrador do servidor, acesso de suporte, uma trilha de auditoria por organização, um e-mail por usuário |
+| 12 — e-mail | 14/10 | ADR 0004, uma correção do instalador (`f3d127d`), duas entregas de código (`03c924b`, `fbe86f0`) e o commit de documentação | item 3.1: e-mail por um relay autenticado, convites, recuperação de senha por link de uso único, avisos de segurança e avisos de tarefas terminadas com preferências por usuário |
 | 11 — uma fonte única para as regras GS1 | 13/10 | ADR 0003, depois três entregas de código (`8e3d9c7`, `6f6ce19`, `e7c5a6d`) e o commit de documentação | item 2.5: uma versão do engine para todos os serviços, chaves, qualificadores e formatos do GS1 Barcode Syntax Dictionary, as mensagens do engine traduzidas, uma verificação semanal de atualizações |
 
 Ao fim da sessão 4, o fork altera ou acrescenta 70 arquivos do projeto oficial (cerca de 16.000 linhas
@@ -405,6 +406,38 @@ mudanças para a versão, cinco para o dicionário, oito para as mensagens). A A
 ambiente de trabalho, então a primeira execução real do workflow semanal será no GitHub. Ainda não confirmado na
 homologação nem no CI.
 
+## Sessão 12 — e-mail (item 3.1)
+
+O responsável ainda não conseguia chegar à estação de trabalho nem ao servidor para aplicar o bundle cumulativo dos
+itens 2.4 e 2.5, e pediu para seguir com o próximo item e entregar tudo num único bundle a partir de `fd8f67c`,
+tomando a opção recomendada em toda pergunta. Ele enviou na conversa o bundle das sessões 10 e 11; a base em cima
+dele bateu exatamente com o fim da sessão 11 (1.904 verificações).
+
+Toda pergunta do [ADR 0004](adr/0004-e-mail.md) foi decidida pela opção recomendada: envio SMTP a um relay escolhido
+pelo operador (587 STARTTLS ou 465 TLS, já que a porta 25 é bloqueada no Azure), configurações no `.env` e e-mail
+desligado sem elas; mensagens como tarefas do worker existente, com novas tentativas; links de uso único guardados
+como hash, com o token no fragmento do endereço; convites por padrão quando há endereço; recuperação com a mesma
+resposta para todos; avisos de segurança sempre e avisos de tarefas a pedido, no idioma do usuário; textos no
+código; Mailpit num perfil do compose para experimentar; três entregas.
+
+| Commit | Mudança |
+|---|---|
+| `a0ccc6a` | docs: ADR 0004 nos dois idiomas (etapa 1) |
+| `f3d127d` | install: nenhuma configuração gravada duas vezes no `.env` numa nova execução (um defeito mais antigo achado pelo teste do relay) |
+| `03c924b` | etapa 2: `mail.py`, `mailtexts.py`, `tokens.py`, `notify.py`; a tarefa `mail` e `notBefore`; recuperação, links, convites, redefinições por link, avisos e preferências no `app.py`; a etapa do relay no instalador; Mailpit; `test_mail.py` com um relay SMTP próprio |
+| `fbe86f0` | etapa 3: os formulários de recuperação e de link da página de entrada, o convite na tela de usuários, Opções → E-mail, as imagens dos guias do usuário; `test_mail_e2e.py` |
+
+Escrever o teste do instalador para o relay mostrou que uma nova execução gravava `FQDN`, `TLS_MODE`, uma
+quantidade de réplicas e mais duas configurações duas vezes no `.env`, o valor antigo por último, de modo que uma
+mudança feita pelo instalador não valia: a conferência das chaves gerenciadas procurava o nome seguido de um
+espaço, e os nomes no fim de uma linha da lista são seguidos de uma quebra de linha. Corrigido no seu próprio
+commit, com uma conferência de que nenhuma chave aparece duas vezes. O teste no navegador da página do link mostrou
+que um link colado numa página de entrada aberta muda só o fragmento e não carrega a página de novo; a página agora
+escuta essa mudança. As 16 proteções do servidor e a retirada do token da barra de endereço passaram por teste de
+mutação; uma mutação (o link de uma conta desativada aceito) escapou no início e ganhou a sua conferência. A imagem
+do Mailpit não pode ser baixada no ambiente de trabalho, então a primeira execução dela é na homologação. Ainda não
+confirmado na homologação nem no CI.
+
 ## Como as principais áreas evoluíram
 
 | Área | 1.0.0 (sessão 1) | Agora |
@@ -414,10 +447,10 @@ homologação nem no CI.
 | Achar cadastros | abrir um GTIN por vez | lista de registros, busca por texto, filtros por tipo de chave, qualificador, autor e problemas de link, busca por código, outros cadastros da chave |
 | Trabalho em lote | nenhum | exportação XLSX/CSV e importação em duas etapas |
 | Qualidade dos destinos | nenhuma | verificador de links no editor, em todos os cadastros e na importação |
-| Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, organizações (tenants) com usuários e auditoria próprios, um administrador do servidor com acesso de suporte, tela de usuários, senhas temporárias, histórico, auditoria, no banco próprio do portal |
+| Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, organizações (tenants) com usuários e auditoria próprios, um administrador do servidor com acesso de suporte, tela de usuários, senhas temporárias ou convites por e-mail, recuperação de senha por e-mail, avisos de segurança, histórico, auditoria, no banco próprio do portal |
 | Instalação | manual, com patch | fork git, configuração em camadas, instalador para Ubuntu, backup |
 | Resolução | GTIN e lote, links comprimidos do Digital Link 1.1 | todas as chaves e qualificadores, as regras do Resolver 1.2.1, EPC em binário de etiquetas NFC (`/eh…`, `/ex…`) |
-| Testes | 69 verificações | 1.670 verificações em 21 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador (68); rodam pelo pytest e no GitHub Actions, o portal e seus workers de tarefas também num MongoDB real |
+| Testes | 69 verificações | 1.845 verificações em 23 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador (84); rodam pelo pytest e no GitHub Actions, o portal e seus workers de tarefas também num MongoDB real |
 | Implantação | um contêiner por serviço, servidor embutido do Flask, proxy reiniciado à mão | quantas réplicas se queira dos quatro serviços sem estado (definidas no `.env`), gunicorn em todos os serviços web, um proxy que acompanha as réplicas pelo DNS do Docker |
 | Documentação | README do pacote, documento de passagem | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e português), documentação das extensões, changelog |
 
@@ -454,6 +487,9 @@ homologação nem no CI.
     de um `++` é ignorado.
 13. Os linksets escrevem os tipos de link `gs1:` em `https://ref.gs1.org/voc/` (Resolver 2.14); os
     documentos gravados mantêm as chaves oficiais `https://gs1.org/voc/`.
+14. O e-mail passa por um relay escolhido pelo operador, como tarefas do worker; sem relay nada muda. Os links de
+    uso único são guardados como hash e levados no fragmento do endereço; a recuperação de senha responde igual
+    para todos; os avisos de segurança não podem ser desligados ([ADR 0004](adr/0004-e-mail.md)).
 
 ## Lições aprendidas
 
@@ -505,6 +541,11 @@ homologação nem no CI.
   os testes passando, porque os testes rodavam a árvore de fontes. Teste o que a imagem vai conter.
 - Antes de gerar uma tabela que substitui uma escrita à mão, compare as duas: as diferenças são erros do gerador ou
   da tabela antiga, e as duas pedem uma decisão.
+- O teste de uma funcionalidade nova lê o que o código antigo grava: conferir o `.env` do instalador para o relay
+  revelou configurações gravadas duas vezes, o valor antigo por último, um defeito mais antigo que a
+  funcionalidade. Confira a saída, não só os valores que deviam mudar.
+- Um link que difere da página aberta só depois do `#` não carrega a página de novo: um código que lê o fragmento
+  ao carregar também precisa escutar o `hashchange`.
 
 ## Pendências
 
@@ -514,8 +555,9 @@ homologação nem no CI.
 - A verificação final do instalador usa só o `/portal/healthz`; deveria também pedir algo ao Resolver pelo
   proxy (item 7.2).
 - Uma cópia do backup fora do servidor e um ensaio de restauração.
-- Os itens 2.4 e 2.5 na homologação e no CI (sessões 10 e 11): faltam o push do responsável, o resumo do CI, as
-  conferências da atualização na homologação e a primeira execução da verificação semanal do engine.
+- Os itens 2.4, 2.5 e 3.1 na homologação e no CI (sessões 10 a 12): faltam o push do responsável, o resumo do CI,
+  as conferências da atualização na homologação, a primeira execução da verificação semanal do engine, um primeiro
+  teste do e-mail com o Mailpit e depois com o relay da organização.
 - Revisão dos 221 nomes de AIs em português e das mensagens do engine em português; decisão sobre o logotipo GS1
   na página inicial e nas páginas do Resolver.
 

@@ -2,6 +2,39 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### E-mail (backlog item 3.1)
+- **Architecture decision record** [ADR 0004](../adr/0004-e-mail.md) (English and Portuguese): outgoing mail through
+  an authenticated SMTP relay, messages as jobs of the worker, single-use links for invitations and password
+  recovery, a notification framework with per-user preferences. Commit `a0ccc6a`.
+- **Outgoing e-mail** (step 2), off unless `PORTAL_MAIL_HOST` is set: `portal/mail.py` sends through the relay with
+  STARTTLS on 587 (default) or TLS on 465, the certificate always verified and no credential ever sent without
+  encryption; `python mail.py test <address>` checks the settings. Settings `PORTAL_MAIL_*`, `PORTAL_INVITE_HOURS`,
+  `PORTAL_RESET_MINUTES` in `.env.example`; the installer asks for the relay (optional). Commit `03c924b`.
+- **Invitations**: a user created with an address gets a link (72 hours) to choose a password instead of a
+  temporary one shown to the administrator; a reset by an administrator sends a link (60 minutes) and the old
+  password stops working at once. Without an address, or with e-mail off, temporary passwords as before.
+  Commits `03c924b`, `fbe86f0`.
+- **Password recovery** on the sign-in page (*Forgotten your password?*): by user name or address, the same answer
+  and timing for every entry, limits per entry and per browser address. Links carry a random token in the
+  fragment of the address (never in a server log), stored only as a hash, valid once; choosing a password through
+  one ends every session and link of the account. Commits `03c924b`, `fbe86f0`.
+- **Notifications** in the user's language: security notices always (password changed, e-mail address changed —
+  to the old and the new address —, account locked); finished imports and full link checks when the user asks
+  (Options → E-mail). Messages are jobs of the worker (`type: "mail"`), retried after 1, 5, 15, 60 and 120 minutes,
+  `mail-failed` in the audit trail without the address; the text leaves the job once sent. Jobs gain `notBefore`;
+  a `tokens` collection; users gain `invited`, `language`, `languageChosen`, `notify`; journal actions
+  `password-recovery`, `password-reset`, `invite-accepted`, `preferences`, `mail-failed`; `"mail"` in
+  `/portal/healthz`. Commit `03c924b`.
+- **Mailpit for trying it** (`docker compose --profile mail-test up -d mailpit`): a test relay that keeps every
+  message, on `127.0.0.1:8025` only; never started by default. Commit `03c924b`.
+- **Fix: the installer wrote some settings twice in `.env`** on a re-run (`FQDN`, `RESOLVER_CONTACT_REGION`,
+  `PORTAL_ADMIN_USERNAME`, `TLS_MODE`, `DATA_ENTRY_SERVICE_REPLICAS`: the names at the end of a line of its list
+  of managed keys), the old value last, so a value changed through the installer did not take effect. Found while
+  writing the relay's test. Commit `f3d127d`.
+- **Tests**: `test_mail.py` (138 checks, against an SMTP relay of the tests' own, `fake_smtp.py`; 16 protections
+  mutation-checked) and `test_mail_e2e.py` (37, the screens in Chromium); the installer test covers the relay and
+  duplicate keys (84). Commits `f3d127d`, `03c924b`, `fbe86f0`.
+
 ### One source for the GS1 rules (backlog item 2.5)
 - **Architecture decision record** [ADR 0003](../adr/0003-gs1-rules-from-the-dictionary.md) (English and
   Portuguese): the portal's GS1 rules generated from the GS1 Barcode Syntax Dictionary of one pinned engine

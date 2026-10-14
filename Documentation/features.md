@@ -77,6 +77,10 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Show-password button | An eye in every password field (sign-in, password change) | `1525f82` |
 | First user from `.env` | `PORTAL_ADMIN_USERNAME` / `PORTAL_ADMIN_PASSWORD` create the first administrator while there are no users | `126f507` |
 | Command-line users | `create_user.py`: create, set password, role, prefixes, remove | `126f507`, `71b15f2` |
+| Password recovery by e-mail | *Forgotten your password?* on the sign-in page (installations with e-mail): a single-use link (60 minutes) to the account's address, by user name or address; the same answer for every entry; limits per entry and per browser address ([ADR 0004](adr/0004-e-mail.md)) | `03c924b`, `fbe86f0` |
+| Invitations | A user created with an address chooses their own password through a link (72 hours) instead of a temporary password; *Send the invitation again*; a reset by an administrator sends a link | `03c924b`, `fbe86f0` |
+| Security notices | A message when the password or the e-mail address changes (to the old and the new address) and when the account is locked | `03c924b` |
+| E-mail preferences | Options → E-mail: the language of the messages and the notices of finished imports and full link checks | `03c924b`, `fbe86f0` |
 
 ## Portal: editor
 
@@ -185,7 +189,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Server administrator | The operator's administrators manage organisations and every user; an organisation's administrator only its users | `1590b7e`, `675b6ca` |
 | Support access | Read-only access of a server administrator to one organisation, with a reason recorded in its audit trail; a banner while it is open | `1590b7e`, `675b6ca` |
 | Audit trail per organisation | Each organisation sees its own trail; what the operator did to it is tagged; history and "changed by" per organisation | `1590b7e`, `675b6ca` |
-| E-mail per user | Optional, unique; for the e-mail features to come | `1590b7e`, `675b6ca` |
+| E-mail per user | Optional, unique; where invitations, recovery links and notices go | `1590b7e`, `675b6ca`, `03c924b` |
 | Journal | One event per document in the portal's database, included in the backup; kept by age per category (sign-ins 180 days, record changes and administration for ever by default; `PORTAL_JOURNAL_*_DAYS`) | `71b15f2`, `d783f3d` |
 
 ## Portal: robustness and security
@@ -239,7 +243,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Portal database user | The one-shot service `portal-db-init` creates the portal's MongoDB user, or brings its password up to date, at every start | `d783f3d` |
 | Move from the files of earlier versions | At its first start the portal imports `users.json`, `records-meta.json` and `journal.jsonl` into its database and keeps them as `*.migrated`; an interrupted import finishes at the next start | `d783f3d` |
 | Installer secrets for the portal | `PORTAL_DB_PASSWORD` and `PORTAL_SECRET_KEY` generated and kept on re-runs | `d783f3d` |
-| Health check | `/portal/healthz`, with the job worker (`worker`: `ok` or `unavailable`); the installer warns when the worker does not report | `126f507`, `a072e9d` |
+| Health check | `/portal/healthz`, with the job worker (`worker`: `ok` or `unavailable`) and e-mail (`mail`: `on` or `off`); the installer warns when the worker does not report | `126f507`, `a072e9d`, `03c924b` |
+| E-mail relay | Messages through an authenticated SMTP relay (587 STARTTLS or 465 TLS, certificate verified), sent and retried by the worker; settings in `.env`, asked by the installer; `python mail.py test <address>`; a Mailpit service (profile `mail-test`) for trying it | `03c924b` |
 | One engine release | The GS1 Barcode Syntax Engine release is written once, in `docker-compose.yml` (`x-gs1-syntax-engine`), and used by the resolver, the data entry API, the portal, CI and the tests | `8e3d9c7` |
 | `portal-worker` service | The portal's image running the job worker; `PORTAL_WORKER=embedded` runs it as a thread of the portal for a set-up without the service | `a072e9d` |
 

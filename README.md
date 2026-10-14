@@ -97,7 +97,7 @@ the official Postman collection is at
 | Area | Addition |
 |---|---|
 | **Portal** (`/portal/`) | Sign-in with per-user passwords (with a show/hide button); editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; QR code labels (PNG/SVG) with the dimensions of the *QR Codes powered by GS1* guidelines, a choice of QR version, error correction and human readable text, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search and filters by key type and qualifier; spreadsheet import/export (XLSX, CSV) with preview; link checker |
-| **Governance** | Roles (administrator, editor, reader); organisations (tenants) that own GS1 Company Prefixes, each with its own users and audit trail, and a server administrator with recorded, read-only support access; access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords; history of every record with restore; audit trail with filters and CSV export |
+| **Governance** | Roles (administrator, editor, reader); organisations (tenants) that own GS1 Company Prefixes, each with its own users and audit trail, and a server administrator with recorded, read-only support access; access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords or, with an e-mail relay, invitations by e-mail; password recovery by e-mail; security notices; history of every record with restore; audit trail with filters and CSV export |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, built from the GS1 Barcode Syntax Dictionary of the engine release every service uses |
 | **Data attributes** | Every data attribute of URI Syntax §4.10 in QR codes, validated by the GS1 Barcode Syntax Engine (formats, check digits, dates, code lists and the association rules of the General Specifications), its messages in the user's language; passed on by the resolver to the targets |
 | **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, the default link unless the request decides a language variant, request paths checked by the GS1 Barcode Syntax Engine, values with `%2F`, the query string passed on exactly as sent, EPC binary strings (`/eh…`, `/ex…`) from NFC tags decompressed, HTML pages in pt-BR / en-GB for browsers |
@@ -594,7 +594,7 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 
 ## Open backlog
 
-Status on 13 October 2026. Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+Status on 14 October 2026. Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
 the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
@@ -604,8 +604,9 @@ data in MongoDB, background jobs in a worker service, replicas of every stateles
 GS1 Company Prefixes, the server administrator and support access, an audit trail per organisation;
 [ADR 0002](Documentation/adr/0002-tenants.md)), and item 2.5, one source for the GS1 rules (keys, qualifiers and
 formats from the GS1 Barcode Syntax Dictionary, one engine release for every service, the engine's messages
-translated, a weekly update check; [ADR 0003](Documentation/adr/0003-gs1-rules-from-the-dictionary.md)), are
-complete too. What was
+translated, a weekly update check; [ADR 0003](Documentation/adr/0003-gs1-rules-from-the-dictionary.md)), and item
+3.1, e-mail (an authenticated relay, invitations, password recovery by single-use link, notifications with
+per-user preferences; [ADR 0004](Documentation/adr/0004-e-mail.md)), are complete too. What was
 done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
 The items below are in the agreed order; sizes are relative (S, M, L). The order puts first what later items
 build on: the portal's data store and tenants come before the API, e-mail and analytics, which all need to
@@ -613,8 +614,7 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Platform services | 3.1 | **E-mail**: outgoing mail through an authenticated relay (settings in `.env`), invitations to new users, password recovery by single-use link, a notification framework with per-user preferences | M | 2.4 |
-| | 3.2 | **Tenant API and API keys**: a versioned API of the portal for records, labels and later analytics, described in OpenAPI, limited to the tenant's prefixes; keys created by the tenant administrator in the portal (random, stored only as a hash, shown once, with scopes, expiry, revocation, last use and rate limits); the official data entry API and its token stay internal | L | 2.4, 2.5 |
+| Platform services | 3.2 | **Tenant API and API keys**: a versioned API of the portal for records, labels and later analytics, described in OpenAPI, limited to the tenant's prefixes; keys created by the tenant administrator in the portal (random, stored only as a hash, shown once, with scopes, expiry, revocation, last use and rate limits); the official data entry API and its token stay internal | L | 2.4, 2.5 |
 | Resolution log and analytics | 4.1 | **Log of resolver requests** (key, qualifiers, data attribute AIs, link type, outcome and level, latency, language, device, referrer, EPC scheme), asynchronous, privacy by design, raw events with an expiry plus daily aggregates | L | 2.3 |
 | | 4.2 | **Home page after sign-in with indicators**, each tenant seeing only its own prefixes and keys (the server administrator sees the whole installation): usage, resolution quality (404 for unknown codes first), record quality, operation, governance; export to Excel and CSV | L | 4.1, 2.4 |
 | | 4.3 | **Monitoring and alerts** by e-mail: resolver down (checked through the proxy), failed backup, spikes of 404, certificate expiry | M | 4.2, 3.1 |

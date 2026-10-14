@@ -74,6 +74,10 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Botão de mostrar senha | Um olho em cada campo de senha (entrada, troca de senha) | `1525f82` |
 | Primeiro usuário pelo `.env` | `PORTAL_ADMIN_USERNAME` / `PORTAL_ADMIN_PASSWORD` criam o primeiro administrador enquanto não há usuários | `126f507` |
 | Usuários pela linha de comando | `create_user.py`: criar, definir senha, perfil, prefixos, excluir | `126f507`, `71b15f2` |
+| Recuperação de senha por e-mail | *Esqueceu a senha?* na página de entrada (instalações com e-mail): um link de uso único (60 minutos) para o endereço da conta, por usuário ou endereço; a mesma resposta para qualquer entrada; limites por entrada e por endereço do navegador ([ADR 0004](adr/0004-e-mail.md)) | `03c924b`, `fbe86f0` |
+| Convites | Um usuário criado com endereço escolhe a própria senha por um link (72 horas) em vez de uma senha temporária; *Reenviar convite*; a redefinição por um administrador envia um link | `03c924b`, `fbe86f0` |
+| Avisos de segurança | Uma mensagem quando a senha ou o endereço de e-mail muda (para o endereço antigo e o novo) e quando a conta é bloqueada | `03c924b` |
+| Preferências de e-mail | Opções → E-mail: o idioma das mensagens e os avisos de importações e verificações de todos os links terminadas | `03c924b`, `fbe86f0` |
 
 ## Portal: editor
 
@@ -182,7 +186,7 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Administrador do servidor | Os administradores do operador gerenciam as organizações e todos os usuários; o administrador de uma organização, só os usuários dela | `1590b7e`, `675b6ca` |
 | Acesso de suporte | Acesso só de leitura de um administrador do servidor a uma organização, com o motivo registrado na auditoria dela; uma faixa enquanto está aberto | `1590b7e`, `675b6ca` |
 | Auditoria por organização | Cada organização vê a sua trilha; o que o operador fez nela aparece marcado; histórico e "alterado por" por organização | `1590b7e`, `675b6ca` |
-| E-mail por usuário | Opcional, único; para as funcionalidades de e-mail que virão | `1590b7e`, `675b6ca` |
+| E-mail por usuário | Opcional, único; para onde vão convites, links de recuperação e avisos | `1590b7e`, `675b6ca`, `03c924b` |
 | Diário | Um evento por documento no banco do portal, incluído no backup; guardado por idade, por categoria (entradas 180 dias, alterações de cadastros e administração para sempre por padrão; `PORTAL_JOURNAL_*_DAYS`) | `71b15f2`, `d783f3d` |
 
 ## Portal: robustez e segurança
@@ -236,7 +240,8 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Usuário do banco do portal | O serviço `portal-db-init`, que roda uma vez, cria o usuário MongoDB do portal, ou atualiza sua senha, a cada início | `d783f3d` |
 | Migração dos arquivos das versões anteriores | No primeiro início o portal importa `users.json`, `records-meta.json` e `journal.jsonl` para o seu banco e os guarda como `*.migrated`; uma importação interrompida termina no início seguinte | `d783f3d` |
 | Segredos do portal no instalador | `PORTAL_DB_PASSWORD` e `PORTAL_SECRET_KEY` gerados e mantidos quando o instalador roda de novo | `d783f3d` |
-| Verificação de saúde | `/portal/healthz`, com o worker de tarefas (`worker`: `ok` ou `unavailable`); o instalador avisa quando o worker não se apresenta | `126f507`, `a072e9d` |
+| Verificação de saúde | `/portal/healthz`, com o worker de tarefas (`worker`: `ok` ou `unavailable`) e o e-mail (`mail`: `on` ou `off`); o instalador avisa quando o worker não se apresenta | `126f507`, `a072e9d`, `03c924b` |
+| Relay de e-mail | Mensagens por um relay SMTP autenticado (587 STARTTLS ou 465 TLS, certificado verificado), enviadas e repetidas pelo worker; configurações no `.env`, perguntadas pelo instalador; `python mail.py test <endereço>`; um serviço Mailpit (perfil `mail-test`) para experimentar | `03c924b` |
 | Uma versão do engine | A versão do GS1 Barcode Syntax Engine é escrita uma vez, no `docker-compose.yml` (`x-gs1-syntax-engine`), e usada pelo resolver, pela API de cadastro, pelo portal, pelo CI e pelos testes | `8e3d9c7` |
 | Serviço `portal-worker` | A imagem do portal rodando o worker de tarefas; `PORTAL_WORKER=embedded` o roda como uma thread do portal, para uma instalação sem o serviço | `a072e9d` |
 

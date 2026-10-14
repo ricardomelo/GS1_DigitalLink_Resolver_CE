@@ -26,6 +26,7 @@ the next one started.
 | 8 — backlog, quick wins, CI | 13 Oct | `bc1c86b`, `1a1ca59`, `d68a883` and the documentation commits | backlog reordered around tenants, e-mail, API keys and custom domains; 30-minute idle session with a warning and a 12-hour limit; syntax box removed from the home page; community notice; development tests through pytest and on GitHub Actions |
 | 9 — architecture for scale | 13 Oct | ADR 0001, then three code deliveries (`d783f3d`, `a072e9d`, `20f3304`) and the documentation commits | item 2.3: the portal's state in MongoDB, background jobs in a worker service, replicas of every stateless service behind a proxy that finds them by itself; gunicorn in every web service; nginx 1.30 |
 | 10 — tenants | 13 Oct | ADR 0002, then two code deliveries (`1590b7e`, `675b6ca`), the documentation commit and a fix (`7c10048`) | item 2.4: organisations that own GS1 Company Prefixes, the server administrator, support access, an audit trail per organisation, an e-mail address per user |
+| 12 — e-mail | 14 Oct | ADR 0004, an installer fix (`f3d127d`), two code deliveries (`03c924b`, `fbe86f0`) and the documentation commit | item 3.1: mail through an authenticated relay, invitations, password recovery by single-use link, security notices and notices of finished jobs with per-user preferences |
 | 11 — one source for the GS1 rules | 13 Oct | ADR 0003, then three code deliveries (`8e3d9c7`, `6f6ce19`, `e7c5a6d`) and the documentation commit | item 2.5: one engine release for every service, keys, qualifiers and formats from the GS1 Barcode Syntax Dictionary, the engine's messages translated, a weekly update check |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
@@ -393,6 +394,37 @@ from the older dictionary). Every new test was mutation-checked (three changes f
 dictionary, eight for the messages). The GitHub API could not be reached from the sandbox, so the weekly
 workflow's first real run will be on GitHub. Not yet confirmed on staging nor in CI.
 
+## Session 12 — e-mail (item 3.1)
+
+The owner still could not reach the workstation or the server to apply the cumulative bundle of items 2.4 and 2.5,
+and asked to go on with the next item and deliver everything in one bundle from `fd8f67c`, taking the recommended
+option on every question. He sent the bundle of sessions 10 and 11 into the chat; the baseline on top of it
+matched the end of session 11 exactly (1,904 checks).
+
+Every question of [ADR 0004](adr/0004-e-mail.md) was settled on the recommended option: SMTP submission to a relay
+the operator chooses (587 STARTTLS or 465 TLS, port 25 being blocked on Azure), settings in `.env` and mail off
+without them; messages as jobs of the existing worker with retries; single-use links stored as hashes, with the
+token in the fragment of the address; invitations by default when there is an address; recovery with the same
+answer for everyone; security notices always and job notices on request, in the user's language; texts in the
+code; Mailpit in a compose profile for trying it; three deliveries.
+
+| Commit | Change |
+|---|---|
+| `a0ccc6a` | docs: ADR 0004 in both languages (step 1) |
+| `f3d127d` | install: no setting written twice in `.env` on a re-run (an older defect found by the relay's test) |
+| `03c924b` | step 2: `mail.py`, `mailtexts.py`, `tokens.py`, `notify.py`; the `mail` job and `notBefore`; recovery, links, invitations, resets by link, notices and preferences in `app.py`; the installer's relay step; Mailpit; `test_mail.py` with an SMTP relay of its own |
+| `fbe86f0` | step 3: the sign-in page's recovery and link forms, the invitation on the users screen, Options → E-mail, the user guides' images; `test_mail_e2e.py` |
+
+Writing the installer's test for the relay showed that a re-run wrote `FQDN`, `TLS_MODE`, a replica count and two
+more settings twice in `.env`, the old value last, so a change made through the installer did not take effect: the
+check of the managed keys looked for the name followed by a space, and the names at the end of a line of the list
+are followed by a line break. Fixed in its own commit with a check that no key appears twice. The browser test of
+the link page found that a link pasted into an open sign-in page changes only the fragment and does not load the
+page again; the page now listens for it. All 16 protections of the server and the removal of the token from the
+address bar were mutation-checked; one mutation (a disabled account's link accepted) escaped at first and got its
+check. Mailpit's image cannot be pulled in the sandbox, so its first run is on staging. Not yet confirmed on
+staging nor in CI.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -402,10 +434,10 @@ workflow's first real run will be on GitHub. Not yet confirmed on staging nor in
 | Finding records | open one GTIN at a time | record list, text search, filters by key type, qualifier, author and link problems, code search, other records of a key |
 | Bulk work | none | XLSX/CSV export and two-step import |
 | Quality of targets | none | link checker in the editor, for every record and on import |
-| Accounts | users from the command line, all equal | roles, prefixes, organisations (tenants) with their own users and audit trail, a server administrator with support access, users screen, temporary passwords, history, audit trail, in the portal's own database |
+| Accounts | users from the command line, all equal | roles, prefixes, organisations (tenants) with their own users and audit trail, a server administrator with support access, users screen, temporary passwords or invitations by e-mail, password recovery by e-mail, security notices, history, audit trail, in the portal's own database |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
 | Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
-| Tests | 69 checks | 1,670 checks in 21 test programs (one of them GS1's own test suite), plus the installer test (68); run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
+| Tests | 69 checks | 1,845 checks in 23 test programs (one of them GS1's own test suite), plus the installer test (84); run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
 | Deployment | one container per service, Flask's built-in server, the proxy restarted by hand | any number of replicas of the four stateless services (set in `.env`), gunicorn in every web service, a proxy that follows replicas through Docker's DNS |
 | Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
@@ -440,6 +472,9 @@ workflow's first real run will be on GitHub. Not yet confirmed on staging nor in
     go to the path, data attributes to the query string; a `++` hostname is ignored.
 13. Linksets write `gs1:` link types in `https://ref.gs1.org/voc/` (Resolver 2.14); stored documents keep
     the official `https://gs1.org/voc/` keys.
+14. E-mail goes through a relay the operator chooses, as jobs of the worker; without a relay nothing changes.
+    Single-use links are stored as hashes and carried in the fragment of the address; password recovery answers
+    the same for everyone; security notices cannot be switched off ([ADR 0004](adr/0004-e-mail.md)).
 
 ## Lessons learnt
 
@@ -488,6 +523,11 @@ workflow's first real run will be on GitHub. Not yet confirmed on staging nor in
   while every test passed, because the tests ran the source tree. Test what the image will hold.
 - Before generating a table that replaces a hand-written one, compare the two: the differences are either the
   generator's mistakes or the old table's, and both need a decision.
+- A test of a new feature reads what the old code writes: checking the installer's `.env` for the relay found
+  settings written twice, the old value last, a defect older than the feature. Check the output, not only the
+  values that were meant to change.
+- A link that differs from the open page only after `#` does not load the page again: code that reads the
+  fragment at load time must also listen for `hashchange`.
 
 ## Open items
 
@@ -499,7 +539,8 @@ workflow's first real run will be on GitHub. Not yet confirmed on staging nor in
 - An off-server backup copy and a restore rehearsal.
 - Review of the 221 Portuguese AI names and of the Portuguese engine messages; decision on the GS1 logo on the
   home page and resolver pages.
-- Items 2.4 and 2.5 on staging and in CI (sessions 10 and 11): the owner's push, the CI summary, the staging
-  checks of the update and the first run of the weekly update check are pending.
+- Items 2.4, 2.5 and 3.1 on staging and in CI (sessions 10 to 12): the owner's push, the CI summary, the staging
+  checks of the update, the first run of the weekly update check, a first try of e-mail with Mailpit and then
+  with the organisation's relay are pending.
 
 Next steps: the open backlog, in the agreed order, is in the README ([Open backlog](../README.md#open-backlog)).

@@ -89,7 +89,7 @@ O README original é mantido, sem mudanças, em [upstream-README.md](../upstream
 | Área | Acréscimo |
 |---|---|
 | **Portal** (`/portal/`) | Entrada com senha por usuário (com botão de mostrar/ocultar); editor para qualquer chave primária e qualificadores, com conferências GS1 enquanto se digita; destinos por tipo de link GS1, idioma e título; destino principal; etiquetas com QR Code (PNG/SVG) nas dimensões do guia *QR Codes powered by GS1*, com escolha de versão, correção de erros e texto legível, opcionalmente com atributos de dados GS1 Digital Link (validade, peso, preço…); lista de registros com busca e filtros por tipo de chave e qualificador; importação/exportação de planilhas (XLSX, CSV) com prévia; verificador de links |
-| **Governança** | Perfis (administrador, editor, leitor); organizações (tenants) donas de prefixos de empresa GS1, cada uma com seus usuários e sua auditoria, e um administrador do servidor com acesso de suporte só de leitura e registrado; acesso limitado a prefixos de empresa GS1 por usuário; tela de administração de usuários com senhas temporárias; histórico de cada cadastro com restauração; auditoria com filtros e exportação CSV |
+| **Governança** | Perfis (administrador, editor, leitor); organizações (tenants) donas de prefixos de empresa GS1, cada uma com seus usuários e sua auditoria, e um administrador do servidor com acesso de suporte só de leitura e registrado; acesso limitado a prefixos de empresa GS1 por usuário; tela de administração de usuários com senhas temporárias ou, com um relay de e-mail, convites por e-mail; recuperação de senha por e-mail; avisos de segurança; histórico de cada cadastro com restauração; auditoria com filtros e exportação CSV |
 | **Chaves e qualificadores** | As 16 chaves primárias da URI Syntax §4.3 e todos os qualificadores da §4.4, com os formatos da §4.6, a ordem e os caminhos compostos da §4.9, montados a partir do GS1 Barcode Syntax Dictionary da versão do engine que todos os serviços usam |
 | **Atributos de dados** | Todos os atributos de dados da URI Syntax §4.10 nos QR Codes, validados pelo GS1 Barcode Syntax Engine (formatos, dígitos verificadores, datas, listas de códigos e as regras de associação das General Specifications), com as mensagens no idioma do usuário; repassados pelo Resolver aos destinos |
 | **Resolver** | Subida na hierarquia de qualificadores (série → lote → variante → chave), regras de 404, formas de `linkType`, `defaultLink`, linkset RFC 9264 válido no schema da GS1, JSON-LD sob pedido, o link padrão salvo quando a requisição indica uma versão de idioma, caminhos conferidos pelo GS1 Barcode Syntax Engine, valores com `%2F`, a query string repassada exatamente como enviada, EPC em binário (`/eh…`, `/ex…`) de etiquetas NFC descomprimido, páginas HTML em pt-BR / en-GB para navegadores |
@@ -540,7 +540,7 @@ As imagens do README e do guia do portal, nos dois idiomas, são geradas por `de
 
 ## Backlog em aberto
 
-Situação em 13 de outubro de 2026. A fase 1, a base de conformidade, está concluída: a revisão cláusula a
+Situação em 14 de outubro de 2026. A fase 1, a base de conformidade, está concluída: a revisão cláusula a
 cláusula, o modelo de cadastro do GS1-Conformant Resolver 2.5.9, um link padrão acima de todo cadastro, as
 correções de resolução, o EPC em binário e a própria suíte de testes de Resolver da GS1 (aprovada numa
 instalação de homologação). O item 2.1, os ajustes rápidos (limites da sessão, página inicial, aviso da
@@ -551,15 +551,16 @@ o item 2.4, os tenants (organizações donas de prefixos de empresa GS1, o admin
 de suporte, uma trilha de auditoria por organização; [ADR 0002](adr/0002-organizacoes.md)), e o item 2.5, uma
 fonte única para as regras GS1 (chaves, qualificadores e formatos do GS1 Barcode Syntax Dictionary, uma versão do
 engine para todos os serviços, as mensagens do engine traduzidas, uma verificação semanal de atualizações;
-[ADR 0003](adr/0003-regras-gs1-do-dicionario.md)), também estão concluídos. O que foi feito está no [histórico](historico.md) e no
+[ADR 0003](adr/0003-regras-gs1-do-dicionario.md)), e o item 3.1, o e-mail (um relay autenticado, convites, recuperação
+de senha por link de uso único, notificações com preferências por usuário; [ADR 0004](adr/0004-e-mail.md)), também
+estão concluídos. O que foi feito está no [histórico](historico.md) e no
 [changelog](../extensions/CHANGELOG.md). Os itens abaixo seguem a ordem combinada; os tamanhos são relativos
 (P, M, G). A ordem põe primeiro aquilo em que os itens seguintes se apoiam: o armazenamento de dados do portal
 e os tenants vêm antes da API, do e-mail e dos analytics, que precisam saber de quem são os dados que tratam.
 
 | Fase | # | Item | Tam. | Depende de |
 |---|---|---|---|---|
-| Serviços da plataforma | 3.1 | **E-mail**: envio por um relay autenticado (configurações no `.env`), convites para novos usuários, recuperação de senha por link de uso único, uma estrutura de notificações com preferências por usuário | M | 2.4 |
-| | 3.2 | **API do tenant e chaves de API**: uma API versionada do portal para cadastros, etiquetas e depois analytics, descrita em OpenAPI, limitada aos prefixos do tenant; chaves criadas pelo administrador do tenant no portal (aleatórias, guardadas só como hash, exibidas uma única vez, com escopos, validade, revogação, último uso e limites de taxa); a API de cadastro oficial e o seu token continuam internos | G | 2.4, 2.5 |
+| Serviços da plataforma | 3.2 | **API do tenant e chaves de API**: uma API versionada do portal para cadastros, etiquetas e depois analytics, descrita em OpenAPI, limitada aos prefixos do tenant; chaves criadas pelo administrador do tenant no portal (aleatórias, guardadas só como hash, exibidas uma única vez, com escopos, validade, revogação, último uso e limites de taxa); a API de cadastro oficial e o seu token continuam internos | G | 2.4, 2.5 |
 | Log de resolução e analytics | 4.1 | **Log das requisições ao Resolver** (chave, qualificadores, AIs de atributos de dados, tipo de link, resultado e nível, latência, idioma, dispositivo, origem, esquema EPC), assíncrono, com privacidade desde a concepção, eventos brutos com prazo de expiração e agregados diários | G | 2.3 |
 | | 4.2 | **Página inicial pós-login com indicadores**, cada tenant vendo só os seus prefixos e chaves (o administrador do servidor vê a instalação inteira): uso, qualidade da resolução (primeiro os 404 de códigos desconhecidos), qualidade dos cadastros, operação, governança; exportação para Excel e CSV | G | 4.1, 2.4 |
 | | 4.3 | **Monitoramento e alertas** por e-mail: Resolver fora do ar (verificado pelo proxy), falha de backup, picos de 404, vencimento do certificado | M | 4.2, 3.1 |

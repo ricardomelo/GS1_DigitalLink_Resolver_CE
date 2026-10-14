@@ -295,6 +295,7 @@ def guide_images(locale: str, folder: str, description: str, own_copies: bool) -
         # Organisations and support access (last: an organisation takes its records away from maria)
         tenant_images(page, folder, locale)
         mail_images(browser, folder, locale)
+        apikey_images(browser, folder, locale)
         browser.close()
 
 
@@ -367,6 +368,24 @@ def mail_images(browser, folder: str, locale: str) -> None:
     finally:
         users.update("maria", email="")
         os.environ["PORTAL_MAIL_HOST"] = ""
+
+
+def apikey_images(browser, folder: str, locale: str) -> None:
+    """The API keys screen with a key just created (Documentation/adr/0005-tenant-api.md)."""
+    ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1100})
+    page = ctx.new_page()
+    page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+    page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
+    page.click("#login-submit"); page.wait_for_timeout(1000)
+    page.goto(BASE + "#apikeys"); page.wait_for_timeout(900)
+    page.fill("#new-apikey-name", "ERP" if locale == "en-GB" else "Integração ERP")
+    page.check("#apikeys-create input[value='records:write']")
+    page.click("#apikeys-create button[type=submit]"); page.wait_for_timeout(1200)
+    save(page, f"{folder}/api-keys.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1100})
+    for button in page.query_selector_all("#apikeys-body button.btn-danger-ghost"):   # the next run starts clean
+        page.once("dialog", lambda d: d.accept())
+        button.click(); page.wait_for_timeout(400)
+    ctx.close()
 
 
 guide_images("en-GB", "guide", "Organic açaí 500 g — batch L2026A", own_copies=False)

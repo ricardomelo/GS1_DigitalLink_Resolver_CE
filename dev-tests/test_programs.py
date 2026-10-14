@@ -77,6 +77,7 @@ PROGRAMS = [
             env={"GS1_SYNTAX_ENGINE_DIR": "/nonexistent"}),
     Program("session", "e2e", "portal/test_session.py"),
     Program("mail_e2e", "e2e", "portal/test_mail_e2e.py", needs_cmd=("openssl",)),
+    Program("api_e2e", "e2e", "portal/test_api_e2e.py"),
     Program("home", "home", "home/test_home.py", needs_cmd=("nginx",)),
     Program("install", "install", "install/test_install.sh", ("COMPOSE_BIN",), ("nginx", "openssl"), root=True),
     Program("deploy", "install", "install/test_deploy.py", ("COMPOSE_BIN",), ("ps",)),

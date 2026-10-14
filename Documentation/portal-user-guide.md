@@ -565,6 +565,27 @@ A server administrator (an administrator of the operator) sees every user, with 
 filter, and chooses the **Organisation** of each new user (*Operator (server administration)* for the operator's
 own users). A user's organisation never changes.
 
+### API keys (administrators)
+
+![API keys](images/guide/api-keys.png)
+
+**API keys** (user menu, administrators) lets the organisation's own systems — an ERP, a product information
+system, a shop — read and write its records through the portal's API, without anyone typing them in the portal.
+The keys you create reach your organisation's records (for a server administrator, the operator's records).
+
+**Create a key.** Give it a **Name** that says which system uses it, tick its **Scopes** (*Read records*, *Write and
+delete records*, *Make labels*), choose the **Validity** (30 to 365 days) and, optionally, **GS1 Company
+Prefixes** to limit it further, then **Create key**. The key (`rk_…`) appears **once**, with an example request:
+copy it (**Copy key**) straight into the system that will use it. It is not shown again, not even to you; if it is
+lost, revoke it and create another. You receive an e-mail when a key is created and a week before it expires
+(installations with e-mail).
+
+**Keys** lists each key with its id (the part after `rk_`, shown in the audit trail as `api:<id>`), scopes,
+prefixes, who created it and when, its expiry, its last use and its state (*Active*, *Expired*, *Revoked by …*).
+**Revoke** stops a key at once. Changes made with a key appear in the history and the audit trail with the user
+`api:<id>`. The technical description of the API is linked under the list (`openapi.json`); the README describes
+its operations.
+
 ### Organisations (server administrators)
 
 ![Organisations](images/guide/organisations.png)
@@ -642,6 +663,7 @@ the operator's users did to organisations; an organisation's whole trail only du
 
 - **AI (Application Identifier)** — the number in brackets that says what a value is: (01) GTIN,
   (10) batch/lot, (17) expiry date…
+- **API key** — a credential that lets a system use the portal's API within one organisation's records (section 14).
 - **Data attribute** — extra information in a Digital Link's query string (expiry, weight, price); never
   stored by the resolver.
 - **Default target** — the target that opens when the code is scanned without asking for a specific type.

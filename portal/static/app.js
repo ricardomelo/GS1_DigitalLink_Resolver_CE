@@ -1250,7 +1250,7 @@ const records = { all: [], loaded: false };
 
 function isRecordsView() { return location.hash === "#records"; }
 
-const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants" };
+const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants", "#apikeys": "apikeys" };
 
 /* Shows the editor, the record list, the user administration, the organisations or the audit trail, following
    the address (#records, #users, #tenants, #audit), so the browser's back button and bookmarks work. Users and the
@@ -1258,14 +1258,17 @@ const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#t
    still an administrator); organisations are for server administrators. */
 function applyView() {
   let view = VIEWS[location.hash] || "editor";
-  if ((view === "users" || view === "audit") && CONFIG && CONFIG.accountRole !== "admin") view = "editor";
+  if ((view === "users" || view === "audit" || view === "apikeys") && CONFIG && CONFIG.accountRole !== "admin") view = "editor";
   if (view === "tenants" && CONFIG && !CONFIG.serverAdmin) view = "editor";
   $("#editor-view").hidden = view !== "editor";
   $("#records-view").hidden = view !== "records";
   $("#users-view").hidden = view !== "users";
   $("#tenants-view").hidden = view !== "tenants";
   $("#audit-view").hidden = view !== "audit";
-  const titles = { editor: "intro", records: "records", users: "users", audit: "audit", tenants: "tenants" };
+  $("#apikeys-view").hidden = view !== "apikeys";
+  if (view !== "apikeys") forgetNewKey();
+  const titles = { editor: "intro", records: "records", users: "users", audit: "audit", tenants: "tenants",
+                   apikeys: "apikeys" };
   I18N.set($("#hero-title"), `${titles[view]}.title`);
   I18N.set($("#hero-lede"), `${titles[view]}.lede`);
   const link = $("#hero-link");
@@ -1275,6 +1278,7 @@ function applyView() {
   if (view === "users" && CONFIG) loadUsers();
   if (view === "tenants" && CONFIG) loadTenants();
   if (view === "audit" && CONFIG) loadAudit();
+  if (view === "apikeys" && CONFIG) loadApiKeys();
 }
 
 /* ------------------------------------------------------------------ roles */
@@ -1537,6 +1541,115 @@ async function removeUser(username) {
     loadUsers();
   } catch (e) {
     usersStatus("error", e.code, e.params);
+  }
+}
+
+/* ------------------------------------------------------------------ API keys (administrators) */
+function apikeysStatus(kind, key, params) {
+  const box = $("#apikeys-status");
+  box.hidden = !key;
+  box.className = "status" + (kind ? " is-" + kind : "");
+  if (key) I18N.set(box, key, params);
+}
+
+/* The scope the keys belong to: the administrator's organisation, or the operator's records. */
+function showApiKeysScope() {
+  const tenant = CONFIG.tenant;
+  if (tenant) I18N.set($("#apikeys-scope"), "apikeys.scopeTenant", { name: tenant.name });
+  else I18N.set($("#apikeys-scope"), "apikeys.scopeOperator");
+}
+
+/* A new key is shown once: leaving the screen removes it from the page. */
+function forgetNewKey() {
+  $("#apikey-new").hidden = true;
+  $("#apikey-value").textContent = "";
+  $("#apikey-example").textContent = "";
+}
+
+async function loadApiKeys() {
+  showApiKeysScope();
+  try {
+    const data = await api("GET", "keys");
+    const days = $("#new-apikey-days");
+    if (!days.options.length) {
+      const choices = [30, 90, 180, 365].filter(d => d <= data.maxDays);
+      days.replaceChildren(...choices.map(d => i18nOption("apikeys.daysOption", String(d), { days: d })));
+      days.value = String(choices.includes(data.defaultDays) ? data.defaultDays : choices[choices.length - 1]);
+    }
+    $("#apikeys-body").replaceChildren(...data.keys.map(apiKeyRow));
+    $("#apikeys-empty").hidden = data.keys.length > 0;
+  } catch (e) {
+    apikeysStatus("error", e.code, e.params);
+  }
+}
+
+function apiKeyRow(k) {
+  const tr = document.createElement("tr");
+  if (k.state !== "active") tr.className = "is-disabled";
+  const cell = (label, content) => {
+    const td = document.createElement("td");
+    td.dataset.label = t(label);
+    if (content instanceof Node) td.append(content); else td.textContent = content;
+    tr.append(td);
+    return td;
+  };
+  const name = document.createElement("span");
+  const id = document.createElement("code");
+  id.textContent = k.id;
+  name.append(k.name, document.createElement("br"), id);
+  cell("apikeys.name", name);
+  cell("apikeys.scopes", k.scopes.map(s => t("apikeys.scopeShort." + s)).join(", "));
+  cell("users.prefixes", k.prefixes.length ? k.prefixes.join(", ") : t("users.allPrefixes"));
+  cell("apikeys.createdAt", `${formatWhen(k.created)} · ${k.createdBy || "—"}`);
+  cell("apikeys.expires", formatWhen(k.expiresAt));
+  cell("apikeys.lastUsed", formatWhen(k.lastUsed));
+  cell("users.state", k.state === "revoked" ? t("apikeys.stateRevoked", { user: k.revokedBy || "—" })
+                                            : t("apikeys.state." + k.state));
+  const actions = document.createElement("div");
+  actions.className = "user-actions";
+  if (k.state === "active") {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn btn-danger-ghost";
+    I18N.set(b, "apikeys.revoke");
+    b.addEventListener("click", () => revokeApiKey(k));
+    actions.append(b);
+  }
+  cell("users.actions", actions);
+  return tr;
+}
+
+async function createApiKey(event) {
+  event.preventDefault();
+  forgetNewKey();
+  const scopes = [...document.querySelectorAll("#apikeys-create input[name=scope]:checked")].map(i => i.value);
+  try {
+    const result = await api("POST", "keys", {
+      name: $("#new-apikey-name").value.trim(), scopes, days: Number($("#new-apikey-days").value),
+      prefixes: prefixesFrom($("#new-apikey-prefixes").value),
+    });
+    apikeysStatus("ok", result.code, result.params);
+    $("#apikey-value").textContent = result.key;
+    const base = new URL("api/v1", location.href).href;
+    $("#apikey-example").textContent =
+      `curl -H "Authorization: Bearer ${result.key}" ${base}/\n` +
+      `curl -H "Authorization: Bearer ${result.key}" "${base}/records?limit=10"`;
+    $("#apikey-new").hidden = false;
+    $("#new-apikey-name").value = "";
+    $("#new-apikey-prefixes").value = "";
+    loadApiKeys();
+  } catch (e) {
+    apikeysStatus("error", e.code, e.params);
+  }
+}
+
+async function revokeApiKey(k) {
+  if (!confirm(t("apikeys.confirmRevoke", { name: k.name }))) return;
+  try {
+    const result = await api("DELETE", "keys/" + encodeURIComponent(k.id));
+    apikeysStatus("ok", result.code, result.params);
+    loadApiKeys();
+  } catch (e) {
+    apikeysStatus("error", e.code, e.params);
   }
 }
 
@@ -2807,8 +2920,12 @@ function setupUserMenu() {
     if (e.key === "ArrowUp" && i >= 0) { e.preventDefault(); list[(i - 1 + list.length) % list.length].focus(); }
   });
   document.addEventListener("click", e => { if (!menu.contains(e.target)) close(false); });
-  $("#menu-options").addEventListener("click", () => { close(false); openOptions(); });
-  ["#menu-records", "#menu-users", "#menu-tenants", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", () => close(false)));
+  // A choice closes the menu even while the pointer is still over it (the menu also opens on hover): it stays
+  // closed until the pointer leaves, instead of covering the page that was chosen.
+  const dismiss = () => { close(false); menu.classList.add("is-dismissed"); };
+  menu.addEventListener("mouseleave", () => menu.classList.remove("is-dismissed"));
+  $("#menu-options").addEventListener("click", () => { dismiss(); openOptions(); });
+  ["#menu-records", "#menu-users", "#menu-tenants", "#menu-apikeys", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", dismiss));
   $("#menu-logout").addEventListener("click", signOut);
 }
 
@@ -2966,6 +3083,8 @@ async function init() {
   $("#records-search").addEventListener("input", renderRecords);
   $("#history-toggle").addEventListener("click", toggleHistory);
   $("#users-create").addEventListener("submit", createUser);
+  $("#apikeys-create").addEventListener("submit", createApiKey);
+  $("#apikey-copy").addEventListener("click", () => navigator.clipboard?.writeText($("#apikey-value").textContent));
   $("#temp-password-copy").addEventListener("click", () => navigator.clipboard?.writeText($("#temp-password-value").textContent));
   $("#audit-filters").addEventListener("submit", loadAudit);
   $("#users-tenant-filter").addEventListener("change", renderUsers);

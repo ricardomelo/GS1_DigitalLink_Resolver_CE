@@ -575,6 +575,28 @@ Um administrador do servidor (um administrador do operador) vê todos os usuári
 **Organização**, e escolhe a **Organização** de cada usuário novo (*Operador (administração do servidor)* para os
 usuários do próprio operador). A organização de um usuário nunca muda.
 
+### Chaves de API (administradores)
+
+![Chaves de API](../images/guide/pt-BR/api-keys.png)
+
+**Chaves de API** (menu do usuário, administradores) permite que os sistemas da própria organização — um ERP, um
+sistema de informações de produto, uma loja — leiam e gravem os seus cadastros pela API do portal, sem que alguém
+os digite no portal. As chaves que você cria alcançam os cadastros da sua organização (para um administrador do
+servidor, os cadastros do operador).
+
+**Criar uma chave.** Dê um **Nome** que diga qual sistema a usa, marque os **Escopos** (*Ler cadastros*, *Gravar e
+excluir cadastros*, *Gerar etiquetas*), escolha a **Validade** (de 30 a 365 dias) e, se quiser, **Prefixos de
+empresa GS1** para limitá-la mais, e clique em **Criar chave**. A chave (`rk_…`) aparece **uma vez**, com um exemplo
+de requisição: copie-a (**Copiar chave**) direto para o sistema que vai usá-la. Ela não aparece de novo, nem para
+você; se ela se perder, revogue-a e crie outra. Você recebe um e-mail quando uma chave é criada e uma semana antes
+de ela expirar (instalações com e-mail).
+
+**Chaves** lista cada chave com o seu id (a parte depois de `rk_`, que aparece na auditoria como `api:<id>`),
+escopos, prefixos, quem a criou e quando, a validade, o último uso e a situação (*Ativa*, *Expirada*, *Revogada
+por …*). **Revogar** para uma chave na hora. As mudanças feitas com uma chave aparecem no histórico e na auditoria
+com o usuário `api:<id>`. A descrição técnica da API está ligada abaixo da lista (`openapi.json`); o README
+descreve as suas operações.
+
 ### Organizações (administradores do servidor)
 
 ![Organizações](../images/guide/pt-BR/organisations.png)
@@ -653,6 +675,8 @@ suporte.
 
 - **AI (Application Identifier, identificador de aplicação)** — o número entre parênteses que diz o que é
   um valor: (01) GTIN, (10) lote, (17) validade…
+- **Chave de API** — uma credencial que permite a um sistema usar a API do portal dentro dos cadastros de uma
+  organização (seção 14).
 - **Atributo de dados** — informação extra na parte de parâmetros de um Digital Link (validade, peso,
   preço); nunca gravada pelo Resolver.
 - **Cadastro** — um identificador com seus qualificadores, descrição e destinos.

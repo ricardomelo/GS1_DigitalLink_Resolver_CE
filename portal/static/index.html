@@ -48,6 +48,10 @@
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 21V5l7-3v5l11 3v11H3Zm2-2h3v-3H5v3Zm0-5h3v-3H5v3Zm0-5h3V6.5L5 7.8V9Zm5 10h3v-3h-3v3Zm0-5h3v-3h-3v3Zm5 5h4v-3h-4v3Zm0-5h4v-3h-4v3Z"/></svg>
                 <span data-i18n="menu.tenants"></span>
               </a>
+              <a class="menu-item needs-admin" role="menuitem" href="#apikeys" id="menu-apikeys">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M7 14a3 3 0 1 1 0-6 3 3 0 0 1 0 6Zm5.65-4A6 6 0 1 0 12.65 14H17v3h3v-3h2v-4h-9.35Z"/></svg>
+                <span data-i18n="menu.apikeys"></span>
+              </a>
               <a class="menu-item needs-admin" role="menuitem" href="#audit" id="menu-audit">
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 2.1 5l-1.4 1.4A9 9 0 1 0 13 3Zm-1 5v5l4.3 2.5.7-1.2-3.5-2.1V8H12Z"/></svg>
                 <span data-i18n="menu.audit"></span>
@@ -552,6 +556,64 @@
       </div>
       <p class="records-empty" id="tenants-empty" data-i18n="tenants.none" hidden></p>
       <p class="field-msg" id="tenants-operator" aria-live="polite"></p>
+    </section>
+  </main>
+
+  <!-- API keys of the tenant API (administrators; Documentation/adr/0005-tenant-api.md) -->
+  <main class="records-main" id="apikeys-view" hidden>
+    <section class="sheet">
+      <h2 data-i18n="apikeys.createTitle"></h2>
+      <p class="field-msg" id="apikeys-scope"></p>
+      <form class="users-create apikeys-create" id="apikeys-create" novalidate>
+        <div class="apikeys-name">
+          <label for="new-apikey-name" data-i18n="apikeys.name"></label>
+          <input id="new-apikey-name" autocomplete="off" maxlength="60" data-i18n-attr="placeholder:apikeys.namePlaceholder">
+        </div>
+        <fieldset class="apikeys-scopes">
+          <legend data-i18n="apikeys.scopes"></legend>
+          <label class="choice"><input type="checkbox" name="scope" value="records:read" checked> <span data-i18n="apikeys.scope.records:read"></span></label>
+          <label class="choice"><input type="checkbox" name="scope" value="records:write"> <span data-i18n="apikeys.scope.records:write"></span></label>
+          <label class="choice"><input type="checkbox" name="scope" value="labels:read"> <span data-i18n="apikeys.scope.labels:read"></span></label>
+        </fieldset>
+        <div>
+          <label for="new-apikey-days" data-i18n="apikeys.days"></label>
+          <select id="new-apikey-days"></select>
+        </div>
+        <div class="users-prefixes">
+          <label for="new-apikey-prefixes" data-i18n="users.prefixes"></label>
+          <input id="new-apikey-prefixes" autocomplete="off" data-i18n-attr="placeholder:apikeys.prefixesPlaceholder">
+        </div>
+        <button type="submit" class="btn btn-primary" data-i18n="apikeys.create"></button>
+      </form>
+      <div class="status" id="apikeys-status" role="status" aria-live="polite" hidden></div>
+      <div class="temp-password apikey-new" id="apikey-new" hidden>
+        <p data-i18n="apikeys.showOnce"></p>
+        <code class="code" id="apikey-value"></code>
+        <button type="button" class="btn btn-ghost" id="apikey-copy" data-i18n="apikeys.copy"></button>
+        <p class="field-msg" data-i18n="apikeys.example"></p>
+        <pre class="apikey-example" id="apikey-example"></pre>
+      </div>
+
+      <h2 data-i18n="apikeys.listTitle"></h2>
+      <div class="table-wrap">
+        <table class="records-table users-table apikeys-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="apikeys.name"></th>
+              <th scope="col" data-i18n="apikeys.scopes"></th>
+              <th scope="col" data-i18n="users.prefixes"></th>
+              <th scope="col" data-i18n="apikeys.createdAt"></th>
+              <th scope="col" data-i18n="apikeys.expires"></th>
+              <th scope="col" data-i18n="apikeys.lastUsed"></th>
+              <th scope="col" data-i18n="users.state"></th>
+              <th scope="col" data-i18n="users.actions"></th>
+            </tr>
+          </thead>
+          <tbody id="apikeys-body"></tbody>
+        </table>
+      </div>
+      <p class="records-empty" id="apikeys-empty" data-i18n="apikeys.none" hidden></p>
+      <p class="field-msg"><span data-i18n="apikeys.docs"></span> <a href="api/v1/openapi.json" id="apikeys-openapi" target="_blank" rel="noopener">openapi.json</a></p>
     </section>
   </main>
 

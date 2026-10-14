@@ -578,7 +578,7 @@ Decisions and the reasons for them: [ADR 0001](adr/0001-portal-state-in-mongodb.
 
 The resolver's own log is another database, **`resolver_log`**, which the portal's user may read only: its
 collection `requests` holds one event per resolution request (fields in [ADR 0006](adr/0006-resolver-request-log.md),
-section 3.1; indexes on time, company part + time, key + time, TTL on `expiresAt`). The daily backup leaves it out.
+section 3.1; indexes on time, company part + time, key + time, TTL on `expiresAt`). The daily backup keeps it.
 
 Journal retention: an event is kept for `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS` (0)
 or `PORTAL_JOURNAL_ADMIN_DAYS` (0) days from the end of the day it was made; 0 keeps it for ever.
@@ -694,7 +694,8 @@ portal.
   start-up, backup cron). Safe to re-run; `--non-interactive` reads every answer from
   environment variables. Templates of the nginx site in `templates/`.
 - `resolver-backup.sh` + `resolver-backup.cron`: MongoDB dump through the container (every database, the
-  portal's included, except the raw request log `resolver_log`) and archive of the portal volume, 14 days kept.
+  portal's and the request log included) and archive of the portal volume, 14 days kept; a failed dump says
+  `ERROR`, leaves no partial file and exits with status 1.
 - `install.sh` also writes `PORTAL_TIME_ZONE` (not asked: the environment, the existing `.env`, else the server's time
   zone from `timedatectl`, `/etc/timezone` or the `/etc/localtime` link, else UTC).
 
@@ -737,7 +738,7 @@ run against it. Setup and commands are in
 | `portal/test_portal_e2e.py` | 211 | the portal in Chromium against `mock_data_entry.py`, desktop and phone, with an embedded worker (also stopped: the queue and "not running" messages, a job that fails); organisations, a tenant administrator and support access in both languages; also run without the engine (166) |
 | `home/test_home.py` | 68 | home page through a real nginx (1.27.3 or later: `NGINX_BIN` or the PATH), no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts; replicas through a stub DNS server answering the service names with `127.0.0.x` addresses: nginx starts while a service has no address and finds it later, shares the requests between two replicas, follows a third added and two removed without a restart, and no request fails while replicas stop |
 | `install/test_install.sh` | 87 | installer through shims (Compose v2), including a portal whose job worker does not start; replica counts written, kept, taken from the environment and refused when invalid; the time zone of the request counts (the server's, from the environment, refused when not a name); the e-mail relay (off by default, written with STARTTLS or TLS, its password kept and never shown, switched off, a test relay set by hand kept, refusals); no setting written twice in `.env` |
-| `install/test_deploy.py` | 59 | `docker compose config` of the replicas and process counts (defaults, values from `.env`, a refused value, names kept by the database and the proxy); the proxy image's nginx version and `resolve` in every upstream; each image's gunicorn `CMD` started locally (three processes, an answer, the request logged, a clean stop on SIGTERM within 10 s); the portal's fallback session key with six processes starting together and eight threads while writing it is slow; the portal started from the files the `COPY` lines of its Dockerfile put in the image, every module and data file of `portal/` among them; one engine release, in `docker-compose.yml` only, given to every image (ADR 0003) |
+| `install/test_deploy.py` | 62 | the daily backup with a stand-in `docker` (only options `mongodump` has; a failed dump: `ERROR`, status 1, no partial file; a good one: the archive, `OK`); `docker compose config` of the replicas and process counts (defaults, values from `.env`, a refused value, names kept by the database and the proxy); the proxy image's nginx version and `resolve` in every upstream; each image's gunicorn `CMD` started locally (three processes, an answer, the request logged, a clean stop on SIGTERM within 10 s); the portal's fallback session key with six processes starting together and eight threads while writing it is slow; the portal started from the files the `COPY` lines of its Dockerfile put in the image, every module and data file of `portal/` among them; one engine release, in `docker-compose.yml` only, given to every image (ADR 0003) |
 
 **pytest and continuous integration.** `dev-tests/test_programs.py` runs each program above as one pytest
 test (a subprocess from the repository root): exit status 0 without a `FAIL` line passes; otherwise the

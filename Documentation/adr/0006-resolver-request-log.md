@@ -51,8 +51,8 @@ Constraints:
 4. **Storage**: a database of its own, **`resolver_log`**, collection `requests`, written by the resolver with the
    connection it already has; each event carries its expiry date (TTL), **`RESOLVER_LOG_DAYS`, 90 days by
    default**; `0` switches the log off. The portal's database user is given **read** access to `resolver_log`
-   (`portal-db-init`), never write. The daily backup leaves `resolver_log` out: raw events are short-lived, and
-   what lasts is in the aggregates below.
+   (`portal-db-init`), never write. The daily backup was to leave `resolver_log` out; it keeps it (section 3.4:
+   `mongodump` cannot leave a whole database out).
 5. **Daily aggregates** in the portal's database (`request_daily`): the worker's hourly housekeeping (ADR 0005)
    counts each day's events per primary key — totals, outcomes, device classes, forms, languages, link types,
    automated requests, time taken — plus one document per day for the whole installation with the 50th, 95th and
@@ -155,6 +155,12 @@ access. `/portal/api/config` gains `requestLog: {"days": …}` (0: the log is of
 - The installer does not ask for the time zone; it writes the server's (`timedatectl`, `/etc/timezone` or the
   `/etc/localtime` link), keeps an existing value and refuses one that is not an IANA name. The portal's image gains
   `tzdata`, so the names work whatever the base image holds.
+- **The backup keeps `resolver_log`** (found on staging, 14 October): `--nsExclude`, used to leave it out, is an option
+  of `mongorestore` only, and `mongodump` refused to run, so the dump failed. `mongodump` can leave collections out
+  only within one chosen database, never a whole database, and several dumps would change the restore procedure. The
+  raw events are small at the installation's traffic and expire anyway. `resolver-backup.sh` now says `ERROR`, removes
+  the partial file and exits with status 1 when the dump fails; `test_deploy.py` checks its `mongodump` options and
+  both outcomes with a stand-in `docker`.
 
 ## 4. Options considered
 
@@ -181,8 +187,7 @@ access. `/portal/api/config` gains `requestLog: {"days": …}` (0: the log is of
   are counted in the resolver's output.
 - Raw events grow with traffic: about 300 bytes each, plus indexes; at a million scans a day and 90 days, some
   30 GB. `RESOLVER_LOG_DAYS` is the lever; aggregates stay small (one document per key and day).
-- The backup no longer holds `resolver_log`; a restore starts with an empty raw log and the aggregates of the
-  backup.
+- The backup holds `resolver_log` too (section 3.4), so it grows with the raw events; `RESOLVER_LOG_DAYS` limits both.
 - A portal reaching an external database through `PORTAL_DB_URI` reads the log only if that server also holds
   `resolver_log`.
 - Requests made by the installation's own checks (the test plan's `curl`, GS1's test suite) are logged too, as
@@ -202,5 +207,5 @@ access. `/portal/api/config` gains `requestLog: {"days": …}` (0: the log is of
 1. This record (both languages).
 2. On the server: `web_server/src/request_log.py` and the hooks in the resolver; the read role in `db_init.py`;
    `portal/requestlog.py` (scope, reading, aggregates in the worker's housekeeping), the tenant API's calls, the
-   portal's endpoints; the backup without `resolver_log`; the installer's time zone; development tests.
+   portal's endpoints; the installer's time zone; development tests.
 3. The *Requests* screen, the end-to-end test, images, the user and developer guides.

@@ -677,7 +677,8 @@ events are lost and the resolver writes `Request log: N event(s) lost (…)` in 
 **Retention.** `RESOLVER_LOG_DAYS` (90) days, by an expiry date on each event; `0` switches the log off (nothing is
 captured; the tenant API's calls are not recorded either). The portal's worker counts each day's events per key
 once an hour into the portal's collection `request_daily`, in the days of `PORTAL_TIME_ZONE` (the installer writes
-the server's), kept `PORTAL_STATS_DAYS` (800) days. The daily backup leaves `resolver_log` out.
+the server's), kept `PORTAL_STATS_DAYS` (800) days. The daily backup keeps `resolver_log` too (`mongodump` cannot leave
+a whole database out).
 
 **Who reads it.** The portal's database user may read `resolver_log`, never write it (`portal-db-init`). Each user
 sees the events of the records in his reach; a server administrator not limited to prefixes sees the whole
@@ -1116,11 +1117,11 @@ runs imports with the same rules).
 ## Daily backup
 
 `scripts/resolver-backup.sh` dumps every MongoDB database (the resolver's records and the portal's users,
-record metadata, journal and daily request counts) except the raw request log `resolver_log`, through the database container so the credentials never appear on the host,
+record metadata, journal and daily request counts) and the request log `resolver_log`, through the database container so the credentials never appear on the host,
 and archives the portal's configuration volume, keeping 14 days in `/var/backups/resolver`. It finds the repository from its own location.
 
 ```bash
-sudo scripts/resolver-backup.sh                                     # test: prints OK and the sizes
+sudo scripts/resolver-backup.sh                                     # test: prints OK and the sizes (ERROR and status 1 on a failure)
 sed "s|REPOSITORY|$PWD|" scripts/resolver-backup.cron | sudo tee /etc/cron.d/resolver-backup >/dev/null
 sudo chmod 644 /etc/cron.d/resolver-backup                          # daily at 02:30
 ```

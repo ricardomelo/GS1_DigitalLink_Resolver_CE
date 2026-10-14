@@ -595,7 +595,7 @@ Decisões e seus motivos: [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md).
 O registro do próprio Resolver é outro banco, **`resolver_log`**, que o usuário do portal só pode ler: a sua coleção
 `requests` guarda um evento por requisição de resolução (campos no [ADR 0006](adr/0006-registro-de-requisicoes.md),
 seção 3.1; índices em horário, parte da empresa + horário, chave + horário, TTL em `expiresAt`). O backup diário o
-deixa de fora.
+guarda.
 
 Retenção do diário: um evento é guardado por `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS`
 (0) ou `PORTAL_JOURNAL_ADMIN_DAYS` (0) dias a partir do fim do dia em que aconteceu; 0 guarda para sempre.
@@ -719,8 +719,8 @@ segurança do ramo 1.30). O
   inicialização, cron de backup). Pode ser rodado de novo; `--non-interactive` lê todas as
   respostas de variáveis de ambiente. Os modelos do site nginx ficam em `templates/`.
 - `resolver-backup.sh` + `resolver-backup.cron`: dump do MongoDB pelo contêiner (todos os bancos, o do
-  portal incluído, menos o registro bruto de requisições `resolver_log`) e arquivo do volume do portal, 14 dias
-  guardados.
+  portal e o registro de requisições incluídos) e arquivo do volume do portal, 14 dias guardados; um dump que falha
+  diz `ERROR`, não deixa arquivo parcial e sai com status 1.
 - O `install.sh` também grava `PORTAL_TIME_ZONE` (não pergunta: o ambiente, o `.env` existente, senão o fuso do
   servidor pelo `timedatectl`, `/etc/timezone` ou o link `/etc/localtime`, senão UTC).
 
@@ -763,7 +763,7 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `portal/test_portal_e2e.py` | 211 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular, com um worker embutido (também parado: as mensagens de fila e de "não está em execução", uma tarefa que falha); organizações, um administrador de tenant e o acesso de suporte nos dois idiomas; também roda sem o engine (166) |
 | `home/test_home.py` | 68 | página inicial com um nginx real (1.27.3 ou posterior: `NGINX_BIN` ou o PATH), sem o quadro da sintaxe, aviso da comunidade; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug; réplicas por um servidor DNS simulado que responde os nomes dos serviços com endereços `127.0.0.x`: o nginx inicia quando um serviço não tem endereço e o acha depois, reparte as requisições entre duas réplicas, acompanha uma terceira acrescentada e duas retiradas sem reiniciar, e nenhuma requisição falha enquanto réplicas param |
 | `install/test_install.sh` | 87 | instalador com simulações (Compose v2), incluindo um portal cujo worker de tarefas não sobe; quantidades de réplicas gravadas, mantidas, tomadas do ambiente e recusadas quando inválidas; o fuso das contagens de requisições (o do servidor, do ambiente, recusado quando não é um nome); o relay de e-mail (desligado por padrão, gravado com STARTTLS ou TLS, a senha mantida e nunca mostrada, desligado, um relay de teste definido à mão mantido, recusas); nenhuma configuração gravada duas vezes no `.env` |
-| `install/test_deploy.py` | 59 | `docker compose config` das réplicas e quantidades de processos (padrões, valores do `.env`, um valor recusado, nomes mantidos pelo banco e pelo proxy); a versão do nginx da imagem do proxy e o `resolve` em todos os upstreams; o `CMD` gunicorn de cada imagem iniciado localmente (três processos, uma resposta, a requisição no log, parada limpa com SIGTERM em até 10 s); a chave de sessão reserva do portal com seis processos iniciando juntos e oito threads enquanto gravá-la é lento; o portal iniciado a partir dos arquivos que as linhas `COPY` do seu Dockerfile põem na imagem, entre eles todo módulo e arquivo de dados de `portal/`; uma versão do engine, só no `docker-compose.yml`, passada a toda imagem (ADR 0003) |
+| `install/test_deploy.py` | 62 | o backup diário com um `docker` substituto (só opções que o `mongodump` tem; um dump que falha: `ERROR`, status 1, nenhum arquivo parcial; um bom: o arquivo, `OK`); `docker compose config` das réplicas e quantidades de processos (padrões, valores do `.env`, um valor recusado, nomes mantidos pelo banco e pelo proxy); a versão do nginx da imagem do proxy e o `resolve` em todos os upstreams; o `CMD` gunicorn de cada imagem iniciado localmente (três processos, uma resposta, a requisição no log, parada limpa com SIGTERM em até 10 s); a chave de sessão reserva do portal com seis processos iniciando juntos e oito threads enquanto gravá-la é lento; o portal iniciado a partir dos arquivos que as linhas `COPY` do seu Dockerfile põem na imagem, entre eles todo módulo e arquivo de dados de `portal/`; uma versão do engine, só no `docker-compose.yml`, passada a toda imagem (ADR 0003) |
 
 **pytest e integração contínua.** O `dev-tests/test_programs.py` roda cada programa acima como um teste
 pytest (um subprocesso a partir da raiz do repositório): status 0 sem linha `FAIL` passa; caso contrário, o

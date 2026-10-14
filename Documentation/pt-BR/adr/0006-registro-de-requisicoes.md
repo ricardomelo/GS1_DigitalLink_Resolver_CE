@@ -54,8 +54,8 @@ Restrições:
 4. **Armazenamento**: um banco próprio, **`resolver_log`**, coleção `requests`, gravado pelo Resolver com a conexão
    que ele já tem; cada evento leva a sua data de expiração (TTL), **`RESOLVER_LOG_DAYS`, 90 dias por padrão**; `0`
    desliga o registro. O usuário de banco do portal recebe acesso de **leitura** a `resolver_log` (`portal-db-init`),
-   nunca de escrita. O backup diário deixa `resolver_log` de fora: os eventos brutos duram pouco, e o que fica está
-   nos agregados abaixo.
+   nunca de escrita. O backup diário deixaria `resolver_log` de fora; ele o guarda (seção 3.4: o `mongodump` não
+   consegue deixar um banco inteiro de fora).
 5. **Agregados diários** no banco do portal (`request_daily`): a manutenção de hora em hora do worker (ADR 0005)
    conta os eventos de cada dia por chave primária — totais, resultados, classes de dispositivo, formas, idiomas,
    tipos de link, requisições automatizadas, tempo gasto — mais um documento por dia para a instalação inteira com os
@@ -163,6 +163,12 @@ desligado).
 - O instalador não pergunta o fuso; grava o do servidor (`timedatectl`, `/etc/timezone` ou o link `/etc/localtime`),
   mantém um valor existente e recusa um que não seja um nome IANA. A imagem do portal ganha o `tzdata`, para que os
   nomes funcionem qualquer que seja o conteúdo da imagem de base.
+- **O backup guarda o `resolver_log`** (achado na homologação, 14 de outubro): o `--nsExclude`, usado para deixá-lo de
+  fora, é uma opção só do `mongorestore`, e o `mongodump` se recusou a rodar, então o dump falhou. O `mongodump` só
+  deixa coleções de fora dentro de um banco escolhido, nunca um banco inteiro, e vários dumps mudariam o procedimento
+  de restauração. Os eventos brutos são pequenos no tráfego da instalação e expiram de qualquer jeito. O
+  `resolver-backup.sh` agora diz `ERROR`, apaga o arquivo parcial e sai com status 1 quando o dump falha; o
+  `test_deploy.py` confere as suas opções do `mongodump` e os dois resultados com um `docker` substituto.
 
 ## 4. Opções consideradas
 
@@ -189,8 +195,8 @@ desligado).
   perdidos são contados na saída do Resolver.
 - Os eventos brutos crescem com o tráfego: cerca de 300 bytes cada, mais índices; com um milhão de leituras por dia e
   90 dias, uns 30 GB. `RESOLVER_LOG_DAYS` é a alavanca; os agregados continuam pequenos (um documento por chave e dia).
-- O backup não guarda mais `resolver_log`; uma restauração começa com o registro bruto vazio e os agregados do
-  backup.
+- O backup guarda também o `resolver_log` (seção 3.4), então cresce com os eventos brutos; `RESOLVER_LOG_DAYS` limita
+  os dois.
 - Um portal que usa um banco externo por `PORTAL_DB_URI` só lê o registro se aquele servidor também tiver o
   `resolver_log`.
 - As requisições feitas pelas próprias verificações da instalação (os `curl` do plano de testes, a suíte de testes da
@@ -210,5 +216,5 @@ desligado).
 1. Este registro (nos dois idiomas).
 2. No servidor: `web_server/src/request_log.py` e os ganchos no Resolver; o papel de leitura em `db_init.py`;
    `portal/requestlog.py` (escopo, leitura, agregados na manutenção do worker), as chamadas da API das organizações, os
-   endpoints do portal; o backup sem `resolver_log`; o fuso no instalador; testes de desenvolvimento.
+   endpoints do portal; o fuso no instalador; testes de desenvolvimento.
 3. A tela *Acessos*, o teste de ponta a ponta, imagens, os guias do usuário e do desenvolvedor.

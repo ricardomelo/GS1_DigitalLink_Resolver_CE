@@ -17,6 +17,9 @@ Checks, without Docker:
   * one GS1 Barcode Syntax Engine release (ADR 0003): written once in docker-compose.yml, given to every image
     that checks GS1 data as a build argument, used by their Dockerfiles, the portal's build script and the
     CI set-up action without a release of their own, and the one portal/gs1_dictionary.json was made from;
+  * the daily backup (scripts/resolver-backup.sh) with a stand-in "docker": mongodump is given only options
+    mongodump has (--nsExclude is mongorestore's: the backup failed on a server with it), a failed dump says
+    ERROR, exits with status 1 and leaves no partial file, a good one writes the archive and says OK;
   * the portal image's files: the portal server is started from a folder assembled by the COPY instructions
     of portal/Dockerfile (not from the source folder), and every module and data file of portal/ is in it,
     so a file left out of the image fails here rather than on a server.
@@ -57,6 +60,52 @@ results: list[tuple[bool, str]] = []
 def check(condition, label: str, detail=None) -> None:
     results.append((bool(condition), label))
     print(("PASS " if condition else "FAIL ") + label + ("" if condition or detail is None else f" — {detail}"))
+
+
+# --------------------------------------------------------------------------- the daily backup
+# Options of mongodump (MongoDB Database Tools 100.x, "mongodump --help"); --nsInclude/--nsExclude/--nsFrom/--nsTo are
+# mongorestore's only.
+MONGODUMP_OPTIONS = {"-h", "--host", "--port", "--uri", "-u", "--username", "-p", "--password",
+                     "--authenticationDatabase", "--authenticationMechanism", "--awsSessionToken", "--gssapiServiceName",
+                     "--gssapiHostName", "--ssl", "--tls", "--sslCAFile", "--tlsCAFile", "--sslPEMKeyFile",
+                     "--tlsCertificateKeyFile", "-d", "--db", "-c", "--collection", "-q", "--query", "--queryFile",
+                     "--readPreference", "--forceTableScan", "--gzip", "-o", "--out", "--archive", "--oplog",
+                     "--dumpDbUsersAndRoles", "--excludeCollection", "--excludeCollectionsWithPrefix", "-j",
+                     "--numParallelCollections", "--viewsAsCollections", "-v", "--verbose", "--quiet", "--config",
+                     "--compressors"}
+
+
+def backup_checks() -> None:
+    script = REPO / "scripts" / "resolver-backup.sh"
+    text = script.read_text()
+    found = re.search(r"'(mongodump [^']*)'", text)
+    command = found.group(1) if found else ""
+    options = {word.split("=", 1)[0] for word in shlex.split(command.replace('"$', '"X'))[1:] if word.startswith("-")}
+    check(command and options <= MONGODUMP_OPTIONS,
+          "backup: mongodump is given only options mongodump has", sorted(options - MONGODUMP_OPTIONS))
+    for outcome, docker in (("fails", 'echo "error parsing command line options" >&2; exit 2'),
+                            ("works", 'printf "ARCHIVE-BYTES"')):
+        work = Path(tempfile.mkdtemp(prefix="backup-test-"))
+        bin_dir, backups = work / "bin", work / "backups"
+        bin_dir.mkdir()
+        stand_in = bin_dir / "docker"
+        # "docker compose exec …" dumps (or fails); "docker compose ps" lists no running portal
+        stand_in.write_text("#!/bin/sh\ncase \"$*\" in *mongodump*) " + docker + " ;; *) exit 0 ;; esac\n")
+        stand_in.chmod(0o755)
+        run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60,
+                             env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                                  "RESOLVER_DIR": str(work), "BACKUP_DIR": str(backups)})
+        left = sorted(p.name for p in backups.iterdir()) if backups.exists() else []
+        if outcome == "fails":
+            check(run.returncode == 1 and "ERROR: database backup failed" in run.stdout and not left,
+                  "backup: a failed dump says ERROR, exits 1 and leaves no partial file",
+                  (run.returncode, run.stdout[-200:], left))
+        else:
+            archives = [n for n in left if n.endswith(".archive.gz")]
+            check(run.returncode == 0 and " OK " in run.stdout and len(archives) == 1
+                  and (backups / archives[0]).read_text() == "ARCHIVE-BYTES" and not any(n.endswith(".tmp") for n in left),
+                  "backup: a good dump writes the archive and says OK", (run.returncode, run.stdout[-200:], left))
+        shutil.rmtree(work, ignore_errors=True)
 
 
 # --------------------------------------------------------------------------- docker-compose.yml
@@ -343,6 +392,7 @@ def main() -> int:
         print("FAIL COMPOSE_BIN is not set to a Docker Compose v2 binary")
         return 1
     compose_checks()
+    backup_checks()
     release_checks()
     proxy_checks()
     no_db = "mongodb://127.0.0.1:9/?serverSelectionTimeoutMS=300"

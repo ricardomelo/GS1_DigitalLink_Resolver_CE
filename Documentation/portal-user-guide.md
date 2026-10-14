@@ -27,8 +27,9 @@ For installation and operation see the [README](../README.md); for how the porta
 14. [Administration: users](#14-administration-users)
 15. [Administration: audit trail](#15-administration-audit-trail)
 16. [Requests to the resolver](#16-requests-to-the-resolver)
-17. [Messages and what to do](#17-messages-and-what-to-do)
-18. [Glossary](#18-glossary)
+17. [The overview](#17-the-overview)
+18. [Messages and what to do](#18-messages-and-what-to-do)
+19. [Glossary](#19-glossary)
 
 ---
 
@@ -85,7 +86,8 @@ the organisation's name; the operator's administrators see *Server administrator
 ![Sign-in page](images/guide/sign-in.png)
 
 Open the portal address (for example `https://id.example.org/portal/`), enter your **Username** and
-**Password** and select **Sign in**. If you have no account, ask the resolver administrator. If you have
+**Password** and select **Sign in**. The portal opens on the **Overview** (section 17); **Link editor** in the user
+menu, or the portal's address itself, opens the editor. If you have no account, ask the resolver administrator. If you have
 forgotten your password, use **Forgotten your password?** when the page offers it (installations with e-mail,
 below); otherwise ask the administrator for a new temporary password.
 
@@ -132,7 +134,8 @@ your password?** at once and tell your administrator.
 ![User menu](images/guide/user-menu.png)
 
 The round button at the top right opens the user menu: your user name, **Home page** (the resolver's
-home page), **Registered records** (section 11), **Requests** (section 16), **Users**, **API keys** and **Audit
+home page), **Overview** (section 17), **Link editor** (sections 4 to 10), **Registered records** (section 11),
+**Requests** (section 16), **Users**, **API keys** and **Audit
 trail** (administrators only; **Organisations** for server administrators), **Options** and **Sign out**.
 
 ### Changing your password
@@ -574,7 +577,7 @@ system, a shop — read and write its records through the portal's API, without 
 The keys you create reach your organisation's records (for a server administrator, the operator's records).
 
 **Create a key.** Give it a **Name** that says which system uses it, tick its **Scopes** (*Read records*, *Write and
-delete records*, *Make labels*), choose the **Validity** (30 to 365 days) and, optionally, **GS1 Company
+delete records*, *Make labels*, *Read statistics* — the overview's figures, section 17), choose the **Validity** (30 to 365 days) and, optionally, **GS1 Company
 Prefixes** to limit it further, then **Create key**. The key (`rk_…`) appears **once**, with an example request:
 copy it (**Copy key**) straight into the system that will use it. It is not shown again, not even to you; if it is
 lost, revoke it and create another. You receive an e-mail when a key is created and a week before it expires
@@ -673,7 +676,50 @@ invalid requests that have no code; during support access, the organisation's.
 (section 14): when, which key, the operation, the answer's status and the time taken — never the records or data
 they sent.
 
-## 17. Messages and what to do
+## 17. The overview
+
+![Overview](images/guide/overview.png)
+
+**Overview** (the page opened after sign-in; user menu, every user) gathers the indicators of the codes and records in
+your reach — your organisation's, or your GS1 Company Prefixes'; the whole installation for the server administrator,
+the organisation's during support access. The line at the top says whose figures they are and the dates.
+
+**Period.** The last **7**, **30** (the default) or **90 days**, today included, in the installation's time zone. Under
+each figure the change on the period of the same length just before: in green when it moves the right way (more
+scans, fewer codes not found), in red otherwise.
+
+**Usage.** **Scans** are the requests made by people (phones, tablets, computers); **Automated requests** — crawlers,
+link previews, monitors — are counted apart. One bar per day as on the Requests screen (in orange the scans that
+found nothing), the **Most scanned codes** (select a code to open it in the editor) and **How codes are scanned**: by
+device class, by form of the link (GS1 Digital Link, compressed link, EPC binary from an RFID tag), by language of the
+device and by link type asked.
+
+**Resolution quality.** The share of requests answered, the **Codes not registered (404)** — scanned, but nobody
+registered them — the codes **without a link of the type asked**, invalid requests, the resolver's errors and the
+average answer time (for the server administrator also the 95th percentile of the slowest day). These count every
+request, automated ones included. **Scanned codes nobody registered** lists them, most scanned first: **Register**
+opens the editor on the code so that the next scan leads somewhere; *the key has other records* means the code's key
+is registered but not for the batch or serial scanned.
+
+**Record quality.** How many records and keys, by key type; qualified records whose key has **no key-level record**
+(other codes of that key answer 404, section 5); serial numbers registered **with their batch or variant** (rule 2 of
+GS1-Conformant Resolver 2.5.9); records **without a description**; the **keys nobody scanned** in the period; and the
+records with problems in the **last check of every link** (section 13).
+
+**Operation.** When every link was last checked and how long requests are kept. The server administrator also sees
+whether the job worker runs, whether e-mail is on and up to which day the daily counts are complete.
+
+**Governance** (administrators). Record changes (created, changed, deleted, imports) and by user, sign-ins and
+refused sign-ins, exports, active API keys and those expiring within 14 days, calls to the tenant API and how many
+were refused, and the users by role.
+
+**Export Excel** downloads every figure of the period chosen: a sheet of indicators (each with the previous period's
+value) and sheets per day, the most scanned codes (up to 100), the codes not registered, the codes without the link
+asked, the keys nobody scanned and the changes by user. **Export CSV** downloads the indicators sheet only. Each
+export is written in the audit trail. Organisations' own systems can read the same usage and quality figures through
+the tenant API (`GET /portal/api/v1/stats`, API keys with the scope *Read statistics*, section 14).
+
+## 18. Messages and what to do
 
 | Message | What to do |
 |---|---|
@@ -694,7 +740,7 @@ they sent.
 | *If there is an account with this user name or e-mail address, a message … has been sent.* | Check your mailbox and its spam folder; nothing arrives if the account has no address: ask an administrator. |
 | *This link is no longer valid…* | Ask for a new one (**Forgotten your password?**, or the administrator for an invitation); only the newest link works, once. |
 
-## 18. Glossary
+## 19. Glossary
 
 - **AI (Application Identifier)** — the number in brackets that says what a value is: (01) GTIN,
   (10) batch/lot, (17) expiry date…

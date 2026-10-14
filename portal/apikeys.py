@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 import store
 import users
 
-SCOPES = ("records:read", "records:write", "labels:read")
+SCOPES = ("records:read", "records:write", "labels:read", "stats:read")
 MAX_ACTIVE_KEYS = 20
 NAME_LENGTH = (3, 60)
 DEFAULT_DAYS = 90

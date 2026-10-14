@@ -442,6 +442,73 @@ def _aggregate(now: datetime | None) -> int:
     return counted
 
 
+# ----------------------------------------------------------------------------------------------- periods (ADR 0007)
+def _add(target: dict, doc: dict) -> None:
+    """Adds an aggregate document (or a group of raw events in the same shape) to a running entry."""
+    target["total"] += doc.get("total", 0)
+    target["automated"] += doc.get("automated", 0)
+    target["ms"] += doc.get("ms") or 0
+    target["msMax"] = max(target["msMax"], doc.get("msMax") or 0)
+    for name in ("outcome", "device", "form"):
+        for value, n in (doc.get(name) or {}).items():
+            _bump(target[name], value, n)
+    for name in ("language", "linkType"):
+        found = doc.get(name) or []
+        for value, n in (found.items() if isinstance(found, dict) else found):
+            _bump(target[name], value, n)
+
+
+def collect(scope: dict, whole: bool, first: date, last: date, keys: bool = True) -> dict:
+    """The requests of the days [first, last] of the installation's time zone in a scope (ADR 0007, section 3.2):
+    {"total": entry, "days": {day: entry}, "keys": {(ai, value): entry with "cp"}, "p95": [daily p95 values]}, an
+    entry being {"total", "automated", "outcome", "device", "form", "language", "linkType", "ms", "msMax"} with
+    dictionaries of counts. Finished days come from the aggregates, today from the raw events. For the whole
+    installation the totals come from the installation's documents (requests without a key included); otherwise
+    from the documents per key of the scope."""
+    current = today()
+    total, days, per_key, p95 = _empty(), {}, {}, []
+    past_last = min(last, current - timedelta(days=1))
+    if first <= past_last:
+        span = {"day": {"$gte": first.isoformat(), "$lte": past_last.isoformat()}}
+        if whole:
+            for doc in daily().find({**span, "ai": {"$exists": False}}):
+                _add(total, doc)
+                _add(days.setdefault(doc["day"], _empty()), doc)
+                if doc.get("p95") is not None:
+                    p95.append(doc["p95"])
+        if keys or not whole:
+            query = {"$and": [scope, span, {"ai": {"$exists": True}}]} if scope else {**span, "ai": {"$exists": True}}
+            for doc in daily().find(query):
+                if not whole:
+                    _add(total, doc)
+                    _add(days.setdefault(doc["day"], _empty()), doc)
+                if keys:
+                    entry = per_key.setdefault((doc.get("ai"), doc.get("v")), {**_empty(), "cp": doc.get("cp")})
+                    _add(entry, doc)
+    if first <= current <= last:
+        start, end = day_bounds(current)
+        match = {"t": {"$gte": start, "$lt": end}}
+        query = {"$and": [scope, match]} if scope else match
+        groups = events().aggregate([
+            {"$match": query},
+            {"$group": {"_id": {"ai": "$ai", "v": "$v", "cp": "$cp", "o": "$o", "dev": "$dev", "f": "$f",
+                                "lang": "$lang", "lt": "$lt"},
+                        "n": {"$sum": 1}, "ms": {"$sum": "$ms"}, "max": {"$max": "$ms"}}}])
+        today_entry = days.setdefault(current.isoformat(), _empty())
+        for group in groups:
+            g, n = group["_id"], group["n"]
+            doc = {"total": n, "automated": n if g.get("dev") == "automated" else 0, "ms": group.get("ms") or 0,
+                   "msMax": group.get("max") or 0, "outcome": {g.get("o") or "-": n}, "device": {g.get("dev") or "-": n},
+                   "form": {g.get("f") or "-": n}, "language": {g["lang"]: n} if g.get("lang") else {},
+                   "linkType": {g["lt"]: n} if g.get("lt") else {}}
+            _add(total, doc)
+            _add(today_entry, doc)
+            if keys and g.get("cp"):
+                entry = per_key.setdefault((g.get("ai"), g.get("v")), {**_empty(), "cp": g.get("cp")})
+                _add(entry, doc)
+    return {"total": total, "days": days, "keys": per_key, "p95": p95}
+
+
 # ----------------------------------------------------------------------------------------------- tenant API calls
 def record_api_call(key: dict | None, method: str, operation: str | None, status: int, ms: int) -> None:
     """One call of /portal/api/v1 (ADR 0006, decision 8): never the record, the query string or the key's secret."""

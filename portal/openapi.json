@@ -3,7 +3,7 @@
  "info": {
   "title": "Link management portal — tenant API",
   "version": "1.0.0",
-  "summary": "Records and labels of one organisation of a GS1 Digital Link resolver, for its own systems.",
+  "summary": "Records, labels and statistics of one organisation of a GS1 Digital Link resolver, for its own systems.",
   "description": "Authenticate every call (except this description) with an API key created by an administrator in the portal (API keys): `Authorization: Bearer rk_<id>.<secret>`. A key belongs to an organisation (or to the operator) and reaches only its records, within the key's GS1 Company Prefixes when it has some; it has scopes, an expiry and a limit of requests per minute. Answers are JSON; errors carry a message `code` and its `params` (the portal's message codes). Records are addressed by primary key and value (`/records/01/09506000134352`) and, for a qualified record, its key qualifiers as a path in `qualifiers` (`?qualifiers=/10/L1`). The API follows the portal's rules: the GS1 rules of keys, qualifiers and formats, the registration model of GS1-Conformant Resolver 2.5.9, the default link type shared by every record of a key (`default.sharedMismatch`). It is meant for servers: it sends no CORS headers."
  },
  "servers": [{"url": "/portal/api/v1"}],
@@ -16,6 +16,23 @@
     "responses": {
      "200": {"description": "The key", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WhoAmI"}}}},
      "401": {"$ref": "#/components/responses/Unauthorised"},
+     "429": {"$ref": "#/components/responses/RateLimit"}
+    }
+   }
+  },
+  "/stats": {
+   "get": {
+    "operationId": "getStats",
+    "summary": "Usage, resolution quality and record quality of the key's reach",
+    "description": "Scope `stats:read`. The figures of the portal's overview for the last 7, 30 or 90 days in the installation's time zone (today included), each compared with the period just before: scans by people and automated requests, per day, the most scanned codes, shares by device class, form, language and link type; the requests answered, scanned codes nobody registered (404 unknown) and codes without a link of the type asked (404 noLink); the records, their quality and the keys nobody scanned. Nothing in it identifies the people who scan.",
+    "parameters": [
+     {"name": "days", "in": "query", "description": "The period", "schema": {"type": "integer", "enum": [7, 30, 90], "default": 30}}
+    ],
+    "responses": {
+     "200": {"description": "The statistics", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Stats"}}}},
+     "401": {"$ref": "#/components/responses/Unauthorised"},
+     "403": {"$ref": "#/components/responses/Forbidden"},
+     "422": {"$ref": "#/components/responses/Invalid"},
      "429": {"$ref": "#/components/responses/RateLimit"}
     }
    }
@@ -199,12 +216,37 @@
     "type": "object", "required": ["code", "created", "digitalLink"],
     "properties": {"code": {"type": "string", "enum": ["save.created", "save.updated"]}, "created": {"type": "boolean"}, "digitalLink": {"type": "string"}}
    },
+   "Stats": {
+    "type": "object", "required": ["period", "usage", "quality", "records"],
+    "properties": {
+     "period": {"type": "object", "properties": {"days": {"type": "integer"}, "from": {"type": "string", "format": "date"}, "to": {"type": "string", "format": "date"}, "previousFrom": {"type": "string", "format": "date"}, "previousTo": {"type": "string", "format": "date"}, "timeZone": {"type": "string"}}},
+     "usage": {"type": "object", "properties": {
+      "scans": {"type": "integer", "description": "Requests by people (automated ones left out)"}, "automated": {"type": "integer"},
+      "previous": {"type": "object", "properties": {"scans": {"type": "integer"}, "automated": {"type": "integer"}}},
+      "perDay": {"type": "array", "items": {"type": "object", "properties": {"day": {"type": "string", "format": "date"}, "scans": {"type": "integer"}, "automated": {"type": "integer"}, "notFound": {"type": "integer"}}}},
+      "topCodes": {"type": "array", "items": {"type": "object", "properties": {"key": {"type": "string"}, "value": {"type": "string"}, "anchor": {"type": "string"}, "scans": {"type": "integer"}, "notFound": {"type": "integer"}}}},
+      "device": {"type": "object", "additionalProperties": {"type": "integer"}}, "form": {"type": "object", "additionalProperties": {"type": "integer"}},
+      "language": {"type": "array", "items": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}]}},
+      "linkType": {"type": "array", "items": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}]}}}},
+     "quality": {"type": "object", "properties": {
+      "requests": {"type": "integer"}, "answered": {"type": "integer"}, "unknown": {"type": "integer"}, "noLink": {"type": "integer"}, "invalid": {"type": "integer"}, "error": {"type": "integer"},
+      "previous": {"type": "object"}, "avgMs": {"type": ["integer", "null"]},
+      "unknownCodes": {"type": "array", "items": {"type": "object", "properties": {"anchor": {"type": "string"}, "requests": {"type": "integer"}, "registered": {"type": ["boolean", "null"], "description": "Whether the key has records (none for the qualifiers scanned)"}}}},
+      "noLinkCodes": {"type": "array", "items": {"type": "object", "properties": {"anchor": {"type": "string"}, "requests": {"type": "integer"}}}}}},
+     "records": {"type": "object", "properties": {
+      "available": {"type": "boolean", "description": "False when the resolver could not be read; the other figures are absent then"},
+      "records": {"type": "integer"}, "keys": {"type": "integer"}, "byKey": {"type": "object", "additionalProperties": {"type": "integer"}},
+      "noKeyRecord": {"type": "integer"}, "breaksRules": {"type": "integer"}, "noDescription": {"type": "integer"},
+      "notScanned": {"type": "integer"}, "notScannedSample": {"type": "array", "items": {"type": "string"}},
+      "linkProblems": {"type": "integer"}, "lastCheck": {"type": ["object", "null"]}}}
+    }
+   },
    "WhoAmI": {
     "type": "object", "required": ["key", "organisation", "rateLimit"],
     "properties": {
      "key": {"type": "object", "required": ["id", "name", "scopes", "prefixes", "expiresAt"], "properties": {
       "id": {"type": "string"}, "name": {"type": "string"},
-      "scopes": {"type": "array", "items": {"type": "string", "enum": ["records:read", "records:write", "labels:read"]}},
+      "scopes": {"type": "array", "items": {"type": "string", "enum": ["records:read", "records:write", "labels:read", "stats:read"]}},
       "prefixes": {"type": "array", "items": {"type": "string"}}, "expiresAt": {"type": "string"}}},
      "organisation": {"type": ["string", "null"], "description": "Null for the operator's keys"},
      "rateLimit": {"type": "object", "properties": {"perMinute": {"type": "integer"}}},

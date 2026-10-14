@@ -36,6 +36,7 @@ import mail
 import meta
 import migrate
 import notify
+import overview
 import requestlog
 import sheet
 import store
@@ -1132,6 +1133,12 @@ def remove_record(anchor: str, pairs: list) -> None:
 def list_records():
     """Every record on the resolver (one per primary key + qualifier set), with the portal's metadata.
     Searching and filtering happen in the browser; the list is small enough to send whole."""
+    return jsonify({"records": visible_records()})
+
+
+def visible_records() -> list[dict]:
+    """The records of the record list: every record on the resolver the user may see, with the portal's metadata
+    (also the overview's record quality, Documentation/adr/0007-overview-indicators.md)."""
     status, body = resolver("GET", "/summary")
     if status == 404:
         lines = []
@@ -1167,7 +1174,7 @@ def list_records():
             "breaksRules": entry["kind"] == "qualified" and bool(gs1.split_informative(
                 key[0], [tuple(p) for p in entry.get("qualifiers", [])])[1]),
         })
-    return jsonify({"records": records})
+    return records
 
 
 # --------------------------------------------------------------------------- spreadsheets
@@ -2030,6 +2037,93 @@ def tenant_api_calls():
         return jsonify(**requestlog.list_api_calls(request.args, g.tenant, whole, names, g.tenants), whole=whole)
     except PyMongoError as exc:
         return _log_unavailable(exc)
+
+
+# --------------------------------------------------------------------------- overview (ADR 0007)
+@app.errorhandler(overview.PeriodError)
+def on_period_error(err):
+    """A period that is not 7, 30 or 90 days: 422."""
+    return message("overview.badPeriod", 422, params={"periods": list(overview.PERIODS)})
+
+
+def overview_records() -> list[dict] | None:
+    """The records of the scope for the overview, or None when the resolver cannot be read."""
+    try:
+        return visible_records()
+    except UpstreamError as exc:
+        log.warning("Overview without records: %s", exc)
+        return None
+
+
+def overview_last_check() -> dict:
+    """The last check of every link of the scope, limited to the records the user may see."""
+    last = _last_full_check(g.tenant)
+    if not last:
+        return {}
+    return {**last, "records": {k: v for k, v in last.get("records", {}).items() if allowed(k.split("|")[0])}}
+
+
+def overview_operation(last_check: dict) -> dict:
+    """The operation group: the last check of every link; for server administrators also the worker, e-mail and the
+    request log's counts."""
+    out = {"lastCheck": last_check.get("checkedAt"), "logDays": requestlog.log_days()}
+    if g.server_admin:
+        try:
+            out["worker"] = jobs.workers_alive()
+        except PyMongoError:
+            out["worker"] = 0
+        out["mail"] = "on" if mail.enabled() else "off"
+        out["countedUntil"] = store.get_setting(requestlog.SETTING_FINAL)
+    return out
+
+
+def overview_data(days, top: int = overview.TOP_SCREEN) -> dict:
+    """Every indicator of the overview in the scope of the request."""
+    per = overview.period(days)
+    scope, whole = request_log_scope()
+    last_check = overview_last_check()
+    governance_of = None
+    if g.account_role == "admin":
+        audit_scope = journal.scope_query(g.tenant, operator_view=g.server_admin and not g.support)
+
+        def governance_of(p, n):
+            return overview.governance(audit_scope, lambda anchor: gs1.within_prefixes(anchor, g.prefixes), p,
+                                       g.tenant, whole, n)
+    return overview.build(per, scope, whole, overview_records(), last_check, overview_operation(last_check),
+                          governance_of, top)
+
+
+@app.get("/portal/api/overview")
+@require_login
+def get_overview():
+    """The overview's indicators for the last 7, 30 or 90 days (Documentation/adr/0007-overview-indicators.md)."""
+    try:
+        return jsonify(overview_data(request.args.get("days")))
+    except PyMongoError as exc:
+        return _log_unavailable(exc)
+
+
+@app.post("/portal/api/overview/export")
+@require_login
+def export_overview():
+    """The overview's figures as XLSX (one sheet per list) or CSV (one row per figure); the browser sends the labels
+    in the user's language. A journal event: overview-export."""
+    data = request.get_json(silent=True) or {}
+    labels = data.get("labels") if isinstance(data.get("labels"), dict) else {}
+    labels = {str(k): str(v) for k, v in labels.items()}
+    try:
+        found = overview_data(data.get("days"), overview.TOP_EXPORT)
+    except PyMongoError as exc:
+        return _log_unavailable(exc)
+    stamp = time.strftime("%Y%m%d-%H%M")
+    log_event("overview-export", detail=f'{data.get("format")} days={found["period"]["days"]}')
+    if data.get("format") == "csv":
+        body, mime, ext = overview.write_csv(found, labels), "text/csv; charset=utf-8", "csv"
+    else:
+        body = overview.write_xlsx(found, labels)
+        mime, ext = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
+    return Response(body, mimetype=mime, headers={
+        "Content-Disposition": f'attachment; filename="portal-overview-{stamp}.{ext}"'})
 
 
 # Human readable interpretation below the QR code: every element string, only the key's, or none.

@@ -19,6 +19,7 @@ an installation is responsible for its use (see the notice at the top of the [RE
 | [E-mail](adr/0004-e-mail.md) | maintainers, developers, operators | ADR 0004: outgoing mail through an authenticated relay, invitations, password recovery by single-use link, notifications with per-user preferences |
 | [Tenant API](adr/0005-tenant-api.md) | maintainers, developers, operators | ADR 0005: the portal's versioned API for organisations' systems, API keys created by administrators (scopes, prefixes, expiry, hash only), a request limit per key, OpenAPI description |
 | [Request log](adr/0006-resolver-request-log.md) | maintainers, developers, operators | ADR 0006: the resolver records each resolution request asynchronously and without personal data (no address, no User-Agent, no serial number), raw events with an expiry, daily aggregates per key by the worker, attribution to organisations at query time, the tenant API's calls |
+| [Overview](adr/0007-overview-indicators.md) | maintainers, developers | ADR 0007: the page opened after sign-in, indicators of usage, resolution quality, record quality, operation and governance per scope for 7, 30 or 90 days, computed on request from the daily aggregates and today's events, exports, the tenant API's `/stats` |
 | [Official README](upstream-README.md) | — | the README of the official GS1 Resolver CE, kept for reference |
 | [Development tests](../dev-tests/README.md) | developers | how to set up and run the tests |
 

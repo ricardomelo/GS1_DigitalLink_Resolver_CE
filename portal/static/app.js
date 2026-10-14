@@ -1251,7 +1251,7 @@ const records = { all: [], loaded: false };
 function isRecordsView() { return location.hash === "#records"; }
 
 const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants", "#apikeys": "apikeys",
-                "#requests": "requests" };
+                "#requests": "requests", "#overview": "overview" };
 
 /* Shows the editor, the record list, the user administration, the organisations or the audit trail, following
    the address (#records, #users, #tenants, #audit), so the browser's back button and bookmarks work. Users and the
@@ -1268,9 +1268,10 @@ function applyView() {
   $("#audit-view").hidden = view !== "audit";
   $("#apikeys-view").hidden = view !== "apikeys";
   $("#requests-view").hidden = view !== "requests";
+  $("#overview-view").hidden = view !== "overview";
   if (view !== "apikeys") forgetNewKey();
   const titles = { editor: "intro", records: "records", users: "users", audit: "audit", tenants: "tenants",
-                   apikeys: "apikeys", requests: "requests" };
+                   apikeys: "apikeys", requests: "requests", overview: "overview" };
   I18N.set($("#hero-title"), `${titles[view]}.title`);
   I18N.set($("#hero-lede"), `${titles[view]}.lede`);
   const link = $("#hero-link");
@@ -1282,6 +1283,7 @@ function applyView() {
   if (view === "audit" && CONFIG) loadAudit();
   if (view === "apikeys" && CONFIG) loadApiKeys();
   if (view === "requests" && CONFIG) loadRequestsView();
+  if (view === "overview" && CONFIG) loadOverview();
 }
 
 /* ------------------------------------------------------------------ roles */
@@ -2031,6 +2033,267 @@ async function loadApiCalls(event, more = false) {
     I18N.set($("#requests-api-count"), data.next ? "requests.countMore" : "requests.count", { count: shown });
   } catch (e) {
     I18N.set($("#requests-api-count"), e.code, e.params);
+  }
+}
+
+/* ------------------------------------------------------------------ overview (Documentation/adr/0007-overview-indicators.md)
+   The page opened after sign-in: indicators of the scope for the last 7, 30 or 90 days, each compared with the period
+   before it. Everything is computed by the server (GET overview); this part only draws it. */
+const overviewState = { data: null, loading: 0 };
+const nf = n => new Intl.NumberFormat(I18N.locale).format(n);
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = text;
+  return node;
+}
+
+/* A change against the previous period, as text: "+12 % vs. the previous 30 days", "new", or "no change". */
+function changeText(value, previous, days) {
+  if (previous === undefined || previous === null) return "";
+  if (value === previous) return t("overview.same", { days });
+  if (!previous) return t("overview.new", { days });
+  const pct = Math.round(((value - previous) / previous) * 100);
+  return t("overview.change", { change: (pct > 0 ? "+" : "") + nf(pct), days });
+}
+
+/* A tile: label, figure, and the change (green when it moves the right way: "up" or "down" is better). */
+function tile(labelKey, value, opts = {}) {
+  const box = el("div", "overview-tile" + (opts.warn ? " is-warn" : ""));
+  box.append(el("span", "tile-label", t(labelKey, opts.params || {})));
+  box.append(el("strong", "tile-value", value === null || value === undefined ? "—"
+                                          : opts.text ? value : nf(value) + (opts.unit ? " " + opts.unit : "")));
+  const change = opts.previous !== undefined ? changeText(value, opts.previous, overviewState.data.period.days) : opts.note;
+  if (change) {
+    const small = el("small", "tile-change", change);
+    if (opts.previous !== undefined && opts.better && value !== opts.previous) {
+      const up = value > opts.previous;
+      small.classList.add((opts.better === "up") === up ? "is-good" : "is-bad");
+    }
+    box.append(small);
+  }
+  if (opts.id) box.id = opts.id;
+  return box;
+}
+
+function share(part, whole) {
+  return whole ? Math.round((part / whole) * 1000) / 10 : 0;
+}
+
+/* A small table of counts with their share, for devices, forms, languages, link types and key types. */
+function shareTable(captionKey, pairs, labelOf) {
+  const total = pairs.reduce((n, [, v]) => n + v, 0);
+  const table = el("table", "records-table overview-table overview-share");
+  const caption = captionKey ? el("caption", "", t(captionKey)) : null;
+  const body = el("tbody");
+  pairs.forEach(([name, n]) => {
+    const tr = el("tr");
+    const label = el("td", "", labelOf ? labelOf(name) : name);
+    const count = el("td", "num", nf(n));
+    const bar = el("td", "overview-share-bar");
+    const fill = el("span");
+    fill.style.width = `${share(n, total)}%`;
+    bar.append(fill, el("small", "", `${nf(share(n, total))} %`));
+    tr.append(label, count, bar);
+    body.append(tr);
+  });
+  if (caption) table.append(caption);
+  table.append(body);
+  return pairs.length ? table : el("p", "records-empty", captionKey ? t(captionKey) + ": —" : "—");
+}
+
+function codeButton(code, labelKey) {
+  const button = el("button", "btn btn-ghost btn-small", t(labelKey));
+  button.type = "button";
+  button.addEventListener("click", () => openFromList({ key: code.key, value: code.value, qualifiers: [] }));
+  return button;
+}
+
+async function loadOverview() {
+  const days = $("#overview-days").value || "30";
+  const ticket = ++overviewState.loading;
+  I18N.set($("#overview-status"), "records.loading");
+  try {
+    const data = await api("GET", "overview?days=" + encodeURIComponent(days));
+    if (ticket !== overviewState.loading) return;          // a newer period was chosen meanwhile
+    overviewState.data = data;
+    $("#overview-status").textContent = "";
+    renderOverview();
+  } catch (e) {
+    if (ticket === overviewState.loading) I18N.set($("#overview-status"), e.code, e.params);
+  }
+}
+
+function renderOverview() {
+  const d = overviewState.data;
+  if (!d) return;
+  const days = d.period.days;
+  const fmt = new Intl.DateTimeFormat(I18N.locale, { day: "2-digit", month: "2-digit", year: "numeric" });
+  const day = iso => fmt.format(new Date(iso + "T12:00:00"));
+  const who = d.whole ? t("overview.scopeWhole")
+    : CONFIG.support ? CONFIG.support.name : CONFIG.tenant ? CONFIG.tenant.name : t("users.operatorName");
+  $("#overview-scope").textContent = t("overview.scope", { who, from: day(d.period.from), to: day(d.period.to),
+                                                            zone: d.period.timeZone });
+  $("#overview-off").hidden = d.logDays > 0;
+
+  // Usage
+  const u = d.usage;
+  $("#overview-usage-tiles").replaceChildren(
+    tile("overview.scans", u.scans, { previous: u.previous.scans, better: "up", id: "overview-tile-scans" }),
+    tile("overview.automated", u.automated, { previous: u.previous.automated }),
+    tile("overview.perDayAvg", new Intl.NumberFormat(I18N.locale, { maximumFractionDigits: 1 }).format(u.scans / days),
+         { text: true }),
+    tile("overview.codesScanned", u.topCodes.length >= 10 ? t("overview.tenOrMore") : u.topCodes.length,
+         { text: u.topCodes.length >= 10 }));
+  const top = Math.max(1, ...u.perDay.map(x => x.scans));
+  const chart = $("#overview-chart");
+  chart.setAttribute("aria-label", t("overview.chartLabel", { scans: nf(u.scans), days }));
+  chart.replaceChildren(...u.perDay.map(x => {
+    const bar = el("div", "requests-bar");
+    const ok = el("span", "bar-ok"), lost = el("span", "bar-missing");
+    ok.style.height = `${((x.scans - x.notFound) / top) * 100}%`;
+    lost.style.height = `${(x.notFound / top) * 100}%`;
+    bar.append(lost, ok);
+    bar.title = t("requests.dayTitle", { day: day(x.day), total: x.scans, missing: x.notFound });
+    bar.dataset.day = x.day;
+    return bar;
+  }));
+  $("#overview-top-body").replaceChildren(...u.topCodes.map(c => {
+    const tr = el("tr");
+    const code = el("td", "code");
+    const link = el("a", "", c.anchor);
+    link.href = "#";
+    link.addEventListener("click", e => { e.preventDefault(); openFromList({ key: c.key, value: c.value, qualifiers: [] }); });
+    code.append(link);
+    tr.append(code, el("td", "num", nf(c.scans)), el("td", "num", nf(c.notFound)));
+    return tr;
+  }));
+  $("#overview-top-empty").hidden = u.topCodes.length > 0;
+  const devices = Object.entries(u.device).sort((a, b) => b[1] - a[1]);
+  const forms = Object.entries(u.form).sort((a, b) => b[1] - a[1]);
+  $("#overview-shares").replaceChildren(
+    shareTable("overview.byDevice", devices, name => t("requests.device." + name)),
+    shareTable("overview.byForm", forms, name => t("overview.form." + name)),
+    shareTable("overview.byLanguage", u.language),
+    shareTable("overview.byLinkType", u.linkType));
+
+  // Resolution quality (every request, automated ones included)
+  const q = d.quality;
+  const answeredPct = q.requests ? share(q.answered, q.requests) : null;
+  $("#overview-quality-tiles").replaceChildren(
+    tile("overview.answeredShare", answeredPct === null ? null : `${nf(answeredPct)} %`, { text: true,
+         note: t("overview.ofRequests", { n: nf(q.requests) }) }),
+    tile("overview.q.unknown", q.unknown, { previous: q.previous.unknown, better: "down", warn: q.unknown > 0,
+         id: "overview-tile-unknown" }),
+    tile("overview.q.noLink", q.noLink, { previous: q.previous.noLink, better: "down", warn: q.noLink > 0 }),
+    tile("overview.q.invalid", q.invalid, { previous: q.previous.invalid, better: "down" }),
+    tile("overview.q.error", q.error, { previous: q.previous.error, better: "down", warn: q.error > 0 }),
+    tile("overview.avgMs", q.avgMs, { unit: "ms", note: q.p95Max !== null && q.p95Max !== undefined
+         ? t("overview.p95Note", { ms: nf(q.p95Max) }) : "" }));
+  const codeRows = (list, body, empty, actionKey) => {
+    body.replaceChildren(...list.map(c => {
+      const tr = el("tr");
+      const code = el("td", "code", c.anchor);
+      if (c.registered) code.append(" ", el("span", "badge badge-unchanged", t("overview.keyHasRecords")));
+      const action = el("td", "");
+      action.append(codeButton(c, c.registered === false ? actionKey : "overview.open"));
+      tr.append(code, el("td", "num", nf(c.requests)), action);
+      return tr;
+    }));
+    empty.hidden = list.length > 0;
+  };
+  codeRows(q.unknownCodes, $("#overview-unknown-body"), $("#overview-unknown-empty"), "overview.register");
+  codeRows(q.noLinkCodes, $("#overview-nolink-body"), $("#overview-nolink-empty"), "overview.open");
+
+  // Records
+  const r = d.records;
+  $("#overview-records-off").hidden = r.available !== false;
+  const check = r.lastCheck;
+  $("#overview-records-tiles").replaceChildren(...(r.available ? [
+    tile("overview.r.records", r.records, { note: t("overview.r.keysNote", { n: nf(r.keys) }) }),
+    tile("overview.r.noKeyRecord", r.noKeyRecord, { warn: r.noKeyRecord > 0 }),
+    tile("overview.r.breaksRules", r.breaksRules, { warn: r.breaksRules > 0 }),
+    tile("overview.r.noDescription", r.noDescription),
+    tile("overview.r.notScanned", r.notScanned, { note: t("overview.r.notScannedNote", { days }) }),
+    tile("overview.r.linkProblems", check ? r.linkProblems : null, { warn: r.linkProblems > 0,
+         note: check ? t("overview.checkedAt", { when: formatWhen(check.at) }) : t("overview.neverChecked") }),
+  ] : []));
+  $("#overview-bykey").replaceChildren(r.available
+    ? shareTable(null, Object.entries(r.byKey).sort((a, b) => b[1] - a[1]), ai => keyName(ai)) : "");
+  $("#overview-quiet").replaceChildren(...(r.notScannedSample || []).map(a => el("li", "code", a)));
+  $("#overview-quiet-empty").hidden = !r.available || (r.notScannedSample || []).length > 0;
+
+  // Operation
+  const op = d.operation || {};
+  const facts = [["overview.lastCheck", op.lastCheck ? formatWhen(op.lastCheck) : t("overview.neverChecked")],
+                 ["overview.op.logDays", d.logDays ? t("overview.op.logDaysValue", { days: d.logDays }) : t("overview.off")]];
+  if ("worker" in op) facts.push(["overview.op.worker", op.worker ? t("overview.op.workers", { n: op.worker }) : t("overview.op.noWorker")]);
+  if ("mail" in op) facts.push(["overview.op.mail", t(op.mail === "on" ? "overview.on" : "overview.off")]);
+  if ("countedUntil" in op) facts.push(["overview.op.countedUntil", op.countedUntil ? day(op.countedUntil) : "—"]);
+  $("#overview-operation").replaceChildren(...facts.flatMap(([k, v]) => [el("dt", "", t(k)), el("dd", "", v)]));
+
+  // Governance (administrators)
+  const gov = d.governance;
+  $("#overview-governance").hidden = !gov;
+  if (gov) {
+    const changes = Object.values(gov.changes).reduce((n, v) => n + v, 0);
+    $("#overview-governance-tiles").replaceChildren(
+      tile("overview.g.changes", changes, { note: ["create", "update", "delete", "import"].filter(a => gov.changes[a])
+           .map(a => t("overview.g.change." + a) + ": " + nf(gov.changes[a])).join(" · ") }),
+      tile("overview.g.signIns", gov.signIns),
+      tile("overview.g.signInsRefused", gov.signInsRefused, { warn: gov.signInsRefused > 0 }),
+      tile("overview.g.exports", gov.exports),
+      tile("overview.g.keysActive", gov.apiKeys.active, { note: gov.apiKeys.expiring
+           ? t("overview.g.keysExpiringNote", { n: gov.apiKeys.expiring }) : "" , warn: gov.apiKeys.expiring > 0 }),
+      tile("overview.g.apiCalls", gov.apiCalls.calls, { note: t("overview.g.apiRefusedNote", { n: nf(gov.apiCalls.refused) }) }));
+    $("#overview-users-body").replaceChildren(...gov.byUser.map(([user, n]) => {
+      const tr = el("tr");
+      tr.append(el("td", "", user.startsWith("api:") ? t("overview.g.apiUser", { key: user.slice(4) }) : user),
+                el("td", "num", nf(n)));
+      return tr;
+    }));
+    $("#overview-users-empty").hidden = gov.byUser.length > 0;
+    $("#overview-accounts").replaceChildren(shareTable(null,
+      Object.entries(gov.users).sort((a, b) => b[1] - a[1]), role => t("overview.g.users." + role)));
+  }
+}
+
+function keyName(ai) {
+  return I18N.has(`key.${ai}.name`) ? t(`key.${ai}.name`) : `(${ai})`;
+}
+
+/* The labels of the export, in the user's language: every overview.* message and the names used in its lists. */
+function overviewLabels() {
+  const labels = {};
+  for (const key of I18N.keys()) {
+    if (key.startsWith("overview.") || key.startsWith("requests.device.")) labels[key] = t(key, { days: overviewState.data?.period.days ?? 30 });
+  }
+  return labels;
+}
+
+async function exportOverview(format) {
+  const days = $("#overview-days").value || "30";
+  try {
+    const res = await fetch(BASE + "api/overview/export", {
+      method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ format, days: Number(days), labels: overviewLabels() }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      I18N.set($("#overview-status"), body.code || "error.unexpected", body.params || { status: res.status });
+      return;
+    }
+    const blob = await res.blob();
+    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || `overview.${format}`;
+    const a = el("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } catch (e) {
+    I18N.set($("#overview-status"), "error.unexpected", { status: e.message });
   }
 }
 
@@ -3108,7 +3371,7 @@ function setupUserMenu() {
   const dismiss = () => { close(false); menu.classList.add("is-dismissed"); };
   menu.addEventListener("mouseleave", () => menu.classList.remove("is-dismissed"));
   $("#menu-options").addEventListener("click", () => { dismiss(); openOptions(); });
-  ["#menu-records", "#menu-requests", "#menu-users", "#menu-tenants", "#menu-apikeys", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", dismiss));
+  ["#menu-overview", "#menu-editor", "#menu-records", "#menu-requests", "#menu-users", "#menu-tenants", "#menu-apikeys", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", dismiss));
   $("#menu-logout").addEventListener("click", signOut);
 }
 
@@ -3283,6 +3546,10 @@ async function init() {
   $("#requests-tab-api").addEventListener("click", () => showRequestsTab("api"));
   $("#requests-api-filters").addEventListener("submit", e => loadApiCalls(e));
   $("#requests-api-more").addEventListener("click", () => loadApiCalls(null, true));
+  $("#overview-days").addEventListener("change", () => loadOverview());
+  $("#overview-xlsx").addEventListener("click", () => exportOverview("xlsx"));
+  $("#overview-csv").addEventListener("click", () => exportOverview("csv"));
+  document.addEventListener("localechange", () => { if (overviewState.data && !$("#overview-view").hidden) renderOverview(); });
   $("#records-problems").addEventListener("change", renderRecords);
   $("#records-check").addEventListener("click", checkAllLinks);
   $("#check-links").addEventListener("click", checkLinks);

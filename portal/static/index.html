@@ -36,6 +36,14 @@
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 3 2 11.5h3V21h5.5v-6h3v6H19v-9.5h3L12 3Z"/></svg>
                 <span data-i18n="menu.home"></span>
               </a>
+              <a class="menu-item" role="menuitem" href="#overview" id="menu-overview">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 3h8v8H3V3Zm2 2v4h4V5H5Zm8-2h8v5h-8V3Zm2 2v1h4V5h-4ZM3 13h8v8H3v-8Zm2 2v4h4v-4H5Zm8-5h8v11h-8V10Zm2 2v7h4v-7h-4Z"/></svg>
+                <span data-i18n="menu.overview"></span>
+              </a>
+              <a class="menu-item" role="menuitem" href="#editor" id="menu-editor">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25Zm17.7-10.2a1 1 0 0 0 0-1.42l-2.33-2.33a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"/></svg>
+                <span data-i18n="menu.editor"></span>
+              </a>
               <a class="menu-item" role="menuitem" href="#records" id="menu-records">
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 5h2v2H4V5Zm4 0h12v2H8V5Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Z"/></svg>
                 <span data-i18n="menu.records"></span>
@@ -578,6 +586,7 @@
           <label class="choice"><input type="checkbox" name="scope" value="records:read" checked> <span data-i18n="apikeys.scope.records:read"></span></label>
           <label class="choice"><input type="checkbox" name="scope" value="records:write"> <span data-i18n="apikeys.scope.records:write"></span></label>
           <label class="choice"><input type="checkbox" name="scope" value="labels:read"> <span data-i18n="apikeys.scope.labels:read"></span></label>
+          <label class="choice"><input type="checkbox" name="scope" value="stats:read"> <span data-i18n="apikeys.scope.stats:read"></span></label>
         </fieldset>
         <div>
           <label for="new-apikey-days" data-i18n="apikeys.days"></label>
@@ -677,6 +686,125 @@
           <tbody id="audit-body"></tbody>
         </table>
       </div>
+    </section>
+  </main>
+
+  <!-- Overview: indicators of the scope, opened after sign-in (Documentation/adr/0007-overview-indicators.md) -->
+  <main class="records-main" id="overview-view" hidden>
+    <section class="sheet overview">
+      <div class="overview-head">
+        <div class="overview-period">
+          <label for="overview-days" data-i18n="overview.period"></label>
+          <select id="overview-days">
+            <option value="7" data-i18n="overview.days" data-i18n-params='{"days":7}'></option>
+            <option value="30" data-i18n="overview.days" data-i18n-params='{"days":30}' selected></option>
+            <option value="90" data-i18n="overview.days" data-i18n-params='{"days":90}'></option>
+          </select>
+        </div>
+        <p class="overview-scope" id="overview-scope"></p>
+        <div class="overview-actions">
+          <button type="button" class="btn btn-ghost" id="overview-xlsx" data-i18n="overview.exportXlsx"></button>
+          <button type="button" class="btn btn-ghost" id="overview-csv" data-i18n="overview.exportCsv"></button>
+        </div>
+      </div>
+      <p class="field-msg" id="overview-status" aria-live="polite"></p>
+      <p class="status is-warn" id="overview-off" data-i18n="requests.off" hidden></p>
+
+      <section class="overview-group" aria-labelledby="overview-usage-title">
+        <h2 id="overview-usage-title" data-i18n="overview.group.usage"></h2>
+        <div class="overview-tiles" id="overview-usage-tiles"></div>
+        <div class="requests-chart overview-chart" id="overview-chart" role="img"></div>
+        <p class="requests-legend"><span class="swatch swatch-ok"></span><span data-i18n="requests.legendOk"></span>
+          <span class="swatch swatch-missing"></span><span data-i18n="requests.legendMissing"></span></p>
+        <div class="overview-columns">
+          <div>
+            <h3 data-i18n="overview.topCodes"></h3>
+            <div class="table-wrap"><table class="records-table overview-table">
+              <thead><tr><th scope="col" data-i18n="overview.col.code"></th>
+                <th scope="col" class="num" data-i18n="overview.scans"></th>
+                <th scope="col" class="num" data-i18n="overview.notFound"></th></tr></thead>
+              <tbody id="overview-top-body"></tbody>
+            </table></div>
+            <p class="records-empty" id="overview-top-empty" data-i18n="overview.noScans" hidden></p>
+          </div>
+          <div>
+            <h3 data-i18n="overview.shares"></h3>
+            <div id="overview-shares"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="overview-group" aria-labelledby="overview-quality-title">
+        <h2 id="overview-quality-title" data-i18n="overview.group.quality"></h2>
+        <div class="overview-tiles" id="overview-quality-tiles"></div>
+        <div class="overview-columns">
+          <div>
+            <h3 data-i18n="overview.unknownCodes"></h3>
+            <p class="hint" data-i18n="overview.unknownHint"></p>
+            <div class="table-wrap"><table class="records-table overview-table">
+              <thead><tr><th scope="col" data-i18n="overview.col.code"></th>
+                <th scope="col" class="num" data-i18n="overview.col.requests"></th>
+                <th scope="col"><span class="visually-hidden" data-i18n="overview.col.action"></span></th></tr></thead>
+              <tbody id="overview-unknown-body"></tbody>
+            </table></div>
+            <p class="records-empty" id="overview-unknown-empty" data-i18n="overview.noUnknown" hidden></p>
+          </div>
+          <div>
+            <h3 data-i18n="overview.noLinkCodes"></h3>
+            <p class="hint" data-i18n="overview.noLinkHint"></p>
+            <div class="table-wrap"><table class="records-table overview-table">
+              <thead><tr><th scope="col" data-i18n="overview.col.code"></th>
+                <th scope="col" class="num" data-i18n="overview.col.requests"></th>
+                <th scope="col"><span class="visually-hidden" data-i18n="overview.col.action"></span></th></tr></thead>
+              <tbody id="overview-nolink-body"></tbody>
+            </table></div>
+            <p class="records-empty" id="overview-nolink-empty" data-i18n="overview.noNoLink" hidden></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="overview-group" aria-labelledby="overview-records-title">
+        <h2 id="overview-records-title" data-i18n="overview.group.records"></h2>
+        <p class="status is-warn" id="overview-records-off" data-i18n="overview.r.unavailable" hidden></p>
+        <div class="overview-tiles" id="overview-records-tiles"></div>
+        <div class="overview-columns">
+          <div>
+            <h3 data-i18n="overview.r.byKey"></h3>
+            <div id="overview-bykey"></div>
+          </div>
+          <div>
+            <h3 data-i18n="overview.notScannedTitle"></h3>
+            <ul class="overview-codes" id="overview-quiet"></ul>
+            <p class="records-empty" id="overview-quiet-empty" data-i18n="overview.allScanned" hidden></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="overview-group" aria-labelledby="overview-operation-title">
+        <h2 id="overview-operation-title" data-i18n="overview.group.operation"></h2>
+        <dl class="overview-facts" id="overview-operation"></dl>
+      </section>
+
+      <section class="overview-group needs-admin" id="overview-governance" aria-labelledby="overview-governance-title">
+        <h2 id="overview-governance-title" data-i18n="overview.group.governance"></h2>
+        <div class="overview-tiles" id="overview-governance-tiles"></div>
+        <div class="overview-columns">
+          <div>
+            <h3 data-i18n="overview.g.byUser"></h3>
+            <div class="table-wrap"><table class="records-table overview-table">
+              <thead><tr><th scope="col" data-i18n="overview.col.user"></th>
+                <th scope="col" class="num" data-i18n="overview.col.changes"></th></tr></thead>
+              <tbody id="overview-users-body"></tbody>
+            </table></div>
+            <p class="records-empty" id="overview-users-empty" data-i18n="overview.g.noChanges" hidden></p>
+          </div>
+          <div>
+            <h3 data-i18n="overview.g.accounts"></h3>
+            <div id="overview-accounts"></div>
+          </div>
+        </div>
+      </section>
+      <p class="field-msg" id="overview-privacy" data-i18n="overview.privacy"></p>
     </section>
   </main>
 

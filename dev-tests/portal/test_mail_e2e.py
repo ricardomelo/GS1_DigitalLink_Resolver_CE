@@ -72,7 +72,8 @@ def link_of(msg):
 def sign_in(page, user, password):
     page.goto(BASE + "login")
     page.fill("#username", user); page.fill("#password", password); page.click("#login-submit")
-    page.wait_for_url(BASE, timeout=5000)
+    page.wait_for_url(BASE + "#overview", timeout=5000)       # sign-in opens the overview (ADR 0007)
+    page.goto(BASE)
     page.wait_for_timeout(600)
 
 
@@ -131,7 +132,7 @@ with sync_playwright() as p:
           maria.is_visible("#login-form") and "Senha definida" in maria.inner_text("#login-status")
           and maria.input_value("#username") == "maria", maria.inner_text("#login-status"))
     maria.fill("#password", "maria-password-long"); maria.click("#login-submit"); maria.wait_for_timeout(1200)
-    check("the invited user signs in", maria.url == BASE, maria.url)
+    check("the invited user signs in (the overview opens)", maria.url == BASE + "#overview", maria.url)
 
     ctx_again, again = new_page("pt-BR")
     again.goto(invite); again.wait_for_timeout(800)

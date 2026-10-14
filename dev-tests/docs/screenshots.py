@@ -135,6 +135,7 @@ def sign_in(browser, locale, viewport=None):
     page.on("dialog", lambda dialog: dialog.accept())    # "discard unsaved changes?" between pictures
     page.goto(BASE); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(800)
+    page.goto(BASE); page.wait_for_timeout(500)          # sign-in opens the overview; the pictures start in the editor
     return page
 
 
@@ -224,6 +225,7 @@ def guide_images(locale: str, folder: str, description: str) -> None:
         save(page, f"{folder}/sign-in.png", clip={"x": 0, "y": 0, "width": 1280, "height": 760})
         page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
         page.click("#login-submit"); page.wait_for_timeout(800)
+        page.goto(BASE); page.wait_for_timeout(500)      # sign-in opens the overview
         save(page, f"{folder}/editor-start.png", clip={"x": 0, "y": 0, "width": 1280, "height": 820})
 
         # Steps 1 to 3 and the history of a batch record (saved once more, so it has a version)
@@ -418,7 +420,8 @@ def seed_requests() -> None:
 
 
 def requests_images(browser, folder: str, locale: str) -> None:
-    """The Requests screen of a server administrator: the last 30 days and the latest requests (ADR 0006)."""
+    """The Requests screen of a server administrator: the last 30 days and the latest requests (ADR 0006); the
+    overview of the same month (ADR 0007)."""
     seed_requests()
     ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1250})
     page = ctx.new_page()
@@ -427,6 +430,8 @@ def requests_images(browser, folder: str, locale: str) -> None:
     page.click("#login-submit"); page.wait_for_timeout(1000)
     page.goto(BASE + "#requests"); page.wait_for_timeout(1500)
     save(page, f"{folder}/requests.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1250})
+    page.goto(BASE + "#overview"); page.wait_for_timeout(1500)   # the overview (ADR 0007), the same month
+    save(page, f"{folder}/overview.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1600})
     ctx.close()
 
 

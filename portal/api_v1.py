@@ -21,6 +21,7 @@ from flask import Response, g, jsonify, request
 import apikeys
 import app as portal
 import gs1
+import overview
 import requestlog
 from gs1 import ValidationError
 
@@ -226,3 +227,14 @@ def v1_get_label(key, value):
     """The record's label, as the portal makes it (format=svg|png, hri, version, ecl, attr=AI:value)."""
     anchor = _anchor(key, value)
     return portal.label_response(anchor, request.args)
+
+
+@portal.app.get(PREFIX + "/stats")
+@require_key("stats:read")
+def v1_stats():
+    """Usage, resolution quality and record quality of the key's reach for the last 7, 30 or 90 days
+    (Documentation/adr/0007-overview-indicators.md); the portal's overview without operation and governance."""
+    per = overview.period(request.args.get("days"))
+    scope, _ = portal.request_log_scope()
+    data = overview.build(per, scope, False, portal.overview_records(), portal.overview_last_check(), {})
+    return jsonify({name: data[name] for name in ("period", "usage", "quality", "records")})

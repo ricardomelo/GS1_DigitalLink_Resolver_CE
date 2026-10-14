@@ -87,7 +87,8 @@ for i in range(205):                                       # enough for a second
 def sign_in(page, user, password):
     page.goto(BASE + "login")
     page.fill("#username", user); page.fill("#password", password); page.click("#login-submit")
-    page.wait_for_url(BASE, timeout=5000)
+    page.wait_for_url(BASE + "#overview", timeout=5000)       # sign-in opens the overview (ADR 0007)
+    page.goto(BASE)
     page.wait_for_timeout(500)
 
 

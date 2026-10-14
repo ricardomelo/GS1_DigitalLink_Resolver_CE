@@ -103,7 +103,8 @@ def sign_in(page):
     page.fill("#username", "tester")
     page.fill("#password", "a-long-test-password")
     page.click("#login-submit")
-    page.wait_for_url("**/portal/")
+    page.wait_for_url("**/portal/#overview")                  # sign-in opens the overview (ADR 0007)
+    page.goto(BASE)
     page.wait_for_function("document.body.dataset.role")
 
 

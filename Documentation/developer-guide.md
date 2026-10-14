@@ -118,6 +118,7 @@ portal/                          new: the link management portal
   apikeys.py                     API keys of the tenant API: creation, hash, revocation, request limit (ADR 0005)
   api_v1.py                      the tenant API, /portal/api/v1 (imported at the end of app.py), its calls logged
   requestlog.py                  the request log as the portal reads it: scope, listing, daily counts, API calls (ADR 0006)
+  overview.py                    the overview's indicators and their exports (ADR 0007)
   openapi.json                   its OpenAPI 3.1 description, served at /portal/api/v1/openapi.json
   db_init.py                     creates the portal's database user (portal-db-init service)
   create_user.py                 command-line user administration
@@ -444,6 +445,24 @@ documents of other runs removed — then records the last finished day (ten minu
 `record_api_call()` and `list_api_calls()` keep and list the tenant API's calls (`api_requests`); `api_v1.py` records
 each call in an `after_request` hook, with the key seen (also a refused one), the route's template, status and time.
 
+### `overview.py` — the overview
+
+[ADR 0007](adr/0007-overview-indicators.md). `period(days)` checks the period (7, 30 or 90; `PeriodError`, answered
+422 `overview.badPeriod`) and gives its dates and the previous period's in `PORTAL_TIME_ZONE`. `build()` puts the
+groups together from what `app.overview_data()` gathers for the scope of the request (`request_log_scope()`,
+`visible_records()` — the record list's own function, or `None` when the resolver cannot be read —, the last check of
+every link limited to `allowed()`, `overview_operation()` and, for administrators, a function giving the governance
+group). `usage_and_quality()` reads `requestlog.collect(scope, whole, first, last)`: the aggregates of the period's
+past days (per key, folded with `_add()`; for the whole installation the totals come from the `|*` documents, so
+requests without a key count) and today's raw events grouped the same way; usage counts people (`total − automated`),
+quality every request. `record_quality()` counts the records, keys by type, `noKeyRecord`, `breaksRules`, records
+without a description, keys nobody scanned in the period and records with link problems. `governance()` reads
+`journal.counts(scope, start, end, allowed)` (actions, and record changes per user, within the user's prefixes), the
+accounts of the scope by role, the API keys (active, expiring within 14 days) and `api_requests` (calls, refused).
+`summary_rows()` and `tables()` turn an answer into rows labelled with the texts the browser sends (the message codes
+when none are sent); `write_csv()` and `write_xlsx()` make the files (cells protected, sheet names cleaned for Excel).
+`api_v1.v1_stats()` serves `usage`, `quality` and `records` to keys with `stats:read`.
+
 ### `migrate.py`, `db_init.py`
 
 `migrate.run(config_dir)` moves `users.json`, `records-meta.json` and `journal.jsonl` into empty collections
@@ -471,8 +490,9 @@ No framework and no build step: plain HTML, CSS and JavaScript served as static 
 | `app.js` | everything else; a map of its sections is at the top of the file |
 | `app.css` | styles; media queries after the rules they change |
 
-**Views.** The address fragment chooses the view (`#records`, `#requests`, `#users`, `#audit`, otherwise the editor),
-so the browser's back button and bookmarks work (`applyView()`).
+**Views.** The address fragment chooses the view (`#overview`, `#records`, `#requests`, `#users`, `#audit`, otherwise
+the editor, also `#editor`), so the browser's back button and bookmarks work (`applyView()`). Signing in opens
+`#overview` (`login.js`).
 
 **Translation.** Elements declare their texts: `data-i18n="key"`, `data-i18n-params='{…}'`,
 `data-i18n-attr="placeholder:key;aria-label:key"`. `I18N.apply()` renders them all; `I18N.set(el, key,
@@ -500,6 +520,14 @@ counted apart), lists the latest requests (`loadRequests()`, `requestRow()`, pag
 `requestsQuery()`), exports them (`downloadRequests()`) and, for administrators, the tenant API's calls in a second
 tab (`showRequestsTab()`, `loadApiCalls()`). `body[data-requests-whole]` (from `CONFIG.requestLog.whole`) shows the
 organisation column. Rows carry `data-label` for the phone layout.
+
+**Overview ([ADR 0007](adr/0007-overview-indicators.md)).** The `#overview` view (every user) asks `GET /overview` for
+the period of `#overview-days` (`loadOverview()`, a newer request winning over a slower older one) and draws it
+(`renderOverview()`): tiles (`tile()`, the change on the previous period from `changeText()`, green or red by
+`better`), the bars per day (as on the Requests screen), tables of codes (a code opens the editor through
+`openFromList()`), share tables with bars (`shareTable()`), the operation facts and, when the answer has it, the
+governance group (`.needs-admin`). `exportOverview()` posts the period and every `overview.*` text of the current
+language (`overviewLabels()`, `I18N.keys()`) and saves the file. The tables stay tables on a phone.
 
 **Record list.** `loadRecords()` fetches `/records` once; `renderRecords()` filters in the browser by key
 type (`#records-key`), qualifier (`qualifierMatches()`), author, link problems and text (`fold()` ignores
@@ -546,11 +574,13 @@ operator.
 | `GET /requests.csv` (same filters) | any | Up to 50,000 of them as CSV (UTF-8 with BOM, `;`, cells protected); journal `requests-export` |
 | `GET /requests/daily?days=30` | any | `days`: `[{day, total, automated, outcome}]`, oldest first, in the scope (past days from `request_daily`, today from the events); `timeZone` |
 | `GET /requests/api?from=&to=&key=&before=&limit=` | admin | The tenant API's calls of the scope (every organisation's for a server administrator): `calls` (`at`, `key`, `keyName`, `organisation`, `method`, `operation`, `status`, `ms`), `next`, `whole` |
+| `GET /overview?days=7\|30\|90` | any | The overview of the scope ([ADR 0007](adr/0007-overview-indicators.md)): `period`, `whole`, `logDays`, `usage`, `quality`, `records`, `operation`, `governance` (administrators; otherwise `null`); 422 `overview.badPeriod`, 503 `requests.unavailable` |
+| `POST /overview/export` `{format: xlsx\|csv, days, labels}` | any | The overview as a file (lists up to 100); journal `overview-export` |
 | `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable", "mail": "on"\|"off"}` |
 
 The **tenant API** (`/portal/api/v1`, an API key instead of the session) is described in `portal/openapi.json`
 and in the README (*Tenant API*): `GET /`, `GET /records`, `GET`/`PUT`/`DELETE /records/{key}/{value}`,
-`GET /labels/{key}/{value}`, `GET /openapi.json`.
+`GET /labels/{key}/{value}`, `GET /stats` (scope `stats:read`, ADR 0007), `GET /openapi.json`.
 
 ## 8. Portal data
 
@@ -725,6 +755,7 @@ run against it. Setup and commands are in
 | `portal/test_tenants.py` | 82 | tenants ([ADR 0002](adr/0002-tenants.md)): an installation without tenants unchanged; tenants and their prefixes (names, overlaps, redundancy, operator users in the way); the operator's records and users; tenant administrators and their users; e-mail addresses; records, history, record list, export and imports per tenant, and the worker's check before each record; prefixes moving between owners; the audit trail per tenant and its CSV; support access; disabled and removed tenants; link check results per scope; ownership by key type; the command line; the messages of both languages (same keys, every key of the page and every message code of the server translated) |
 | `portal/test_mail.py` | 138 | e-mail ([ADR 0004](adr/0004-e-mail.md)) against an SMTP relay of the test's own (`fake_smtp.py`: STARTTLS or TLS with a throwaway certificate, authentication, refusals on demand): settings that do not fit, sending with STARTTLS and TLS, headers and the HTML alternative, temporary and permanent failures, credentials never sent without encryption, the test command; the texts of both languages; single-use links (hash only, once, replaced, expired, purged); `notBefore` and `defer()`; with mail off nothing changes; invitations, password recovery (the same answer and time for every input, limits, who gets nothing), resets by an administrator, security notices, preferences, notices of finished jobs; retries, failures, a message skipped for an account disabled meanwhile, no address in the journal; every message code translated. Every protection mutation-checked |
 | `portal/test_api.py` | 92 | the tenant API and its keys ([ADR 0005](adr/0005-tenant-api.md)): keys created, listed and revoked only in the administrator's own scope (also during support access), the rules of a key (name, scopes, days, prefixes, 20 active), the full key once and only its hash stored, the creator told by e-mail; authentication (missing, wrong, revoked, expired, disabled organisation), sessions and keys kept apart; records listed in pages, read, written (GS1 rules, another owner's record refused, no CORS), deleted; labels; scopes, a key's prefixes, the operator's keys; the journal (`api:<id>`); the request limit and the last use; the expiry notice and the worker's housekeeping; the OpenAPI description against the routes and the answers; both languages. Every protection mutation-checked |
+| `portal/test_overview.py` | 66 | the overview ([ADR 0007](adr/0007-overview-indicators.md)): the period and the previous one (a period refused), usage before and after the worker counted (past days from the aggregates, today from the raw events, the same figures either way), per day, the most scanned codes, shares, quality (a compressed link's answer counted as answered), unknown and noLink codes with whether the key has records; record quality (no key record, keys nobody scanned); operation; each scope (an organisation, a user's prefixes, the operator, the whole installation with requests without a key but only codes in the lists, support access); 7 and 90 days; governance (changes by kind and user, within an administrator's prefixes; users; API keys expiring); `/v1/stats` and its scope, a key's prefixes; the exports (sheet names, labels, protected cells, the journal, the origin); the resolver or the log unreadable; the texts in both languages, the description, the sign-in's landing. 18 mutations, all caught |
 | `portal/test_requestlog.py` | 74 | the request log in the portal ([ADR 0006](adr/0006-resolver-request-log.md)): who sees which events (an organisation, a user's prefixes, the operator, server administrators with each event's organisation, a limited server administrator, support access, a prefix moving between organisations), filters (outcome, device, automated, code as GTIN-13, GTIN-14, prefix, anchor; days of `PORTAL_TIME_ZONE`), pages with ties, the CSV (formulas protected, the organisation column, the journal), the daily aggregates (per key and for the installation, percentiles, expiry, finished days, replacement, the lock, the switch, an unknown time zone), requests per day per scope, the tenant API's calls (never the record or the secret; who sees them), the configuration, an unreadable log, the messages of both languages |
 | `portal/test_jobs.py` | 70 | background jobs: states, expiry, atomic claim, ownership of writes, silent workers given back and failed after three attempts, the worker's announcement, `stalled`, the health check, the worker loop (errors, heartbeat, stop and hand-back, `JobLost`), the embedded worker and `PORTAL_WORKER`; imports through the API (queue, worker, journal, another user, a worker dying before and after writing a record, a failure); link checks through the API (every record, a list, a stop that cancels pending addresses) |
 | `portal/test_worker_processes.py` | 13 | `worker.py` as real processes on a real MongoDB (run by `test_store_mongodb.py`): two workers share the queue without taking a job twice; SIGTERM hands the job back and the other worker finishes it; after SIGKILL a new worker continues the job once its heartbeat is old |
@@ -733,7 +764,8 @@ run against it. Setup and commands are in
 | `portal/test_mail_e2e.py` | 37 | the e-mail screens in Chromium with the relay of `fake_smtp.py`: recovery on the sign-in page (the same answer for every entry), an invitation from the users screen, the page a link opens (user name, the token gone from the address bar, short and different passwords refused, a phone's width), a link used twice, a link opened while someone else is signed in, a recovery ending the user's open session, Options → E-mail kept, a reset by link, every text of the sign-in page translated, and the same screens with e-mail off |
 | `portal/test_requests_e2e.py` | 28 | the Requests screen in Chromium ([ADR 0006](adr/0006-resolver-request-log.md)): the menu item for every user (and the menu closing), 30 bars from the aggregates and today's events, the latest requests (organisation column for a server administrator, EPC scheme, level, serial as `/21/*`), the next page, filters (not found, a GTIN-13, automated requests), the CSV export, support access, English, an organisation's reader (no organisation column, no API tab), an administrator's API calls without the key's secret, a phone's width, the log switched off |
 | `portal/test_api_e2e.py` | 21 | the API keys screen in Chromium: an organisation's administrator creates a key (shown once with an example), a system uses it through `/portal/api/v1`, the record shows `api:<id>`, leaving the screen removes the key from the page, revoking on screen stops it at once, the audit trail, both languages, a phone's width, the operator's keys for a server administrator, no screen for an editor |
-| `portal/test_portal_e2e.py` | 211 | the portal in Chromium against `mock_data_entry.py`, desktop and phone, with an embedded worker (also stopped: the queue and "not running" messages, a job that fails); organisations, a tenant administrator and support access in both languages; also run without the engine (166) |
+| `portal/test_overview_e2e.py` | 27 | the overview in Chromium: sign-in lands on it, its groups for an organisation's administrator, the period selector, *Register* opening the editor on the code, the Excel and CSV exports, the menu items, Portuguese, a reader without governance, a server administrator's whole installation and server facts, a phone's width |
+| `portal/test_portal_e2e.py` | 212 | the portal in Chromium against `mock_data_entry.py`, desktop and phone, with an embedded worker (also stopped: the queue and "not running" messages, a job that fails); organisations, a tenant administrator and support access in both languages; also run without the engine (167) |
 | `home/test_home.py` | 68 | home page through a real nginx (1.27.3 or later: `NGINX_BIN` or the PATH), no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts; replicas through a stub DNS server answering the service names with `127.0.0.x` addresses: nginx starts while a service has no address and finds it later, shares the requests between two replicas, follows a third added and two removed without a restart, and no request fails while replicas stop |
 | `install/test_install.sh` | 87 | installer through shims (Compose v2), including a portal whose job worker does not start; replica counts written, kept, taken from the environment and refused when invalid; the time zone of the request counts (the server's, from the environment, refused when not a name); the e-mail relay (off by default, written with STARTTLS or TLS, its password kept and never shown, switched off, a test relay set by hand kept, refusals); no setting written twice in `.env` |
 | `install/test_deploy.py` | 62 | the daily backup with a stand-in `docker` (only options `mongodump` has; a failed dump: `ERROR`, status 1, no partial file; a good one: the archive, `OK`); `docker compose config` of the replicas and process counts (defaults, values from `.env`, a refused value, names kept by the database and the proxy); the proxy image's nginx version and `resolve` in every upstream; each image's gunicorn `CMD` started locally (three processes, an answer, the request logged, a clean stop on SIGTERM within 10 s); the portal's fallback session key with six processes starting together and eight threads while writing it is slow; the portal started from the files the `COPY` lines of its Dockerfile put in the image, every module and data file of `portal/` among them; one engine release, in `docker-compose.yml` only, given to every image (ADR 0003) |
@@ -742,7 +774,7 @@ run against it. Setup and commands are in
 test (a subprocess from the repository root): exit status 0 without a `FAIL` line passes; otherwise the
 report shows the `FAIL` lines and the end of the output; a program that only printed `SKIP` is skipped.
 Markers group them: `resolver` (resolver, EPC binary, data entry, GS1 suite), `portal` (the portal programs
-without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`, `test_requests_e2e.py`), `home`,
+without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`, `test_requests_e2e.py`, `test_overview_e2e.py`), `home`,
 `install` (the installer through password-less `sudo` when not root, and `test_deploy.py`), `database` (`test_store_mongodb.py`). `dev-tests/conftest.py` keeps the programs from
 being imported by pytest, registers the markers and prints the check counts of each program at the end (and
 in the GitHub Actions run summary). With `DEV_TESTS_STRICT=1` a program fails when an environment variable

@@ -622,7 +622,7 @@ description `GET /portal/api/v1/openapi.json` (OpenAPI 3.1, the installation's a
 **Keys.** Administrators create them in the portal (user menu → **API keys**): a tenant administrator for his
 organisation, a server administrator for the operator's records only (a server administrator never gets a key
 into an organisation; support access stays the only way in). A key has a name, scopes (`records:read`,
-`records:write`, `labels:read`), optional GS1 Company Prefixes inside the organisation's, and a validity of 1 to
+`records:write`, `labels:read`, `stats:read` for the overview's figures), optional GS1 Company Prefixes inside the organisation's, and a validity of 1 to
 `PORTAL_API_KEY_MAX_DAYS` days (90 by default); at most 20 active keys per organisation. The key —
 `rk_<12 hex>.<43 characters>` — is shown once; only the SHA-256 of its secret is stored, so a lost key is revoked
 and replaced. Revoking takes effect on the next request. The administrator who created a key receives an e-mail
@@ -694,6 +694,28 @@ the record or the query string).
 docker compose exec database-service sh -c 'mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
   --authenticationDatabase admin resolver_log --quiet --eval "db.requests.find({}, {_id: 0}).sort({t: -1}).limit(5)"'
 ```
+
+## Overview
+
+The portal opens on the **Overview** after sign-in ([ADR 0007](../adr/0007-overview-indicators.md)); the editor keeps
+the portal's address (`/portal/`, also `/portal/#editor`). Its figures cover the last 7, 30 or 90 days of
+`PORTAL_TIME_ZONE`, today included, each against the period of the same length before it, in the scope of the user
+(the rules of the request log above): usage (scans by people, automated requests apart, per day, the most scanned
+codes, shares by device, form, language and link type), resolution quality (requests answered, codes nobody
+registered and codes without the link asked, invalid requests, errors, average time; the slowest day's 95th
+percentile for the whole installation), record quality (records and keys by type, no key-level record, serial with
+batch or variant, no description, keys nobody scanned, link problems of the last full check), operation (the last
+link check, the log's retention; for server administrators the worker, e-mail and the last day counted) and, for
+administrators, governance (record changes by kind and by user, sign-ins and refusals, exports, users by role, API
+keys active and expiring within 14 days, the tenant API's calls and refusals).
+
+The figures are computed on request: past days from `request_daily`, today from the raw events, the records from the
+resolver's summary, governance from the journal. **Quality counts every request; usage counts people.** When the
+resolver cannot be read the records group says so and the rest is shown. **Export Excel** (a sheet of indicators with
+the previous period, sheets per day, codes and users, lists up to 100) and **Export CSV** (the indicators) are
+journalled as `overview-export`. API keys with the scope `stats:read` read usage, quality and records through
+`GET /portal/api/v1/stats?days=30`. Nothing is configured: the overview needs the request log (`RESOLVER_LOG_DAYS`
+above 0) for its usage and quality figures.
 
 ## Home page
 

@@ -82,7 +82,11 @@ with sync_playwright() as p:
     check("password hidden again", page.get_attribute("#password", "type") == "password")
     reveal.click()
     page.click("#login-submit"); page.wait_for_timeout(800)
-    check("signed in", page.url.endswith("/portal/"), page.url)
+    check("signed in: the overview opens", page.url.endswith("/portal/#overview") and page.is_visible("#overview-view")
+          and not page.is_visible("#editor-view"), page.url)
+    page.goto(BASE); page.wait_for_timeout(500)
+    check("the portal's address without a fragment is still the editor", page.is_visible("#editor-view")
+          and not page.is_visible("#overview-view"))
 
     page.fill("#key-value", "7898357410016"); page.wait_for_timeout(100)
     check("check digit feedback", "should be 5" in page.inner_text("#key-msg"), page.inner_text("#key-msg"))
@@ -651,6 +655,7 @@ with sync_playwright() as p:
         phone.tap("#password + .reveal")
         check("phone: password shown with a tap", phone.get_attribute("#password", "type") == "text")
         phone.tap("#login-submit"); phone.wait_for_timeout(900)
+        phone.goto(BASE); phone.wait_for_timeout(600)
         phone.fill("#key-value", "09506000134352"); phone.wait_for_timeout(300)
         phone.tap("#opt-attrs"); phone.wait_for_timeout(200)
         phone.tap("#attr-rows .attr-row .combo-toggle"); phone.wait_for_timeout(200)
@@ -714,6 +719,7 @@ with sync_playwright() as p:
     reader.fill("#current-password", temp); reader.fill("#new-password", "reader1-own-password")
     reader.fill("#confirm-password", "reader1-own-password"); reader.click("#password-save"); reader.wait_for_timeout(700)
     reader.click("#password-cancel"); reader.wait_for_timeout(200)
+    reader.goto(BASE); reader.wait_for_timeout(700)
     reader.select_option("#key-type", "00"); reader.fill("#key-value", "095060001343520000"); reader.wait_for_timeout(200)
     reader.click("#open"); reader.wait_for_timeout(800)
     check("reader: record opens read-only", reader.input_value("#description") == "Pallet 1 (second version)"

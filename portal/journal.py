@@ -161,6 +161,24 @@ def search(user: str | None = None, since: str | None = None, until: str | None 
     return found
 
 
+def counts(scope: dict, start: datetime, end: datetime, allowed=None) -> tuple[dict[str, int], dict[str, int]]:
+    """Events of one audit trail (scope_query()) made in [start, end): ({action: count}, {user: record changes}),
+    leaving out record events that allowed(anchor) refuses (the overview, Documentation/adr/0007-overview-indicators.md).
+    """
+    query = {**(scope or {}), "at": {"$gte": start, "$lt": end}}
+    actions: dict[str, int] = {}
+    by_user: dict[str, int] = {}
+    for event in _journal().find(query, {"action": 1, "user": 1, "anchor": 1}):
+        if allowed and event.get("anchor") and not allowed(event["anchor"]):
+            continue
+        action = event.get("action", "")
+        actions[action] = actions.get(action, 0) + 1
+        if action in CATEGORIES["record"]:
+            user = event.get("user", "-")
+            by_user[user] = by_user.get(user, 0) + 1
+    return actions, by_user
+
+
 def apply_retention() -> dict[str, int]:
     """Recalculates expiresAt of the events of every category whose retention changed since the last start
     (the values in use are kept in settings "journalRetention"), one day at a time, under a lock so that

@@ -63,7 +63,7 @@ async function signIn(event) {
     const { res, data } = await busy($("#login-submit"), "login.submitting", "login.submit",
                                      () => post("api/login", { username, password, language: I18N.locale }));
     if (res.ok) {
-      location.replace("./");
+      location.replace("./#overview");
       return;
     }
     showStatus("error", data.code || "error.unexpected", data.params || { status: res.status });

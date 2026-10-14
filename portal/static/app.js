@@ -1250,7 +1250,8 @@ const records = { all: [], loaded: false };
 
 function isRecordsView() { return location.hash === "#records"; }
 
-const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants", "#apikeys": "apikeys" };
+const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants", "#apikeys": "apikeys",
+                "#requests": "requests" };
 
 /* Shows the editor, the record list, the user administration, the organisations or the audit trail, following
    the address (#records, #users, #tenants, #audit), so the browser's back button and bookmarks work. Users and the
@@ -1266,9 +1267,10 @@ function applyView() {
   $("#tenants-view").hidden = view !== "tenants";
   $("#audit-view").hidden = view !== "audit";
   $("#apikeys-view").hidden = view !== "apikeys";
+  $("#requests-view").hidden = view !== "requests";
   if (view !== "apikeys") forgetNewKey();
   const titles = { editor: "intro", records: "records", users: "users", audit: "audit", tenants: "tenants",
-                   apikeys: "apikeys" };
+                   apikeys: "apikeys", requests: "requests" };
   I18N.set($("#hero-title"), `${titles[view]}.title`);
   I18N.set($("#hero-lede"), `${titles[view]}.lede`);
   const link = $("#hero-link");
@@ -1279,6 +1281,7 @@ function applyView() {
   if (view === "tenants" && CONFIG) loadTenants();
   if (view === "audit" && CONFIG) loadAudit();
   if (view === "apikeys" && CONFIG) loadApiKeys();
+  if (view === "requests" && CONFIG) loadRequestsView();
 }
 
 /* ------------------------------------------------------------------ roles */
@@ -1849,6 +1852,186 @@ async function loadAudit(event) {
 
 function downloadAudit() {
   location.href = BASE + "api/audit.csv?" + auditQuery();
+}
+
+/* ------------------------------------------------------------------ requests to the resolver (#requests)
+   The log of resolver requests (Documentation/adr/0006-resolver-request-log.md), in the scope of the account: the
+   last 30 days as bars, the latest requests with filters and pages, a CSV export, and for administrators the calls
+   of the tenant API. Nothing here identifies the people who scan: the server never stores it. */
+const REQUEST_OUTCOMES = ["redirect", "notFound", "unknown", "noLink", "choice", "linkset", "invalid", "error", "compressed"];
+const REQUEST_DEVICES = ["mobile", "tablet", "desktop", "automated", "unknown"];
+const requestsState = { next: null, apiNext: null, tab: "resolver" };
+
+function fillRequestFilters() {
+  const outcome = $("#requests-outcome"), device = $("#requests-device");
+  if (outcome.options.length) return;
+  outcome.append(i18nOption("requests.any", ""), ...REQUEST_OUTCOMES.map(o => i18nOption("requests.outcome." + o, o)));
+  device.append(i18nOption("requests.any", ""), ...REQUEST_DEVICES.map(d => i18nOption("requests.device." + d, d)));
+}
+
+function requestsQuery() {
+  const params = new URLSearchParams();
+  [["from", "#requests-from"], ["to", "#requests-to"], ["code", "#requests-code"], ["outcome", "#requests-outcome"],
+   ["device", "#requests-device"]].forEach(([name, sel]) => { if ($(sel).value.trim()) params.set(name, $(sel).value.trim()); });
+  if ($("#requests-automated").checked) params.set("automated", "1");
+  return params;
+}
+
+function loadRequestsView() {
+  fillRequestFilters();
+  const days = CONFIG.requestLog?.days ?? 0;
+  $("#requests-off").hidden = days > 0;
+  document.body.dataset.requestsWhole = String(Boolean(CONFIG.requestLog?.whole));
+  I18N.set($("#requests-privacy"), "requests.privacy", { days });
+  showRequestsTab(CONFIG.accountRole === "admin" ? requestsState.tab : "resolver");
+  loadRequestDays();
+  loadRequests();
+}
+
+function showRequestsTab(tab) {
+  requestsState.tab = tab;
+  $("#requests-resolver").hidden = tab !== "resolver";
+  $("#requests-api").hidden = tab !== "api";
+  $("#requests-tab-resolver").setAttribute("aria-selected", String(tab === "resolver"));
+  $("#requests-tab-api").setAttribute("aria-selected", String(tab === "api"));
+  if (tab === "api") loadApiCalls();
+}
+
+/* The last 30 days: one bar per day, requests answered (redirects, choices, linksets) and not found (404) stacked;
+   automated requests are left out of the bars and counted in the summary. */
+async function loadRequestDays() {
+  const chart = $("#requests-chart");
+  try {
+    const { days } = await api("GET", "requests/daily?days=30");
+    const shown = days.map(d => {
+      const missing = (d.outcome.unknown || 0) + (d.outcome.noLink || 0);
+      return { day: d.day, total: Math.max(0, d.total - d.automated), missing, automated: d.automated };
+    });
+    const top = Math.max(1, ...shown.map(d => d.total));
+    const total = shown.reduce((n, d) => n + d.total, 0);
+    const missing = shown.reduce((n, d) => n + Math.min(d.missing, d.total), 0);
+    const automated = shown.reduce((n, d) => n + d.automated, 0);
+    I18N.set($("#requests-summary"), "requests.summary", { total, missing, automated });
+    chart.setAttribute("aria-label", t("requests.summary", { total, missing, automated }));
+    chart.replaceChildren(...shown.map(d => {
+      const bar = document.createElement("div");
+      bar.className = "requests-bar";
+      const ok = document.createElement("span"), lost = document.createElement("span");
+      const lostShare = Math.min(d.missing, d.total);
+      ok.className = "bar-ok"; ok.style.height = `${((d.total - lostShare) / top) * 100}%`;
+      lost.className = "bar-missing"; lost.style.height = `${(lostShare / top) * 100}%`;
+      bar.append(lost, ok);
+      const when = new Intl.DateTimeFormat(I18N.locale, { day: "2-digit", month: "2-digit" }).format(new Date(d.day + "T12:00:00"));
+      bar.title = t("requests.dayTitle", { day: when, total: d.total, missing: lostShare });
+      bar.dataset.day = d.day;
+      return bar;
+    }));
+  } catch (e) {
+    I18N.set($("#requests-summary"), e.code, e.params);
+    chart.replaceChildren();
+  }
+}
+
+function requestCell(tr, label, content, className) {
+  const td = document.createElement("td");
+  td.dataset.label = t(label);
+  if (className) td.className = className;
+  if (content instanceof Node) td.append(content); else td.textContent = content ?? "";
+  tr.append(td);
+  return td;
+}
+
+function requestRow(e) {
+  const tr = document.createElement("tr");
+  requestCell(tr, "audit.when", formatWhen(e.at));
+  const code = e.anchor ? e.anchor + (e.qualifiers || "") : (e.path || "—");
+  const codeCell = requestCell(tr, "requests.code", code, "code");
+  if (e.attributes?.length) {
+    const small = document.createElement("small");
+    small.className = "muted";
+    small.textContent = " ?" + e.attributes.join(" ");
+    codeCell.append(small);
+  }
+  if (e.form && e.form !== "uri") {
+    const tag = document.createElement("span");
+    tag.className = "badge badge-unchanged";
+    tag.textContent = e.form === "epc" ? (e.epc || "EPC") : t("requests.form." + e.form);
+    codeCell.append(" ", tag);
+  }
+  const badge = document.createElement("span");
+  badge.className = "badge requests-outcome is-" + e.outcome;
+  I18N.set(badge, "requests.outcome." + e.outcome);
+  requestCell(tr, "requests.outcome", badge);
+  const answer = [];
+  if (e.linkType) answer.push(t("requests.asked", { type: e.linkType }));
+  if (e.level !== null && e.level !== undefined) answer.push(t("requests.level", { level: e.level || t("requests.keyLevel") }));
+  if (e.target) answer.push("→ " + e.target);
+  if (!answer.length) answer.push(String(e.status ?? ""));
+  requestCell(tr, "requests.answer", answer.join(" · "));
+  requestCell(tr, "requests.device", t("requests.device." + (e.device || "unknown")) + (e.referrer ? ` · ${e.referrer}` : ""));
+  requestCell(tr, "requests.language", [e.language, e.country].filter(Boolean).join(" · ") || "—");
+  requestCell(tr, "requests.ms", e.ms ?? "—", "num");
+  requestCell(tr, "audit.tenant", e.organisation || t("users.operatorName"), "requests-org-col");
+  return tr;
+}
+
+async function loadRequests(event, more = false) {
+  if (event) event.preventDefault();
+  const params = requestsQuery();
+  if (more && requestsState.next) params.set("before", requestsState.next);
+  if (!more) { $("#requests-body").replaceChildren(); I18N.set($("#requests-count"), "records.loading"); }
+  try {
+    const data = await api("GET", "requests?" + params.toString());
+    $("#requests-body").append(...data.events.map(requestRow));
+    requestsState.next = data.next;
+    $("#requests-more").hidden = !data.next;
+    const shown = $("#requests-body").children.length;
+    $("#requests-empty").hidden = shown > 0;
+    I18N.set($("#requests-count"), data.next ? "requests.countMore" : "requests.count", { count: shown });
+  } catch (e) {
+    I18N.set($("#requests-count"), e.code, e.params);
+  }
+}
+
+function downloadRequests() {
+  location.href = BASE + "api/requests.csv?" + requestsQuery().toString();
+}
+
+async function loadApiCalls(event, more = false) {
+  if (event) event.preventDefault();
+  const params = new URLSearchParams();
+  if ($("#requests-api-from").value) params.set("from", $("#requests-api-from").value);
+  if ($("#requests-api-to").value) params.set("to", $("#requests-api-to").value);
+  if (more && requestsState.apiNext) params.set("before", requestsState.apiNext);
+  if (!more) { $("#requests-api-body").replaceChildren(); I18N.set($("#requests-api-count"), "records.loading"); }
+  try {
+    const data = await api("GET", "requests/api?" + params.toString());
+    $("#requests-api-body").append(...data.calls.map(c => {
+      const tr = document.createElement("tr");
+      requestCell(tr, "audit.when", formatWhen(c.at));
+      const key = document.createElement("span");
+      if (c.key) {
+        const id = document.createElement("code");
+        id.textContent = c.key;
+        key.append(c.keyName || "", c.keyName ? " " : "", id);
+      } else {
+        I18N.set(key, "requests.noKey");
+      }
+      requestCell(tr, "requests.key", key);
+      requestCell(tr, "audit.tenant", c.organisation || t("users.operatorName"), "requests-org-col");
+      requestCell(tr, "requests.operation", `${c.method} ${c.operation || ""}`, "code");
+      requestCell(tr, "requests.status", c.status, "num");
+      requestCell(tr, "requests.ms", c.ms ?? "—", "num");
+      return tr;
+    }));
+    requestsState.apiNext = data.next;
+    $("#requests-api-more").hidden = !data.next;
+    const shown = $("#requests-api-body").children.length;
+    $("#requests-api-empty").hidden = shown > 0;
+    I18N.set($("#requests-api-count"), data.next ? "requests.countMore" : "requests.count", { count: shown });
+  } catch (e) {
+    I18N.set($("#requests-api-count"), e.code, e.params);
+  }
 }
 
 /* ------------------------------------------------------------------ record list: loading, filters, code search */
@@ -2925,7 +3108,7 @@ function setupUserMenu() {
   const dismiss = () => { close(false); menu.classList.add("is-dismissed"); };
   menu.addEventListener("mouseleave", () => menu.classList.remove("is-dismissed"));
   $("#menu-options").addEventListener("click", () => { dismiss(); openOptions(); });
-  ["#menu-records", "#menu-users", "#menu-tenants", "#menu-apikeys", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", dismiss));
+  ["#menu-records", "#menu-requests", "#menu-users", "#menu-tenants", "#menu-apikeys", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", dismiss));
   $("#menu-logout").addEventListener("click", signOut);
 }
 
@@ -3093,6 +3276,13 @@ async function init() {
   $("#support-cancel").addEventListener("click", () => $("#support-dialog").close());
   $("#support-leave").addEventListener("click", endSupport);
   $("#audit-csv").addEventListener("click", downloadAudit);
+  $("#requests-filters").addEventListener("submit", e => loadRequests(e));
+  $("#requests-more").addEventListener("click", () => loadRequests(null, true));
+  $("#requests-csv").addEventListener("click", downloadRequests);
+  $("#requests-tab-resolver").addEventListener("click", () => showRequestsTab("resolver"));
+  $("#requests-tab-api").addEventListener("click", () => showRequestsTab("api"));
+  $("#requests-api-filters").addEventListener("submit", e => loadApiCalls(e));
+  $("#requests-api-more").addEventListener("click", () => loadApiCalls(null, true));
   $("#records-problems").addEventListener("change", renderRecords);
   $("#records-check").addEventListener("click", checkAllLinks);
   $("#check-links").addEventListener("click", checkLinks);

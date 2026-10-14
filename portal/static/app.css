@@ -606,3 +606,31 @@ body:not([data-operator-view="true"]) .audit-tenant-col { display: none !importa
 .copy-list li[aria-selected="true"] { background: var(--page); box-shadow: inset 3px 0 0 var(--gs1-blue); }
 .copy-list li:hover { background: var(--page); }
 .copy-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: .75rem; }
+
+/* ---------------------------------------------------------------- requests to the resolver (#requests) */
+body:not([data-requests-whole="true"]) .requests-org-col { display: none !important; }
+.requests-chart { display: flex; align-items: flex-end; gap: 3px; height: 9rem; padding: .5rem 0;
+  border-bottom: 1px solid var(--line); }
+.requests-bar { flex: 1 1 0; height: 100%; display: flex; flex-direction: column-reverse; justify-content: flex-start;
+  min-width: 4px; }
+.requests-bar span { display: block; width: 100%; }
+.requests-bar .bar-ok { background: var(--gs1-blue); border-radius: 2px 2px 0 0; }
+.requests-bar .bar-missing { background: var(--gs1-orange); }
+.requests-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; margin: .5rem 0 0;
+  font-size: .8125rem; color: var(--muted); }
+.requests-legend .swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; }
+.requests-legend .swatch-ok { background: var(--gs1-blue); }
+.requests-legend .swatch-missing { background: var(--gs1-orange); margin-left: .6rem; }
+.requests-tabs { display: flex; gap: .25rem; margin: 1.75rem 0 0; border-bottom: 1px solid var(--line); }
+.requests-tab { border: 0; background: none; padding: .6rem 1rem; font: inherit; font-weight: 600; color: var(--muted);
+  border-bottom: 3px solid transparent; cursor: pointer; }
+.requests-tab[aria-selected="true"] { color: var(--gs1-blue); border-bottom-color: var(--gs1-orange); }
+.requests-automated { align-self: center; margin: 0; font-size: .875rem; }
+.requests-table td { font-size: .875rem; }
+.requests-table td.code { white-space: normal; word-break: break-all; }
+.requests-outcome.is-redirect, .requests-outcome.is-linkset, .requests-outcome.is-choice,
+.requests-outcome.is-compressed { background: #E7F4EC; color: var(--ok); }
+.requests-outcome.is-unknown, .requests-outcome.is-noLink { background: #FFF4E0; color: #9A5B00; }
+.requests-outcome.is-invalid, .requests-outcome.is-error { background: #FDECEA; color: var(--err); }
+#requests-more, #requests-api-more { margin-top: 1rem; }
+

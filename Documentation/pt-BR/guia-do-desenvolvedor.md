@@ -484,7 +484,7 @@ Sem framework e sem etapa de build: HTML, CSS e JavaScript puros servidos como a
 | `app.js` | todo o resto; um mapa das seções está no início do arquivo |
 | `app.css` | estilos; media queries depois das regras que alteram |
 
-**Visões.** O fragmento do endereço escolhe a visão (`#records`, `#users`, `#audit`, senão o editor), então
+**Visões.** O fragmento do endereço escolhe a visão (`#records`, `#requests`, `#users`, `#audit`, senão o editor), então
 o botão voltar do navegador e os favoritos funcionam (`applyView()`).
 
 **Tradução.** Os elementos declaram seus textos: `data-i18n="chave"`, `data-i18n-params='{…}'`,
@@ -509,6 +509,14 @@ convite ou recuperação (um link aberto com alguém conectado: a página de ent
 chaves do escopo da própria conta (`loadApiKeys()`, `apiKeyRow()`), cria uma (`createApiKey()`: a chave e um exemplo
 aparecem uma vez) e revoga (`revokeApiKey()`). `forgetNewKey()` retira uma chave nova da página quando se sai da
 visão.
+
+**Acessos ([ADR 0006](adr/0006-registro-de-requisicoes.md)).** A visão `#requests` (todos os usuários) desenha os
+últimos 30 dias (`loadRequestDays()`: uma barra por dia a partir de `/requests/daily`, respondidas e não encontradas
+empilhadas, as automatizadas contadas à parte), lista as últimas requisições (`loadRequests()`, `requestRow()`,
+páginas com `next`, os filtros de `requestsQuery()`), as exporta (`downloadRequests()`) e, para administradores,
+mostra as chamadas da API das organizações numa segunda aba (`showRequestsTab()`, `loadApiCalls()`).
+`body[data-requests-whole]` (de `CONFIG.requestLog.whole`) mostra a coluna da organização. As linhas levam
+`data-label` para o layout de celular.
 
 **Lista de registros.** `loadRecords()` busca `/records` uma vez; `renderRecords()` filtra no navegador por
 tipo de chave (`#records-key`), qualificador (`qualifierMatches()`), autor, problemas de link e texto
@@ -750,6 +758,7 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `portal/test_store_mongodb.py` | 165 | num MongoDB real (`PORTAL_TEST_MONGO_URI`, só no CI): o usuário criado pelo `db_init.py` e suas permissões (lê o registro de requisições, não grava nele); `test_store.py`, `test_jobs.py` e `test_worker_processes.py` de novo como esse usuário (com suas linhas repassadas); o monitor de TTL, também para tarefas e anúncios antigos de workers |
 | `portal/test_registration.py` | 26 | §2.5.9 pela API do portal: qualificadores informativos (salvar, abrir, histórico, lista, exportar, importar), cadastros contra a regra 2, o cadastro da chave ao salvar e ao importar |
 | `portal/test_mail_e2e.py` | 37 | as telas de e-mail no Chromium com o relay do `fake_smtp.py`: recuperação na página de entrada (a mesma resposta para qualquer entrada), um convite pela tela de usuários, a página que um link abre (nome de usuário, o token fora da barra de endereço, senhas curtas e diferentes recusadas, a largura de um celular), um link usado duas vezes, um link aberto com outra pessoa conectada, uma recuperação encerrando a sessão aberta do usuário, Opções → E-mail mantido, uma redefinição por link, todo texto da página de entrada traduzido, e as mesmas telas com o e-mail desligado |
+| `portal/test_requests_e2e.py` | 28 | a tela Acessos no Chromium ([ADR 0006](adr/0006-registro-de-requisicoes.md)): o item de menu para todo usuário (e o menu que fecha), 30 barras a partir dos agregados e dos eventos de hoje, as últimas requisições (coluna da organização para o administrador do servidor, esquema EPC, nível, série como `/21/*`), a página seguinte, filtros (não encontradas, um GTIN-13, automatizadas), a exportação CSV, o acesso de suporte, inglês, um leitor de uma organização (sem coluna da organização, sem a aba da API), as chamadas da API de um administrador sem o segredo da chave, a largura de um celular, o registro desligado |
 | `portal/test_api_e2e.py` | 21 | a tela de chaves de API no Chromium: o administrador de uma organização cria uma chave (mostrada uma vez com um exemplo), um sistema a usa por `/portal/api/v1`, o cadastro mostra `api:<id>`, sair da tela retira a chave da página, revogar na tela a para na hora, a auditoria, os dois idiomas, a largura de um celular, as chaves do operador para um administrador do servidor, nenhuma tela para um editor |
 | `portal/test_portal_e2e.py` | 211 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular, com um worker embutido (também parado: as mensagens de fila e de "não está em execução", uma tarefa que falha); organizações, um administrador de tenant e o acesso de suporte nos dois idiomas; também roda sem o engine (166) |
 | `home/test_home.py` | 68 | página inicial com um nginx real (1.27.3 ou posterior: `NGINX_BIN` ou o PATH), sem o quadro da sintaxe, aviso da comunidade; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug; réplicas por um servidor DNS simulado que responde os nomes dos serviços com endereços `127.0.0.x`: o nginx inicia quando um serviço não tem endereço e o acha depois, reparte as requisições entre duas réplicas, acompanha uma terceira acrescentada e duas retiradas sem reiniciar, e nenhuma requisição falha enquanto réplicas param |
@@ -760,7 +769,7 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 pytest (um subprocesso a partir da raiz do repositório): status 0 sem linha `FAIL` passa; caso contrário, o
 relatório mostra as linhas `FAIL` e o fim da saída; um programa que só imprimiu `SKIP` é pulado. Marcadores
 os agrupam: `resolver` (Resolver, EPC binário, API de cadastro, suíte da GS1), `portal` (os programas do
-portal sem navegador), `e2e` (`test_portal_e2e.py` com e sem o engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`), `home`, `install`
+portal sem navegador), `e2e` (`test_portal_e2e.py` com e sem o engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`, `test_requests_e2e.py`), `home`, `install`
 (o instalador por `sudo` sem senha quando não se é root, e o `test_deploy.py`), `database` (`test_store_mongodb.py`). O `dev-tests/conftest.py` impede que o pytest importe os
 programas, registra os marcadores e imprime ao final a contagem de verificações de cada programa (e também
 no resumo da execução do GitHub Actions). Com `DEV_TESTS_STRICT=1`, um programa falha quando uma variável de

@@ -25,8 +25,9 @@ português do Brasil e em inglês britânico; as imagens deste guia mostram a ve
 13. [Verificar se os destinos respondem](#13-verificar-se-os-destinos-respondem)
 14. [Administração: usuários](#14-administração-usuários)
 15. [Administração: auditoria](#15-administração-auditoria)
-16. [Mensagens e o que fazer](#16-mensagens-e-o-que-fazer)
-17. [Glossário](#17-glossário)
+16. [Acessos ao Resolver](#16-acessos-ao-resolver)
+17. [Mensagens e o que fazer](#17-mensagens-e-o-que-fazer)
+18. [Glossário](#18-glossário)
 
 ---
 
@@ -64,7 +65,8 @@ Cada usuário tem um perfil, escolhido por um administrador (seção 14).
 | Ver e pesquisar a lista de registros; exportar planilhas | ✓ | ✓ | ✓ |
 | Criar, alterar, excluir e restaurar cadastros | | ✓ | ✓ |
 | Importar planilhas; verificar links | | ✓ | ✓ |
-| Gerenciar usuários; ver a auditoria | | | ✓ |
+| Ver os acessos ao Resolver dos seus cadastros | ✓ | ✓ | ✓ |
+| Gerenciar usuários; ver a auditoria; ver as chamadas das chaves de API | | | ✓ |
 
 Um usuário também pode ser limitado a um ou mais **prefixos de empresa GS1**: nesse caso ele só vê e altera
 os identificadores desses prefixos, em todas as telas, planilhas e relatórios. Sem prefixos, o usuário
@@ -131,8 +133,8 @@ use **Esqueceu a senha?** imediatamente e avise o seu administrador.
 ![Menu do usuário](../images/guide/pt-BR/user-menu.png)
 
 O botão redondo no alto à direita abre o menu do usuário: o seu nome, **Página inicial** (a página
-inicial do Resolver), **Registros cadastrados** (seção 11), **Usuários** e **Auditoria** (só
-administradores), **Opções** e **Sair**.
+inicial do Resolver), **Registros cadastrados** (seção 11), **Acessos** (seção 16), **Usuários**, **Chaves de API**
+e **Auditoria** (só administradores; **Organizações** para os administradores do servidor), **Opções** e **Sair**.
 
 ### Trocar a senha
 
@@ -650,7 +652,44 @@ administrador do servidor fez na organização (usuários, prefixos, acesso de s
 usuários do operador fizeram nas organizações; a trilha inteira de uma organização, só durante o acesso de
 suporte.
 
-## 16. Mensagens e o que fazer
+## 16. Acessos ao Resolver
+
+![Acessos](../images/guide/pt-BR/requests.png)
+
+**Acessos** (menu do usuário, todos os usuários) mostra como os códigos ao seu alcance são lidos: cada requisição
+que o Resolver respondeu — um QR Code lido por um celular, um link aberto, um aplicativo pedindo o linkset — com o
+que ele respondeu.
+
+**Últimos 30 dias.** Uma barra por dia: em azul as requisições respondidas, em laranja as **não encontradas** (404) —
+um código que ninguém cadastrou, ou um tipo de link que o cadastro não tem. A linha acima das barras dá os totais.
+As requisições feitas por máquinas — robôs de buscadores, prévias de links, monitores, ferramentas de linha de
+comando — são contadas à parte e ficam fora das barras.
+
+**Últimas requisições.** As mais novas primeiro, 200 por vez (**Mostrar mais** para as seguintes). Cada linha mostra
+quando, o **Código** (o identificador e os qualificadores da leitura: um número de série aparece só como `/21/*`;
+`?17` quer dizer que o QR Code levava uma data de validade, cujo valor não é guardado), o **Resultado**
+(*Redirecionada*, *Código não cadastrado*, *Sem link desse tipo*, *Escolha entre links*, *Linkset*, *Requisição
+inválida*…), a **Resposta** (o tipo de link pedido, o nível do cadastro que respondeu — o da chave ou o de um lote — e o
+site para onde a pessoa foi), a classe do **Dispositivo** (celular, tablet, computador, automatizado) e o site de onde
+a pessoa veio, o **Idioma** do celular e o tempo que o Resolver levou, em milissegundos. Filtre por data (**De**,
+**Até**), **Código** (um GTIN, um prefixo de empresa GS1 ou um caminho de Digital Link como `/01/…`), **Resultado**
+(*Não encontrada (404)* junta os dois tipos de 404) e **Dispositivo**; marque **Incluir requisições automatizadas**
+para ver também as das máquinas. **Exportar CSV** baixa o que os filtros mostram, até 50.000 requisições, para o
+Excel.
+
+**O que é guardado.** Nada que identifique as pessoas que leem: nem o endereço, nem o navegador, nem números de
+série, nem os valores dos atributos de dados. Cada requisição fica guardada por um número de dias definido pela
+instalação (90 por padrão, mostrado abaixo da lista); as contagens diárias por trás das barras ficam mais tempo.
+
+**Quem vê o quê.** Cada usuário vê as requisições dos códigos ao seu alcance (a sua organização, os seus prefixos de
+empresa GS1). O administrador do servidor vê a instalação inteira, com uma coluna **Organização**, inclusive as
+requisições inválidas, que não têm código; durante um acesso de suporte, as da organização.
+
+**API das organizações** (administradores). A segunda aba lista as chamadas que os sistemas da organização fizeram
+com chaves de API (seção 14): quando, qual chave, a operação, o status da resposta e o tempo gasto — nunca os
+cadastros ou dados enviados.
+
+## 17. Mensagens e o que fazer
 
 | Mensagem | O que fazer |
 |---|---|
@@ -671,12 +710,15 @@ suporte.
 | *Se houver uma conta com este usuário ou e-mail, uma mensagem … foi enviada.* | Confira a caixa de entrada e a pasta de spam; nada chega se a conta não tem endereço: peça a um administrador. |
 | *Este link não vale mais…* | Peça um novo (**Esqueceu a senha?**, ou ao administrador para um convite); só o link mais recente funciona, uma vez. |
 
-## 17. Glossário
+## 18. Glossário
 
 - **AI (Application Identifier, identificador de aplicação)** — o número entre parênteses que diz o que é
   um valor: (01) GTIN, (10) lote, (17) validade…
 - **Chave de API** — uma credencial que permite a um sistema usar a API do portal dentro dos cadastros de uma
   organização (seção 14).
+- **Requisição automatizada** — uma requisição feita por uma máquina (um buscador, uma prévia de link, um monitor,
+  uma ferramenta de linha de comando) e não pelo celular ou navegador de uma pessoa; contada à parte em **Acessos**
+  (seção 16).
 - **Atributo de dados** — informação extra na parte de parâmetros de um Digital Link (validade, peso,
   preço); nunca gravada pelo Resolver.
 - **Cadastro** — um identificador com seus qualificadores, descrição e destinos.

@@ -28,8 +28,9 @@ For installation and operation see the [README](../README.md); for how the porta
 13. [Checking that the targets answer](#13-checking-that-the-targets-answer)
 14. [Administration: users](#14-administration-users)
 15. [Administration: audit trail](#15-administration-audit-trail)
-16. [Messages and what to do](#16-messages-and-what-to-do)
-17. [Glossary](#17-glossary)
+16. [Requests to the resolver](#16-requests-to-the-resolver)
+17. [Messages and what to do](#17-messages-and-what-to-do)
+18. [Glossary](#18-glossary)
 
 ---
 
@@ -66,7 +67,8 @@ Each user has one role. An administrator chooses it (section 14).
 | See and search the record list; export spreadsheets | ✓ | ✓ | ✓ |
 | Create, change, delete and restore records | | ✓ | ✓ |
 | Import spreadsheets; check links | | ✓ | ✓ |
-| Manage users; see the audit trail | | | ✓ |
+| See the requests to the resolver of their records | ✓ | ✓ | ✓ |
+| Manage users; see the audit trail; see the calls of API keys | | | ✓ |
 
 A user may also be limited to one or more **GS1 Company Prefixes**: they then see and change only the
 identifiers that belong to those prefixes, in every screen, spreadsheet and report. Without prefixes a
@@ -132,8 +134,8 @@ your password?** at once and tell your administrator.
 ![User menu](images/guide/user-menu.png)
 
 The round button at the top right opens the user menu: your user name, **Home page** (the resolver's
-home page), **Registered records** (section 11), **Users** and **Audit trail** (administrators only),
-**Options** and **Sign out**.
+home page), **Registered records** (section 11), **Requests** (section 16), **Users**, **API keys** and **Audit
+trail** (administrators only; **Organisations** for server administrators), **Options** and **Sign out**.
 
 ### Changing your password
 
@@ -638,7 +640,42 @@ administrator did to the organisation (its users, its prefixes, support access) 
 *operator*. The server administrator sees the operator's trail, with an **Organisation** column and everything
 the operator's users did to organisations; an organisation's whole trail only during support access.
 
-## 16. Messages and what to do
+## 16. Requests to the resolver
+
+![Requests](images/guide/requests.png)
+
+**Requests** (user menu, every user) shows how the codes in your reach are scanned: each request the resolver
+answered — a QR code read by a phone, a link opened, an app asking for the linkset — with what it answered.
+
+**Last 30 days.** One bar per day: in blue the requests answered, in orange those **not found** (404) — a code that
+nobody registered, or a link type the record does not have. The line above the bars gives the totals. Requests made
+by machines — search engine crawlers, link previews, monitors, command-line tools — are counted apart and left out
+of the bars.
+
+**Latest requests.** The newest first, 200 at a time (**Show more** for the next ones). Each row shows when, the
+**Code** (the identifier and the qualifiers in the scan: a serial number appears only as `/21/*`; `?17` means the QR
+code carried an expiry date, whose value is not kept), the **Outcome** (*Redirected*, *Code not registered*, *No link
+of that type*, *Choice of links*, *Linkset*, *Invalid request*…), the **Answer** (the link type asked, the level of the
+record that answered — the key's or a batch's — and the site the person was sent to), the **Device** class (phone,
+tablet, computer, automated) and the site the person came from, the **Language** of the phone and the time the
+resolver took, in milliseconds. Filter by date (**From**, **To**), **Code** (a GTIN, a GS1 Company Prefix or a
+Digital Link path such as `/01/…`), **Outcome** (*Not found (404)* gathers both kinds of 404) and **Device**; tick
+**Include automated requests** to see the machines' requests too. **Export CSV** downloads what the filters show, up
+to 50,000 requests, for Excel.
+
+**What is kept.** Nothing that identifies the people who scan: not their address, not their browser, not serial
+numbers, not the values of data attributes. Each request is kept for a number of days set by the installation (90
+by default, shown under the list); the daily counts behind the bars are kept longer.
+
+**Who sees what.** Each user sees the requests of the codes in his reach (his organisation, his GS1 Company
+Prefixes). The server administrator sees the whole installation, with an **Organisation** column, including
+invalid requests that have no code; during support access, the organisation's.
+
+**Tenant API** (administrators). The second tab lists the calls the organisation's systems made with API keys
+(section 14): when, which key, the operation, the answer's status and the time taken — never the records or data
+they sent.
+
+## 17. Messages and what to do
 
 | Message | What to do |
 |---|---|
@@ -659,11 +696,13 @@ the operator's users did to organisations; an organisation's whole trail only du
 | *If there is an account with this user name or e-mail address, a message … has been sent.* | Check your mailbox and its spam folder; nothing arrives if the account has no address: ask an administrator. |
 | *This link is no longer valid…* | Ask for a new one (**Forgotten your password?**, or the administrator for an invitation); only the newest link works, once. |
 
-## 17. Glossary
+## 18. Glossary
 
 - **AI (Application Identifier)** — the number in brackets that says what a value is: (01) GTIN,
   (10) batch/lot, (17) expiry date…
 - **API key** — a credential that lets a system use the portal's API within one organisation's records (section 14).
+- **Automated request** — a request made by a machine (a search engine, a link preview, a monitor, a command-line
+  tool) rather than a person's phone or browser; counted apart in **Requests** (section 16).
 - **Data attribute** — extra information in a Digital Link's query string (expiry, weight, price); never
   stored by the resolver.
 - **Default target** — the target that opens when the code is scanned without asking for a specific type.

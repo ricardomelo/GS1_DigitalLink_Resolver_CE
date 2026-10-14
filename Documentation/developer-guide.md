@@ -473,7 +473,7 @@ No framework and no build step: plain HTML, CSS and JavaScript served as static 
 | `app.js` | everything else; a map of its sections is at the top of the file |
 | `app.css` | styles; media queries after the rules they change |
 
-**Views.** The address fragment chooses the view (`#records`, `#users`, `#audit`, otherwise the editor),
+**Views.** The address fragment chooses the view (`#records`, `#requests`, `#users`, `#audit`, otherwise the editor),
 so the browser's back button and bookmarks work (`applyView()`).
 
 **Translation.** Elements declare their texts: `data-i18n="key"`, `data-i18n-params='{…}'`,
@@ -495,6 +495,13 @@ recovery fragment (a link opened while someone was signed in: the sign-in page r
 **API keys ([ADR 0005](adr/0005-tenant-api.md)).** The `#apikeys` view (administrators) lists the keys of the
 account's own scope (`loadApiKeys()`, `apiKeyRow()`), creates one (`createApiKey()`: the key and an example are
 shown once) and revokes (`revokeApiKey()`). `forgetNewKey()` removes a new key from the page when the view is left.
+
+**Requests ([ADR 0006](adr/0006-resolver-request-log.md)).** The `#requests` view (every user) draws the last 30
+days (`loadRequestDays()`: one bar per day from `/requests/daily`, answered and not found stacked, automated requests
+counted apart), lists the latest requests (`loadRequests()`, `requestRow()`, pages with `next`, the filters of
+`requestsQuery()`), exports them (`downloadRequests()`) and, for administrators, the tenant API's calls in a second
+tab (`showRequestsTab()`, `loadApiCalls()`). `body[data-requests-whole]` (from `CONFIG.requestLog.whole`) shows the
+organisation column. Rows carry `data-label` for the phone layout.
 
 **Record list.** `loadRecords()` fetches `/records` once; `renderRecords()` filters in the browser by key
 type (`#records-key`), qualifier (`qualifierMatches()`), author, link problems and text (`fold()` ignores
@@ -725,6 +732,7 @@ run against it. Setup and commands are in
 | `portal/test_store_mongodb.py` | 165 | on a real MongoDB (`PORTAL_TEST_MONGO_URI`, CI only): the user made by `db_init.py` and its privileges (reading the request log, not writing it); `test_store.py`, `test_jobs.py` and `test_worker_processes.py` again as that user (their lines relayed); the TTL monitor, also for jobs and old worker announcements |
 | `portal/test_registration.py` | 26 | §2.5.9 through the portal API: informative qualifiers (save, open, history, list, export, import), records against rule 2, the key's own record when saving and importing |
 | `portal/test_mail_e2e.py` | 37 | the e-mail screens in Chromium with the relay of `fake_smtp.py`: recovery on the sign-in page (the same answer for every entry), an invitation from the users screen, the page a link opens (user name, the token gone from the address bar, short and different passwords refused, a phone's width), a link used twice, a link opened while someone else is signed in, a recovery ending the user's open session, Options → E-mail kept, a reset by link, every text of the sign-in page translated, and the same screens with e-mail off |
+| `portal/test_requests_e2e.py` | 28 | the Requests screen in Chromium ([ADR 0006](adr/0006-resolver-request-log.md)): the menu item for every user (and the menu closing), 30 bars from the aggregates and today's events, the latest requests (organisation column for a server administrator, EPC scheme, level, serial as `/21/*`), the next page, filters (not found, a GTIN-13, automated requests), the CSV export, support access, English, an organisation's reader (no organisation column, no API tab), an administrator's API calls without the key's secret, a phone's width, the log switched off |
 | `portal/test_api_e2e.py` | 21 | the API keys screen in Chromium: an organisation's administrator creates a key (shown once with an example), a system uses it through `/portal/api/v1`, the record shows `api:<id>`, leaving the screen removes the key from the page, revoking on screen stops it at once, the audit trail, both languages, a phone's width, the operator's keys for a server administrator, no screen for an editor |
 | `portal/test_portal_e2e.py` | 211 | the portal in Chromium against `mock_data_entry.py`, desktop and phone, with an embedded worker (also stopped: the queue and "not running" messages, a job that fails); organisations, a tenant administrator and support access in both languages; also run without the engine (166) |
 | `home/test_home.py` | 68 | home page through a real nginx (1.27.3 or later: `NGINX_BIN` or the PATH), no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts; replicas through a stub DNS server answering the service names with `127.0.0.x` addresses: nginx starts while a service has no address and finds it later, shares the requests between two replicas, follows a third added and two removed without a restart, and no request fails while replicas stop |
@@ -735,7 +743,7 @@ run against it. Setup and commands are in
 test (a subprocess from the repository root): exit status 0 without a `FAIL` line passes; otherwise the
 report shows the `FAIL` lines and the end of the output; a program that only printed `SKIP` is skipped.
 Markers group them: `resolver` (resolver, EPC binary, data entry, GS1 suite), `portal` (the portal programs
-without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`), `home`,
+without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`, `test_requests_e2e.py`), `home`,
 `install` (the installer through password-less `sudo` when not root, and `test_deploy.py`), `database` (`test_store_mongodb.py`). `dev-tests/conftest.py` keeps the programs from
 being imported by pytest, registers the markers and prints the check counts of each program at the end (and
 in the GitHub Actions run summary). With `DEV_TESTS_STRICT=1` a program fails when an environment variable

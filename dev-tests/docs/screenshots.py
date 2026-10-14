@@ -296,6 +296,7 @@ def guide_images(locale: str, folder: str, description: str, own_copies: bool) -
         tenant_images(page, folder, locale)
         mail_images(browser, folder, locale)
         apikey_images(browser, folder, locale)
+        requests_images(browser, folder, locale)
         browser.close()
 
 
@@ -385,6 +386,61 @@ def apikey_images(browser, folder: str, locale: str) -> None:
     for button in page.query_selector_all("#apikeys-body button.btn-danger-ghost"):   # the next run starts clean
         page.once("dialog", lambda d: d.accept())
         button.click(); page.wait_for_timeout(400)
+    ctx.close()
+
+
+def seed_requests() -> None:
+    """A month of resolver requests, as the resolver would log them (Documentation/adr/0006-resolver-request-log.md),
+    and their daily counts. Made once; the same for both languages."""
+    import math
+    import random
+    from datetime import datetime, timedelta, timezone
+    import requestlog
+    events = requestlog.events()
+    if events.estimated_document_count():
+        return
+    rnd = random.Random(42)
+    now = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+    codes = [("09506000134352", "", "brand.example", 6), ("09506000134352", "/10/L2026A", "brand.example", 3),
+             ("09506000134376", "/21/*", "medical.example", 2), ("09506000134925", "/10/C77", "coffee.example", 2),
+             ("07895555000017", "", "acme.example", 2), ("09506000999982", None, None, 1)]
+    agents = ["mobile"] * 14 + ["tablet", "desktop", "desktop", "automated"]
+    for day in range(30):
+        for i in range(int(18 + 10 * math.sin(day / 3) + rnd.randint(0, 6))):
+            value, level, host, _ = rnd.choices(codes, weights=[c[3] for c in codes])[0]
+            t = now - timedelta(days=day, minutes=rnd.randint(0, 600 if day == 0 else 1400))
+            doc = {"t": t, "expiresAt": t + timedelta(days=90), "m": "GET", "f": "uri", "ai": "01", "v": value,
+                   "cp": value[1:], "dev": rnd.choice(agents), "ms": rnd.randint(6, 40),
+                   "lang": rnd.choice(["pt-br", "pt-br", "pt-br", "en", "es"])}
+            if level is None:
+                doc.update(s=404, o="unknown")
+            else:
+                doc.update(s=307, o="redirect", lvl=level, to="www." + host)
+                if level.startswith("/10/"):
+                    doc["q"] = {"10": level[4:]}
+                elif level == "/21/*":
+                    doc["q"] = {"21": None}
+            if rnd.random() < .15:
+                doc["ref"] = "www.instagram.com"
+            if rnd.random() < .05:
+                doc.update(f="epc", epc="SGTIN-96")
+            events.insert_one(doc)
+    events.insert_one({"t": now - timedelta(minutes=3), "expiresAt": now + timedelta(days=90), "m": "GET", "f": "uri",
+                       "s": 400, "o": "invalid", "p": "/wp-login.php", "dev": "automated", "ms": 2})
+    for day in range(1, 31):
+        requestlog.count_day(requestlog.today() - timedelta(days=day))
+
+
+def requests_images(browser, folder: str, locale: str) -> None:
+    """The Requests screen of a server administrator: the last 30 days and the latest requests (ADR 0006)."""
+    seed_requests()
+    ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1250})
+    page = ctx.new_page()
+    page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+    page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
+    page.click("#login-submit"); page.wait_for_timeout(1000)
+    page.goto(BASE + "#requests"); page.wait_for_timeout(1500)
+    save(page, f"{folder}/requests.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1250})
     ctx.close()
 
 

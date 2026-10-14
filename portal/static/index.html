@@ -40,6 +40,10 @@
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 5h2v2H4V5Zm4 0h12v2H8V5Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Z"/></svg>
                 <span data-i18n="menu.records"></span>
               </a>
+              <a class="menu-item" role="menuitem" href="#requests" id="menu-requests">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 20h18v2H3v-2Zm1-8h3v6H4v-6Zm5-5h3v11H9V7Zm5 3h3v8h-3v-8Zm5-7h3v15h-3V3Z"/></svg>
+                <span data-i18n="menu.requests"></span>
+              </a>
               <a class="menu-item needs-admin" role="menuitem" href="#users" id="menu-users">
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-7 1.7-7 4.5V20h14v-2.5C16 14.7 12.3 13 9 13Zm7.5-2a3.5 3.5 0 1 0-1-6.9 5.9 5.9 0 0 1 0 6.8c.3.1.6.1 1 .1Zm1.4 2.2A5.6 5.6 0 0 1 20 17.5V20h2v-2.5c0-2-1.8-3.5-4.1-4.3Z"/></svg>
                 <span data-i18n="menu.users"></span>
@@ -672,6 +676,109 @@
           </thead>
           <tbody id="audit-body"></tbody>
         </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Requests to the resolver (every user, in the scope of the account; Documentation/adr/0006-resolver-request-log.md) -->
+  <main class="records-main" id="requests-view" hidden>
+    <section class="sheet">
+      <p class="status is-warn" id="requests-off" data-i18n="requests.off" hidden></p>
+      <h2 data-i18n="requests.daysTitle"></h2>
+      <p class="field-msg" id="requests-summary" aria-live="polite"></p>
+      <div class="requests-chart" id="requests-chart" role="img"></div>
+      <p class="requests-legend"><span class="swatch swatch-ok"></span><span data-i18n="requests.legendOk"></span>
+        <span class="swatch swatch-missing"></span><span data-i18n="requests.legendMissing"></span></p>
+
+      <div class="requests-tabs needs-admin" role="tablist">
+        <button type="button" role="tab" class="requests-tab" id="requests-tab-resolver" aria-selected="true"
+                aria-controls="requests-resolver" data-i18n="requests.tabResolver"></button>
+        <button type="button" role="tab" class="requests-tab" id="requests-tab-api" aria-selected="false"
+                aria-controls="requests-api" data-i18n="requests.tabApi"></button>
+      </div>
+
+      <div id="requests-resolver" role="tabpanel" aria-labelledby="requests-tab-resolver">
+        <h2 data-i18n="requests.listTitle"></h2>
+        <form class="audit-filters requests-filters" id="requests-filters" novalidate>
+          <div>
+            <label for="requests-from" data-i18n="audit.from"></label>
+            <input type="date" id="requests-from">
+          </div>
+          <div>
+            <label for="requests-to" data-i18n="audit.to"></label>
+            <input type="date" id="requests-to">
+          </div>
+          <div class="audit-text">
+            <label for="requests-code" data-i18n="requests.code"></label>
+            <input id="requests-code" autocomplete="off" inputmode="text" data-i18n-attr="placeholder:requests.codePlaceholder">
+          </div>
+          <div>
+            <label for="requests-outcome" data-i18n="requests.outcome"></label>
+            <select id="requests-outcome"></select>
+          </div>
+          <div>
+            <label for="requests-device" data-i18n="requests.device"></label>
+            <select id="requests-device"></select>
+          </div>
+          <label class="choice requests-automated"><input type="checkbox" id="requests-automated">
+            <span data-i18n="requests.automated"></span></label>
+          <button type="submit" class="btn btn-primary" data-i18n="audit.filter"></button>
+          <button type="button" class="btn btn-ghost" id="requests-csv" data-i18n="audit.csv"></button>
+        </form>
+        <p class="field-msg" id="requests-count" aria-live="polite"></p>
+        <div class="table-wrap">
+          <table class="records-table requests-table">
+            <thead>
+              <tr>
+                <th scope="col" data-i18n="audit.when"></th>
+                <th scope="col" data-i18n="requests.code"></th>
+                <th scope="col" data-i18n="requests.outcome"></th>
+                <th scope="col" data-i18n="requests.answer"></th>
+                <th scope="col" data-i18n="requests.device"></th>
+                <th scope="col" data-i18n="requests.language"></th>
+                <th scope="col" class="num" data-i18n="requests.ms"></th>
+                <th scope="col" class="requests-org-col" data-i18n="audit.tenant"></th>
+              </tr>
+            </thead>
+            <tbody id="requests-body"></tbody>
+          </table>
+        </div>
+        <p class="records-empty" id="requests-empty" data-i18n="requests.none" hidden></p>
+        <button type="button" class="btn btn-ghost" id="requests-more" data-i18n="requests.more" hidden></button>
+        <p class="field-msg" id="requests-privacy" data-i18n="requests.privacy"></p>
+      </div>
+
+      <div id="requests-api" role="tabpanel" aria-labelledby="requests-tab-api" hidden>
+        <h2 data-i18n="requests.apiTitle"></h2>
+        <form class="audit-filters" id="requests-api-filters" novalidate>
+          <div>
+            <label for="requests-api-from" data-i18n="audit.from"></label>
+            <input type="date" id="requests-api-from">
+          </div>
+          <div>
+            <label for="requests-api-to" data-i18n="audit.to"></label>
+            <input type="date" id="requests-api-to">
+          </div>
+          <button type="submit" class="btn btn-primary" data-i18n="audit.filter"></button>
+        </form>
+        <p class="field-msg" id="requests-api-count" aria-live="polite"></p>
+        <div class="table-wrap">
+          <table class="records-table requests-table">
+            <thead>
+              <tr>
+                <th scope="col" data-i18n="audit.when"></th>
+                <th scope="col" data-i18n="requests.key"></th>
+                <th scope="col" class="requests-org-col" data-i18n="audit.tenant"></th>
+                <th scope="col" data-i18n="requests.operation"></th>
+                <th scope="col" class="num" data-i18n="requests.status"></th>
+                <th scope="col" class="num" data-i18n="requests.ms"></th>
+              </tr>
+            </thead>
+            <tbody id="requests-api-body"></tbody>
+          </table>
+        </div>
+        <p class="records-empty" id="requests-api-empty" data-i18n="requests.apiNone" hidden></p>
+        <button type="button" class="btn btn-ghost" id="requests-api-more" data-i18n="requests.more" hidden></button>
       </div>
     </section>
   </main>

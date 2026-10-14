@@ -92,6 +92,8 @@ root, ana, edu, bia = (client(u, f"{u}-password-long") for u in ("root", "ana", 
 
 
 
+# On a real MongoDB the request log's database is shared by every program of a run: start from an empty log
+requestlog.events().delete_many({})
 users.create("rui", "rui-password-long", "reader", tenant=acme["id"], must_change=False)
 rui = client("rui", "rui-password-long")
 check("malformed entries ignored, the others read", portal.EXPORT_LIMITS == {"reader": 0, "editor": 2},

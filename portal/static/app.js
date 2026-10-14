@@ -426,6 +426,8 @@ let previewSeq = 0;
 
 function renderPreview() {
   const g = readKey();
+  // EAN/UPC beside the QR code: for GTINs of consumer units only (indicator 0), as the server decides
+  $("#opt-linear-field").hidden = !(g.ai === "01" && (!g.ok || g.value.startsWith("0")));
   const l = readQualifiers();
   const host = domainBase(g);
   const shown = g.ok ? g.value : "______________";
@@ -567,6 +569,8 @@ function applyPreview(ready, g, l, uri, attributes, placeholder = "preview.qrPla
 function setDownloads(labelQuery) {
   toggleLink($("#download-png"), labelQuery ? `${BASE}api/qrcode?${labelQuery}&format=png` : null);
   toggleLink($("#download-svg"), labelQuery ? `${BASE}api/qrcode?${labelQuery}&format=svg` : null);
+  toggleLink($("#download-pdf"), labelQuery ? `${BASE}api/qrcode?${labelQuery}&format=pdf` : null);
+  toggleLink($("#download-zip"), labelQuery ? `${BASE}api/qrcode?${labelQuery}&format=zip` : null);
 }
 
 function showQrMessage(key) {
@@ -952,10 +956,12 @@ function setupAttributes() {
    (automatic by default) and error correction level (M by default). Remembered in the browser.
    The preview image is the exported label itself, so what is shown is what is downloaded. */
 const LABEL_OPTIONS_KEY = "gs1resolver.portal.labelOptions";
-const LABEL_DEFAULTS = { hri: "full", version: "auto", ecl: "m" };
+const LABEL_DEFAULTS = { hri: "full", version: "auto", ecl: "m", size: "100", linear: "none" };
 
 function labelOptionsQuery() {
   const params = new URLSearchParams({ hri: $("#opt-hri").value, version: $("#opt-version").value, ecl: $("#opt-ecl").value });
+  if ($("#opt-size").value !== "100") params.set("size", $("#opt-size").value);
+  if (!$("#opt-linear-field").hidden && $("#opt-linear").value !== "none") params.set("linear", $("#opt-linear").value);
   if ($("#opt-domain").value) params.set("domain", $("#opt-domain").value);
   return params.toString();
 }
@@ -990,13 +996,24 @@ function domainBase(g) {
   return best ? best.url : CONFIG.resolver;
 }
 
+/* "80 % (X 0.396 mm)": each size with the QR code's X-dimension, in the user's number format. */
+function fillSizeOptions() {
+  const format = new Intl.NumberFormat(I18N.locale, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  [...$("#opt-size").options].forEach(o => {
+    const size = Number(o.value);
+    o.textContent = t(size === 100 ? "label.size.target" : "label.size.option", { size, x: format.format(0.495 * size / 100) });
+  });
+}
+
 function setupLabelOptions() {
+  fillSizeOptions();
+  document.addEventListener("localechange", fillSizeOptions);
   let saved = {};
   try {
     saved = JSON.parse(localStorage.getItem(LABEL_OPTIONS_KEY) || "{}");
   } catch { /* defaults */ }
   if (typeof saved.hri === "boolean") saved.hri = saved.hri ? "full" : "none";   // earlier versions: on/off
-  const fields = { hri: "#opt-hri", version: "#opt-version", ecl: "#opt-ecl" };
+  const fields = { hri: "#opt-hri", version: "#opt-version", ecl: "#opt-ecl", size: "#opt-size", linear: "#opt-linear" };
   for (const [name, selector] of Object.entries(fields)) {
     const select = $(selector);
     const value = saved[name] ?? LABEL_DEFAULTS[name];

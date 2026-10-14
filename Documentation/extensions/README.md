@@ -913,9 +913,11 @@ PNG or SVG and the address beneath it is a link.
 The image in the preview panel is the exported label itself, so what is shown is what is downloaded.
 It follows the symbol and text dimensions of the *QR Codes powered by GS1 design guidelines* (v1.0, May 2024):
 
-- **Size:** the SVG is sized in millimetres at the 100 % target X-dimension, 0.495 mm per module. The PNG
-  uses 12 pixels per module and carries a DPI value (≈ 616) that prints at the same size. Do not print
-  below 100 %: the text is 2.2 mm high at that size and must not fall under the 2 mm minimum.
+- **Size** ([ADR 0010](../adr/0010-label-studio.md)): 80, 90, **100** (default), 120, 150 or 200 % of the target
+  X-dimension, that is 0.396 to 0.990 mm per module (the range for GS1 Digital Link QR codes on consumer units). The
+  SVG and PDF are sized in millimetres at that X-dimension; the PNG uses 12 pixels per module and carries the DPI
+  value that prints at the same size. The text stays 2.2 mm high at every size (never under the 2 mm minimum); print
+  the files at 100 % (no scaling).
 - **Quiet zone:** 4X on all four sides, always blank.
 - **Human readable interpretation** (full by default; or the key only, or none): the element strings below
   the quiet zone, one per line: the key (e.g. `(01)` followed by the GTIN-14, `(414)` followed by the GLN), then each
@@ -924,8 +926,18 @@ It follows the symbol and text dimensions of the *QR Codes powered by GS1 design
   Liberation Sans (metrically equivalent to Arial). The guidelines require it when the QR code stands alone
   on pack; it may be omitted when the code sits next to the linear barcode that already carries the same
   data, or on a consumer-engagement panel.
-- **SVG** is fully vector: QR modules and HRI glyph outlines, so it opens identically anywhere
-  and is the format to hand to packaging designers. PNG suits documents and quick use.
+- **SVG** and **PDF** are fully vector: modules, bars and HRI glyph outlines (the PDF embeds no font and has one
+  page the size of the label, the URI as its title), so they open identically anywhere and are the formats to hand
+  to packaging designers. PNG suits documents and quick use. **ZIP** downloads the label as SVG, PNG and PDF with a
+  `README.txt` giving the URI, the QR version and level, both X-dimensions, the bar height and the printed size.
+- **A linear barcode beside the QR code** (*Linear barcode beside it*, for GTINs of consumer units, indicator 0):
+  *EAN-13 / UPC-A / EAN-8, as the GTIN takes* — EAN-8 for a GTIN-8, UPC-A for a GTIN-12, EAN-13 for a GTIN-13 — or
+  *UPC-E* for a GTIN-12 that zero-suppresses; for the transition to 2D, when a till must still scan the product.
+  It carries the GTIN only. X = 0.330 mm times the same size (0.264 to 0.660 mm, magnification 80 to 200 %), bars
+  22.85 mm high at 100 % (EAN-8 18.23 mm), quiet zones EAN-13 11X/7X, UPC-A 9X/9X, UPC-E 9X/7X, EAN-8 7X/7X, guard
+  bars 5X longer, human readable digits under the bars (EAN-13's first digit left of them; UPC-A's and UPC-E's outer
+  digits smaller and outside). Another key, or an indicator other than 0, answers 422 `label.linearNotPossible`;
+  the header `X-Linear-Symbol` names the symbol drawn.
   *Key only* keeps the first line, e.g. `(01)07898357410015`, for codes printed next to other text that
   already shows the batch or date.
 - **QR version** (*Automatic* by default, the smallest version that fits; or 1 to 40, each shown with its

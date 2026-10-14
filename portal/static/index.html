@@ -229,6 +229,10 @@
               <a id="download-png" class="btn btn-ghost" aria-disabled="true" data-i18n="preview.png"></a>
               <a id="download-svg" class="btn btn-ghost" aria-disabled="true" data-i18n="preview.svg"></a>
             </div>
+            <div class="dl-pair">
+              <a id="download-pdf" class="btn btn-ghost" aria-disabled="true" data-i18n="preview.pdf"></a>
+              <a id="download-zip" class="btn btn-ghost" aria-disabled="true" data-i18n="preview.zip"></a>
+            </div>
           </div>
         </div>
         <div class="label-controls">
@@ -293,6 +297,20 @@
                   <option value="m" data-i18n="label.ecl.m"></option>
                   <option value="q" data-i18n="label.ecl.q"></option>
                   <option value="h" data-i18n="label.ecl.h"></option>
+                </select>
+              </label>
+              <!-- Size and a linear barcode beside the QR code (Documentation/adr/0010-label-studio.md) -->
+              <label class="opt-field"><span data-i18n="label.size"></span>
+                <select id="opt-size">
+                  <option value="80"></option><option value="90"></option><option value="100"></option>
+                  <option value="120"></option><option value="150"></option><option value="200"></option>
+                </select>
+              </label>
+              <label class="opt-field" id="opt-linear-field" hidden><span data-i18n="label.linear"></span>
+                <select id="opt-linear">
+                  <option value="none" data-i18n="label.linear.none"></option>
+                  <option value="auto" data-i18n="label.linear.auto"></option>
+                  <option value="upce" data-i18n="label.linear.upce"></option>
                 </select>
               </label>
               <!-- The domain in the QR code (Documentation/adr/0009-tenant-domains.md): shown when the scope has one -->

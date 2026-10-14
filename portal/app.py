@@ -17,6 +17,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 import time
 from datetime import timedelta
@@ -30,6 +31,7 @@ import gs1
 import jobs
 import journal
 import label
+import linear
 import apikeys
 import domains
 import linkcheck
@@ -2300,9 +2302,41 @@ def qrcode():
     return label_response(anchor, request.args)
 
 
+def label_size(raw) -> int:
+    """The label's size, a percentage of the target X-dimensions (Documentation/adr/0010-label-studio.md)."""
+    try:
+        size = int(str(raw or "100").rstrip("%"))
+    except ValueError:
+        size = 0
+    if size not in label.SIZES:
+        raise ValidationError("label.sizeInvalid", sizes=", ".join(map(str, label.SIZES)))
+    return size
+
+
+def label_linear(anchor: str, pairs, raw) -> tuple[str, str] | None:
+    """The EAN/UPC symbol beside the QR code: none (default), auto (the one the GTIN takes) or upce."""
+    choice = str(raw or "none").strip().lower()
+    if choice in ("none", "0", ""):
+        return None
+    if choice not in ("auto", "upce"):
+        raise ValidationError("label.linearInvalid")
+    ai, value = gs1.split_anchor(anchor)
+    try:
+        if ai != "01":
+            raise linear.NotPossible(ai)
+        return linear.symbol_for(value, choice)
+    except linear.NotPossible:
+        raise ValidationError("label.linearNotPossible", choice=choice) from None
+
+
+def zip_name(filename: str) -> str:
+    """The name of the files inside a label's zip: no folders, nothing a file system refuses."""
+    return re.sub(r"[^A-Za-z0-9_.-]", "-", filename)
+
+
 def label_response(anchor: str, args) -> Response:
     """The label of a key (whose access was checked) from the request's options: the portal's and the tenant
-    API's (qualifiers, attr, hri, version, ecl, format, domain)."""
+    API's (qualifiers, attr, hri, version, ecl, size, linear, domain, format=svg|png|pdf|zip)."""
     pairs = request_qualifiers(args, anchor)
     uri, attribute_lines = digital_link_for(anchor, pairs, request_attributes(args), args.get("domain"))
     lines = gs1.hri_lines(anchor, pairs) + attribute_lines
@@ -2315,6 +2349,8 @@ def label_response(anchor: str, args) -> Response:
         show_hri=hri != "none",
         version=qr_version(args.get("version")),
         error=qr_error_level(args.get("ecl")),
+        size=label_size(args.get("size")),
+        linear=label_linear(anchor, pairs, args.get("linear")),
     )
     try:
         qr = label.symbol(options)
@@ -2322,6 +2358,8 @@ def label_response(anchor: str, args) -> Response:
         raise ValidationError("qr.tooLong" if exc.params["needed"] is None else "qr.tooSmall", **exc.params) from None
     # The version and level actually used, shown under the preview
     qr_headers = {"X-QR-Version": str(qr.version), "X-QR-Level": qr.error.upper(), "X-QR-Modules": str(len(qr.matrix))}
+    if options.linear:
+        qr_headers["X-Linear-Symbol"] = f"{linear.NAMES[options.linear[0]]} {options.linear[1]}"
     ai, value = gs1.split_anchor(anchor)
     suffix = "".join(f"_{q}_{v}" for q, v in pairs)
     filename = f"qrcode_{ai}_{value}{suffix}"
@@ -2329,6 +2367,12 @@ def label_response(anchor: str, args) -> Response:
     if download_format == "png":
         return Response(label.render_png(options), mimetype="image/png",
                         headers={"Content-Disposition": f'attachment; filename="{filename}.png"', **qr_headers})
+    if download_format == "pdf":
+        return Response(label.render_pdf(options), mimetype="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"', **qr_headers})
+    if download_format == "zip":
+        return Response(label.render_zip(options, zip_name(filename)), mimetype="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{filename}.zip"', **qr_headers})
     headers = {"Content-Disposition": f'attachment; filename="{filename}.svg"'} if download_format == "svg" else {}
     return Response(label.render_svg(options), mimetype="image/svg+xml", headers={**headers, **qr_headers})
 

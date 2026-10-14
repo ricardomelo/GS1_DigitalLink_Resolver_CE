@@ -353,6 +353,8 @@ part: resolver address, identifier, qualifiers, data attributes) and a legend.
 - **Published** / **Not yet registered** tells whether the record exists on the resolver.
 - **Try now** opens the Digital Link in a new tab, as a scan would.
 - **Copy link address** copies the Digital Link.
+- **Download PDF** saves the label as a vector PDF the size of the label, and **Download all (ZIP)** the SVG,
+  PNG and PDF together with a text file of the sizes.
 - **Download PNG** and **Download SVG** save the label. The SVG is drawn in millimetres at the
   recommended module size (X = 0.495 mm), with a quiet zone of 4 modules and text 2.2 mm high, so it
   prints at the right size when printed at 100 %. Use the SVG for print artwork; the PNG for screens and
@@ -366,6 +368,11 @@ part: resolver address, identifier, qualifiers, data attributes) and a legend.
   40 (177 × 177), when the artwork needs a constant size.
 - **Error correction** — L (7 %), M (15 %, the default), Q (25 %) or H (30 %): how much of the code can
   be damaged and still be read. The level is applied exactly as chosen.
+- **Size** — 80 % to 200 % of the recommended size; each choice shows the module size (X 0.396 mm to 0.990 mm).
+  The text under the code stays 2.2 mm high at every size. Use 100 % unless the artwork needs another.
+- **Linear barcode beside it** (GTINs of products, indicator 0) — *None*; *EAN-13 / UPC-A / EAN-8, as the GTIN
+  takes*; or *UPC-E* for a GTIN-12 that allows it: the familiar barcode drawn next to the QR code at the same size,
+  with its digits underneath, so that every till scans the product while the QR code gives the links.
 - **Domain in the QR code** (shown when your organisation has a verified domain, section 14) — *Default of the
   prefix*: the domain set as the default of the record's GS1 Company Prefix, otherwise the resolver's address; the
   resolver's address; or one of your verified domains. The address under the code and the downloads follow the

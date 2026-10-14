@@ -149,6 +149,23 @@ with sync_playwright() as p:
     page.goto(BASE); page.wait_for_timeout(900)
     check("…the label no longer offers it", page.is_hidden("#opt-domain-field"))
 
+    # The label studio (Documentation/adr/0010-label-studio.md): size, a linear barcode, PDF and ZIP
+    page.fill("#key-value", ACME); page.wait_for_timeout(900)
+    sizes = page.eval_on_selector_all("#opt-size option", "os => os.map(o => o.textContent)")
+    check("label studio: the sizes with their X-dimensions", sizes[0] == "80 % (X 0.396 mm)"
+          and sizes[2] == "100 % (X 0.495 mm, recommended)" and sizes[-1] == "200 % (X 0.990 mm)", sizes)
+    check("…a linear barcode offered for a GTIN of a consumer unit", page.is_visible("#opt-linear"))
+    page.select_option("#opt-size", "150"); page.select_option("#opt-linear", "auto"); page.wait_for_timeout(1200)
+    href = page.get_attribute("#download-pdf", "href") or ""
+    check("…the downloads carry the options, PDF and ZIP among them", "size=150" in href and "linear=auto" in href
+          and href.endswith("format=pdf") and (page.get_attribute("#download-zip", "href") or "").endswith("format=zip"), href)
+    check("…the preview drawn with the EAN-13 beside the QR code", page.locator("#qr img").count() == 1
+          and "has-error" not in (page.get_attribute("#qr", "class") or ""))
+    page.select_option("#key-type", "00"); page.wait_for_timeout(300)
+    check("…no linear barcode for an SSCC", page.is_hidden("#opt-linear-field"))
+    page.select_option("#key-type", "01"); page.select_option("#opt-size", "100"); page.select_option("#opt-linear", "none")
+    page.wait_for_timeout(300)
+
     # An editor: no screen
     editor_ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900})
     editor = editor_ctx.new_page()

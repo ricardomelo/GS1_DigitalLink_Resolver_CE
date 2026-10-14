@@ -124,14 +124,17 @@
     "summary": "The record's QR code label",
     "description": "Scope `labels:read`. The headers X-QR-Version, X-QR-Level and X-QR-Modules tell the symbol made.",
     "parameters": [
-     {"name": "format", "in": "query", "description": "svg (default) or png, as a download", "schema": {"type": "string", "enum": ["svg", "png"]}},
+     {"name": "format", "in": "query", "description": "svg (default), png or pdf, as a download; zip: the three and a README.txt", "schema": {"type": "string", "enum": ["svg", "png", "pdf", "zip"]}},
+     {"name": "size", "in": "query", "description": "Percentage of the target X-dimensions: the QR code's 0.495 mm, an EAN/UPC's 0.330 mm", "schema": {"type": "integer", "enum": [80, 90, 100, 120, 150, 200], "default": 100}},
+     {"name": "linear", "in": "query", "description": "An EAN/UPC symbol beside the QR code, for GTINs of consumer units: auto (EAN-13, UPC-A or EAN-8 as the GTIN takes) or upce", "schema": {"type": "string", "enum": ["none", "auto", "upce"], "default": "none"}},
+     {"name": "domain", "in": "query", "description": "The domain in the QR code: default (that of the record's prefix, else the installation's), installation, or a verified domain of the organisation", "schema": {"type": "string", "default": "default"}},
      {"name": "hri", "in": "query", "description": "Human readable text under the symbol", "schema": {"type": "string", "enum": ["full", "key", "none"], "default": "full"}},
      {"name": "version", "in": "query", "description": "QR version, or auto", "schema": {"type": "string", "default": "auto"}},
      {"name": "ecl", "in": "query", "description": "Error correction level", "schema": {"type": "string", "enum": ["l", "m", "q", "h"], "default": "m"}},
      {"name": "attr", "in": "query", "description": "A GS1 Digital Link data attribute in the QR code, AI:value (repeatable; checked by the GS1 Barcode Syntax Engine)", "schema": {"type": "array", "items": {"type": "string"}}, "style": "form", "explode": true}
     ],
     "responses": {
-     "200": {"description": "The label", "content": {"image/svg+xml": {}, "image/png": {}}},
+     "200": {"description": "The label", "content": {"image/svg+xml": {}, "image/png": {}, "application/pdf": {}, "application/zip": {}}},
      "401": {"$ref": "#/components/responses/Unauthorised"},
      "403": {"$ref": "#/components/responses/Forbidden"},
      "422": {"$ref": "#/components/responses/Invalid"},

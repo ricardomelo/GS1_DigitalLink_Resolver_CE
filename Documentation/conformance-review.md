@@ -550,7 +550,7 @@ Most requests are made by GS1's PHP helper (HEAD, `Accept: */*`, no `Accept-Lang
 test compression; item 1.6 rests on its own tests and the staging checks above.
 
 **Staging, 2 October 2026**, at `ef96276` (before `bc573c4`), URI
-`https://idhml.gs1br.org/01/07898357410022`, a record created in the portal for the test: default link type
+`https://<staging host>/01/07898357410022`, a record created in the portal for the test: default link type
 `gs1:pip`, with links in Portuguese and English; `gs1:instructions` in Portuguese and English; all
 `text/html`.
 

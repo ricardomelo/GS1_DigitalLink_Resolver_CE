@@ -934,7 +934,7 @@ for contributing upstream.
 
 ## 1.0.0 — 23 September 2026 (checkpoint)
 
-Installed on the GS1 Brasil staging resolver and reported working by the operator.
+Installed on the staging resolver and reported working by the operator.
 
 ### Portal
 - Back-end-for-front-end (Flask) holding the resolver token; safe orchestration of Resolver CE calls
@@ -962,5 +962,5 @@ Installed on the GS1 Brasil staging resolver and reported working by the operato
 
 ### Deployment
 - `docker-compose.override.yml`: portal service; ports 8080 and 27017 bound to 127.0.0.1.
-- `gs1resolver.json` with real resolver root, GS1 Brasil contact, JSON-LD context location.
+- `gs1resolver.json` with the real resolver root, the operator's contact, JSON-LD context location.
 - Daily MongoDB backup script and cron entry.

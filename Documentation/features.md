@@ -103,6 +103,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Every primary key of URI Syntax 1.7 §4.3 | GTIN, ITIP, GMN, CPID, GLN (414, 415, 417), GSRN (8017, 8018), GCN, SSCC, GDTI, GINC, GSIN, GRAI, GIAI, each with its own label, hint and checks (check digit, GMN check-character pair, ITIP piece/total, GRAI filler zero…) | `e181ccc` |
 | Every key qualifier of §4.4/4.6/4.9 | 22, 10, 21, 235 (TPX), 8011, 254, 7040, 8020, 8019, with the combinations and order the standard allows and the required ones (8020 for 415) | `67d40bb` |
 | Mirrors the Syntax Engine | Validation in Python and JavaScript compared with the GS1 Barcode Syntax Engine by the tests | `e181ccc`, `67d40bb` |
+| Rules from the GS1 Barcode Syntax Dictionary | Keys, qualifiers, their order, lengths and formats, in the server and in the browser, built from the dictionary of the pinned engine release (`portal/gs1_dictionary.json`, generated) with the portal's few deliberate exceptions; a format the portal cannot check stops the build instead of being accepted ([ADR 0003](adr/0003-gs1-rules-from-the-dictionary.md)) | `6f6ce19` |
 | GTIN convenience | 8, 12, 13 or 14 digits typed, stored as GTIN-14; restricted-circulation GTIN-13 (prefix 2) refused | `126f507` |
 
 ## Portal: QR code labels
@@ -124,14 +125,14 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Feature | What it does | Since |
 |---|---|---|
 | Attributes in the QR code | Expiry, weight, price… (URI Syntax §4.10) added to the code drawn now; never stored; cleared when another record opens | `4b42c6f` |
-| GS1 Barcode Syntax Engine | Validation by GS1's own C library 1.4.1 and Python binding (built in a Docker stage); the option is hidden when the engine is absent | `4b42c6f` |
+| GS1 Barcode Syntax Engine | Validation by GS1's own C library and Python binding (built in a Docker stage), at the release every service uses; the option is hidden when the engine is absent | `4b42c6f`, `8e3d9c7` |
 | Combo box | Pick from *Most used* / *All attributes* or type a number or name; works on phones | `1525f82` |
 | Order | Up/down buttons | `1525f82` |
 | Day 00 refused | With the first/last day of the month suggested | `1525f82` |
 | Decimal families | (310n), (392n)… accept `123,45` or `123.45` and encode `3102=012345`; the URI line shows the decimals used | `e71384d` |
 | No limit of 10 | A ceiling of 100 per request; the QR code is the real limit | `e71384d` |
-| Localised messages | Association errors (`requires`, `pair`) in both languages | `08570e4` |
-| Portuguese AI names | 216 names, e.g. "(17) Data de validade (USE BY or EXPIRY)", in the field and in the list; searching the list keeps the chosen attribute | `08570e4`, `cf5ce10` |
+| Localised messages | Association errors (`requires`, `pair`) in both languages; every other message of the engine (formats, check digits, dates, code lists: 94 messages and 117 linters' messages) too | `08570e4`, `e7c5a6d` |
+| Portuguese AI names | 221 names (with (7041) and (8040)–(8043) since `e7c5a6d`), e.g. "(17) Data de validade (USE BY or EXPIRY)", in the field and in the list; searching the list keeps the chosen attribute | `08570e4`, `cf5ce10` |
 
 ## Portal: record list
 
@@ -239,6 +240,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Move from the files of earlier versions | At its first start the portal imports `users.json`, `records-meta.json` and `journal.jsonl` into its database and keeps them as `*.migrated`; an interrupted import finishes at the next start | `d783f3d` |
 | Installer secrets for the portal | `PORTAL_DB_PASSWORD` and `PORTAL_SECRET_KEY` generated and kept on re-runs | `d783f3d` |
 | Health check | `/portal/healthz`, with the job worker (`worker`: `ok` or `unavailable`); the installer warns when the worker does not report | `126f507`, `a072e9d` |
+| One engine release | The GS1 Barcode Syntax Engine release is written once, in `docker-compose.yml` (`x-gs1-syntax-engine`), and used by the resolver, the data entry API, the portal, CI and the tests | `8e3d9c7` |
 | `portal-worker` service | The portal's image running the job worker; `PORTAL_WORKER=embedded` runs it as a thread of the portal for a set-up without the service | `a072e9d` |
 
 ## Development tests and documentation
@@ -248,6 +250,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Development tests | Resolver, GS1's resolver test suite run in Chromium against the resolver code, EPC binary decoder (checked against TDS annex E.3 and the `epc-tds` library), data entry, keys, governance, spreadsheets, special characters, data attributes, link checker, background jobs (also as worker processes on a real MongoDB), portal end to end in Chromium (desktop and phone), home page and replicas through nginx, installer through shims, deployment (Compose, gunicorn) | `0733a3f` and later |
 | Development tests through pytest | `pytest dev-tests` runs every program, by group (`-m resolver`, `portal`, `e2e`, `home`, `install`, `database`), with each program's check count; strict mode for CI | `d68a883`, `d783f3d` |
 | Continuous integration | GitHub Actions runs the tests in six parallel jobs on every push and pull request to `gs1br/develop`, one of them on a real MongoDB 7 (service container), the proxy test on nginx 1.30; pinned versions, cached engines and browser; status badge in the README | `d68a883`, `d783f3d`, `20f3304` |
+| Weekly engine update check | A scheduled GitHub Actions job opens an issue when a newer GS1 Barcode Syntax Engine is released: what changes in the dictionary, the messages that need a translation, the portal's test results with it | `6f6ce19`, `e7c5a6d` |
 | Screenshots | `dev-tests/docs/screenshots.py` regenerates the README and user guide images | `f14d8c4`, session 4 |
 | Documentation | README, user guide, features, history, developer guide, extensions documentation, changelog | `539bab0` and later |
 

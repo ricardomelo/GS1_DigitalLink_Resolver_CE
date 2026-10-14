@@ -100,6 +100,7 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Todas as chaves primárias da URI Syntax 1.7 §4.3 | GTIN, ITIP, GMN, CPID, GLN (414, 415, 417), GSRN (8017, 8018), GCN, SSCC, GDTI, GINC, GSIN, GRAI, GIAI, cada uma com rótulo, dica e conferências próprias (dígito verificador, par de caracteres do GMN, peça/total do ITIP, zero inicial do GRAI…) | `e181ccc` |
 | Todos os qualificadores da §4.4/4.6/4.9 | 22, 10, 21, 235 (TPX), 8011, 254, 7040, 8020, 8019, com as combinações e a ordem que o padrão permite e os obrigatórios (8020 para 415) | `67d40bb` |
 | Espelha o Syntax Engine | Validação em Python e JavaScript comparada com o GS1 Barcode Syntax Engine nos testes | `e181ccc`, `67d40bb` |
+| Regras do GS1 Barcode Syntax Dictionary | Chaves, qualificadores, a ordem deles, tamanhos e formatos, no servidor e no navegador, montados a partir do dicionário da versão fixada do engine (`portal/gs1_dictionary.json`, gerado) com as poucas exceções deliberadas do portal; um formato que o portal não sabe conferir para a montagem em vez de ser aceito ([ADR 0003](adr/0003-regras-gs1-do-dicionario.md)) | `6f6ce19` |
 | Comodidades do GTIN | 8, 12, 13 ou 14 dígitos digitados, gravados como GTIN-14; GTIN-13 de circulação restrita (prefixo 2) recusado | `126f507` |
 
 ## Portal: etiquetas com QR Code
@@ -121,14 +122,14 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Funcionalidade | O que faz | Desde |
 |---|---|---|
 | Atributos no QR Code | Validade, peso, preço… (URI Syntax §4.10) acrescentados ao código gerado agora; nunca gravados; limpos quando outro cadastro é aberto | `4b42c6f` |
-| GS1 Barcode Syntax Engine | Validação pela própria biblioteca C da GS1, versão 1.4.1, e o binding Python (compilados num estágio do Docker); a opção some quando o engine não está instalado | `4b42c6f` |
+| GS1 Barcode Syntax Engine | Validação pela própria biblioteca C da GS1 e o binding Python (compilados num estágio do Docker), na versão que todos os serviços usam; a opção some quando o engine não está instalado | `4b42c6f`, `8e3d9c7` |
 | Caixa de combinação | Escolher em *Mais usados* / *Todos os atributos* ou digitar número ou nome; funciona no celular | `1525f82` |
 | Ordem | Botões para subir e descer | `1525f82` |
 | Dia 00 recusado | Com sugestão do primeiro ou último dia do mês | `1525f82` |
 | Famílias decimais | (310n), (392n)… aceitam `123,45` ou `123.45` e codificam `3102=012345`; a linha da URI mostra as casas decimais usadas | `e71384d` |
 | Sem limite de 10 | Teto de 100 por requisição; o QR Code é o limite real | `e71384d` |
-| Mensagens traduzidas | Erros de associação (`requires`, `pair`) nos dois idiomas | `08570e4` |
-| Nomes dos AIs em português | 216 nomes, como "(17) Data de validade (USE BY or EXPIRY)", no campo e na lista; buscar na lista mantém o atributo escolhido | `08570e4`, `cf5ce10` |
+| Mensagens traduzidas | Erros de associação (`requires`, `pair`) nos dois idiomas; todas as outras mensagens do engine (formatos, dígitos verificadores, datas, listas de códigos: 94 mensagens e 117 mensagens de linters) também | `08570e4`, `e7c5a6d` |
+| Nomes dos AIs em português | 221 nomes (com (7041) e (8040)–(8043) desde `e7c5a6d`), como "(17) Data de validade (USE BY or EXPIRY)", no campo e na lista; buscar na lista mantém o atributo escolhido | `08570e4`, `cf5ce10` |
 
 ## Portal: lista de registros
 
@@ -236,6 +237,7 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Migração dos arquivos das versões anteriores | No primeiro início o portal importa `users.json`, `records-meta.json` e `journal.jsonl` para o seu banco e os guarda como `*.migrated`; uma importação interrompida termina no início seguinte | `d783f3d` |
 | Segredos do portal no instalador | `PORTAL_DB_PASSWORD` e `PORTAL_SECRET_KEY` gerados e mantidos quando o instalador roda de novo | `d783f3d` |
 | Verificação de saúde | `/portal/healthz`, com o worker de tarefas (`worker`: `ok` ou `unavailable`); o instalador avisa quando o worker não se apresenta | `126f507`, `a072e9d` |
+| Uma versão do engine | A versão do GS1 Barcode Syntax Engine é escrita uma vez, no `docker-compose.yml` (`x-gs1-syntax-engine`), e usada pelo resolver, pela API de cadastro, pelo portal, pelo CI e pelos testes | `8e3d9c7` |
 | Serviço `portal-worker` | A imagem do portal rodando o worker de tarefas; `PORTAL_WORKER=embedded` o roda como uma thread do portal, para uma instalação sem o serviço | `a072e9d` |
 
 ## Testes de desenvolvimento e documentação
@@ -245,6 +247,7 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Testes de desenvolvimento | Resolver, suíte de testes de Resolver da GS1 rodando no Chromium contra o código do Resolver, decodificador de EPC em binário (conferido com o anexo E.3 do TDS e com a biblioteca `epc-tds`), API de cadastro, chaves, governança, planilhas, caracteres especiais, atributos de dados, verificador de links, tarefas em segundo plano (também como processos de worker num MongoDB real), portal de ponta a ponta no Chromium (desktop e celular), página inicial e réplicas com nginx, instalador com simulações, implantação (Compose, gunicorn) | `0733a3f` e seguintes |
 | Testes de desenvolvimento pelo pytest | `pytest dev-tests` roda todos os programas, por grupo (`-m resolver`, `portal`, `e2e`, `home`, `install`, `database`), com a contagem de verificações de cada programa; modo estrito para o CI | `d68a883`, `d783f3d` |
 | Integração contínua | O GitHub Actions roda os testes em seis jobs paralelos a cada push e pull request para `gs1br/develop`, um deles num MongoDB 7 real (contêiner de serviço), o teste do proxy no nginx 1.30; versões fixadas, engines e navegador em cache; selo de status no README | `d68a883`, `d783f3d`, `20f3304` |
+| Verificação semanal do engine | Uma tarefa agendada do GitHub Actions abre uma issue quando sai uma versão mais nova do GS1 Barcode Syntax Engine: o que muda no dicionário, as mensagens que precisam de tradução, o resultado dos testes do portal com ela | `6f6ce19`, `e7c5a6d` |
 | Screenshots | `dev-tests/docs/screenshots.py` regenera as imagens do README e do guia do portal nos dois idiomas | `f14d8c4`, sessão 4 |
 | Documentação | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e em português), documentação das extensões, changelog | `539bab0` e seguintes |
 

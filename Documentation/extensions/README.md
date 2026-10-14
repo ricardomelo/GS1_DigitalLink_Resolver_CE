@@ -744,8 +744,9 @@ the resolver also uses:
   (8014) as §4.10 requires), their titles and format components, and the qualifiers of each key.
 
 **Which AIs.** The list is the grammar of §4.10: `queryStringParam` names 156 parameters, which resolve to
-530 AIs (the 5 newest — (7041), (8040) to (8043) — are not yet known to the engine's release 1.4.1, so 525
-are offered). The grammar deliberately includes every primary key and the batch/lot, so that a code can carry
+530 AIs (the 5 newest — (7041), (8040) to (8043) — are in the dictionary of the engine's release 1.4.1 but not
+as data attributes, so 525 are offered; a release that makes them data attributes adds them with no code
+change, ADR 0003). The grammar deliberately includes every primary key and the batch/lot, so that a code can carry
 a second identifier (§4.10 note, §5.9 and §5.11: an SSCC with the CONTENT, count and batch of what it
 holds); 368 of them are the decimal variants of measures and amounts, (3100) to (3105) and so on, which the
 portal groups into 59 families (below), so the list has 216 entries. It leaves out the AIs that would

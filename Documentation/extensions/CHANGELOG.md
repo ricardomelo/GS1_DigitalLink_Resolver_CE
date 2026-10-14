@@ -2,11 +2,42 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### One source for the GS1 rules (backlog item 2.5)
+- **Architecture decision record** [ADR 0003](../adr/0003-gs1-rules-from-the-dictionary.md) (English and
+  Portuguese): the portal's GS1 rules generated from the GS1 Barcode Syntax Dictionary of one pinned engine
+  release; that release used by every service; every engine message translated; a weekly job proposing updates.
+  Commit `8d50280`.
+- **One GS1 Barcode Syntax Engine release** (step 2), written once in `docker-compose.yml`
+  (`x-gs1-syntax-engine`, `1.4.1`) and passed to the five services that check GS1 data as the build argument
+  `GS1_SYNTAX_ENGINE_RELEASE`. **Deliberate change to the official images**: `web_server/Dockerfile` and
+  `data_entry_server/Dockerfile` installed whatever `gs1encoder` release was newest at build time; they now install
+  the pinned one and refuse to build without it (build them through Docker Compose). The portal's build script
+  and the CI set-up action read the same value. Commit `8e3d9c7`.
+- **Rules from the dictionary** (step 3): `portal/gs1_dictionary.json`, generated from the pinned release's
+  dictionary (`portal/tools/gen_dictionary.py`, `portal/gs1dict.py`); `gs1.py` builds the keys, qualifiers, their
+  order, lengths and formats from it, with the portal's few deliberate exceptions (ITIP without (22), the
+  character sets of values in a URI); a format the portal cannot check stops the build. The browser receives the
+  same rules (`rules` in `/config`) instead of repeating them; a Pay-to GLN (415) now has a live check. The
+  portal image copies every `*.json` of `portal/`. Same records accepted as before. Commit `6f6ce19`.
+- **Weekly update check** `.github/workflows/engine-update.yml` (Mondays, and on demand): when a newer engine
+  release exists it builds it in the runner's copy, regenerates the dictionary and the message table, runs the
+  portal's tests and opens one issue per release with the differences, the messages that need a translation and
+  the test results; it never pushes. Permissions `contents: read`, `issues: write`. Commits `6f6ce19`, `e7c5a6d`.
+- **The engine's messages in the user's language** (step 4): the 94 messages and 117 linters' messages of 1.4.1
+  are translated (`engine.*` in `i18n.js`; the English text is the engine's own), recognised from a table
+  generated from the engine's sources (`portal/engine_messages.json`, `portal/tools/gen_engine_messages.py`,
+  `portal/engine_messages.py`); `attr.invalid` keeps its English `detail` and adds `message`. The build script
+  also copies the engine's message sources. AIs (7041) and (8040)–(8043) named in Portuguese. Commit `e7c5a6d`.
+- **Tests**: `test_dictionary.py` (30 checks) and `test_engine_messages.py` (26), both mutation-checked;
+  `test_deploy.py` checks the one release everywhere (59); `test_keys.py` checks the engine it compares with
+  (138); the portal in Chromium reads an engine message in Portuguese (211 checks, 166 without the engine).
+  Commits `8e3d9c7`, `6f6ce19`, `e7c5a6d`.
+
 ### Tenants (backlog item 2.4)
 - **Fix: `tenants.py` in the portal image.** `portal/Dockerfile` copied the portal's modules by name and left
   out `tenants.py`, so the portal of `1590b7e` would not have started in a container. The image now copies every
   module at the top of `portal/`, and `test_deploy.py` starts the portal from the files the image would hold.
-  Found before the update reached staging.
+  Found before the update reached staging. Commit `7c10048`.
 - **Architecture decision record** [ADR 0002](../adr/0002-tenants.md) (English and Portuguese): organisations
   (tenants) that own GS1 Company Prefixes; the operator owns whatever no tenant holds; the operator's
   administrators are the server administrators; read-only support access with a reason; an audit trail per

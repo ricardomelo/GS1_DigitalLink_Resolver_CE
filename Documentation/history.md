@@ -25,7 +25,8 @@ the next one started.
 | 7 — GS1's resolver test suite | 2 Oct | `bc573c4` → `386a8c3` | GS1's own suite passes on staging (31 of 31), link types published in `https://ref.gs1.org/voc/` (F22), erratum E12, open backlog in the README |
 | 8 — backlog, quick wins, CI | 13 Oct | `bc1c86b`, `1a1ca59`, `d68a883` and the documentation commits | backlog reordered around tenants, e-mail, API keys and custom domains; 30-minute idle session with a warning and a 12-hour limit; syntax box removed from the home page; community notice; development tests through pytest and on GitHub Actions |
 | 9 — architecture for scale | 13 Oct | ADR 0001, then three code deliveries (`d783f3d`, `a072e9d`, `20f3304`) and the documentation commits | item 2.3: the portal's state in MongoDB, background jobs in a worker service, replicas of every stateless service behind a proxy that finds them by itself; gunicorn in every web service; nginx 1.30 |
-| 10 — tenants | 13 Oct – | ADR 0002, then two code deliveries (`1590b7e`, `675b6ca`) and the documentation commit | item 2.4: organisations that own GS1 Company Prefixes, the server administrator, support access, an audit trail per organisation, an e-mail address per user |
+| 10 — tenants | 13 Oct | ADR 0002, then two code deliveries (`1590b7e`, `675b6ca`), the documentation commit and a fix (`7c10048`) | item 2.4: organisations that own GS1 Company Prefixes, the server administrator, support access, an audit trail per organisation, an e-mail address per user |
+| 11 — one source for the GS1 rules | 13 Oct | ADR 0003, then three code deliveries (`8e3d9c7`, `6f6ce19`, `e7c5a6d`) and the documentation commit | item 2.5: one engine release for every service, keys, qualifiers and formats from the GS1 Barcode Syntax Dictionary, the engine's messages translated, a weekly update check |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -359,6 +360,39 @@ ran on FerretDB, as far as its known gaps allow. Mock-ups could not be shown bef
 owner usually asks: the images of the finished screens (those of the user guide) were delivered for review before
 the update reaches staging. Not yet confirmed on staging nor in CI.
 
+Before the update was delivered, the deployment test of session 11 found that `portal/Dockerfile` copied the
+portal's modules by name and left out `tenants.py`: the portal of `1590b7e` would not have started in a container.
+The image now copies every module, and `test_deploy.py` starts the portal from the files the image would hold
+(`7c10048`).
+
+## Session 11 — one source for the GS1 rules (item 2.5)
+
+Still with the owner away, and with item 2.4 not yet pushed, the owner asked to go on with the next item on top of
+it, to be delivered together. The portal's GS1 rules were written three times (Python, JavaScript, and the
+tests' comparison with the engine), the resolver and the data entry API installed whatever engine release was
+newest at build time, and the engine's refusals reached the Portuguese interface in English.
+
+The four questions of the item were settled on the recommended options and recorded in
+[ADR 0003](adr/0003-gs1-rules-from-the-dictionary.md): the rules generated from the dictionary into a committed
+file checked by a test, so the portal also works without the engine; one release in `docker-compose.yml`; every
+message of the pinned release translated, with a test; a weekly job that opens an issue rather than a pull request.
+
+| Commit | Change |
+|---|---|
+| `8d50280` | docs: ADR 0003 in both languages (step 1) |
+| `7c10048` | deploy: every portal module in the image (the fix of item 2.4 above) |
+| `8e3d9c7` | step 2: `x-gs1-syntax-engine` in `docker-compose.yml`, a build argument for the five services, the pinned `gs1encoder` in the official images, the build script and CI reading the same value; `test_deploy.py`, `test_keys.py` check it |
+| `6f6ce19` | step 3: `gs1_dictionary.json` and its generator, `gs1dict.py`, `gs1.py` built from it, the browser's rules from `/config`, the comparison for the weekly issue, the weekly workflow; `test_dictionary.py` |
+| `e7c5a6d` | step 4: the engine's message table and recogniser, the 211 messages in both languages, Portuguese names for (7041) and (8040)–(8043); `test_engine_messages.py` |
+
+The tables built from the dictionary were compared with the hand-written ones before replacing them: the only
+differences were the way two keys' shapes are written (417 and 8004, which accept the same records) and the
+qualifiers' internal names. The comparison for the weekly issue was tried on the real dictionaries of 1.1.0 and
+1.4.1 (it shows (7041) and (8040)–(8043) added and, the other way round, that the portal could not build its rules
+from the older dictionary). Every new test was mutation-checked (three changes for the release, five for the
+dictionary, eight for the messages). The GitHub API could not be reached from the sandbox, so the weekly
+workflow's first real run will be on GitHub. Not yet confirmed on staging nor in CI.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -371,7 +405,7 @@ the update reaches staging. Not yet confirmed on staging nor in CI.
 | Accounts | users from the command line, all equal | roles, prefixes, organisations (tenants) with their own users and audit trail, a server administrator with support access, users screen, temporary passwords, history, audit trail, in the portal's own database |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
 | Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
-| Tests | 69 checks | 1,602 checks in 19 test programs (one of them GS1's own test suite), plus the installer test (68); run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
+| Tests | 69 checks | 1,670 checks in 21 test programs (one of them GS1's own test suite), plus the installer test (68); run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
 | Deployment | one container per service, Flask's built-in server, the proxy restarted by hand | any number of replicas of the four stateless services (set in `.env`), gunicorn in every web service, a proxy that follows replicas through Docker's DNS |
 | Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
@@ -380,7 +414,9 @@ the update reaches staging. Not yet confirmed on staging nor in CI.
 1. Official variable names and behaviour are kept; deliberate changes are documented in the changelog.
 2. No instance values in the code: domain from `FQDN`, operator from `RESOLVER_ORG_*` / `RESOLVER_CONTACT_*`.
 3. The portal is the back end between the browser and the API; the token never reaches the browser.
-4. Validation mirrors the GS1 Barcode Syntax Engine; deliberate limits are documented.
+4. Validation mirrors the GS1 Barcode Syntax Engine; deliberate limits are documented. Since session 11 the
+   keys, qualifiers and formats are built from the dictionary of the one engine release written in
+   `docker-compose.yml`, which every service uses ([ADR 0003](adr/0003-gs1-rules-from-the-dictionary.md)).
 5. Resolver: an unknown `linkType` is a 404 (required by the standard); walk-up serial → batch → variant →
    key; query strings are passed on unchanged and never judged.
 6. Roles reader < editor < admin are checked on every call; GS1 Company Prefixes limit every screen. A
@@ -448,6 +484,10 @@ the update reaches staging. Not yet confirmed on staging nor in CI.
   (`allowed()`): changing it there limits every route at once, and the existing tests show nothing else moved.
 - A new owner for everything unassigned (the operator) lets a model arrive without a migration: until the first
   tenant exists, every rule gives the old answer.
+- A list of files kept by hand in a Dockerfile drifts from the code: a new module was missing from the image
+  while every test passed, because the tests ran the source tree. Test what the image will hold.
+- Before generating a table that replaces a hand-written one, compare the two: the differences are either the
+  generator's mistakes or the old table's, and both need a decision.
 
 ## Open items
 
@@ -457,8 +497,9 @@ the update reaches staging. Not yet confirmed on staging nor in CI.
 - The installer's final check uses `/portal/healthz` only; it should also request the resolver through the
   proxy (item 7.2).
 - An off-server backup copy and a restore rehearsal.
-- Review of the 216 Portuguese AI names; decision on the GS1 logo on the home page and resolver pages.
-- Item 2.4 on staging and in CI (session 10): the owner's push, the CI summary and the staging checks of the
-  update are pending.
+- Review of the 221 Portuguese AI names and of the Portuguese engine messages; decision on the GS1 logo on the
+  home page and resolver pages.
+- Items 2.4 and 2.5 on staging and in CI (sessions 10 and 11): the owner's push, the CI summary, the staging
+  checks of the update and the first run of the weekly update check are pending.
 
 Next steps: the open backlog, in the agreed order, is in the README ([Open backlog](../README.md#open-backlog)).

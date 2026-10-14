@@ -97,6 +97,7 @@ O README original é mantido, sem mudanças, em [upstream-README.md](../upstream
 | **Resolver** | Subida na hierarquia de qualificadores (série → lote → variante → chave), regras de 404, formas de `linkType`, `defaultLink`, linkset RFC 9264 válido no schema da GS1, JSON-LD sob pedido, o link padrão salvo quando a requisição indica uma versão de idioma, caminhos conferidos pelo GS1 Barcode Syntax Engine, valores com `%2F`, a query string repassada exatamente como enviada, EPC em binário (`/eh…`, `/ex…`) de etiquetas NFC descomprimido, páginas HTML em pt-BR / en-GB para navegadores |
 | **API de cadastro** | `GET /api/summary` (todos os cadastros numa requisição); `GET /api/index` passou a exigir o token; o "Authorize" do Swagger funciona em todas as operações protegidas |
 | **Configuração** | Padrões no `.env.example` + `.env` opcional para todos os serviços; arquivo de descrição (`/.well-known/gs1resolver`) montado a partir da configuração; endereços de bind para as portas publicadas |
+| **Registro de acessos** | O Resolver registra cada requisição que responde — código, resultado, nível, destino, tempo, idioma, classe de dispositivo — sem o endereço de quem leu, o User-Agent, números de série ou valores de atributos de dados; contagens diárias por chave; uma tela *Acessos* conforme o alcance de cada usuário, com exportação CSV; as chamadas da API das organizações ([ADR 0006](adr/0006-registro-de-requisicoes.md)) |
 | **Página inicial** (`/`) | Menu para o portal, a documentação da API, o padrão GS1 Digital Link, gs1.org e este código; independente do domínio |
 | **Operação** | Instalador interativo para Ubuntu 22.04 / 24.04; backup diário do banco e da configuração do portal; o Compose reinicia o proxy quando um serviço atrás dele é recriado |
 | **Qualidade** | Testes de desenvolvimento do Resolver, da API de cadastro, do portal (unitários e de ponta a ponta no navegador), da página inicial, do instalador e do verificador de links; comparação com o GS1 Syntax Engine; aprovação na própria suíte de testes de Resolver da GS1 (31 de 31), que também roda nos testes de desenvolvimento |
@@ -583,7 +584,9 @@ engine para todos os serviços, as mensagens do engine traduzidas, uma verifica�
 [ADR 0003](adr/0003-regras-gs1-do-dicionario.md)), e o item 3.1, o e-mail (um relay autenticado, convites, recuperação
 de senha por link de uso único, notificações com preferências por usuário; [ADR 0004](adr/0004-e-mail.md)), e o item
 3.2, a API das organizações (uma API versionada do portal para os sistemas das próprias organizações, chaves de API
-com escopos, validade e um limite de requisições; [ADR 0005](adr/0005-api-das-organizacoes.md)), também estão
+com escopos, validade e um limite de requisições; [ADR 0005](adr/0005-api-das-organizacoes.md)), e o item 4.1, o
+registro das requisições ao Resolver (cada requisição registrada pelo Resolver sem dados pessoais, contagens diárias
+por chave, uma tela Acessos; [ADR 0006](adr/0006-registro-de-requisicoes.md)), também estão
 concluídos. O que foi feito está no [histórico](historico.md) e no
 [changelog](../extensions/CHANGELOG.md). Os itens abaixo seguem a ordem combinada; os tamanhos são relativos
 (P, M, G). A ordem põe primeiro aquilo em que os itens seguintes se apoiam: o armazenamento de dados do portal
@@ -591,8 +594,7 @@ e os tenants vêm antes da API, do e-mail e dos analytics, que precisam saber de
 
 | Fase | # | Item | Tam. | Depende de |
 |---|---|---|---|---|
-| Log de resolução e analytics | 4.1 | **Log das requisições ao Resolver** (chave, qualificadores, AIs de atributos de dados, tipo de link, resultado e nível, latência, idioma, dispositivo, origem, esquema EPC), assíncrono, com privacidade desde a concepção, eventos brutos com prazo de expiração e agregados diários | G | 2.3 |
-| | 4.2 | **Página inicial pós-login com indicadores**, cada tenant vendo só os seus prefixos e chaves (o administrador do servidor vê a instalação inteira): uso, qualidade da resolução (primeiro os 404 de códigos desconhecidos), qualidade dos cadastros, operação, governança; exportação para Excel e CSV | G | 4.1, 2.4 |
+| Log de resolução e analytics | 4.2 | **Página inicial pós-login com indicadores**, cada tenant vendo só os seus prefixos e chaves (o administrador do servidor vê a instalação inteira): uso, qualidade da resolução (primeiro os 404 de códigos desconhecidos), qualidade dos cadastros, operação, governança; exportação para Excel e CSV | G | 4.1, 2.4 |
 | | 4.3 | **Monitoramento e alertas** por e-mail: Resolver fora do ar (verificado pelo proxy), falha de backup, picos de 404, vencimento do certificado | M | 4.2, 3.1 |
 | | 4.4 | **Resumo semanal por e-mail** por tenant | P | 4.2, 3.1 |
 | Domínios próprios e estúdio de etiquetas | 5.1 | **O domínio do próprio tenant no QR Code** (URI Syntax 4.11): domínios cadastrados por tenant e comprovados por um registro DNS; padrão por prefixo, escolhido ao gerar a etiqueta (domínio da instalação quando não houver); ou o domínio aponta para o Resolver (certificado emitido por domínio) ou o servidor do tenant redireciona para ele mantendo caminho e query string; um domínio só responde pelos prefixos do seu tenant; caminho-base opcional | G | 2.4, 2.5 |

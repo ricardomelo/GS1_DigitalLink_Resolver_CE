@@ -199,6 +199,15 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Descrição OpenAPI | `GET /portal/api/v1/openapi.json`, OpenAPI 3.1, pública, conferida contra as rotas pelos testes | `bb0b496` |
 | Limite de requisições | 120 requisições por chave e minuto por padrão (`PORTAL_API_RATE_PER_MINUTE`), compartilhado por todas as réplicas; 429 com `Retry-After` | `bb0b496` |
 
+## Registro de acessos
+
+| Funcionalidade | O que faz | Desde |
+|---|---|---|
+| Registro das requisições ao Resolver | Cada leitura que o Resolver responde é registrada: código e qualificadores, resultado (redirecionada, código não cadastrado, sem link desse tipo, escolha, linkset, inválida), o nível que respondeu, o host do destino, o tempo gasto, idioma, classe de dispositivo, host de origem; nunca o endereço de quem leu, o User-Agent, números de série ou valores de atributos de dados; gravado em segundo plano, sem atrasar nenhuma leitura; guardado `RESOLVER_LOG_DAYS` (90) ([ADR 0006](adr/0006-registro-de-requisicoes.md)) | `d633fcb` |
+| Contagens diárias | Requisições por chave e dia, com resultados, dispositivos, idiomas, tipos de link e tempos, contadas de hora em hora pelo worker no fuso da instalação, guardadas 800 dias | `d633fcb` |
+| Tela Acessos | Todo usuário: os últimos 30 dias em barras, as últimas requisições dos códigos ao seu alcance com filtros e exportação CSV; o administrador do servidor vê a instalação inteira com a organização de cada requisição | `7b8967a` |
+| Chamadas da API das organizações | Cada chamada de `/portal/api/v1` registrada (chave, organização, operação, status, tempo) e listada para os administradores | `d633fcb`, `7b8967a` |
+
 ## Portal: robustez e segurança
 
 | Funcionalidade | O que faz | Desde |

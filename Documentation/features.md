@@ -202,6 +202,15 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | OpenAPI description | `GET /portal/api/v1/openapi.json`, OpenAPI 3.1, public, checked against the routes by the tests | `bb0b496` |
 | Request limit | 120 requests per key and minute by default (`PORTAL_API_RATE_PER_MINUTE`), shared by every replica; 429 with `Retry-After` | `bb0b496` |
 
+## Request log
+
+| Feature | What it does | Since |
+|---|---|---|
+| Log of resolver requests | Each scan the resolver answers is recorded: code and qualifiers, outcome (redirected, code not registered, no link of that type, choice, linkset, invalid), the level that answered, the target's host, the time taken, language, device class, referrer's host; never the client's address, the User-Agent, serial numbers or data attribute values; written in the background, never slowing a scan; kept `RESOLVER_LOG_DAYS` (90) ([ADR 0006](adr/0006-resolver-request-log.md)) | `d633fcb` |
+| Daily counts | Requests per key and day, with outcomes, devices, languages, link types and times, counted hourly by the worker in the installation's time zone, kept 800 days | `d633fcb` |
+| Requests screen | Every user: the last 30 days as bars, the latest requests of the codes in his reach with filters and a CSV export; the server administrator sees the whole installation with the organisation of each request | `7b8967a` |
+| Tenant API calls | Each call of `/portal/api/v1` recorded (key, organisation, operation, status, time) and listed for administrators | `d633fcb`, `7b8967a` |
+
 ## Portal: robustness and security
 
 | Feature | What it does | Since |

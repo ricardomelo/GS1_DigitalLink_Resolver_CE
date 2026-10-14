@@ -105,6 +105,7 @@ the official Postman collection is at
 | **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, the default link unless the request decides a language variant, request paths checked by the GS1 Barcode Syntax Engine, values with `%2F`, the query string passed on exactly as sent, EPC binary strings (`/eh…`, `/ex…`) from NFC tags decompressed, HTML pages in pt-BR / en-GB for browsers |
 | **Data entry API** | `GET /api/summary` (all records in one request); `GET /api/index` now requires the token; Swagger "Authorize" works on every protected operation |
 | **Configuration** | `.env.example` defaults + optional `.env` for every service; description file (`/.well-known/gs1resolver`) built from the configuration; bind addresses for the published ports |
+| **Request log** | The resolver records each request it answers — code, outcome, level, target, time, language, device class — without the client's address, User-Agent, serial numbers or data attribute values; daily counts per key; a *Requests* screen per user's reach, with a CSV export; the tenant API's calls ([ADR 0006](Documentation/adr/0006-resolver-request-log.md)) |
 | **Home page** (`/`) | Menu to the portal, the API documentation, the GS1 Digital Link standard, gs1.org and this code; domain independent |
 | **Operations** | Interactive installer for Ubuntu 22.04 / 24.04; daily backup of the database and the portal's configuration; Compose restarts the proxy when a service behind it is recreated |
 | **Quality** | Development tests for the resolver, the data entry API, the portal (unit and browser end-to-end), the home page, the installer and the link checker; comparison with the GS1 Syntax Engine; GS1's own resolver test suite passed (31 of 31) and also run in the development tests |
@@ -638,7 +639,9 @@ translated, a weekly update check; [ADR 0003](Documentation/adr/0003-gs1-rules-f
 3.1, e-mail (an authenticated relay, invitations, password recovery by single-use link, notifications with
 per-user preferences; [ADR 0004](Documentation/adr/0004-e-mail.md)), and item 3.2, the tenant API (a versioned API of
 the portal for organisations' own systems, API keys with scopes, expiry and a request limit;
-[ADR 0005](Documentation/adr/0005-tenant-api.md)), are complete too. What was
+[ADR 0005](Documentation/adr/0005-tenant-api.md)), and item 4.1, the log of resolver requests (each request recorded
+by the resolver without personal data, daily counts per key, a Requests screen;
+[ADR 0006](Documentation/adr/0006-resolver-request-log.md)), are complete too. What was
 done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
 The items below are in the agreed order; sizes are relative (S, M, L). The order puts first what later items
 build on: the portal's data store and tenants come before the API, e-mail and analytics, which all need to
@@ -646,8 +649,7 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Resolution log and analytics | 4.1 | **Log of resolver requests** (key, qualifiers, data attribute AIs, link type, outcome and level, latency, language, device, referrer, EPC scheme), asynchronous, privacy by design, raw events with an expiry plus daily aggregates | L | 2.3 |
-| | 4.2 | **Home page after sign-in with indicators**, each tenant seeing only its own prefixes and keys (the server administrator sees the whole installation): usage, resolution quality (404 for unknown codes first), record quality, operation, governance; export to Excel and CSV | L | 4.1, 2.4 |
+| Resolution log and analytics | 4.2 | **Home page after sign-in with indicators**, each tenant seeing only its own prefixes and keys (the server administrator sees the whole installation): usage, resolution quality (404 for unknown codes first), record quality, operation, governance; export to Excel and CSV | L | 4.1, 2.4 |
 | | 4.3 | **Monitoring and alerts** by e-mail: resolver down (checked through the proxy), failed backup, spikes of 404, certificate expiry | M | 4.2, 3.1 |
 | | 4.4 | **Weekly summary by e-mail** per tenant | S | 4.2, 3.1 |
 | Custom domains and label studio | 5.1 | **The tenant's own domain in the QR code** (URI Syntax 4.11): domains registered per tenant and proved by a DNS record; default per prefix, chosen when the label is made (installation domain when none is set); either the domain points at the resolver (certificate issued per domain) or the tenant's server redirects to it keeping path and query string; a domain answers only for its tenant's prefixes; optional path stem | L | 2.4, 2.5 |

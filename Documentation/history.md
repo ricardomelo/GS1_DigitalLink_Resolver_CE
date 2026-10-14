@@ -28,6 +28,7 @@ the next one started.
 | 10 — tenants | 13 Oct | ADR 0002, then two code deliveries (`1590b7e`, `675b6ca`), the documentation commit and a fix (`7c10048`) | item 2.4: organisations that own GS1 Company Prefixes, the server administrator, support access, an audit trail per organisation, an e-mail address per user |
 | 11 — one source for the GS1 rules | 13 Oct | ADR 0003, then three code deliveries (`8e3d9c7`, `6f6ce19`, `e7c5a6d`) and the documentation commit | item 2.5: one engine release for every service, keys, qualifiers and formats from the GS1 Barcode Syntax Dictionary, the engine's messages translated, a weekly update check |
 | 12 — e-mail and the tenant API | 14 Oct | ADRs 0004 and 0005, an installer fix (`f3d127d`), four code deliveries (`03c924b`, `fbe86f0`, `bb0b496`, `c469f29`) and two documentation commits | item 3.1: mail through an authenticated relay, invitations, password recovery by single-use link, security notices and notices of finished jobs with per-user preferences; item 3.2: a versioned API for organisations' systems with API keys |
+| 13 — the request log | 14 Oct | ADR 0006, two code deliveries (`d633fcb`, `7b8967a`) and the documentation commit | item 4.1: every resolution request recorded by the resolver without personal data, daily counts per key, a Requests screen, the tenant API's calls recorded |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -451,6 +452,36 @@ browser test found two defects before delivery: one message key written twice in
 "Created" replaced the message "Key … created"), now refused by a test, and a new key left in the page after
 leaving the screen, now removed. Not yet confirmed on staging nor in CI.
 
+## Session 13 — the log of resolver requests (item 4.1)
+
+The owner still could not reach the workstation or the server, and asked to go on with the handover and deliver one
+bundle with everything since `fd8f67c`, taking the recommended option on every question. He sent the bundle of
+session 12 into the chat; the baseline on top of it matched the end of session 12 (1,743 checks without a browser,
+465 in Chromium).
+
+Every question of [ADR 0006](adr/0006-resolver-request-log.md) was settled on the recommended option: the resolver
+records each request itself, after answering, from what the resolution knows; nothing that identifies the client
+(no address, not even hashed; no User-Agent, only a device class; only the referrer's host; only the AIs of serial
+numbers and data attributes); a bounded queue and a writer thread per process; a database of its own,
+`resolver_log`, readable by the portal's user, with an expiry per event (90 days); daily aggregates per key by the
+worker in the installation's time zone (800 days); ownership derived from the company part at query time; server
+administrators see the whole installation; the tenant API's calls recorded by the portal; three deliveries.
+
+| Commit | Change |
+|---|---|
+| `e519771` | docs: ADR 0006 in both languages (step 1) |
+| `d633fcb` | step 2: `web_server/src/request_log.py` and the resolver's hooks; the read role in `db_init.py`; `portal/requestlog.py` (scope, listing, aggregates in the housekeeping, API calls); the portal's endpoints; the backup without `resolver_log`; the installer's time zone; `test_request_log.py`, `test_requestlog.py` |
+| `7b8967a` | step 3: the Requests screen and its image, the user guides' section 16; `test_requests_e2e.py` |
+
+The resolver's answers had to stay exactly as they were, while the log needs two facts only the resolution knows:
+the level of the record that answered and why a 404 happened. `web_logic` returns them in private keys of its
+results, which `web_namespace` removes before answering; the tests compare the 404 and 300 answers with the official
+shape. mongomock deletes documents whose TTL date has passed when they are read, so a log switched off by an expiry
+of zero days looked empty either way: the mutation "switch ignored" escaped until the test also counted what the
+writer wrote. Another escaped mutation showed a test that searched for an escaped pattern, which matches the same
+nothing with or without escaping. The browser test found the new menu item left out of the list of items that close
+the menu. 26 mutations, all caught. Not yet confirmed on staging nor in CI.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -459,12 +490,13 @@ leaving the screen, now removed. Not yet confirmed on staging nor in CI.
 | Labels | PNG/SVG, HRI on/off, optional branding | HRI full/key/none, QR version and correction, data attributes, no branding |
 | Finding records | open one GTIN at a time | record list, text search, filters by key type, qualifier, author and link problems, code search, other records of a key |
 | Bulk work | none | XLSX/CSV export and two-step import |
+| Usage | nothing recorded | every resolution request logged without personal data, daily counts per key, a Requests screen per scope |
 | Integration | the official data entry API and its single master token | a versioned API for each organisation's systems, with API keys (scopes, prefixes, expiry, a request limit) and an OpenAPI description |
 | Quality of targets | none | link checker in the editor, for every record and on import |
 | Accounts | users from the command line, all equal | roles, prefixes, organisations (tenants) with their own users and audit trail, a server administrator with support access, users screen, temporary passwords or invitations by e-mail, password recovery by e-mail, security notices, history, audit trail, in the portal's own database |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
 | Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
-| Tests | 69 checks | 1,958 checks in 25 test programs (one of them GS1's own test suite), plus the installer test (84); run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
+| Tests | 69 checks | 2,133 checks in 28 test programs (one of them GS1's own test suite), plus the installer test (87); run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
 | Deployment | one container per service, Flask's built-in server, the proxy restarted by hand | any number of replicas of the four stateless services (set in `.env`), gunicorn in every web service, a proxy that follows replicas through Docker's DNS |
 | Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
@@ -505,6 +537,9 @@ leaving the screen, now removed. Not yet confirmed on staging nor in CI.
 15. Organisations' systems use the portal's own versioned API (`/portal/api/v1`) with keys their administrators
     create; a key acts as a user of its organisation would, under every rule of the portal; only the hash of a key
     is kept ([ADR 0005](adr/0005-tenant-api.md)).
+16. The resolver records each request it answers, in the background and without anything that identifies the person
+    who scanned; raw events expire, daily counts per key last; whose events they are is decided at query time from the
+    key ([ADR 0006](adr/0006-resolver-request-log.md)).
 
 ## Lessons learnt
 
@@ -560,6 +595,9 @@ leaving the screen, now removed. Not yet confirmed on staging nor in CI.
   fragment at load time must also listen for `hashchange`. The same holds for what a view leaves behind: a key shown
   once stayed in the page when the view changed, until leaving the view removed it.
 - A message catalogue kept by hand can hold one key twice, and the second silently wins: a test now refuses it.
+- A test double can do more than the real thing in a way that hides a defect: mongomock removes expired documents
+  when they are read, so an expiry of zero days looked like a log switched off. Check the side effect itself (what
+  was written), not only what a query returns.
 - A mutation that makes the code loop for ever is caught (the test cannot pass) but can stop a mutation loop that
   waits on it: give each run its own time limit and treat a timeout as caught.
 
@@ -573,8 +611,11 @@ leaving the screen, now removed. Not yet confirmed on staging nor in CI.
 - An off-server backup copy and a restore rehearsal.
 - Review of the 221 Portuguese AI names and of the Portuguese engine messages; decision on the GS1 logo on the
   home page and resolver pages.
-- Items 2.4, 2.5, 3.1 and 3.2 on staging and in CI (sessions 10 to 12): the owner's push, the CI summary, the staging
-  checks of the update, the first run of the weekly update check, a first try of e-mail with Mailpit and then
-  with the organisation's relay are pending.
+- Items 2.4, 2.5, 3.1, 3.2 and 4.1 on staging and in CI (sessions 10 to 13): the owner's push, the CI summary, the
+  staging checks of the update, the first run of the weekly update check, a first try of e-mail with Mailpit and then
+  with the organisation's relay, and the first requests logged on staging are pending.
+- The resolver's own `/heartbeat` answers 500 (official code: a Flask-RESTX resource returns a `jsonify` response
+  inside a tuple); the portal's health check uses the data entry API's, so nothing depends on it. A candidate for a
+  small fix and an issue upstream.
 
 Next steps: the open backlog, in the agreed order, is in the README ([Open backlog](../README.md#open-backlog)).

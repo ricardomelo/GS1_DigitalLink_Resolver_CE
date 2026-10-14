@@ -973,6 +973,7 @@ language-neutral on labels.
 | Before | After | Standard reference |
 |---|---|---|
 | `/10/<unregistered batch>` → 500 | uses the GTIN's links (walks up the tree) | 2.5.9, 2.5.10, item 16 |
+| nothing recorded about resolutions (only gunicorn's access line, with the client's address) | each resolution request recorded in `resolver_log.requests` after it is answered, in the background, without the client's address or User-Agent; answers unchanged ([ADR 0006](../adr/0006-resolver-request-log.md)) | — (operation) |
 | batch with a missing linkType → 200 with an error inside | 404 | 2.6.2, items 9 and 18 |
 | `/10/123/` (trailing slash) → 400 | treated as `/10/123` | 2.13, item 25 |
 | `?linkType=defaultLink` → 300 with an object | redirects to the default target | 2.5.8 |

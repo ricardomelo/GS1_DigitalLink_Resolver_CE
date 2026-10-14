@@ -28,6 +28,7 @@ o próximo começar.
 | 10 — tenants | 13/10 | ADR 0002, depois duas entregas de código (`1590b7e`, `675b6ca`), o commit de documentação e uma correção (`7c10048`) | item 2.4: organizações donas de prefixos de empresa GS1, o administrador do servidor, acesso de suporte, uma trilha de auditoria por organização, um e-mail por usuário |
 | 11 — uma fonte única para as regras GS1 | 13/10 | ADR 0003, depois três entregas de código (`8e3d9c7`, `6f6ce19`, `e7c5a6d`) e o commit de documentação | item 2.5: uma versão do engine para todos os serviços, chaves, qualificadores e formatos do GS1 Barcode Syntax Dictionary, as mensagens do engine traduzidas, uma verificação semanal de atualizações |
 | 12 — e-mail e a API das organizações | 14/10 | ADRs 0004 e 0005, uma correção do instalador (`f3d127d`), quatro entregas de código (`03c924b`, `fbe86f0`, `bb0b496`, `c469f29`) e dois commits de documentação | item 3.1: e-mail por um relay autenticado, convites, recuperação de senha por link de uso único, avisos de segurança e avisos de tarefas terminadas com preferências por usuário; item 3.2: uma API versionada para os sistemas das organizações, com chaves de API |
+| 13 — o registro de acessos | 14/10 | ADR 0006, duas entregas de código (`d633fcb`, `7b8967a`) e o commit de documentação | item 4.1: toda requisição de resolução registrada pelo Resolver sem dados pessoais, contagens diárias por chave, uma tela Acessos, as chamadas da API das organizações registradas |
 
 Ao fim da sessão 4, o fork altera ou acrescenta 70 arquivos do projeto oficial (cerca de 16.000 linhas
 acrescentadas) e é coberto por 739 verificações nos testes de desenvolvimento, além do teste do
@@ -465,6 +466,36 @@ esgotado. O teste no navegador achou dois defeitos antes da entrega: uma chave d
 catálogo (o cabeçalho de coluna "Criada" substituía a mensagem "Chave … criada"), agora recusada por um teste, e uma
 chave nova deixada na página depois de sair da tela, agora retirada. Ainda não confirmado na homologação nem no CI.
 
+## Sessão 13 — o registro das requisições ao Resolver (item 4.1)
+
+O responsável ainda não conseguia chegar à estação nem ao servidor, e pediu para seguir com o handover e entregar um
+bundle com tudo desde `fd8f67c`, escolhendo a opção recomendada em toda pergunta. Ele mandou o bundle da sessão 12 na
+conversa; a base sobre ele bateu com o fim da sessão 12 (1.743 verificações sem navegador, 465 no Chromium).
+
+Toda pergunta do [ADR 0006](adr/0006-registro-de-requisicoes.md) foi decidida pela opção recomendada: o próprio
+Resolver registra cada requisição, depois de responder, a partir do que a resolução sabe; nada que identifique o
+cliente (nenhum endereço, nem com hash; nenhum User-Agent, só uma classe de dispositivo; só o host de origem; só os AIs
+de números de série e atributos de dados); uma fila limitada e uma thread de gravação por processo; um banco próprio,
+`resolver_log`, legível pelo usuário do portal, com expiração por evento (90 dias); agregados diários por chave feitos
+pelo worker no fuso da instalação (800 dias); a posse derivada da parte da empresa na hora da consulta; os
+administradores do servidor veem a instalação inteira; as chamadas da API das organizações registradas pelo portal;
+três entregas.
+
+| Commit | Mudança |
+|---|---|
+| `e519771` | docs: ADR 0006 nos dois idiomas (etapa 1) |
+| `d633fcb` | etapa 2: `web_server/src/request_log.py` e os ganchos do Resolver; o papel de leitura no `db_init.py`; `portal/requestlog.py` (escopo, listagem, agregados na manutenção, chamadas da API); os endpoints do portal; o backup sem `resolver_log`; o fuso no instalador; `test_request_log.py`, `test_requestlog.py` |
+| `7b8967a` | etapa 3: a tela Acessos e a sua imagem, a seção 16 dos guias do usuário; `test_requests_e2e.py` |
+
+As respostas do Resolver tinham de ficar exatamente como eram, mas o registro precisa de dois fatos que só a
+resolução conhece: o nível do cadastro que respondeu e o motivo de um 404. O `web_logic` os devolve em chaves privadas
+dos seus resultados, que o `web_namespace` retira antes de responder; os testes comparam as respostas 404 e 300 com o
+formato oficial. O mongomock apaga, na leitura, documentos cuja data de TTL já passou, então um registro desligado por
+uma expiração de zero dias parecia vazio de qualquer jeito: a mutação "desligamento ignorado" escapou até o teste
+contar também o que o gravador gravou. Outra mutação que escapou mostrou um teste que procurava um padrão já escapado,
+que não acha nada com ou sem escape. O teste no navegador achou o novo item de menu fora da lista dos itens que fecham
+o menu. 26 mutações, todas pegas. Ainda não confirmado na homologação nem no CI.
+
 ## Como as principais áreas evoluíram
 
 | Área | 1.0.0 (sessão 1) | Agora |
@@ -473,12 +504,13 @@ chave nova deixada na página depois de sair da tela, agora retirada. Ainda não
 | Etiquetas | PNG/SVG, HRI sim/não, marca opcional | HRI completo/chave/nenhum, versão e correção do QR, atributos de dados, sem marca |
 | Achar cadastros | abrir um GTIN por vez | lista de registros, busca por texto, filtros por tipo de chave, qualificador, autor e problemas de link, busca por código, outros cadastros da chave |
 | Trabalho em lote | nenhum | exportação XLSX/CSV e importação em duas etapas |
+| Uso | nada registrado | toda requisição de resolução registrada sem dados pessoais, contagens diárias por chave, uma tela Acessos por escopo |
 | Integração | a API de cadastro oficial e o seu único token mestre | uma API versionada para os sistemas de cada organização, com chaves de API (escopos, prefixos, validade, um limite de requisições) e uma descrição OpenAPI |
 | Qualidade dos destinos | nenhuma | verificador de links no editor, em todos os cadastros e na importação |
 | Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, organizações (tenants) com usuários e auditoria próprios, um administrador do servidor com acesso de suporte, tela de usuários, senhas temporárias ou convites por e-mail, recuperação de senha por e-mail, avisos de segurança, histórico, auditoria, no banco próprio do portal |
 | Instalação | manual, com patch | fork git, configuração em camadas, instalador para Ubuntu, backup |
 | Resolução | GTIN e lote, links comprimidos do Digital Link 1.1 | todas as chaves e qualificadores, as regras do Resolver 1.2.1, EPC em binário de etiquetas NFC (`/eh…`, `/ex…`) |
-| Testes | 69 verificações | 1.958 verificações em 25 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador (84); rodam pelo pytest e no GitHub Actions, o portal e seus workers de tarefas também num MongoDB real |
+| Testes | 69 verificações | 2.133 verificações em 28 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador (87); rodam pelo pytest e no GitHub Actions, o portal e seus workers de tarefas também num MongoDB real |
 | Implantação | um contêiner por serviço, servidor embutido do Flask, proxy reiniciado à mão | quantas réplicas se queira dos quatro serviços sem estado (definidas no `.env`), gunicorn em todos os serviços web, um proxy que acompanha as réplicas pelo DNS do Docker |
 | Documentação | README do pacote, documento de passagem | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e português), documentação das extensões, changelog |
 
@@ -521,6 +553,9 @@ chave nova deixada na página depois de sair da tela, agora retirada. Ainda não
 15. Os sistemas das organizações usam a API versionada do próprio portal (`/portal/api/v1`) com chaves que os seus
     administradores criam; uma chave age como um usuário da sua organização agiria, sob todas as regras do portal;
     só o hash de uma chave é guardado ([ADR 0005](adr/0005-api-das-organizacoes.md)).
+16. O Resolver registra cada requisição que responde, em segundo plano e sem nada que identifique a pessoa que leu;
+    os eventos brutos expiram, as contagens diárias por chave ficam; de quem são os eventos é decidido na hora da
+    consulta, pela chave ([ADR 0006](adr/0006-registro-de-requisicoes.md)).
 
 ## Lições aprendidas
 
@@ -580,6 +615,9 @@ chave nova deixada na página depois de sair da tela, agora retirada. Ainda não
   mostrada uma vez ficava na página quando a visão mudava, até sair da visão passar a retirá-la.
 - Um catálogo de mensagens mantido à mão pode ter a mesma chave duas vezes, e a segunda vence em silêncio: um teste
   agora recusa isso.
+- Um substituto de teste pode fazer mais do que a peça real de um jeito que esconde um defeito: o mongomock apaga
+  documentos vencidos na leitura, então uma expiração de zero dias parecia um registro desligado. Confira o efeito em
+  si (o que foi gravado), não só o que uma consulta devolve.
 - Uma mutação que faz o código girar para sempre é pega (o teste não passa), mas pode parar um laço de mutações que
   espera por ela: dê a cada execução o seu próprio limite de tempo e trate o tempo esgotado como pego.
 
@@ -591,9 +629,13 @@ chave nova deixada na página depois de sair da tela, agora retirada. Ainda não
 - A verificação final do instalador usa só o `/portal/healthz`; deveria também pedir algo ao Resolver pelo
   proxy (item 7.2).
 - Uma cópia do backup fora do servidor e um ensaio de restauração.
-- Os itens 2.4, 2.5, 3.1 e 3.2 na homologação e no CI (sessões 10 a 12): faltam o push do responsável, o resumo do CI,
-  as conferências da atualização na homologação, a primeira execução da verificação semanal do engine, um primeiro
-  teste do e-mail com o Mailpit e depois com o relay da organização.
+- Os itens 2.4, 2.5, 3.1, 3.2 e 4.1 na homologação e no CI (sessões 10 a 13): faltam o push do responsável, o resumo do
+  CI, as conferências da atualização na homologação, a primeira execução da verificação semanal do engine, um primeiro
+  teste do e-mail com o Mailpit e depois com o relay da organização, e as primeiras requisições registradas na
+  homologação.
+- O `/heartbeat` do próprio Resolver responde 500 (código oficial: um recurso do Flask-RESTX devolve uma resposta do
+  `jsonify` dentro de uma tupla); a verificação de saúde do portal usa a da API de cadastro, então nada depende dele.
+  Candidato a uma correção pequena e a uma issue no projeto oficial.
 - Revisão dos 221 nomes de AIs em português e das mensagens do engine em português; decisão sobre o logotipo GS1
   na página inicial e nas páginas do Resolver.
 

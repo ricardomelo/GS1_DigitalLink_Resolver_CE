@@ -2,6 +2,31 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Log of resolver requests (backlog item 4.1)
+- **Architecture decision record** [ADR 0006](../adr/0006-resolver-request-log.md) (English and Portuguese): the
+  resolver records each resolution request itself, asynchronously and without personal data; raw events with an
+  expiry in a database of their own, daily aggregates per key by the worker, ownership derived at query time.
+  Commit `e519771`.
+- **The resolver's log** (step 2): each request for a GS1 Digital Link URI, a compressed one, an EPC binary string or
+  `?compress` becomes one event in `resolver_log.requests` — key and company part, qualifiers (only the AI of a serial
+  number or TPX), the AIs of data attributes (never their values), link type asked, outcome (`unknown` code and
+  `noLink` told apart) with the level that answered, target host, time taken, language, device class, referrer host,
+  optional country. Never the client's address, the User-Agent or the full referrer. A queue and a writer thread per
+  process: a scan never waits for the database; lost events are counted. **Deliberate change to the official
+  resolver**: two hooks and private keys in `web_logic`'s results, removed before answering, so answers are unchanged.
+  `RESOLVER_LOG_DAYS` (90; 0 switches it off), `RESOLVER_LOG_COUNTRY_HEADER`. Commit `d633fcb`.
+- **The log in the portal**: the portal's database user may read `resolver_log` (never write it); `/portal/api/requests`,
+  `requests.csv` (journalled as `requests-export`), `requests/daily`; each user sees the requests of the records in his
+  reach, a server administrator the whole installation. The worker counts each day per key into `request_daily`
+  (`PORTAL_TIME_ZONE`, which the installer writes from the server; `PORTAL_STATS_DAYS`, 800). The tenant API's calls
+  are recorded in `api_requests` (key, organisation, route template, status, time) and listed for administrators
+  (`/portal/api/requests/api`). The backup leaves `resolver_log` out; the portal's image gains `tzdata`. Commit `d633fcb`.
+- **Requests screen** (step 3, every user): the last 30 days as bars, the latest requests with filters, pages and a CSV
+  export, the tenant API's calls for administrators; user guides (new section 16) in both languages. Commit `7b8967a`.
+- **Tests**: `test_request_log.py` (73 checks), `test_requestlog.py` (74), `test_requests_e2e.py` (28); 26 mutations,
+  all caught; the installer test checks the time zone (87); `test_store_mongodb.py` checks the read-only role on the
+  log. Commits `d633fcb`, `7b8967a`.
+
 ### Tenant API and API keys (backlog item 3.2)
 - **Architecture decision record** [ADR 0005](../adr/0005-tenant-api.md) (English and Portuguese): a versioned API
   of the portal for organisations' own systems, keys owned by organisations and created by their administrators,

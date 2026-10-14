@@ -272,9 +272,12 @@ write_env() {
     env_line CERTBOT_EMAIL "${CERTBOT_EMAIL-}"
     env_line TLS_CERT_FILE "${TLS_CERT_FILE-}"
     env_line TLS_KEY_FILE "${TLS_KEY_FILE-}"
-    local key header=0
+    local key header=0 managed
+    # One space between the names: a name at the end of a line of MANAGED_KEYS is followed by a line break, and
+    # was copied again below with its old value (the last line of .env wins).
+    managed=" $(printf '%s ' $MANAGED_KEYS)"
     for key in "${EXISTING_ORDER[@]}"; do
-      [[ $MANAGED_KEYS == *" $key "* ]] && continue
+      [[ $managed == *" $key "* ]] && continue
       (( header )) || { printf '\n# Other settings kept from the previous .env\n'; header=1; }
       printf '%s\n' "${EXISTING_RAW[$key]}"
     done

@@ -155,6 +155,7 @@ sed -i "s/^WEB_SERVICE_REPLICAS=.*/WEB_SERVICE_REPLICAS='2'/" "$SB/repo/.env"
 : > "$SB/state/calls"
 run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org PORTAL_WORKER_REPLICAS=3; rc=$?
 check "B: exit status 0" "[[ $rc == 0 ]]"
+check "B: no setting written twice (the last line of .env would win)" "[[ -z \$(grep -oE '^[A-Z_]+=' $SB/repo/.env | sort | uniq -d) ]]"
 check "B: secrets kept" "[[ \$(envval SESSION_TOKEN) == $A_TOKEN && \$(envval MONGO_INITDB_ROOT_PASSWORD) == $A_PWD ]]"
 check "B: portal database password and session key kept" "[[ \$(envval PORTAL_DB_PASSWORD) == $A_PORTAL_DB && \$(envval PORTAL_SECRET_KEY) == $A_KEY ]]"
 check "B: settings kept from .env (operator)" "[[ \$(envval RESOLVER_ORG_NAME) == 'Example Org' ]]"

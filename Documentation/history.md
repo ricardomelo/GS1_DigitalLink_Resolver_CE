@@ -501,6 +501,16 @@ built into their browser. The portal, the resolver's pages, the home page and th
 Portuguese and British English, as before. The commits and sessions above that mention the Portuguese documents
 describe them as they were.
 
+## Session 14 — Claude Code cloud sessions
+
+From 14 October the work moves from a chat project, whose sandbox could not push and delivered bundles for the
+owner to apply and push, to Claude Code cloud sessions, which clone the fork and push to `gs1br/develop` themselves.
+The owner's handover still opens each session. `CLAUDE.md` now holds the conventions that can be public (language,
+commits, documents kept in step, tests), and a session start hook prepares the test environment the CI way; the
+whole battery passed in the session before the push. The engine's release tarball is refused by the session's
+proxy, so the hook builds the portal's engine from a git clone of the same release (`b9bd4ed`; 1,896 checks without a
+browser and 493 in Chromium in the session).
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -561,6 +571,8 @@ describe them as they were.
     key ([ADR 0006](adr/0006-resolver-request-log.md)).
 17. The documentation is written in British English only; the software's own texts (portal, resolver pages, home
     page, e-mail) stay in Brazilian Portuguese and British English.
+18. Development happens in Claude Code cloud sessions that push to `gs1br/develop` directly; `CLAUDE.md` holds the
+    conventions and a session start hook prepares the tests as the CI does.
 
 ## Lessons learnt
 
@@ -632,9 +644,8 @@ describe them as they were.
 - An off-server backup copy and a restore rehearsal.
 - Review of the 221 Portuguese AI names and of the Portuguese engine messages; decision on the GS1 logo on the
   home page and resolver pages.
-- Items 2.4, 2.5, 3.1, 3.2 and 4.1 on staging and in CI (sessions 10 to 13): the owner's push, the CI summary, the
-  staging checks of the update, the first run of the weekly update check, a first try of e-mail with Mailpit and then
-  with the organisation's relay, and the first requests logged on staging are pending.
+- Items 2.4, 2.5, 3.1, 3.2 and 4.1 were confirmed on staging and in CI on 14 October (session 13); a real e-mail
+  relay for staging and production is still to be set up.
 - The resolver's own `/heartbeat` answers 500 (official code: a Flask-RESTX resource returns a `jsonify` response
   inside a tuple); the portal's health check uses the data entry API's, so nothing depends on it. A candidate for a
   small fix and an issue upstream.

@@ -2,6 +2,14 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Development in Claude Code cloud sessions
+- `CLAUDE.md`: the repository's conventions (language, commits, documents kept in step, tests) for Claude Code.
+- `.claude/hooks/session-start.sh`, registered in `.claude/settings.json`: a cloud session installs the development
+  tests' pieces at the versions pinned in `.github/actions/dev-tests-setup/action.yml` into `~/.cache/dev-tests` and
+  exports the variables the programs read. The portal's GS1 Barcode Syntax Engine is built from a git clone of the
+  release, because the session's proxy refuses the release tarball; nginx 1.30 is built from source. Commits are
+  now pushed from the session itself, without bundles. **The software is unchanged.** Commit `b9bd4ed`.
+
 ### Documentation in English only
 - The Brazilian Portuguese documentation is removed: `Documentation/pt-BR/` (overview, user guide, features, history,
   developer guide, conformance review, ADRs 0001–0006) and the Portuguese screenshots

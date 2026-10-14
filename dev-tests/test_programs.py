@@ -58,6 +58,7 @@ PROGRAMS = [
     Program("data_entry_api", "resolver", "resolver/test_data_entry_api.py"),
     Program("keys", "portal", "portal/test_keys.py", ("GS1_SYNTAX_ENGINE",), ("node",)),
     Program("dictionary", "portal", "portal/test_dictionary.py", ("GS1_SYNTAX_ENGINE_DIR",)),
+    Program("engine_messages", "portal", "portal/test_engine_messages.py", ("GS1_SYNTAX_ENGINE_DIR",)),
     Program("governance", "portal", "portal/test_governance.py"),
     Program("sheet", "portal", "portal/test_sheet.py"),
     Program("special_chars", "portal", "portal/test_special_chars.py"),

@@ -1,9 +1,10 @@
 # Weekly check for a newer GS1 Barcode Syntax Engine (Documentation/adr/0003-gs1-rules-from-the-dictionary.md).
 #
 # When gs1/gs1-syntax-engine has a release newer than the one written in docker-compose.yml, this job uses it in
-# the runner's own copy of the repository: builds it, generates portal/gs1_dictionary.json from its dictionary,
-# compares that with the committed file, runs the portal's development tests against it, and opens an issue
-# saying what changed (one issue per release, never twice, even after it was closed). It never pushes: updating
+# the runner's own copy of the repository: builds it, generates portal/gs1_dictionary.json from its dictionary and
+# portal/engine_messages.json from its messages, compares them with the committed files, runs the portal's
+# development tests against them, and opens an issue saying what changed, messages without a translation included
+# (one issue per release, never twice, even after it was closed). It never pushes: updating
 # stays a reviewed change of x-gs1-syntax-engine and of the generated file.
 name: GS1 Barcode Syntax Engine update check
 
@@ -65,6 +66,7 @@ jobs:
           LATEST: ${{ steps.releases.outputs.latest }}
         run: |
           cp portal/gs1_dictionary.json "$RUNNER_TEMP/committed-dictionary.json"
+          cp portal/engine_messages.json "$RUNNER_TEMP/committed-messages.json"
           sed -i "s/^x-gs1-syntax-engine: .*/x-gs1-syntax-engine: \&gs1-syntax-engine \"$LATEST\"/" docker-compose.yml
           grep -n '^x-gs1-syntax-engine' docker-compose.yml
 
@@ -74,12 +76,15 @@ jobs:
           npm: "true"
           syntax-engine: "true"
 
-      - name: Compare the dictionaries
+      - name: Compare the dictionaries and the messages
         if: steps.releases.outputs.update == 'true'
         run: |
           python portal/tools/gen_dictionary.py "$GS1_SYNTAX_ENGINE_DIR"
           python portal/tools/dictionary_diff.py "$RUNNER_TEMP/committed-dictionary.json" portal/gs1_dictionary.json \
             > "$RUNNER_TEMP/summary.md"
+          python portal/tools/gen_engine_messages.py "$GS1_SYNTAX_ENGINE_DIR" \
+            --summary "$RUNNER_TEMP/committed-messages.json" >> "$RUNNER_TEMP/summary.md"
+          python portal/tools/gen_engine_messages.py "$GS1_SYNTAX_ENGINE_DIR"
           cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: The portal's development tests with the new release
@@ -118,7 +123,9 @@ jobs:
             echo
             echo "To update: change \`x-gs1-syntax-engine\` in \`docker-compose.yml\`, build the engine"
             echo "(\`portal/tools/build-syntax-engine.sh\`), regenerate \`portal/gs1_dictionary.json\` with"
-            echo "\`portal/tools/gen_dictionary.py\`, run every development test, then \`docker compose up -d --build\`."
+            echo "\`portal/tools/gen_dictionary.py\` and \`portal/engine_messages.json\` with"
+            echo "\`portal/tools/gen_engine_messages.py\`, translate the messages listed above in \`portal/static/i18n.js\`,"
+            echo "run every development test, then \`docker compose up -d --build\`."
             echo "See Documentation/adr/0003-gs1-rules-from-the-dictionary.md. Opened by the weekly update check ($RUN_URL)."
           } > "$RUNNER_TEMP/issue.md"
           gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/issue.md"

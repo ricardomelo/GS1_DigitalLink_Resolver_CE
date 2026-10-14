@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds the GS1 Barcode Syntax Engine (https://github.com/gs1/gs1-syntax-engine) for the portal:
-# the native library, its Python binding and the GS1 Barcode Syntax Dictionary of the same release.
+# the native library, its Python binding and the GS1 Barcode Syntax Dictionary of the same release, and the
+# sources of the engine's English messages (source/), from which the portal's translations are checked.
 # The portal uses them to validate GS1 Digital Link data attributes (portal/syntax.py).
 #
 #   portal/tools/build-syntax-engine.sh <destination directory> [release]
@@ -30,5 +31,8 @@ cp -L "$SRC/c-lib/build/libgs1encoders.so" "$DEST/libgs1encoders.so"
 cp "$SRC/contrib/python3/gs1encoders.py" "$DEST/gs1encoders.py"
 cp "$SRC/c-lib/gs1-syntax-dictionary.txt" "$DEST/gs1-syntax-dictionary.txt"
 cp "$WORK/gs1-syntax-engine-${RELEASE}/LICENSE" "$DEST/LICENSE"
+# the sources of the engine's messages, for portal/tools/gen_engine_messages.py (ADR 0003)
+mkdir -p "$DEST/source"
+cp "$SRC/c-lib/tr_EN.h" "$SRC/c-lib/syntax/gs1syntaxdictionary.c" "$SRC/c-lib/syntax/gs1syntaxdictionary.h" "$DEST/source/"
 echo "$RELEASE" > "$DEST/RELEASE"
 echo "GS1 Barcode Syntax Engine $RELEASE built in $DEST"

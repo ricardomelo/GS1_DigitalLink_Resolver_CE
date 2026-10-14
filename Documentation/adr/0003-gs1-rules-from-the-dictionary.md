@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (13 October 2026). To be implemented in four steps: 1 (this record), 2 (one engine release and the weekly check), 3 (rules generated from the dictionary), 4 (engine messages translated, new AIs named) |
+| Status | **Accepted** (13 October 2026) and **implemented** in four steps: 1 (this record), 2 (one engine release), 3 (rules generated from the dictionary, the weekly check), 4 (engine messages translated, new AIs named); see section 3.6 |
 | Backlog item | 2.5 — one source for the GS1 rules |
 | Decided by | the owner of the branch, on the options of section 4 (all four recommended) |
 | Portuguese | [ADR 0003 em português](../pt-BR/adr/0003-regras-gs1-do-dicionario.md) |
@@ -114,7 +114,7 @@ files into a work folder, compares them with the committed ones (`portal/tools/d
 portal group of the development tests against it, and opens an issue with the summary. Permissions: `contents:
 read`, `issues: write`. It never changes the branch.
 
-### 3.6 As implemented in steps 2 and 3
+### 3.6 As implemented
 
 - Step 2 put the release in `docker-compose.yml` and the build arguments in place; the weekly job came with step 3,
   because it needs the generator and the comparison (`portal/tools/dictionary_diff.py`), which also says whether the
@@ -129,6 +129,18 @@ read`, `issues: write`. It never changes the branch.
   one. The qualifiers' names in `QUALIFIER_FORMATS` are now the dictionary's titles (they are not shown).
 - Two keys' shapes are written differently and accept exactly the same records: 417 and 8004 were "alone, or with
   7040 required" and are now "7040 optional", as the dictionary writes them.
+- Step 4, the messages (section 3.4 as built): release 1.4.1 has 94 templates and 117 linters' messages, all
+  translated. The build script also copies the engine's message sources (`source/`) into the build. The parameters
+  are numbered (`{p1}`, `{p2}`… in the order of the template), not named, since a template does not say what each
+  one is; a linter's message, or another template's, inside a message is recognised as a message of its own
+  (`AI (17): The date contains an illegal month of the year.` → `engine.AI_LINTER_ERROR` with `p1` `17` and `p2`
+  `engine.lint.ILLEGAL_MONTH`), and the most specific template is tried first. The refusal keeps its code
+  `attr.invalid` and its English `detail`, and gains `message` (code and parameters); the browser shows the
+  translated text in place of `detail` (`i18n.js`). The association rules keep their own messages (`attr.requires`,
+  `attr.pair`, `attr.unknown`), which name the AI as the user chose it. The recogniser is `portal/engine_messages.py`;
+  `gen_engine_messages.py --summary` gives the weekly issue the messages that need a translation.
+- The new AIs got Portuguese names (221 named in all); being neither data attributes nor qualifiers in 1.4.1, they
+  appear only where a message names them.
 
 ## 4. Options considered
 

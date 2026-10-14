@@ -117,8 +117,11 @@ portal/                          new: the link management portal
   static/                        index.html, login.html, app.js, login.js, password.js, i18n.js, app.css
   gs1dict.py                     the GS1 Barcode Syntax Dictionary: parser, gs1_dictionary.json reader (ADR 0003)
   gs1_dictionary.json            the dictionary of the engine release in docker-compose.yml, generated
-  tools/build-syntax-engine.sh   builds the engine (C library + Python binding)
+  engine_messages.py             recognises the engine's messages as message codes (translated in i18n.js)
+  engine_messages.json           the engine's message templates and linters' messages, generated
+  tools/build-syntax-engine.sh   builds the engine (C library + Python binding, dictionary, message sources)
   tools/gen_dictionary.py        writes (or --check) gs1_dictionary.json from an engine build
+  tools/gen_engine_messages.py   writes (or --check, --summary) engine_messages.json from an engine build
   tools/dictionary_diff.py       what changes between two generated dictionaries (the weekly issue)
   assets/fonts/                  Liberation Sans for the label text (OFL)
   Dockerfile, requirements.txt
@@ -275,6 +278,10 @@ attributes allowed in a query string (AIs flagged `?`), the families of decimal 
 converts `123,45` for a family; `digital_link()` checks the attributes of a record (day 00, duplicates,
 AIs of the path refused, then the engine's own linters and association rules) and returns the URI and the
 HRI lines, or raises `ValidationError` with a message code. Calls to the engine are serialised by a lock.
+The engine's other refusals are `attr.invalid` with its English text in `detail` and, when
+`engine_messages.recognise()` knows the text, `message`: `{code: "engine.<CODE>", params: {p1, p2…}}`, a linter's
+message inside it being `engine.lint.<CODE>`. `i18n.js` holds both languages of every engine message (the English
+one is the engine's text) and shows the translation in place of `detail`.
 
 ### `label.py` — QR code labels
 
@@ -547,7 +554,8 @@ run against it. Setup and commands are in
 | `resolver/test_epc_binary.py` | 163 | EPC binary decoder: EPCB examples, every vector of TDS 2.3 annex E.3 (`eh` and `ex`), +AIDC data, `++` hostnames, refusals, RE3, TDT artefacts against their schema; 800 random EPCs against `epc-tds` when `EPC_TDS` is set (162 without) |
 | `resolver/test_gs1_suite.py` | 215 | GS1's resolver test suite, its JavaScript unchanged in Chromium, against the web server code over HTTP; a Python version of its `tester.php`; seven scenarios; needs `GS1_RESOLVER_TESTSUITE` and `AJV_DIST` (skipped without) |
 | `resolver/test_data_entry_api.py` | 53 | token on every protected operation; registration rules of §2.5.9 and informative qualifiers |
-| `portal/test_dictionary.py` | 29 | the GS1 rules from the dictionary (ADR 0003): `gs1_dictionary.json` exactly what the pinned release's dictionary gives, the parser, keys, shapes, order and formats built from it with the portal's exceptions, a longer format or a new key handled with no code, an unknown linter or shape stopping the build, the rules sent to the browser, AIs (7041) and (8040)–(8043), the comparison of the weekly issue |
+| `portal/test_dictionary.py` | 30 | the GS1 rules from the dictionary (ADR 0003): `gs1_dictionary.json` exactly what the pinned release's dictionary gives, the parser, keys, shapes, order and formats built from it with the portal's exceptions, a longer format or a new key handled with no code, an unknown linter or shape stopping the build, the rules sent to the browser, AIs (7041) and (8040)–(8043) and their Portuguese names, the comparison of the weekly issue |
+| `portal/test_engine_messages.py` | 26 | the engine's messages (ADR 0003): `engine_messages.json` exactly what the pinned release's sources give, both languages of every message with the same parameters (the English one the engine's text), every message and linter's message recognised as itself, the portal's refusals carrying the message, the comparison of the weekly issue |
 | `portal/test_keys.py` | 138 | keys and qualifiers, compared with the GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | roles, prefixes, users, history, audit |
 | `portal/test_sheet.py` | 43 | spreadsheets, limits per format |
@@ -631,11 +639,14 @@ annex E vector to `test_epc_binary.py`.
 
 **The syntax engine.** The weekly job *GS1 Barcode Syntax Engine update check*
 (`.github/workflows/engine-update.yml`) opens an issue when a newer release exists, with what changes in the
-dictionary and the portal's test results. To update, change the release in one place, `x-gs1-syntax-engine` in
-`docker-compose.yml`; build the engine (`portal/tools/build-syntax-engine.sh <dir>`), regenerate the dictionary
-(`python portal/tools/gen_dictionary.py <dir>`), run every test, commit both; on the server `docker compose up -d
---build`. Every image, the build script, CI and the tests follow the one release (`test_deploy.py` fails when
-something holds a release of its own; `test_dictionary.py` when the file was made from another).
+dictionary, the engine messages that need a translation and the portal's test results. To update, change the
+release in one place, `x-gs1-syntax-engine` in `docker-compose.yml`; build the engine
+(`portal/tools/build-syntax-engine.sh <dir>`), regenerate the dictionary (`python portal/tools/gen_dictionary.py
+<dir>`) and the messages (`python portal/tools/gen_engine_messages.py <dir>`), add the new or changed messages to
+both languages of `i18n.js` (`engine.*`; the English one is the engine's text, parameters as `{p1}`, `{p2}`…), run
+every test, commit; on the server `docker compose up -d --build`. Every image, the build script, CI and the tests
+follow the one release (`test_deploy.py` fails when something holds a release of its own; `test_dictionary.py` and
+`test_engine_messages.py` when a file was made from another or a message has no translation).
 
 ## 15. Conventions
 

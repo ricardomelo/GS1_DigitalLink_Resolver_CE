@@ -25,6 +25,7 @@ import re
 import sys
 import threading
 
+import engine_messages
 import gs1
 import gs1dict
 from gs1 import ValidationError
@@ -198,7 +199,9 @@ def _engine_error(message: str, markup: str, chosen: dict[str, str]) -> Validati
     """The engine's refusal. The association rules of the General Specifications, which users meet most
     (a price needs a quantity or measure; two weights of different precision cannot go together), get
     messages of their own in the user's language, naming the AIs as the user chose them ("392n", not
-    "3920"). Other refusals (a check digit, a date, a code list) keep the engine's precise English text."""
+    "3920"). Other refusals (a check digit, a date, a code list) are attr.invalid with the engine's English text
+    in "detail" and, when it is one of the engine's messages, its code and parameters in "message"
+    (engine_messages.py), which the browser shows in the user's language instead."""
     shown = lambda ai: chosen.get(ai, ai)                      # noqa: E731
     if match := _REQUIRES.match(message):
         # "31nn" in the engine's list stands for the families 310n-316n; the portal writes "31nn" as well
@@ -207,7 +210,10 @@ def _engine_error(message: str, markup: str, chosen: dict[str, str]) -> Validati
         return ValidationError("attr.pair", ai=shown(match.group(1)), other=shown(match.group(2)))
     if match := _NOT_ATTRIBUTE.match(message):
         return ValidationError("attr.unknown", ai=shown(match.group(1)))
-    return ValidationError("attr.invalid", detail=message, markup=markup)
+    recognised = engine_messages.recognise(message)
+    if recognised is None:
+        return ValidationError("attr.invalid", detail=message, markup=markup)
+    return ValidationError("attr.invalid", detail=message, markup=markup, message=recognised)
 
 
 def _refuse_day_zero(ai: str, value: str, components: list[dict]) -> None:

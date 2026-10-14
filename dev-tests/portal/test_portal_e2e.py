@@ -522,6 +522,11 @@ with sync_playwright() as p:
         check("invalid date refused by the engine", "illegal month" in page.inner_text("#attr-msg"), page.inner_text("#attr-msg"))
         check("nothing downloadable while attributes are wrong", page.get_attribute("#download-png", "href") is None
               and page.is_disabled("#copy") and "Correct the attributes" in page.inner_text("#qr"))
+        page.select_option("#locale", "pt-BR"); page.wait_for_timeout(900)      # the preview is checked again
+        check("the engine's message in Portuguese (engine.AI_LINTER_ERROR with engine.lint.ILLEGAL_MONTH)",
+              page.inner_text("#attr-msg") == "O GS1 Barcode Syntax Engine recusou os atributos: AI (17): A data tem um mês inválido.",
+              page.inner_text("#attr-msg"))
+        page.select_option("#locale", "en-GB"); page.wait_for_timeout(900)
         page.fill(f"{first} .attr-value", "261231"); page.wait_for_timeout(900)
         check("valid attribute accepted", "1 attribute(s) checked" in page.inner_text("#attr-msg"), page.inner_text("#attr-msg"))
         check("preview shows the query string", page.inner_text("#dl").endswith("/21/S1?17=261231")

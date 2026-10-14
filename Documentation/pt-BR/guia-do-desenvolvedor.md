@@ -120,8 +120,11 @@ portal/                          novo: o portal de gestão de links
   static/                        index.html, login.html, app.js, login.js, password.js, i18n.js, app.css
   gs1dict.py                     o GS1 Barcode Syntax Dictionary: leitor do texto e do gs1_dictionary.json (ADR 0003)
   gs1_dictionary.json            o dicionário da versão do engine no docker-compose.yml, gerado
-  tools/build-syntax-engine.sh   compila o engine (biblioteca C + binding Python)
+  engine_messages.py             reconhece as mensagens do engine como códigos de mensagem (traduzidos no i18n.js)
+  engine_messages.json           os modelos de mensagem do engine e as mensagens dos linters, gerado
+  tools/build-syntax-engine.sh   compila o engine (biblioteca C + binding Python, dicionário, fontes das mensagens)
   tools/gen_dictionary.py        escreve (ou confere com --check) o gs1_dictionary.json a partir de um engine
+  tools/gen_engine_messages.py   escreve (ou confere com --check, compara com --summary) o engine_messages.json
   tools/dictionary_diff.py       o que muda entre dois dicionários gerados (a issue semanal)
   assets/fonts/                  Liberation Sans para o texto da etiqueta (OFL)
   Dockerfile, requirements.txt
@@ -281,7 +284,10 @@ monta os atributos permitidos na query string (AIs marcados com `?`), as famíli
 `/config`; `resolve_decimal()` converte `123,45` numa família; `digital_link()` confere os atributos de um
 cadastro (dia 00, repetidos, AIs do caminho recusados, depois os linters e as regras de associação do
 próprio engine) e devolve a URI e as linhas de HRI, ou lança `ValidationError` com um código de mensagem.
-As chamadas ao engine são serializadas por um lock.
+As chamadas ao engine são serializadas por um lock. As demais recusas do engine são `attr.invalid` com o texto em
+inglês em `detail` e, quando o `engine_messages.recognise()` conhece o texto, `message`: `{code: "engine.<CODE>",
+params: {p1, p2…}}`, sendo a mensagem de um linter dentro dela `engine.lint.<CODE>`. O `i18n.js` tem os dois idiomas
+de toda mensagem do engine (a inglesa é o texto do engine) e mostra a tradução no lugar do `detail`.
 
 ### `label.py` — etiquetas com QR Code
 
@@ -567,7 +573,8 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `resolver/test_epc_binary.py` | 163 | decodificador de EPC em binário: exemplos do EPCB, todos os vetores do anexo E.3 do TDS 2.3 (`eh` e `ex`), dados +AIDC, hostnames `++`, recusas, RE3, artefatos do TDT contra o seu schema; 800 EPCs aleatórios comparados com o `epc-tds` quando `EPC_TDS` está definido (162 sem ele) |
 | `resolver/test_gs1_suite.py` | 215 | suíte de testes de Resolver da GS1, com o JavaScript sem alteração no Chromium, contra o código do web server por HTTP; uma versão em Python do seu `tester.php`; sete cenários; precisa de `GS1_RESOLVER_TESTSUITE` e `AJV_DIST` (pulado sem eles) |
 | `resolver/test_data_entry_api.py` | 53 | token em toda operação protegida; regras de cadastro do §2.5.9 e qualificadores informativos |
-| `portal/test_dictionary.py` | 29 | as regras GS1 do dicionário (ADR 0003): o `gs1_dictionary.json` exatamente o que o dicionário da versão fixada dá, o leitor, chaves, formas, ordem e formatos montados dele com as exceções do portal, um formato maior ou uma chave nova sem código, um linter ou forma desconhecidos parando a montagem, as regras enviadas ao navegador, os AIs (7041) e (8040)–(8043), a comparação da issue semanal |
+| `portal/test_dictionary.py` | 30 | as regras GS1 do dicionário (ADR 0003): o `gs1_dictionary.json` exatamente o que o dicionário da versão fixada dá, o leitor, chaves, formas, ordem e formatos montados dele com as exceções do portal, um formato maior ou uma chave nova sem código, um linter ou forma desconhecidos parando a montagem, as regras enviadas ao navegador, os AIs (7041) e (8040)–(8043) e seus nomes em português, a comparação da issue semanal |
+| `portal/test_engine_messages.py` | 26 | as mensagens do engine (ADR 0003): o `engine_messages.json` exatamente o que as fontes da versão fixada dão, os dois idiomas de toda mensagem com os mesmos parâmetros (a inglesa é o texto do engine), toda mensagem e mensagem de linter reconhecida como ela mesma, as recusas do portal levando a mensagem, a comparação da issue semanal |
 | `portal/test_keys.py` | 138 | chaves e qualificadores, comparados com o GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | perfis, prefixos, usuários, histórico, auditoria |
 | `portal/test_sheet.py` | 43 | planilhas, limites por formato |
@@ -651,13 +658,15 @@ TDS 14.5 que `_component()` não conheça; um esquema `++`, só de uma entrada e
 não tiver artefato para ele. Acrescente o vetor do anexo E do TDS ao `test_epc_binary.py`.
 
 **O syntax engine.** A tarefa semanal *GS1 Barcode Syntax Engine update check*
-(`.github/workflows/engine-update.yml`) abre uma issue quando há versão mais nova, com o que muda no dicionário e o
-resultado dos testes do portal. Para atualizar, mude a versão num lugar só, `x-gs1-syntax-engine` no
-`docker-compose.yml`; compile o engine (`portal/tools/build-syntax-engine.sh <pasta>`), regenere o dicionário
-(`python portal/tools/gen_dictionary.py <pasta>`), rode todos os testes e faça o commit dos dois; no servidor,
-`docker compose up -d --build`. Toda imagem, o script de build, o CI e os testes seguem a versão única (o
-`test_deploy.py` falha quando algo guarda uma versão própria; o `test_dictionary.py`, quando o arquivo foi feito de
-outra).
+(`.github/workflows/engine-update.yml`) abre uma issue quando há versão mais nova, com o que muda no dicionário, as
+mensagens do engine que precisam de tradução e o resultado dos testes do portal. Para atualizar, mude a versão num
+lugar só, `x-gs1-syntax-engine` no `docker-compose.yml`; compile o engine (`portal/tools/build-syntax-engine.sh
+<pasta>`), regenere o dicionário (`python portal/tools/gen_dictionary.py <pasta>`) e as mensagens (`python
+portal/tools/gen_engine_messages.py <pasta>`), acrescente as mensagens novas ou alteradas aos dois idiomas do
+`i18n.js` (`engine.*`; a inglesa é o texto do engine, com os parâmetros como `{p1}`, `{p2}`…), rode todos os testes
+e faça o commit; no servidor, `docker compose up -d --build`. Toda imagem, o script de build, o CI e os testes seguem
+a versão única (o `test_deploy.py` falha quando algo guarda uma versão própria; o `test_dictionary.py` e o
+`test_engine_messages.py`, quando um arquivo foi feito de outra versão ou falta a tradução de uma mensagem).
 
 ## 15. Convenções
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Situação | **Aceito** (13 de outubro de 2026). A implementar em quatro etapas: 1 (este registro), 2 (uma versão do motor e a verificação semanal), 3 (regras geradas do dicionário), 4 (mensagens do motor traduzidas, AIs novos nomeados) |
+| Situação | **Aceito** (13 de outubro de 2026) e **implementado** em quatro etapas: 1 (este registro), 2 (uma versão do motor), 3 (regras geradas do dicionário, a verificação semanal), 4 (mensagens do motor traduzidas, AIs novos nomeados); veja a seção 3.6 |
 | Item do backlog | 2.5 — uma fonte única para as regras GS1 |
 | Decidido por | o responsável pelo branch, sobre as opções da seção 4 (as quatro recomendadas) |
 | Inglês | [ADR 0003 in English](../../adr/0003-gs1-rules-from-the-dictionary.md) (versão de referência) |
@@ -118,7 +118,7 @@ regenera os dois arquivos numa pasta de trabalho, compara com os do repositório
 (`portal/tools/dictionary_diff.py`), roda o grupo portal dos testes de desenvolvimento com ela e abre uma issue com
 o resumo. Permissões: `contents: read`, `issues: write`. Nunca altera o branch.
 
-### 3.6 Como implementado nas etapas 2 e 3
+### 3.6 Como implementado
 
 - A etapa 2 pôs a versão no `docker-compose.yml` e os argumentos de build no lugar; a tarefa semanal veio com a
   etapa 3, porque precisa do gerador e da comparação (`portal/tools/dictionary_diff.py`), que também diz se o portal
@@ -135,6 +135,19 @@ o resumo. Permissões: `contents: read`, `issues: write`. Nunca altera o branch.
   dicionário (não aparecem na tela).
 - As formas de duas chaves ficaram escritas de outro jeito e aceitam exatamente os mesmos cadastros: 417 e 8004
   eram "sozinhas, ou com 7040 obrigatório" e agora são "7040 opcional", como o dicionário escreve.
+- Etapa 4, as mensagens (a seção 3.4 como construída): a versão 1.4.1 tem 94 modelos e 117 mensagens de linters,
+  todos traduzidos. O script de build também copia as fontes das mensagens do motor (`source/`) para a compilação.
+  Os parâmetros são numerados (`{p1}`, `{p2}`… na ordem do modelo), não nomeados, porque um modelo não diz o que
+  cada um é; a mensagem de um linter, ou de outro modelo, dentro de uma mensagem é reconhecida como mensagem própria
+  (`AI (17): The date contains an illegal month of the year.` → `engine.AI_LINTER_ERROR` com `p1` `17` e `p2`
+  `engine.lint.ILLEGAL_MONTH`), e o modelo mais específico é tentado primeiro. A recusa mantém o código
+  `attr.invalid` e o `detail` em inglês, e ganha `message` (código e parâmetros); o navegador mostra o texto
+  traduzido no lugar do `detail` (`i18n.js`). As regras de associação mantêm as mensagens próprias
+  (`attr.requires`, `attr.pair`, `attr.unknown`), que dão o nome do AI como o usuário o escolheu. Quem reconhece é o
+  `portal/engine_messages.py`; o `gen_engine_messages.py --summary` dá à issue semanal as mensagens que precisam de
+  tradução.
+- Os AIs novos ganharam nomes em português (221 nomeados ao todo); como na 1.4.1 não são atributos de dados nem
+  qualificadores, só aparecem onde uma mensagem os cita.
 
 ## 4. Opções consideradas
 

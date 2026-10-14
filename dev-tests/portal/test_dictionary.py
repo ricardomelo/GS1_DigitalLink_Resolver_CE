@@ -8,8 +8,8 @@ its issue.
   GS1_SYNTAX_ENGINE_DIR=<engine build> python dev-tests/portal/test_dictionary.py
 """
 import copy
-import json
 import os
+import re
 import subprocess
 import sys
 
@@ -149,6 +149,11 @@ check("digits-only keys drop the separators people type (from the checks, not a 
 check("(7041) and (8040)-(8043) are in the dictionary, none of them a data attribute, key or qualifier",
       all(c in AIS and "?" not in AIS[c]["flags"] and "dlpkey" not in AIS[c] and c not in gs1.QUALIFIER_ORDER
           for c in ("7041", "8040", "8041", "8042", "8043")) and AIS["8040"]["title"] == "IMEI")
+pt_block = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read().split('\n    "en-GB": {')[0]
+pt_names = dict(re.findall(r'^      "ai\.(\w+)": "([^"]+)"', pt_block, re.M))
+check("…and named in Portuguese beside the other AIs the portal names (English uses the dictionary's titles)",
+      all(pt_names.get(c) for c in ("7041", "8040", "8041", "8042", "8043")) and len(pt_names) == 221,
+      (len(pt_names), {c: pt_names.get(c) for c in ("7041", "8040", "8041", "8042", "8043")}))
 
 # ------------------------------------------------------------------ the comparison of the weekly update check
 newer = copy.deepcopy(DATA)

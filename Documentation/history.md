@@ -578,6 +578,25 @@ found three things on the way: an automated client's views and clicks would have
 (it gets its own); and the resolver's pages load Google's web fonts, which on a page every scan reaches would tell a
 third party about each scan — the item's page now loads none (the other resolver pages are unchanged).
 
+**Item 7.2, production readiness**, the parts that are code (the owner away; recommended options). The backup copies
+each run off the server when `BACKUP_COPY_TO` names an rsync destination, and a copy that fails fails the run so that
+the monitoring says so; `scripts/restore-rehearsal.sh` restores an archive into a throw-away container of the
+database's own image, without network, and sets its counts next to the live ones; `scripts/rotate-secrets.sh` gives
+the installer's secrets new values, MongoDB's root password changed in the database first and handed to `mongosh` on
+standard input; the installer's final check now tries a scan of GS1's example GTIN through the whole chain and the
+portal over the public address; a production checklist. Commit `449edef`: `test_deploy.py` 97, `test_install.sh` 91,
+13 mutations caught. What remains of the item happens on the servers: a clean installation, the copy's destination,
+a rehearsal, the staging secrets rotated.
+
+**Item 7.4, load test**: the script (`dev-tests/load/load_test.py`, standard library only, an open model of arrivals,
+a mix of scans, linksets and item pages, percentiles and thresholds; its User-Agent counted as automated) and the
+procedure of the rehearsal; the rehearsal itself needs the staging server. Commit `37c5664`: `test_load.py` (17) against
+a stand-in server; a mutation of the percentile's rounding escaped at first and the test gained a check.
+
+**Item 7.3, default titles in the link's language** (finding F21): Portuguese for links in Portuguese, English
+otherwise, a typed title kept, the portal's own titles shown empty so that they follow a change of language. Commit
+`266dcf3`: `test_titles.py` (11). The rest of 7.3 (the Portuguese AI names, the logo) waits for the owner's review.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

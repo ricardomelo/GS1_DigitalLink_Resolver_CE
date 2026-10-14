@@ -61,9 +61,10 @@ The review describes the branch at `115a054`. Findings fixed since, with the com
 | F17 | Fixed (item 1.5): JSON-LD in the HTML page; HTML without an `Accept` header | `4f81234` |
 | F18 | Fixed (item 1.5): links without a media type handled | `4f81234` |
 | F19 | Fixed (item 1.5): q-values and RFC 4647 lookup | `4f81234` |
+| F21 | Fixed (item 7.3): a link without a title gets its type's title in the link's language (Portuguese, else English) | `266dcf3` |
 | F22 | Settled (item 1.4, owner's decision): GS1's test suite accepts either namespace; linksets and the JSON-LD context now write `gs1:` link types in `https://ref.gs1.org/voc/` as 2.14 defines it; stored documents unchanged (section 8) | `bc573c4` |
 
-Still open: F20 and F23 (errata E2 and E4), F21 (item 7.3).
+Still open: F20 and F23 (errata E2 and E4).
 
 ## 2. Method
 
@@ -315,7 +316,7 @@ for AI (22) are not satisfied: 01". The resolver therefore answers 400, and the 
 ITIP (decision of `67d40bb`). The behaviour follows the GS1 General Specifications; the standards disagree
 with each other. **Action: erratum E2** (item 8.1); no code change.
 
-### F21 — Default titles are in English (Resolver 2.5.3) — partly
+### F21 — Default titles are in English (Resolver 2.5.3) — fixed (item 7.3, `266dcf3`)
 
 A blank title becomes the vocabulary title in English (`LINK_TYPE_DEFAULT_TITLES`), whatever the language of
 the link; 2.5.3 says the title SHOULD be in the language of the target. Side: registration. **Action: item

@@ -98,6 +98,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Confirmation on *Open record* | Asks before discarding unsaved changes, also after the key or qualifiers changed | `3a49ca9` |
 | Singular wording | "This identifier has one other record" | `d11c369` |
 | Read-only mode | Readers see every field disabled and a note | `71b15f2` |
+| Default titles in the link's language | A link without a title gets its type's title in Portuguese or English, as the link's language (GS1-Conformant Resolver 2.5.3) | `266dcf3` |
 
 ## Portal: identification keys and qualifiers
 
@@ -270,6 +271,11 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Health check | `/portal/healthz`, with the job worker (`worker`: `ok` or `unavailable`) and e-mail (`mail`: `on` or `off`); the installer warns when the worker does not report | `126f507`, `a072e9d`, `03c924b` |
 | E-mail relay | Messages through an authenticated SMTP relay (587 STARTTLS or 465 TLS, certificate verified), sent and retried by the worker; settings in `.env`, asked by the installer; `python mail.py test <address>`; a Mailpit service (profile `mail-test`) for trying it | `03c924b` |
 | One engine release | The GS1 Barcode Syntax Engine release is written once, in `docker-compose.yml` (`x-gs1-syntax-engine`), and used by the resolver, the data entry API, the portal, CI and the tests | `8e3d9c7` |
+| Off-server backup copy | Each daily backup copied to `BACKUP_COPY_TO` (rsync); a failed copy fails the run and alerts | `449edef` |
+| Restore rehearsal | `scripts/restore-rehearsal.sh`: an archive restored into a throw-away container, its counts next to the live database's | `449edef` |
+| Secret rotation | `scripts/rotate-secrets.sh`: new API token, session key and database passwords, MongoDB's changed in the database first, nothing printed | `449edef` |
+| Installer's final checks | The home page, the description file, a scan of GS1's example GTIN through the proxy and the portal over the public address | `449edef` |
+| Load test | `dev-tests/load/load_test.py`: a steady rate of scans, linksets and item pages with response-time percentiles and pass/fail thresholds | `37c5664` |
 | `portal-worker` service | The portal's image running the job worker; `PORTAL_WORKER=embedded` runs it as a thread of the portal for a set-up without the service | `a072e9d` |
 
 ## Development tests and documentation

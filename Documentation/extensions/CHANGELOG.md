@@ -2,6 +2,27 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Default link titles in the link's language (backlog item 7.3, conformance review F21)
+- A link saved without a title gets its type's title in Portuguese when the link is in Portuguese, in English
+  otherwise (was: English always); the editor shows a title the portal gave as empty, so that it follows a change of
+  language. Commit `266dcf3`.
+
+### Load test script (backlog item 7.4)
+- `dev-tests/load/load_test.py`: scans at a steady rate with a mix of phones' scans, apps' linksets and item pages;
+  answers, errors and response times with pass/fail thresholds; the procedure of a scale-out rehearsal in the
+  extensions documentation. Commit `37c5664`.
+
+### Production readiness (backlog item 7.2)
+- **Off-server copy** of each daily backup to `BACKUP_COPY_TO` (rsync); a failed copy fails the run and is recorded for
+  the monitoring. Commit `449edef`.
+- **`scripts/restore-rehearsal.sh`**: restores an archive into a throw-away container of the database's image and
+  compares the counts with the live database. Commit `449edef`.
+- **`scripts/rotate-secrets.sh`**: new values for the API token, the portal's session key, the portal's database
+  password and MongoDB's root password (changed in the database first), never printed. Commit `449edef`.
+- **Installer**: the final checks also request a scan through the proxy and the portal over the public address.
+  Commit `449edef`.
+- A production checklist in the extensions documentation. Commit `449edef`.
+
 ### The item's page and Verified by GS1 (backlog items 6.1 and 6.2)
 - **Architecture decision record** [ADR 0011](../adr/0011-item-page.md).
 - **The item's page** (resolver; deliberate change to the official linkset page for browsers): the item's description

@@ -140,7 +140,7 @@ def _lines(output: str, prefix: str) -> list[str]:
     "program",
     [pytest.param(p, id=p.name, marks=getattr(pytest.mark, p.group)) for p in PROGRAMS],
 )
-def test_program(program: Program, check_counts):
+def test_program(program: Program, check_counts, failure_notes):
     missing = _missing(program)
     if missing and STRICT:
         pytest.fail(f"{program.name}: " + "; ".join(missing) + " (DEV_TESTS_STRICT is set)", pytrace=False)
@@ -162,6 +162,7 @@ def test_program(program: Program, check_counts):
     if run.returncode != 0 or failed:
         tail = "\n".join(output.splitlines()[-30:])
         report = "\n".join(failed[:50]) or "(no FAIL line)"
+        failure_notes[program.name] = failed[:20] or output.splitlines()[-15:]
         pytest.fail(f"{program.name}: exit status {run.returncode}, {len(failed)} failed check(s)\n"
                     f"{report}\n--- end of the output ---\n{tail}", pytrace=False)
     if skipped and STRICT:

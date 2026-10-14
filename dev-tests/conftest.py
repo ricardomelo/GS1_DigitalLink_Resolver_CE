@@ -27,18 +27,30 @@ GROUPS = {
 }
 
 _CHECKS = pytest.StashKey[dict]()
+_FAILURES = pytest.StashKey[dict]()
 
 
 def pytest_configure(config):
     for name, text in GROUPS.items():
         config.addinivalue_line("markers", f"{name}: {text}")
     config.stash[_CHECKS] = {}
+    config.stash[_FAILURES] = {}
 
 
 @pytest.fixture
 def check_counts(request):
     """Where each program run records (passed, failed, skipped parts) for the summary."""
     return request.config.stash[_CHECKS]
+
+
+@pytest.fixture
+def failure_notes(request):
+    """Where each failed program run records its FAIL lines (GitHub annotations, below)."""
+    return request.config.stash[_FAILURES]
+
+
+def _annotation(text: str) -> str:
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
@@ -69,3 +81,9 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         title = os.environ.get("DEV_TESTS_TITLE", "Development test checks")
         with open(summary, "a", encoding="utf-8") as out:
             out.write(f"### {title}\n\n" + "\n".join(rows) + "\n\n")
+
+    # And each failed program as an annotation of the job: the API gives annotations to whoever can read the
+    # repository, also where the logs cannot be downloaded (a cloud session behind a proxy).
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        for name, lines in list(config.stash.get(_FAILURES, {}).items())[:10]:
+            terminalreporter.write_line(f"::error title=dev-tests {name}::" + _annotation("\n".join(lines)[:3000]))

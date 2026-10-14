@@ -939,7 +939,8 @@ Markers group them: `resolver` (resolver, EPC binary, data entry, GS1 suite, the
 without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`, `test_requests_e2e.py`, `test_overview_e2e.py`, `test_domains_e2e.py`, `test_item_page_e2e.py`, `test_sso_e2e.py`), `home`,
 `install` (the installer through password-less `sudo` when not root, and `test_deploy.py`), `database` (`test_store_mongodb.py`). `dev-tests/conftest.py` keeps the programs from
 being imported by pytest, registers the markers and prints the check counts of each program at the end (and
-in the GitHub Actions run summary). With `DEV_TESTS_STRICT=1` a program fails when an environment variable
+in the GitHub Actions run summary; on GitHub each failed program's `FAIL` lines also become an annotation of
+the job, which the API gives where the logs cannot be downloaded). With `DEV_TESTS_STRICT=1` a program fails when an environment variable
 it needs is not set or names a missing path (`needs_env`), when a variable that is not a path is not set
 (`needs_var`), when a command it needs is not on the PATH, or when it prints `SKIP`. To add a program: write
 it with `PASS`/`FAIL` lines and an exit status, add a `Program(...)` line to `PROGRAMS` (group, path, the

@@ -208,6 +208,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Daily counts | Requests per key and day, with outcomes, devices, languages, link types and times, counted hourly by the worker in the installation's time zone, kept 800 days | `d633fcb` |
 | Requests screen | Every user: the last 30 days as bars, the latest requests of the codes in his reach with filters and a CSV export; the server administrator sees the whole installation with the organisation of each request | `7b8967a` |
 | Tenant API calls | Each call of `/portal/api/v1` recorded (key, organisation, operation, status, time) and listed for administrators | `d633fcb`, `7b8967a` |
+| Overview after sign-in | Indicators of the user's scope for 7, 30 or 90 days against the period before: usage, resolution quality with the scanned codes nobody registered first, record quality, operation and governance; Excel and CSV exports ([ADR 0007](adr/0007-overview-indicators.md)) | `16ceb9f` |
+| Statistics through the tenant API | `GET /portal/api/v1/stats` with the scope `stats:read`: the overview's usage, quality and records for an organisation's own systems | `16ceb9f` |
 
 ## Portal: robustness and security
 

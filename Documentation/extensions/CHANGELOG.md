@@ -2,6 +2,23 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Overview after sign-in (backlog item 4.2)
+- **Architecture decision record** [ADR 0007](../adr/0007-overview-indicators.md): a new view opened after sign-in,
+  five groups of indicators per scope for 7, 30 or 90 days against the period before, computed on request, exports,
+  `/v1/stats`.
+- **The overview** (`#overview`, *Visão geral*): usage (scans by people, automated requests apart, per day, the most
+  scanned codes, shares by device, form, language and link type), resolution quality (requests answered, **scanned
+  codes nobody registered** with *Register* opening the editor, codes without the link asked, invalid requests,
+  errors, average time; the slowest day's 95th percentile for the whole installation), record quality (records and
+  keys by type, no key-level record, serial with batch or variant, no description, keys nobody scanned, link
+  problems), operation and, for administrators, governance (record changes by kind and user, sign-ins and refusals,
+  exports, users by role, API keys active and expiring, the tenant API's calls). **Sign-in now opens the overview**;
+  the editor keeps the portal's address and gains *Link editor* in the menu. Commit `16ceb9f`.
+- **Exports** of the overview to Excel (a sheet of indicators with the previous period, sheets per day, codes and
+  users) and CSV, journalled as `overview-export`. Commit `16ceb9f`.
+- **Tenant API**: `GET /portal/api/v1/stats?days=` (usage, quality, records of the key's reach) with the new scope
+  `stats:read` (*Read statistics*). Existing keys are unchanged. Commit `16ceb9f`.
+
 ### Development in Claude Code cloud sessions
 - `CLAUDE.md`: the repository's conventions (language, commits, documents kept in step, tests) for Claude Code.
 - `.claude/hooks/session-start.sh`, registered in `.claude/settings.json`: a cloud session installs the development

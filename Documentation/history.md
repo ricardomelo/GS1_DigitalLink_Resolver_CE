@@ -511,6 +511,19 @@ whole battery passed in the session before the push. The engine's release tarbal
 proxy, so the hook builds the portal's engine from a git clone of the same release (`b9bd4ed`; 1,896 checks without a
 browser and 493 in Chromium in the session).
 
+**Item 4.2, the overview** (the owner away, every question on the recommended option; [ADR 0007](adr/0007-overview-indicators.md)).
+A new view opened after sign-in, with the editor kept at the portal's address so that bookmarks and the guides stay
+right; 7, 30 or 90 days against the period before; usage, resolution quality (the scanned codes nobody registered
+first, each one click from the editor), record quality, operation and, for administrators, governance; computed on
+request from the daily aggregates and today's raw events; Excel and CSV exports; `/v1/stats` for organisations'
+systems with a new scope. Commit `16ceb9f`: `portal/overview.py`, `requestlog.collect()`, `journal.counts()`,
+`app.visible_records()` shared with the record list, the view, both languages, `test_overview.py` (66) and
+`test_overview_e2e.py` (27). The test of the aggregates first passed for the wrong reason: the embedded worker's
+housekeeping at start-up had already marked the past days as finished before the test wrote its events, so the test
+now clears that mark; three mutations escaped at first (a compressed link's answer, requests without a key in a code
+list, an administrator limited to prefixes seeing others' changes) and the program gained a check for each, 18 of 18
+caught. Sign-in landing on the overview changed five browser programs, which now open the editor themselves.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -573,6 +586,8 @@ browser and 493 in Chromium in the session).
     page, e-mail) stay in Brazilian Portuguese and British English.
 18. Development happens in Claude Code cloud sessions that push to `gs1br/develop` directly; `CLAUDE.md` holds the
     conventions and a session start hook prepares the tests as the CI does.
+19. The portal opens on the overview after sign-in; its figures are computed on request from what the request log
+    and the journal keep, in the scope of the user ([ADR 0007](adr/0007-overview-indicators.md)).
 
 ## Lessons learnt
 

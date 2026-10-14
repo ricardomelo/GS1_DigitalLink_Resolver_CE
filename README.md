@@ -677,7 +677,7 @@ know whose data they handle.
 |---|---|---|---|---|
 | Production | 7.1 | **Single sign-on** for the portal, per tenant; per-role limits on exports | M | 2.4 |
 | | 7.2 | **Production readiness**, on the servers: an installation on a clean machine, the off-server copy set up, a restore rehearsal, the staging secrets rotated and the [production checklist](Documentation/extensions/README.md#going-to-production) worked through (the scripts and the installer's final check of a scan through the proxy are done) | S | — |
-| | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages, default link titles in the link's language (conformance review F21) | S | — |
+| | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages (default link titles in the link's language, conformance review F21: done) | S | — |
 | | 7.4 | **Load test and scale-out rehearsal** on staging with `dev-tests/load/load_test.py` (done): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded ([procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)) | S | 2.3 |
 | Standards | 8.1 | **Errata and Work Requests to GS1**: E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
 

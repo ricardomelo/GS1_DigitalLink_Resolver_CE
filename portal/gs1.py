@@ -64,6 +64,53 @@ LINK_TYPES = [
 ]
 LINK_TYPE_CODES = {code for code, _, _ in LINK_TYPES}
 LINK_TYPE_DEFAULT_TITLES = {code: title for code, _, title in LINK_TYPES}
+# Titles in Portuguese, the portal's other language (the editor's names, portal/static/i18n.js): a link left without a
+# title gets the one in its own language (GS1-Conformant Resolver 2.5.3, conformance review F21); English otherwise.
+LINK_TYPE_TITLES_PT = {
+    "gs1:pip": "Página do produto",
+    "gs1:instructions": "Instruções de uso",
+    "gs1:support": "Atendimento (SAC)",
+    "gs1:certificationInfo": "Certificados e conformidade",
+    "gs1:safetyInfo": "Informações de segurança",
+    "gs1:epil": "Bula eletrônica (paciente)",
+    "gs1:smpc": "Informações ao profissional de saúde",
+    "gs1:recallStatus": "Situação de recolhimento (recall)",
+    "gs1:quickStartGuide": "Guia rápido",
+    "gs1:tutorial": "Tutoriais",
+    "gs1:relatedVideo": "Vídeo do produto",
+    "gs1:serviceInfo": "Manutenção e assistência técnica",
+    "gs1:whatsInTheBox": "Conteúdo da embalagem",
+    "gs1:faqs": "Perguntas frequentes",
+    "gs1:registerProduct": "Registrar produto ou garantia",
+    "gs1:purchaseSuppliesOrAccessories": "Comprar acessórios e refis",
+    "gs1:promotion": "Promoção",
+    "gs1:hasRetailers": "Onde comprar",
+    "gs1:review": "Avaliações",
+    "gs1:leaveReview": "Deixar uma avaliação",
+    "gs1:socialMedia": "Redes sociais",
+    "gs1:sustainabilityInfo": "Sustentabilidade e reciclagem",
+    "gs1:nutritionalInfo": "Informação nutricional",
+    "gs1:ingredientsInfo": "Ingredientes",
+    "gs1:allergenInfo": "Alergênicos",
+    "gs1:recipeInfo": "Receitas",
+    "gs1:masterData": "Dados cadastrais (B2B)",
+    "gs1:traceability": "Rastreabilidade",
+    "gs1:epcis": "Repositório EPCIS",
+}
+
+
+def default_title(link_type: str, hreflang=()) -> str:
+    """The title a link of this type gets when none is given: in the link's language when the portal knows it
+    (Portuguese), else in English."""
+    language = str((list(hreflang) or [""])[0]).split("-")[0].lower()
+    if language == "pt" and link_type in LINK_TYPE_TITLES_PT:
+        return LINK_TYPE_TITLES_PT[link_type]
+    return LINK_TYPE_DEFAULT_TITLES.get(link_type, link_type)
+
+
+def is_default_title(link_type: str, title: str) -> bool:
+    """Whether a stored title is one the portal gave (in any language it knows), not one somebody typed."""
+    return title in (LINK_TYPE_DEFAULT_TITLES.get(link_type), LINK_TYPE_TITLES_PT.get(link_type))
 # The item's page as a record's default target (Documentation/adr/0011-item-page.md): a gs1:defaultLink to the
 # resolver's own page of the record's links; set by the editor's option, never typed as a link of its own.
 LANDING_TYPE = "gs1:defaultLink"

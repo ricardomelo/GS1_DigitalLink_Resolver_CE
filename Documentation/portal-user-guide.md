@@ -257,7 +257,8 @@ Each target is one web page or document. For each target fill in:
   gets the default target (the first one).
 - **Address (URL)** — the full address, starting with `https://`. Copy it from the browser's address bar;
   spaces, line breaks and invisible characters are refused.
-- **Title** (optional) — a short name shown in lists of links.
+- **Title** (optional) — a short name shown in lists of links and on the item's page. Left empty, the link gets its
+  type's name in the link's language (Portuguese or English) — and a new one if you change the language later.
 
 The first target is the **default target** (badge *Default target*, `gs1:defaultLink`): it opens when
 someone scans the code without asking for anything in particular. **Make default** on another target

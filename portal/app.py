@@ -608,7 +608,7 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
         link = {
             "linktype": link_type,
             "href": href,
-            "title": gs1.clean_text(row.get("title"))[:120] or gs1.LINK_TYPE_DEFAULT_TITLES[link_type],
+            "title": gs1.clean_text(row.get("title"))[:120] or gs1.default_title(link_type, hreflang),
             "type": gs1.guess_media_type(href),
             "hreflang": hreflang,
             # No "fwqs": the resolver always passes the query string on (GS1-Conformant Resolver 1.2.1, section
@@ -1024,7 +1024,9 @@ def get_record():
         result["description"] = target.get("itemDescription", "")
         result["landingPage"] = any(gs1.is_landing(l) for l in target.get("links", []))
         result["links"] = [{
-            "linkType": l.get("linktype"), "url": l.get("href"), "title": l.get("title") or "",
+            # a title the portal gave is shown empty, so that it follows the language if that changes (F21)
+            "linkType": l.get("linktype"), "url": l.get("href"),
+            "title": "" if gs1.is_default_title(l.get("linktype"), l.get("title") or "") else l.get("title") or "",
             "hreflang": l.get("hreflang") or ["pt"], "context": l.get("context") or [],
         } for l in target.get("links", []) if not gs1.is_landing(l)]
         result["links"].sort(key=lambda l: l["linkType"] != default)   # default link first

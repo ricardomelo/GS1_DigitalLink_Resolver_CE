@@ -46,6 +46,7 @@ adds what an organisation needs to run one for its members:
 | [Extensions documentation](Documentation/extensions/README.md) · [Changelog](Documentation/extensions/CHANGELOG.md) | detailed rules and decisions · every change |
 | [Architecture decisions](Documentation/adr/0001-portal-state-in-mongodb.md) | ADR 0001: the portal's state in MongoDB, background jobs in a worker, replicas |
 | [Tenants](Documentation/adr/0002-tenants.md) | ADR 0002: organisations that own GS1 Company Prefixes, support access, an audit trail per tenant |
+| [GS1 rules from the dictionary](Documentation/adr/0003-gs1-rules-from-the-dictionary.md) | ADR 0003: one source for the GS1 rules, one engine release, engine messages translated |
 
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).

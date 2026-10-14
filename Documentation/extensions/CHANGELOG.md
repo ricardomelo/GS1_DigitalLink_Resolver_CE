@@ -2,6 +2,17 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### The label studio (backlog items 5.2, 5.3 and 5.4)
+- **Architecture decision record** [ADR 0010](../adr/0010-label-studio.md).
+- **Size** of the label: 80, 90, 100, 120, 150 or 200 % of the target X-dimension (QR code 0.396 to 0.990 mm), the
+  human readable text staying 2.2 mm. Commit `d60421f`.
+- **PDF** download: one vector page the size of the label, no font embedded, the URI as its title. Commit `d60421f`.
+- **EAN-13, UPC-A, EAN-8 or UPC-E beside the QR code** for GTINs of consumer units (the transition to 2D), at 0.330 mm
+  times the same size, with quiet zones, bar heights, guard bars and digits as the General Specifications place them;
+  header `X-Linear-Symbol`. Commit `d60421f`.
+- **Download all (ZIP)**: SVG, PNG and PDF with a `README.txt` of the sizes. Commit `d60421f`.
+- The default label (100 %, no linear symbol) is exactly as before. Commit `d60421f`.
+
 ### The organisation's own domain in the QR code (backlog item 5.1)
 - **Architecture decision record** [ADR 0009](../adr/0009-tenant-domains.md).
 - **Domains** (user menu, administrators): an organisation's own domains, with an optional path stem, proved by a DNS

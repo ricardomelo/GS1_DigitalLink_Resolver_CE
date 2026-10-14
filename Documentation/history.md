@@ -549,6 +549,19 @@ organisations' keys; the redirect mode left to the organisation's server and che
 (29), `test_domains_e2e.py` (20), the host script in `test_deploy.py` (73). 25 mutations, all caught. The tests found
 that the check of a direct domain asked for the description file under the stem, where it never is.
 
+**Items 5.2 to 5.4, the label studio** ([ADR 0010](adr/0010-label-studio.md), one record for the three, recommended
+options). Sizes as magnifications of both targets, a PDF written by the portal (no new dependency), EAN/UPC beside the
+QR code for GTINs of consumer units, every format in a zip. Commit `d60421f`: `portal/linear.py`, the layout of
+`portal/label.py` as rectangles and text lines drawn alike in SVG, PNG and PDF, the options in the editor and the
+APIs, `test_label.py` (92). The symbols were checked with an independent decoder, zxing-cpp, which the session could
+install but the CI does not have: the test keeps the module patterns it read back (UPC-E for every check digit) and
+reads EAN-13 (every first digit), UPC-A and EAN-8 with OpenCV, which the CI has. Seven of the first mutations
+escaped — parity tables, a zero-suppression rule, the left quiet zone, the linear X at other sizes, keys other than
+the GTIN, names inside the zip — and the test gained a check for each: 18 of 18. The X-dimension figures (QR 0.396 to
+0.990 mm, EAN/UPC 0.330 mm at 80 to 200 %, 22.85 mm bars) were checked against GS1 UK's and GS1 Canada's guides; a
+draft of the General Specifications seen on the way lists other QR figures (0.375/0.625 mm), to be confirmed against
+the ratified release.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -617,6 +630,8 @@ that the check of a direct domain asked for the description file under the stem,
     ([ADR 0008](adr/0008-monitoring-and-alerts.md)).
 21. An organisation's domain answers only for its own keys; a verified domain stays verified
     ([ADR 0009](adr/0009-tenant-domains.md)).
+22. Labels keep their default exactly; sizes are magnifications of both targets; the PDF is written by the portal
+    ([ADR 0010](adr/0010-label-studio.md)).
 
 ## Lessons learnt
 

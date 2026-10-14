@@ -1,11 +1,12 @@
 """
-Background jobs of the portal: spreadsheet imports and link checks, kept as documents of the "jobs"
+Background jobs of the portal: spreadsheet imports, link checks and e-mail messages, kept as documents of the "jobs"
 collection of the portal's database and run by a worker (worker.py), so that no job depends on the memory of
 the web process that accepted it (Documentation/adr/0001-portal-state-in-mongodb.md, section 3.3).
 
 States:
   prepared   an import preview waiting for *Apply* (expires PREPARED_SECONDS after the preview)
-  queued     waiting for a worker (a link check starts here; an import gets here on *Apply*)
+  queued     waiting for a worker (a link check and a message start here; an import gets here on *Apply*);
+             not taken before "notBefore" when it has one (a message the relay could not take yet)
   running    claimed by one worker, which renews "heartbeat" every HEARTBEAT_SECONDS
   finished   done; the result stays for FINISHED_SECONDS
   failed     stopped by an unexpected error, or interrupted more than MAX_ATTEMPTS times
@@ -18,11 +19,13 @@ Workers announce themselves in the "workers" collection ({_id: name, seen, mode,
 the browser use it to tell "waiting in the queue" from "no worker is running".
 
 Document of a job:
-  {_id: token, type: "import" | "linkcheck", user, state, created, queuedAt, startedAt, finishedAt,
-   heartbeat, worker, attempts, done, total, expiresAt, error, ...the fields of its type}
+  {_id: token, type: "import" | "linkcheck" | "mail", user, state, created, queuedAt, startedAt, finishedAt,
+   heartbeat, worker, attempts, done, total, expiresAt, error, notBefore, ...the fields of its type}
   import:    plan, keyRecords, results (one per record written, in plan order: len(results) == done)
   linkcheck: scope ("all" | "list"), urls ([{url, records: [record keys]}]), problems,
              records ([{record, problems}], scope "all")
+  mail:      to, subject, text, html, template, tries, lastError (Documentation/adr/0004-e-mail.md,
+             section 3.2; "user" is the recipient's account; text and html are removed once it is sent or failed)
 """
 import logging
 import os
@@ -45,7 +48,7 @@ MAX_ATTEMPTS = 3                     # claims of one job before it is marked fai
 WORKER_ALIVE_SECONDS = 30            # a worker seen within this time counts as running
 STALLED_SECONDS = 15                 # a job queued this long with no worker running is shown as stalled
 
-TYPES = ("import", "linkcheck")
+TYPES = ("import", "linkcheck", "mail")
 STATES = ("prepared", "queued", "running", "finished", "failed")
 
 
@@ -55,6 +58,10 @@ class JobLost(Exception):
 
 class Interrupted(Exception):
     """The worker is stopping; the job goes back to the queue and continues elsewhere."""
+
+
+class Deferred(Exception):
+    """The job went back to the queue to be tried again later (Reporter.defer)."""
 
 
 def _col():
@@ -153,10 +160,12 @@ def requeue_stale() -> int:
 
 
 def claim(name: str) -> dict | None:
-    """Takes the oldest queued job for this worker (atomically: two workers never take the same job)."""
+    """Takes the oldest queued job for this worker (atomically: two workers never take the same job), leaving
+    the jobs whose notBefore has not come yet."""
     now = store.now()
     return _col().find_one_and_update(
-        {"state": "queued"},
+        # {"notBefore": None} also matches the jobs without the field
+        {"state": "queued", "$or": [{"notBefore": None}, {"notBefore": {"$lte": now}}]},
         {"$set": {"state": "running", "worker": name, "heartbeat": now, "startedAt": now},
          "$inc": {"attempts": 1}},
         sort=[("created", 1)], return_document=ReturnDocument.AFTER)
@@ -190,11 +199,25 @@ class Reporter:
         if self.stopping():
             raise Interrupted(self.token)
 
-    def finish(self, **fields) -> None:
-        """running → finished, with the job's result fields."""
+    def finish(self, remove: tuple = (), **fields) -> None:
+        """running → finished, with the job's result fields; the fields named in remove are dropped."""
         now = store.now()
         self._update({"$set": {"state": "finished", "finishedAt": now, "expiresAt": now + timedelta(seconds=FINISHED_SECONDS),
-                               **fields}, "$unset": {"worker": ""}})
+                               **fields}, "$unset": {"worker": "", **{f: "" for f in remove}}})
+
+    def defer(self, seconds: float, **fields) -> None:
+        """running → queued, not to be taken again for that many seconds (a temporary failure); raises
+        Deferred so that the worker leaves the job."""
+        self._update({"$set": {"state": "queued", "queuedAt": store.now(), "notBefore": _later(seconds), **fields},
+                      "$unset": {"worker": ""}})
+        raise Deferred(self.token)
+
+    def give_up(self, code: str, remove: tuple = (), **fields) -> None:
+        """running → failed with a message code (a permanent failure the runner recognised)."""
+        now = store.now()
+        self._update({"$set": {"state": "failed", "error": code, "finishedAt": now,
+                               "expiresAt": now + timedelta(seconds=FINISHED_SECONDS), **fields},
+                      "$unset": {"worker": "", **{f: "" for f in remove}}})
 
 
 def release(token: str, worker: str) -> None:

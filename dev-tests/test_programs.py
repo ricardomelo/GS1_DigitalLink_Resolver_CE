@@ -69,6 +69,7 @@ PROGRAMS = [
     Program("store", "portal", "portal/test_store.py"),
     Program("jobs", "portal", "portal/test_jobs.py"),
     Program("tenants", "portal", "portal/test_tenants.py"),
+    Program("mail", "portal", "portal/test_mail.py", needs_cmd=("openssl",)),
     Program("store_mongodb", "database", "portal/test_store_mongodb.py", needs_var=("PORTAL_TEST_MONGO_URI",)),
     Program("portal_e2e", "e2e", "portal/test_portal_e2e.py", ("GS1_SYNTAX_ENGINE_DIR",)),
     Program("portal_e2e_without_engine", "e2e", "portal/test_portal_e2e.py",

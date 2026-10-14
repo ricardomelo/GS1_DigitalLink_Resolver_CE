@@ -31,7 +31,9 @@
 #   PORTAL_ADMIN_PASSWORD (empty: generated), INSTALL_BACKUP_CRON (yes | no),
 #   INSTALL_DOCKER_GROUP_USER (user to add to the docker group; empty: none),
 #   WEB_SERVICE_REPLICAS, DATA_ENTRY_SERVICE_REPLICAS, PORTAL_SERVICE_REPLICAS, PORTAL_WORKER_REPLICAS
-#   (containers of each service, 1–20; not asked: default 1, or the value in the existing .env)
+#   (containers of each service, 1–20; not asked: default 1, or the value in the existing .env),
+#   PORTAL_MAIL_HOST (the portal's e-mail relay; empty or "off": no e-mail), PORTAL_MAIL_SECURITY
+#   (starttls | tls), PORTAL_MAIL_PORT, PORTAL_MAIL_USERNAME, PORTAL_MAIL_PASSWORD, PORTAL_MAIL_FROM
 # =================================================================================================
 set -Eeuo pipefail
 umask 077
@@ -195,6 +197,20 @@ valid_replicas() {
 }
 valid_yes_no() { [[ $1 == yes || $1 == no ]] || { warn "Answer yes or no."; return 1; }; }
 valid_user_or_empty() { [[ -z $1 ]] || id -u "$1" >/dev/null 2>&1 || { warn "No such user: $1"; return 1; }; }
+valid_mail_host() {
+  local re='^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$'
+  [[ -z $1 || $1 == off || ( $1 =~ $re && ${#1} -le 253 ) ]] || { warn "Enter a host name such as smtp.example.org (or leave empty)."; return 1; }
+}
+# "none" (no encryption, no credentials) is only for a test relay such as the mailpit service of docker-compose.yml.
+valid_mail_security() {
+  [[ $1 == starttls || $1 == tls || $1 == none ]] || { warn "Choose starttls (port 587) or tls (port 465)."; return 1; }
+}
+valid_port() { [[ $1 =~ ^[1-9][0-9]{0,4}$ ]] && (( $1 <= 65535 )) || { warn "Enter a port number such as 587."; return 1; }; }
+valid_mail_from() {
+  local re='^([^<>]*<)?[^@[:space:]<>]+@[^@[:space:]<>]+\.[^@[:space:]<>]+>?$'
+  [[ $1 =~ $re ]] || { warn "Enter an address, or a name and an address: Resolver <noreply@example.org>."; return 1; }
+  safe_text "$1"
+}
 
 # ------------------------------------------------------------------------------------ .env
 declare -A EXISTING=() EXISTING_RAW=()
@@ -206,7 +222,8 @@ MANAGED_KEYS=" MONGO_INITDB_ROOT_USERNAME MONGO_INITDB_ROOT_PASSWORD MONGO_URI S
   RESOLVER_CONTACT_POSTCODE RESOLVER_CONTACT_COUNTRY RESOLVER_CONTACT_TELEPHONE PORTAL_ADMIN_USERNAME
   PORTAL_ADMIN_PASSWORD PORTAL_DB_PASSWORD PORTAL_SECRET_KEY PROXY_BIND_ADDRESS DATABASE_BIND_ADDRESS TLS_MODE
   CERTBOT_EMAIL TLS_CERT_FILE TLS_KEY_FILE WEB_SERVICE_REPLICAS DATA_ENTRY_SERVICE_REPLICAS
-  PORTAL_SERVICE_REPLICAS PORTAL_WORKER_REPLICAS "
+  PORTAL_SERVICE_REPLICAS PORTAL_WORKER_REPLICAS PORTAL_MAIL_HOST PORTAL_MAIL_PORT PORTAL_MAIL_SECURITY
+  PORTAL_MAIL_USERNAME PORTAL_MAIL_PASSWORD PORTAL_MAIL_FROM "
 
 # Reads KEY=VALUE lines of an existing .env (quotes removed) into EXISTING.
 load_existing_env() {
@@ -261,6 +278,13 @@ write_env() {
     printf '# and the key that signs its sessions (shared by every portal replica).\n'
     env_line PORTAL_DB_PASSWORD "$PORTAL_DB_PASSWORD"
     env_line PORTAL_SECRET_KEY "$PORTAL_SECRET_KEY"
+    printf '\n# Portal: e-mail relay (empty host: no e-mail; see .env.example and Documentation/adr/0004-e-mail.md)\n'
+    env_line PORTAL_MAIL_HOST "$PORTAL_MAIL_HOST"
+    env_line PORTAL_MAIL_PORT "$PORTAL_MAIL_PORT"
+    env_line PORTAL_MAIL_SECURITY "$PORTAL_MAIL_SECURITY"
+    env_line PORTAL_MAIL_USERNAME "$PORTAL_MAIL_USERNAME"
+    env_line PORTAL_MAIL_PASSWORD "$PORTAL_MAIL_PASSWORD"
+    env_line PORTAL_MAIL_FROM "$PORTAL_MAIL_FROM"
     printf '\n# Read by Docker Compose itself\n'
     env_line PROXY_BIND_ADDRESS "$PROXY_BIND_ADDRESS"
     env_line DATABASE_BIND_ADDRESS "127.0.0.1"
@@ -451,7 +475,8 @@ collect_settings() {
   local var
   for var in FQDN TLS_MODE CERTBOT_EMAIL TLS_CERT_FILE TLS_KEY_FILE PROXY_BIND_ADDRESS RESOLVER_ORG_NAME \
              RESOLVER_ORG_URL RESOLVER_CONTACT_STREET RESOLVER_CONTACT_LOCALITY RESOLVER_CONTACT_REGION \
-             RESOLVER_CONTACT_POSTCODE RESOLVER_CONTACT_COUNTRY RESOLVER_CONTACT_TELEPHONE PORTAL_ADMIN_USERNAME; do
+             RESOLVER_CONTACT_POSTCODE RESOLVER_CONTACT_COUNTRY RESOLVER_CONTACT_TELEPHONE PORTAL_ADMIN_USERNAME \
+             PORTAL_MAIL_HOST PORTAL_MAIL_PORT PORTAL_MAIL_SECURITY PORTAL_MAIL_USERNAME PORTAL_MAIL_FROM; do
     preset "$var"
   done
   # The development default of .env.example is not a real domain.
@@ -512,6 +537,8 @@ collect_settings() {
     fi
   fi
 
+  collect_mail
+
   printf '\n    %sOperation%s\n' "$C_BOLD" "$C_OFF"
   INSTALL_BACKUP_CRON=${INSTALL_BACKUP_CRON:-yes}
   ask INSTALL_BACKUP_CRON "Schedule the daily backup at 02:30 (yes/no)" "yes" valid_yes_no
@@ -521,6 +548,47 @@ collect_settings() {
 
   secrets
   summary_before
+}
+
+# The portal's e-mail relay (optional; Documentation/adr/0004-e-mail.md). The password is kept from .env unless
+# the environment (non-interactive) or a new hidden answer gives another.
+collect_mail() {
+  printf '\n    %sE-mail of the portal%s %s(optional: invitations, password recovery, security notices)%s\n' \
+    "$C_BOLD" "$C_OFF" "$C_DIM" "$C_OFF"
+  info "An authenticated SMTP relay of your organisation or a sending service (port 587 or 465; port 25 is"
+  info "usually blocked by cloud providers). Leave it empty to keep e-mail off; type \"off\" to switch it off."
+  ask PORTAL_MAIL_HOST "SMTP relay host (empty: no e-mail)" "" valid_mail_host
+  [[ ${PORTAL_MAIL_HOST-} == off ]] && PORTAL_MAIL_HOST=""
+  if [[ -z ${PORTAL_MAIL_HOST-} ]]; then
+    PORTAL_MAIL_PORT=""; PORTAL_MAIL_SECURITY=""; PORTAL_MAIL_USERNAME=""; PORTAL_MAIL_PASSWORD=""; PORTAL_MAIL_FROM=""
+    return
+  fi
+  ask PORTAL_MAIL_SECURITY "Encryption: starttls (port 587) or tls (port 465)" "starttls" valid_mail_security
+  local port=587
+  [[ $PORTAL_MAIL_SECURITY == tls ]] && port=465
+  [[ $PORTAL_MAIL_SECURITY == none ]] && port=1025
+  ask PORTAL_MAIL_PORT "Relay port" "$port" valid_port
+  ask PORTAL_MAIL_USERNAME "Relay user name (empty: the relay accepts this server without one)" "" valid_optional_text
+  local kept=${PORTAL_MAIL_PASSWORD-}
+  [[ -n $kept ]] || kept=$(existing PORTAL_MAIL_PASSWORD)
+  PORTAL_MAIL_PASSWORD=$kept
+  if [[ -n $PORTAL_MAIL_USERNAME ]] && (( ! NON_INTERACTIVE )); then
+    local first
+    while true; do
+      IFS= read -r -s -p "    Relay password$([[ -n $kept ]] && echo ' (Enter keeps the current one)'): " first \
+        || die "No answer (end of input)."
+      printf '\n'
+      if [[ -z $first && -n $kept ]]; then break; fi
+      if [[ -n $first ]] && safe_text "$first"; then PORTAL_MAIL_PASSWORD=$first; break; fi
+      [[ -z $first ]] && warn "A password is required with a user name."
+    done
+  fi
+  [[ -z $PORTAL_MAIL_USERNAME ]] && PORTAL_MAIL_PASSWORD=""
+  if [[ -n $PORTAL_MAIL_USERNAME && -z $PORTAL_MAIL_PASSWORD ]]; then
+    die "PORTAL_MAIL_PASSWORD: a password is required with PORTAL_MAIL_USERNAME."
+  fi
+  safe_text "$PORTAL_MAIL_PASSWORD" || die "PORTAL_MAIL_PASSWORD: invalid value (see the message above)."
+  ask PORTAL_MAIL_FROM "Sender of the messages, e.g. Resolver <noreply@example.org>" "" valid_mail_from
 }
 
 secrets() {
@@ -587,6 +655,12 @@ summary_before() {
   else
     printf '      First user       %s (password %s)\n' "$PORTAL_ADMIN_USERNAME" \
       "$([[ -n $GENERATED_ADMIN_PASSWORD ]] && echo 'generated, shown at the end' || echo 'as typed')"
+  fi
+  if [[ -n ${PORTAL_MAIL_HOST-} ]]; then
+    printf '      E-mail relay     %s:%s (%s), from %s\n' "$PORTAL_MAIL_HOST" "$PORTAL_MAIL_PORT" "$PORTAL_MAIL_SECURITY" \
+      "$PORTAL_MAIL_FROM"
+  else
+    printf '      E-mail relay     none (e-mail off)\n'
   fi
   printf '      Daily backup     %s\n' "$INSTALL_BACKUP_CRON"
   printf '\n'

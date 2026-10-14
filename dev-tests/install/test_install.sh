@@ -144,6 +144,7 @@ check "A: nginx and certbot packages requested" "grep -q 'apt-get install -y.*ce
 check "A: one replica of each service written to .env" "[[ \$(envval WEB_SERVICE_REPLICAS)\$(envval DATA_ENTRY_SERVICE_REPLICAS)\$(envval PORTAL_SERVICE_REPLICAS)\$(envval PORTAL_WORKER_REPLICAS) == 1111 ]]"
 check "A: Compose reads the replica counts" "[[ \$(compose_cfg | grep -c 'replicas: 1') == 4 ]]"
 check "A: replicas in the summary" "grep -q 'Replicas *resolver 1, data entry API 1, portal 1, job worker 1' $SB/state/out"
+check "A: no e-mail relay asked for: e-mail off" "[[ -z \$(envval PORTAL_MAIL_HOST) && -z \$(envval PORTAL_MAIL_PASSWORD) ]] && grep -q 'E-mail relay *none (e-mail off)' $SB/state/out"
 check "A: backup cron points at the repository" "grep -q \"root $SB/repo/scripts/resolver-backup.sh\" $SB/state/cron"
 A_TOKEN=$(envval SESSION_TOKEN); A_PWD=$(envval MONGO_INITDB_ROOT_PASSWORD)
 A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY)
@@ -153,8 +154,15 @@ echo "--- B. second run on the same installation"
 echo "PORTAL_SESSION_IDLE_MINUTES='20'" >> "$SB/repo/.env"
 sed -i "s/^WEB_SERVICE_REPLICAS=.*/WEB_SERVICE_REPLICAS='2'/" "$SB/repo/.env"
 : > "$SB/state/calls"
-run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org PORTAL_WORKER_REPLICAS=3; rc=$?
+run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org PORTAL_WORKER_REPLICAS=3 PORTAL_MAIL_HOST=smtp.example.org \
+  PORTAL_MAIL_USERNAME=portal@example.org PORTAL_MAIL_PASSWORD='relay pass phrase $1' \
+  PORTAL_MAIL_FROM='Link portal <noreply@example.org>'; rc=$?
 check "B: exit status 0" "[[ $rc == 0 ]]"
+check "B: e-mail relay written: STARTTLS on 587 by default" "[[ \$(envval PORTAL_MAIL_HOST) == smtp.example.org && \$(envval PORTAL_MAIL_PORT) == 587 && \$(envval PORTAL_MAIL_SECURITY) == starttls && \$(envval PORTAL_MAIL_USERNAME) == portal@example.org ]]"
+check "B: relay password and sender written as given" "[[ \$(envval PORTAL_MAIL_PASSWORD) == 'relay pass phrase \$1' && \$(envval PORTAL_MAIL_FROM) == 'Link portal <noreply@example.org>' ]]"
+check "B: relay password neither printed nor logged" "! grep -q 'relay pass phrase' $SB/state/out && ! grep -q 'relay pass phrase' $SB/state/install.log"
+check "B: relay in the summary" "grep -q 'E-mail relay *smtp.example.org:587 (starttls), from Link portal <noreply@example.org>' $SB/state/out"
+check "B: the portal and its worker receive the relay settings" "[[ \$(compose_cfg | grep -c 'PORTAL_MAIL_HOST: smtp.example.org') -ge 2 ]]"
 check "B: no setting written twice (the last line of .env would win)" "[[ -z \$(grep -oE '^[A-Z_]+=' $SB/repo/.env | sort | uniq -d) ]]"
 check "B: secrets kept" "[[ \$(envval SESSION_TOKEN) == $A_TOKEN && \$(envval MONGO_INITDB_ROOT_PASSWORD) == $A_PWD ]]"
 check "B: portal database password and session key kept" "[[ \$(envval PORTAL_DB_PASSWORD) == $A_PORTAL_DB && \$(envval PORTAL_SECRET_KEY) == $A_KEY ]]"
@@ -228,6 +236,7 @@ answers=$(printf '%s\n' \
   "" "ops@example.org" \
   "Example Org" "ftp://bad" "https://www.example.org" "" "Rio de Janeiro" "RJ" "" "Brazil" "" \
   "maria" "short" "it's a long password" "correct horse battery" "correct horse battery" \
+  "" \
   "" "" "y")
 INSTALLER_ARGS=" " run_installer <<< "$answers"; rc=$?
 check "F: exit status 0" "[[ $rc == 0 ]]"
@@ -236,6 +245,7 @@ check "F: invalid URL rejected" "grep -q 'Enter a URL starting with https://' $S
 check "F: default HTTPS mode taken" "[[ \$(envval TLS_MODE) == letsencrypt ]]"
 check "F: short password rejected; typed user used" "grep -q 'At least 12 characters' $SB/state/out && [[ \$(envval PORTAL_ADMIN_USERNAME) == maria ]]"
 check "F: typed password not printed" "! grep -q 'correct horse' $SB/state/out"
+check "F: e-mail relay left empty: e-mail off" "grep -q 'An authenticated SMTP relay' $SB/state/out && [[ -z \$(envval PORTAL_MAIL_HOST) ]]"
 check "F: password with a single quote rejected, then another accepted" "grep -q 'Single quotes' $SB/state/out && [[ \$(envval PORTAL_ADMIN_USERNAME) == maria ]]"
 
 # ------------------------------------------------------------------------------ G. refusals
@@ -257,6 +267,17 @@ check "G: zero replicas refused" "[[ $rc != 0 ]] && grep -q 'PORTAL_SERVICE_REPL
 run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org WEB_SERVICE_REPLICAS=two; rc=$?
 check "G: a replica count that is not a number refused" "[[ $rc != 0 ]] && grep -q 'WEB_SERVICE_REPLICAS: invalid value' $SB/state/out"
 
+new_sandbox
+run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org PORTAL_MAIL_HOST=smtp.example.org \
+  PORTAL_MAIL_USERNAME=portal PORTAL_MAIL_FROM=noreply@example.org; rc=$?
+check "G: a relay user name without a password refused" "[[ $rc != 0 ]] && grep -q 'PORTAL_MAIL_PASSWORD: a password is required' $SB/state/out && [[ ! -e $SB/repo/.env ]]"
+run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org PORTAL_MAIL_HOST=smtp.example.org \
+  PORTAL_MAIL_FROM=noreply; rc=$?
+check "G: a sender that is not an address refused" "[[ $rc != 0 ]] && grep -q 'PORTAL_MAIL_FROM: invalid' $SB/state/out"
+run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org PORTAL_MAIL_HOST='smtp example' \
+  PORTAL_MAIL_FROM=noreply@example.org; rc=$?
+check "G: a relay host that is not a host name refused" "[[ $rc != 0 ]] && grep -q 'PORTAL_MAIL_HOST: invalid' $SB/state/out"
+
 # ------------------------------------------------------------------------------ H. stale proxy
 echo "--- H. proxy still pointing at the old containers (502) after the services were recreated"
 new_sandbox
@@ -276,6 +297,21 @@ run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org; r
 check "I: exit status 0 (the portal works; only background jobs wait)" "[[ $rc == 0 ]]"
 check "I: warning naming the portal-worker log" "grep -q 'job worker is not running' $SB/state/out && grep -q 'docker compose logs portal-worker' $SB/state/out"
 check "I: no 'Job worker running' line" "! grep -q 'Job worker running' $SB/state/out"
+
+# ------------------------------------------------------------------------------ J. e-mail relay
+echo "--- J. e-mail relay: TLS, kept on a second run, switched off"
+new_sandbox
+run_installer "${BASE[@]}" PORTAL_MAIL_HOST=smtp.example.org PORTAL_MAIL_SECURITY=tls PORTAL_MAIL_USERNAME=portal \
+  PORTAL_MAIL_PASSWORD=relay-secret PORTAL_MAIL_FROM=noreply@example.org; rc=$?
+check "J: exit status 0" "[[ $rc == 0 ]]"
+check "J: TLS on 465 by default" "[[ \$(envval PORTAL_MAIL_SECURITY) == tls && \$(envval PORTAL_MAIL_PORT) == 465 ]]"
+run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org; rc=$?
+check "J: a second run keeps the relay and its password" "[[ $rc == 0 && \$(envval PORTAL_MAIL_HOST) == smtp.example.org && \$(envval PORTAL_MAIL_PASSWORD) == relay-secret && \$(envval PORTAL_MAIL_PORT) == 465 ]]"
+run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org PORTAL_MAIL_HOST=off; rc=$?
+check "J: \"off\" switches e-mail off and forgets the credentials" "[[ $rc == 0 && -z \$(envval PORTAL_MAIL_HOST) && -z \$(envval PORTAL_MAIL_PASSWORD) && -z \$(envval PORTAL_MAIL_USERNAME) ]]"
+printf "PORTAL_MAIL_HOST='mailpit'\nPORTAL_MAIL_PORT='1025'\nPORTAL_MAIL_SECURITY='none'\nPORTAL_MAIL_FROM='portal@example.org'\n" >> "$SB/repo/.env"
+run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org; rc=$?
+check "J: a test relay set by hand (mailpit, no encryption) is kept" "[[ $rc == 0 && \$(envval PORTAL_MAIL_HOST) == mailpit && \$(envval PORTAL_MAIL_SECURITY) == none && \$(envval PORTAL_MAIL_PORT) == 1025 ]]"
 
 echo
 echo "$PASS passed, $FAIL failed"

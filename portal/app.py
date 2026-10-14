@@ -31,12 +31,15 @@ import jobs
 import journal
 import label
 import linkcheck
+import mail
 import meta
 import migrate
+import notify
 import sheet
 import store
 import syntax
 import tenants
+import tokens
 import users
 import worker
 from gs1 import ValidationError
@@ -62,6 +65,12 @@ SESSION_MAX_HOURS = max(SESSION_IDLE_MINUTES / 60, float(os.environ.get("PORTAL_
 SESSION_WARNING_SECONDS = min(120.0, SESSION_IDLE_MINUTES * 60 / 4)
 MAX_LOGIN_FAILURES = 5
 LOCKOUT_SECONDS = store.LOGIN_FAILURE_SECONDS   # 15 minutes
+# Password recovery requests in the same window (Documentation/adr/0004-e-mail.md, section 3.5): per user name or
+# address typed, per browser address; invalid single-use links per browser address.
+RECOVERY_PER_LOGIN = 3
+RECOVERY_PER_ADDRESS = 10
+BAD_LINKS_PER_ADDRESS = 10
+RECOVERY_SECONDS = 0.5      # every recovery answer takes at least this long, whether or not an account matched
 UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "15"))
 MAX_LINKS = 20
 
@@ -206,6 +215,12 @@ class LoginThrottle:
     def clear(self, *keys: str) -> None:
         """Forgets the failures of the keys after a successful sign-in."""
         self._failures().delete_many({"key": {"$in": list(keys)}})
+
+    def over(self, key: str, limit: int) -> bool:
+        """Whether a key already counts `limit` events in the window (password recovery and links use their own
+        keys, "forgot-…" and "link-…", in the same collection)."""
+        window = store.now() - timedelta(seconds=LOCKOUT_SECONDS)
+        return self._failures().count_documents({"key": key, "at": {"$gt": window}}, limit=limit) >= limit
 
 
 throttle = LoginThrottle()
@@ -666,6 +681,8 @@ def login():
         typed = shown_username(username)
         audit.info("user=%s action=login-failed addr=%s", typed, client_address())
         log_event("login-failed", user=typed, detail=client_address(), tenant=tenant, actor_tenant=tenant)
+        if account and throttle.retry_after(keys[0]):   # this failure locked the account: tell its owner, once
+            notify.send(username, "account-locked", when=notify.now_text(), minutes=LOCKOUT_SECONDS // 60)
         time.sleep(0.5)
         return message("auth.invalid", 401)
     if tenant_blocked(account):
@@ -678,6 +695,7 @@ def login():
     session.update(user=username, fp=users.fingerprint(username), was_logged_in=True, since=int(time.time()))
     audit.info("user=%s action=login addr=%s", username, client_address())
     users.touch_login(username)
+    users.note_language(username, data.get("language"))     # the language of his messages, until he chooses one
     log_event("login", user=username, detail=client_address(), tenant=tenant, actor_tenant=tenant)
     return message("auth.welcome", 200, user=username, mustChange=bool((users.get(username) or {}).get("mustChange")))
 
@@ -723,13 +741,119 @@ def change_password():
     session["fp"] = users.fingerprint(g.user)   # keeps this session; every other session is signed out
     audit.info("user=%s action=password-change", g.user)
     log_event("password-change", tenant=g.account_tenant)
+    notify.send(g.user, "password-changed", when=notify.now_text())
     return message("password.changed")
+
+
+# --------------------------------------------------------------------------- e-mail: recovery and links
+@app.get("/portal/api/login/options")
+def login_options():
+    """What the sign-in page offers besides the password: recovery by e-mail when mail is on."""
+    return jsonify(passwordRecovery=mail.enabled())
+
+
+def _link_params(purpose: str, token: str) -> dict:
+    """The link and its validity, as the messages show them."""
+    hours = tokens.validity_hours(purpose)
+    return {"link": tokens.link(token, purpose, notify.link_base()),
+            "hours": f"{hours:g}", "minutes": f"{round(hours * 60)}"}
+
+
+def send_link(username: str, purpose: str, template: str, language: str | None = None) -> bool:
+    """Issues a single-use link and queues the message that carries it; the link is withdrawn when no message
+    could be queued."""
+    token = tokens.issue(username, purpose)
+    if notify.send(username, template, language=language, **_link_params(purpose, token)):
+        return True
+    tokens.purge(username, purpose)
+    return False
+
+
+@app.post("/portal/api/password/forgot")
+def forgot_password():
+    """Password recovery (Documentation/adr/0004-e-mail.md, decision 6): sends a recovery link when the user name
+    or address typed belongs to an account that may sign in and has an address. The answer, and the time it
+    takes, are the same whether or not an account matched."""
+    if not mail.enabled():
+        return message("password.recoveryOff", 404)
+    data = request.get_json(silent=True) or {}
+    typed = str(data.get("login", "")).strip()[:users.EMAIL_MAX]
+    if not typed:
+        raise ValidationError("password.recoveryMissing")
+    started = time.monotonic()
+    keys = (f"forgot-user:{typed.lower()}", f"forgot-addr:{client_address()}")
+    if throttle.over(keys[0], RECOVERY_PER_LOGIN) or throttle.over(keys[1], RECOVERY_PER_ADDRESS):
+        return message("password.recoveryLimit", 429, params={"minutes": LOCKOUT_SECONDS // 60})
+    throttle.fail(*keys)
+    username = users.find_login(typed)
+    account = users.get(username) if username else None
+    if account and account.get("email") and notify.reachable(account):
+        language = account.get("language") or data.get("language")
+        if send_link(username, "reset", "password-recovery", language=language):
+            tenant = account.get("tenant")
+            audit.info("user=%s action=password-recovery addr=%s", username, client_address())
+            log_event("password-recovery", user=username, detail=client_address(), tenant=tenant, actor_tenant=tenant)
+    time.sleep(max(0.0, RECOVERY_SECONDS - (time.monotonic() - started)))
+    return message("password.recoverySent")
+
+
+def _bad_link(key: str):
+    throttle.fail(key)
+    return message("password.linkInvalid", 410)
+
+
+@app.post("/portal/api/password/link/check")
+def check_password_link():
+    """Whether a single-use link is still valid, and for whom: the page shows the user name before the user types
+    a password. Nothing is used up."""
+    key = f"link-addr:{client_address()}"
+    if throttle.over(key, BAD_LINKS_PER_ADDRESS):
+        return message("password.linkLimit", 429, params={"minutes": LOCKOUT_SECONDS // 60})
+    found = tokens.peek((request.get_json(silent=True) or {}).get("token"))
+    if not found or not notify.reachable(users.get(found["user"])):
+        return _bad_link(key)
+    return jsonify(user=found["user"], purpose=found["purpose"], min=users.MIN_PASSWORD_LENGTH)
+
+
+@app.post("/portal/api/password/link")
+def set_password_by_link():
+    """Sets the password through an invitation or recovery link: the link is used up, every session and every other
+    link of the account end, and a recovery is followed by a security message."""
+    key = f"link-addr:{client_address()}"
+    if throttle.over(key, BAD_LINKS_PER_ADDRESS):
+        return message("password.linkLimit", 429, params={"minutes": LOCKOUT_SECONDS // 60})
+    data = request.get_json(silent=True) or {}
+    token, new = data.get("token"), str(data.get("newPassword", ""))
+    if not tokens.peek(token):
+        return _bad_link(key)
+    if len(new) < users.MIN_PASSWORD_LENGTH:
+        raise ValidationError("password.tooShort", min=users.MIN_PASSWORD_LENGTH)
+    used = tokens.consume(token)                        # atomically: a link works once
+    account = users.get(used["user"]) if used else None
+    if not used or not notify.reachable(account):
+        return _bad_link(key)
+    username, purpose, tenant = used["user"], used["purpose"], account.get("tenant")
+    try:
+        users.set_password(username, new, must_change=False)
+    except users.StoreNotWritable as exc:
+        log.error("Password through a link not set: %s", exc)
+        return message("password.storeReadOnly", 500)
+    tokens.purge(username)
+    throttle.clear(f"user:{username.lower()}")          # a locked account is open again
+    users.note_language(username, data.get("language"))
+    action = "invite-accepted" if purpose == "invite" else "password-reset"
+    audit.info("user=%s action=%s addr=%s", username, action, client_address())
+    log_event(action, user=username, detail=client_address(), tenant=tenant, actor_tenant=tenant)
+    if purpose == "reset":
+        notify.send(username, "password-changed", when=notify.now_text())
+    session.clear()
+    return message("password.set", 200, purpose=purpose, user=username)
 
 
 @app.get("/portal/healthz")
 def healthz():
-    """Health check for Compose and monitoring: the portal is up, whether the resolver answers and whether a
-    job worker is running (jobs.WORKER_ALIVE_SECONDS)."""
+    """Health check for Compose and monitoring: the portal is up, whether the resolver answers, whether a job
+    worker is running (jobs.WORKER_ALIVE_SECONDS) and whether e-mail is configured."""
     try:
         status, _ = resolver("GET", "/heartbeat")
     except UpstreamError:
@@ -739,7 +863,7 @@ def healthz():
     except PyMongoError:
         workers = 0
     return jsonify(portal="ok", resolver="ok" if status == 200 else "unavailable",
-                   worker="ok" if workers else "unavailable"), 200
+                   worker="ok" if workers else "unavailable", mail="on" if mail.enabled() else "off"), 200
 
 
 # --------------------------------------------------------------------------- portal API
@@ -767,7 +891,42 @@ def config():
         importLimits=sheet.limits(),
         dataAttributes=syntax.ENGINE.describe(),
         session=session_info(),
+        mail={"enabled": mail.enabled()},
+        preferences=preferences_of(users.get(g.user) or {}),
     )
+
+
+def preferences_of(account: dict) -> dict:
+    """The user's own e-mail choices (Options → E-mail): his address (set by the administrators), the language of
+    his messages and each optional category, on or off."""
+    chosen = account.get("notify") or {}
+    return {"email": account.get("email"), "language": account.get("language"),
+            "languageChosen": bool(account.get("languageChosen")),
+            "notify": {name: bool(chosen.get(name, notify.CATEGORIES[name][1])) for name in notify.OPTIONAL}}
+
+
+@app.get("/portal/api/preferences")
+@require_login
+def get_preferences():
+    """The signed-in user's e-mail preferences."""
+    return jsonify(preferences_of(users.get(g.user) or {}))
+
+
+@app.put("/portal/api/preferences")
+@require_login
+def save_preferences():
+    """Saves the language of the user's messages and the optional categories he wants."""
+    data = request.get_json(silent=True) or {}
+    choices = data.get("notify")
+    if choices is not None:
+        if not isinstance(choices, dict) or any(name not in notify.OPTIONAL for name in choices):
+            raise users.UserError("preferences.categoryUnknown")
+    account = users.set_preferences(g.user, language=data.get("language"), notify=choices)
+    shown = preferences_of(account)
+    log_event("preferences", tenant=g.account_tenant,
+              detail=f'language={shown["language"]} ' + " ".join(f"{k}={'on' if v else 'off'}"
+                                                                for k, v in shown["notify"].items()))
+    return message("preferences.saved", 200, preferences=shown)
 
 
 def tenant_summary(tenant_id: str | None) -> dict | None:
@@ -1246,6 +1405,7 @@ def run_import_job(job: dict, reporter: "jobs.Reporter") -> None:
                    counts["created"], counts["updated"], counts["failed"])
         log_event("import", detail="created={created} updated={updated} failed={failed}".format(**counts))
     reporter.finish()
+    notify.send(user, "import-finished", **counts)     # when the user switched "My background jobs" on
 
 
 @app.post("/portal/api/import/apply")
@@ -1343,6 +1503,8 @@ def run_link_job(job: dict, reporter: "jobs.Reporter") -> None:
                                "records": by_record, "urls": len(results), "user": job["user"]})
         audit.info("user=%s action=linkcheck urls=%d problems=%d", job["user"], len(results), len(problems))
     reporter.finish(**fields)
+    if job["scope"] == "all":                         # only the check of every record, which can take long
+        notify.send(job["user"], "linkcheck-finished", urls=len(results), problems=len(problems))
 
 
 @app.post("/portal/api/links/jobs")
@@ -1445,17 +1607,29 @@ def list_users():
 @require_login
 @admin_required
 def create_user():
-    """Creates a user with a temporary password, shown once in the answer (administrators). A server
+    """Creates a user (administrators): with mail on, an address and "invite", the user gets an invitation by
+    e-mail and chooses his own password; otherwise a temporary password, shown once in the answer. A server
     administrator chooses the tenant (none: the operator); a tenant administrator creates users of his tenant."""
     data = request.get_json(silent=True) or {}
     username = str(data.get("username", "")).strip()
     tenant = (str(data.get("tenant") or "").strip() or None) if g.server_admin else g.account_tenant
-    password = temporary_password()
-    users.create(username, password, str(data.get("role", "")), data.get("prefixes") or [], tenant=tenant,
-                 email=data.get("email"))
+    role, prefixes = str(data.get("role", "")), data.get("prefixes") or []
+    detail = f'{username} role={data.get("role")} prefixes={",".join(prefixes)}'
+    language = data.get("language") or (users.get(g.user) or {}).get("language")   # the inviter's, until the user signs in
+    if data.get("invite") and mail.enabled() and str(data.get("email") or "").strip():
+        users.create(username, None, role, prefixes, tenant=tenant, email=data.get("email"), language=language)
+        if send_link(username, "invite", "invite", language=language):
+            audit.info("user=%s action=user-create target=%s role=%s tenant=%s invited", g.user, username, role,
+                       tenant or "-")
+            log_event("user-create", tenant=tenant, detail=detail + " invited")
+            return message("users.invited", 201, params={"user": username})
+        password = temporary_password()                 # the invitation could not be queued: as before
+        users.set_password(username, password, must_change=True)
+    else:
+        password = temporary_password()
+        users.create(username, password, role, prefixes, tenant=tenant, email=data.get("email"), language=language)
     audit.info("user=%s action=user-create target=%s role=%s tenant=%s", g.user, username, data.get("role"), tenant or "-")
-    log_event("user-create", tenant=tenant,
-              detail=f'{username} role={data.get("role")} prefixes={",".join(data.get("prefixes") or [])}')
+    log_event("user-create", tenant=tenant, detail=detail)
     return message("users.created", 201, params={"user": username}, password=password)
 
 
@@ -1473,7 +1647,14 @@ def update_user(username):
     audit.info("user=%s action=user-update target=%s", g.user, username)
     log_event("user-update", tenant=target.get("tenant"),
               detail=f'{username} role={account["role"]} disabled={account["disabled"]} '
-                     f'prefixes={",".join(account["prefixes"])}')
+                     f'prefixes={",".join(account["prefixes"])}'
+                     + (" email-changed" if account["email"] != target.get("email") else ""))
+    if account["email"] != target.get("email"):        # security: to the old address and to the new one
+        when = notify.now_text()
+        if target.get("email"):
+            notify.send(username, "email-changed-old", to=target["email"], when=when)
+        if account["email"]:
+            notify.send(username, "email-changed-new", when=when)
     return message("users.updated", 200, params={"user": username})
 
 
@@ -1481,8 +1662,19 @@ def update_user(username):
 @require_login
 @admin_required
 def reset_user(username):
-    """Gives a user a new temporary password (shown once) and ends the user's sessions (administrators)."""
+    """Resets a user's password (administrators). With mail on and an address: the password stops working at once
+    (every session ends) and a link to choose a new one goes by e-mail (an invited user gets a new invitation).
+    Otherwise a new temporary password, shown once, and the user's sessions end."""
     target = managed_account(username)
+    if mail.enabled() and target.get("email") and notify.reachable(target) and username != g.user:
+        invited = bool(target.get("invited"))
+        if not invited:
+            users.clear_password(username)
+        if send_link(username, "invite" if invited else "reset", "invite" if invited else "password-reset-admin",
+                     language=target.get("language")):
+            audit.info("user=%s action=user-reset target=%s by=link", g.user, username)
+            log_event("user-reset", tenant=target.get("tenant"), detail=f"{username} link")
+            return message("users.resetSent", 200, params={"user": username})
     password = temporary_password()
     users.set_password(username, password, must_change=True)
     audit.info("user=%s action=user-reset target=%s", g.user, username)
@@ -1499,6 +1691,7 @@ def remove_user(username):
         raise users.UserError("users.notSelf")
     target = managed_account(username)
     users.remove(username)
+    tokens.purge(username)                              # his links stop working; queued messages are skipped
     audit.info("user=%s action=user-remove target=%s", g.user, username)
     log_event("user-remove", tenant=target.get("tenant"), detail=username)
     return message("users.removed", 200, params={"user": username})
@@ -1745,6 +1938,6 @@ def qrcode():
 # --------------------------------------------------------------------------- background jobs
 # What the worker runs for each type of job (worker.py). With PORTAL_WORKER=embedded a worker thread runs
 # them inside this process; otherwise the portal-worker service does.
-JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job}
+JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job, "mail": notify.run_mail_job}
 EMBEDDED_WORKER = (worker.start_embedded(JOB_RUNNERS)
                    if worker.mode() == "embedded" and not worker.IN_WORKER_PROCESS else None)

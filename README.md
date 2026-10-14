@@ -136,7 +136,8 @@ flowchart LR
 | `data-entry-service` | `DATA_ENTRY_SERVICE_REPLICAS` (1) | REST API to create, read, update and delete records | internal (via `/api`) |
 | `portal-service` | `PORTAL_SERVICE_REPLICAS` (1) | Link management portal (Flask + static front end) | internal (via `/portal/`) |
 | `portal-db-init` | one, at every start | Creates or updates the portal's database user, then exits | — |
-| `portal-worker` | `PORTAL_WORKER_REPLICAS` (1) | Runs the portal's background jobs (spreadsheet imports, link checks) from its database; the portal's image | — |
+| `portal-worker` | `PORTAL_WORKER_REPLICAS` (1) | Runs the portal's background jobs (spreadsheet imports, link checks, e-mail messages) from its database; the portal's image | — |
+| `mailpit` | none unless started (profile `mail-test`) | A test relay that keeps every e-mail, for trying the portal's e-mail before a real relay exists; never in production | `127.0.0.1:8025` |
 | `database-service` | `database-server` | MongoDB | `${DATABASE_BIND_ADDRESS}:27017` |
 
 The portal is a back end between the browser and the data entry API: the API token never reaches the
@@ -387,7 +388,7 @@ checks the user's role and GS1 Company Prefixes.
 | `GET /history?key=&value=&qualifiers=` | Versions of a record (with content) |
 | `GET /users`, `POST /users`, `PUT /users/{name}`, `POST /users/{name}/reset`, `DELETE /users/{name}` | User administration (administrators) |
 | `GET /audit`, `GET /audit.csv` (`user`, `from`, `to`, `q`) | Audit trail (administrators) |
-| `GET /portal/healthz` | Health of the portal, of its access to the API and of its job worker (`worker`: `ok` or `unavailable`) |
+| `GET /portal/healthz` | Health of the portal, of its access to the API and of its job worker (`worker`: `ok` or `unavailable`); whether e-mail is configured (`mail`: `on` or `off`) |
 
 ## System requirements
 
@@ -463,7 +464,7 @@ sudo FQDN=id.example.org TLS_MODE=letsencrypt CERTBOT_EMAIL=ops@example.org \
    ```
 
 4. **Start.** `docker compose up -d --build`, then check `curl -s http://127.0.0.1:8080/portal/healthz`
-   (`{"portal":"ok","resolver":"ok","worker":"ok"}`) and a request that reaches the resolver through the proxy:
+   (`{"portal":"ok","resolver":"ok","worker":"ok","mail":"off"}`) and a request that reaches the resolver through the proxy:
    `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver` (`200`). The
    health check reaches the web server directly, without the proxy's resolver route.
 5. **HTTPS.** Put a TLS reverse proxy in front of `127.0.0.1:8080`. With nginx: copy
@@ -496,6 +497,7 @@ never committed).
 | `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD` | The portal's own database and user (created by `portal-db-init`); the installer generates the password |
 | `PORTAL_SECRET_KEY` | Key that signs the portal's sessions; every portal replica must share it (the installer generates it; empty: a key kept in the portal's volume) |
 | `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS` (0), `PORTAL_JOURNAL_ADMIN_DAYS` (0) | Days the journal keeps sign-ins, record changes and administration events (0 = for ever) |
+| `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`, `PORTAL_MAIL_SECURITY` (`starttls`), `PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM` | The portal's e-mail relay ([ADR 0004](Documentation/adr/0004-e-mail.md)): invitations, password recovery, security notices; empty host: e-mail off. Port 587 (STARTTLS) or 465 (TLS); the installer asks for them; details and a test command in [the extensions documentation](Documentation/extensions/README.md#e-mail) |
 | `PORTAL_WORKER` (`external`) | Where imports and link checks run: `external`, the `portal-worker` service; `embedded`, a thread of the portal, for a set-up without that service |
 | `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_COOKIE_SECURE` | Optional portal settings: minutes without use and hours after the sign-in before the session ends, Secure cookie |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Host addresses of ports 8080 and 27017 (read by Compose from `.env` only) |
@@ -506,7 +508,7 @@ never committed).
 
 ```bash
 git pull && docker compose up -d --build                         # update
-curl -s http://127.0.0.1:8080/portal/healthz                     # {"portal":"ok","resolver":"ok","worker":"ok"}
+curl -s http://127.0.0.1:8080/portal/healthz                     # {"portal":"ok","resolver":"ok","worker":"ok","mail":"off"}
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver   # 200: resolver through the proxy
 docker compose exec portal-service python create_user.py maria --role editor   # add or reset a user
 # who changed what: user menu → Audit trail (administrators), or the container log:
@@ -644,7 +646,7 @@ Later, when convenient:
 
 ```
 .env.example                    configuration defaults (committed); .env holds installation values
-docker-compose.yml              the services (seven: one run once at start, four with replicas)
+docker-compose.yml              the services (seven: one run once at start, four with replicas; mailpit for tests)
 data_entry_server/              data entry API (official, with /summary and token on /index)
 web_server/                     resolver (official, with conformance fixes and HTML pages)
 database_server/                MongoDB image (official)

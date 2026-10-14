@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Situação | **Aceita** (14 de outubro de 2026). A implementar em três etapas: 1 (este registro), 2 (envio, links de uso único, notificações e suas configurações no servidor), 3 (telas) |
+| Situação | **Aceita** (14 de outubro de 2026). Implementada em três etapas: 1 (este registro), 2 (envio, links de uso único, notificações e suas configurações no servidor; seção 3.8), 3 (telas) |
 | Item do backlog | 3.1 — e-mail |
 | Decidido por | o dono do branch, que pediu a opção recomendada em todos os pontos da seção 4 enquanto estava ausente |
 | Inglês | [ADR 0004 in English](../../adr/0004-e-mail.md) (versão de referência) |
@@ -183,6 +183,35 @@ por endereço do navegador em 15 minutos.
 | `POST /portal/api/users/<nome>/reset` | administradores | envia um link quando possível (`users.resetSent`), senão uma senha temporária como hoje |
 | `GET /portal/api/config` | com acesso | ganha `mail` (`{"enabled": bool}`) e o `email`, `language` e `notify` do usuário |
 | `GET /portal/healthz` | qualquer um | ganha `"mail": "off"` ou `"on"` |
+
+### 3.8 Como implementado na etapa 2
+
+Como projetado, com estes detalhes resolvidos pela implementação:
+
+- `mail.send()` abre uma conexão por mensagem e se identifica no `EHLO` com o `FQDN`. Uma resposta que recusa o
+  destinatário depois da mensagem conta como qualquer resposta 4xx ou 5xx.
+- Quando um link foi emitido mas a sua mensagem não pôde ser enfileirada, o link é retirado (`app.send_link()`);
+  para um usuário novo o administrador recebe então uma senha temporária, como sem e-mail.
+- A redefinição por um administrador vai por link só para uma conta ativa com endereço e nunca para a conta do
+  próprio administrador; uma conta desativada ainda recebe uma senha temporária.
+- `users.create()` sem senha e sem endereço é recusado (`users.emailRequired`).
+- `mail-failed` é gravado na trilha de auditoria do destinatário (a da sua organização, ou a do operador);
+  escolher as preferências grava `preferences`.
+- A verificação de saúde acrescenta `"mail": "on" | "off"`.
+- O instalador pergunta pelo relay depois do primeiro usuário do portal: servidor (vazio: sem e-mail; `off` o
+  desliga), `starttls` ou `tls`, porta, usuário, senha (oculta; Enter mantém a do `.env`) e remetente. Um relay de
+  teste com `none`, definido à mão, é mantido numa nova execução. Escrever o teste desta etapa revelou um defeito
+  mais antigo do instalador — configurações no fim de uma linha da sua lista de chaves gerenciadas eram gravadas
+  duas vezes, o valor antigo por último —, corrigido no seu próprio commit (`f3d127d`).
+- A imagem do `mailpit` é fixada (`axllent/mailpit:v1.31.5`). O ambiente de desenvolvimento não alcança o Docker
+  Hub, então ela é iniciada pela primeira vez no servidor de homologação.
+- Toda proteção é conferida por mutação no `test_mail.py` (16 mutações, todas pegas): a resposta da recuperação
+  distinguindo contas inexistentes, ou respondendo mais rápido para elas; um token gravado em claro; um link usado
+  duas vezes; uma conta desativada recebendo; o texto da mensagem mantido depois do envio; `notBefore` ignorado;
+  a redefinição por um administrador mantendo a senha antiga; outros links sobrevivendo a uma senha definida por
+  link; credenciais enviadas sem STARTTLS; um aviso de bloqueio a cada falha; o endereço no diário; categorias
+  opcionais ignoradas; o endereço antigo não avisado; sem limite de recuperação; o link de uma conta desativada
+  aceito.
 
 ## 4. Opções consideradas
 

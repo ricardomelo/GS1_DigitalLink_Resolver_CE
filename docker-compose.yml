@@ -167,6 +167,22 @@ services:
     networks:
       - resolver-internal-network
 
+  mailpit:
+    # Only for trying the portal's e-mail on a test installation before a real relay exists
+    # (Documentation/adr/0004-e-mail.md, decision 9); never in production. Not started by "docker compose up":
+    # "docker compose --profile mail-test up -d mailpit" starts it. It accepts every message on port 1025
+    # (PORTAL_MAIL_HOST=mailpit, PORTAL_MAIL_PORT=1025, PORTAL_MAIL_SECURITY=none) and shows them, with its API,
+    # on port 8025 of the host's loopback address only.
+    image: axllent/mailpit:v1.31.5
+    profiles: ["mail-test"]
+    environment:
+      MP_MAX_MESSAGES: 500
+    ports:
+      - "127.0.0.1:8025:8025"
+    restart: unless-stopped
+    networks:
+      - resolver-internal-network
+
 
 volumes:
   resolver-database-volume: {}

@@ -1,7 +1,8 @@
 """
 The portal's job worker: claims the jobs of the "jobs" collection one at a time and runs them with the
-portal's own functions (app.JOB_RUNNERS), so that imports and link checks do not depend on the web process
-that accepted them (Documentation/adr/0001-portal-state-in-mongodb.md, section 3.3; jobs.py has the states).
+portal's own functions (app.JOB_RUNNERS), so that imports, link checks and e-mail messages do not depend on the
+web process that accepted them (Documentation/adr/0001-portal-state-in-mongodb.md, section 3.3; jobs.py has the
+states).
 
 PORTAL_WORKER chooses where it runs:
   external   (default) the portal-worker service runs "python worker.py"; the web process only creates jobs
@@ -115,6 +116,8 @@ class Worker:
         except jobs.Interrupted:
             jobs.release(token, self.name)
             log.info("Job %s handed back to the queue: the worker is stopping.", token)
+        except jobs.Deferred:
+            log.info("Job %s went back to the queue, to be tried again later.", token)
         except jobs.JobLost:
             log.warning("Job %s was given to another worker while this one worked on it; left to it.", token)
         except Exception:                                   # noqa: BLE001 — any error ends this job only

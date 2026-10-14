@@ -84,7 +84,7 @@ alterações.
 
 ```
 .env.example                     padrões de configuração (versionado); o .env guarda os valores da instalação
-docker-compose.yml               sete serviços (quatro com réplicas); .env lido por todos; endereços de bind; volumes nomeados
+docker-compose.yml               sete serviços (quatro com réplicas), mais o mailpit no perfil mail-test; .env lido por todos; endereços de bind; volumes nomeados
 data_entry_server/src/
   data_entry_namespace.py        /summary, token no /index, BearerAuth no Swagger
   data_entry_logic.py            read_summary()
@@ -115,6 +115,10 @@ portal/                          novo: o portal de gestão de links
   migrate.py                     migração única dos arquivos das versões anteriores para o banco
   jobs.py                        tarefas em segundo plano: estados, retirada, sinal de vida, o anúncio do worker
   worker.py                      o worker de tarefas (serviço portal-worker, ou uma thread com PORTAL_WORKER=embedded)
+  mail.py                        e-mail de saída por um relay SMTP; "python mail.py test <endereço>" (ADR 0004)
+  mailtexts.py                   os textos das mensagens de e-mail, nos dois idiomas
+  tokens.py                      links de uso único: convites e recuperação de senha
+  notify.py                      notificações: categorias, as escolhas do usuário, a tarefa "mail"
   db_init.py                     cria o usuário do banco do portal (serviço portal-db-init)
   create_user.py                 administração de usuários pela linha de comando
   static/                        index.html, login.html, app.js, login.js, password.js, i18n.js, app.css
@@ -149,6 +153,7 @@ tests/, useful_external_python_scripts/   oficiais
 | `portal-service` | `portal/` (dois estágios: syntax engine, aplicação; gunicorn) | interna 8000 | `resolver-portal-config:/app/config` | `PORTAL_SERVICE_REPLICAS` |
 | `portal-worker` | `portal/` (`python worker.py`) | — | `resolver-portal-config:/app/config` | `PORTAL_WORKER_REPLICAS` |
 | `frontend-proxy-service` | `frontend_proxy_server/` (nginx 1.30) | `${PROXY_BIND_ADDRESS:-0.0.0.0}:8080` | — | 1 (`frontend-proxy-server`) |
+| `mailpit` | imagem `axllent/mailpit`, só no perfil `mail-test` (um relay de teste, [ADR 0004](adr/0004-e-mail.md)) | `127.0.0.1:8025` (suas páginas e API) | — | nenhum, a menos que iniciado com `--profile mail-test` |
 
 Todos os serviços leem o `.env.example` e depois o `.env` (Compose ≥ 2.24, `required: false`), então o
 `.env` guarda só o que a instalação muda. Os endereços de bind, as quantidades de réplicas (`*_REPLICAS`) e
@@ -156,8 +161,10 @@ as de processos (`*_PROCESSES`, passadas aos contêineres como `WEB_CONCURRENCY`
 Compose, só do `.env`. As variáveis estão descritas no `.env.example` e na seção *Configuration* do README; o portal
 também lê `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD`, `PORTAL_DB_HOST` (ou `PORTAL_DB_URI`),
 `PORTAL_JOURNAL_*_DAYS`, `PORTAL_SESSION_IDLE_MINUTES`, `PORTAL_SESSION_MAX_HOURS`, `PORTAL_SECRET_KEY`,
-`PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT`, `PORTAL_WORKER` e `PORTAL_CONFIG_DIR` (e `PORTAL_*_FILE`, os
-arquivos que a migração lê). Só o `portal-db-init` recebe o `MONGO_URI` root; o do portal e o do worker ficam
+`PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT`, `PORTAL_WORKER`, `PORTAL_CONFIG_DIR` (e `PORTAL_*_FILE`, os
+arquivos que a migração lê) e, para o e-mail, `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`, `PORTAL_MAIL_SECURITY`,
+`PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM`, `PORTAL_MAIL_REPLY_TO`, `PORTAL_MAIL_CA_FILE`,
+`PORTAL_MAIL_TIMEOUT`, `PORTAL_INVITE_HOURS` e `PORTAL_RESET_MINUTES`. Só o `portal-db-init` recebe o `MONGO_URI` root; o do portal e o do worker ficam
 vazios. O worker tem as configurações do portal (ele importa o `app.py` e faz a mesma inicialização, o que é
 seguro sob as travas compartilhadas).
 
@@ -342,12 +349,54 @@ e confere `allowed()` de novo antes de gravar cada cadastro.
 
 O `jobs.py` é a fila: `create()`, `get()` (a tarefa do usuário, de um tipo, não expirada), `queue_prepared()`,
 `status()` (estado, progresso, `stalled`, `error`) e, para os workers, `announce()` / `withdraw()` /
-`workers_alive()`, `requeue_stale()`, `claim()`, `Reporter` (`beat()`, `progress()`, `record()`,
-`check_stop()`, `finish()`), `release()`, `fail()`. Os tempos são constantes no início (`HEARTBEAT_SECONDS` 10,
+`workers_alive()`, `requeue_stale()`, `claim()` (a tarefa mais antiga da fila cujo `notBefore`, se houver, já
+passou), `Reporter` (`beat()`, `progress()`, `record()`, `check_stop()`, `finish(remove=…)`, `defer(seconds)` —
+de volta à fila para mais tarde, levantando `Deferred` —, `give_up(code)`), `release()`, `fail()`. Os tipos são
+`import`, `linkcheck` e `mail`. Os tempos são constantes no início (`HEARTBEAT_SECONDS` 10,
 `STALE_SECONDS` 120, `MAX_ATTEMPTS` 3, `WORKER_ALIVE_SECONDS` 30, `STALLED_SECONDS` 15, validades de 30 minutos
 e de um dia). O `worker.py` tem `Worker` (`run_once()`, `loop()`, `stop()`), `start_embedded()`, `wake()` e
 `main()` (o serviço: SIGTERM e SIGINT o param depois do item em mãos); `IN_WORKER_PROCESS` impede que o
 `app.py` inicie um worker embutido dentro do processo do worker.
+
+### `mail.py`, `mailtexts.py`, `tokens.py`, `notify.py` — e-mail
+
+[ADR 0004](adr/0004-e-mail.md). O `mail.py` lê `PORTAL_MAIL_*` a cada chamada (`settings()`, `problems()`,
+`enabled()`: desligado sem servidor, e com um erro registrado uma vez quando as configurações não combinam), monta
+uma mensagem (`message()`: texto simples com alternativa HTML, `Auto-Submitted: auto-generated`, um `Message-ID` do
+domínio do remetente) e a envia por uma conexão própria (`send()`): com `starttls` o relay precisa oferecer
+STARTTLS antes de qualquer credencial ser enviada, com `tls` a conexão é TLS desde o início, com `none` não há
+criptografia nem autenticação (relays de teste). O certificado é sempre verificado (`PORTAL_MAIL_CA_FILE`
+acrescenta uma autoridade). `MailError.temporary` separa a falta de conexão, um tempo esgotado ou uma resposta
+4xx de uma resposta 5xx ou de um certificado recusado. `python mail.py test <endereço>` envia uma mensagem de
+teste na hora e mostra o resultado.
+
+O `mailtexts.py` guarda `TEXTS` (um assunto e um texto simples por mensagem e idioma) e `SIGNATURE`;
+`compose(template, language, **params)` preenche os marcadores (um desconhecido continua visível) e faz a
+alternativa HTML (escapada, links clicáveis); `language()` converte o idioma de uma página em `pt-BR` ou `en-GB`.
+O `tokens.py` emite links de uso único: `issue(user, purpose)` (o link anterior com aquele propósito para de
+funcionar; só o SHA-256 é guardado), `peek()`, `consume()` (atômico: `find_one_and_delete`), `purge()`, `link()`; a
+validade vem de `PORTAL_INVITE_HOURS` e `PORTAL_RESET_MINUTES`.
+
+O `notify.py` associa cada mensagem a uma categoria (`TEMPLATES`, `CATEGORIES`: `account` e `security` sempre
+enviadas, `jobs` opcional e desligada por padrão), confere o destinatário (`reachable()`: ativo, de um tenant
+ativo; `wants()`: a escolha do usuário para as categorias opcionais), compõe a mensagem no idioma do usuário e
+enfileira uma tarefa `mail` (`send()`, que nunca levanta exceção: a ação que causou a mensagem já aconteceu). O
+`run_mail_job()` (em `app.JOB_RUNNERS`) pula uma conta que não pode mais receber, envia, devolve a tarefa à fila por
+`RETRY_MINUTES` (1, 5, 15, 60, 120) depois de uma falha temporária (`Reporter.defer()`), a faz falhar depois de uma
+definitiva ou da última tentativa (`Reporter.give_up()`, diário `mail-failed` com o modelo e a resposta do relay)
+e retira `text` e `html` da tarefa depois de enviada ou falhada.
+
+No `app.py`: `send_link()` (emite um link e enfileira a sua mensagem; o link é retirado quando nada pôde ser
+enfileirado), `forgot_password()` (a mesma resposta e pelo menos `RECOVERY_SECONDS` para qualquer entrada; limites
+`RECOVERY_PER_LOGIN` e `RECOVERY_PER_ADDRESS` por `LoginThrottle.over()`), `check_password_link()` e
+`set_password_by_link()` (`BAD_LINKS_PER_ADDRESS`; a senha definida, os outros links e as sessões da conta
+encerrados, uma conta bloqueada liberada), `preferences_of()` e as chamadas de preferências, e as chamadas de
+`notify.send()` depois de uma troca de senha, de uma troca de endereço de e-mail, do acesso errado que bloqueia uma
+conta, de uma importação e de uma verificação de todos os cadastros. O `create_user()` convida quando pedido, com o
+e-mail ligado e um endereço; o `reset_user()` envia um link quando pode (um novo convite para um usuário convidado)
+e senão gera uma senha temporária como antes. O `users.py` ganha os campos `invited`, `language`,
+`languageChosen` e `notify`, e `clear_password()`, `find_login()` (um nome de usuário, sem diferenciar maiúsculas,
+ou um endereço), `note_language()` e `set_preferences()`; `create()` sem senha cria uma conta convidada.
 
 ### `migrate.py`, `db_init.py`
 
@@ -409,8 +458,12 @@ acesso de suporte, ou o operador) e aos prefixos de empresa GS1 do usuário. Err
 |---|---|---|
 | `POST /login` `{username, password}` | — | Entrar (429 `auth.locked` quando bloqueado) |
 | `POST /logout` | — | Sair |
-| `POST /password` `{currentPassword, newPassword}` | qualquer | Trocar a senha; outras sessões são encerradas |
-| `GET /config` | qualquer | Usuário, perfil (o que vale), `accountRole`, `serverAdmin`, `tenant` e `support` (`{id, name, disabled}` ou `null`), prefixos, endereço do Resolver, tipos de link, chaves com qualificadores e combinações, idiomas, limites de importação, atributos de dados, limites da sessão (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`) |
+| `POST /password` `{currentPassword, newPassword}` | qualquer | Trocar a senha; outras sessões são encerradas; uma mensagem de segurança quando o e-mail está ligado |
+| `GET /login/options` | — | `{passwordRecovery}`: se a página de acesso oferece recuperação (e-mail ligado) |
+| `POST /password/forgot` `{login, language}` | — | Link de recuperação por e-mail para a conta desse nome de usuário ou endereço, quando ela pode entrar e tem endereço; sempre `password.recoverySent` (404 `password.recoveryOff` com o e-mail desligado, 429 `password.recoveryLimit`) |
+| `POST /password/link/check` `{token}` · `POST /password/link` `{token, newPassword, language}` | — | Um link de uso único: `{user, purpose, min}` ou 410 `password.linkInvalid`; depois a senha definida (`password.set`, `purpose`), o link consumido (429 `password.linkLimit` depois de dez links inválidos de um endereço) |
+| `GET /preferences` · `PUT /preferences` `{language, notify: {jobs}}` | qualquer | O endereço de e-mail do usuário (só leitura), o idioma das suas mensagens e as categorias opcionais (`preferences.saved`, `preferences.languageInvalid`, `preferences.categoryUnknown`) |
+| `GET /config` | qualquer | Usuário, perfil (o que vale), `accountRole`, `serverAdmin`, `tenant` e `support` (`{id, name, disabled}` ou `null`), prefixos, endereço do Resolver, tipos de link, chaves com qualificadores e combinações, idiomas, limites de importação, atributos de dados, limites da sessão (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`), `mail` (`{enabled}`) e `preferences` (como `GET /preferences`) |
 | `GET /session` | qualquer (também enquanto uma nova senha é exigida) | Renova a sessão; responde os mesmos limites da sessão |
 | `GET /record?key=&value=&qualifiers=/10/L1` | leitor | Um cadastro: `exists`, `description`, `links`, `defaultLinkType`, `sharedDefaultLinkType`, `digitalLink`, `otherEntries` (cada um com `informative`), `qualifiers` (os do cadastro), `informative` (digitados) e `storedInformative`, `hasKeyRecord` |
 | `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}], keyRecord?}` | editor | Criar (201) ou substituir (200); o primeiro link é o principal. Com número de série, 22 e 10 em `qualifiers` são gravados como informativos. `keyRecord: {mode: copy\|target, description, url}` cria antes o cadastro da chave (`save.createdWithKey`, `keyRecordCreated`) |
@@ -422,13 +475,13 @@ acesso de suporte, ou o operador) e aos prefixos de empresa GS1 do usuário. Err
 | `POST /links/check` `{urls}` | editor | Verificar endereços (editor) |
 | `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `GET /links/last` | editor · editor · leitor | Verificação de links em segundo plano (estado: `state` `queued`\|`running`\|`finished`\|`failed`, `done`, `total`, `stalled`, `error`) |
 | `GET /history?key=&value=&qualifiers=` | leitor | Versões de um cadastro feitas no escopo da requisição, com conteúdo |
-| `GET /users` · `POST /users` `{username, role, prefixes, email, tenant}` · `PUT /users/{nome}` `{role, prefixes, email, disabled}` · `POST /users/{nome}/reset` · `DELETE /users/{nome}` | administrador | Administração de usuários: o adm. do servidor gerencia todos os usuários (`tenant` escolhe a organização; a resposta do GET acrescenta `tenants`), o administrador de um tenant os usuários do seu tenant; `tenantName` em cada usuário; senhas temporárias na resposta |
+| `GET /users` · `POST /users` `{username, role, prefixes, email, tenant}` · `PUT /users/{nome}` `{role, prefixes, email, disabled}` · `POST /users/{nome}/reset` · `DELETE /users/{nome}` | administrador | Administração de usuários: o adm. do servidor gerencia todos os usuários (`tenant` escolhe a organização; a resposta do GET acrescenta `tenants`), o administrador de um tenant os usuários do seu tenant; `tenantName` e `invited` em cada usuário; senhas temporárias na resposta. Com o e-mail ligado: `POST /users` com `invite` e um endereço responde `users.invited` sem senha; `reset` responde `users.resetSent` (um link por e-mail) para um usuário com endereço |
 | `GET /tenants` · `POST /tenants` `{name, prefixes}` · `PUT /tenants/{id}` `{name, prefixes, disabled}` · `DELETE /tenants/{id}` | adm. do servidor | Organizações; o GET acrescenta `users` e `records` por tenant e `operatorRecords` |
 | `POST /support` `{tenant, reason}` · `DELETE /support` | adm. do servidor | Abrir e fechar o acesso de suporte, só leitura, a um tenant, registrado na trilha dele |
 | `GET /audit` · `GET /audit.csv` (`user`, `from`, `to`, `q`, `limit`) | administrador | Auditoria do escopo: a de um tenant; a do operador mais o que usuários do operador fizeram a tenants; a de um tenant durante o acesso de suporte. Os eventos levam `tenant`, `tenantName`, `byOperator`; o CSV acrescenta `organisation` e `by_operator` |
 | `POST /digital-link` `{key, value, qualifiers, attributes:[{ai, value}]}` | leitor | Digital Link com atributos de dados conferidos pelo engine; nada é gravado |
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&attr=AI:valor` | leitor | Etiqueta; cabeçalhos `X-QR-Version`, `X-QR-Level`, `X-QR-Modules`; 422 `qr.tooSmall` / `qr.tooLong` |
-| `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable"}` |
+| `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable", "mail": "on"\|"off"}` |
 
 ## 8. Dados do portal
 
@@ -437,13 +490,14 @@ Decisões e seus motivos: [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md).
 
 | Coleção | `_id` e conteúdo | Índices |
 |---|---|---|
-| `users` | nome de usuário; `hash`, `role`, `prefixes`, `tenant` (ausente nos usuários do operador), `email` (opcional), `disabled`, `mustChange`, `created`, `lastLogin` | — |
+| `users` | nome de usuário; `hash` (vazio enquanto convidado, ou depois de uma redefinição por link), `role`, `prefixes`, `tenant` (ausente nos usuários do operador), `email` (opcional), `disabled`, `mustChange`, `created`, `lastLogin`, `invited`, `language`, `languageChosen`, `notify` (os quatro últimos ausentes quando vazios) | — |
 | `tenants` | `t-` + 12 dígitos hexadecimais; `name`, `prefixes`, `disabled`, `created`, `createdBy` ([ADR 0002](adr/0002-organizacoes.md)) | — |
 | `record_meta` | chave do cadastro (GTIN pelos 14 dígitos, as outras chaves por `AI/valor`, mais o caminho dos qualificadores); `createdAt`, `createdBy`, `updatedAt`, `updatedBy`, `tenant` (ausente para o operador) | — |
-| `journal` | ObjectId (`jsonl-<linha>` nos eventos migrados); `at` (data), `user`, `action`, `category`, `tenant` (ausente para o operador), `byOperator`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Ações de cadastro `create`, `update`, `delete` (com o conteúdo do cadastro), `import`; outras: `login`, `login-failed`, `login-refused`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`, `tenant-create`, `tenant-update`, `tenant-remove`, `support-open` (o motivo em `detail`), `support-close` | data; cadastro + data; usuário + data; tenant + data; categoria; TTL em `expiresAt` |
-| `login_failures` | `key` (`user:<nome>` ou `addr:<endereço>`), `at` | chave + data; TTL de 15 minutos em `at` |
+| `journal` | ObjectId (`jsonl-<linha>` nos eventos migrados); `at` (data), `user`, `action`, `category`, `tenant` (ausente para o operador), `byOperator`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Ações de cadastro `create`, `update`, `delete` (com o conteúdo do cadastro), `import`; outras: `login`, `login-failed`, `login-refused`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`, `tenant-create`, `tenant-update`, `tenant-remove`, `support-open` (o motivo em `detail`), `support-close`, `password-recovery`, `password-reset`, `invite-accepted`, `preferences`, `mail-failed` (nunca um endereço de e-mail) | data; cadastro + data; usuário + data; tenant + data; categoria; TTL em `expiresAt` |
+| `login_failures` | `key` (`user:<nome>` ou `addr:<endereço>`; pedidos de recuperação `forgot-user:<entrada>` e `forgot-addr:<endereço>`; links inválidos `link-addr:<endereço>`), `at` | chave + data; TTL de 15 minutos em `at` |
 | `linkcheck_cache` | endereço; `result`, `expiresAt` | TTL em `expiresAt` |
-| `jobs` | token; `type` (`import`, `linkcheck`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `expiresAt`, `error`; importações `plan`, `keyRecords`, `results`; verificações de links `scope`, `urls` (`[{url, records}]`), `problems`, `records` (`[{record, problems}]`) | estado + criação; TTL em `expiresAt` |
+| `jobs` | token; `type` (`import`, `linkcheck`, `mail`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `expiresAt`, `error`, `notBefore`; importações `plan`, `keyRecords`, `results`; verificações de links `scope`, `urls` (`[{url, records}]`), `problems`, `records` (`[{record, problems}]`); mensagens `to`, `subject`, `text` e `html` (retirados depois de enviada ou falhada), `template`, `tries`, `lastError`, `sent` ou `skipped` | estado + criação; TTL em `expiresAt` |
+| `tokens` | SHA-256 do token de um link de uso único; `purpose` (`invite`, `reset`), `user`, `created`, `expiresAt` ([ADR 0004](adr/0004-e-mail.md)) | usuário + propósito; TTL em `expiresAt` |
 | `workers` | nome do worker (`host:pid:modo`); `seen`, `mode`, `job` | TTL de 10 minutos em `seen` |
 | `settings` | `lastFullCheck` (a do operador) e `lastFullCheck:<tenant>`, `journalRetention`, `migration` e os documentos `lock:<nome>` | — |
 
@@ -585,13 +639,14 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `portal/test_session.py` | 30 | limites da sessão (15 s sem uso no teste): regras do servidor, aviso, renovação pelo uso, outras abas, limite absoluto, os dois idiomas; aviso da comunidade no rodapé (cerca de dois minutos) |
 | `portal/test_store.py` | 58 | a camada de dados do portal: configurações de conexão, índices, a trava compartilhada (também entre dois administradores ao mesmo tempo), usuários, metadados dos cadastros, diário e retenção, bloqueio de entrada, migração dos arquivos antigos (também interrompida e retomada) |
 | `portal/test_tenants.py` | 82 | tenants ([ADR 0002](adr/0002-organizacoes.md)): uma instalação sem tenants igual a antes; tenants e seus prefixos (nomes, sobreposições, redundância, usuários do operador no caminho); os cadastros e usuários do operador; administradores de tenant e seus usuários; endereços de e-mail; cadastros, histórico, lista, exportação e importações por tenant, e a conferência do worker antes de cada cadastro; prefixos mudando de dono; a trilha de auditoria por tenant e seu CSV; acesso de suporte; tenants desativados e removidos; resultados da verificação de links por escopo; posse por tipo de chave; a linha de comando; as mensagens dos dois idiomas (mesmas chaves, toda chave da página e todo código de mensagem do servidor traduzidos) |
+| `portal/test_mail.py` | 138 | e-mail ([ADR 0004](adr/0004-e-mail.md)) contra um relay SMTP do próprio teste (`fake_smtp.py`: STARTTLS ou TLS com um certificado descartável, autenticação, recusas sob demanda): configurações que não combinam, envio com STARTTLS e TLS, cabeçalhos e a alternativa HTML, falhas temporárias e definitivas, credenciais nunca enviadas sem criptografia, o comando de teste; os textos dos dois idiomas; links de uso único (só o hash, uma vez, substituídos, expirados, apagados); `notBefore` e `defer()`; com o e-mail desligado nada muda; convites, recuperação de senha (a mesma resposta e o mesmo tempo para qualquer entrada, limites, quem não recebe nada), redefinições por um administrador, avisos de segurança, preferências, avisos de tarefas terminadas; novas tentativas, falhas, uma mensagem pulada para uma conta desativada no meio do caminho, nenhum endereço no diário; todo código de mensagem traduzido. Toda proteção conferida por mutação |
 | `portal/test_jobs.py` | 70 | tarefas em segundo plano: estados, validade, retirada atômica, posse das gravações, workers calados devolvidos e falha depois de três tentativas, o anúncio do worker, `stalled`, a verificação de saúde, o laço do worker (erros, sinal de vida, parada e devolução, `JobLost`), o worker embutido e `PORTAL_WORKER`; importações pela API (fila, worker, diário, outro usuário, um worker que morre antes e depois de gravar um cadastro, uma falha); verificações de links pela API (todos os cadastros, uma lista, uma parada que cancela os endereços pendentes) |
 | `portal/test_worker_processes.py` | 13 | o `worker.py` como processos reais num MongoDB real (rodado pelo `test_store_mongodb.py`): dois workers dividem a fila sem pegar a mesma tarefa duas vezes; o SIGTERM devolve a tarefa e o outro worker a termina; depois de um SIGKILL, um worker novo continua a tarefa quando o sinal de vida fica velho |
 | `portal/test_store_mongodb.py` | 161 | num MongoDB real (`PORTAL_TEST_MONGO_URI`, só no CI): o usuário criado pelo `db_init.py` e suas permissões; `test_store.py`, `test_jobs.py` e `test_worker_processes.py` de novo como esse usuário (com suas linhas repassadas); o monitor de TTL, também para tarefas e anúncios antigos de workers |
 | `portal/test_registration.py` | 26 | §2.5.9 pela API do portal: qualificadores informativos (salvar, abrir, histórico, lista, exportar, importar), cadastros contra a regra 2, o cadastro da chave ao salvar e ao importar |
 | `portal/test_portal_e2e.py` | 210 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular, com um worker embutido (também parado: as mensagens de fila e de "não está em execução", uma tarefa que falha); organizações, um administrador de tenant e o acesso de suporte nos dois idiomas; também roda sem o engine (164) |
 | `home/test_home.py` | 68 | página inicial com um nginx real (1.27.3 ou posterior: `NGINX_BIN` ou o PATH), sem o quadro da sintaxe, aviso da comunidade; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug; réplicas por um servidor DNS simulado que responde os nomes dos serviços com endereços `127.0.0.x`: o nginx inicia quando um serviço não tem endereço e o acha depois, reparte as requisições entre duas réplicas, acompanha uma terceira acrescentada e duas retiradas sem reiniciar, e nenhuma requisição falha enquanto réplicas param |
-| `install/test_install.sh` | 68 | instalador com simulações (Compose v2), incluindo um portal cujo worker de tarefas não sobe; quantidades de réplicas gravadas, mantidas, tomadas do ambiente e recusadas quando inválidas |
+| `install/test_install.sh` | 84 | instalador com simulações (Compose v2), incluindo um portal cujo worker de tarefas não sobe; quantidades de réplicas gravadas, mantidas, tomadas do ambiente e recusadas quando inválidas; o relay de e-mail (desligado por padrão, gravado com STARTTLS ou TLS, a senha mantida e nunca mostrada, desligado, um relay de teste definido à mão mantido, recusas); nenhuma configuração gravada duas vezes no `.env` |
 | `install/test_deploy.py` | 59 | `docker compose config` das réplicas e quantidades de processos (padrões, valores do `.env`, um valor recusado, nomes mantidos pelo banco e pelo proxy); a versão do nginx da imagem do proxy e o `resolve` em todos os upstreams; o `CMD` gunicorn de cada imagem iniciado localmente (três processos, uma resposta, a requisição no log, parada limpa com SIGTERM em até 10 s); a chave de sessão reserva do portal com seis processos iniciando juntos e oito threads enquanto gravá-la é lento; o portal iniciado a partir dos arquivos que as linhas `COPY` do seu Dockerfile põem na imagem, entre eles todo módulo e arquivo de dados de `portal/`; uma versão do engine, só no `docker-compose.yml`, passada a toda imagem (ADR 0003) |
 
 **pytest e integração contínua.** O `dev-tests/test_programs.py` roda cada programa acima como um teste

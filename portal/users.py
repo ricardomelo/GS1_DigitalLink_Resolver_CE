@@ -3,7 +3,8 @@ Portal user store: the "users" collection of the portal's database (store.py), o
 
     {"_id": "maria", "hash": "<werkzeug hash>", "role": "editor", "prefixes": ["7891234"],
      "tenant": "t-3f9a1c0b2e7d", "email": "maria@example.org",
-     "disabled": false, "mustChange": false, "created": "…", "lastLogin": "…"}
+     "disabled": false, "mustChange": false, "created": "…", "lastLogin": "…",
+     "invited": "…", "language": "pt-BR", "languageChosen": true, "notify": {"jobs": true}}
 
 Roles, from least to most: reader (consults and exports), editor (also changes records), admin (also
 manages users and sees the audit trail). "tenant" is the organisation the user belongs to (tenants.py,
@@ -13,6 +14,11 @@ identifier of its tenant, or everything the operator holds); a tenant user's pre
 "email" is optional and unique in the installation. "mustChange" asks for a new password at the next sign-in
 (temporary passwords). Accounts imported from a users.json written before roles existed ({"name": "<hash>"})
 are read as admins (migrate.py).
+
+E-mail (Documentation/adr/0004-e-mail.md, section 3.4): "invited" is the date of an invitation while the account
+has no password of its own (an empty hash: no password signs in); "language" is the language of the user's
+messages (taken from the page at each sign-in until "languageChosen"); "notify" holds the optional categories of
+messages the user switched on (notify.py).
 
 Writes run under a lock shared by every replica (store.lock), so two administrators acting at the same
 moment cannot both remove the last enabled server administrator. Every lookup reads the database, so changes
@@ -37,7 +43,10 @@ PREFIX = re.compile(r"^\d{4,12}$", re.ASCII)   # ASCII digits only: \d alone wou
 EMAIL = re.compile(r"^[^@\s\x00-\x1f\x7f]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
                    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$")
 EMAIL_MAX = 254
-FIELDS = ("hash", "role", "prefixes", "tenant", "email", "disabled", "mustChange", "created", "lastLogin")
+FIELDS = ("hash", "role", "prefixes", "tenant", "email", "disabled", "mustChange", "created", "lastLogin",
+          "invited", "language", "languageChosen", "notify")
+OPTIONAL_FIELDS = ("tenant", "email", "invited", "language", "languageChosen", "notify")   # absent when empty
+LANGUAGES = ("en-GB", "pt-BR")
 # Hash of a random password, checked when the username does not exist so that response
 # times do not reveal which usernames are valid.
 _DUMMY_HASH = generate_password_hash(os.urandom(16).hex())
@@ -66,7 +75,8 @@ def _account(value) -> dict:
     if isinstance(value, str):                     # before roles: every user was an administrator
         value = {"hash": value, "role": "admin"}
     account = {"hash": "", "role": "admin", "prefixes": [], "tenant": None, "email": None, "disabled": False,
-               "mustChange": False, "created": None, "lastLogin": None}
+               "mustChange": False, "created": None, "lastLogin": None, "invited": None, "language": None,
+               "languageChosen": False, "notify": {}}
     account.update({k: v for k, v in value.items() if k in FIELDS})
     if account["role"] not in ROLES:
         account["role"] = "reader"
@@ -125,8 +135,9 @@ def locked():
 
 def _stored(account: dict) -> dict:
     """The fields of an account as stored: no "tenant" for the operator's users, no "email" when there is none
-    (so that queries for {"tenant": None} find both the users written before tenants existed and new ones)."""
-    return {k: account[k] for k in FIELDS if not (k in ("tenant", "email") and not account[k])}
+    (so that queries for {"tenant": None} find both the users written before tenants existed and new ones), and
+    the other optional fields only when they hold something."""
+    return {k: account[k] for k in FIELDS if not (k in OPTIONAL_FIELDS and not account[k])}
 
 
 def _save(username: str, account: dict) -> None:
@@ -195,13 +206,14 @@ def clean_prefixes(values) -> list[str]:
 def set_password(username: str, password: str, must_change: bool = False, role: str | None = None,
                  prefixes=None, tenant: str | None = None, email=None) -> None:
     """Sets the password, creating the account when needed (role admin unless given; the tenant only when
-    the account is created: an existing user keeps his)."""
+    the account is created: an existing user keeps his). An invitation ends: the account has a password."""
     with locked():
         account = get(username)
         if account is None:
             account = _account({"role": role or "admin", "created": _now(), "tenant": tenant})
         account["hash"] = generate_password_hash(password)
         account["mustChange"] = must_change
+        account["invited"] = None
         if role:
             account["role"] = role
         if prefixes is not None:
@@ -213,19 +225,25 @@ def set_password(username: str, password: str, must_change: bool = False, role: 
         _save(username, account)
 
 
-def create(username: str, password: str, role: str, prefixes=(), must_change: bool = True,
-           tenant: str | None = None, email=None) -> None:
+def create(username: str, password: str | None, role: str, prefixes=(), must_change: bool = True,
+           tenant: str | None = None, email=None, language: str | None = None) -> None:
     """Creates a user (name, role, prefixes, tenant, e-mail); by default the password must be changed at the
-    first sign-in. Without a tenant the user is the operator's."""
+    first sign-in. Without a tenant the user is the operator's. Without a password (None) the user is invited:
+    he chooses one through the link of his invitation (an address is then required)."""
     if not USERNAME.match(username or ""):
         raise UserError("users.nameInvalid")
     if role not in ROLES:
         raise UserError("users.roleInvalid")
     prefixes = clean_prefixes(prefixes)
     account = _account({"role": role, "prefixes": prefixes, "created": _now(), "tenant": tenant or None,
-                        "email": clean_email(email)})
-    account["hash"] = generate_password_hash(password)
-    account["mustChange"] = must_change
+                        "email": clean_email(email), "language": clean_language(language)})
+    if password is None:
+        if not account["email"]:
+            raise UserError("users.emailRequired")
+        account["invited"] = _now()
+    else:
+        account["hash"] = generate_password_hash(password)
+        account["mustChange"] = must_change
     with locked():
         _check_scope(account["tenant"], prefixes)
         _check_email(username, account["email"])
@@ -262,6 +280,73 @@ def update(username: str, role: str | None = None, prefixes=None, disabled: bool
         return account
 
 
+def clear_password(username: str) -> None:
+    """Removes the password (an administrator's reset by link): no password signs in and every session of the
+    account ends, until the user chooses a new one through the link."""
+    with locked():
+        account = get(username)
+        if not account:
+            raise UserError("users.unknown", user=username)
+        account["hash"] = ""
+        account["mustChange"] = False
+        _save(username, account)
+
+
+def find_login(login: str) -> str | None:
+    """The user name an entry of the password recovery form means: a user name, or an e-mail address (case is
+    ignored for both)."""
+    text = str(login or "").strip()
+    if not text or len(text) > EMAIL_MAX:
+        return None
+    if "@" in text:
+        doc = _users().find_one({"email": text.lower()}, {"_id": 1})
+        if doc:
+            return doc["_id"]
+    if get(text):
+        return text
+    if USERNAME.match(text):                       # user names are case-sensitive; recovery forgives case
+        for doc in _users().find({}, {"_id": 1}):
+            if doc["_id"].lower() == text.lower():
+                return doc["_id"]
+    return None
+
+
+def clean_language(value) -> str | None:
+    """A language of the messages (en-GB, pt-BR), or None when it is not one."""
+    text = str(value or "").strip()
+    return text if text in LANGUAGES else None
+
+
+def note_language(username: str, value) -> None:
+    """Keeps the page's language as the language of the user's messages, until he chooses one (best effort)."""
+    language = clean_language(value)
+    if not language:
+        return
+    try:
+        _users().update_one({"_id": username, "languageChosen": {"$ne": True}, "language": {"$ne": language}},
+                            {"$set": {"language": language}})
+    except PyMongoError:
+        pass
+
+
+def set_preferences(username: str, language=None, notify: dict | None = None) -> dict:
+    """The user's own choices: the language of his messages and the optional categories (notify.py checks the
+    names). Returns the account."""
+    with locked():
+        account = get(username)
+        if not account:
+            raise UserError("users.unknown", user=username)
+        if language is not None:
+            account["language"] = clean_language(language)
+            if not account["language"]:
+                raise UserError("preferences.languageInvalid")
+            account["languageChosen"] = True
+        if notify is not None:
+            account["notify"] = {k: True for k, v in notify.items() if v}
+        _save(username, account)
+        return account
+
+
 def remove(username: str) -> None:
     """Removes a user, keeping at least one enabled administrator."""
     with locked():
@@ -286,4 +371,4 @@ def public(username: str, account: dict) -> dict:
     """What the administration screen shows (never the hash)."""
     return {"username": username, **{k: account[k] for k in
                                      ("role", "prefixes", "tenant", "email", "disabled", "mustChange", "created",
-                                      "lastLogin")}}
+                                      "lastLogin", "invited")}}

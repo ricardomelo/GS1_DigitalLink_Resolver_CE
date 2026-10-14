@@ -81,7 +81,7 @@ Files added by the fork are marked **new**; the others are official files with c
 
 ```
 .env.example                     configuration defaults (committed); .env holds installation values
-docker-compose.yml               seven services (four with replicas); .env loaded by every service; bind addresses; named volumes
+docker-compose.yml               seven services (four with replicas), plus mailpit in the mail-test profile; .env loaded by every service; bind addresses; named volumes
 data_entry_server/src/
   data_entry_namespace.py        /summary, token on /index, BearerAuth in Swagger
   data_entry_logic.py            read_summary()
@@ -112,6 +112,10 @@ portal/                          new: the link management portal
   migrate.py                     one-off move of the files of earlier versions into the database
   jobs.py                        background jobs: states, claim, heartbeat, the worker's announcement
   worker.py                      the job worker (portal-worker service, or a thread with PORTAL_WORKER=embedded)
+  mail.py                        outgoing e-mail through an SMTP relay; "python mail.py test <address>" (ADR 0004)
+  mailtexts.py                   the texts of the e-mail messages, in both languages
+  tokens.py                      single-use links: invitations and password recovery
+  notify.py                      notifications: categories, the user's choices, the "mail" job
   db_init.py                     creates the portal's database user (portal-db-init service)
   create_user.py                 command-line user administration
   static/                        index.html, login.html, app.js, login.js, password.js, i18n.js, app.css
@@ -146,6 +150,7 @@ tests/, useful_external_python_scripts/   official
 | `portal-service` | `portal/` (two stages: syntax engine, application; gunicorn) | internal 8000 | `resolver-portal-config:/app/config` | `PORTAL_SERVICE_REPLICAS` |
 | `portal-worker` | `portal/` (`python worker.py`) | — | `resolver-portal-config:/app/config` | `PORTAL_WORKER_REPLICAS` |
 | `frontend-proxy-service` | `frontend_proxy_server/` (nginx 1.30) | `${PROXY_BIND_ADDRESS:-0.0.0.0}:8080` | — | 1 (`frontend-proxy-server`) |
+| `mailpit` | image `axllent/mailpit`, profile `mail-test` only (a test relay, [ADR 0004](adr/0004-e-mail.md)) | `127.0.0.1:8025` (its pages and API) | — | none unless started with `--profile mail-test` |
 
 Every service reads `.env.example` and then `.env` (Compose ≥ 2.24, `required: false`), so `.env` holds
 only what an installation changes. The bind addresses, the replica counts (`*_REPLICAS`) and the process
@@ -154,8 +159,11 @@ only. The
 variables are described in `.env.example` and in the README's *Configuration* section; the portal also
 reads `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD`, `PORTAL_DB_HOST` (or `PORTAL_DB_URI`),
 `PORTAL_JOURNAL_*_DAYS`, `PORTAL_SESSION_IDLE_MINUTES`, `PORTAL_SESSION_MAX_HOURS`, `PORTAL_SECRET_KEY`,
-`PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT`, `PORTAL_WORKER` and `PORTAL_CONFIG_DIR` (and
-`PORTAL_*_FILE`, the files the migration reads). `portal-db-init` alone receives the root `MONGO_URI`; the
+`PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT`, `PORTAL_WORKER`, `PORTAL_CONFIG_DIR` (and
+`PORTAL_*_FILE`, the files the migration reads) and, for e-mail, `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`,
+`PORTAL_MAIL_SECURITY`, `PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM`,
+`PORTAL_MAIL_REPLY_TO`, `PORTAL_MAIL_CA_FILE`, `PORTAL_MAIL_TIMEOUT`, `PORTAL_INVITE_HOURS` and
+`PORTAL_RESET_MINUTES`. `portal-db-init` alone receives the root `MONGO_URI`; the
 portal's and the worker's are blanked. The worker has the portal's settings (it imports `app.py` and runs the
 same start-up, which is safe under the shared locks).
 
@@ -334,12 +342,53 @@ checks `allowed()` again before writing each record.
 
 `jobs.py` is the queue: `create()`, `get()` (the user's job of a type, not expired), `queue_prepared()`,
 `status()` (state, progress, `stalled`, `error`), and for workers `announce()` / `withdraw()` /
-`workers_alive()`, `requeue_stale()`, `claim()`, `Reporter` (`beat()`, `progress()`, `record()`,
-`check_stop()`, `finish()`), `release()`, `fail()`. Timings are constants at the top (`HEARTBEAT_SECONDS` 10,
+`workers_alive()`, `requeue_stale()`, `claim()` (the oldest queued job whose `notBefore`, if any, has
+passed), `Reporter` (`beat()`, `progress()`, `record()`, `check_stop()`, `finish(remove=…)`, `defer(seconds)`
+— back in the queue for later, raising `Deferred` —, `give_up(code)`), `release()`, `fail()`. The types are
+`import`, `linkcheck` and `mail`. Timings are constants at the top (`HEARTBEAT_SECONDS` 10,
 `STALE_SECONDS` 120, `MAX_ATTEMPTS` 3, `WORKER_ALIVE_SECONDS` 30, `STALLED_SECONDS` 15, expiries 30 minutes
 and one day). `worker.py` has `Worker` (`run_once()`, `loop()`, `stop()`), `start_embedded()`, `wake()` and
 `main()` (the service: SIGTERM and SIGINT stop it after the item in hand); `IN_WORKER_PROCESS` keeps
 `app.py` from starting an embedded worker inside the worker process.
+
+### `mail.py`, `mailtexts.py`, `tokens.py`, `notify.py` — e-mail
+
+[ADR 0004](adr/0004-e-mail.md). `mail.py` reads `PORTAL_MAIL_*` at every call (`settings()`, `problems()`,
+`enabled()`: off without a host, and with an error logged once when the settings do not fit together), builds a
+message (`message()`: plain text with an HTML alternative, `Auto-Submitted: auto-generated`, a `Message-ID` of
+the sender's domain) and sends it over a connection of its own (`send()`): with `starttls` the relay must offer
+STARTTLS before any credential is sent, with `tls` the connection is TLS from the start, with `none` there is
+neither encryption nor authentication (test relays). The certificate is always verified (`PORTAL_MAIL_CA_FILE`
+adds an authority). `MailError.temporary` tells a missing connection, a timeout or a 4xx answer from a 5xx answer
+or a refused certificate. `python mail.py test <address>` sends a test message at once and prints the outcome.
+
+`mailtexts.py` holds `TEXTS` (a subject and a plain text per message and language) and `SIGNATURE`;
+`compose(template, language, **params)` fills the placeholders (an unknown one stays visible) and makes the HTML
+alternative (escaped, links clickable); `language()` maps a page's language to `pt-BR` or `en-GB`.
+`tokens.py` issues single-use links: `issue(user, purpose)` (the earlier link of that purpose stops working;
+only the SHA-256 is stored), `peek()`, `consume()` (atomic: `find_one_and_delete`), `purge()`, `link()`; the
+validity comes from `PORTAL_INVITE_HOURS` and `PORTAL_RESET_MINUTES`.
+
+`notify.py` maps each message to a category (`TEMPLATES`, `CATEGORIES`: `account` and `security` always sent,
+`jobs` optional and off by default), checks the recipient (`reachable()`: enabled, of an enabled tenant;
+`wants()`: the user's choice for optional categories), composes the message in the user's language and queues a
+`mail` job (`send()`, which never raises: the action that caused the message has happened). `run_mail_job()` (in
+`app.JOB_RUNNERS`) skips an account that can no longer receive, sends, puts the job back for `RETRY_MINUTES` (1, 5,
+15, 60, 120) after a temporary failure (`Reporter.defer()`), fails it after a permanent one or the last try
+(`Reporter.give_up()`, journal `mail-failed` with the template and the relay's answer), and removes `text` and
+`html` from the job once it is sent or has failed.
+
+In `app.py`: `send_link()` (issues a link and queues its message; the link is withdrawn when nothing could be
+queued), `forgot_password()` (the same answer and at least `RECOVERY_SECONDS` for every input; limits
+`RECOVERY_PER_LOGIN` and `RECOVERY_PER_ADDRESS` through `LoginThrottle.over()`), `check_password_link()` and
+`set_password_by_link()` (`BAD_LINKS_PER_ADDRESS`; the password set, every other link and session of the account
+ended, a locked account opened again), `preferences_of()` and the preferences endpoints, and the calls of
+`notify.send()` after a password change, a change of e-mail address, the failed sign-in that locks an account,
+an import and a check of every record. `create_user()` invites when asked, mail is on and there is an address;
+`reset_user()` sends a link when it can (a new invitation for an invited user) and otherwise makes a temporary
+password as before. `users.py` gains the fields `invited`, `language`, `languageChosen` and `notify`, and
+`clear_password()`, `find_login()` (a user name, ignoring case, or an address), `note_language()` and
+`set_preferences()`; `create()` without a password makes an invited account.
 
 ### `migrate.py`, `db_init.py`
 
@@ -398,8 +447,12 @@ operator.
 |---|---|---|
 | `POST /login` `{username, password}` | — | Sign in (429 `auth.locked` when throttled) |
 | `POST /logout` | — | Sign out |
-| `POST /password` `{currentPassword, newPassword}` | any | Change password; other sessions end |
-| `GET /config` | any | User, role (the one that applies), `accountRole`, `serverAdmin`, `tenant` and `support` (`{id, name, disabled}` or `null`), prefixes, resolver address, link types, keys with qualifiers and shapes, languages, import limits, data attributes, session limits (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`) |
+| `POST /password` `{currentPassword, newPassword}` | any | Change password; other sessions end; a security message when mail is on |
+| `GET /login/options` | — | `{passwordRecovery}`: whether the sign-in page offers recovery (mail on) |
+| `POST /password/forgot` `{login, language}` | — | Recovery link by e-mail to the account of that user name or address, when it may sign in and has an address; always `password.recoverySent` (404 `password.recoveryOff` when mail is off, 429 `password.recoveryLimit`) |
+| `POST /password/link/check` `{token}` · `POST /password/link` `{token, newPassword, language}` | — | A single-use link: `{user, purpose, min}` or 410 `password.linkInvalid`; then the password set (`password.set`, `purpose`), the link used up (429 `password.linkLimit` after ten invalid links from one address) |
+| `GET /preferences` · `PUT /preferences` `{language, notify: {jobs}}` | any | The user's e-mail address (read only), the language of his messages and the optional categories (`preferences.saved`, `preferences.languageInvalid`, `preferences.categoryUnknown`) |
+| `GET /config` | any | User, role (the one that applies), `accountRole`, `serverAdmin`, `tenant` and `support` (`{id, name, disabled}` or `null`), prefixes, resolver address, link types, keys with qualifiers and shapes, languages, import limits, data attributes, session limits (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`), `mail` (`{enabled}`) and `preferences` (as `GET /preferences`) |
 | `GET /session` | any (also while a new password is due) | Renews the session; answers the same session limits |
 | `GET /record?key=&value=&qualifiers=/10/L1` | reader | One record: `exists`, `description`, `links`, `defaultLinkType`, `sharedDefaultLinkType`, `digitalLink`, `otherEntries` (each with `informative`), `qualifiers` (the record's own), `informative` (typed) and `storedInformative`, `hasKeyRecord` |
 | `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}], keyRecord?}` | editor | Create (201) or replace (200); the first link is the default. With a serial number, 22 and 10 in `qualifiers` are stored as informative. `keyRecord: {mode: copy\|target, description, url}` also creates the key's own record first (`save.createdWithKey`, `keyRecordCreated`) |
@@ -411,13 +464,13 @@ operator.
 | `POST /links/check` `{urls}` | editor | Check addresses (editor) |
 | `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `GET /links/last` | editor · editor · reader | Background link check (status: `state` `queued`\|`running`\|`finished`\|`failed`, `done`, `total`, `stalled`, `error`) |
 | `GET /history?key=&value=&qualifiers=` | reader | Versions of a record made in the scope of the request, with content |
-| `GET /users` · `POST /users` `{username, role, prefixes, email, tenant}` · `PUT /users/{name}` `{role, prefixes, email, disabled}` · `POST /users/{name}/reset` · `DELETE /users/{name}` | admin | User administration: a server admin manages every user (`tenant` chooses the organisation; the answer to GET adds `tenants`), a tenant administrator the users of his tenant; `tenantName` on each user; temporary passwords in the answer |
+| `GET /users` · `POST /users` `{username, role, prefixes, email, tenant}` · `PUT /users/{name}` `{role, prefixes, email, disabled}` · `POST /users/{name}/reset` · `DELETE /users/{name}` | admin | User administration: a server admin manages every user (`tenant` chooses the organisation; the answer to GET adds `tenants`), a tenant administrator the users of his tenant; `tenantName` and `invited` on each user; temporary passwords in the answer. With mail on: `POST /users` with `invite` and an address answers `users.invited` without a password; `reset` answers `users.resetSent` (a link by e-mail) for a user with an address |
 | `GET /tenants` · `POST /tenants` `{name, prefixes}` · `PUT /tenants/{id}` `{name, prefixes, disabled}` · `DELETE /tenants/{id}` | server admin | Organisations; GET adds `users` and `records` per tenant and `operatorRecords` |
 | `POST /support` `{tenant, reason}` · `DELETE /support` | server admin | Open and close read-only support access to a tenant, recorded in its audit trail |
 | `GET /audit` · `GET /audit.csv` (`user`, `from`, `to`, `q`, `limit`) | admin | Audit trail of the scope: a tenant's; the operator's plus what operator users did to tenants; a tenant's during support access. Events carry `tenant`, `tenantName`, `byOperator`; the CSV adds `organisation` and `by_operator` |
 | `POST /digital-link` `{key, value, qualifiers, attributes:[{ai, value}]}` | reader | Digital Link with data attributes checked by the engine; nothing stored |
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&attr=AI:value` | reader | Label; headers `X-QR-Version`, `X-QR-Level`, `X-QR-Modules`; 422 `qr.tooSmall` / `qr.tooLong` |
-| `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable"}` |
+| `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable", "mail": "on"\|"off"}` |
 
 ## 8. Portal data
 
@@ -426,13 +479,14 @@ Decisions and the reasons for them: [ADR 0001](adr/0001-portal-state-in-mongodb.
 
 | Collection | `_id` and content | Indexes |
 |---|---|---|
-| `users` | user name; `hash`, `role`, `prefixes`, `tenant` (absent for the operator's users), `email` (optional), `disabled`, `mustChange`, `created`, `lastLogin` | — |
+| `users` | user name; `hash` (empty while invited, or after a reset by link), `role`, `prefixes`, `tenant` (absent for the operator's users), `email` (optional), `disabled`, `mustChange`, `created`, `lastLogin`, `invited`, `language`, `languageChosen`, `notify` (the last four absent when empty) | — |
 | `tenants` | `t-` + 12 hexadecimal digits; `name`, `prefixes`, `disabled`, `created`, `createdBy` ([ADR 0002](adr/0002-tenants.md)) | — |
 | `record_meta` | record key (GTIN records by the 14 digits, other keys by `AI/value`, plus the qualifier path); `createdAt`, `createdBy`, `updatedAt`, `updatedBy`, `tenant` (absent for the operator) | — |
-| `journal` | ObjectId (`jsonl-<line>` for migrated events); `at` (date), `user`, `action`, `category`, `tenant` (absent for the operator), `byOperator`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Record actions `create`, `update`, `delete` (with the record's content), `import`; others `login`, `login-failed`, `login-refused`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`, `tenant-create`, `tenant-update`, `tenant-remove`, `support-open` (the reason in `detail`), `support-close` | date; record + date; user + date; tenant + date; category; TTL on `expiresAt` |
-| `login_failures` | `key` (`user:<name>` or `addr:<address>`), `at` | key + date; TTL 15 minutes on `at` |
+| `journal` | ObjectId (`jsonl-<line>` for migrated events); `at` (date), `user`, `action`, `category`, `tenant` (absent for the operator), `byOperator`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Record actions `create`, `update`, `delete` (with the record's content), `import`; others `login`, `login-failed`, `login-refused`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`, `tenant-create`, `tenant-update`, `tenant-remove`, `support-open` (the reason in `detail`), `support-close`, `password-recovery`, `password-reset`, `invite-accepted`, `preferences`, `mail-failed` (never an e-mail address) | date; record + date; user + date; tenant + date; category; TTL on `expiresAt` |
+| `login_failures` | `key` (`user:<name>` or `addr:<address>`; recovery requests `forgot-user:<entry>` and `forgot-addr:<address>`; invalid links `link-addr:<address>`), `at` | key + date; TTL 15 minutes on `at` |
 | `linkcheck_cache` | address; `result`, `expiresAt` | TTL on `expiresAt` |
-| `jobs` | token; `type` (`import`, `linkcheck`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `expiresAt`, `error`; imports `plan`, `keyRecords`, `results`; link checks `scope`, `urls` (`[{url, records}]`), `problems`, `records` (`[{record, problems}]`) | state + creation; TTL on `expiresAt` |
+| `jobs` | token; `type` (`import`, `linkcheck`, `mail`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `expiresAt`, `error`, `notBefore`; imports `plan`, `keyRecords`, `results`; link checks `scope`, `urls` (`[{url, records}]`), `problems`, `records` (`[{record, problems}]`); messages `to`, `subject`, `text` and `html` (removed once sent or failed), `template`, `tries`, `lastError`, `sent` or `skipped` | state + creation; TTL on `expiresAt` |
+| `tokens` | SHA-256 of a single-use link's token; `purpose` (`invite`, `reset`), `user`, `created`, `expiresAt` ([ADR 0004](adr/0004-e-mail.md)) | user + purpose; TTL on `expiresAt` |
 | `workers` | worker name (`host:pid:mode`); `seen`, `mode`, `job` | TTL 10 minutes on `seen` |
 | `settings` | `lastFullCheck` (the operator's) and `lastFullCheck:<tenant>`, `journalRetention`, `migration`, and the `lock:<name>` documents | — |
 
@@ -566,13 +620,14 @@ run against it. Setup and commands are in
 | `portal/test_session.py` | 30 | session limits (15 s idle in the test): server rules, warning, renewal on use, other tabs, absolute limit, both languages; community notice in the footer (about two minutes) |
 | `portal/test_store.py` | 58 | the portal's database layer: connection settings, indexes, the shared lock (also between two administrators at once), users, record metadata, journal and its retention, sign-in throttle, migration of the old files (also interrupted and resumed) |
 | `portal/test_tenants.py` | 82 | tenants ([ADR 0002](adr/0002-tenants.md)): an installation without tenants unchanged; tenants and their prefixes (names, overlaps, redundancy, operator users in the way); the operator's records and users; tenant administrators and their users; e-mail addresses; records, history, record list, export and imports per tenant, and the worker's check before each record; prefixes moving between owners; the audit trail per tenant and its CSV; support access; disabled and removed tenants; link check results per scope; ownership by key type; the command line; the messages of both languages (same keys, every key of the page and every message code of the server translated) |
+| `portal/test_mail.py` | 138 | e-mail ([ADR 0004](adr/0004-e-mail.md)) against an SMTP relay of the test's own (`fake_smtp.py`: STARTTLS or TLS with a throwaway certificate, authentication, refusals on demand): settings that do not fit, sending with STARTTLS and TLS, headers and the HTML alternative, temporary and permanent failures, credentials never sent without encryption, the test command; the texts of both languages; single-use links (hash only, once, replaced, expired, purged); `notBefore` and `defer()`; with mail off nothing changes; invitations, password recovery (the same answer and time for every input, limits, who gets nothing), resets by an administrator, security notices, preferences, notices of finished jobs; retries, failures, a message skipped for an account disabled meanwhile, no address in the journal; every message code translated. Every protection mutation-checked |
 | `portal/test_jobs.py` | 70 | background jobs: states, expiry, atomic claim, ownership of writes, silent workers given back and failed after three attempts, the worker's announcement, `stalled`, the health check, the worker loop (errors, heartbeat, stop and hand-back, `JobLost`), the embedded worker and `PORTAL_WORKER`; imports through the API (queue, worker, journal, another user, a worker dying before and after writing a record, a failure); link checks through the API (every record, a list, a stop that cancels pending addresses) |
 | `portal/test_worker_processes.py` | 13 | `worker.py` as real processes on a real MongoDB (run by `test_store_mongodb.py`): two workers share the queue without taking a job twice; SIGTERM hands the job back and the other worker finishes it; after SIGKILL a new worker continues the job once its heartbeat is old |
 | `portal/test_store_mongodb.py` | 161 | on a real MongoDB (`PORTAL_TEST_MONGO_URI`, CI only): the user made by `db_init.py` and its privileges; `test_store.py`, `test_jobs.py` and `test_worker_processes.py` again as that user (their lines relayed); the TTL monitor, also for jobs and old worker announcements |
 | `portal/test_registration.py` | 26 | §2.5.9 through the portal API: informative qualifiers (save, open, history, list, export, import), records against rule 2, the key's own record when saving and importing |
 | `portal/test_portal_e2e.py` | 210 | the portal in Chromium against `mock_data_entry.py`, desktop and phone, with an embedded worker (also stopped: the queue and "not running" messages, a job that fails); organisations, a tenant administrator and support access in both languages; also run without the engine (164) |
 | `home/test_home.py` | 68 | home page through a real nginx (1.27.3 or later: `NGINX_BIN` or the PATH), no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts; replicas through a stub DNS server answering the service names with `127.0.0.x` addresses: nginx starts while a service has no address and finds it later, shares the requests between two replicas, follows a third added and two removed without a restart, and no request fails while replicas stop |
-| `install/test_install.sh` | 68 | installer through shims (Compose v2), including a portal whose job worker does not start; replica counts written, kept, taken from the environment and refused when invalid |
+| `install/test_install.sh` | 84 | installer through shims (Compose v2), including a portal whose job worker does not start; replica counts written, kept, taken from the environment and refused when invalid; the e-mail relay (off by default, written with STARTTLS or TLS, its password kept and never shown, switched off, a test relay set by hand kept, refusals); no setting written twice in `.env` |
 | `install/test_deploy.py` | 59 | `docker compose config` of the replicas and process counts (defaults, values from `.env`, a refused value, names kept by the database and the proxy); the proxy image's nginx version and `resolve` in every upstream; each image's gunicorn `CMD` started locally (three processes, an answer, the request logged, a clean stop on SIGTERM within 10 s); the portal's fallback session key with six processes starting together and eight threads while writing it is slow; the portal started from the files the `COPY` lines of its Dockerfile put in the image, every module and data file of `portal/` among them; one engine release, in `docker-compose.yml` only, given to every image (ADR 0003) |
 
 **pytest and continuous integration.** `dev-tests/test_programs.py` runs each program above as one pytest

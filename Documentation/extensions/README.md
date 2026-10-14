@@ -72,6 +72,7 @@ Every service loads `.env.example` and then `.env` if it exists; a value in `.en
 | `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD` | portal, portal-db-init | `resolver_portal` (all three) | random password (installer) |
 | `PORTAL_SECRET_KEY` | portal (session cookies) | empty → `secret.key` in the volume | random (installer); required when the portal's replicas run on more than one Docker host |
 | `PORTAL_JOURNAL_SESSION_DAYS`, `PORTAL_JOURNAL_RECORD_DAYS`, `PORTAL_JOURNAL_ADMIN_DAYS` | portal (journal retention) | 180, 0, 0 (0 = for ever) | as the operator's policy requires |
+| `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`, `PORTAL_MAIL_SECURITY`, `PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM` (and the optional `PORTAL_MAIL_REPLY_TO`, `PORTAL_MAIL_CA_FILE`, `PORTAL_MAIL_TIMEOUT`, `PORTAL_INVITE_HOURS`, `PORTAL_RESET_MINUTES`) | portal and its worker (e-mail, see *E-mail* below) | empty host: e-mail off | the organisation's relay (installer); the password only in `.env` |
 | `PORTAL_WORKER` | portal (where background jobs run) | `external` (the `portal-worker` service) | `external`; `embedded` (a thread of the portal) only for a set-up without `portal-worker` |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Docker Compose (**only from `.env`**) | `0.0.0.0` | `127.0.0.1` behind a TLS proxy |
 | `WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`, `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS` | Docker Compose (**only from `.env`**): containers of each service | 1 | as the load requires (1 to 20; the installer writes them) |
@@ -527,6 +528,90 @@ the checker cannot be used to probe the server's own network.
   responsible for its use (`footer.notice`).
 - The audit trail records `login`, `login-failed`, `logout` and `password-change` alongside the record
   changes.
+
+## E-mail
+
+The portal sends mail through an SMTP relay the operator chooses ([ADR 0004](../adr/0004-e-mail.md)). Without
+`PORTAL_MAIL_HOST` e-mail is off and nothing below happens: users get temporary passwords, as before.
+
+**What is sent.**
+
+| Message | When | Category |
+|---|---|---|
+| Invitation (a link to choose a password, 72 hours) | an administrator creates a user with an address, *Send an invitation by e-mail* ticked | account (always) |
+| Password recovery (a link, 60 minutes) | *Forgot your password?* on the sign-in page, for an account that may sign in and has an address | account (always) |
+| Password reset by an administrator (a link, 60 minutes) | *Reset password* on a user with an address; the old password stops working at once | account (always) |
+| Your password was changed | the user changed it, or chose one through a recovery or reset link | security (always) |
+| Your e-mail address was changed | an administrator changed it: to the old and to the new address | security (always) |
+| Sign-in attempts to your account | the failed sign-in that locks the account for 15 minutes, once per lock | security (always) |
+| Your import / your link check has finished | an import, or a check of every record, the user started | my background jobs (optional, off by default; *Options → E-mail*) |
+
+Messages go in the user's language (`pt-BR` or `en-GB`): the page's language at each sign-in until the user
+chooses one in *Options*; an invitation goes in the inviting administrator's. Nothing is sent to a disabled
+account or to a user of a disabled organisation.
+
+**The relay.** Ask the organisation's mail administrators for:
+
+- a host name and port: 587 with STARTTLS (`PORTAL_MAIL_SECURITY=starttls`, the default) or 465 with TLS
+  (`tls`). Port 25 is blocked by most cloud providers (Azure does) and is not used;
+- a user name and password allowed to submit mail (Microsoft 365 calls it *Authenticated SMTP* and enables it
+  per mailbox; Google Workspace uses `smtp-relay.gmail.com` or an app password; sending services such as Amazon
+  SES, SendGrid or Mailgun give SMTP credentials). A relay that accepts the server by its address needs none;
+- a sender address the organisation's domain allows (`PORTAL_MAIL_FROM`, e.g.
+  `Link portal <noreply@example.org>`): the domain's SPF record must include the relay, and the relay should
+  sign with DKIM, or messages may be marked as spam. Give `PORTAL_MAIL_REPLY_TO` a help-desk address if users
+  should be able to answer;
+- a certificate signed by a public authority, or the private authority's certificate for
+  `PORTAL_MAIL_CA_FILE` (the file must be inside the containers, e.g. in the `resolver-portal-config` volume).
+
+The relay's certificate is always verified; with `starttls` a relay that does not offer STARTTLS is refused
+before any credential is sent. `PORTAL_MAIL_SECURITY=none` (no encryption) is accepted only without
+credentials, for a test relay. Settings that do not fit together switch e-mail off with an error in the log
+(`docker compose logs portal-service | grep -i e-mail`).
+
+**Checking it.** After setting the values in `.env` (or running the installer) and `docker compose up -d`:
+
+```bash
+curl -s http://127.0.0.1:8080/portal/healthz                     # … "mail":"on"
+docker compose exec portal-service python mail.py test you@example.org
+# Relay smtp.example.org:587 (starttls), from …, to you@example.org …
+# Sent: the relay accepted the message. Check the mailbox (and its spam folder).
+```
+
+A refusal is printed with the relay's answer (`535` wrong credentials, `550` sender not allowed, a certificate
+refused …).
+
+**How it is sent.** A message is a job of the worker (`type: "mail"`): the request that causes it only queues
+it, so a slow relay never slows the portal. After a temporary failure (no connection, a timeout, a 4xx answer)
+the job goes back to the queue for 1, 5, 15, 60 and 120 minutes; after a permanent one (5xx) or the last try it
+fails and the audit trail records `mail-failed` with the relay's answer (never the address). The message text,
+which may carry a link, leaves the job as soon as it is sent or has failed. The worker logs each message
+(`docker compose logs portal-worker | grep Message`).
+
+**Links.** Invitation and recovery links carry a random 256-bit token in the fragment of the address
+(`…/portal/login#reset=…`), which browsers never send to a server, so it reaches no access log. Only the token's
+SHA-256 is stored (`tokens` collection, removed by MongoDB when it expires). A link works once; a newer one of
+the same kind replaces it; choosing a password through it ends every session and every other link of the
+account. Validity: `PORTAL_INVITE_HOURS` (72) and `PORTAL_RESET_MINUTES` (60).
+
+**Password recovery** answers the same message, after at least half a second, whether or not the user name or
+address belongs to an account; requests are limited to 3 per entry and 10 per browser address in 15 minutes,
+and ten invalid links from one address pause link checks for 15 minutes.
+
+**Trying it without a relay.** On a test installation, Mailpit accepts every message and shows it:
+
+```bash
+docker compose --profile mail-test up -d mailpit
+cp .env .env.before-mailpit && sed -i '/^PORTAL_MAIL_/d' .env       # keep a copy; drop earlier mail lines
+printf "PORTAL_MAIL_HOST='mailpit'\nPORTAL_MAIL_PORT='1025'\nPORTAL_MAIL_SECURITY='none'\nPORTAL_MAIL_FROM='portal@example.org'\n" >> .env
+docker compose up -d
+curl -s http://127.0.0.1:8025/api/v1/messages | python3 -m json.tool | grep -E '"(Subject|Address)"'
+curl -s http://127.0.0.1:8025/api/v1/message/latest | python3 -c 'import json,sys; print(json.load(sys.stdin)["Text"])'
+```
+
+Put the copy back (`mv .env.before-mailpit .env`, then `docker compose up -d`) and stop Mailpit
+(`docker compose --profile mail-test rm -sf mailpit`) when done. Never use it in production: it keeps every
+message, links included.
 
 ## Home page
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (sending, single-use links, notifications and their settings on the server), 3 (screens) |
+| Status | **Accepted** (14 October 2026). Implemented in three steps: 1 (this record), 2 (sending, single-use links, notifications and their settings on the server; section 3.8), 3 (screens) |
 | Backlog item | 3.1 — e-mail |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 while he was away |
 | Portuguese | [ADR 0004 em português](../pt-BR/adr/0004-e-mail.md) |
@@ -178,6 +178,34 @@ browser address in 15 minutes.
 | `POST /portal/api/users/<name>/reset` | administrators | sends a link when possible (`users.resetSent`), else a temporary password as today |
 | `GET /portal/api/config` | signed in | gains `mail` (`{"enabled": bool}`) and the user's `email`, `language`, `notify` |
 | `GET /portal/healthz` | anyone | gains `"mail": "off"` or `"on"` |
+
+### 3.8 As implemented in step 2
+
+As designed, with these details settled by the implementation:
+
+- `mail.send()` opens one connection per message and names itself in `EHLO` with `FQDN`. An answer refusing
+  the recipient after the message counts like any 4xx or 5xx answer.
+- When a link was issued but its message could not be queued, the link is withdrawn (`app.send_link()`); for a
+  new user the administrator then gets a temporary password, as without mail.
+- An administrator's reset goes by link only for an enabled account with an address and never for the
+  administrator's own account; a disabled account still gets a temporary password.
+- `users.create()` without a password and without an address is refused (`users.emailRequired`).
+- `mail-failed` is written in the recipient's audit trail (his tenant's, or the operator's); choosing the
+  preferences writes `preferences`.
+- The health check adds `"mail": "on" | "off"`.
+- The installer asks for the relay after the first portal user: host (empty: no e-mail; `off` switches it
+  off), `starttls` or `tls`, port, user name, password (hidden; Enter keeps the one in `.env`) and sender. A test
+  relay with `none`, set by hand, is kept on a re-run. Writing the test of this step found an older defect of
+  the installer — settings at the end of a line of its list of managed keys were written twice, the old value
+  last — fixed in its own commit (`f3d127d`).
+- The `mailpit` image is pinned (`axllent/mailpit:v1.31.5`). The development sandbox cannot reach Docker Hub,
+  so it is first started on the staging server.
+- Every protection is mutation-checked by `test_mail.py` (16 mutations, all caught): the recovery answer
+  telling unknown accounts apart, or answering faster for them; a raw token stored; a link usable twice; a
+  disabled account receiving; the message text kept after sending; `notBefore` ignored; an administrator's
+  reset keeping the old password; other links surviving a password set by link; credentials sent without
+  STARTTLS; a lock notice on every failure; the address in the journal; optional categories ignored; the old
+  address not told; no recovery limit; a disabled account's link accepted.
 
 ## 4. Options considered
 

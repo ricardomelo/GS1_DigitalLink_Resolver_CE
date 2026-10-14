@@ -125,7 +125,8 @@ flowchart LR
 | `data-entry-service` | `DATA_ENTRY_SERVICE_REPLICAS` (1) | API REST para criar, ler, alterar e excluir cadastros | interno (via `/api`) |
 | `portal-service` | `PORTAL_SERVICE_REPLICAS` (1) | Portal de gestão de links (Flask + front-end estático) | interno (via `/portal/`) |
 | `portal-db-init` | um, a cada início | Cria ou atualiza o usuário do banco do portal e termina | — |
-| `portal-worker` | `PORTAL_WORKER_REPLICAS` (1) | Executa as tarefas em segundo plano do portal (importações de planilhas, verificações de links) a partir do banco; a imagem do portal | — |
+| `portal-worker` | `PORTAL_WORKER_REPLICAS` (1) | Executa as tarefas em segundo plano do portal (importações de planilhas, verificações de links, mensagens de e-mail) a partir do banco; a imagem do portal | — |
+| `mailpit` | nenhum, a menos que iniciado (perfil `mail-test`) | Um relay de teste que guarda todos os e-mails, para experimentar o e-mail do portal antes de haver um relay real; nunca em produção | `127.0.0.1:8025` |
 | `database-service` | `database-server` | MongoDB | `${DATABASE_BIND_ADDRESS}:27017` |
 
 O portal é um back-end entre o navegador e a API de cadastro: o token da API nunca chega ao navegador, e o
@@ -428,7 +429,7 @@ sudo FQDN=id.example.org TLS_MODE=letsencrypt CERTBOT_EMAIL=ops@example.org \
    ```
 
 4. **Iniciar.** `docker compose up -d --build` e depois confira
-   `curl -s http://127.0.0.1:8080/portal/healthz` (`{"portal":"ok","resolver":"ok","worker":"ok"}`) e uma requisição que
+   `curl -s http://127.0.0.1:8080/portal/healthz` (`{"portal":"ok","resolver":"ok","worker":"ok","mail":"off"}`) e uma requisição que
    chega ao Resolver pelo proxy: `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver`
    (`200`). A verificação de saúde fala direto com o servidor web, sem passar pela rota do Resolver no proxy.
 5. **HTTPS.** Coloque um proxy reverso TLS na frente de `127.0.0.1:8080`. Com nginx: copie
@@ -462,6 +463,7 @@ da instalação, nunca versionados).
 | `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD` | Banco e usuário próprios do portal (criado pelo `portal-db-init`); o instalador gera a senha |
 | `PORTAL_SECRET_KEY` | Chave que assina as sessões do portal; todas as réplicas do portal precisam compartilhá-la (o instalador a gera; vazia: uma chave guardada no volume do portal) |
 | `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS` (0), `PORTAL_JOURNAL_ADMIN_DAYS` (0) | Dias que o diário guarda entradas, alterações de cadastros e eventos de administração (0 = para sempre) |
+| `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`, `PORTAL_MAIL_SECURITY` (`starttls`), `PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM` | O relay de e-mail do portal ([ADR 0004](adr/0004-e-mail.md)): convites, recuperação de senha, avisos de segurança; servidor vazio: e-mail desligado. Porta 587 (STARTTLS) ou 465 (TLS); o instalador pergunta por eles; detalhes e um comando de teste na [documentação das extensões](../extensions/README.md#e-mail) (em inglês) |
 | `PORTAL_WORKER` (`external`) | Onde rodam as importações e verificações de links: `external`, o serviço `portal-worker`; `embedded`, uma thread do próprio portal, para uma instalação sem esse serviço |
 | `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_COOKIE_SECURE` | Configurações opcionais do portal: minutos sem uso e horas depois da entrada até a sessão terminar, cookie Secure |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Endereços do host para as portas 8080 e 27017 (lidos pelo Compose só do `.env`) |
@@ -472,7 +474,7 @@ da instalação, nunca versionados).
 
 ```bash
 git pull && docker compose up -d --build                         # atualizar
-curl -s http://127.0.0.1:8080/portal/healthz                     # {"portal":"ok","resolver":"ok","worker":"ok"}
+curl -s http://127.0.0.1:8080/portal/healthz                     # {"portal":"ok","resolver":"ok","worker":"ok","mail":"off"}
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/.well-known/gs1resolver   # 200: Resolver pelo proxy
 docker compose exec portal-service python create_user.py maria --role editor   # incluir ou redefinir um usuário
 # quem alterou o quê: menu do usuário → Auditoria (administradores), ou o log do contêiner:

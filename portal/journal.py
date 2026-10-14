@@ -10,14 +10,17 @@ Event: {"at", "user", "action", "category", "tenant"?, "byOperator"?, "anchor"?,
   record actions: create, update, delete (doc = the record after the change, or before a deletion),
   import (detail = counts); others: login, login-failed, login-refused, logout, password-change, user-create,
   user-update, user-reset, user-remove, export, tenant-create, tenant-update, tenant-remove, support-open,
-  support-close.
+  support-close, and with e-mail (Documentation/adr/0004-e-mail.md) password-recovery (a recovery link was
+  sent), password-reset (a password chosen through a recovery or reset link), invite-accepted, preferences and
+  mail-failed (a message the relay refused; never the address).
 
 "tenant" is the tenant whose audit trail the event belongs to (Documentation/adr/0002-tenants.md, section 3.5);
 none for the operator, which is also what events written before tenants existed are. "byOperator" marks what an
 operator user (a server administrator) did to a tenant, so that the operator's trail shows it too.
 
 Retention by age, per category (Documentation/adr/0001-portal-state-in-mongodb.md, section 3.5):
-  PORTAL_JOURNAL_SESSION_DAYS  login, login-failed, login-refused, logout        default 180
+  PORTAL_JOURNAL_SESSION_DAYS  login, login-failed, login-refused, logout,       default 180
+                               password-recovery
   PORTAL_JOURNAL_RECORD_DAYS   create, update, delete, import                    default 0 (kept for ever)
   PORTAL_JOURNAL_ADMIN_DAYS    password-change, user-*, export and anything else  default 0 (kept for ever)
 An event is kept for the days of its category counted from the end of the day (UTC) it was made: expiresAt
@@ -37,7 +40,7 @@ log = logging.getLogger("portal.journal")
 
 RECORD_ACTIONS = ("create", "update", "delete")
 CATEGORIES = {
-    "session": ("login", "login-failed", "login-refused", "logout"),
+    "session": ("login", "login-failed", "login-refused", "logout", "password-recovery"),
     "record": ("create", "update", "delete", "import"),
 }
 RETENTION_VARIABLES = {"session": ("PORTAL_JOURNAL_SESSION_DAYS", 180),

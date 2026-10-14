@@ -2,6 +2,22 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Single sign-on per organisation and per-role limits on exports (backlog item 7.1)
+- **Architecture decision record** [ADR 0012](../adr/0012-single-sign-on.md).
+- **Organisation sign-in** (user menu, administrators): each organisation's OpenID Connect provider — issuer, client
+  ID, a write-only secret, e-mail domains — tested from the screen; a server administrator sees every one and sets the
+  operator's. Collection `sso`; journal `sso-save`, `sso-remove`. Commit `732b5c0`.
+- **Sign in with your organisation's account** on the sign-in page: the e-mail's domain chooses the provider; the code
+  flow with PKCE, state and nonce; the ID token verified with the provider's keys; the account with that e-mail in that
+  organisation signed in, nobody created; refusals explained on the sign-in page and journalled. Commit `732b5c0`.
+- **Password sign-in off** per organisation (never for server administrators); password recovery then sends nothing
+  to those users. Commit `732b5c0`.
+- **`PORTAL_EXPORT_LIMITS`**: the most rows one export of a role may hold (records, requests), 0 for none; the page
+  hides the export buttons of a role that may not export. Commit `732b5c0`.
+- The audit trail names every journal action (the domains', the overview export and the item page's brands showed
+  their codes). Commit `732b5c0`.
+- New dependency `pyjwt[crypto]`. Commit `732b5c0`.
+
 ### Default link titles in the link's language (backlog item 7.3, conformance review F21)
 - A link saved without a title gets its type's title in Portuguese when the link is in Portuguese, in English
   otherwise (was: English always); the editor shows a title the portal gave as empty, so that it follows a change of

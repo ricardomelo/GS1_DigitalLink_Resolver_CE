@@ -597,6 +597,18 @@ a stand-in server; a mutation of the percentile's rounding escaped at first and 
 otherwise, a typed title kept, the portal's own titles shown empty so that they follow a change of language. Commit
 `266dcf3`: `test_titles.py` (11). The rest of 7.3 (the Portuguese AI names, the logo) waits for the owner's review.
 
+**Item 7.1, single sign-on and export limits** ([ADR 0012](adr/0012-single-sign-on.md), recommended options).
+OpenID Connect per organisation, the provider chosen by the e-mail's domain, the account matched by e-mail and never
+created, password sign-in off per organisation but never for server administrators (so that a provider that is down
+locks nobody out for good), the client secret write-only in the portal's database rather than encrypted with the
+session key (whose rotation would have broken every configuration silently); and `PORTAL_EXPORT_LIMITS` per role.
+Commit `732b5c0`: `portal/sso.py`, the Organisation sign-in screen, the sign-in page's second form, `test_sso.py` (62) with
+a stand-in provider, `test_sso_e2e.py` (17), `test_exports.py` (17). On the way: a throttle first put on the start of
+single sign-on would have stopped an office signing in at nine behind one address, and was dropped (nothing secret is
+checked there); an empty secret field, as the screen sends it, would have wiped the stored secret (a test caught it
+through a mutation and the code keeps it); and the audit trail showed raw codes for eight journal actions of this and
+earlier items, now named in both languages and guarded by a test.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

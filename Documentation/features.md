@@ -192,6 +192,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | E-mail per user | Optional, unique; where invitations, recovery links and notices go | `1590b7e`, `675b6ca`, `03c924b` |
 | API keys | Administrators create keys for their organisation's systems (the operator's records for a server administrator): scopes, optional prefixes, validity; shown once, stored as a hash, revocable; last use; e-mail when created and before expiry ([ADR 0005](adr/0005-tenant-api.md)) | `bb0b496`, `c469f29` |
 | Journal | One event per document in the portal's database, included in the backup; kept by age per category (sign-ins 180 days, record changes and administration for ever by default; `PORTAL_JOURNAL_*_DAYS`) | `71b15f2`, `d783f3d` |
+| Single sign-on | Each organisation's OpenID Connect provider (Entra ID, Google, Okta, Keycloak…) for its users' sign-in, chosen by the e-mail's domain; accounts matched by e-mail, never created; password sign-in off per organisation, never for server administrators ([ADR 0012](adr/0012-single-sign-on.md)) | `732b5c0` |
+| Export limits per role | `PORTAL_EXPORT_LIMITS`: the most rows one export of a role may hold, or none; refusals journalled, buttons hidden | `732b5c0` |
 
 ## Tenant API
 

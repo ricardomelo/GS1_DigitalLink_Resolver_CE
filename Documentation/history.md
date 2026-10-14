@@ -536,7 +536,18 @@ category (off by default) but would have made alerts impossible to switch off. T
 text "mongodump failed" matched the stand-in's own pattern for the dump: the record now says "the database dump
 failed". The CI job on a real MongoDB failed on `b9bd4ed` (a commit without code) and on `16ceb9f`; its logs cannot be
 downloaded from the session (the log storage host is outside the network policy), so the job was run again to tell a
-flaky run from a defect.
+flaky run from a defect. It failed again: not flaky. The failure started with `b9bd4ed`, which changed no code, so
+something outside the branch changed between two runs (an unpinned package or the `mongo:7` image); the owner is
+asked for the end of that job's log.
+
+**Item 5.1, the organisation's own domain** ([ADR 0009](adr/0009-tenant-domains.md), recommended options). Domains in
+the portal proved by a DNS TXT record and never un-verified by a DNS hiccup; a default per prefix or a choice on the
+label; the resolver recognising a verified direct domain from `X-Forwarded-Host`, removing its stem and refusing other
+organisations' keys; the redirect mode left to the organisation's server and checked by the portal; certificates by
+`scripts/custom-domains.sh` with the installer's template. Commit `0a6e42a`: `portal/domains.py`,
+`web_server/src/domains.py`, the Domains view, the label's option, `test_domains.py` (59), `test_domains_resolver.py`
+(29), `test_domains_e2e.py` (20), the host script in `test_deploy.py` (73). 25 mutations, all caught. The tests found
+that the check of a direct domain asked for the description file under the stem, where it never is.
 
 ## How the main areas evolved
 
@@ -604,6 +615,8 @@ flaky run from a defect.
     and the journal keep, in the scope of the user ([ADR 0007](adr/0007-overview-indicators.md)).
 20. The worker monitors the installation and e-mails the administrators on a change of state, never on every round
     ([ADR 0008](adr/0008-monitoring-and-alerts.md)).
+21. An organisation's domain answers only for its own keys; a verified domain stays verified
+    ([ADR 0009](adr/0009-tenant-domains.md)).
 
 ## Lessons learnt
 

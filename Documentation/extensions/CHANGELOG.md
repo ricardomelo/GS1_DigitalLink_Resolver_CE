@@ -2,6 +2,22 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### The organisation's own domain in the QR code (backlog item 5.1)
+- **Architecture decision record** [ADR 0009](../adr/0009-tenant-domains.md).
+- **Domains** (user menu, administrators): an organisation's own domains, with an optional path stem, proved by a DNS
+  TXT record `_gs1resolver.<domain>`, kept verified, looked at again daily; default per GS1 Company Prefix; *Test*
+  through the domain; at most 10 per organisation; journal `domain-create`, `domain-verify`, `domain-update`,
+  `domain-remove`. Commit `0a6e42a`.
+- **Labels**: *Domain in the QR code* (default of the prefix, the installation's, a verified domain); the preview, the
+  record's `digitalLink`, the tenant API's records and labels (`domain=`) follow it. Commit `0a6e42a`.
+- **Resolver** (deliberate change to the official component, only for registered domains): a middleware recognises a
+  verified direct domain from `X-Forwarded-Host` (which the proxy now passes), removes its stem, answers only for its
+  organisation's prefixes (404 for others) and names it as `resolverRoot`; every other host is served as before.
+  Commit `0a6e42a`.
+- **`scripts/custom-domains.sh`** `list` / `apply`: nginx sites and Let's Encrypt certificates for verified direct
+  domains on the host. Commit `0a6e42a`.
+- The portal's requirements name `dnspython` (already installed with `pymongo`). Commit `0a6e42a`.
+
 ### Monitoring and alerts by e-mail (backlog item 4.3)
 - **Architecture decision record** [ADR 0008](../adr/0008-monitoring-and-alerts.md) (committed with the docs of
   item 4.2, `b06ff53`, before its code).

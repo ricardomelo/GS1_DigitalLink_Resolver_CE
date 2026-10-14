@@ -494,7 +494,18 @@ formato oficial. O mongomock apaga, na leitura, documentos cuja data de TTL já 
 uma expiração de zero dias parecia vazio de qualquer jeito: a mutação "desligamento ignorado" escapou até o teste
 contar também o que o gravador gravou. Outra mutação que escapou mostrou um teste que procurava um padrão já escapado,
 que não acha nada com ou sem escape. O teste no navegador achou o novo item de menu fora da lista dos itens que fecham
-o menu. 26 mutações, todas pegas. Ainda não confirmado na homologação nem no CI.
+o menu. 26 mutações, todas pegas.
+
+**Testes na homologação, 14 de outubro.** O responsável aplicou o bundle na estação e na homologação e seguiu um plano
+de testes cobrindo tudo desde `fd8f67c` (sessões 10 a 13). O CI ficou verde em todos os jobs. Dois achados não eram do
+código: o `.env` tinha três configurações duplicadas de antes da correção do instalador da sessão 12 (`f3d127d` evita
+duplicatas novas, mas não retira as antigas), retiradas à mão; e a verificação semanal do motor falhou porque um fork
+no GitHub vem com Issues desligado (Settings → Features → Issues), e depois disso rodou verde. Organizações, as regras
+GS1, e-mail, a API de organizações e a tela Acessos funcionaram como descrito. O backup diário falhou: `d633fcb`
+deixava `resolver_log` de fora com `--nsExclude`, uma opção do `mongorestore` que o `mongodump` não tem, e o script
+parava sem mensagem própria, deixando um arquivo pela metade. `c1b3f78` devolve o registro ao backup (é pequeno e
+limitado pela expiração), avisa `ERROR`, apaga o arquivo pela metade, e o `test_deploy.py` agora roda o script com um
+`docker` substituto e confere as opções do dump (62 verificações).
 
 ## Como as principais áreas evoluíram
 

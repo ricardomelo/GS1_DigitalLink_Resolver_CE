@@ -20,11 +20,16 @@
   reach, a server administrator the whole installation. The worker counts each day per key into `request_daily`
   (`PORTAL_TIME_ZONE`, which the installer writes from the server; `PORTAL_STATS_DAYS`, 800). The tenant API's calls
   are recorded in `api_requests` (key, organisation, route template, status, time) and listed for administrators
-  (`/portal/api/requests/api`). The backup leaves `resolver_log` out; the portal's image gains `tzdata`. Commit `d633fcb`.
+  (`/portal/api/requests/api`). The portal's image gains `tzdata`. Commit `d633fcb`.
+- **Fix: the daily backup** (found on staging, 14 October): `d633fcb` left `resolver_log` out with `--nsExclude`, which
+  `mongodump` does not have, so the backup failed without a message of its own and left a partial file. The backup
+  now keeps every database, the log included; a failed dump says `ERROR`, removes the partial file and exits with
+  status 1; `test_deploy.py` checks the dump's options and runs the script with a stand-in `docker` (62). Commit
+  `c1b3f78`.
 - **Requests screen** (step 3, every user): the last 30 days as bars, the latest requests with filters, pages and a CSV
   export, the tenant API's calls for administrators; user guides (new section 16) in both languages. Commit `7b8967a`.
 - **Tests**: `test_request_log.py` (73 checks), `test_requestlog.py` (74), `test_requests_e2e.py` (28); 26 mutations,
-  all caught; the installer test checks the time zone (87); `test_store_mongodb.py` checks the read-only role on the
+  all caught; the installer test checks the time zone (87), the deployment test the backup (62); `test_store_mongodb.py` checks the read-only role on the
   log. Commits `d633fcb`, `7b8967a`.
 
 ### Tenant API and API keys (backlog item 3.2)

@@ -756,7 +756,8 @@ variables and commands it needs), and a row to the table above.
 A second workflow, `.github/workflows/engine-update.yml` (weekly, Mondays 09:37 UTC, and on demand), opens an
 issue when the GS1 Barcode Syntax Engine has a release newer than `x-gs1-syntax-engine`: it uses the new release in
 its own copy, regenerates the dictionary, compares it (`tools/dictionary_diff.py`), runs the `portal` group and
-writes both in the issue; one issue per release; it never pushes (`contents: read`, `issues: write`).
+writes both in the issue; one issue per release; it never pushes (`contents: read`, `issues: write`). A fork on GitHub has Issues switched off by default, and the
+job then fails with "repository has disabled issues": switch them on in Settings → Features → Issues.
 
 `.github/workflows/dev-tests.yml` runs one job per group in parallel on every push and pull request to
 `gs1br/develop` (not for changes to `Documentation/` or Markdown files only), in strict mode. The `database`

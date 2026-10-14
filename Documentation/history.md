@@ -480,7 +480,18 @@ shape. mongomock deletes documents whose TTL date has passed when they are read,
 of zero days looked empty either way: the mutation "switch ignored" escaped until the test also counted what the
 writer wrote. Another escaped mutation showed a test that searched for an escaped pattern, which matches the same
 nothing with or without escaping. The browser test found the new menu item left out of the list of items that close
-the menu. 26 mutations, all caught. Not yet confirmed on staging nor in CI.
+the menu. 26 mutations, all caught.
+
+**Tests on staging, 14 October.** The owner applied the bundle on the workstation and on staging and followed a test
+plan covering everything since `fd8f67c` (sessions 10 to 13). CI was green in every job. Two findings were not in the
+code: `.env` held three settings twice from before the installer fix of session 12 (`f3d127d` stops new duplicates
+but does not remove old ones), removed by hand; and the weekly engine check failed because a fork on GitHub has
+Issues switched off by default (Settings → Features → Issues), after which it ran green. Organisations, the GS1
+rules, e-mail, the tenant API and the Requests screen worked as described. The daily backup failed: `d633fcb` left
+`resolver_log` out with `--nsExclude`, an option of `mongorestore` that `mongodump` does not have, and the script
+stopped without a message of its own, leaving a partial file. `c1b3f78` puts the log back in the backup (it is small
+and bounded by its expiry), reports `ERROR`, removes the partial file, and `test_deploy.py` now runs the script with a
+stand-in `docker` and checks the dump's options (62 checks).
 
 ## How the main areas evolved
 

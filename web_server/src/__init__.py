@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Any
 import domains
+import landing
 import request_log
 from web_namespace import web_namespace
 from mongo_db_init import mongo, init_mongo
@@ -80,6 +81,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     if domains.MAP.database is None:
         domains.MAP.database = lambda: mongo.cx[domains.portal_db_name()]
     app.wsgi_app = domains.Middleware(app.wsgi_app)
+    # The brands of the item's page (Documentation/adr/0011-item-page.md), from the same database
+    if landing.BRANDS.database is None:
+        landing.BRANDS.database = lambda: mongo.cx[domains.portal_db_name()]
 
     @app.after_request
     def add_headers(response: Response) -> Response:

@@ -274,6 +274,16 @@ the ones in the form) or **Replace the targets**. Nothing is saved until you sel
 
 **Check targets** asks each address whether it answers (section 13); it never stops you from saving.
 
+**Default target: the item's page.** Tick this option (above the targets) when the code should open a page with
+**all** the targets instead of only the first one: the resolver makes that page — mobile first, a large button with an
+icon for each target, the targets in the language of the phone first (the others under *Other languages*), the batch's
+and the product's targets when a batch is scanned, and the brand of your GS1 Company Prefix (logo and colours, set by an
+administrator under **Item page**, section 14). With the option no target is marked as the default. Like the default
+type, the option is shared by every record of the identifier: when the product uses it, a batch must use it too (the
+message under the targets says so). The page counts its **views** and the **clicks** on its buttons (section 16);
+nothing about the person is kept. When the installation has switched it on, the page also offers **Check this code in
+Verified by GS1** for a GTIN or a GLN, where anyone can see who licensed the code.
+
 ### Saving
 
 Select **Save links**. The portal checks everything again on the server and answers:
@@ -650,6 +660,21 @@ whose QR codes carry this domain by default (one domain per prefix). **Test** re
 resolver's description file, or a redirect of one of your codes — and shows the result. **Remove** deletes the domain
 from the portal: labels already printed with it keep working only while the domain still reaches the resolver.
 
+### Item page (administrators)
+
+![Item page](images/guide/item-page.png)
+
+**Item page** (user menu, administrators) sets the brand of the page the resolver shows for records whose default
+target is the item's page (section 5): for each GS1 Company Prefix of your organisation — or a longer prefix inside
+one, for a brand of its own — a **brand name**, a **logo** (PNG, JPEG or WebP, up to 200 KB; SVG is not accepted) and
+two colours: the **main colour** of the page's header and buttons and the **button colour** of its highlights. The text
+on them is black or white, whichever reads better; the card shows a preview. The page uses the brand of the longest
+prefix the code starts with, else the installation's default (set by the server administrator, who also brands the
+operator's prefixes). **Offer to check the code in Verified by GS1** can be switched off per brand; when the
+installation has not switched the service on, the screen says so. **Edit** fills the form with a brand, **Remove logo**
+keeps the brand without a logo, **Remove brand** goes back to the brand above it. A change shows on the page within a
+minute. During support access the list is read only.
+
 ### Support access
 
 ![Support access](images/guide/support-dialog.png)
@@ -696,7 +721,8 @@ of the bars.
 **Latest requests.** The newest first, 200 at a time (**Show more** for the next ones). Each row shows when, the
 **Code** (the identifier and the qualifiers in the scan: a serial number appears only as `/21/*`; `?17` means the QR
 code carried an expiry date, whose value is not kept), the **Outcome** (*Redirected*, *Code not registered*, *No link
-of that type*, *Choice of links*, *Linkset*, *Invalid request*…), the **Answer** (the link type asked, the level of the
+of that type*, *Choice of links*, *Linkset*, *Invalid request*, *Item page* — a view of the item's page reached by a
+scan —, *Click on the item page*…), the **Answer** (the link type asked, the level of the
 record that answered — the key's or a batch's — and the site the person was sent to), the **Device** class (phone,
 tablet, computer, automated) and the site the person came from, the **Language** of the phone and the time the
 resolver took, in milliseconds. Filter by date (**From**, **To**), **Code** (a GTIN, a GS1 Company Prefix or a
@@ -729,7 +755,8 @@ each figure the change on the period of the same length just before: in green wh
 scans, fewer codes not found), in red otherwise.
 
 **Usage.** **Scans** are the requests made by people (phones, tablets, computers); **Automated requests** — crawlers,
-link previews, monitors — are counted apart. One bar per day as on the Requests screen (in orange the scans that
+link previews, monitors — are counted apart, and so are the **Item page views** and **Clicks on the item page** (shown
+once there are any: they follow a scan, they are not scans). One bar per day as on the Requests screen (in orange the scans that
 found nothing), the **Most scanned codes** (select a code to open it in the editor) and **How codes are scanned**: by
 device class, by form of the link (GS1 Digital Link, compressed link, EPC binary from an RFID tag), by language of the
 device and by link type asked.

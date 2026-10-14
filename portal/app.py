@@ -33,6 +33,7 @@ import journal
 import label
 import linear
 import apikeys
+import branding
 import domains
 import linkcheck
 import mail
@@ -570,6 +571,12 @@ def digital_link_for(anchor: str, pairs, attributes, domain: str | None = None) 
     return syntax.ENGINE.digital_link(base, anchor, pairs, attributes)
 
 
+def landing_link(anchor: str, pairs) -> dict:
+    """The link of a record to its own page (Documentation/adr/0011-item-page.md), on the record's domain."""
+    return {"linktype": gs1.LANDING_TYPE, "href": gs1.landing_url(link_base(anchor), anchor, pairs),
+            "title": "Item page", "type": "text/html", "hreflang": ["und"]}
+
+
 def build_document(data: dict) -> tuple[str, str | None, dict]:
     """Validates a record sent by the browser (key, qualifiers, description, targets, default) and builds
     the Resolver CE v3 document: (anchor, qualifier pairs, document). Raises ValidationError on the first problem.
@@ -619,6 +626,11 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
 
     # The first link is the default (gs1:defaultLink); its type becomes the key's defaultLinktype.
     default = data.get("defaultLinkType") or links[0]["linktype"]
+    if data.get("landingPage"):
+        # The item's page as the default target (Documentation/adr/0011-item-page.md): a gs1:defaultLink to the
+        # resolver's page of these links, on the record's domain
+        links.append(landing_link(anchor, pairs))
+        default = gs1.LANDING_TYPE
     if default not in {l["linktype"] for l in links}:
         raise ValidationError("default.required")
 
@@ -1006,14 +1018,15 @@ def get_record():
         # With other entries on the same key the default link type is shared and cannot change here.
         "sharedDefaultLinkType": default if others else None,
         "defaultLinkType": default,
-        "description": "", "links": [],
+        "description": "", "links": [], "landingPage": False,
     }
     if target:
         result["description"] = target.get("itemDescription", "")
+        result["landingPage"] = any(gs1.is_landing(l) for l in target.get("links", []))
         result["links"] = [{
             "linkType": l.get("linktype"), "url": l.get("href"), "title": l.get("title") or "",
             "hreflang": l.get("hreflang") or ["pt"], "context": l.get("context") or [],
-        } for l in target.get("links", [])]
+        } for l in target.get("links", []) if not gs1.is_landing(l)]
         result["links"].sort(key=lambda l: l["linkType"] != default)   # default link first
     return jsonify(result)
 
@@ -1049,14 +1062,18 @@ def key_record_document(anchor: str, pairs: list, doc: dict, request_data) -> di
         return None
     ai, value = gs1.split_anchor(anchor)
     default = doc["links"][0]
+    # With the item's page as default target, the key's record gets its own page (the same option), not a copy of
+    # the qualified record's page link
+    landing = doc["defaultLinktype"] == gs1.LANDING_TYPE
     if request_data.get("mode") == "target":
-        rows = [{"linkType": doc["defaultLinktype"], "url": request_data.get("url"), "hreflang": default["hreflang"],
-                 "title": ""}]
+        rows = [{"linkType": default["linktype"] if landing else doc["defaultLinktype"], "url": request_data.get("url"),
+                 "hreflang": default["hreflang"], "title": ""}]
     else:
         rows = [{"linkType": l["linktype"], "url": l["href"], "hreflang": l["hreflang"], "title": l["title"],
-                 "context": l.get("context", [])} for l in doc["links"]]
+                 "context": l.get("context", [])} for l in doc["links"] if not gs1.is_landing(l)]
     _, _, key_doc = build_document({"key": ai, "value": value, "description": request_data.get("description") or doc["itemDescription"],
-                                    "defaultLinkType": doc["defaultLinktype"], "links": rows})
+                                    "defaultLinkType": rows[0]["linkType"] if landing else doc["defaultLinktype"],
+                                    "landingPage": landing, "links": rows})
     return key_doc
 
 
@@ -1288,6 +1305,9 @@ def import_preview():
             item["action"] = "error"
             report.append(item)
             continue
+        # A row of type gs1:defaultLink is the item's page of an exported record (ADR 0011): read back as the option
+        landing = any(l["linkType"] == gs1.LANDING_TYPE for l in record["links"])
+        record["links"] = [l for l in record["links"] if l["linkType"] != gs1.LANDING_TYPE]
         defaults = [l for l in record["links"] if l["default"]]
         if len(defaults) > 1:
             errors.append({"row": defaults[1]["row"], "code": "import.defaultMany",
@@ -1323,7 +1343,7 @@ def import_preview():
             anchor, pairs, doc = build_document({
                 "key": record["key"] or "01", "value": record["value"], "qualifiers": dict(record["qualifiers"]),
                 "description": record["description"],
-                "defaultLinkType": ordered[0]["linkType"] if ordered else None,
+                "defaultLinkType": ordered[0]["linkType"] if ordered else None, "landingPage": landing,
                 "links": [{"linkType": l["linkType"], "url": l["url"], "hreflang": l["hreflang"],
                            "title": l["title"]} for l in ordered]})
         except ValidationError as exc:
@@ -1383,6 +1403,8 @@ def import_preview():
         if (item["pairs"] and anchor not in in_file and anchor not in key_records and gs1.has_key_level(gs1.split_anchor(anchor)[0])
                 and not any(not e.get("qualifiers") for e in existing.get(anchor, []))):
             doc = {k: v for k, v in item["doc"].items() if k not in ("qualifiers", "informativeQualifiers")}
+            if doc["defaultLinktype"] == gs1.LANDING_TYPE:     # the key's own page, not the qualified record's
+                doc["links"] = [l for l in doc["links"] if not gs1.is_landing(l)] + [landing_link(anchor, [])]
             key_records[anchor] = {"anchor": anchor, "pairs": [], "doc": doc, "rows": item["rows"]}
     for item in report:
         anchor = gs1.anchor_for(item["key"], item["value"]) if item.get("action") in ("create", "update") else None
@@ -1552,7 +1574,8 @@ def start_link_job():
                 continue
             key = f'{line["anchor"]}|{entry.get("path", "")}'
             for link in line.get("links") or []:
-                urls.setdefault(link.get("href"), []).append(key)
+                if not gs1.is_landing(link):          # the item's page is the resolver's own (ADR 0011)
+                    urls.setdefault(link.get("href"), []).append(key)
         scope = "all"
     else:
         urls = {u: [] for u in data.get("urls") or [] if isinstance(u, str) and u}
@@ -2164,6 +2187,65 @@ def remove_domain(name):
     doc = domains.remove(name, tenant)
     log_event("domain-remove", tenant=tenant, detail=doc["_id"])
     return message("domains.removed", 200, params={"domain": doc["_id"]})
+
+
+# --------------------------------------------------------------------------- the item's page (ADR 0011)
+def branding_scope() -> tuple[str | None, bool]:
+    """Whose brands the request manages (the account's own scope; during support access read only) and whether it is
+    a server administrator outside support access (the operator's prefixes and the installation's default)."""
+    if g.support:
+        return g.support, False
+    return g.account_tenant, bool(g.server_admin)
+
+
+@app.get("/portal/api/branding")
+@require_login
+@admin_required
+def list_branding():
+    tenant, server = branding_scope()
+    held = (tenants.get(tenant) or {}).get("prefixes", []) if tenant else []
+    return jsonify(brands=[branding.public(d) for d in branding.load(tenant)], readOnly=bool(g.support),
+                   prefixes=held, installationDefault=server, maxLogoKB=branding.MAX_LOGO_BYTES // 1024,
+                   verifiedOn=bool((os.environ.get("RESOLVER_VERIFIED_BY_GS1_URL", "") or "").strip()))
+
+
+@app.put("/portal/api/branding/<prefix>")
+@require_login
+@admin_required
+def save_branding(prefix):
+    if g.support:
+        raise ReadOnlySupport()
+    tenant, server = branding_scope()
+    doc = branding.save(prefix, request.get_json(silent=True) or {}, tenant, server, g.user)
+    log_event("branding-save", tenant=tenant, detail=f'{doc["_id"]} name={doc.get("name") or "-"} '
+              f'logo={"yes" if doc.get("logo") else "no"} verified={doc.get("verified")}')
+    return message("branding.saved", 200, params={"prefix": doc["_id"]}, item=branding.public(doc))
+
+
+@app.get("/portal/api/branding/<prefix>/logo")
+@require_login
+@admin_required
+def branding_logo(prefix):
+    """The logo of one of the scope's brands, for the screen's preview."""
+    found = branding.logo(prefix, branding_scope()[0])
+    if not found:
+        return message("branding.unknown", 404)
+    response = Response(bytes(found["data"]), mimetype=found["type"])
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@app.delete("/portal/api/branding/<prefix>")
+@require_login
+@admin_required
+def remove_branding(prefix):
+    if g.support:
+        raise ReadOnlySupport()
+    tenant, server = branding_scope()
+    doc = branding.remove(prefix, tenant, server)
+    log_event("branding-remove", tenant=tenant, detail=doc["_id"])
+    return message("branding.removed", 200, params={"prefix": doc["_id"]})
 
 
 # --------------------------------------------------------------------------- overview (ADR 0007)

@@ -79,7 +79,7 @@ Constraints:
 ### 3.1 An event (`resolver_log.requests`, `web_server/src/request_log.py`)
 
 ```
-{"t": <date>, "expiresAt": <date>, "m": "GET", "f": "uri" | "compressed" | "epc", "epc": "sgtin-96",
+{"t": <date>, "expiresAt": <date>, "m": "GET", "f": "uri" | "compressed" | "epc" | "landing", "epc": "sgtin-96",
  "ai": "01", "v": "07898357410015", "cp": "7898357410015",
  "q": {"10": "L1", "21": null}, "da": ["17", "3103"], "lt": "pip",
  "s": 307, "o": "redirect", "lvl": "/10/L1", "to": "www.example.org", "ms": 12,
@@ -90,12 +90,12 @@ Constraints:
 | Field | Content |
 |---|---|
 | `t`, `expiresAt` | time of the request (UTC) and of its deletion (`t` + `RESOLVER_LOG_DAYS`, TTL index) |
-| `m`, `f`, `epc` | GET or HEAD; `uri`, `compressed`, `epc`; the EPC scheme (`f` = `epc` only) |
+| `m`, `f`, `epc` | GET or HEAD; `uri`, `compressed`, `epc`, `landing` (the item's page and its clicks, [ADR 0011](0011-item-page.md)); the EPC scheme (`f` = `epc` only) |
 | `ai`, `v`, `cp` | the primary key as resolved (a GTIN-13 already as GTIN-14) and its company part: after the indicator digit of a GTIN or ITIP, the extension digit of an SSCC and the filler digit of a GRAI (as `gs1.company_part()` in the portal) |
 | `q` | the key qualifiers of the path; `null` for 21 and 235 |
 | `da` | AIs of the data attributes of the query string (names made of 2 to 4 digits) |
 | `lt` | the link type asked, without the vocabulary's address (`pip`); `linkset` for a linkset; absent for the default |
-| `s`, `o` | HTTP status and outcome: `redirect` 307, `choice` 300, `linkset` 200, `unknown` 404 (no record applies), `noLink` 404 (a record applies, no link of that type), `invalid` 400, `error` 5xx, `compressed` 200 |
+| `s`, `o` | HTTP status and outcome: `redirect` 307, `choice` 300, `linkset` 200, `unknown` 404 (no record applies), `noLink` 404 (a record applies, no link of that type), `invalid` 400, `error` 5xx, `compressed` 200; `page` 200 and `click` 302 for the item's page reached as a default target and its buttons ([ADR 0011](0011-item-page.md); an automated client's are logged `linkset` and `redirect`) |
 | `lvl` | the level that answered (`""` for the key, `/10/L1` for a batch; unit values as `*`); redirect and choice only |
 | `to` | host of the target (redirect only) |
 | `ms` | milliseconds from the request's arrival in the resolver to its answer |

@@ -8,6 +8,7 @@ trademark and the images illustrate the software, not an endorsement). Run it ag
 """
 import json
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -285,6 +286,7 @@ def guide_images(locale: str, folder: str, description: str) -> None:
         mail_images(browser, folder, locale)
         apikey_images(browser, folder, locale)
         domain_images(browser, folder, locale)
+        item_page_images(browser, folder, locale)
         requests_images(browser, folder, locale)
         browser.close()
 
@@ -402,6 +404,50 @@ def domain_images(browser, folder: str, locale: str) -> None:
     for name in ("id.brand.example", "qr.brand.example"):                # the next run starts clean
         page.once("dialog", lambda d: d.accept())
         page.locator(f".domain-card[data-domain='{name}'] button.btn-danger-ghost").click(); page.wait_for_timeout(500)
+    ctx.close()
+
+
+def example_logo() -> str:
+    """A made-up brand's logo (a fruit and its name), as a PNG file."""
+    from PIL import ImageDraw
+    path = os.path.join(CONFIG, "brand-logo.png")
+    image = Image.new("RGB", (240, 80), (255, 255, 255))
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((8, 8, 72, 72), fill=(74, 29, 92))
+    draw.ellipse((24, 24, 56, 56), fill=(123, 176, 58))
+    draw.text((86, 32), "AMAZON FRUIT CO.", fill=(74, 29, 92))
+    image.save(path)
+    return path
+
+
+def item_page_images(browser, folder: str, locale: str) -> None:
+    """The Item page screen with a brand, and the resolver's item page of a record on a phone
+    (Documentation/adr/0011-item-page.md); the page is made by the resolver's code in a process of its own."""
+    import base64
+    import subprocess
+    logo = example_logo()
+    ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1200})
+    page = ctx.new_page()
+    page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+    page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
+    page.click("#login-submit"); page.wait_for_timeout(1000)
+    page.goto(BASE + "#branding"); page.wait_for_timeout(900)
+    page.fill("#brand-prefix", "9506000"); page.fill("#brand-name", "Amazon Fruit Co.")
+    page.fill("#brand-colour", "#4a1d5c"); page.fill("#brand-accent", "#7bb03a"); page.set_input_files("#brand-logo", logo)
+    page.click("#branding-form button[type=submit]"); page.wait_for_timeout(1000)
+    save(page, f"{folder}/item-page.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1150})
+    page.once("dialog", lambda d: d.accept())                              # the next run starts clean
+    page.locator(".domain-card[data-prefix='9506000'] button.btn-danger-ghost").click(); page.wait_for_timeout(500)
+    ctx.close()
+    html = subprocess.run([sys.executable, os.path.join(HERE, "item_page_html.py"), logo, locale], check=True,
+                          capture_output=True, text=True).stdout
+    data = "data:image/png;base64," + base64.b64encode(open(logo, "rb").read()).decode()
+    html = re.sub(r'src="/_brand/[^"]*"', f'src="{data}"', html)
+    ctx = browser.new_context(locale=locale, viewport={"width": 390, "height": 844}, device_scale_factor=2,
+                              is_mobile=True)
+    page = ctx.new_page()
+    page.set_content(html); page.wait_for_timeout(400)
+    save(page, f"{folder}/item-page-phone.png", full=True)
     ctx.close()
 
 

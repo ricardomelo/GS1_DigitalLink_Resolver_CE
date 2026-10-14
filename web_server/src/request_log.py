@@ -216,6 +216,10 @@ def event(noted: dict[str, Any], response: Response) -> dict[str, Any]:
     if lang:
         doc["lang"] = lang
     doc["dev"] = device_class(request.headers.get("User-Agent"))
+    if doc["dev"] == "automated" and doc["o"] in ("page", "click"):
+        # Page views and clicks count people following a scan: an automated client's are plain answers, already
+        # counted apart as automated (ADR 0011)
+        doc["o"] = "linkset" if doc["o"] == "page" else "redirect"
     referrer = host_of(request.headers.get("Referer"))
     if referrer:
         doc["ref"] = referrer
@@ -228,7 +232,10 @@ def event(noted: dict[str, Any], response: Response) -> dict[str, Any]:
 
 
 def outcome(status: int, noted: dict[str, Any]) -> str:
-    """redirect, choice, linkset, compressed, unknown, noLink, invalid or error."""
+    """redirect, choice, linkset, compressed, unknown, noLink, invalid or error; page and click for the item's page
+    (Documentation/adr/0011-item-page.md)."""
+    if noted.get("outcome") in ("page", "click") and status < 400:
+        return noted["outcome"]
     if noted.get("compress"):
         return "compressed" if status < 400 else "invalid"
     if status == 307:

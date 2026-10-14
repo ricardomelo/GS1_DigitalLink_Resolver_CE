@@ -252,6 +252,11 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .link-row:first-child { border-left-color: var(--gs1-orange); background: #FFFAF7; }
 .link-row:first-child .row-badge { display: block; }
 .link-row:first-child .make-default { display: none; }
+/* The item's page is the default target: no row is (ADR 0011) */
+.landing-choice { display: flex; gap: .5rem; align-items: flex-start; margin: .5rem 0 1rem; }
+.landing-choice .hint { display: block; margin: .15rem 0 0; }
+.links.landing .link-row:first-child { border-left-color: var(--line, #D8DEE4); background: none; }
+.links.landing .link-row:first-child .row-badge, .links.landing .make-default { display: none; }
 
 /* ---------------------------------------------------------------- buttons (gs1.org) */
 .btn {
@@ -632,6 +637,7 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .requests-outcome.is-compressed { background: #E7F4EC; color: var(--ok); }
 .requests-outcome.is-unknown, .requests-outcome.is-noLink { background: #FFF4E0; color: #9A5B00; }
 .requests-outcome.is-invalid, .requests-outcome.is-error { background: #FDECEA; color: var(--err); }
+.requests-outcome.is-page, .requests-outcome.is-click { background: #E8F0FB; color: var(--link); }
 #requests-more, #requests-api-more { margin-top: 1rem; }
 
 
@@ -702,3 +708,10 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .domains-help summary { cursor: pointer; color: var(--gs1-blue); font-weight: 600; }
 .opt-domain select { max-width: 100%; }
 .domain-card .user-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+/* The item's page: brands (ADR 0011) */
+.branding-form .brand-colours { display: flex; flex-direction: row; gap: 1rem; align-items: end; }
+.brand-colours label { display: flex; flex-direction: column; gap: .2rem; }
+.brand-colours input[type=color] { width: 4rem; height: 2.4rem; padding: .1rem; }
+.brand-preview { display: flex; align-items: center; gap: .75rem; border-radius: 6px; padding: .6rem .9rem; margin: .4rem 0 .6rem; min-height: 3rem; }
+.brand-preview img { max-height: 2.5rem; max-width: 9rem; background: #fff; border-radius: 3px; padding: 2px; }
+.brand-preview .brand-button { margin-left: auto; border-radius: 4px; padding: .3rem .7rem; font-size: .85rem; font-weight: 600; }

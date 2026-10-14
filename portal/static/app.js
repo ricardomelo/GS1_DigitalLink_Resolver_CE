@@ -1207,9 +1207,9 @@ function fitOthers() {
 
 /* The record being edited as it would be saved, to tell whether it has unsaved changes. */
 function editorSnapshot() {
-  const { key, description, links } = collect();
+  const { key, description, links, landingPage } = collect();
   const informative = splitInformative(key, readQualifiers().pairs || []).informative;
-  return JSON.stringify({ description, links, informative });
+  return JSON.stringify({ description, links, landingPage, informative });
 }
 
 /* Whether the open record has unsaved changes. With targetsOnly the informative batch and variant are left
@@ -1263,8 +1263,11 @@ async function openRecord() {
     state.sharedDefaultLinkType = record.sharedDefaultLinkType;
     $("#description").value = record.description || "";
     $("#links").replaceChildren();
+    $("#landing-page").checked = !!record.landingPage
+      || (!record.exists && record.sharedDefaultLinkType === "gs1:defaultLink");
     if (record.links.length) record.links.forEach(addRow);
-    else addRow({ linkType: record.sharedDefaultLinkType || "gs1:pip" });
+    else addRow({ linkType: record.sharedDefaultLinkType && record.sharedDefaultLinkType !== "gs1:defaultLink"
+                            ? record.sharedDefaultLinkType : "gs1:pip" });
     refreshDefault();
 
     setOpenMessage(record.exists ? "open.found" : "open.new", {}, record.otherEntries);
@@ -1300,7 +1303,8 @@ const records = { all: [], loaded: false };
 function isRecordsView() { return location.hash === "#records"; }
 
 const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants", "#apikeys": "apikeys",
-                "#requests": "requests", "#overview": "overview", "#domains": "domains" };
+                "#requests": "requests", "#overview": "overview", "#domains": "domains",
+                "#branding": "branding" };
 
 /* Shows the editor, the record list, the user administration, the organisations or the audit trail, following
    the address (#records, #users, #tenants, #audit), so the browser's back button and bookmarks work. Users and the
@@ -1308,7 +1312,8 @@ const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#t
    still an administrator); organisations are for server administrators. */
 function applyView() {
   let view = VIEWS[location.hash] || "editor";
-  if ((view === "users" || view === "audit" || view === "apikeys" || view === "domains") && CONFIG
+  if ((view === "users" || view === "audit" || view === "apikeys" || view === "domains"
+       || view === "branding") && CONFIG
       && CONFIG.accountRole !== "admin") view = "editor";
   if (view === "tenants" && CONFIG && !CONFIG.serverAdmin) view = "editor";
   $("#editor-view").hidden = view !== "editor";
@@ -1320,9 +1325,11 @@ function applyView() {
   $("#requests-view").hidden = view !== "requests";
   $("#overview-view").hidden = view !== "overview";
   $("#domains-view").hidden = view !== "domains";
+  $("#branding-view").hidden = view !== "branding";
   if (view !== "apikeys") forgetNewKey();
   const titles = { editor: "intro", records: "records", users: "users", audit: "audit", tenants: "tenants",
-                   apikeys: "apikeys", requests: "requests", overview: "overview", domains: "domains" };
+                   apikeys: "apikeys", requests: "requests", overview: "overview", domains: "domains",
+                   branding: "branding" };
   I18N.set($("#hero-title"), `${titles[view]}.title`);
   I18N.set($("#hero-lede"), `${titles[view]}.lede`);
   const link = $("#hero-link");
@@ -1336,6 +1343,7 @@ function applyView() {
   if (view === "requests" && CONFIG) loadRequestsView();
   if (view === "overview" && CONFIG) loadOverview();
   if (view === "domains" && CONFIG) loadDomains();
+  if (view === "branding" && CONFIG) loadBranding();
 }
 
 /* ------------------------------------------------------------------ roles */
@@ -1912,7 +1920,8 @@ function downloadAudit() {
    The log of resolver requests (Documentation/adr/0006-resolver-request-log.md), in the scope of the account: the
    last 30 days as bars, the latest requests with filters and pages, a CSV export, and for administrators the calls
    of the tenant API. Nothing here identifies the people who scan: the server never stores it. */
-const REQUEST_OUTCOMES = ["redirect", "notFound", "unknown", "noLink", "choice", "linkset", "invalid", "error", "compressed"];
+const REQUEST_OUTCOMES = ["redirect", "notFound", "unknown", "noLink", "choice", "linkset", "invalid", "error", "compressed",
+                          "page", "click"];
 const REQUEST_DEVICES = ["mobile", "tablet", "desktop", "automated", "unknown"];
 const requestsState = { next: null, apiNext: null, tab: "resolver" };
 
@@ -2215,6 +2224,135 @@ async function refreshDomainConfig() {
   } catch { /* the next page load will have it */ }
 }
 
+/* ------------------------------------------------------------------ the item's page (Documentation/adr/0011-item-page.md)
+   Brands per prefix: the name, logo and colours the resolver's page of an item's links shows, and whether it offers
+   Verified by GS1. An organisation's administrators brand prefixes inside theirs; a server administrator the
+   operator's and the installation's default ("*"); support access is read only. */
+const brandingState = { data: null };
+
+function brandingStatus(kind, key, params) {
+  const box = $("#branding-status");
+  box.hidden = !key;
+  box.className = "status" + (kind ? " is-" + kind : "");
+  if (key) I18N.set(box, key, params);
+}
+
+async function loadBranding() {
+  try {
+    brandingState.data = await api("GET", "branding");
+    renderBranding();
+  } catch (e) {
+    brandingStatus("error", e.code, e.params);
+  }
+}
+
+/* Black or white text on a colour, whichever reads better (as the resolver's page chooses). */
+function textOn(hex) {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.179 ? "#000000" : "#FFFFFF";
+}
+
+function renderBranding() {
+  const data = brandingState.data;
+  if (!data) return;
+  const who = CONFIG.support ? CONFIG.support.name : CONFIG.tenant ? CONFIG.tenant.name : t("users.operatorName");
+  I18N.set($("#branding-scope"), "branding.scope", { who });
+  $("#branding-readonly").hidden = !data.readOnly;
+  $("#branding-form").hidden = data.readOnly;
+  $("#branding-verified-off").hidden = data.verifiedOn;
+  I18N.set($("#brand-logo-hint"), "branding.logoHint", { max: data.maxLogoKB });
+  const options = [...data.prefixes, ...(data.installationDefault ? ["*"] : [])];
+  $("#brand-prefixes").replaceChildren(...options.map(p => new Option(p === "*" ? t("branding.installation") : p, p)));
+  $("#branding-list").replaceChildren(...data.brands.map(brandCard));
+  $("#branding-empty").hidden = data.brands.length > 0;
+}
+
+function brandCard(b) {
+  const card = el("article", "domain-card is-verified");
+  card.dataset.prefix = b.prefix;
+  const head = el("div", "domain-head");
+  head.append(el("strong", "domain-name", b.prefix === "*" ? t("branding.installation") : b.prefix));
+  head.append(el("span", "badge " + (b.verified ? "badge-created" : "badge-unchanged"),
+                 t(b.verified ? "branding.verifiedOn" : "branding.verifiedOffBadge")));
+  card.append(head);
+  const preview = el("div", "brand-preview");
+  preview.style.background = b.colour;
+  preview.style.color = textOn(b.colour);
+  if (b.logo) {
+    const img = el("img");
+    img.src = BASE + b.logo.url;
+    img.alt = t("branding.logoAlt", { name: b.name || b.prefix });
+    preview.append(img);
+  }
+  preview.append(el("span", "", b.name || t("branding.noName")));
+  const sample = el("span", "brand-button", t("branding.sampleButton"));
+  sample.style.background = b.accent;
+  sample.style.color = textOn(b.accent);
+  preview.append(sample);
+  card.append(preview);
+  card.append(el("p", "field-msg", t("branding.updated", { when: formatWhen(b.updated), who: b.updatedBy || "" })
+    + (b.logo ? " · " + t("branding.logoSize", { width: b.logo.width, height: b.logo.height, kb: Math.ceil(b.logo.bytes / 1024) }) : "")));
+  if (!brandingState.data.readOnly) {
+    const actions = el("div", "user-actions");
+    const button = (key, cls, fn) => { const x = el("button", "btn " + cls, t(key)); x.type = "button"; x.addEventListener("click", fn); actions.append(x); };
+    button("branding.edit", "btn-ghost", () => {
+      $("#brand-prefix").value = b.prefix;
+      $("#brand-name").value = b.name;
+      $("#brand-colour").value = b.colour.toLowerCase();
+      $("#brand-accent").value = b.accent.toLowerCase();
+      $("#brand-verified").checked = b.verified;
+      $("#brand-logo").value = "";
+      $("#brand-name").focus();
+    });
+    if (b.logo) button("branding.removeLogo", "btn-ghost", () => brandingCall("PUT", b.prefix, { logo: "" }));
+    button("branding.remove", "btn-danger-ghost", () => {
+      if (confirm(t("branding.confirmRemove", { prefix: b.prefix }))) brandingCall("DELETE", b.prefix);
+    });
+    card.append(actions);
+  }
+  return card;
+}
+
+async function brandingCall(method, prefix, body) {
+  try {
+    const result = await api(method, "branding/" + encodeURIComponent(prefix), body);
+    brandingStatus("ok", result.code, result.params);
+    loadBranding();
+    return true;
+  } catch (e) {
+    brandingStatus("error", e.code, e.params);
+    return false;
+  }
+}
+
+function readFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function saveBranding(event) {
+  event.preventDefault();
+  const body = { name: $("#brand-name").value.trim(), colour: $("#brand-colour").value,
+                 accent: $("#brand-accent").value, verified: $("#brand-verified").checked };
+  const file = $("#brand-logo").files[0];
+  if (file) {
+    if (file.size > brandingState.data.maxLogoKB * 1024) {
+      brandingStatus("error", "branding.logoTooLarge", { max: brandingState.data.maxLogoKB });
+      return;
+    }
+    body.logo = await readFile(file);
+  }
+  const prefix = $("#brand-prefix").value.trim() || "-";
+  if (await brandingCall("PUT", prefix, body)) {
+    $("#branding-form").reset();
+  }
+}
+
 /* ------------------------------------------------------------------ overview (Documentation/adr/0007-overview-indicators.md)
    The page opened after sign-in: indicators of the scope for the last 7, 30 or 90 days, each compared with the period
    before it. Everything is computed by the server (GET overview); this part only draws it. */
@@ -2324,7 +2462,11 @@ function renderOverview() {
     tile("overview.perDayAvg", new Intl.NumberFormat(I18N.locale, { maximumFractionDigits: 1 }).format(u.scans / days),
          { text: true }),
     tile("overview.codesScanned", u.topCodes.length >= 10 ? t("overview.tenOrMore") : u.topCodes.length,
-         { text: u.topCodes.length >= 10 }));
+         { text: u.topCodes.length >= 10 }),
+    // The item's page (ADR 0011): shown once it has been used in either period
+    ...(u.pageViews || u.clicks || u.previous.pageViews || u.previous.clicks ? [
+      tile("overview.pageViews", u.pageViews, { previous: u.previous.pageViews, id: "overview-tile-pages" }),
+      tile("overview.clicks", u.clicks, { previous: u.previous.clicks, id: "overview-tile-clicks" })] : []));
   const top = Math.max(1, ...u.perDay.map(x => x.scans));
   const chart = $("#overview-chart");
   chart.setAttribute("aria-label", t("overview.chartLabel", { scans: nf(u.scans), days }));
@@ -3287,18 +3429,31 @@ function addRow(data = {}) {
   return li;
 }
 
-/* The first target is the default link (gs1:defaultLink). When other records share the GTIN
-   (product/batches), the default link type is shared and must be kept. */
+/* The first target is the default link (gs1:defaultLink), unless the item's page is (then the default link type is
+   gs1:defaultLink itself). When other records share the GTIN (product/batches), the default link type is shared and
+   must be kept. */
+const LANDING_TYPE = "gs1:defaultLink";
+
+function currentDefaultType() {
+  const first = $("#links .link-row .link-type");
+  return $("#landing-page").checked ? LANDING_TYPE : (first ? first.value : null);
+}
+
 function refreshDefault() {
   const msg = $("#default-msg");
-  const first = $("#links .link-row .link-type");
-  if (!first || !state.sharedDefaultLinkType) {
+  $("#links").classList.toggle("landing", $("#landing-page").checked);
+  const current = currentDefaultType();
+  if (!current || !state.sharedDefaultLinkType) {
     I18N.set(msg, null);
     msg.className = "field-msg";
     return;
   }
-  const mismatch = first.value !== state.sharedDefaultLinkType;
-  I18N.set(msg, mismatch ? "default.sharedLocal" : "default.shared", { linkType: state.sharedDefaultLinkType });
+  const mismatch = current !== state.sharedDefaultLinkType;
+  const shared = state.sharedDefaultLinkType === LANDING_TYPE;
+  I18N.set(msg, mismatch ? (shared ? "landing.sharedLocal" : current === LANDING_TYPE ? "landing.sharedOther"
+                                                                                     : "default.sharedLocal")
+                         : (shared ? "landing.shared" : "default.shared"),
+           { linkType: state.sharedDefaultLinkType });
   msg.className = "field-msg" + (mismatch ? " is-error" : "");
 }
 
@@ -3310,6 +3465,7 @@ function collect() {
     qualifiers: Object.fromEntries(l.pairs || []),
     description: $("#description").value,
     defaultLinkType: $("#links .link-row .link-type").value,
+    landingPage: $("#landing-page").checked,
     links: [...document.querySelectorAll("#links .link-row")].map(li => ({
       linkType: $(".link-type", li).value,
       url: $(".url", li).value.trim(),
@@ -3568,7 +3724,7 @@ function setupUserMenu() {
   menu.addEventListener("mouseleave", () => menu.classList.remove("is-dismissed"));
   $("#menu-options").addEventListener("click", () => { dismiss(); openOptions(); });
   ["#menu-overview", "#menu-editor", "#menu-records", "#menu-requests", "#menu-users", "#menu-tenants", "#menu-domains",
-   "#menu-apikeys", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", dismiss));
+   "#menu-branding", "#menu-apikeys", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", dismiss));
   $("#menu-logout").addEventListener("click", signOut);
 }
 
@@ -3708,6 +3864,7 @@ async function init() {
   window.addEventListener("resize", fitOthers);
   document.addEventListener("localechange", () => { if (othersState.entries.length) renderOthers(othersState.entries); });
   $("#add").addEventListener("click", () => $(".url", addRow()).focus());
+  $("#landing-page").addEventListener("change", refreshDefault);
   $("#copy-from").addEventListener("click", openCopy);
   $("#copy-cancel").addEventListener("click", closeCopy);
   $("#copy-search").addEventListener("input", drawCopyList);
@@ -3747,6 +3904,8 @@ async function init() {
   $("#requests-api-more").addEventListener("click", () => loadApiCalls(null, true));
   $("#overview-days").addEventListener("change", () => loadOverview());
   $("#domains-create").addEventListener("submit", createDomain);
+  $("#branding-form").addEventListener("submit", saveBranding);
+  document.addEventListener("localechange", () => { if (brandingState.data && !$("#branding-view").hidden) renderBranding(); });
   $("#opt-domain").addEventListener("change", renderPreview);
   document.addEventListener("localechange", () => { if (domainsState.data && !$("#domains-view").hidden) renderDomains(); });
   $("#overview-xlsx").addEventListener("click", () => exportOverview("xlsx"));

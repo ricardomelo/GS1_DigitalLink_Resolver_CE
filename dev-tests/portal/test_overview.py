@@ -166,7 +166,7 @@ u, q, rec = data["usage"], data["quality"], data["records"]
 check("usage after the worker counted: past days from the aggregates (5 + 2 + 3 + 4 + 1 + 1 scans by people)",
       u["scans"] == 16 and u["automated"] == 1, (u["scans"], u["automated"]))
 check("…the previous period from the aggregates too (the 4 scans of 40 days ago)",
-      u["previous"] == {"scans": 4, "automated": 0}, u["previous"])
+      u["previous"] == {"scans": 4, "automated": 0, "pageViews": 0, "clicks": 0}, u["previous"])
 check("…one entry per day, oldest first, adding up to the period's scans",
       len(u["perDay"]) == 30 and u["perDay"][-1]["day"] == TODAY.isoformat()
       and sum(d["scans"] for d in u["perDay"]) == u["scans"], [d for d in u["perDay"] if d["scans"]])

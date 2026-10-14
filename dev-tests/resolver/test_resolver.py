@@ -187,10 +187,12 @@ for language, cookie, expected in cases:
 r = get(G + "?linkType=linkset", "text/html")
 check("HTML linkset page", r.status_code == 200 and r.content_type.startswith("text/html"))
 html = r.get_data(as_text=True)
-check("HTML linkset page: levels named from the absolute anchors", "<h2>Produto (todas as unidades)</h2>" in html
-      and "id.example.org" not in html.split("<h2>", 1)[1].split("</h2>", 1)[0], html[html.find("<h2>"):][:200])
+check("HTML linkset page (the item's page, ADR 0011): one level, no level headings, the code in human readable form",
+      "<h2>" not in html.split("<main>", 1)[1] and "(01) 07898357410015" in html, html[html.find("<main>"):][:300])
 r = get(G + "/10/123?linkType=linkset", "text/html")
-check("HTML linkset page: batch level named", "<h2>Lote 123</h2>" in r.get_data(as_text=True))
+batch_html = r.get_data(as_text=True)
+check("HTML linkset page: levels named from the absolute anchors (batch and product)", "<h2>Lote 123</h2>" in batch_html
+      and "<h2>Produto (todas as unidades)</h2>" in batch_html, batch_html[batch_html.find("<h2>"):][:200])
 # Targets that are not web addresses (stored through the API, which takes any href) are listed, not linked
 UNSAFE = "/01/07890000000772"
 author({"anchor": UNSAFE, "itemDescription": "Unsafe targets", "defaultLinktype": "gs1:pip", "links": [
@@ -199,11 +201,11 @@ author({"anchor": UNSAFE, "itemDescription": "Unsafe targets", "defaultLinktype"
     {"linktype": "gs1:smpc", "href": " JavaScript:alert(1)", "title": "Script 2", "type": "text/html", "hreflang": ["en"]},
     {"linktype": "gs1:faqs", "href": "data:text/html,<script>alert(1)</script>", "title": "Data", "type": "text/html", "hreflang": ["en"]}]})
 unsafe_html = get(UNSAFE + "?linkType=linkset", "text/html").get_data(as_text=True)
-check("HTML linkset page: https target linked", 'href="https://example.org/ok"' in unsafe_html)
+check("HTML linkset page: an https target linked (through the click route)", unsafe_html.count('href="/_click?') == 1)
 check("HTML linkset page: javascript: and data: targets listed without a link",
       "javascript:" not in unsafe_html.lower().split('<script type="application/ld+json">')[0].split("<script>")[0]
       and 'href="data:' not in unsafe_html and 'href=" javascript' not in unsafe_html.lower()
-      and unsafe_html.count('class="unlinked"') == 3 and "Script 2" in unsafe_html, unsafe_html[unsafe_html.find("<h2>"):][:900])
+      and unsafe_html.count('class="off"') == 3 and "Script 2" in unsafe_html, unsafe_html[unsafe_html.find("<main>"):][:900])
 unsafe_404 = get(UNSAFE + "?linkType=gs1:recallStatus", "text/html").get_data(as_text=True)
 check("HTML 404 page lists the same targets without links", 'class="unlinked"' in unsafe_404 and "javascript:alert" not in unsafe_404)
 check("HTML pages: logo links to the home page", '<a class="brand" href="/" title="Página inicial do Resolver">' in html)

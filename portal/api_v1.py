@@ -178,10 +178,12 @@ def v1_get_record(key, value):
         return _refuse("record.notFound", 404)
     stored = gs1.pairs_from(target.get("informativeQualifiers"))
     ai, val = gs1.split_anchor(anchor)
-    links = sorted((_link_out(l) for l in target.get("links") or []), key=lambda l: l["linkType"] != default)
+    links = sorted((_link_out(l) for l in target.get("links") or [] if not gs1.is_landing(l)),
+                   key=lambda l: l["linkType"] != default)
     return jsonify({"key": ai, "value": val, "qualifiers": gs1.qualifier_path(pairs, encode=False),
                     "informative": gs1.qualifier_path(stored, encode=False),
                     "description": target.get("itemDescription") or "", "defaultLinkType": default, "links": links,
+                    "landingPage": any(gs1.is_landing(l) for l in target.get("links") or []),
                     "digitalLink": gs1.digital_link(portal.link_base(anchor), anchor,
                                                     gs1.join_informative(pairs, informative or stored))})
 
@@ -195,7 +197,7 @@ def v1_put_record(key, value):
         raise ValidationError("request.jsonRequired")
     data = {"key": key, "value": value, "qualifiers": request.args.get("qualifiers", ""),
             "description": body.get("description"), "links": body.get("links") if isinstance(body.get("links"), list) else [],
-            "defaultLinkType": body.get("defaultLinkType")}
+            "defaultLinkType": body.get("defaultLinkType"), "landingPage": bool(body.get("landingPage"))}
     data["links"] = [row for row in data["links"] if isinstance(row, dict)]
     anchor, pairs, doc = portal.build_document(data)
     portal.check_access(anchor)

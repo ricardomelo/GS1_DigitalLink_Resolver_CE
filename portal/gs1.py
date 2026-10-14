@@ -64,6 +64,21 @@ LINK_TYPES = [
 ]
 LINK_TYPE_CODES = {code for code, _, _ in LINK_TYPES}
 LINK_TYPE_DEFAULT_TITLES = {code: title for code, _, title in LINK_TYPES}
+# The item's page as a record's default target (Documentation/adr/0011-item-page.md): a gs1:defaultLink to the
+# resolver's own page of the record's links; set by the editor's option, never typed as a link of its own.
+LANDING_TYPE = "gs1:defaultLink"
+LANDING_QUERY = "?linkType=linkset&view=page"
+
+
+def landing_url(base_url: str, anchor: str, pairs: list[tuple[str, str]] = ()) -> str:
+    """The address of a record's page: its GS1 Digital Link with ?linkType=linkset&view=page."""
+    return f"{base_url}{anchor}{qualifier_path(list(pairs))}{LANDING_QUERY}"
+
+
+def is_landing(link: dict) -> bool:
+    """Whether a stored link is the record's page (gs1:defaultLink to an address ending with LANDING_QUERY)."""
+    return link.get("linktype") == LANDING_TYPE and str(link.get("href") or "").endswith(LANDING_QUERY)
+
 
 # BCP 47 language tags offered in the editor's menu (names are rendered by the browser). Any other
 # well-formed tag (pt-BR, en-US, vi, …) is accepted too: records created with other tools use them.

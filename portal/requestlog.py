@@ -37,9 +37,10 @@ LOG_DB = "resolver_log"
 EVENTS = "requests"
 DAILY = "request_daily"
 API_CALLS = "api_requests"
-OUTCOMES = ("redirect", "choice", "linkset", "unknown", "noLink", "invalid", "error", "compressed")
+# page and click: the item's page and its buttons, people following a scan (Documentation/adr/0011-item-page.md)
+OUTCOMES = ("redirect", "choice", "linkset", "unknown", "noLink", "invalid", "error", "compressed", "page", "click")
 DEVICES = ("mobile", "tablet", "desktop", "automated", "unknown")
-FORMS = ("uri", "compressed", "epc")
+FORMS = ("uri", "compressed", "epc", "landing")
 MAX_PAGE = 500
 DEFAULT_PAGE = 200
 MAX_EXPORT = 50_000

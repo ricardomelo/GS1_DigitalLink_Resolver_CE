@@ -54,6 +54,7 @@ adds what an organisation needs to run one for its members:
 | [Label studio](Documentation/adr/0010-label-studio.md) | ADR 0010: label sizes, PDF, an EAN/UPC beside the QR code, every format in one zip |
 | [The organisation's own domain](Documentation/adr/0009-tenant-domains.md) | ADR 0009: domains proved by DNS, default per prefix, the resolver answering on them for their organisation only, certificates on the host |
 | [Monitoring and alerts](Documentation/adr/0008-monitoring-and-alerts.md) | ADR 0008: the worker checks the resolver, the backup, the certificate and spikes of 404, and e-mails the administrators |
+| [The item's page](Documentation/adr/0011-item-page.md) | ADR 0011: the resolver's page of an item's links as the default target, branded per prefix, clicks logged, Verified by GS1 |
 
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).
@@ -101,6 +102,7 @@ the official Postman collection is at
 | **Portal** (`/portal/`) | Sign-in with per-user passwords (with a show/hide button); editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; QR code labels (SVG, PNG, PDF, or all three in a ZIP) with the dimensions of the *QR Codes powered by GS1* guidelines, sizes from 80 to 200 %, an optional EAN-13, UPC-A, EAN-8 or UPC-E beside the QR code for the transition to 2D, a choice of QR version, error correction and human readable text, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search and filters by key type and qualifier; spreadsheet import/export (XLSX, CSV) with preview; link checker |
 | **Governance** | Roles (administrator, editor, reader); organisations (tenants) that own GS1 Company Prefixes, each with its own users and audit trail, and a server administrator with recorded, read-only support access; access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords or, with an e-mail relay, invitations by e-mail; API keys for the organisations' own systems (tenant API); password recovery by e-mail; security notices; history of every record with restore; audit trail with filters and CSV export |
 | **Own domains** | An organisation's own domain in its QR codes (URI Syntax §4.11), with an optional path stem: proved by a DNS TXT record, default per GS1 Company Prefix or chosen on the label; either pointing at the resolver (which then answers on it for that organisation's codes only, certificates by `scripts/custom-domains.sh`) or redirected by the organisation's own server ([ADR 0009](Documentation/adr/0009-tenant-domains.md)) |
+| **Item page** | A page of all the links of an item as the default target of its code: made by the resolver, mobile first, an icon per link type, the visitor's language first, the logo and colours of the brand of each GS1 Company Prefix (uploaded in the portal), page views and clicks counted apart from scans, and a link to Verified by GS1 for GTINs and GLNs when the installation switches it on ([ADR 0011](Documentation/adr/0011-item-page.md)) |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, built from the GS1 Barcode Syntax Dictionary of the engine release every service uses |
 | **Data attributes** | Every data attribute of URI Syntax §4.10 in QR codes, validated by the GS1 Barcode Syntax Engine (formats, check digits, dates, code lists and the association rules of the General Specifications), its messages in the user's language; passed on by the resolver to the targets |
 | **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, the default link unless the request decides a language variant, request paths checked by the GS1 Barcode Syntax Engine, values with `%2F`, the query string passed on exactly as sent, EPC binary strings (`/eh…`, `/ex…`) from NFC tags decompressed, HTML pages in pt-BR / en-GB for browsers |
@@ -338,6 +340,8 @@ content no longer fits the chosen QR version.
 | Browser (`Accept: text/html`) on an error | HTML page (not found, information not available with the available links, invalid code), pt-BR / en-GB |
 | `GET /eh{hexadecimal}`, `GET /ex{base 64}` | EPC binary string (e.g. from an NFC tag) resolved as the GS1 Digital Link it stands for; data attributes it carries are passed on in the query string; `400` if it does not decode |
 | `GET /.well-known/gs1resolver` | Resolver description file; `resolverRoot` and `contact` from the configuration (`resolverRoot` is the organisation's domain and stem when asked on one) |
+| `…?linkType=linkset` in a browser; `…?linkType=linkset&view=page` | The item's page: the brand of the prefix, a button per link, the visitor's language first, Verified by GS1 when switched on; with `view=page` (a record's default target) counted as a page view ([ADR 0011](Documentation/adr/0011-item-page.md)) |
+| `GET /_click?a=&l=&i=&t=` · `GET /_brand/{prefix}` | A button of the item's page: the link found again in the record, counted as a click, `302` to it (never to an address taken from the request) · a brand's logo |
 | The same requests on an organisation's verified domain (`https://id.brand.example[/stem]/01/…`) | Resolved for that organisation's codes only (others: `404`), the stem removed ([ADR 0009](Documentation/adr/0009-tenant-domains.md)) |
 | `GET /` | Home page |
 
@@ -382,7 +386,7 @@ checks the user's role and GS1 Company Prefixes.
 | `GET /config` | Resolver address, link types, languages, keys and their qualifier shapes, import limits, data attributes, session limits |
 | `GET /session` | Renews the session (used by the page while the user works without server calls) |
 | `GET /record?key=&value=&qualifiers=` | Read one record (and the other records of the key) |
-| `POST /record` | Create or replace one record (`key`, `value`, `qualifiers`, `description`, `links`) |
+| `POST /record` | Create or replace one record (`key`, `value`, `qualifiers`, `description`, `links`, `landingPage`) |
 | `DELETE /record?key=&value=&qualifiers=` | Delete one record, keeping the others of the key |
 | `GET /records` | Every record with its change history |
 | `POST /export` | XLSX or CSV of every record |
@@ -395,6 +399,7 @@ checks the user's role and GS1 Company Prefixes.
 | `GET /audit`, `GET /audit.csv` (`user`, `from`, `to`, `q`) | Audit trail (administrators) |
 | `GET /portal/healthz` | Health of the portal, of its access to the API and of its job worker (`worker`: `ok` or `unavailable`); whether e-mail is configured (`mail`: `on` or `off`) |
 | `GET /keys`, `POST /keys`, `DELETE /keys/{id}` | API keys of the tenant API (administrators, for their own organisation or the operator) |
+| `GET /branding`, `PUT /branding/{prefix}`, `DELETE /branding/{prefix}`, `GET /branding/{prefix}/logo` | Brands of the item's page per GS1 Company Prefix (administrators; `*` the installation's default, server administrators) |
 
 ### Tenant API (`/portal/api/v1`, API key)
 
@@ -409,7 +414,7 @@ portal (user menu → **API keys**: scopes, optional prefixes, validity) and see
 | `GET /portal/api/v1/` | any | The key, its organisation, its limit |
 | `GET /portal/api/v1/records?key=&limit=&after=` | `records:read` | The records within reach, a page at a time |
 | `GET /portal/api/v1/records/{key}/{value}?qualifiers=/10/L1` | `records:read` | One record: description, links, Digital Link |
-| `PUT /portal/api/v1/records/{key}/{value}?qualifiers=` | `records:write` | Create (201) or replace (200): `{description, links: [{linkType, url, title, hreflang}]}` |
+| `PUT /portal/api/v1/records/{key}/{value}?qualifiers=` | `records:write` | Create (201) or replace (200): `{description, links: [{linkType, url, title, hreflang}], landingPage}` (`landingPage: true`: the item's page as the default target) |
 | `DELETE /portal/api/v1/records/{key}/{value}?qualifiers=` | `records:write` | Delete one record |
 | `GET /portal/api/v1/labels/{key}/{value}?format=svg\|png&…` | `labels:read` | The QR code label, with the options of the portal's (also `domain=default\|installation\|<verified domain>`, `size=80…200`, `linear=auto\|upce`, `format=pdf\|zip`) |
 | `GET /portal/api/v1/stats?days=7\|30\|90` | `stats:read` | Usage, resolution quality and record quality of the key's reach, as on the portal's overview |
@@ -531,6 +536,7 @@ never committed).
 | `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`, `PORTAL_MAIL_SECURITY` (`starttls`), `PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM` | The portal's e-mail relay ([ADR 0004](Documentation/adr/0004-e-mail.md)): invitations, password recovery, security notices; empty host: e-mail off. Port 587 (STARTTLS) or 465 (TLS); the installer asks for them; details and a test command in [the extensions documentation](Documentation/extensions/README.md#e-mail) |
 | `PORTAL_API_RATE_PER_MINUTE` (120), `PORTAL_API_KEY_MAX_DAYS` (365) | The tenant API: requests per key and minute; the longest validity of an API key |
 | `RESOLVER_LOG_DAYS` (90), `RESOLVER_LOG_COUNTRY_HEADER` | The log of resolver requests ([ADR 0006](Documentation/adr/0006-resolver-request-log.md)): days each event (and each call of the tenant API) is kept, 0 switches it off; a header with a two-letter country set by a proxy in front (empty: no country) |
+| `RESOLVER_VERIFIED_BY_GS1_URL` | The item's page ([ADR 0011](Documentation/adr/0011-item-page.md)): the Verified by GS1 address for a GTIN or GLN, a template with `{key}` (`gtin`, `gln`) and `{value}`; empty (default): no link |
 | `PORTAL_TIME_ZONE` (UTC), `PORTAL_STATS_DAYS` (800) | The days of the daily request counts (an IANA name; the installer writes the server's) and how long the counts are kept |
 | `PORTAL_MONITOR_MINUTES` (5), `PORTAL_MONITOR_URL`, `PORTAL_MONITOR_PROBE`, `PORTAL_MONITOR_BACKUP_HOURS` (26), `PORTAL_MONITOR_TLS_HOST` (`FQDN`), `PORTAL_MONITOR_CERT_DAYS` (21), `PORTAL_ALERT_404_MIN` (20), `PORTAL_ALERT_404_FACTOR` (3) | Monitoring and alerts by e-mail ([ADR 0008](Documentation/adr/0008-monitoring-and-alerts.md)): how often the worker checks (0: off), the resolver's address through the proxy and a registered code to try, the longest time without a good backup, the certificate's host and days of warning, what makes a spike of 404 |
 | `PORTAL_WORKER` (`external`) | Where imports and link checks run: `external`, the `portal-worker` service; `embedded`, a thread of the portal, for a set-up without that service |
@@ -633,7 +639,7 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 
 ## Open backlog
 
-Status on 14 October 2026 (items 4.2 to 5.4 done in session 14). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+Status on 14 October 2026 (items 4.2 to 6.2 done in session 14). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
 the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
@@ -655,8 +661,9 @@ usage, resolution quality, records, operation and governance per scope, exports,
 resolver through the proxy, the backup, the certificate, spikes of 404;
 [ADR 0008](Documentation/adr/0008-monitoring-and-alerts.md)), and item 5.1, the organisation's own domain in the QR
 code ([ADR 0009](Documentation/adr/0009-tenant-domains.md)), and items 5.2 to 5.4, the label studio (sizes, PDF, an
-EAN/UPC beside the QR code, every format in a zip; [ADR 0010](Documentation/adr/0010-label-studio.md)), are complete
-too. What was
+EAN/UPC beside the QR code, every format in a zip; [ADR 0010](Documentation/adr/0010-label-studio.md)), and items
+6.1 and 6.2, the item's page (the resolver's page of an item's links as the default target, branded per prefix, with
+Verified by GS1; [ADR 0011](Documentation/adr/0011-item-page.md)), are complete too. What was
 done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
 The items below are in the agreed order; sizes are relative (S, M, L). The order puts first what later items
 build on: the portal's data store and tenants come before the API, e-mail and analytics, which all need to
@@ -664,8 +671,6 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Landing page | 6.1 | **Page of the item's links** as the default target: generated by the resolver, mobile first, an icon per link type, logo and colours per prefix, languages, clicks logged | L | 4.1, 5.1 |
-| | 6.2 | **Verified by GS1 on the landing page**: a link that looks the key up in Verified by GS1, for the key types the service accepts; on or off per installation and per tenant; shown on the page only, not added to the linkset (the link type `gs1:verificationService` denotes a GS1 Lightweight Messaging service, not a web page) | S | 6.1 |
 | Production | 7.1 | **Single sign-on** for the portal, per tenant; per-role limits on exports | M | 2.4 |
 | | 7.2 | **Production readiness**: rotation of secrets, installation on a clean machine (with a check through the proxy at the end), off-server backup copy and restore rehearsal, production domain checklist | M | — |
 | | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages, default link titles in the link's language (conformance review F21) | S | — |

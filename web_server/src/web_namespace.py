@@ -9,6 +9,7 @@ from flask_restx import Namespace, Resource
 
 import domains
 import epc_binary
+import landing
 import request_log
 import web_logic
 import web_pages
@@ -47,6 +48,29 @@ class RobotsTxt(Resource):
         Handle unsupported HTTP methods gracefully for /robots.txt.
         """
         return {'error': 'Method not allowed'}, 405
+
+
+@web_namespace.route('/_click')
+class ItemPageClick(Resource):
+    def get(self) -> Response | tuple[Any, int]:
+        """A link of the item's page, logged as a click and redirected to (Documentation/adr/0011-item-page.md)."""
+        return landing.click(_page_linkset)
+
+
+@web_namespace.route('/_brand/<prefix>')
+class ItemPageLogo(Resource):
+    def get(self, prefix: str) -> Response | tuple[Any, int]:
+        """The logo of a brand of the item's page."""
+        return landing.logo(prefix)
+
+
+def _page_linkset(identifiers: str, qualifier_path: str | None) -> list[dict] | None:
+    """The linkset of a record, as its page lists it (None when there is none)."""
+    ai, value = identifiers.strip('/').split('/', 1)
+    data, _ = web_logic.read_document(identifiers, f'{ai}_{value}', qualifier_path, None, [], None, None, True)
+    if data.get('response_status') != 200:
+        return None
+    return web_logic.format_linkset_for_external_use(data, identifiers)['linkset']
 
 
 @web_namespace.route('/heartbeat')
@@ -443,9 +467,11 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
         accept = request.headers.get('Accept', '')
         if _wants_html():
             linkset = web_logic.format_linkset_for_external_use(response_data, identifiers)['linkset']
-            # section 2.10: the HTML page carries the linkset as JSON-LD too
+            # section 2.10: the HTML page carries the linkset as JSON-LD too; the page is the item's page (ADR 0011)
             json_ld = web_logic.format_linkset_for_external_use(response_data, identifiers, as_json_ld=True)
-            response = Response(web_pages.render_linkset(identifiers, qualifier_path, linkset, json_ld),
+            if request.args.get('view') == 'page':        # reached as a record's default target: a follow-up
+                request_log.note(form='landing', outcome='page')
+            response = Response(landing.render_page(identifiers, qualifier_path, linkset, json_ld),
                                 status=200, mimetype='text/html')
         else:
             as_json_ld = 'application/ld+json' in accept

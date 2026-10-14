@@ -753,6 +753,45 @@ with a redirect (301, 302, 307 or 308) to `https://<FQDN>/<path>?<query>`; for n
 `location ~ ^/gs1(/.*)$ { return 307 https://<FQDN>$1$is_args$args; }`, for Apache
 `RedirectMatch 307 ^/gs1/(.*)$ https://<FQDN>/$1`. Nothing is installed on this server.
 
+## The item's page
+
+A record can send its scans to **a page of all its links** instead of one target
+([ADR 0011](../adr/0011-item-page.md); backlog items 6.1 and 6.2). The page is the resolver's linkset page for browsers
+(`?linkType=linkset`, GS1-Conformant Resolver 2.10), rewritten for phones: the item's description as its title, the
+brand of the record's prefix (name, logo, colours; the text colour chosen for contrast), one large button per link with
+an icon for its type, the links in the visitor's language first (the others under *Other languages*), the levels
+(serial, batch, product) when there are several, the code in human-readable form, the linkset as JSON-LD. It loads
+nothing from other sites: no web fonts, and the logo is served by the resolver itself (`/_brand/<prefix>`).
+
+**As the default target.** The editor's *Default target: the item's page* (and `landingPage: true` in the tenant API)
+adds to the record a link of type `gs1:defaultLink` to `<the record's Digital Link>?linkType=linkset&view=page` and makes
+it the default; a scan is redirected to it (307) like any default, so resolution stays conformant and JSON clients are
+unaffected. The editor hides that link and shows the option; spreadsheets carry it as a row of type `gs1:defaultLink`,
+read back as the option. As the default link type is shared by the records of a key, so is the option: a batch of a
+product using it must use it too, and the key's own record created with a batch gets its own page.
+
+**Views and clicks.** The page reached as a default target (`view=page`) is logged with form `landing`, outcome `page`;
+each button goes through `/_click?a=<record>&l=<level>&i=<position>&t=<link type>`, which reads the record again, finds
+the link at that place and of that type (otherwise 404 — never an address taken from the request), logs outcome
+`click` with the link type and the target's host, and redirects (302). An automated client's views and clicks are
+logged as plain `linkset` and `redirect`. The overview counts **page views** and **clicks** apart from scans; the
+Requests screen filters both.
+
+**Brands** (user menu → **Item page**, administrators): per GS1 Company Prefix of the organisation (or a longer prefix
+inside one), a name, a logo uploaded as PNG, JPEG or WebP (up to 200 KB and 2000 pixels a side; SVG refused, it can
+carry scripts) and two colours; a server administrator brands the operator's prefixes and the installation's default
+(`*`). The resolver reads them every minute from the portal's `branding` collection and uses the longest prefix.
+
+**Verified by GS1** (item 6.2): for a GTIN or a GLN the page links to Verified by GS1 when
+`RESOLVER_VERIFIED_BY_GS1_URL` is set (a template with `{key}` = `gtin` or `gln` and `{value}`; empty, the default:
+off) and the brand has not switched it off. The link is on the page only, never in the linkset. Check the service's
+current address before setting it:
+
+```bash
+grep -q '^RESOLVER_VERIFIED_BY_GS1_URL=' .env || printf 'RESOLVER_VERIFIED_BY_GS1_URL=%s\n' 'https://www.gs1.org/services/verified-by-gs1/results?{key}={value}' >> .env
+docker compose up -d web-service
+```
+
 ## Monitoring and alerts
 
 The job worker checks the installation every `PORTAL_MONITOR_MINUTES` (5; 0 switches it off), one replica at a time
@@ -1242,6 +1281,7 @@ remove the portal's database (`docker compose exec database-service sh -c 'mongo
 "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin resolver_portal
 --eval "db.dropDatabase()"'`) and run `docker compose up -d --force-recreate portal-db-init portal-service portal-worker`: the
 files are imported again at the start.
+
 Keep a copy of the archives on another machine as well.
 
 ## Development tests

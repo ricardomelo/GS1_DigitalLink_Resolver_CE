@@ -33,6 +33,7 @@ TOP_EXPORT = 100
 EXPIRING_DAYS = 14
 NOT_SCANNED_SAMPLE = 20
 ANSWERED = ("redirect", "choice", "linkset", "compressed")
+FOLLOW_UPS = ("page", "click")          # the item's page and its buttons: after a scan, not scans (ADR 0011)
 REFUSED_SIGN_INS = ("login-failed", "login-refused")
 
 
@@ -60,8 +61,13 @@ def _iso_period(per: dict) -> dict:
 
 
 # ----------------------------------------------------------------------------------------------- usage and quality
+def _follow_ups(entry: dict) -> int:
+    return sum(entry["outcome"].get(o, 0) for o in FOLLOW_UPS)
+
+
 def _scans(entry: dict) -> int:
-    return max(0, entry["total"] - entry["automated"])
+    """People's requests that are not follow-ups (the resolver gives automated clients' follow-ups plain outcomes)."""
+    return max(0, entry["total"] - entry["automated"] - _follow_ups(entry))
 
 
 def _not_found(entry: dict) -> int:
@@ -74,7 +80,7 @@ def _sorted_pairs(counter: dict, top: int) -> list[list]:
 
 def _quality_counts(entry: dict) -> dict:
     outcome = entry["outcome"]
-    return {"requests": entry["total"], "answered": sum(outcome.get(o, 0) for o in ANSWERED),
+    return {"requests": entry["total"] - _follow_ups(entry), "answered": sum(outcome.get(o, 0) for o in ANSWERED),
             "unknown": outcome.get("unknown", 0), "noLink": outcome.get("noLink", 0),
             "invalid": outcome.get("invalid", 0), "error": outcome.get("error", 0)}
 
@@ -101,11 +107,14 @@ def usage_and_quality(scope: dict, whole: bool, per: dict, top: int, registered:
     scanned = sorted(((k, e) for k, e in keys.items() if _scans(e)), key=lambda kv: (-_scans(kv[1]), str(kv[0])))
     usage = {
         "scans": _scans(total), "automated": total["automated"],
-        "previous": {"scans": _scans(before["total"]), "automated": before["total"]["automated"]},
+        "pageViews": total["outcome"].get("page", 0), "clicks": total["outcome"].get("click", 0),
+        "previous": {"scans": _scans(before["total"]), "automated": before["total"]["automated"],
+                     "pageViews": before["total"]["outcome"].get("page", 0),
+                     "clicks": before["total"]["outcome"].get("click", 0)},
         "perDay": per_day,
         "topCodes": [code(ai, v, e, scans=_scans(e), notFound=min(_not_found(e), _scans(e)))
                      for (ai, v), e in scanned[:top]],
-        "device": dict(total["device"]), "form": dict(total["form"]),
+        "device": dict(total["device"]), "form": {f: n for f, n in total["form"].items() if f != "landing"},
         "language": _sorted_pairs(total["language"], top), "linkType": _sorted_pairs(total["linkType"], top),
     }
 
@@ -205,6 +214,8 @@ def summary_rows(data: dict, labels: dict) -> list[list]:
     u, q, r = data["usage"], data["quality"], data["records"]
     add("usage", "overview.scans", u["scans"], u["previous"]["scans"])
     add("usage", "overview.automated", u["automated"], u["previous"]["automated"])
+    add("usage", "overview.pageViews", u["pageViews"], u["previous"]["pageViews"])
+    add("usage", "overview.clicks", u["clicks"], u["previous"]["clicks"])
     for name, n in sorted(u["device"].items()):
         add("usage", "requests.device." + name, n)
     for name, n in sorted(u["form"].items()):

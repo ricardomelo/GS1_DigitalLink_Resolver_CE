@@ -115,8 +115,8 @@ _BASE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>{{ title }} | {{ product }}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+{% if fonts %}<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">{% endif %}
 <style>
 :root{--blue:#002C6C;--orange:#F26334;--action:#CE3D0D;--link:#00799E;--ink:#121212;--text:#262626;--muted:#555F6D;
 --line:#CDD5DF;--page:#F0F5FA;--sans:"Montserrat","Gotham SSm A","Gotham SSm B",Verdana,sans-serif}
@@ -284,9 +284,10 @@ def _hri(identifiers: str, qualifier_path: str | None) -> str:
     return '  '.join(f'({parts[i]}) {parts[i + 1]}' for i in range(0, len(parts) - 1, 2))
 
 
-def _page(locale: str, title: str, body: str) -> str:
-    """A whole HTML page: header, language menu, body and the operator footer from the configuration."""
-    return render_template_string(_BASE, locale=locale, title=title, product=PRODUCT_NAME, logo=LOGO_DATA_URI,
+def _page(locale: str, title: str, body: str, fonts: bool = True) -> str:
+    """A whole HTML page: header, language menu, body and the operator footer from the configuration. Without fonts,
+    nothing is loaded from other sites (the item's page, which every scan of some codes reaches: ADR 0011)."""
+    return render_template_string(_BASE, locale=locale, title=title, product=PRODUCT_NAME, logo=LOGO_DATA_URI, fonts=fonts,
                                   org=ORG_NAME, org_url=ORG_URL, footer=_t(locale, 'footer'),
                                   language_label=_t(locale, 'language'), home_label=_t(locale, 'home'),
                                   locales=SUPPORTED_LOCALES,

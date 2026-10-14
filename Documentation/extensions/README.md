@@ -1230,6 +1230,34 @@ docker compose ps                          # …-web-service-1, …-web-service-
 - **The proxy image** follows nginx's 1.30 branch (`nginx:1.30-alpine`); `docker compose build --pull
   frontend-proxy-service && docker compose up -d` takes its latest security release.
 
+### Load test and scale-out rehearsal
+
+`dev-tests/load/load_test.py` (item 7.4; Python's standard library only, so it runs from a laptop or another server)
+sends scans at a steady rate for a while — an open model: a slow server does not slow the arrivals, as with real
+scans — and reports the answers, the errors (no answer, or 5xx) and the response times (mean, p50, p95, p99, max), in
+total and per kind of request: a phone's scan (`text/html`, the redirect not followed), an app reading the linkset,
+the item's page (`--mix scan=90,linkset=5,page=5` by default). Its User-Agent is counted as automated by the request
+log, so the scans of the overview stay real. It passes when errors are at most `--max-errors` % (1) and p95 at most
+`--max-p95` ms (1000). Run it against staging, or against production only in an agreed window.
+
+A rehearsal, on staging:
+
+1. A file of registered codes (from the portal's spreadsheet export, one GS1 Digital Link path per line), and a
+   baseline with one replica of each service:
+   ```bash
+   python3 dev-tests/load/load_test.py --base https://<staging FQDN> --codes codes.txt --rate 20 --duration 60 --json r1-20.json
+   ```
+2. Raise the rate (50, 100, 200 requests a second…) until p95 passes 1000 ms or errors appear; watch
+   `docker stats` (CPU per container) and the database during each run.
+3. Add replicas of the resolver (`WEB_SERVICE_REPLICAS=2`, then 4) and processes (`WEB_SERVICE_PROCESSES`),
+   `docker compose up -d`, and repeat: the rate at which p95 passes 1000 ms should rise with them while the CPU allows.
+4. Record each run (`--json`), the replica and process counts, the server's size and the rates in the history; the
+   agreed target load decides the production sizing.
+
+Scans are reads: MongoDB on the same server is rarely the limit before the CPU of the resolver's processes. When it
+is, or for availability, a MongoDB replica set (three members on separate machines, `MONGO_URI` and `PORTAL_DB_URI`
+listing them with `replicaSet=`) is the next step; the services need no change for it.
+
 To offer more link types, add a row to `LINK_TYPES` in `portal/gs1.py` and its labels to every locale in
 `portal/static/i18n.js`, then run `docker compose up -d --build portal-service portal-worker` (the worker
 runs imports with the same rules).

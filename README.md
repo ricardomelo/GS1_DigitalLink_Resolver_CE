@@ -615,6 +615,10 @@ runs on nginx 1.30 from nginx.org, as in the proxy image. The versions of Python
 GS1's suite, Docker Compose and nginx are pinned in `.github/actions/dev-tests-setup/action.yml`; engines,
 packages and the browser are cached. Each job's result, with its check counts, is on the run's summary page.
 
+**Claude Code cloud sessions.** `CLAUDE.md` holds the conventions of this repository for Claude Code, and
+`.claude/hooks/session-start.sh` prepares a cloud session for the tests: the same pieces and pinned versions as
+the CI setup, installed into `~/.cache/dev-tests`, with the variables the programs read.
+
 The official integration test `tests/setup_test.py` needs the running stack and reads the token from
 `SESSION_TOKEN`. The screenshots of this README and of the user guide are produced by
 `dev-tests/docs/screenshots.py`.
@@ -686,6 +690,7 @@ portal/                         link management portal: app.py, gs1.py (keys, qu
 scripts/                        install.sh, templates/ (nginx), resolver-backup.sh and its cron entry
 dev-tests/                      development tests (see above)
 .github/                        workflows/dev-tests.yml (continuous integration), actions/dev-tests-setup/
+CLAUDE.md, .claude/             conventions and the session start hook for Claude Code cloud sessions
 Documentation/                  README.md (index), portal-user-guide.md, features.md, history.md,
                                 developer-guide.md, extensions/ (detailed documentation, changelog),
                                 images/ (README), adr/ (architecture decision records),

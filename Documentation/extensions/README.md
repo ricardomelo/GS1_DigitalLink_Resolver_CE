@@ -651,6 +651,49 @@ curl -s -o label.svg -H "Authorization: Bearer $KEY" 'https://id.example.org/por
 Errors come as `{"code": "...", "params": {...}}` with the portal's message codes (`api.keyMissing`,
 `api.keyInvalid`, `api.scope`, `api.rateLimit`, `access.prefix`, `record.notFound`, the GS1 and validation codes).
 
+## Request log
+
+The resolver records each resolution request — a GS1 Digital Link URI, a compressed one, an EPC binary string,
+a `?compress` request — as one event in its own database, `resolver_log` (collection `requests`;
+[ADR 0006](../adr/0006-resolver-request-log.md)). `/heartbeat`, `/favicon.ico`, `/robots.txt`,
+`/.well-known/gs1resolver`, the home page, the portal and the data entry API are not recorded.
+
+**What an event holds.** Time, method, form (`uri`, `compressed`, `epc` and the EPC scheme), the primary key and
+its company part, the key qualifiers (only the AI of a serial number or a TPX), the AIs of the data attributes in
+the query string, the link type asked, the status and the outcome — `redirect`, `choice` (300), `linkset`,
+`unknown` (no record applies: a code nobody registered), `noLink` (a record applies but has no link of that type),
+`invalid` (400), `error`, `compressed` — the level of the record that answered (unit values as `*`), the target's
+host, the time taken, the preferred language, a device class (`mobile`, `tablet`, `desktop`, `automated`,
+`unknown`), the referrer's host and, when `RESOLVER_LOG_COUNTRY_HEADER` names a header set by a proxy in front, a
+two-letter country. For an invalid request whose key cannot be read, the first 200 characters of the path.
+
+**What is never stored.** The client's address in any form, the User-Agent, the full referrer, cookies, the values of
+data attributes and of serial numbers, any other header. A privacy notice of the operator can say so.
+
+**Writing.** Events go into a queue of 10,000 per server process and a background thread writes them in batches
+of up to 500, so a scan never waits for the database. When the queue is full or the database does not answer,
+events are lost and the resolver writes `Request log: N event(s) lost (…)` in its output, at most once a minute.
+
+**Retention.** `RESOLVER_LOG_DAYS` (90) days, by an expiry date on each event; `0` switches the log off (nothing is
+captured; the tenant API's calls are not recorded either). The portal's worker counts each day's events per key
+once an hour into the portal's collection `request_daily`, in the days of `PORTAL_TIME_ZONE` (the installer writes
+the server's), kept `PORTAL_STATS_DAYS` (800) days. The daily backup leaves `resolver_log` out.
+
+**Who reads it.** The portal's database user may read `resolver_log`, never write it (`portal-db-init`). Each user
+sees the events of the records in his reach; a server administrator not limited to prefixes sees the whole
+installation, also requests without a key; ownership comes from the company part at query time, so a prefix given
+to an organisation takes its history along. The portal's API: `GET /portal/api/requests`, `/requests.csv`,
+`/requests/daily`, and `/requests/api` for the tenant API's calls (administrators). The tenant API's calls are
+recorded by the portal itself (`api_requests`: key, organisation, method, the route's template, status, time — never
+the record or the query string).
+
+**Looking at it on the server** (as the root user of the installation's MongoDB):
+
+```bash
+docker compose exec database-service sh -c 'mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
+  --authenticationDatabase admin resolver_log --quiet --eval "db.requests.find({}, {_id: 0}).sort({t: -1}).limit(5)"'
+```
+
 ## Home page
 
 `https://<FQDN>/` shows a home page in the same look and feel as the portal, with a menu to:
@@ -1072,7 +1115,7 @@ runs imports with the same rules).
 ## Daily backup
 
 `scripts/resolver-backup.sh` dumps every MongoDB database (the resolver's records and the portal's users,
-record metadata and journal), through the database container so the credentials never appear on the host,
+record metadata, journal and daily request counts) except the raw request log `resolver_log`, through the database container so the credentials never appear on the host,
 and archives the portal's configuration volume, keeping 14 days in `/var/backups/resolver`. It finds the repository from its own location.
 
 ```bash

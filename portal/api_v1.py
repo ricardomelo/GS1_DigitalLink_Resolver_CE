@@ -11,7 +11,9 @@ Imported at the end of app.py (it uses app's functions), so it adds its routes t
 """
 import copy
 import json
+import logging
 import os
+import time
 from functools import wraps
 
 from flask import Response, g, jsonify, request
@@ -19,7 +21,10 @@ from flask import Response, g, jsonify, request
 import apikeys
 import app as portal
 import gs1
+import requestlog
 from gs1 import ValidationError
+
+log = logging.getLogger("portal.api")
 
 PREFIX = "/portal/api/v1"
 SPEC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "openapi.json")
@@ -48,6 +53,7 @@ def require_key(scope: str | None = None):
             key = apikeys.authenticate(header[len("Bearer "):].strip())
             if not key or portal.tenant_blocked({"tenant": key.get("tenant")}):
                 return _refuse("api.keyInvalid", 401, challenge)
+            g.api_key_seen = key                          # for the log of calls, even when refused below
             allowed, wait = apikeys.count_request(key["_id"])
             if not allowed:
                 return _refuse("api.rateLimit", 429, {"Retry-After": str(wait)}, seconds=wait)
@@ -60,6 +66,27 @@ def require_key(scope: str | None = None):
             return view(*args, **kwargs)
         return wrapper
     return decorator
+
+
+@portal.app.before_request
+def _call_started():
+    """The time a call of this API arrived (its log, Documentation/adr/0006-resolver-request-log.md, decision 8)."""
+    if request.path == PREFIX or request.path.startswith(PREFIX + "/"):
+        g.api_call_started = time.perf_counter()
+
+
+@portal.app.after_request
+def _call_logged(response):
+    """Records the call: key, method, the route's template (never the record or the query string), status, time."""
+    started = g.get("api_call_started")
+    if started is not None and request.method in ("GET", "PUT", "DELETE", "POST", "HEAD"):
+        try:
+            requestlog.record_api_call(g.get("api_key_seen"), request.method,
+                                       request.url_rule.rule if request.url_rule else None, response.status_code,
+                                       max(0, round((time.perf_counter() - started) * 1000)))
+        except Exception as exc:                          # the log never changes an answer
+            log.warning("Tenant API call not logged: %s", exc)
+    return response
 
 
 def _anchor(key: str, value: str) -> str:

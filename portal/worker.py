@@ -14,7 +14,8 @@ The loop: give the jobs of silent workers back to the queue, claim the oldest qu
 thread renews its heartbeat, look again after a second when there is nothing to do. On SIGTERM (docker stop)
 the worker finishes the record it is writing, gives the job back to the queue and stops; the next worker
 continues from there. About once an hour, between jobs, it also runs the portal's housekeeping (app.HOUSEKEEPING:
-the notices of API keys about to expire); each task is safe to run in several workers at once.
+the notices of API keys about to expire, the daily counts of resolver requests); each task is safe to run in several
+workers at once.
 """
 import logging
 import os

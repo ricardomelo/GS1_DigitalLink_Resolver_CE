@@ -147,6 +147,23 @@ usuário, ou, para os usuários do operador, "nenhum dos prefixos das organizaç
 servidor fora de um acesso de suporte. `/portal/api/config` ganha `requestLog: {"days": …}` (0: o registro está
 desligado).
 
+### 3.4 Como foi implementado (etapa 2)
+
+- Um administrador do servidor **limitado a prefixos de empresa GS1** não vê a instalação inteira: como qualquer
+  usuário do operador, vê os eventos do operador dentro dos seus prefixos (`app.log_sees_everything()`: um
+  administrador do servidor fora de um acesso de suporte e sem prefixos).
+- Classe de dispositivo: `unknown` também para um User-Agent que não corresponde a nada; as pilhas HTTP de apps nativos
+  (okhttp, Dalvik, CFNetwork) contam como `mobile`, verificadas antes do padrão de tablet (o User-Agent de um app
+  Android não tem "Mobile").
+- Os agregados são gravados um documento por vez (`replace_one` com uma marca de execução), não numa gravação em lote;
+  um dia com dezenas de milhares de chaves leva proporcionalmente mais tempo (o item 7.4 mede isso).
+- As chamadas da API das organizações guardam o modelo da rota como o Flask o nomeia
+  (`/portal/api/v1/records/<key>/<path:value>`), e a chave também quando uma chamada foi recusada depois de a chave
+  ser reconhecida (limite de requisições, escopo).
+- O instalador não pergunta o fuso; grava o do servidor (`timedatectl`, `/etc/timezone` ou o link `/etc/localtime`),
+  mantém um valor existente e recusa um que não seja um nome IANA. A imagem do portal ganha o `tzdata`, para que os
+  nomes funcionem qualquer que seja o conteúdo da imagem de base.
+
 ## 4. Opções consideradas
 
 | Ponto | Escolhida (recomendada) | Não escolhidas |

@@ -145,6 +145,7 @@ check "A: one replica of each service written to .env" "[[ \$(envval WEB_SERVICE
 check "A: Compose reads the replica counts" "[[ \$(compose_cfg | grep -c 'replicas: 1') == 4 ]]"
 check "A: replicas in the summary" "grep -q 'Replicas *resolver 1, data entry API 1, portal 1, job worker 1' $SB/state/out"
 check "A: no e-mail relay asked for: e-mail off" "[[ -z \$(envval PORTAL_MAIL_HOST) && -z \$(envval PORTAL_MAIL_PASSWORD) ]] && grep -q 'E-mail relay *none (e-mail off)' $SB/state/out"
+check "A: time zone of the daily request counts written (the server's, else UTC)" "[[ -n \$(envval PORTAL_TIME_ZONE) ]] && compose_cfg | grep -q \"PORTAL_TIME_ZONE: \$(envval PORTAL_TIME_ZONE)\" && grep -q 'Time zone *'\$(envval PORTAL_TIME_ZONE) $SB/state/out"
 check "A: backup cron points at the repository" "grep -q \"root $SB/repo/scripts/resolver-backup.sh\" $SB/state/cron"
 A_TOKEN=$(envval SESSION_TOKEN); A_PWD=$(envval MONGO_INITDB_ROOT_PASSWORD)
 A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY)
@@ -154,7 +155,8 @@ echo "--- B. second run on the same installation"
 echo "PORTAL_SESSION_IDLE_MINUTES='20'" >> "$SB/repo/.env"
 sed -i "s/^WEB_SERVICE_REPLICAS=.*/WEB_SERVICE_REPLICAS='2'/" "$SB/repo/.env"
 : > "$SB/state/calls"
-run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org PORTAL_WORKER_REPLICAS=3 PORTAL_MAIL_HOST=smtp.example.org \
+run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org PORTAL_WORKER_REPLICAS=3 PORTAL_TIME_ZONE=America/Sao_Paulo \
+  PORTAL_MAIL_HOST=smtp.example.org \
   PORTAL_MAIL_USERNAME=portal@example.org PORTAL_MAIL_PASSWORD='relay pass phrase $1' \
   PORTAL_MAIL_FROM='Link portal <noreply@example.org>'; rc=$?
 check "B: exit status 0" "[[ $rc == 0 ]]"
@@ -167,6 +169,7 @@ check "B: no setting written twice (the last line of .env would win)" "[[ -z \$(
 check "B: secrets kept" "[[ \$(envval SESSION_TOKEN) == $A_TOKEN && \$(envval MONGO_INITDB_ROOT_PASSWORD) == $A_PWD ]]"
 check "B: portal database password and session key kept" "[[ \$(envval PORTAL_DB_PASSWORD) == $A_PORTAL_DB && \$(envval PORTAL_SECRET_KEY) == $A_KEY ]]"
 check "B: settings kept from .env (operator)" "[[ \$(envval RESOLVER_ORG_NAME) == 'Example Org' ]]"
+check "B: a time zone taken from the environment" "[[ \$(envval PORTAL_TIME_ZONE) == America/Sao_Paulo ]]"
 check "B: unmanaged setting carried over" "grep -q \"^PORTAL_SESSION_IDLE_MINUTES='20'\" $SB/repo/.env"
 check "B: replica count kept from .env; another taken from the environment" "[[ \$(envval WEB_SERVICE_REPLICAS) == 2 && \$(envval PORTAL_WORKER_REPLICAS) == 3 && \$(envval PORTAL_SERVICE_REPLICAS) == 1 ]]"
 check "B: Compose scales the services as written" "[[ \$(compose_cfg | grep -c 'replicas: 2') == 1 && \$(compose_cfg | grep -c 'replicas: 3') == 1 ]]"
@@ -266,6 +269,8 @@ run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org PO
 check "G: zero replicas refused" "[[ $rc != 0 ]] && grep -q 'PORTAL_SERVICE_REPLICAS: invalid value' $SB/state/out && [[ ! -e $SB/repo/.env ]]"
 run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org WEB_SERVICE_REPLICAS=two; rc=$?
 check "G: a replica count that is not a number refused" "[[ $rc != 0 ]] && grep -q 'WEB_SERVICE_REPLICAS: invalid value' $SB/state/out"
+run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org PORTAL_TIME_ZONE='../../etc/passwd'; rc=$?
+check "G: a time zone that is not an IANA name refused" "[[ $rc != 0 ]] && grep -q 'PORTAL_TIME_ZONE: invalid value' $SB/state/out"
 
 new_sandbox
 run_installer FQDN=id.example.org RESOLVER_ORG_NAME=Org CERTBOT_EMAIL=a@b.org PORTAL_MAIL_HOST=smtp.example.org \

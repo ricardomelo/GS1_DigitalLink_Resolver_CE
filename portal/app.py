@@ -36,6 +36,7 @@ import mail
 import meta
 import migrate
 import notify
+import requestlog
 import sheet
 import store
 import syntax
@@ -893,6 +894,7 @@ def config():
         dataAttributes=syntax.ENGINE.describe(),
         session=session_info(),
         mail={"enabled": mail.enabled()},
+        requestLog={"days": requestlog.log_days(), "whole": log_sees_everything()},
         preferences=preferences_of(users.get(g.user) or {}),
     )
 
@@ -1936,6 +1938,100 @@ def audit_csv():
                     headers={"Content-Disposition": f'attachment; filename="portal-audit-{stamp}.csv"'})
 
 
+# --------------------------------------------------------------------------- request log (ADR 0006)
+REQUEST_CSV_COLUMNS = ["at", "method", "form", "epc", "key", "value", "qualifiers", "attributes", "linkType", "status",
+                       "outcome", "level", "target", "ms", "language", "device", "referrer", "country", "path"]
+
+
+@app.errorhandler(requestlog.FilterError)
+def on_filter_error(err):
+    """A filter of the request log cannot be read: 422 with the message code."""
+    return message(err.code, 422, params=err.params)
+
+
+def request_log_scope() -> tuple[dict, bool]:
+    """The events the request reaches (Documentation/adr/0006-resolver-request-log.md, decision 7) and whether it is
+    the whole installation (a server administrator outside support access)."""
+    whole = log_sees_everything()
+    return requestlog.scope_filter(g.tenants, g.tenant, g.prefixes, whole), whole
+
+
+def log_sees_everything() -> bool:
+    """A server administrator outside support access and not limited to prefixes sees the whole installation's
+    requests and API calls."""
+    return bool(g.server_admin and not g.support and not g.prefixes)
+
+
+def _log_unavailable(exc: Exception):
+    log.warning("Request log not read: %s", exc)
+    return message("requests.unavailable", 503)
+
+
+@app.get("/portal/api/requests")
+@require_login
+def list_requests():
+    """The newest resolver requests in the scope of the request, with the filters of the Requests screen."""
+    scope, whole = request_log_scope()
+    try:
+        found = requestlog.list_events(request.args, scope, organisations=g.tenants if whole else None)
+    except PyMongoError as exc:
+        return _log_unavailable(exc)
+    return jsonify(**found, days=requestlog.log_days(), whole=whole)
+
+
+@app.get("/portal/api/requests.csv")
+@require_login
+def requests_csv():
+    """The resolver requests matching the filters as CSV for Excel (UTF-8 with BOM, ';', cells protected against
+    formulas), at most requestlog.MAX_EXPORT rows. A journal event: the export of the log."""
+    scope, whole = request_log_scope()
+    try:
+        found = requestlog.list_events(request.args, scope, limit=requestlog.MAX_EXPORT,
+                                       organisations=g.tenants if whole else None)
+    except PyMongoError as exc:
+        return _log_unavailable(exc)
+    out = io.StringIO()
+    writer = csv.writer(out, delimiter=";", lineterminator="\r\n")
+    columns = REQUEST_CSV_COLUMNS + (["organisation"] if whole else [])
+    writer.writerow(columns)
+    for event in found["events"]:                   # paths of invalid requests and referrers are typed by anyone
+        writer.writerow([sheet.protect(" ".join(event[c]) if isinstance(event.get(c), list) else
+                                       ("" if event.get(c) is None else event[c])) for c in columns])
+    log_event("requests-export", detail=f'rows={len(found["events"])}')
+    stamp = time.strftime("%Y%m%d-%H%M")
+    return Response(("\ufeff" + out.getvalue()).encode("utf-8"), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="resolver-requests-{stamp}.csv"'})
+
+
+@app.get("/portal/api/requests/daily")
+@require_login
+def requests_per_day():
+    """Requests per day in the scope of the request (30 days by default, at most 400), oldest first."""
+    scope, whole = request_log_scope()
+    try:
+        days = int(request.args.get("days") or 30)
+    except ValueError:
+        return message("requests.badFilter", 422, params={"name": "days"})
+    try:
+        return jsonify(days=requestlog.per_day(scope, whole, days), timeZone=str(requestlog.zone()))
+    except PyMongoError as exc:
+        return _log_unavailable(exc)
+
+
+@app.get("/portal/api/requests/api")
+@require_login
+@admin_required
+def tenant_api_calls():
+    """The tenant API's calls (Documentation/adr/0006-resolver-request-log.md, decision 8): an organisation's for its
+    administrators (during support access, that organisation's), every organisation's for a server administrator."""
+    whole = log_sees_everything()
+    names = apikeys.names(g.tenant, every=whole)
+    try:
+        return jsonify(**requestlog.list_api_calls(request.args, g.tenant, whole, names, g.tenants), whole=whole)
+    except PyMongoError as exc:
+        return _log_unavailable(exc)
+
+
 # Human readable interpretation below the QR code: every element string, only the key's, or none.
 # "1" and "0" are the values of earlier versions of the portal.
 HRI_MODES = {"full": "full", "1": "full", "key": "key", "none": "none", "0": "none"}
@@ -2019,7 +2115,7 @@ def label_response(anchor: str, args) -> Response:
 # them inside this process; otherwise the portal-worker service does.
 JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job, "mail": notify.run_mail_job}
 # What the worker runs about once an hour, outside any job (worker.HOUSEKEEPING_SECONDS)
-HOUSEKEEPING = [notify_expiring_keys]
+HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate]
 EMBEDDED_WORKER = (worker.start_embedded(JOB_RUNNERS, HOUSEKEEPING)
                    if worker.mode() == "embedded" and not worker.IN_WORKER_PROCESS else None)
 

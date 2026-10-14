@@ -5,6 +5,7 @@ from flask_cors import CORS
 import logging
 import os
 from typing import Any
+import request_log
 from web_namespace import web_namespace
 from mongo_db_init import mongo, init_mongo
 
@@ -65,6 +66,13 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
         # registering api blueprint to app
         app.register_blueprint(api_blueprint)
+
+    # The log of resolver requests (ADR 0006): the routes note what they resolved, these hooks time the request and
+    # queue its event; a background thread writes it to resolver_log.requests. A test may set its own collection.
+    if request_log.WRITER.collection is None:
+        request_log.WRITER.collection = lambda: mongo.cx[request_log.DB_NAME][request_log.COLLECTION]
+    app.before_request(request_log.start)
+    app.after_request(request_log.record)
 
     @app.after_request
     def add_headers(response: Response) -> Response:

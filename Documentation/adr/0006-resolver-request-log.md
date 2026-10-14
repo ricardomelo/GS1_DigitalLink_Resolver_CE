@@ -141,6 +141,21 @@ The scope is a filter on `cp`: an organisation's prefixes (anchored, from `g.ten
 for the operator's users "none of the organisations' prefixes"; none for a server administrator outside support
 access. `/portal/api/config` gains `requestLog: {"days": …}` (0: the log is off).
 
+### 3.4 As implemented (step 2)
+
+- A server administrator **limited to GS1 Company Prefixes** does not see the whole installation: like any operator
+  user, he sees the operator's events within his prefixes (`app.log_sees_everything()`: a server administrator outside
+  support access and without prefixes).
+- Device class: `unknown` also for a User-Agent that matches nothing; the HTTP stacks of native apps (okhttp, Dalvik,
+  CFNetwork) count as `mobile`, checked before the tablet pattern (an Android app's User-Agent has no "Mobile").
+- The aggregates are written one document at a time (`replace_one` with a run stamp), not in one bulk write; a day
+  with tens of thousands of keys takes correspondingly longer (item 7.4 measures it).
+- The tenant API's calls keep the route's template as Flask names it (`/portal/api/v1/records/<key>/<path:value>`), and
+  the key also when a call was refused after the key was recognised (request limit, scope).
+- The installer does not ask for the time zone; it writes the server's (`timedatectl`, `/etc/timezone` or the
+  `/etc/localtime` link), keeps an existing value and refuses one that is not an IANA name. The portal's image gains
+  `tzdata`, so the names work whatever the base image holds.
+
 ## 4. Options considered
 
 | Point | Chosen (recommended) | Not chosen |

@@ -196,6 +196,16 @@ valid_replicas() {
   [[ $1 =~ ^[1-9][0-9]?$ ]] && (( $1 <= MAX_REPLICAS )) || { warn "Enter a number of replicas from 1 to $MAX_REPLICAS."; return 1; }
 }
 valid_yes_no() { [[ $1 == yes || $1 == no ]] || { warn "Answer yes or no."; return 1; }; }
+valid_time_zone() { [[ $1 =~ ^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$ ]]; }
+
+# The server's time zone as an IANA name (timedatectl, /etc/timezone or the /etc/localtime link), else UTC.
+server_time_zone() {
+  local tz=""
+  if command -v timedatectl >/dev/null 2>&1; then tz=$(timedatectl show -p Timezone --value 2>/dev/null || true); fi
+  [[ -n $tz ]] || tz=$(head -n 1 /etc/timezone 2>/dev/null || true)
+  if [[ -z $tz && -L /etc/localtime ]]; then tz=$(readlink -f /etc/localtime); tz=${tz#*/zoneinfo/}; fi
+  if valid_time_zone "$tz"; then printf '%s' "$tz"; else printf 'UTC'; fi
+}
 valid_user_or_empty() { [[ -z $1 ]] || id -u "$1" >/dev/null 2>&1 || { warn "No such user: $1"; return 1; }; }
 valid_mail_host() {
   local re='^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$'
@@ -223,7 +233,7 @@ MANAGED_KEYS=" MONGO_INITDB_ROOT_USERNAME MONGO_INITDB_ROOT_PASSWORD MONGO_URI S
   PORTAL_ADMIN_PASSWORD PORTAL_DB_PASSWORD PORTAL_SECRET_KEY PROXY_BIND_ADDRESS DATABASE_BIND_ADDRESS TLS_MODE
   CERTBOT_EMAIL TLS_CERT_FILE TLS_KEY_FILE WEB_SERVICE_REPLICAS DATA_ENTRY_SERVICE_REPLICAS
   PORTAL_SERVICE_REPLICAS PORTAL_WORKER_REPLICAS PORTAL_MAIL_HOST PORTAL_MAIL_PORT PORTAL_MAIL_SECURITY
-  PORTAL_MAIL_USERNAME PORTAL_MAIL_PASSWORD PORTAL_MAIL_FROM "
+  PORTAL_MAIL_USERNAME PORTAL_MAIL_PASSWORD PORTAL_MAIL_FROM PORTAL_TIME_ZONE "
 
 # Reads KEY=VALUE lines of an existing .env (quotes removed) into EXISTING.
 load_existing_env() {
@@ -285,6 +295,8 @@ write_env() {
     env_line PORTAL_MAIL_USERNAME "$PORTAL_MAIL_USERNAME"
     env_line PORTAL_MAIL_PASSWORD "$PORTAL_MAIL_PASSWORD"
     env_line PORTAL_MAIL_FROM "$PORTAL_MAIL_FROM"
+    printf '\n# Portal: time zone of the daily counts of resolver requests (Documentation/adr/0006-resolver-request-log.md)\n'
+    env_line PORTAL_TIME_ZONE "$PORTAL_TIME_ZONE"
     printf '\n# Read by Docker Compose itself\n'
     env_line PROXY_BIND_ADDRESS "$PROXY_BIND_ADDRESS"
     env_line DATABASE_BIND_ADDRESS "127.0.0.1"
@@ -487,6 +499,12 @@ collect_settings() {
     [[ -n ${!var-} ]] || printf -v "$var" '%s' 1
     valid_replicas "${!var}" || die "$var: invalid value '${!var}' (a number from 1 to $MAX_REPLICAS)."
   done
+  # The time zone of the portal's daily request counts (Documentation/adr/0006-resolver-request-log.md): not asked;
+  # kept from the environment or the existing .env, else the server's own.
+  preset PORTAL_TIME_ZONE
+  [[ -n ${PORTAL_TIME_ZONE-} ]] || PORTAL_TIME_ZONE=$(server_time_zone)
+  valid_time_zone "$PORTAL_TIME_ZONE" \
+    || die "PORTAL_TIME_ZONE: invalid value '$PORTAL_TIME_ZONE' (an IANA time zone name, e.g. America/Sao_Paulo)."
 
   printf '\n    %sResolver address%s\n' "$C_BOLD" "$C_OFF"
   ask FQDN "Domain name of the resolver (e.g. id.example.org)" "" valid_fqdn
@@ -662,6 +680,7 @@ summary_before() {
   else
     printf '      E-mail relay     none (e-mail off)\n'
   fi
+  printf '      Time zone        %s (daily counts of resolver requests)\n' "$PORTAL_TIME_ZONE"
   printf '      Daily backup     %s\n' "$INSTALL_BACKUP_CRON"
   printf '\n'
   confirm "Proceed with the installation?" y || die "Nothing was changed."

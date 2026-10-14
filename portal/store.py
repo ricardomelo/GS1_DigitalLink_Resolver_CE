@@ -14,7 +14,9 @@ Connection, from the environment:
 
 Collections: users, tenants (tenants.py), record_meta, journal, login_failures, linkcheck_cache, settings, jobs
 and workers (jobs.py), tokens (tokens.py: invitation and recovery links), api_keys and api_rate (apikeys.py: the tenant
-API's keys and request counters). The indexes are made at
+API's keys and request counters), request_daily and api_requests (requestlog.py: daily counts of the resolver's
+requests and the tenant API's calls). The resolver's own log, resolver_log.requests, is another database that the
+portal's user may only read (db_init.py, Documentation/adr/0006-resolver-request-log.md). The indexes are made at
 the first use in each process (createIndex is allowed to the readWrite role). Dates are stored as BSON dates
 in UTC and come back as naive datetimes in UTC (pymongo's default).
 """
@@ -71,6 +73,16 @@ INDEXES = {
     ],
     "api_rate": [
         ([("at", ASCENDING)], {"expireAfterSeconds": 120}),
+    ],
+    "request_daily": [
+        ([("day", ASCENDING)], {}),
+        ([("cp", ASCENDING), ("day", ASCENDING)], {}),
+        ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
+    ],
+    "api_requests": [
+        ([("t", DESCENDING)], {}),
+        ([("tenant", ASCENDING), ("t", DESCENDING)], {}),
+        ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
     ],
 }
 

@@ -79,6 +79,11 @@ def load(tenant: str | None) -> list[dict]:
     return list(_col().find(_scope_query(tenant)).sort("created", -1))
 
 
+def names(tenant: str | None, every: bool = False) -> dict[str, str]:
+    """Key id → name, for a scope or (every) for the whole installation: the request log's list of API calls."""
+    return {doc["_id"]: doc.get("name", "") for doc in _col().find({} if every else _scope_query(tenant), {"name": 1})}
+
+
 def clean_name(value) -> str:
     name = " ".join(str(value or "").split())
     if not (NAME_LENGTH[0] <= len(name) <= NAME_LENGTH[1]) or not name.isprintable():

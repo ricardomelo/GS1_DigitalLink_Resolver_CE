@@ -333,7 +333,7 @@ w.housekeep(force=True)
 w.housekeep()
 check("the worker runs its housekeeping, a failing task does not stop the others, at most once an hour",
       ran == [1] and failing == [1])
-check("the portal's worker has the expiry check", portal.HOUSEKEEPING == [portal.notify_expiring_keys]
+check("the portal's worker has the expiry check", portal.notify_expiring_keys in portal.HOUSEKEEPING
       and portal.EMBEDDED_WORKER.housekeeping == portal.HOUSEKEEPING)
 
 # ================================================================== the description against the code

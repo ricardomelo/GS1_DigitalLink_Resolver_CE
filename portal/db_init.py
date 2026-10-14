@@ -1,6 +1,7 @@
 """
-Creates, or brings up to date, the portal's own MongoDB user: readWrite on the portal's database and nothing
-else (Documentation/adr/0001-portal-state-in-mongodb.md, section 3.1).
+Creates, or brings up to date, the portal's own MongoDB user: readWrite on the portal's database, read on the
+resolver's request log (resolver_log, Documentation/adr/0006-resolver-request-log.md) and nothing else
+(Documentation/adr/0001-portal-state-in-mongodb.md, section 3.1).
 
 Run by the one-shot Compose service portal-db-init before the portal starts, on every "docker compose up",
 so a new installation, an existing one and a restored one all end with the user and the password of .env.
@@ -17,7 +18,8 @@ import sys
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
-RESERVED = {"admin", "local", "config", "resolver_ce"}     # never given to the portal
+LOG_DB = "resolver_log"                                   # written by the resolver, read by the portal
+RESERVED = {"admin", "local", "config", "resolver_ce", LOG_DB}     # never the portal's own database
 
 
 def main() -> int:
@@ -34,7 +36,7 @@ def main() -> int:
     if name in RESERVED:
         print(f"portal-db-init: PORTAL_DB_NAME may not be {name!r}.", file=sys.stderr)
         return 1
-    roles = [{"role": "readWrite", "db": name}]
+    roles = [{"role": "readWrite", "db": name}, {"role": "read", "db": LOG_DB}]
     timeout = int(os.environ.get("PORTAL_DB_INIT_TIMEOUT_MS", "60000"))   # the database may still be starting
     try:
         with MongoClient(root_uri, serverSelectionTimeoutMS=timeout, appname="portal-db-init") as client:

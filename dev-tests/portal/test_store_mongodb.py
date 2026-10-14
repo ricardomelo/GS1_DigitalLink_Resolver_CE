@@ -11,11 +11,12 @@ Everything made here (a database and a user named devtest_*) is removed at the e
   PORTAL_TEST_MONGO_URI='mongodb://root:pw@localhost:27017/?authSource=admin' python dev-tests/portal/test_store_mongodb.py
 """
 import os
+import re
 import secrets
 import subprocess
 import sys
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from urllib.parse import quote_plus
 
 from pymongo import MongoClient
@@ -70,7 +71,13 @@ try:
     check("db_init: user created, exit status 0", run.returncode == 0 and "created" in run.stdout, run.stderr[-300:])
     check("db_init: the password is never printed", first not in run.stdout + run.stderr)
     roles = root[NAME].command("usersInfo", USER)["users"][0]["roles"]
-    check("db_init: readWrite on the portal's database, nothing else", roles == [{"role": "readWrite", "db": NAME}], roles)
+    check("db_init: readWrite on the portal's database, read on the request log, nothing else",
+          sorted(roles, key=lambda r: r["db"]) == sorted([{"role": "readWrite", "db": NAME},
+                                                          {"role": "read", "db": "resolver_log"}], key=lambda r: r["db"]),
+          roles)
+    # the request log (ADR 0006): written by the resolver (root here), read by the portal
+    root["resolver_log"]["requests"].insert_one({"_id": "probe-event", "t": datetime(2026, 10, 14), "cp": "7898357410015",
+                                                 "o": "redirect", "dev": "mobile", "ms": 5})
 
     with MongoClient(user_uri(first), serverSelectionTimeoutMS=5000) as client:
         own = client[NAME]["probe"]
@@ -84,6 +91,20 @@ try:
                 check(f"portal user: cannot read the {other} database", False)
             except OperationFailure as exc:
                 check(f"portal user: cannot read the {other} database", exc.code == 13, exc.code)
+        log = client["resolver_log"]["requests"]
+        check("portal user: reads the request log",
+              log.find_one({"_id": "probe-event"}, {"_id": 1}) == {"_id": "probe-event"})
+        check("portal user: the request log's queries work (anchored regex, $not, $group)",
+              log.count_documents({"cp": {"$regex": "^(?:7898357)"}}) >= 1
+              and log.count_documents({"_id": "probe-event", "cp": {"$exists": True, "$not": re.compile("^(?:789111)")}}) == 1
+              and any(g["n"] >= 1 for g in log.aggregate([{"$match": {"_id": "probe-event"}},
+                                                           {"$group": {"_id": {"o": "$o", "ai": "$ai"}, "n": {"$sum": 1},
+                                                                       "ms": {"$max": "$ms"}}}])))
+        try:
+            log.insert_one({"_id": "forged"})
+            check("portal user: cannot write the request log", False)
+        except OperationFailure as exc:
+            check("portal user: cannot write the request log", exc.code == 13, exc.code)
         try:
             client["resolver_ce"]["resolver"].insert_one({"_id": "x"})
             check("portal user: cannot write the resolver's records", False)
@@ -101,6 +122,7 @@ try:
     check("… the old password no longer works, the new one does", not can_sign_in(first) and can_sign_in(second))
     check("… roles unchanged", root[NAME].command("usersInfo", USER)["users"][0]["roles"] == roles)
     check("db_init refuses the official database", db_init(PORTAL_DB_PASSWORD=second, PORTAL_DB_NAME="resolver_ce").returncode == 1)
+    check("db_init refuses the request log's database", db_init(PORTAL_DB_PASSWORD=second, PORTAL_DB_NAME="resolver_log").returncode == 1)
     check("db_init refuses an empty password", db_init(PORTAL_DB_PASSWORD="").returncode == 1)
     check("db_init without MONGO_URI fails", db_init(PORTAL_DB_PASSWORD=second, MONGO_URI="").returncode == 1)
 
@@ -149,6 +171,7 @@ finally:
     except OperationFailure:
         pass
     root.drop_database(NAME)
+    root["resolver_log"]["requests"].delete_one({"_id": "probe-event"})
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

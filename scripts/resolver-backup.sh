@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Daily backup of a GS1 Resolver CE installation: every MongoDB database (the resolver's records and the
-# portal's own database: users with password hashes, record metadata, journal) and the portal's
-# configuration volume (the fallback session key and the files of earlier versions, *.migrated).
+# portal's own database: users with password hashes, record metadata, journal, the daily counts of requests) except
+# the raw log of resolver requests (resolver_log: short-lived events, Documentation/adr/0006-resolver-request-log.md),
+# and the portal's configuration volume (the fallback session key and the files of earlier versions, *.migrated).
 #
 # Run it from the repository (no copy needed):  sudo scripts/resolver-backup.sh
 # Scheduled by scripts/resolver-backup.cron. Settings can be overridden from the environment.
@@ -21,7 +22,7 @@ cd "$RESOLVER_DIR"
 # never appear on the host's command line.
 DB_ARCHIVE="$BACKUP_DIR/resolver-$STAMP.archive.gz"
 docker compose exec -T database-service sh -c \
-  'mongodump -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --archive --gzip' \
+  'mongodump -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --nsExclude="resolver_log.*" --archive --gzip' \
   > "$DB_ARCHIVE.tmp"
 [ -s "$DB_ARCHIVE.tmp" ] || { echo "$(date -Is) ERROR: empty database backup"; rm -f "$DB_ARCHIVE.tmp"; exit 1; }
 mv "$DB_ARCHIVE.tmp" "$DB_ARCHIVE"

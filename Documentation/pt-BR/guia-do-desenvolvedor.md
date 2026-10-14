@@ -94,6 +94,7 @@ web_server/src/
   web_namespace.py               caminho original, resposta HTML ou JSON, arquivo de descrição, query string,
                                  requisições /eh… e /ex…
   epc_binary.py                  novo: EPC em binário (eh/ex) decodificado para GS1 Digital Link
+  request_log.py                 novo: o registro das requisições ao Resolver: o que é guardado, uma fila e uma thread de gravação (ADR 0006)
   tdt/                           novo: artefatos do EPC Tag Data Translation 2.2 (arquivos da GS1, sem alteração)
   web_pages.py                   novo: páginas HTML (erros, linkset) em pt-BR e en-GB
   public/gs1resolver.json        modelo do arquivo de descrição
@@ -120,7 +121,8 @@ portal/                          novo: o portal de gestão de links
   tokens.py                      links de uso único: convites e recuperação de senha
   notify.py                      notificações: categorias, as escolhas do usuário, a tarefa "mail"
   apikeys.py                     chaves da API das organizações: criação, hash, revogação, limite de requisições (ADR 0005)
-  api_v1.py                      a API das organizações, /portal/api/v1 (importada no fim do app.py)
+  api_v1.py                      a API das organizações, /portal/api/v1 (importada no fim do app.py), com as chamadas registradas
+  requestlog.py                  o registro de requisições como o portal o lê: escopo, listagem, contagens diárias, chamadas da API (ADR 0006)
   openapi.json                   a sua descrição OpenAPI 3.1, servida em /portal/api/v1/openapi.json
   db_init.py                     cria o usuário do banco do portal (serviço portal-db-init)
   create_user.py                 administração de usuários pela linha de comando
@@ -168,8 +170,10 @@ também lê `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD`, `PORTA
 arquivos que a migração lê) e, para o e-mail, `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`, `PORTAL_MAIL_SECURITY`,
 `PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM`, `PORTAL_MAIL_REPLY_TO`, `PORTAL_MAIL_CA_FILE`,
 `PORTAL_MAIL_TIMEOUT`, `PORTAL_INVITE_HOURS` e `PORTAL_RESET_MINUTES`, e para a API das organizações
-`PORTAL_API_RATE_PER_MINUTE` e `PORTAL_API_KEY_MAX_DAYS`. Só o `portal-db-init` recebe o `MONGO_URI` root; o do portal e o do worker ficam
-vazios. O worker tem as configurações do portal (ele importa o `app.py` e faz a mesma inicialização, o que é
+`PORTAL_API_RATE_PER_MINUTE` e `PORTAL_API_KEY_MAX_DAYS`, e para o registro de requisições `RESOLVER_LOG_DAYS`,
+`PORTAL_TIME_ZONE` e `PORTAL_STATS_DAYS`. O Resolver lê `RESOLVER_LOG_DAYS` e `RESOLVER_LOG_COUNTRY_HEADER` e grava o seu
+registro com o `MONGO_URI` root que já tem. Do lado do portal, só o `portal-db-init` recebe o `MONGO_URI` root; o do
+portal e o do worker ficam vazios. O worker tem as configurações do portal (ele importa o `app.py` e faz a mesma inicialização, o que é
 seguro sob as travas compartilhadas).
 
 ## 4. Fluxos das requisições
@@ -179,6 +183,15 @@ URI; o Resolver lê o documento de `/01/09506000134352`, escolhe a entrada do co
 (subindo para uma entrada menos específica quando não há uma exata), escolhe o link por `linkType`,
 idioma, tipo de mídia e contexto, e responde `307` para ele, acrescentando a query string da leitura
 exatamente como foi enviada.
+
+**O evento da requisição** ([ADR 0006](adr/0006-registro-de-requisicoes.md)). Toda rota de resolução chama
+`request_log.note()` com o que sabe (forma, chave, qualificadores, query string, tipo de link pedido, idiomas, o nível
+que respondeu e, num 404, se nenhum cadastro se aplicou ou se faltou o link daquele tipo); `web_logic.read_document()`
+passa os dois últimos nas chaves privadas `_level` e `_outcome`, que `_process_response()` retira antes de responder. O
+gancho `after_request` da aplicação (`request_log.record()`) acrescenta status, host do destino, tempo gasto, classe
+de dispositivo, host do Referer e país, e põe o evento na fila do processo; a thread de gravação insere lotes em
+`resolver_log.requests`. A manutenção de hora em hora do worker (`requestlog.aggregate()`) conta cada dia em
+`request_daily`.
 
 **Uma etiqueta NFC com um EPC.** `GET /eh30164596f40c0e5cbe991a83` (ou `/exMBZFlvQMDly-mRqD`) → proxy →
 web-service. O segmento único casa com a RE3 da URI Syntax 1.7, então `epc_binary.decompress()` o converte
@@ -424,13 +437,33 @@ mão; o `test_api.py` o confere contra as rotas e valida respostas com os seus e
 chaves (`list_api_keys()`, `create_api_key()`, `revoke_api_key()`, sempre no escopo da própria conta),
 `notify_expiring_keys()` e `HOUSEKEEPING`.
 
+### `requestlog.py` — o registro das requisições ao Resolver
+
+[ADR 0006](adr/0006-registro-de-requisicoes.md). O Resolver grava os eventos (`web_server/src/request_log.py`, seção
+9); este módulo os lê pelo cliente do próprio portal (`store.db().client["resolver_log"]`, só leitura para o usuário
+do portal). `scope_filter(tenants, tenant, prefixes, whole)` transforma o escopo de uma requisição num filtro sobre a
+parte da empresa `cp` dos eventos (os prefixos de uma organização, ancorados; para o operador, chaves que nenhum
+prefixo de organização inicia; restrito aos prefixos do próprio usuário); `app.log_sees_everything()` é verdadeiro
+para um administrador do servidor fora de um acesso de suporte e sem prefixos próprios, que vê todos os eventos,
+também os sem chave. `list_events(args, scope)` aplica os filtros (`from`/`to` como dias do `PORTAL_TIME_ZONE`, `code`
+como âncora, valor de chave, GTIN-13 ou prefixo, `outcome` com `notFound` para os dois 404, `device`, requisições
+automatizadas fora a menos que pedidas) e pagina com `before` = `<horário>|<id>` da última linha. `per_day()` lê
+`request_daily` para os dias passados e os eventos brutos para hoje. `aggregate()` (em `app.HOUSEKEEPING`) pega a trava
+`request-stats` sem esperar (outra réplica com ela: pula), conta cada dia a partir do seguinte ao
+`requestStats.finalUntil` (na primeira vez, do evento mais antigo) até hoje com `count_day()` — um `$match` + `$group`
+por chave, resultado, dispositivo, forma, idioma e tipo de link, consolidado em Python num documento por chave e um por
+dia (`|*`) com percentis do tempo gasto, gravado com uma marca de execução e os documentos do dia de outras execuções
+removidos — e então registra o último dia terminado (dez minutos depois da meia-noite, ontem). `record_api_call()` e
+`list_api_calls()` guardam e listam as chamadas da API das organizações (`api_requests`); o `api_v1.py` registra cada
+chamada num gancho `after_request`, com a chave vista (também uma recusada), o modelo da rota, status e tempo.
+
 ### `migrate.py`, `db_init.py`
 
 `migrate.run(config_dir)` leva `users.json`, `records-meta.json` e `journal.jsonl` para coleções vazias uma
 única vez, sob a trava `migration`, com `_id` fixos para que uma importação interrompida termine no início
 seguinte; os arquivos viram `*.migrated`. O `db_init.py` (serviço `portal-db-init`) conecta com o
-`MONGO_URI` root e cria o usuário do portal, ou atualiza sua senha e permissões; recusa `admin`, `local`,
-`config` e `resolver_ce` como banco do portal.
+`MONGO_URI` root e cria o usuário do portal, ou atualiza sua senha e permissões (`readWrite` no seu banco, `read`
+no `resolver_log`); recusa `admin`, `local`, `config`, `resolver_ce` e `resolver_log` como banco do portal.
 
 ### `create_user.py`
 
@@ -500,7 +533,7 @@ acesso de suporte, ou o operador) e aos prefixos de empresa GS1 do usuário. Err
 | `POST /password/forgot` `{login, language}` | — | Link de recuperação por e-mail para a conta desse nome de usuário ou endereço, quando ela pode entrar e tem endereço; sempre `password.recoverySent` (404 `password.recoveryOff` com o e-mail desligado, 429 `password.recoveryLimit`) |
 | `POST /password/link/check` `{token}` · `POST /password/link` `{token, newPassword, language}` | — | Um link de uso único: `{user, purpose, min}` ou 410 `password.linkInvalid`; depois a senha definida (`password.set`, `purpose`), o link consumido (429 `password.linkLimit` depois de dez links inválidos de um endereço) |
 | `GET /preferences` · `PUT /preferences` `{language, notify: {jobs}}` | qualquer | O endereço de e-mail do usuário (só leitura), o idioma das suas mensagens e as categorias opcionais (`preferences.saved`, `preferences.languageInvalid`, `preferences.categoryUnknown`) |
-| `GET /config` | qualquer | Usuário, perfil (o que vale), `accountRole`, `serverAdmin`, `tenant` e `support` (`{id, name, disabled}` ou `null`), prefixos, endereço do Resolver, tipos de link, chaves com qualificadores e combinações, idiomas, limites de importação, atributos de dados, limites da sessão (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`), `mail` (`{enabled}`) e `preferences` (como `GET /preferences`) |
+| `GET /config` | qualquer | Usuário, perfil (o que vale), `accountRole`, `serverAdmin`, `tenant` e `support` (`{id, name, disabled}` ou `null`), prefixos, endereço do Resolver, tipos de link, chaves com qualificadores e combinações, idiomas, limites de importação, atributos de dados, limites da sessão (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`), `mail` (`{enabled}`), `requestLog` (`{days, whole}`: a retenção do registro, 0 quando desligado, e se o usuário vê a instalação inteira) e `preferences` (como `GET /preferences`) |
 | `GET /session` | qualquer (também enquanto uma nova senha é exigida) | Renova a sessão; responde os mesmos limites da sessão |
 | `GET /record?key=&value=&qualifiers=/10/L1` | leitor | Um cadastro: `exists`, `description`, `links`, `defaultLinkType`, `sharedDefaultLinkType`, `digitalLink`, `otherEntries` (cada um com `informative`), `qualifiers` (os do cadastro), `informative` (digitados) e `storedInformative`, `hasKeyRecord` |
 | `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}], keyRecord?}` | editor | Criar (201) ou substituir (200); o primeiro link é o principal. Com número de série, 22 e 10 em `qualifiers` são gravados como informativos. `keyRecord: {mode: copy\|target, description, url}` cria antes o cadastro da chave (`save.createdWithKey`, `keyRecordCreated`) |
@@ -518,6 +551,10 @@ acesso de suporte, ou o operador) e aos prefixos de empresa GS1 do usuário. Err
 | `GET /audit` · `GET /audit.csv` (`user`, `from`, `to`, `q`, `limit`) | administrador | Auditoria do escopo: a de um tenant; a do operador mais o que usuários do operador fizeram a tenants; a de um tenant durante o acesso de suporte. Os eventos levam `tenant`, `tenantName`, `byOperator`; o CSV acrescenta `organisation` e `by_operator` |
 | `POST /digital-link` `{key, value, qualifiers, attributes:[{ai, value}]}` | leitor | Digital Link com atributos de dados conferidos pelo engine; nada é gravado |
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&attr=AI:valor` | leitor | Etiqueta; cabeçalhos `X-QR-Version`, `X-QR-Level`, `X-QR-Modules`; 422 `qr.tooSmall` / `qr.tooLong` |
+| `GET /requests?from=&to=&code=&outcome=&device=&automated=&before=&limit=` | qualquer | Requisições ao Resolver no escopo da requisição ([ADR 0006](adr/0006-registro-de-requisicoes.md)), as mais novas primeiro, no máximo `limit` (1–500, 200): `events` (`at`, `method`, `form`, `epc`, `key`, `value`, `anchor`, `qualifiers`, `attributes`, `linkType`, `status`, `outcome`, `level`, `target`, `ms`, `language`, `device`, `referrer`, `country`, `path`, e `organisation` para a instalação inteira), `next`, `days`, `whole`; 422 `requests.badDate` / `requests.badFilter`, 503 `requests.unavailable` |
+| `GET /requests.csv` (mesmos filtros) | qualquer | Até 50.000 delas em CSV (UTF-8 com BOM, `;`, células protegidas); diário `requests-export` |
+| `GET /requests/daily?days=30` | qualquer | `days`: `[{day, total, automated, outcome}]`, do mais antigo ao mais novo, no escopo (dias passados de `request_daily`, hoje dos eventos); `timeZone` |
+| `GET /requests/api?from=&to=&key=&before=&limit=` | admin | As chamadas da API das organizações do escopo (as de todas as organizações para um administrador do servidor): `calls` (`at`, `key`, `keyName`, `organisation`, `method`, `operation`, `status`, `ms`), `next`, `whole` |
 | `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable", "mail": "on"\|"off"}` |
 | `GET /keys` · `POST /keys` `{name, scopes, days, prefixes}` · `DELETE /keys/{id}` | administrador | Chaves da API das organizações no escopo da própria conta (a organização de um administrador de organização; o operador para um administrador do servidor, também em acesso de suporte): a lista com `scopes`, `maxDays`, `defaultDays`, `ratePerMinute`; a criação responde `key` (mostrada uma vez) e `item`; o DELETE revoga |
 
@@ -543,7 +580,14 @@ Decisões e seus motivos: [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md).
 | `api_rate` | `<id da chave>:<minuto>`; `n`, `at` | TTL de 2 minutos em `at` |
 | `tokens` | SHA-256 do token de um link de uso único; `purpose` (`invite`, `reset`), `user`, `created`, `expiresAt` ([ADR 0004](adr/0004-e-mail.md)) | usuário + propósito; TTL em `expiresAt` |
 | `workers` | nome do worker (`host:pid:modo`); `seen`, `mode`, `job` | TTL de 10 minutos em `seen` |
-| `settings` | `lastFullCheck` (a do operador) e `lastFullCheck:<tenant>`, `journalRetention`, `migration` e os documentos `lock:<nome>` | — |
+| `request_daily` | `<dia>\|<AI>\|<valor>` (o dia de uma chave) ou `<dia>\|*` (o dia da instalação); `day`, `ai`, `v`, `cp`, `total`, `automated`, `outcome`, `device`, `form` (contagens por nome), `language`, `linkType` (`[[nome, contagem]]`, no máximo 20), `ms` (soma), `msMax`, no dia da instalação também `keys`, `p50`, `p95`, `p99`; `run`, `expiresAt` ([ADR 0006](adr/0006-registro-de-requisicoes.md)) | dia; parte da empresa + dia; TTL em `expiresAt` |
+| `api_requests` | ObjectId; `t`, `key` (ausente sem uma chave válida), `tenant` (ausente para o operador), `m`, `op` (o modelo da rota), `s`, `ms`, `expiresAt` | data; tenant + data; TTL em `expiresAt` |
+| `settings` | `lastFullCheck` (a do operador) e `lastFullCheck:<tenant>`, `journalRetention`, `migration`, `requestStats.finalUntil` (o último dia terminado contado) e os documentos `lock:<nome>` | — |
+
+O registro do próprio Resolver é outro banco, **`resolver_log`**, que o usuário do portal só pode ler: a sua coleção
+`requests` guarda um evento por requisição de resolução (campos no [ADR 0006](adr/0006-registro-de-requisicoes.md),
+seção 3.1; índices em horário, parte da empresa + horário, chave + horário, TTL em `expiresAt`). O backup diário o
+deixa de fora.
 
 Retenção do diário: um evento é guardado por `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS`
 (0) ou `PORTAL_JOURNAL_ADMIN_DAYS` (0) dias a partir do fim do dia em que aconteceu; 0 guarda para sempre.
@@ -610,6 +654,17 @@ host Docker, que montam o mesmo volume), e os arquivos das versões anteriores r
   - `tdt/` guarda os arquivos da GS1 como publicados (rascunhos de 18/11/2024 do TDT 2.2), com `+` nos nomes
     como no manifest; para atualizar, substitua os arquivos e rode `dev-tests/resolver/test_epc_binary.py`.
     `TDT_DIR` aponta para outro lugar, se preciso.
+- `request_log.py` (novo, [ADR 0006](adr/0006-registro-de-requisicoes.md)): `note()` (chamada pelas rotas; marca a
+  requisição como uma a registrar), `start()` e `record()` (os ganchos `before_request` / `after_request` da
+  aplicação, postos em `create_app()`), `event()` (o documento guardado: `qualifiers()` guarda só o AI de 21 e 235,
+  `attribute_ais()` só os AIs da query string, `masked_level()`, `device_class()` — automatizado primeiro, depois as
+  pilhas HTTP de apps, tablet, celular, computador —, `language()`, `host_of()`, `company_part()`), `outcome()`, e
+  `Writer`: uma fila limitada por processo (iniciada no primeiro evento e de novo depois de um fork), uma thread daemon
+  que grava lotes de até 500 com uma nova tentativa, eventos perdidos contados (`lost_total`) e avisados no máximo uma
+  vez por minuto, `flush()` (testes, e na saída). `create_app()` dá ao gravador `mongo.cx["resolver_log"]["requests"]`,
+  a menos que um teste tenha posto outra coleção. `web_logic.read_document()` e `_validate_and_fetch_document()`
+  acrescentam `_level` (o nível que respondeu um 307 ou 300) e `_outcome` (`unknown` ou `noLink` num 404) para o
+  registro; `web_namespace._process_response()` retira os dois antes de responder.
 - `web_pages.py` (novo): `render_error()` e `render_linkset()` (também a página de escolha do 300, com o
   linkset embutido em JSON-LD) em pt-BR / en-GB, `negotiate_locale()`, o rodapé do operador, só destinos
   `http(s)` como links.
@@ -656,7 +711,10 @@ segurança do ramo 1.30). O
   inicialização, cron de backup). Pode ser rodado de novo; `--non-interactive` lê todas as
   respostas de variáveis de ambiente. Os modelos do site nginx ficam em `templates/`.
 - `resolver-backup.sh` + `resolver-backup.cron`: dump do MongoDB pelo contêiner (todos os bancos, o do
-  portal incluído) e arquivo do volume do portal, 14 dias guardados.
+  portal incluído, menos o registro bruto de requisições `resolver_log`) e arquivo do volume do portal, 14 dias
+  guardados.
+- O `install.sh` também grava `PORTAL_TIME_ZONE` (não pergunta: o ambiente, o `.env` existente, senão o fuso do
+  servidor pelo `timedatectl`, `/etc/timezone` ou o link `/etc/localtime`, senão UTC).
 
 ## 13. Testes de desenvolvimento (`dev-tests/`)
 
@@ -671,6 +729,7 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `resolver/test_epc_binary.py` | 163 | decodificador de EPC em binário: exemplos do EPCB, todos os vetores do anexo E.3 do TDS 2.3 (`eh` e `ex`), dados +AIDC, hostnames `++`, recusas, RE3, artefatos do TDT contra o seu schema; 800 EPCs aleatórios comparados com o `epc-tds` quando `EPC_TDS` está definido (162 sem ele) |
 | `resolver/test_gs1_suite.py` | 215 | suíte de testes de Resolver da GS1, com o JavaScript sem alteração no Chromium, contra o código do web server por HTTP; uma versão em Python do seu `tester.php`; sete cenários; precisa de `GS1_RESOLVER_TESTSUITE` e `AJV_DIST` (pulado sem eles) |
 | `resolver/test_data_entry_api.py` | 53 | token em toda operação protegida; regras de cadastro do §2.5.9 e qualificadores informativos |
+| `resolver/test_request_log.py` | 73 | o registro das requisições ao Resolver ([ADR 0006](adr/0006-registro-de-requisicoes.md)) pelo cliente de teste do Flask no mongomock: cada campo do evento de um redirecionamento, níveis, qualificadores de unidade guardados só como AIs, todos os resultados (código desconhecido, tipo de link ausente, escolha, linkset, requisição inválida, sondagem, link comprimido, `?compress`, binário EPC), HEAD, idiomas, o que nunca é guardado (endereço, User-Agent, Referer completo, valores de atributos de dados e números de série), rotas não registradas, respostas inalteradas, o cabeçalho de país, retenção e desligamento, índices, classes de dispositivo, e que um banco que não responde ou falha nunca segura uma requisição (eventos perdidos e contados, lotes de 500) |
 | `portal/test_dictionary.py` | 30 | as regras GS1 do dicionário (ADR 0003): o `gs1_dictionary.json` exatamente o que o dicionário da versão fixada dá, o leitor, chaves, formas, ordem e formatos montados dele com as exceções do portal, um formato maior ou uma chave nova sem código, um linter ou forma desconhecidos parando a montagem, as regras enviadas ao navegador, os AIs (7041) e (8040)–(8043) e seus nomes em português, a comparação da issue semanal |
 | `portal/test_engine_messages.py` | 26 | as mensagens do engine (ADR 0003): o `engine_messages.json` exatamente o que as fontes da versão fixada dão, os dois idiomas de toda mensagem com os mesmos parâmetros (a inglesa é o texto do engine), toda mensagem e mensagem de linter reconhecida como ela mesma, as recusas do portal levando a mensagem, a comparação da issue semanal |
 | `portal/test_keys.py` | 138 | chaves e qualificadores, comparados com o GS1 Syntax Engine |
@@ -685,15 +744,16 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `portal/test_tenants.py` | 82 | tenants ([ADR 0002](adr/0002-organizacoes.md)): uma instalação sem tenants igual a antes; tenants e seus prefixos (nomes, sobreposições, redundância, usuários do operador no caminho); os cadastros e usuários do operador; administradores de tenant e seus usuários; endereços de e-mail; cadastros, histórico, lista, exportação e importações por tenant, e a conferência do worker antes de cada cadastro; prefixos mudando de dono; a trilha de auditoria por tenant e seu CSV; acesso de suporte; tenants desativados e removidos; resultados da verificação de links por escopo; posse por tipo de chave; a linha de comando; as mensagens dos dois idiomas (mesmas chaves, toda chave da página e todo código de mensagem do servidor traduzidos) |
 | `portal/test_mail.py` | 138 | e-mail ([ADR 0004](adr/0004-e-mail.md)) contra um relay SMTP do próprio teste (`fake_smtp.py`: STARTTLS ou TLS com um certificado descartável, autenticação, recusas sob demanda): configurações que não combinam, envio com STARTTLS e TLS, cabeçalhos e a alternativa HTML, falhas temporárias e definitivas, credenciais nunca enviadas sem criptografia, o comando de teste; os textos dos dois idiomas; links de uso único (só o hash, uma vez, substituídos, expirados, apagados); `notBefore` e `defer()`; com o e-mail desligado nada muda; convites, recuperação de senha (a mesma resposta e o mesmo tempo para qualquer entrada, limites, quem não recebe nada), redefinições por um administrador, avisos de segurança, preferências, avisos de tarefas terminadas; novas tentativas, falhas, uma mensagem pulada para uma conta desativada no meio do caminho, nenhum endereço no diário; todo código de mensagem traduzido. Toda proteção conferida por mutação |
 | `portal/test_api.py` | 92 | a API das organizações e as suas chaves ([ADR 0005](adr/0005-api-das-organizacoes.md)): chaves criadas, listadas e revogadas só no escopo do próprio administrador (também em acesso de suporte), as regras de uma chave (nome, escopos, dias, prefixos, 20 ativas), a chave completa uma vez e só o hash guardado, o criador avisado por e-mail; autenticação (ausente, errada, revogada, expirada, organização desativada), sessões e chaves separadas; cadastros listados em páginas, lidos, gravados (regras GS1, cadastro de outro dono recusado, sem CORS), excluídos; etiquetas; escopos, os prefixos de uma chave, as chaves do operador; o diário (`api:<id>`); o limite de requisições e o último uso; o aviso de validade e a limpeza do worker; a descrição OpenAPI contra as rotas e as respostas; os dois idiomas. Toda proteção conferida por mutação |
+| `portal/test_requestlog.py` | 74 | o registro de requisições no portal ([ADR 0006](adr/0006-registro-de-requisicoes.md)): quem vê quais eventos (uma organização, os prefixos de um usuário, o operador, administradores do servidor com a organização de cada evento, um administrador do servidor limitado, acesso de suporte, um prefixo que muda de organização), filtros (resultado, dispositivo, automatizadas, código como GTIN-13, GTIN-14, prefixo, âncora; dias do `PORTAL_TIME_ZONE`), páginas com empates, o CSV (fórmulas protegidas, a coluna da organização, o diário), os agregados diários (por chave e da instalação, percentis, validade, dias terminados, substituição, a trava, o desligamento, um fuso desconhecido), requisições por dia por escopo, as chamadas da API das organizações (nunca o cadastro nem o segredo; quem as vê), a configuração, um registro ilegível, as mensagens dos dois idiomas |
 | `portal/test_jobs.py` | 70 | tarefas em segundo plano: estados, validade, retirada atômica, posse das gravações, workers calados devolvidos e falha depois de três tentativas, o anúncio do worker, `stalled`, a verificação de saúde, o laço do worker (erros, sinal de vida, parada e devolução, `JobLost`), o worker embutido e `PORTAL_WORKER`; importações pela API (fila, worker, diário, outro usuário, um worker que morre antes e depois de gravar um cadastro, uma falha); verificações de links pela API (todos os cadastros, uma lista, uma parada que cancela os endereços pendentes) |
 | `portal/test_worker_processes.py` | 13 | o `worker.py` como processos reais num MongoDB real (rodado pelo `test_store_mongodb.py`): dois workers dividem a fila sem pegar a mesma tarefa duas vezes; o SIGTERM devolve a tarefa e o outro worker a termina; depois de um SIGKILL, um worker novo continua a tarefa quando o sinal de vida fica velho |
-| `portal/test_store_mongodb.py` | 161 | num MongoDB real (`PORTAL_TEST_MONGO_URI`, só no CI): o usuário criado pelo `db_init.py` e suas permissões; `test_store.py`, `test_jobs.py` e `test_worker_processes.py` de novo como esse usuário (com suas linhas repassadas); o monitor de TTL, também para tarefas e anúncios antigos de workers |
+| `portal/test_store_mongodb.py` | 165 | num MongoDB real (`PORTAL_TEST_MONGO_URI`, só no CI): o usuário criado pelo `db_init.py` e suas permissões (lê o registro de requisições, não grava nele); `test_store.py`, `test_jobs.py` e `test_worker_processes.py` de novo como esse usuário (com suas linhas repassadas); o monitor de TTL, também para tarefas e anúncios antigos de workers |
 | `portal/test_registration.py` | 26 | §2.5.9 pela API do portal: qualificadores informativos (salvar, abrir, histórico, lista, exportar, importar), cadastros contra a regra 2, o cadastro da chave ao salvar e ao importar |
 | `portal/test_mail_e2e.py` | 37 | as telas de e-mail no Chromium com o relay do `fake_smtp.py`: recuperação na página de entrada (a mesma resposta para qualquer entrada), um convite pela tela de usuários, a página que um link abre (nome de usuário, o token fora da barra de endereço, senhas curtas e diferentes recusadas, a largura de um celular), um link usado duas vezes, um link aberto com outra pessoa conectada, uma recuperação encerrando a sessão aberta do usuário, Opções → E-mail mantido, uma redefinição por link, todo texto da página de entrada traduzido, e as mesmas telas com o e-mail desligado |
 | `portal/test_api_e2e.py` | 21 | a tela de chaves de API no Chromium: o administrador de uma organização cria uma chave (mostrada uma vez com um exemplo), um sistema a usa por `/portal/api/v1`, o cadastro mostra `api:<id>`, sair da tela retira a chave da página, revogar na tela a para na hora, a auditoria, os dois idiomas, a largura de um celular, as chaves do operador para um administrador do servidor, nenhuma tela para um editor |
 | `portal/test_portal_e2e.py` | 211 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular, com um worker embutido (também parado: as mensagens de fila e de "não está em execução", uma tarefa que falha); organizações, um administrador de tenant e o acesso de suporte nos dois idiomas; também roda sem o engine (166) |
 | `home/test_home.py` | 68 | página inicial com um nginx real (1.27.3 ou posterior: `NGINX_BIN` ou o PATH), sem o quadro da sintaxe, aviso da comunidade; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug; réplicas por um servidor DNS simulado que responde os nomes dos serviços com endereços `127.0.0.x`: o nginx inicia quando um serviço não tem endereço e o acha depois, reparte as requisições entre duas réplicas, acompanha uma terceira acrescentada e duas retiradas sem reiniciar, e nenhuma requisição falha enquanto réplicas param |
-| `install/test_install.sh` | 84 | instalador com simulações (Compose v2), incluindo um portal cujo worker de tarefas não sobe; quantidades de réplicas gravadas, mantidas, tomadas do ambiente e recusadas quando inválidas; o relay de e-mail (desligado por padrão, gravado com STARTTLS ou TLS, a senha mantida e nunca mostrada, desligado, um relay de teste definido à mão mantido, recusas); nenhuma configuração gravada duas vezes no `.env` |
+| `install/test_install.sh` | 87 | instalador com simulações (Compose v2), incluindo um portal cujo worker de tarefas não sobe; quantidades de réplicas gravadas, mantidas, tomadas do ambiente e recusadas quando inválidas; o fuso das contagens de requisições (o do servidor, do ambiente, recusado quando não é um nome); o relay de e-mail (desligado por padrão, gravado com STARTTLS ou TLS, a senha mantida e nunca mostrada, desligado, um relay de teste definido à mão mantido, recusas); nenhuma configuração gravada duas vezes no `.env` |
 | `install/test_deploy.py` | 59 | `docker compose config` das réplicas e quantidades de processos (padrões, valores do `.env`, um valor recusado, nomes mantidos pelo banco e pelo proxy); a versão do nginx da imagem do proxy e o `resolve` em todos os upstreams; o `CMD` gunicorn de cada imagem iniciado localmente (três processos, uma resposta, a requisição no log, parada limpa com SIGTERM em até 10 s); a chave de sessão reserva do portal com seis processos iniciando juntos e oito threads enquanto gravá-la é lento; o portal iniciado a partir dos arquivos que as linhas `COPY` do seu Dockerfile põem na imagem, entre eles todo módulo e arquivo de dados de `portal/`; uma versão do engine, só no `docker-compose.yml`, passada a toda imagem (ADR 0003) |
 
 **pytest e integração contínua.** O `dev-tests/test_programs.py` roda cada programa acima como um teste

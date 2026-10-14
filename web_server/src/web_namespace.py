@@ -8,6 +8,7 @@ from flask import request, abort, Response, send_from_directory, jsonify, make_r
 from flask_restx import Namespace, Resource
 
 import epc_binary
+import request_log
 import web_logic
 import web_pages
 
@@ -96,6 +97,8 @@ class DocOperationsNonGS1DigitalLinkRequest(Resource):
         return response
 
     def _handle_request(self, non_gs1dl_request: str) -> Response | tuple[Any, int]:
+        # the request log keeps the path only when no key can be read from it (ADR 0006)
+        request_log.note(path='/' + non_gs1dl_request, query=_extract_query_strings(request))
         if epc_binary.COMPRESSED_EPC.fullmatch(non_gs1dl_request):
             return _resolve_compressed_epc(non_gs1dl_request)
         try:
@@ -111,6 +114,9 @@ class DocOperationsNonGS1DigitalLinkRequest(Resource):
                 qualifiers = ['{0}/{1}'.format(list(d.keys())[0], quote(str(list(d.values())[0]), safe=''))
                               for d in decompress_result['qualifiers']]
                 qualifier_path = '/' + '/'.join(qualifiers) if qualifiers else None
+                request_log.note(form='compressed', ai=anchor_ai_code, value=anchor_ai,
+                                 qualifiers=[(list(d.keys())[0], str(list(d.values())[0]))
+                                             for d in decompress_result['qualifiers']])
                 return _process_response(doc_id, identifiers, qualifier_path or None,
                                          query_strings=_extract_query_strings(request))
             # Not a compressed GS1 Digital Link (nor anything else the resolver knows): 400, as section 2.4.1
@@ -218,6 +224,8 @@ def _resolve_path(anchor_ai_code: str, fallback_segments: list[str]) -> Response
     doc_id = f'{anchor_ai_code}_{anchor_ai}'
     # values percent-encoded, so that a '/' inside one stays inside it (web_logic decodes them)
     qualifier_path = ''.join('/' + quote(s, safe='') for s in segments[2:])
+    request_log.note(form='uri', ai=anchor_ai_code, value=anchor_ai, qualifiers=list(zip(segments[2::2], segments[3::2])),
+                     query=_extract_query_strings(request))
     logger.debug('Processed identifiers and qualifiers: %s', identifiers + qualifier_path)
     compress = request.args.get('compress', None)
     return _process_response(doc_id, identifiers, qualifier_path=qualifier_path or None, compress=compress,
@@ -233,6 +241,7 @@ def _resolve_compressed_epc(segment: str) -> Response | tuple[Any, int]:
     date, +AIDC data) in the query string, passed on to the target before the request's own query string
     (section 2.12). The hostname of a '++' EPC is not used. A string that does not decode is answered 400.
     """
+    request_log.note(form='epc')
     try:
         epc = epc_binary.decompress(segment)
     except epc_binary.EpcDecodeError as e:
@@ -249,6 +258,8 @@ def _resolve_compressed_epc(segment: str) -> Response | tuple[Any, int]:
     qualifier_path = ''.join('/' + quote(s, safe='') for s in segments[2:])
     own_query = _extract_query_strings(request)
     query_strings = '&'.join(q for q in (attributes, own_query) if q)
+    request_log.note(epc=epc.scheme, ai=segments[0], value=segments[1], query=query_strings,
+                     qualifiers=list(zip(segments[2::2], segments[3::2])))
     return _process_response(f'{segments[0]}_{segments[1]}', identifiers, qualifier_path=qualifier_path or None,
                              compress=request.args.get('compress', None), query_strings=query_strings)
 
@@ -378,6 +389,10 @@ def _append_query(href: str, query_strings: str) -> str:
 
 def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None = None, compress: str | None = None, query_strings: str = '') -> Response | tuple[Any, int]:
     accept_language_list, context, linktype, media_types_list, linkset_requested = _get_request_parameters()
+    asked = 'linkset' if linkset_requested or (linktype or '').strip() in ('all', 'linkset') else \
+        web_logic.normalise_linktype(linktype) or None
+    request_log.note(linkType=asked, languages=web_logic.language_ranges(accept_language_list),
+                     compress=True if compress else None)
 
     if compress:
         uncompressed_link = identifiers
@@ -391,6 +406,8 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
                                                          accept_language_list, context, media_types_list,
                                                          linkset_requested)
     status = response_data['response_status']
+    # private keys for the request log, never part of an answer (ADR 0006)
+    request_log.note(level=response_data.pop('_level', None), outcome=response_data.pop('_outcome', None))
 
     # ---------------------------------------------------------------- erros (400/404/500)
     if status >= 400:

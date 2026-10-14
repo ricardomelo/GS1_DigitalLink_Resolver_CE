@@ -338,7 +338,8 @@ def _validate_and_fetch_document(identifier: str, qualifier_path: str | None, do
                 return serialised_document
 
         # We have searched and there is no partial match that has template variables {0} or {1}
-        return {"response_status": 404, "error": f"No document found for anchor: {doc_id}"}
+        # (_outcome: for the request log only, removed by web_namespace before answering; ADR 0006)
+        return {"response_status": 404, "error": f"No document found for anchor: {doc_id}", "_outcome": "unknown"}
 
     except ValueError as e:
         logger.warning('_validate_and_fetch_document ValueError: %s', e)
@@ -596,16 +597,16 @@ def _handle_link_type(linktype: str | None, default_linktype: str, linkset: list
                         return {"response_status": 307, "data": default_link}
                     return {"response_status": 307, "data": pool[0]}
             if not default_link:
-                return {"response_status": 404, "error": "No default link at this level"}
+                return {"response_status": 404, "error": "No default link at this level", "_outcome": "noLink"}
             return {"response_status": 307, "data": default_link}
 
         key = _find_linktype_key(item, normalise_linktype(linktype))
         if key is None:
-            return {"response_status": 404, "error": f"Linktype not found in linkset: {linktype}"}
+            return {"response_status": 404, "error": f"Linktype not found in linkset: {linktype}", "_outcome": "noLink"}
         links = item[key] if isinstance(item[key], list) else [item[key]]
         pool, _ = choose_links([link for link in links if isinstance(link, dict)], ranges, context, media_types_list)
         if not pool:
-            return {"response_status": 404, "error": f"No link found for linktype: {linktype}"}
+            return {"response_status": 404, "error": f"No link found for linktype: {linktype}", "_outcome": "noLink"}
         if len(pool) == 1:
             return {"response_status": 307, "data": pool[0]}
         # Section 2.6.3, step 7: no best match among links of the same type (example 11)
@@ -755,7 +756,8 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
             applicable.append(entry)
 
         if not applicable:
-            return {"response_status": 404, "error": f"No links found for {gs1dl_identifier}{qualifier_path or ''}"}, None
+            return {"response_status": 404, "error": f"No links found for {gs1dl_identifier}{qualifier_path or ''}",
+                    "_outcome": "unknown"}, None
 
         applicable.sort(key=lambda e: e['_specificity'], reverse=True)
         identifier = _encoded_identifier(gs1dl_identifier)
@@ -778,12 +780,14 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
             if result['response_status'] == 300:
                 result['anchor'] = identifier + entry['_qualifier_path']   # the level whose links are offered
             if result['response_status'] in (300, 307):
+                # the level that answered, for the request log only (removed before answering; ADR 0006)
+                result['_level'] = entry['_qualifier_path']
                 return result, pointer
             if result['response_status'] >= 500:
                 return result, None
             last_result = result
 
-        return last_result or {"response_status": 404, "error": "No link found"}, None
+        return last_result or {"response_status": 404, "error": "No link found", "_outcome": "noLink"}, None
 
     except Exception as e:
         logger.error('read_document: Internal Server Error', exc_info=True)

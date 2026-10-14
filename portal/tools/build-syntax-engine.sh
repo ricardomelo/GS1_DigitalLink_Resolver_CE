@@ -6,12 +6,18 @@
 #   portal/tools/build-syntax-engine.sh <destination directory> [release]
 #
 # Used by portal/Dockerfile and by the development tests. Needs curl, tar, make and a C compiler.
-# The release is pinned so that validation does not change without a deliberate update; keep it in
-# step with the gs1encoder package the resolver installs (web_server/Dockerfile).
+# The release is written once, in docker-compose.yml (x-gs1-syntax-engine), and given to every image that
+# checks GS1 data (ADR 0003); portal/Dockerfile passes it as the second argument. Without it, the release is
+# read from the docker-compose.yml of this repository.
 set -euo pipefail
 
 DEST=${1:?destination directory}
-RELEASE=${2:-1.4.1}
+RELEASE=${2:-}
+if [[ -z $RELEASE ]]; then
+  COMPOSE_FILE="$(cd "$(dirname "$0")/../.." && pwd)/docker-compose.yml"
+  RELEASE=$(sed -n 's/^x-gs1-syntax-engine: *&gs1-syntax-engine *"\([^"]*\)".*/\1/p' "$COMPOSE_FILE" 2>/dev/null || true)
+  [[ -n $RELEASE ]] || { echo "No release given and none found in $COMPOSE_FILE" >&2; exit 1; }
+fi
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 

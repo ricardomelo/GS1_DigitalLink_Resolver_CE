@@ -729,12 +729,13 @@ one of (01), (02), (03), (255), (8006), (8026); (4321) needs an SSCC). Rather th
 keys and qualifiers, `portal/syntax.py` asks the GS1 Barcode Syntax Engine, the reference implementation
 the resolver also uses:
 
-- `portal/tools/build-syntax-engine.sh` downloads a pinned release (1.4.1, the one of the `gs1encoder`
-  package the resolver installs) from GitHub, builds the native library and copies it with GS1's Python
+- `portal/tools/build-syntax-engine.sh` downloads the release written in `docker-compose.yml`
+  (`x-gs1-syntax-engine`, the one of the `gs1encoder` package the resolver and the data entry API install;
+  ADR 0003) from GitHub, builds the native library and copies it with GS1's Python
   binding and the GS1 Barcode Syntax Dictionary of the same release to `/opt/gs1-syntax-engine`. The portal
   image does this in a separate build stage, so the compiler is not in the image; `GS1_SYNTAX_ENGINE_DIR`
-  points to the directory. Updating the release is a deliberate change: build, run the tests, update the
-  script.
+  points to the directory. Updating the release is a deliberate change of that one value: build, run the
+  tests (a weekly job opens an issue when a newer release exists).
 - The engine runs inside the portal process (a few microseconds per check); one instance is shared by the
   portal's threads behind a lock.
 - The engine builds the URI (`getDLuri`), so percent-encoding and order follow it; values may use any

@@ -15,7 +15,11 @@ RUN apt-get install -y nodejs nano
 ADD src/gs1-digitallink-toolkit /app/gs1-digitallink-toolkit
 WORKDIR /app/gs1-digitallink-toolkit
 RUN npm init es6
-RUN npm install --save gs1encoder
+# The GS1 Barcode Syntax Engine at the release docker-compose.yml gives every service (deliberate change to
+# the official image, which installed whatever release was newest; ADR 0003).
+ARG GS1_SYNTAX_ENGINE_RELEASE
+RUN test -n "$GS1_SYNTAX_ENGINE_RELEASE" || { echo "GS1_SYNTAX_ENGINE_RELEASE is not set: build with docker compose"; exit 1; } \
+ && npm install --save "gs1encoder@$GS1_SYNTAX_ENGINE_RELEASE"
 
 WORKDIR /app
 

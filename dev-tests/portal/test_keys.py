@@ -125,6 +125,14 @@ check("qualifiers returned in path order", qual("01", [("21", "S1"), ("22", "V1"
       == [("22", "V1"), ("10", "L1"), ("21", "S1")])
 
 engine = os.environ.get("GS1_SYNTAX_ENGINE")
+if engine and os.path.isdir(os.path.join(engine, "node_modules", "gs1encoder")):
+    # the comparison means something only against the release the resolver runs (docker-compose.yml)
+    sys.path.insert(0, os.path.join(HERE, ".."))
+    from engine_release import engine_release  # noqa: E402
+    with open(os.path.join(engine, "node_modules", "gs1encoder", "package.json"), encoding="utf-8") as fh:
+        installed = json.load(fh).get("version")
+    check(f"the engine compared with is the release of docker-compose.yml ({engine_release()})",
+          installed == engine_release(), installed)
 if engine and shutil.which("node") and os.path.isdir(os.path.join(engine, "node_modules", "gs1encoder")):
     script = """
 import {GS1encoder} from "gs1encoder";

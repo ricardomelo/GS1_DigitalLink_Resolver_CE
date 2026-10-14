@@ -1,11 +1,12 @@
 # GS1 Barcode Syntax Engine (native library, Python binding, syntax dictionary), built in a separate
 # stage so the compiler does not end up in the portal image. It validates GS1 Digital Link data
-# attributes (syntax.py); the release is pinned in tools/build-syntax-engine.sh.
+# attributes (syntax.py), at the release docker-compose.yml gives every service (ADR 0003).
 FROM python:3.12-slim-bookworm AS syntax-engine
+ARG GS1_SYNTAX_ENGINE_RELEASE
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates make gcc libc6-dev \
  && rm -rf /var/lib/apt/lists/*
 COPY tools/build-syntax-engine.sh /tmp/
-RUN bash /tmp/build-syntax-engine.sh /opt/gs1-syntax-engine
+RUN bash /tmp/build-syntax-engine.sh /opt/gs1-syntax-engine "$GS1_SYNTAX_ENGINE_RELEASE"
 
 FROM python:3.12-slim-bookworm
 

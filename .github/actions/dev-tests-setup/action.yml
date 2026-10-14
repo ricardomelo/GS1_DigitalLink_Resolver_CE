@@ -3,8 +3,8 @@
 # pieces its programs need. The versions are pinned here, in one place, so that a result does not change
 # without a deliberate update:
 #   * Python 3.12 and Node.js 24, as in the service images (web_server/Dockerfile, portal/Dockerfile);
-#   * gs1encoder (the resolver's GS1 Barcode Syntax Engine) on the release that
-#     portal/tools/build-syntax-engine.sh builds for the portal; keep the two in step;
+#   * gs1encoder (the resolver's GS1 Barcode Syntax Engine) and the portal's build of the engine, both on
+#     the release written in docker-compose.yml (x-gs1-syntax-engine), read from there;
 #   * epc-tds, the independent EPC library test_epc_binary.py compares with;
 #   * ajv-dist, the JSON schema validator GS1's resolver test suite loads in the browser;
 #   * GS1's resolver test suite at the commit the conformance review was made with;
@@ -45,7 +45,10 @@ runs:
       run: |
         {
           echo "DEV_TOOLS=$HOME/.cache/dev-tests"
-          echo "GS1ENCODER_VERSION=1.4.1"
+          # The GS1 Barcode Syntax Engine's release, written once in docker-compose.yml (ADR 0003)
+          release=$(sed -n 's/^x-gs1-syntax-engine: *&gs1-syntax-engine *"\([^"]*\)".*/\1/p' docker-compose.yml)
+          [[ -n $release ]] || { echo "::error::x-gs1-syntax-engine not found in docker-compose.yml"; exit 1; }
+          echo "GS1ENCODER_VERSION=$release"
           echo "EPC_TDS_VERSION=1.4.1"
           echo "AJV_DIST_VERSION=8.17.1"
           echo "GS1_TESTSUITE_COMMIT=32597c108ac1ecb9e90ce0081bb3a16e5a61e616"
@@ -107,13 +110,13 @@ runs:
       uses: actions/cache@v6
       with:
         path: ~/.cache/dev-tests/gs1se
-        # The script pins the engine's release: a change to it builds the engine again.
-        key: gs1se-${{ runner.os }}-${{ hashFiles('portal/tools/build-syntax-engine.sh') }}
+        # A change of the release or of the script builds the engine again.
+        key: gs1se-${{ runner.os }}-${{ env.GS1ENCODER_VERSION }}-${{ hashFiles('portal/tools/build-syntax-engine.sh') }}
 
     - if: inputs.syntax-engine == 'true' && steps.engine-cache.outputs.cache-hit != 'true'
       name: Build the portal's GS1 Barcode Syntax Engine
       shell: bash
-      run: bash portal/tools/build-syntax-engine.sh "$DEV_TOOLS/gs1se"
+      run: bash portal/tools/build-syntax-engine.sh "$DEV_TOOLS/gs1se" "$GS1ENCODER_VERSION"
 
     - if: inputs.syntax-engine == 'true'
       shell: bash

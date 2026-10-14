@@ -14,6 +14,9 @@ Checks, without Docker:
     and stops cleanly on SIGTERM within Docker's stop period;
   * the portal's fallback session key (secret.key, when PORTAL_SECRET_KEY is not set): processes starting
     at the same moment all end up with the same, complete key;
+  * one GS1 Barcode Syntax Engine release (ADR 0003): written once in docker-compose.yml, given to every image
+    that checks GS1 data as a build argument, used by their Dockerfiles, the portal's build script and the
+    CI set-up action without a release of their own, and the one portal/gs1_dictionary.json was made from;
   * the portal image's files: the portal server is started from a folder assembled by the COPY instructions
     of portal/Dockerfile (not from the source folder), and every module and data file of portal/ is in it,
     so a file left out of the image fails here rather than on a server.
@@ -70,6 +73,38 @@ def compose_config(env_lines: list[str]) -> tuple[dict | None, str]:
     if run.returncode:
         return None, run.stderr
     return json.loads(run.stdout), run.stderr
+
+
+ENGINE_SERVICES = ("web-service", "data-entry-service", "portal-service", "portal-worker", "portal-db-init")
+
+
+def release_checks() -> None:
+    """One release of the GS1 Barcode Syntax Engine for every service, written once (ADR 0003)."""
+    sys.path.insert(0, str(REPO / "dev-tests"))
+    from engine_release import engine_release  # noqa: PLC0415
+    release = engine_release()
+    config, err = compose_config([])
+    args = {name: ((config or {}).get("services", {}).get(name, {}).get("build") or {}).get("args", {})
+            for name in ENGINE_SERVICES}
+    check(all(a.get("GS1_SYNTAX_ENGINE_RELEASE") == release for a in args.values()),
+          f"engine release {release}: the build argument of every service that checks GS1 data", args or err)
+    for folder in ("web_server", "data_entry_server"):
+        text = (REPO / folder / "Dockerfile").read_text()
+        check("ARG GS1_SYNTAX_ENGINE_RELEASE\n" in text and 'gs1encoder@$GS1_SYNTAX_ENGINE_RELEASE' in text
+              and not re.search(r"npm install[^\n]*gs1encoder(\s|$)", text),
+              f"engine release: {folder}/Dockerfile installs gs1encoder at the build argument's release")
+    portal = (REPO / "portal" / "Dockerfile").read_text()
+    check("ARG GS1_SYNTAX_ENGINE_RELEASE" in portal and 'build-syntax-engine.sh /opt/gs1-syntax-engine "$GS1_SYNTAX_ENGINE_RELEASE"' in portal,
+          "engine release: portal/Dockerfile builds the engine at the build argument's release")
+    script = (REPO / "portal" / "tools" / "build-syntax-engine.sh").read_text()
+    action = (REPO / ".github" / "actions" / "dev-tests-setup" / "action.yml").read_text()
+    pinned = re.compile(r"(RELEASE=\$\{2:-\d|GS1ENCODER_VERSION=\d)")
+    check(not pinned.search(script) and not pinned.search(action) and "x-gs1-syntax-engine" in action,
+          "engine release: neither the build script nor the CI set-up action holds a release of its own")
+    dictionary = REPO / "portal" / "gs1_dictionary.json"
+    if dictionary.exists():
+        made_from = json.loads(dictionary.read_text()).get("release")
+        check(made_from == release, f"engine release: portal/gs1_dictionary.json made from {release}", made_from)
 
 
 def compose_checks() -> None:
@@ -308,6 +343,7 @@ def main() -> int:
         print("FAIL COMPOSE_BIN is not set to a Docker Compose v2 binary")
         return 1
     compose_checks()
+    release_checks()
     proxy_checks()
     no_db = "mongodb://127.0.0.1:9/?serverSelectionTimeoutMS=300"
     server_checks("web-service", REPO / "web_server" / "Dockerfile", REPO / "web_server" / "src",

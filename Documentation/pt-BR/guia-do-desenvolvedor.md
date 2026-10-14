@@ -72,8 +72,10 @@ vez só, com os nomes de contêiner oficiais ([ADR 0001](adr/0001-estado-do-port
 
 O Resolver e o portal validam com o **GS1 Barcode Syntax Engine**: o Resolver pelo pacote Node oficial
 `gs1encoder` (toda requisição), o portal pela biblioteca C e pelo binding Python da GS1 (atributos de
-dados). As regras de chaves e qualificadores do próprio portal espelham o engine e são comparadas com ele
-nos testes.
+dados). **Uma versão para todos**, escrita uma vez no `docker-compose.yml` (`x-gs1-syntax-engine`) e passada a
+toda imagem como argumento de build `GS1_SYNTAX_ENGINE_RELEASE` ([ADR 0003](adr/0003-regras-gs1-do-dicionario.md));
+a API de entrada de dados instala o mesmo pacote. As regras de chaves e qualificadores do próprio portal espelham
+o engine e são comparadas com ele nos testes.
 
 ## 2. Estrutura do repositório
 
@@ -259,7 +261,7 @@ ao nome final, então processos que iniciam juntos leem todos uma mesma chave co
 ### `syntax.py` — atributos de dados
 
 `Engine` (uma instância, `syntax.ENGINE`) carrega a `libgs1encoders.so` e o binding Python da GS1 de
-`GS1_SYNTAX_ENGINE_DIR` (compilados por `tools/build-syntax-engine.sh`, versão 1.4.1). Sem eles,
+`GS1_SYNTAX_ENGINE_DIR` (compilados por `tools/build-syntax-engine.sh` na versão do `docker-compose.yml`). Sem eles,
 `available` é falso e a opção some. A partir do Syntax Dictionary do engine (`parse_dictionary()`) ele
 monta os atributos permitidos na query string (AIs marcados com `?`), as famílias de AIs decimais
 (`decimal_families()`, `310n`…) e os AIs que pertencem ao caminho de cada chave. `describe()` alimenta o
@@ -550,7 +552,7 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `resolver/test_epc_binary.py` | 163 | decodificador de EPC em binário: exemplos do EPCB, todos os vetores do anexo E.3 do TDS 2.3 (`eh` e `ex`), dados +AIDC, hostnames `++`, recusas, RE3, artefatos do TDT contra o seu schema; 800 EPCs aleatórios comparados com o `epc-tds` quando `EPC_TDS` está definido (162 sem ele) |
 | `resolver/test_gs1_suite.py` | 215 | suíte de testes de Resolver da GS1, com o JavaScript sem alteração no Chromium, contra o código do web server por HTTP; uma versão em Python do seu `tester.php`; sete cenários; precisa de `GS1_RESOLVER_TESTSUITE` e `AJV_DIST` (pulado sem eles) |
 | `resolver/test_data_entry_api.py` | 53 | token em toda operação protegida; regras de cadastro do §2.5.9 e qualificadores informativos |
-| `portal/test_keys.py` | 137 | chaves e qualificadores, comparados com o GS1 Syntax Engine |
+| `portal/test_keys.py` | 138 | chaves e qualificadores, comparados com o GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | perfis, prefixos, usuários, histórico, auditoria |
 | `portal/test_sheet.py` | 43 | planilhas, limites por formato |
 | `portal/test_special_chars.py` | 57 | caracteres especiais |
@@ -567,7 +569,7 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `portal/test_portal_e2e.py` | 208 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular, com um worker embutido (também parado: as mensagens de fila e de "não está em execução", uma tarefa que falha); organizações, um administrador de tenant e o acesso de suporte nos dois idiomas; também roda sem o engine (164) |
 | `home/test_home.py` | 68 | página inicial com um nginx real (1.27.3 ou posterior: `NGINX_BIN` ou o PATH), sem o quadro da sintaxe, aviso da comunidade; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug; réplicas por um servidor DNS simulado que responde os nomes dos serviços com endereços `127.0.0.x`: o nginx inicia quando um serviço não tem endereço e o acha depois, reparte as requisições entre duas réplicas, acompanha uma terceira acrescentada e duas retiradas sem reiniciar, e nenhuma requisição falha enquanto réplicas param |
 | `install/test_install.sh` | 68 | instalador com simulações (Compose v2), incluindo um portal cujo worker de tarefas não sobe; quantidades de réplicas gravadas, mantidas, tomadas do ambiente e recusadas quando inválidas |
-| `install/test_deploy.py` | 53 | `docker compose config` das réplicas e quantidades de processos (padrões, valores do `.env`, um valor recusado, nomes mantidos pelo banco e pelo proxy); a versão do nginx da imagem do proxy e o `resolve` em todos os upstreams; o `CMD` gunicorn de cada imagem iniciado localmente (três processos, uma resposta, a requisição no log, parada limpa com SIGTERM em até 10 s); a chave de sessão reserva do portal com seis processos iniciando juntos e oito threads enquanto gravá-la é lento; o portal iniciado a partir dos arquivos que as linhas `COPY` do seu Dockerfile põem na imagem, entre eles todo módulo e arquivo de dados de `portal/` |
+| `install/test_deploy.py` | 58 | `docker compose config` das réplicas e quantidades de processos (padrões, valores do `.env`, um valor recusado, nomes mantidos pelo banco e pelo proxy); a versão do nginx da imagem do proxy e o `resolve` em todos os upstreams; o `CMD` gunicorn de cada imagem iniciado localmente (três processos, uma resposta, a requisição no log, parada limpa com SIGTERM em até 10 s); a chave de sessão reserva do portal com seis processos iniciando juntos e oito threads enquanto gravá-la é lento; o portal iniciado a partir dos arquivos que as linhas `COPY` do seu Dockerfile põem na imagem, entre eles todo módulo e arquivo de dados de `portal/`; uma versão do engine, só no `docker-compose.yml`, passada a toda imagem (ADR 0003) |
 
 **pytest e integração contínua.** O `dev-tests/test_programs.py` roda cada programa acima como um teste
 pytest (um subprocesso a partir da raiz do repositório): status 0 sem linha `FAIL` passa; caso contrário, o
@@ -589,10 +591,11 @@ O `.github/workflows/dev-tests.yml` roda um job por grupo, em paralelo, a cada p
 informativo (`continue-on-error`) até provar estabilidade; `e2e` e `install` começaram assim e são
 obrigatórios desde a etapa 4 do item 2.3. A action composta
 `.github/actions/dev-tests-setup` instala só o que o job pede e exporta as variáveis: Python 3.12 e Node.js 24
-como nas imagens; `gs1encoder`, `epc-tds` e `ajv-dist` em versões fixadas (cache pela versão); o engine do
-portal compilado pelo `portal/tools/build-syntax-engine.sh` (cache pelo script, que fixa o release); o
+como nas imagens; `gs1encoder`, `epc-tds` e `ajv-dist` em versões fixadas (cache pela versão, a do `gs1encoder`
+lida do `docker-compose.yml`); o engine do portal compilado pelo `portal/tools/build-syntax-engine.sh` nessa versão
+(cache pela versão e pelo script); o
 Chromium (cache pela versão do Playwright); a suíte da GS1 no commit `32597c1`; o nginx do Ubuntu para o instalador e o
-nginx 1.30.5 do nginx.org para o teste do proxy; Docker Compose v2.29.7. Mude uma versão ali, num lugar só; mantenha o `gs1encoder` no release que o script compila.
+nginx 1.30.5 do nginx.org para o teste do proxy; Docker Compose v2.29.7. Mude uma versão ali, num lugar só; a versão do engine não fica ali, e sim no `docker-compose.yml`.
 
 O `docs/screenshots.py` regenera as imagens do README e do guia do portal em inglês e em português a partir
 do portal real, com dados de exemplo (logotipo GS1 oculto). Versione só as imagens que realmente mudaram.
@@ -625,8 +628,9 @@ na versão em inglês e no README.
 TDS 14.5 que `_component()` não conheça; um esquema `++`, só de uma entrada em `PLUS_PLUS` enquanto o TDT
 não tiver artefato para ele. Acrescente o vetor do anexo E do TDS ao `test_epc_binary.py`.
 
-**O syntax engine.** Mude a tag em `portal/tools/build-syntax-engine.sh` e, para manter os dois engines
-juntos, fixe a mesma versão do `gs1encoder` em `web_server/Dockerfile`; rode todos os testes.
+**O syntax engine.** Mude a versão num lugar só, `x-gs1-syntax-engine` no `docker-compose.yml`; toda imagem, o
+script de build, o CI e os testes a seguem (o `test_deploy.py` falha quando algo guarda uma versão própria). Rode
+todos os testes e, no servidor, `docker compose up -d --build`.
 
 ## 15. Convenções
 

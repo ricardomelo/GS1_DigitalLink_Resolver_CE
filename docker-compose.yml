@@ -1,3 +1,10 @@
+# The release of the GS1 Barcode Syntax Engine and of its GS1 Barcode Syntax Dictionary, the same for every
+# service that checks GS1 data: the resolver and the data entry API (gs1encoder, WebAssembly) and the portal
+# (the C library, built from source). Written here only; each image receives it as a build argument
+# (Documentation/adr/0003-gs1-rules-from-the-dictionary.md). Change it on purpose, after the weekly check's
+# issue and a test run: portal/gs1_dictionary.json must be generated again from the new release.
+x-gs1-syntax-engine: &gs1-syntax-engine "1.4.1"
+
 services:
   database-service:
     build: './database_server'
@@ -20,7 +27,10 @@ services:
   # (default 2). They keep no state of their own, so they have no fixed container_name (Compose cannot
   # replicate a service with one); the proxy finds every replica through Docker's DNS (nginx.conf).
   data-entry-service:
-    build: './data_entry_server'
+    build:
+      context: './data_entry_server'
+      args:
+        GS1_SYNTAX_ENGINE_RELEASE: *gs1-syntax-engine
     env_file:
       - path: .env.example
         required: true
@@ -37,7 +47,10 @@ services:
       - resolver-internal-network
 
   web-service:
-    build: './web_server'
+    build:
+      context: './web_server'
+      args:
+        GS1_SYNTAX_ENGINE_RELEASE: *gs1-syntax-engine
     env_file:
       - path: .env.example
         required: true
@@ -56,7 +69,10 @@ services:
   portal-db-init:
     # One-shot: creates the portal's own MongoDB user (readWrite on PORTAL_DB_NAME only), or brings its
     # password and roles up to date, then exits. It alone receives the root MONGO_URI on the portal's side.
-    build: './portal'
+    build:
+      context: './portal'
+      args:
+        GS1_SYNTAX_ENGINE_RELEASE: *gs1-syntax-engine
     command: ["python", "db_init.py"]
     env_file:
       - path: .env.example
@@ -71,7 +87,10 @@ services:
 
   portal-service:
     # Link management portal for non-technical users (served at /portal/ by the proxy)
-    build: './portal'
+    build:
+      context: './portal'
+      args:
+        GS1_SYNTAX_ENGINE_RELEASE: *gs1-syntax-engine
     env_file:
       - path: .env.example
         required: true
@@ -103,7 +122,10 @@ services:
     # portal's database; same image and settings as the portal, another command. It finishes the record in
     # hand, hands its job back to the queue and stops on "docker compose stop" (stop_grace_period). Each
     # replica runs one job at a time; more replicas run more jobs in parallel.
-    build: './portal'
+    build:
+      context: './portal'
+      args:
+        GS1_SYNTAX_ENGINE_RELEASE: *gs1-syntax-engine
     command: ["python", "worker.py"]
     env_file:
       - path: .env.example

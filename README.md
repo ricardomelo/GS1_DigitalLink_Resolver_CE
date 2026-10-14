@@ -314,7 +314,7 @@ offered without 22, which the Syntax Engine refuses without a GTIN.
 
 **Data attributes** (§4.10): every AI the GS1 Barcode Syntax Dictionary marks as a GS1 Digital Link data
 attribute, which excludes (8200), (03) and (8014) as the standard does. The portal validates them with the
-GS1 Barcode Syntax Engine itself (release 1.4.1, the one the resolver uses), including the invalid pairs
+GS1 Barcode Syntax Engine itself (the release written in `docker-compose.yml`, the one the resolver uses), including the invalid pairs
 and mandatory associations of the GS1 General Specifications §4.13; values of any character of CSET 82
 are percent-encoded as needed. There is no fixed number of attributes per QR code: the label says when the
 content no longer fits the chosen QR version.

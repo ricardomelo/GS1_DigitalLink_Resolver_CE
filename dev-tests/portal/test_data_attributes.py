@@ -26,7 +26,7 @@ os.environ.update(DATA_ENTRY_URL=f"http://127.0.0.1:{DATA_ENTRY_PORT}/api", SESS
                   PORTAL_CONFIG_DIR=CONFIG, PORTAL_DB_NAME=f"devtest_data_attributes_{os.getpid()}",
                   PORTAL_ORIGIN="http://localhost", PORTAL_COOKIE_SECURE="false", RESOLVER_PUBLIC_URL=STEM)
 os.environ.setdefault("PORTAL_DB_URI", "mongomock://")   # a real MongoDB when PORTAL_DB_URI is set
-sys.path[:0] = [HERE, PORTAL]
+sys.path[:0] = [HERE, PORTAL, os.path.join(HERE, "..")]
 
 import mock_data_entry  # noqa: E402
 import app as portal  # noqa: E402
@@ -65,7 +65,9 @@ SSCC = "/00/" + SSCC_BODY + str(gs1.gtin_check_digit(SSCC_BODY))
 GLN = "/414/9506000134376"
 
 # ------------------------------------------------------------------ engine and dictionary
-check("engine release pinned to 1.4.1", E.release == "1.4.1", E.release)
+from engine_release import engine_release  # noqa: E402
+RELEASE = engine_release()
+check(f"engine release is the one of docker-compose.yml ({RELEASE})", E.release == RELEASE, E.release)
 check("dictionary: several hundred data attribute AIs, ranges expanded",
       len(E.attributes) > 500 and all(f"310{n}" in E.attributes for n in range(6)), len(E.attributes))
 check("dictionary: (8200), (03) and (8014) are not data attributes (URI Syntax 4.10)",
@@ -189,7 +191,7 @@ def client(name, password):
 root, other = client("root", "root-password-long"), client("other", "other-password-long")
 config = root.get("/portal/api/config").get_json()["dataAttributes"]
 check("config: data attributes offered with names, formats, limit and path AIs",
-      config["available"] and config["release"] == "1.4.1" and config["max"] == syntax.MAX_ATTRIBUTES
+      config["available"] and config["release"] == RELEASE and config["max"] == syntax.MAX_ATTRIBUTES
       and {"ai": "17", "title": "USE BY or EXPIRY", "components": E.attributes["17"]["components"]} in config["ais"]
       and config["inPath"]["01"] == ["10", "21", "22", "235"]
       and any(a["ai"] == "310n" and a["family"] and a["decimals"] == 5 for a in config["ais"]),

@@ -70,8 +70,10 @@ run once, under their official container names ([ADR 0001](adr/0001-portal-state
 
 Both the resolver and the portal validate with the **GS1 Barcode Syntax Engine**: the resolver through the
 official Node package `gs1encoder` (every request), the portal through the C library and GS1's Python
-binding (data attributes). The portal's own key and qualifier rules mirror the engine and are compared
-with it by the tests.
+binding (data attributes). **One release for all of them**, written once in `docker-compose.yml`
+(`x-gs1-syntax-engine`) and given to every image as the build argument `GS1_SYNTAX_ENGINE_RELEASE`
+([ADR 0003](adr/0003-gs1-rules-from-the-dictionary.md)); the data entry API installs the same package. The
+portal's own key and qualifier rules mirror the engine and are compared with it by the tests.
 
 ## 2. Repository layout
 
@@ -253,7 +255,7 @@ its own and links it to the final name, so processes starting together all read 
 ### `syntax.py` — data attributes
 
 `Engine` (one instance, `syntax.ENGINE`) loads `libgs1encoders.so` and GS1's Python binding from
-`GS1_SYNTAX_ENGINE_DIR` (built by `tools/build-syntax-engine.sh`, release 1.4.1). Without it `available` is
+`GS1_SYNTAX_ENGINE_DIR` (built by `tools/build-syntax-engine.sh` at the release of `docker-compose.yml`). Without it `available` is
 false and the option is hidden. From the engine's Syntax Dictionary (`parse_dictionary()`) it builds the
 attributes allowed in a query string (AIs flagged `?`), the families of decimal AIs (`decimal_families()`,
 `310n`…) and the AIs that belong in each key's path. `describe()` feeds `/config`; `resolve_decimal()`
@@ -531,7 +533,7 @@ run against it. Setup and commands are in
 | `resolver/test_epc_binary.py` | 163 | EPC binary decoder: EPCB examples, every vector of TDS 2.3 annex E.3 (`eh` and `ex`), +AIDC data, `++` hostnames, refusals, RE3, TDT artefacts against their schema; 800 random EPCs against `epc-tds` when `EPC_TDS` is set (162 without) |
 | `resolver/test_gs1_suite.py` | 215 | GS1's resolver test suite, its JavaScript unchanged in Chromium, against the web server code over HTTP; a Python version of its `tester.php`; seven scenarios; needs `GS1_RESOLVER_TESTSUITE` and `AJV_DIST` (skipped without) |
 | `resolver/test_data_entry_api.py` | 53 | token on every protected operation; registration rules of §2.5.9 and informative qualifiers |
-| `portal/test_keys.py` | 137 | keys and qualifiers, compared with the GS1 Syntax Engine |
+| `portal/test_keys.py` | 138 | keys and qualifiers, compared with the GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | roles, prefixes, users, history, audit |
 | `portal/test_sheet.py` | 43 | spreadsheets, limits per format |
 | `portal/test_special_chars.py` | 57 | special characters |
@@ -548,7 +550,7 @@ run against it. Setup and commands are in
 | `portal/test_portal_e2e.py` | 208 | the portal in Chromium against `mock_data_entry.py`, desktop and phone, with an embedded worker (also stopped: the queue and "not running" messages, a job that fails); organisations, a tenant administrator and support access in both languages; also run without the engine (164) |
 | `home/test_home.py` | 68 | home page through a real nginx (1.27.3 or later: `NGINX_BIN` or the PATH), no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts; replicas through a stub DNS server answering the service names with `127.0.0.x` addresses: nginx starts while a service has no address and finds it later, shares the requests between two replicas, follows a third added and two removed without a restart, and no request fails while replicas stop |
 | `install/test_install.sh` | 68 | installer through shims (Compose v2), including a portal whose job worker does not start; replica counts written, kept, taken from the environment and refused when invalid |
-| `install/test_deploy.py` | 53 | `docker compose config` of the replicas and process counts (defaults, values from `.env`, a refused value, names kept by the database and the proxy); the proxy image's nginx version and `resolve` in every upstream; each image's gunicorn `CMD` started locally (three processes, an answer, the request logged, a clean stop on SIGTERM within 10 s); the portal's fallback session key with six processes starting together and eight threads while writing it is slow; the portal started from the files the `COPY` lines of its Dockerfile put in the image, every module and data file of `portal/` among them |
+| `install/test_deploy.py` | 58 | `docker compose config` of the replicas and process counts (defaults, values from `.env`, a refused value, names kept by the database and the proxy); the proxy image's nginx version and `resolve` in every upstream; each image's gunicorn `CMD` started locally (three processes, an answer, the request logged, a clean stop on SIGTERM within 10 s); the portal's fallback session key with six processes starting together and eight threads while writing it is slow; the portal started from the files the `COPY` lines of its Dockerfile put in the image, every module and data file of `portal/` among them; one engine release, in `docker-compose.yml` only, given to every image (ADR 0003) |
 
 **pytest and continuous integration.** `dev-tests/test_programs.py` runs each program above as one pytest
 test (a subprocess from the repository root): exit status 0 without a `FAIL` line passes; otherwise the
@@ -570,11 +572,11 @@ informative (`continue-on-error`) until it proves stable; `e2e` and `install` st
 required since step 4 of item 2.3. The composite action
 `.github/actions/dev-tests-setup` installs only what a job asks for and exports the variables: Python 3.12
 and Node.js 24 as in the images; `gs1encoder`, `epc-tds` and `ajv-dist` at pinned versions (cache keyed by
-the versions); the portal's engine built by `portal/tools/build-syntax-engine.sh` (cache keyed by the
-script, which pins the release); Chromium (cache keyed by the Playwright version); GS1's suite at commit
+the versions, `gs1encoder`'s read from `docker-compose.yml`); the portal's engine built by
+`portal/tools/build-syntax-engine.sh` at that release (cache keyed by the release and the script); Chromium (cache keyed by the Playwright version); GS1's suite at commit
 `32597c1`; Ubuntu's nginx for the installer, nginx 1.30.5 from nginx.org for the proxy test; Docker
-Compose v2.29.7. Change a version there, in one place; keep `gs1encoder` on the
-release the script builds.
+Compose v2.29.7. Change a version there, in one place; the engine's release is not there but in
+`docker-compose.yml`.
 
 `docs/screenshots.py` regenerates the images of the README and of the user guide, in English and in
 Portuguese, from the real portal with example data (GS1 logo hidden). Commit only images that really changed.
@@ -606,8 +608,9 @@ need no code. A `+` scheme needs code only for a Table F format or TDS 14.5 meth
 does not know; a `++` scheme only an entry in `PLUS_PLUS` while TDT has no artefact for it. Add its TDS
 annex E vector to `test_epc_binary.py`.
 
-**The syntax engine.** Change the tag in `portal/tools/build-syntax-engine.sh` and, to keep both engines
-together, pin the same `gs1encoder` version in `web_server/Dockerfile`; run every test.
+**The syntax engine.** Change the release in one place, `x-gs1-syntax-engine` in `docker-compose.yml`; every
+image, the build script, CI and the tests follow it (`test_deploy.py` fails when something holds a release of
+its own). Run every test, and on the server `docker compose up -d --build`.
 
 ## 15. Conventions
 

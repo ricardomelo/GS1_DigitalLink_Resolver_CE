@@ -61,7 +61,7 @@ push and pull request to `gs1br/develop`, with `DEV_TESTS_STRICT=1`; the job `da
 service container and runs the `portal` and `database` groups on it (`PORTAL_DB_URI` and
 `PORTAL_TEST_MONGO_URI` set to it); `database` is informative (`e2e` and `install` were too, until step 4 of
 item 2.3). `.github/actions/dev-tests-setup/action.yml` prepares the runner and holds every pinned version
-(Python 3.12, Node.js 24, `gs1encoder` 1.4.1, `epc-tds` 1.4.1, `ajv-dist` 8.17.1, GS1's suite at `32597c1`,
+(Python 3.12, Node.js 24, `gs1encoder` at the release of `docker-compose.yml`, `epc-tds` 1.4.1, `ajv-dist` 8.17.1, GS1's suite at `32597c1`,
 Docker Compose v2.29.7, nginx 1.30.5 from nginx.org for the `home` job); the engines, npm packages and Chromium are cached. The check counts of each job are on the
 run's summary page.
 

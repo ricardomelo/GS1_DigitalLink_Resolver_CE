@@ -419,7 +419,7 @@ Sem framework e sem etapa de build: HTML, CSS e JavaScript puros servidos como a
 | Arquivo | Papel |
 |---|---|
 | `index.html` | a página do portal: cabeçalho com menus de idioma e de usuário, editor (três passos, outros cadastros, histórico), bloco da etiqueta, lista de registros, usuários, auditoria, janelas (opções, importação), o modelo de uma linha de destino |
-| `login.html`, `login.js` | página de entrada |
+| `login.html`, `login.js` | página de entrada; com e-mail também *Esqueceu a senha?* e a página que um link abre (`#invite=…` / `#reset=…`: o token é lido, retirado da barra de endereço na hora e enviado; um link colado numa página aberta é tratado pelo `hashchange`) |
 | `password.js` | botão de mostrar/ocultar em cada campo de senha |
 | `i18n.js` | catálogo de mensagens (pt-BR, en-GB) e motor de tradução |
 | `app.js` | todo o resto; um mapa das seções está no início do arquivo |
@@ -439,6 +439,12 @@ mesmo catálogo.
 das conferências, padrões, tamanhos e da ordem que o servidor manda em `CONFIG.rules` (`gs1.browser_rules()`,
 montado do dicionário); nada no `app.js` repete um tamanho ou um formato. O servidor confere de novo e é a
 autoridade.
+
+**E-mail ([ADR 0004](adr/0004-e-mail.md)).** `body[data-mail="on"]` (de `CONFIG.mail.enabled`) mostra os
+elementos `.needs-mail`: a caixa de convite do formulário de novo usuário, a seção *E-mail* de Opções
+(`fillPreferences()`, `savePreferences()`). `mailLink(u)` diz se uma redefinição vai por e-mail (a pergunta e o
+texto do botão seguem ela). `init()` encerra a sessão e volta à página de entrada quando encontra um fragmento de
+convite ou recuperação (um link aberto com alguém conectado: a página de entrada redirecionou para cá).
 
 **Lista de registros.** `loadRecords()` busca `/records` uma vez; `renderRecords()` filtra no navegador por
 tipo de chave (`#records-key`), qualificador (`qualifierMatches()`), autor, problemas de link e texto
@@ -644,7 +650,8 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `portal/test_worker_processes.py` | 13 | o `worker.py` como processos reais num MongoDB real (rodado pelo `test_store_mongodb.py`): dois workers dividem a fila sem pegar a mesma tarefa duas vezes; o SIGTERM devolve a tarefa e o outro worker a termina; depois de um SIGKILL, um worker novo continua a tarefa quando o sinal de vida fica velho |
 | `portal/test_store_mongodb.py` | 161 | num MongoDB real (`PORTAL_TEST_MONGO_URI`, só no CI): o usuário criado pelo `db_init.py` e suas permissões; `test_store.py`, `test_jobs.py` e `test_worker_processes.py` de novo como esse usuário (com suas linhas repassadas); o monitor de TTL, também para tarefas e anúncios antigos de workers |
 | `portal/test_registration.py` | 26 | §2.5.9 pela API do portal: qualificadores informativos (salvar, abrir, histórico, lista, exportar, importar), cadastros contra a regra 2, o cadastro da chave ao salvar e ao importar |
-| `portal/test_portal_e2e.py` | 210 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular, com um worker embutido (também parado: as mensagens de fila e de "não está em execução", uma tarefa que falha); organizações, um administrador de tenant e o acesso de suporte nos dois idiomas; também roda sem o engine (164) |
+| `portal/test_mail_e2e.py` | 37 | as telas de e-mail no Chromium com o relay do `fake_smtp.py`: recuperação na página de entrada (a mesma resposta para qualquer entrada), um convite pela tela de usuários, a página que um link abre (nome de usuário, o token fora da barra de endereço, senhas curtas e diferentes recusadas, a largura de um celular), um link usado duas vezes, um link aberto com outra pessoa conectada, uma recuperação encerrando a sessão aberta do usuário, Opções → E-mail mantido, uma redefinição por link, todo texto da página de entrada traduzido, e as mesmas telas com o e-mail desligado |
+| `portal/test_portal_e2e.py` | 211 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular, com um worker embutido (também parado: as mensagens de fila e de "não está em execução", uma tarefa que falha); organizações, um administrador de tenant e o acesso de suporte nos dois idiomas; também roda sem o engine (166) |
 | `home/test_home.py` | 68 | página inicial com um nginx real (1.27.3 ou posterior: `NGINX_BIN` ou o PATH), sem o quadro da sintaxe, aviso da comunidade; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug; réplicas por um servidor DNS simulado que responde os nomes dos serviços com endereços `127.0.0.x`: o nginx inicia quando um serviço não tem endereço e o acha depois, reparte as requisições entre duas réplicas, acompanha uma terceira acrescentada e duas retiradas sem reiniciar, e nenhuma requisição falha enquanto réplicas param |
 | `install/test_install.sh` | 84 | instalador com simulações (Compose v2), incluindo um portal cujo worker de tarefas não sobe; quantidades de réplicas gravadas, mantidas, tomadas do ambiente e recusadas quando inválidas; o relay de e-mail (desligado por padrão, gravado com STARTTLS ou TLS, a senha mantida e nunca mostrada, desligado, um relay de teste definido à mão mantido, recusas); nenhuma configuração gravada duas vezes no `.env` |
 | `install/test_deploy.py` | 59 | `docker compose config` das réplicas e quantidades de processos (padrões, valores do `.env`, um valor recusado, nomes mantidos pelo banco e pelo proxy); a versão do nginx da imagem do proxy e o `resolve` em todos os upstreams; o `CMD` gunicorn de cada imagem iniciado localmente (três processos, uma resposta, a requisição no log, parada limpa com SIGTERM em até 10 s); a chave de sessão reserva do portal com seis processos iniciando juntos e oito threads enquanto gravá-la é lento; o portal iniciado a partir dos arquivos que as linhas `COPY` do seu Dockerfile põem na imagem, entre eles todo módulo e arquivo de dados de `portal/`; uma versão do engine, só no `docker-compose.yml`, passada a toda imagem (ADR 0003) |
@@ -653,7 +660,7 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 pytest (um subprocesso a partir da raiz do repositório): status 0 sem linha `FAIL` passa; caso contrário, o
 relatório mostra as linhas `FAIL` e o fim da saída; um programa que só imprimiu `SKIP` é pulado. Marcadores
 os agrupam: `resolver` (Resolver, EPC binário, API de cadastro, suíte da GS1), `portal` (os programas do
-portal sem navegador), `e2e` (`test_portal_e2e.py` com e sem o engine, `test_session.py`), `home`, `install`
+portal sem navegador), `e2e` (`test_portal_e2e.py` com e sem o engine, `test_session.py`, `test_mail_e2e.py`), `home`, `install`
 (o instalador por `sudo` sem senha quando não se é root, e o `test_deploy.py`), `database` (`test_store_mongodb.py`). O `dev-tests/conftest.py` impede que o pytest importe os
 programas, registra os marcadores e imprime ao final a contagem de verificações de cada programa (e também
 no resumo da execução do GitHub Actions). Com `DEV_TESTS_STRICT=1`, um programa falha quando uma variável de
@@ -681,7 +688,8 @@ Chromium (cache pela versão do Playwright); a suíte da GS1 no commit `32597c1`
 nginx 1.30.5 do nginx.org para o teste do proxy; Docker Compose v2.29.7. Mude uma versão ali, num lugar só; a versão do engine não fica ali, e sim no `docker-compose.yml`.
 
 O `docs/screenshots.py` regenera as imagens do README e do guia do portal em inglês e em português a partir
-do portal real, com dados de exemplo (logotipo GS1 oculto). Versione só as imagens que realmente mudaram.
+do portal real, com dados de exemplo (logotipo GS1 oculto). Versione só as imagens que realmente mudaram. As
+imagens de e-mail (`mail_images()`) são feitas com o e-mail ligado só para elas, contra o relay do `fake_smtp.py`.
 
 ## 14. Como estender
 

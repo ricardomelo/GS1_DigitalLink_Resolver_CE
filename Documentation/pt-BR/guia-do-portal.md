@@ -83,8 +83,9 @@ organização; os administradores do operador veem ali *Administrador do servido
 ![Página de entrada](../images/guide/pt-BR/sign-in.png)
 
 Abra o endereço do portal (por exemplo `https://id.example.org/portal/`), informe **Usuário** e **Senha** e
-clique em **Entrar**. Se você não tem acesso ou esqueceu a senha, fale com o administrador do Resolver: o
-portal não tem recuperação de senha por conta própria.
+clique em **Entrar**. Se você não tem acesso, fale com o administrador do Resolver. Se esqueceu a senha, use
+**Esqueceu a senha?** quando a página oferecer (instalações com e-mail, abaixo); senão, peça ao administrador uma
+nova senha temporária.
 
 - **Senha temporária.** Uma conta nova, ou cuja senha foi redefinida por um administrador, começa com uma
   senha temporária. Depois de entrar, o portal pede que você defina a sua senha antes de continuar.
@@ -102,6 +103,29 @@ portal não tem recuperação de senha por conta própria.
   sem perder o que foi digitado. O portal começa no idioma do navegador e lembra a sua escolha; as páginas
   do próprio Resolver e a página inicial seguem a mesma escolha.
 
+### Senha esquecida e convites (instalações com e-mail)
+
+![Recuperar a senha](../images/guide/pt-BR/password-recovery.png)
+
+Quando a instalação envia e-mail, a página de entrada mostra **Esqueceu a senha?**. Informe o seu **usuário ou
+e-mail** e clique em **Enviar o link**. A página dá sempre a mesma resposta, havendo ou não uma conta, para não
+revelar a ninguém quem tem conta aqui. Se a sua conta tem endereço de e-mail, chega uma mensagem com um link que
+vale por 60 minutos (confira a pasta de spam). Só o link mais recente funciona, e uma vez só. Depois de três
+pedidos para o mesmo usuário, a página pede para esperar 15 minutos.
+
+![Escolha a sua senha](../images/guide/pt-BR/choose-password.png)
+
+O link abre **Escolha uma nova senha** com o seu usuário: digite a nova senha duas vezes (pelo menos 12
+caracteres) e clique em **Salvar a senha**. O portal volta à página de entrada com o seu usuário preenchido; as
+sessões abertas com a senha antiga terminam, e uma mensagem avisa que a senha foi trocada. Um **convite** de um
+administrador abre a mesma página, com o título *Bem-vindo: escolha a sua senha*, e vale por 72 horas. Se a
+página disser que o link não vale mais, ele expirou, já foi usado ou um mais novo foi enviado: peça outro. Se
+outra pessoa estiver conectada no mesmo navegador quando você abrir um link, essa sessão é encerrada antes.
+
+O portal também escreve para você, sempre, quando a sua senha ou o seu endereço de e-mail é trocado (para o
+endereço antigo e para o novo) e quando a sua conta é bloqueada depois de cinco senhas erradas: se não foi você,
+use **Esqueceu a senha?** imediatamente e avise o seu administrador.
+
 ### O menu do usuário
 
 ![Menu do usuário](../images/guide/pt-BR/user-menu.png)
@@ -117,6 +141,16 @@ administradores), **Opções** e **Sair**.
 **Opções** abre o formulário de senha. Preencha a **Senha atual**, a **Nova senha** (pelo menos 12
 caracteres) e **Repita a nova senha**, depois clique em **Salvar senha**. As outras sessões abertas com a
 sua conta (outro navegador, outro computador) são encerradas; a sessão atual continua.
+
+### Preferências de e-mail
+
+![Opções: e-mail](../images/guide/pt-BR/options-email.png)
+
+Com e-mail, **Opções** mostra também **E-mail**: o endereço para onde vão as mensagens (só um administrador pode
+trocá-lo), o **Idioma das mensagens** (no início, o idioma da página com que você entra) e as mensagens que você
+quer. Os avisos de segurança são sempre enviados; **Quando uma importação ou verificação de links que eu iniciei
+terminar** é opcional, útil para importações longas e para **Verificar os links de todos os cadastros**. Clique
+em **Salvar preferências**.
 
 ## 4. O editor em uma olhada
 
@@ -514,16 +548,25 @@ vazio significa todos os identificadores) e clique em **Criar usuário**. O port
 temporária uma única vez**: copie-a (**Copiar senha**) e envie por um canal seguro. O usuário deverá
 trocá-la no primeiro acesso.
 
+![Convidar um usuário por e-mail](../images/guide/pt-BR/users-invite.png)
+
+**Convites por e-mail.** Quando a instalação envia e-mail, digite o **E-mail** do usuário e mantenha **Enviar
+convite por e-mail** marcado: nenhuma senha aparece; o usuário recebe um link, válido por 72 horas, para escolher
+a própria senha (seção 3), e a lista mostra *Convidado — aguardando a senha* até lá (**Reenviar convite** gera um
+novo link). Desmarque a caixa, ou deixe o endereço vazio, para receber uma senha temporária como antes.
+
 **Usuários cadastrados** lista cada usuário com perfil, prefixos, situação (*Ativo*, *Desativado*,
-*Aguardando troca da senha temporária*) e último acesso. Para cada um:
+*Aguardando troca da senha temporária*, *Convidado — aguardando a senha*) e último acesso. Para cada um:
 
 - mude o perfil ou os prefixos e clique em **Salvar**;
-- **Redefinir senha** — uma nova senha temporária, mostrada uma vez; as sessões abertas do usuário são
-  encerradas;
+- **Redefinir senha** — a senha do usuário deixa de valer na hora e as sessões abertas são encerradas; com
+  e-mail e endereço, o usuário recebe um link para escolher uma nova; senão, uma nova senha temporária aparece
+  uma vez;
 - **Desativar** / **Reativar** — um usuário desativado não consegue entrar, e a conta é mantida;
 - **Excluir** — apaga a conta; as alterações do usuário continuam no histórico e na auditoria.
 
-Cada usuário pode ter um **E-mail** (opcional, único; ainda não é usado). Você não pode desativar, rebaixar ou
+Cada usuário pode ter um **E-mail** (opcional, único), para onde vão convites, links de recuperação e avisos de
+segurança; trocá-lo avisa o endereço antigo e o novo. Você não pode desativar, rebaixar ou
 excluir o seu próprio usuário, e o portal sempre mantém pelo menos um administrador do servidor ativo. Usuários
 criados antes de existirem perfis são administradores.
 
@@ -603,6 +646,8 @@ suporte.
 | *O Resolver não respondeu.* | Tente de novo em alguns minutos; se continuar, avise o administrador. |
 | *Sua sessão terminou. Entre novamente.* | Entre de novo; alterações não salvas no formulário se perdem. |
 | *Muitas tentativas sem sucesso. Tente de novo em N minuto(s).* | Aguarde, ou peça a um administrador para redefinir a sua senha. |
+| *Se houver uma conta com este usuário ou e-mail, uma mensagem … foi enviada.* | Confira a caixa de entrada e a pasta de spam; nada chega se a conta não tem endereço: peça a um administrador. |
+| *Este link não vale mais…* | Peça um novo (**Esqueceu a senha?**, ou ao administrador para um convite); só o link mais recente funciona, uma vez. |
 
 ## 17. Glossário
 

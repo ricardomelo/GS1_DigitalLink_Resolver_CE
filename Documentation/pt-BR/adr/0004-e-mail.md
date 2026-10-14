@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Situação | **Aceita** (14 de outubro de 2026). Implementada em três etapas: 1 (este registro), 2 (envio, links de uso único, notificações e suas configurações no servidor; seção 3.8), 3 (telas) |
+| Situação | **Aceita** (14 de outubro de 2026). Implementada em três etapas: 1 (este registro), 2 (envio, links de uso único, notificações e suas configurações no servidor; seção 3.8), 3 (telas; seção 3.9) |
 | Item do backlog | 3.1 — e-mail |
 | Decidido por | o dono do branch, que pediu a opção recomendada em todos os pontos da seção 4 enquanto estava ausente |
 | Inglês | [ADR 0004 in English](../../adr/0004-e-mail.md) (versão de referência) |
@@ -212,6 +212,22 @@ Como projetado, com estes detalhes resolvidos pela implementação:
   link; credenciais enviadas sem STARTTLS; um aviso de bloqueio a cada falha; o endereço no diário; categorias
   opcionais ignoradas; o endereço antigo não avisado; sem limite de recuperação; o link de uma conta desativada
   aceito.
+
+### 3.9 Como implementado na etapa 3
+
+- A página de entrada (`login.html`, `login.js`) tem três formulários: entrada, recuperação e o que um link abre.
+  O token é tirado do fragmento e retirado da barra de endereço antes da primeira requisição; um link colado numa
+  página de entrada aberta muda só o fragmento e é tratado pelo `hashchange`. Um link aberto com alguém conectado
+  no mesmo navegador chega à página do portal (a página de entrada redireciona para lá, mantendo o fragmento): a
+  página encerra essa sessão e volta.
+- A tela de usuários ganha *Enviar convite por e-mail* (marcado por padrão), a situação *Convidado — aguardando a
+  senha* e *Reenviar convite*; a pergunta antes de uma redefinição diz se virá um link ou uma senha temporária.
+  Opções ganha a seção *E-mail*. Tudo o que é novo só aparece quando o `/config` diz que o e-mail está ligado
+  (`body[data-mail]`), então uma instalação sem relay fica como antes.
+- O dono estava ausente: em vez de mock-ups antes, imagens das telas prontas estão nos dois guias do usuário
+  (`password-recovery.png`, `choose-password.png`, `users-invite.png`, `options-email.png`) para a revisão dele.
+- `test_mail_e2e.py` (37 verificações) conduz as telas no Chromium contra o relay dos testes; a retirada do token
+  da barra de endereço é conferida por mutação.
 
 ## 4. Opções consideradas
 

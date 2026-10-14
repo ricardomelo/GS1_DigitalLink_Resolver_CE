@@ -1454,7 +1454,8 @@ function userRow(u) {
   email.setAttribute("aria-label", t("users.email"));
   email.placeholder = t("users.emailPlaceholder");
   cell("users.email", email);
-  cell("users.state", t(u.disabled ? "users.disabled" : u.mustChange ? "users.mustChange" : "users.active"));
+  cell("users.state", t(u.disabled ? "users.disabled" : u.invited ? "users.invitedState"
+                        : u.mustChange ? "users.mustChange" : "users.active"));
   cell("users.lastLogin", formatWhen(u.lastLogin));
   const actions = document.createElement("div");
   actions.className = "user-actions";
@@ -1468,12 +1469,17 @@ function userRow(u) {
   button("users.save", () => saveUser(u.username, { role: role.value, prefixes: prefixesFrom(prefixes.value),
                                                     email: email.value.trim() }), "btn-secondary");
   if (u.username !== CONFIG.user) {                // your own password: user menu → Options
-    button("users.resetPassword", () => resetUser(u.username));
+    button(mailLink(u) && u.invited ? "users.resendInvite" : "users.resetPassword", () => resetUser(u));
     button(u.disabled ? "users.enable" : "users.disable", () => saveUser(u.username, { disabled: !u.disabled }));
     button("users.remove", () => removeUser(u.username), "btn-danger-ghost");
   }
   cell("users.actions", actions);
   return tr;
+}
+
+/* Whether a reset of this user goes by e-mail (a link) rather than a temporary password shown here. */
+function mailLink(u) {
+  return Boolean(CONFIG.mail?.enabled && u.email && !u.disabled && u.username !== CONFIG.user);
 }
 
 async function createUser(event) {
@@ -1483,10 +1489,11 @@ async function createUser(event) {
     const result = await api("POST", "users", {
       username: $("#new-user-name").value.trim(), role: $("#new-user-role").value,
       prefixes: prefixesFrom($("#new-user-prefixes").value), email: $("#new-user-email").value.trim(),
+      invite: Boolean(CONFIG.mail?.enabled && $("#new-user-invite").checked),
       ...(CONFIG.serverAdmin ? { tenant: $("#new-user-tenant").value } : {}),
     });
-    usersStatus("ok", "users.created", result.params);
-    showTemporaryPassword("users.tempPasswordNew", result.params.user, result.password);
+    usersStatus("ok", result.code, result.params);
+    if (result.password) showTemporaryPassword("users.tempPasswordNew", result.params.user, result.password);
     const tenant = $("#new-user-tenant").value;            // several users of one organisation in a row
     $("#users-create").reset();
     $("#new-user-role").value = "editor";
@@ -1507,12 +1514,15 @@ async function saveUser(username, changes) {
   }
 }
 
-async function resetUser(username) {
-  if (!confirm(t("users.confirmReset", { user: username }))) return;
+async function resetUser(u) {
+  const username = u.username;
+  const question = !mailLink(u) ? "users.confirmReset" : u.invited ? "users.confirmResendInvite" : "users.confirmResetLink";
+  if (!confirm(t(question, { user: username }))) return;
+  $("#temp-password").hidden = true;
   try {
     const result = await api("POST", `users/${encodeURIComponent(username)}/reset`, {});
     usersStatus("ok", result.code, result.params);
-    showTemporaryPassword("users.tempPasswordReset", username, result.password);
+    if (result.password) showTemporaryPassword("users.tempPasswordReset", username, result.password);
     loadUsers();
   } catch (e) {
     usersStatus("error", e.code, e.params);
@@ -2814,6 +2824,7 @@ function openOptions(mustChange = false) {
   $("#must-change-note").hidden = !mustChange;
   $("#password-status").hidden = true;
   I18N.set($("#password-cancel"), "options.cancel");
+  fillPreferences();
   $("#options-dialog").showModal();
   $("#current-password").focus();
 }
@@ -2850,11 +2861,48 @@ async function changePassword(event) {
   }
 }
 
+/* ------------------------------------------------------------------ options: e-mail preferences */
+function prefsStatus(kind, code, params) {
+  const el = $("#prefs-status");
+  el.hidden = !code;
+  el.className = "status" + (kind ? " is-" + kind : "");
+  if (code) I18N.set(el, code, params);
+}
+
+function fillPreferences() {
+  const prefs = CONFIG?.preferences;
+  if (!CONFIG?.mail?.enabled || !prefs) return;
+  if (prefs.email) I18N.set($("#prefs-address"), "prefs.address", { email: prefs.email });
+  else I18N.set($("#prefs-address"), "prefs.noAddress");
+  const select = $("#prefs-language");
+  if (!select.options.length) select.replaceChildren(...I18N.SUPPORTED.map(loc => new Option(I18N.nameOf(loc), loc)));
+  select.value = prefs.language || I18N.locale;
+  $("#prefs-jobs").checked = Boolean(prefs.notify?.jobs);
+  prefsStatus(null, null);
+}
+
+async function savePreferences(event) {
+  event.preventDefault();
+  const button = $("#prefs-save");
+  button.disabled = true;
+  try {
+    const result = await api("PUT", "preferences", { language: $("#prefs-language").value,
+                                                     notify: { jobs: $("#prefs-jobs").checked } });
+    CONFIG.preferences = result.preferences;
+    prefsStatus("ok", result.code);
+  } catch (e) {
+    prefsStatus("error", e.code, e.params);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function setupOptions() {
   const dialog = $("#options-dialog");
   $("#options-close").addEventListener("click", () => dialog.close());
   $("#password-cancel").addEventListener("click", () => dialog.close());
   $("#password-form").addEventListener("submit", changePassword);
+  $("#prefs-form").addEventListener("submit", savePreferences);
   dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });   // click on the backdrop
 }
 
@@ -2874,6 +2922,13 @@ document.addEventListener("localechange", () => {
 
 /* ------------------------------------------------------------------ start-up */
 async function init() {
+  // An invitation or recovery link opened while someone is signed in in this browser: the sign-in page redirected
+  // here, keeping the fragment. The link is for choosing a password, so this session ends and the page goes back.
+  if (/^#(invite|reset)=/.test(location.hash)) {
+    try { await api("POST", "logout", {}); } catch { /* signed out locally anyway */ }
+    location.replace("login" + location.hash);
+    return;
+  }
   buildLocaleMenu();
   I18N.apply();
   setupUserMenu();
@@ -2958,6 +3013,7 @@ async function init() {
   document.body.dataset.accountRole = CONFIG.accountRole;
   document.body.dataset.serverAdmin = String(Boolean(CONFIG.serverAdmin));
   document.body.dataset.operatorView = String(Boolean(CONFIG.serverAdmin && !CONFIG.support));
+  document.body.dataset.mail = CONFIG.mail?.enabled ? "on" : "off";
   showTenant();
   SessionClock.start(CONFIG.session);
   setupAttributes();

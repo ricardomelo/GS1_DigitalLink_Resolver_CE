@@ -433,6 +433,22 @@
         <button type="submit" class="btn btn-primary" id="password-save" data-i18n="password.save"></button>
       </div>
     </form>
+    <!-- The user's e-mail preferences (shown when the installation has e-mail; Documentation/adr/0004-e-mail.md) -->
+    <form class="dialog-body prefs-form needs-mail" id="prefs-form" novalidate>
+      <h3 data-i18n="prefs.title"></h3>
+      <p class="field-msg" id="prefs-address"></p>
+      <label for="prefs-language" data-i18n="prefs.language"></label>
+      <select id="prefs-language"></select>
+      <fieldset class="prefs-choices">
+        <legend data-i18n="prefs.messages"></legend>
+        <label class="choice"><input type="checkbox" checked disabled> <span data-i18n="prefs.security"></span></label>
+        <label class="choice"><input type="checkbox" id="prefs-jobs"> <span data-i18n="prefs.jobs"></span></label>
+      </fieldset>
+      <div id="prefs-status" class="status" role="status" aria-live="polite" hidden></div>
+      <div class="dialog-actions">
+        <button type="submit" class="btn btn-secondary" id="prefs-save" data-i18n="prefs.save"></button>
+      </div>
+    </form>
   </dialog>
 
   <!-- User administration (administrators) -->
@@ -460,9 +476,12 @@
           <label for="new-user-email" data-i18n="users.email"></label>
           <input id="new-user-email" type="email" autocomplete="off" maxlength="254" data-i18n-attr="placeholder:users.emailPlaceholder">
         </div>
+        <label class="choice users-invite needs-mail"><input type="checkbox" id="new-user-invite" checked>
+          <span data-i18n="users.invite"></span></label>
         <button type="submit" class="btn btn-primary" data-i18n="users.create"></button>
       </form>
       <p class="field-msg" data-i18n="users.prefixesHint"></p>
+      <p class="field-msg needs-mail" data-i18n="users.inviteHint"></p>
       <p class="field-msg needs-server-admin" data-i18n="users.tenantHint"></p>
       <div class="status" id="users-status" role="status" aria-live="polite" hidden></div>
       <div class="temp-password" id="temp-password" hidden>

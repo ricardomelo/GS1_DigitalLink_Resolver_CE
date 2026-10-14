@@ -431,6 +431,15 @@ dialog::backdrop { background: rgba(0, 30, 74, .45); }
 .auth-card label { margin-top: 1rem; }
 .auth-card .btn { width: 100%; margin-top: 1.5rem; }
 .auth-note { margin: 1.25rem 0 0; font-size: .875rem; color: var(--muted); }
+.auth-forgot { margin: 1rem 0 0; text-align: center; font-size: .9375rem; }
+.auth-lede { margin: 0 0 .5rem; color: var(--muted); }
+.link-user { margin: 1rem 0 0; }
+.users-invite { align-self: center; margin: 0 0 .55rem; font-size: .9375rem; }
+.prefs-form { border-top: 1px solid var(--line); }
+.prefs-form select { max-width: 20rem; }
+.prefs-choices { border: 0; padding: 0; margin: 1.25rem 0 0; }
+.prefs-choices legend { font-weight: 600; margin-bottom: .35rem; padding: 0; }
+.prefs-choices input:disabled + span { color: var(--muted); }
 
 .site-footer { text-align: center; font-size: .8125rem; color: var(--muted); padding: 0 1rem 2rem; }
 .site-footer .notice { margin: 0 auto; max-width: 46rem; line-height: 1.5; }
@@ -484,6 +493,7 @@ dialog::backdrop { background: rgba(0, 30, 74, .45); }
 body[data-role="reader"] .needs-editor { display: none !important; }
 body:not([data-account-role="admin"]) .needs-admin { display: none !important; }
 body:not([data-server-admin="true"]) .needs-server-admin { display: none !important; }
+body:not([data-mail="on"]) .needs-mail { display: none !important; }
 body:not([data-operator-view="true"]) .audit-tenant-col { display: none !important; }
 .read-only-note { margin-top: .75rem; }
 .history-panel { margin-top: 1.5rem; border-top: 1px solid var(--line); padding-top: 1rem; }

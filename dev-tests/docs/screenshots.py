@@ -12,6 +12,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 
 from PIL import Image
 from playwright.sync_api import sync_playwright
@@ -293,6 +294,7 @@ def guide_images(locale: str, folder: str, description: str, own_copies: bool) -
 
         # Organisations and support access (last: an organisation takes its records away from maria)
         tenant_images(page, folder, locale)
+        mail_images(browser, folder, locale)
         browser.close()
 
 
@@ -315,6 +317,56 @@ def tenant_images(page, folder: str, locale: str) -> None:
     page.click("#support-open"); page.wait_for_timeout(1500)
     save(page, f"{folder}/support-banner.png", clip={"x": 0, "y": 0, "width": 1280, "height": 720})
     page.click("#support-leave"); page.wait_for_timeout(1200)
+
+
+_relay = None
+
+
+def mail_images(browser, folder: str, locale: str) -> None:
+    """The e-mail screens (Documentation/adr/0004-e-mail.md): recovery on the sign-in page, the page a link opens,
+    the invitation on the users screen and Options → E-mail. E-mail is on only while they are made (a relay of the
+    development tests' own), so the other images show an installation without it."""
+    global _relay
+    from fake_smtp import FakeRelay
+    import re
+    if _relay is None:
+        _relay = FakeRelay().start()
+    os.environ.update(PORTAL_MAIL_HOST="127.0.0.1", PORTAL_MAIL_PORT=str(_relay.port), PORTAL_MAIL_SECURITY="none",
+                      PORTAL_MAIL_FROM="portal@example.org")
+    users.update("maria", email="maria@brand.example")
+    try:
+        ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 900})
+        page = ctx.new_page()
+        page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+        page.goto(BASE + "login"); page.wait_for_timeout(600)
+        page.click("#forgot-open"); page.fill("#forgot-login", "maria@brand.example")
+        page.click("#forgot-submit"); page.wait_for_timeout(1200)
+        save(page, f"{folder}/password-recovery.png", clip={"x": 0, "y": 0, "width": 1280, "height": 760})
+        end = time.monotonic() + 8
+        while not _relay.messages and time.monotonic() < end:
+            time.sleep(0.05)
+        text = _relay.messages[-1].get_body(("plain",)).get_content()
+        link = re.search(r"http://\S+#reset=[A-Za-z0-9_-]+", text).group(0)
+        _relay.clear()
+        page.goto(link); page.wait_for_timeout(900)
+        save(page, f"{folder}/choose-password.png", clip={"x": 0, "y": 0, "width": 1280, "height": 860})
+        ctx.close()
+
+        ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1100})
+        page = ctx.new_page()
+        page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+        page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
+        page.click("#login-submit"); page.wait_for_timeout(1000)
+        page.goto(BASE + "#users"); page.wait_for_timeout(900)
+        page.fill("#new-user-name", "pedro.lima"); page.fill("#new-user-email", "pedro.lima@brand.example")
+        save_element(page, f"{folder}/users-invite.png", "#users-create", pad=10, extra_height=110)
+        page.click("#user-button"); page.click("#menu-options"); page.wait_for_timeout(400)
+        page.check("#prefs-jobs")
+        save_element(page, f"{folder}/options-email.png", "#options-dialog", pad=4)
+        ctx.close()
+    finally:
+        users.update("maria", email="")
+        os.environ["PORTAL_MAIL_HOST"] = ""
 
 
 guide_images("en-GB", "guide", "Organic açaí 500 g — batch L2026A", own_copies=False)

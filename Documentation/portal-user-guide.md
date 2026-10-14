@@ -85,8 +85,9 @@ the organisation's name; the operator's administrators see *Server administrator
 ![Sign-in page](images/guide/sign-in.png)
 
 Open the portal address (for example `https://id.example.org/portal/`), enter your **Username** and
-**Password** and select **Sign in**. If you have no account or have forgotten your password, ask the
-resolver administrator: the portal has no self-service password reset.
+**Password** and select **Sign in**. If you have no account, ask the resolver administrator. If you have
+forgotten your password, use **Forgotten your password?** when the page offers it (installations with e-mail,
+below); otherwise ask the administrator for a new temporary password.
 
 - **Temporary password.** A new account, or one whose password an administrator has reset, starts with a
   temporary password. After signing in the portal asks you to set your own password before going on.
@@ -103,6 +104,29 @@ resolver administrator: the portal has no self-service password reset.
   at once, without losing what you typed. The portal starts in the language of your browser and
   remembers your choice; the resolver's own pages and the home page follow the same choice.
 
+### Forgotten password and invitations (installations with e-mail)
+
+![Recover your password](images/guide/password-recovery.png)
+
+When the installation sends e-mail, the sign-in page shows **Forgotten your password?**. Enter your **user name
+or e-mail address** and select **Send the link**. The page always gives the same answer, whether or not an
+account matched, so it does not tell anyone who has an account here. If your account has an e-mail address, a
+message arrives with a link valid for 60 minutes (check the spam folder). Only the newest link works, once.
+After three requests for the same name the page asks you to wait 15 minutes.
+
+![Choose your password](images/guide/choose-password.png)
+
+The link opens **Choose a new password** with your user name: type the new password twice (at least 12
+characters) and select **Save the password**. The portal goes back to the sign-in page with your user name
+filled in; every session open with the old password ends, and a message tells you the password was changed. An
+**invitation** from an administrator opens the same page, titled *Welcome: choose your password*, and is valid
+for 72 hours. If the page says the link is no longer valid, it has expired, has been used or a newer one was sent:
+ask for a new one. If someone else is signed in in the same browser when you open a link, that session ends first.
+
+The portal also writes to you, always, when your password or your e-mail address is changed (to the old and the
+new address) and when your account is locked after five wrong passwords: if you did not do it, use **Forgotten
+your password?** at once and tell your administrator.
+
 ### The user menu
 
 ![User menu](images/guide/user-menu.png)
@@ -118,6 +142,15 @@ home page), **Registered records** (section 11), **Users** and **Audit trail** (
 **Options** opens the password form. Enter the **Current password**, the **New password** (at least
 12 characters) and **Repeat the new password**, then **Save password**. Every other session open with your
 account (another browser, another computer) is signed out; the current one stays open.
+
+### E-mail preferences
+
+![Options: e-mail](images/guide/options-email.png)
+
+With e-mail, **Options** also shows **E-mail**: the address messages go to (only an administrator can change it),
+the **Language of the messages** (at first the language of the page you sign in with) and the messages you want.
+Security notices are always sent; **When an import or link check I started has finished** is optional, useful for
+long imports and for **Check every record's links**. Select **Save preferences**.
 
 ## 4. The editor at a glance
 
@@ -505,15 +538,25 @@ redirects, an internal network address (never contacted) or an invalid address. 
 means every identifier), then **Create user**. The portal shows a **temporary password once**: copy it
 (**Copy password**) and send it through a secure channel. The user must change it at the first sign-in.
 
+![Inviting a user by e-mail](images/guide/users-invite.png)
+
+**Invitations by e-mail.** When the installation sends e-mail, type the user's **E-mail** and keep **Send an
+invitation by e-mail** ticked: no password is shown; the user receives a link, valid for 72 hours, to choose
+their own password (section 3), and the list shows *Invited — waiting for the password* until then (**Send the
+invitation again** makes a new link). Untick the box, or leave the address empty, to get a temporary password
+as before.
+
 **Registered users** lists each user with role, prefixes, status (*Active*, *Disabled*, *Waiting for the
-temporary password to be changed*) and last sign-in. For each one:
+temporary password to be changed*, *Invited — waiting for the password*) and last sign-in. For each one:
 
 - change the role or prefixes and **Save**;
-- **Reset password** — a new temporary password, shown once; the user's open sessions end;
+- **Reset password** — the user's password stops working at once and the open sessions end; with e-mail and
+  an address, the user receives a link to choose a new one; otherwise a new temporary password is shown once;
 - **Disable** / **Enable** — a disabled user cannot sign in, and keeps the account;
 - **Remove** — deletes the account; the user's changes stay in the history and audit trail.
 
-Each user may have an **E-mail** address (optional, unique; not used yet). You cannot disable, demote or remove
+Each user may have an **E-mail** address (optional, unique), where invitations, recovery links and security
+notices go; changing it tells both the old and the new address. You cannot disable, demote or remove
 your own user, and the portal always keeps at least one active server administrator. Users created before roles
 existed are administrators.
 
@@ -592,6 +635,8 @@ the operator's users did to organisations; an organisation's whole trail only du
 | *The resolver did not respond.* | Try again in a few minutes; if it persists, tell the administrator. |
 | *Your session has ended. Please sign in again.* | Sign in; unsaved changes in the form are lost. |
 | *Too many unsuccessful attempts. Try again in N minute(s).* | Wait, or ask an administrator to reset your password. |
+| *If there is an account with this user name or e-mail address, a message … has been sent.* | Check your mailbox and its spam folder; nothing arrives if the account has no address: ask an administrator. |
+| *This link is no longer valid…* | Ask for a new one (**Forgotten your password?**, or the administrator for an invitation); only the newest link works, once. |
 
 ## 17. Glossary
 

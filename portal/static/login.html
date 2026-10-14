@@ -44,7 +44,37 @@
       <label for="password" data-i18n="login.password"></label>
       <input id="password" name="password" type="password" autocomplete="current-password" required>
       <button type="submit" class="btn btn-primary" id="login-submit" data-i18n="login.submit"></button>
-      <p class="auth-note" data-i18n="login.help"></p>
+      <p class="auth-forgot"><button type="button" class="link-button" id="forgot-open" hidden data-i18n="login.forgot"></button></p>
+      <p class="auth-note" id="login-help" data-i18n="login.help"></p>
+    </form>
+
+    <!-- Password recovery by e-mail (shown when the installation has e-mail; Documentation/adr/0004-e-mail.md) -->
+    <form class="auth-card" id="forgot-form" novalidate hidden>
+      <h2 data-i18n="login.forgotTitle"></h2>
+      <p class="auth-lede" data-i18n="login.forgotLede"></p>
+      <div id="forgot-status" class="status" role="status" aria-live="polite" hidden></div>
+      <label for="forgot-login" data-i18n="login.forgotLogin"></label>
+      <input id="forgot-login" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="254" required>
+      <button type="submit" class="btn btn-primary" id="forgot-submit" data-i18n="login.forgotSubmit"></button>
+      <p class="auth-forgot"><button type="button" class="link-button" id="forgot-back" data-i18n="login.back"></button></p>
+    </form>
+
+    <!-- Choosing a password through an invitation or recovery link (#invite=… or #reset=… in the address) -->
+    <form class="auth-card" id="link-form" novalidate hidden>
+      <h2 id="link-title" data-i18n="login.linkTitleReset"></h2>
+      <div id="link-status" class="status" role="status" aria-live="polite" hidden></div>
+      <div id="link-fields" hidden>
+        <p class="auth-lede" id="link-lede" data-i18n="login.linkLedeReset"></p>
+        <p class="link-user"><span data-i18n="login.username"></span> <strong id="link-user"></strong></p>
+        <input type="text" name="username" id="link-username" autocomplete="username" hidden>
+        <label for="link-password" data-i18n="password.new"></label>
+        <input id="link-password" type="password" autocomplete="new-password" required aria-describedby="link-hint">
+        <p class="field-msg" id="link-hint" data-i18n="login.linkHint" data-i18n-params='{"min":12}'></p>
+        <label for="link-confirm" data-i18n="password.confirm"></label>
+        <input id="link-confirm" type="password" autocomplete="new-password" required>
+        <button type="submit" class="btn btn-primary" id="link-submit" data-i18n="login.linkSubmit"></button>
+      </div>
+      <p class="auth-forgot"><button type="button" class="link-button" id="link-back" data-i18n="login.back"></button></p>
     </form>
   </main>
 

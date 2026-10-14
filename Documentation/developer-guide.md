@@ -411,7 +411,7 @@ No framework and no build step: plain HTML, CSS and JavaScript served as static 
 | File | Role |
 |---|---|
 | `index.html` | the portal page: header with language and user menus, editor (three steps, other records, history), label block, record list, users, audit, dialogs (options, import), the template of a target row |
-| `login.html`, `login.js` | sign-in page |
+| `login.html`, `login.js` | sign-in page; with e-mail also *Forgotten your password?* and the page a link opens (`#invite=…` / `#reset=…`: the token is read, removed from the address bar at once and posted; a link pasted into an open page is caught by `hashchange`) |
 | `password.js` | show/hide button in every password field |
 | `i18n.js` | message catalogue (pt-BR, en-GB) and translation engine |
 | `app.js` | everything else; a map of its sections is at the top of the file |
@@ -429,6 +429,12 @@ answers carry codes (`save.updated`, `key.checkDigit`…) with parameters, rende
 **Validation.** `readKey()` and `readQualifiers()` repeat the server's rules for instant feedback, from the
 checks, patterns, lengths and order the server sends in `CONFIG.rules` (`gs1.browser_rules()`, built from the
 dictionary); nothing in `app.js` repeats a length or a format. The server checks again and is the authority.
+
+**E-mail ([ADR 0004](adr/0004-e-mail.md)).** `body[data-mail="on"]` (from `CONFIG.mail.enabled`) shows the
+`.needs-mail` elements: the invitation box of the new-user form, the *E-mail* section of Options
+(`fillPreferences()`, `savePreferences()`). `mailLink(u)` tells whether a reset goes by e-mail (the question and
+the button's label follow it). `init()` signs out and goes back to the sign-in page when it finds an invitation or
+recovery fragment (a link opened while someone was signed in: the sign-in page redirected here).
 
 **Record list.** `loadRecords()` fetches `/records` once; `renderRecords()` filters in the browser by key
 type (`#records-key`), qualifier (`qualifierMatches()`), author, link problems and text (`fold()` ignores
@@ -625,7 +631,8 @@ run against it. Setup and commands are in
 | `portal/test_worker_processes.py` | 13 | `worker.py` as real processes on a real MongoDB (run by `test_store_mongodb.py`): two workers share the queue without taking a job twice; SIGTERM hands the job back and the other worker finishes it; after SIGKILL a new worker continues the job once its heartbeat is old |
 | `portal/test_store_mongodb.py` | 161 | on a real MongoDB (`PORTAL_TEST_MONGO_URI`, CI only): the user made by `db_init.py` and its privileges; `test_store.py`, `test_jobs.py` and `test_worker_processes.py` again as that user (their lines relayed); the TTL monitor, also for jobs and old worker announcements |
 | `portal/test_registration.py` | 26 | §2.5.9 through the portal API: informative qualifiers (save, open, history, list, export, import), records against rule 2, the key's own record when saving and importing |
-| `portal/test_portal_e2e.py` | 210 | the portal in Chromium against `mock_data_entry.py`, desktop and phone, with an embedded worker (also stopped: the queue and "not running" messages, a job that fails); organisations, a tenant administrator and support access in both languages; also run without the engine (164) |
+| `portal/test_mail_e2e.py` | 37 | the e-mail screens in Chromium with the relay of `fake_smtp.py`: recovery on the sign-in page (the same answer for every entry), an invitation from the users screen, the page a link opens (user name, the token gone from the address bar, short and different passwords refused, a phone's width), a link used twice, a link opened while someone else is signed in, a recovery ending the user's open session, Options → E-mail kept, a reset by link, every text of the sign-in page translated, and the same screens with e-mail off |
+| `portal/test_portal_e2e.py` | 211 | the portal in Chromium against `mock_data_entry.py`, desktop and phone, with an embedded worker (also stopped: the queue and "not running" messages, a job that fails); organisations, a tenant administrator and support access in both languages; also run without the engine (166) |
 | `home/test_home.py` | 68 | home page through a real nginx (1.27.3 or later: `NGINX_BIN` or the PATH), no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts; replicas through a stub DNS server answering the service names with `127.0.0.x` addresses: nginx starts while a service has no address and finds it later, shares the requests between two replicas, follows a third added and two removed without a restart, and no request fails while replicas stop |
 | `install/test_install.sh` | 84 | installer through shims (Compose v2), including a portal whose job worker does not start; replica counts written, kept, taken from the environment and refused when invalid; the e-mail relay (off by default, written with STARTTLS or TLS, its password kept and never shown, switched off, a test relay set by hand kept, refusals); no setting written twice in `.env` |
 | `install/test_deploy.py` | 59 | `docker compose config` of the replicas and process counts (defaults, values from `.env`, a refused value, names kept by the database and the proxy); the proxy image's nginx version and `resolve` in every upstream; each image's gunicorn `CMD` started locally (three processes, an answer, the request logged, a clean stop on SIGTERM within 10 s); the portal's fallback session key with six processes starting together and eight threads while writing it is slow; the portal started from the files the `COPY` lines of its Dockerfile put in the image, every module and data file of `portal/` among them; one engine release, in `docker-compose.yml` only, given to every image (ADR 0003) |
@@ -634,7 +641,7 @@ run against it. Setup and commands are in
 test (a subprocess from the repository root): exit status 0 without a `FAIL` line passes; otherwise the
 report shows the `FAIL` lines and the end of the output; a program that only printed `SKIP` is skipped.
 Markers group them: `resolver` (resolver, EPC binary, data entry, GS1 suite), `portal` (the portal programs
-without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`), `home`,
+without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`), `home`,
 `install` (the installer through password-less `sudo` when not root, and `test_deploy.py`), `database` (`test_store_mongodb.py`). `dev-tests/conftest.py` keeps the programs from
 being imported by pytest, registers the markers and prints the check counts of each program at the end (and
 in the GitHub Actions run summary). With `DEV_TESTS_STRICT=1` a program fails when an environment variable
@@ -662,7 +669,8 @@ Compose v2.29.7. Change a version there, in one place; the engine's release is n
 `docker-compose.yml`.
 
 `docs/screenshots.py` regenerates the images of the README and of the user guide, in English and in
-Portuguese, from the real portal with example data (GS1 logo hidden). Commit only images that really changed.
+Portuguese, from the real portal with example data (GS1 logo hidden). The e-mail images (`mail_images()`) are made with e-mail
+switched on for them only, against the relay of `fake_smtp.py`. Commit only images that really changed.
 
 ## 14. How to extend
 

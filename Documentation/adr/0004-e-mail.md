@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). Implemented in three steps: 1 (this record), 2 (sending, single-use links, notifications and their settings on the server; section 3.8), 3 (screens) |
+| Status | **Accepted** (14 October 2026). Implemented in three steps: 1 (this record), 2 (sending, single-use links, notifications and their settings on the server; section 3.8), 3 (screens; section 3.9) |
 | Backlog item | 3.1 — e-mail |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 while he was away |
 | Portuguese | [ADR 0004 em português](../pt-BR/adr/0004-e-mail.md) |
@@ -206,6 +206,22 @@ As designed, with these details settled by the implementation:
   reset keeping the old password; other links surviving a password set by link; credentials sent without
   STARTTLS; a lock notice on every failure; the address in the journal; optional categories ignored; the old
   address not told; no recovery limit; a disabled account's link accepted.
+
+### 3.9 As implemented in step 3
+
+- The sign-in page (`login.html`, `login.js`) holds three forms: sign-in, recovery and the one a link opens. The
+  token is taken from the fragment and removed from the address bar before the first request; a link pasted into
+  an open sign-in page changes only the fragment and is caught by `hashchange`. A link opened while someone is
+  signed in in the same browser reaches the portal page (the sign-in page redirects there, keeping the fragment):
+  the page signs that session out and goes back.
+- The users screen gains *Send an invitation by e-mail* (ticked by default), the state *Invited — waiting for the
+  password* and *Send the invitation again*; the question before a reset says whether a link or a temporary
+  password follows. Options gains the *E-mail* section. Everything new is shown only when `/config` says
+  e-mail is on (`body[data-mail]`), so an installation without a relay looks as before.
+- The owner was away: instead of mock-ups first, images of the finished screens are in both user guides
+  (`password-recovery.png`, `choose-password.png`, `users-invite.png`, `options-email.png`) for his review.
+- `test_mail_e2e.py` (37 checks) drives the screens in Chromium against the relay of the tests; removing the
+  token from the address bar is mutation-checked.
 
 ## 4. Options considered
 

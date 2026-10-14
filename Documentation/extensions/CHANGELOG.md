@@ -2,6 +2,26 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Monitoring and alerts by e-mail (backlog item 4.3)
+- **Architecture decision record** [ADR 0008](../adr/0008-monitoring-and-alerts.md) (committed with the docs of
+  item 4.2, `b06ff53`, before its code).
+- **Monitoring by the job worker** every `PORTAL_MONITOR_MINUTES` (5), one replica at a time: the resolver through the
+  proxy (`PORTAL_MONITOR_URL`, an optional `PORTAL_MONITOR_PROBE`; an alert after two failed rounds), the daily
+  backup's record (failed, or no good run for `PORTAL_MONITOR_BACKUP_HOURS`, 26), the certificate of `FQDN`
+  (`PORTAL_MONITOR_TLS_HOST`; expiring within `PORTAL_MONITOR_CERT_DAYS`, 21, or invalid), and spikes of "code not
+  registered" per scope (`PORTAL_ALERT_404_MIN`, 20, and `PORTAL_ALERT_404_FACTOR`, 3, times the usual hour). States in
+  the collection `alerts`. Commit `57a5420`.
+- **Alerts by e-mail** in the new category *alerts* (optional, on by default; Options → E-mail for administrators):
+  seven messages in both languages — resolver down and up, backup failed and good again, certificate expiring and
+  valid again, spike of 404 with the codes scanned most; a reminder every 24 hours while an alert lasts. Server
+  administrators receive the installation's, an organisation's administrators its spikes. Commit `57a5420`.
+- **The overview** lists the active alerts of the scope and, for server administrators, the state of each check.
+  Commit `57a5420`.
+- **The daily backup records its result** in the portal's database (`backup.last`, with `mongosh` inside the database
+  container); a record that cannot be written is a warning in its log, never a failed backup. Commit `57a5420`.
+- **Fix**: e-mail preferences kept only the categories switched on, so a category on by default could not be switched
+  off; both values are kept now. Commit `57a5420`.
+
 ### Overview after sign-in (backlog item 4.2)
 - **Architecture decision record** [ADR 0007](../adr/0007-overview-indicators.md): a new view opened after sign-in,
   five groups of indicators per scope for 7, 30 or 90 days against the period before, computed on request, exports,

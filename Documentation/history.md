@@ -524,6 +524,20 @@ now clears that mark; three mutations escaped at first (a compressed link's answ
 list, an administrator limited to prefixes seeing others' changes) and the program gained a check for each, 18 of 18
 caught. Sign-in landing on the overview changed five browser programs, which now open the editor themselves.
 
+**Item 4.3, monitoring and alerts** ([ADR 0008](adr/0008-monitoring-and-alerts.md), recommended options; the record
+went out with the docs commit of 4.2 by mistake, before its code). The worker checks every 5 minutes, one replica at a
+time: the resolver through the proxy (two failed rounds), the backup's record, which the backup script now writes in
+the portal's database, the certificate once an hour, and spikes of 404 per scope against the usual hour. Messages on a
+change only, a daily reminder, a resolved message; category *alerts* on by default. Commit `57a5420`: `portal/monitor.py`,
+the worker's second schedule, seven messages, `test_monitor.py` (62, 18 mutations caught), `test_deploy.py` (66: the
+backup's record with the stand-in `docker`, and its mongosh script checked by `node --check`). Writing the test found
+a defect older than the feature: preferences stored only the categories switched on, which worked for the jobs
+category (off by default) but would have made alerts impossible to switch off. The backup test found that the error
+text "mongodump failed" matched the stand-in's own pattern for the dump: the record now says "the database dump
+failed". The CI job on a real MongoDB failed on `b9bd4ed` (a commit without code) and on `16ceb9f`; its logs cannot be
+downloaded from the session (the log storage host is outside the network policy), so the job was run again to tell a
+flaky run from a defect.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -588,6 +602,8 @@ caught. Sign-in landing on the overview changed five browser programs, which now
     conventions and a session start hook prepares the tests as the CI does.
 19. The portal opens on the overview after sign-in; its figures are computed on request from what the request log
     and the journal keep, in the scope of the user ([ADR 0007](adr/0007-overview-indicators.md)).
+20. The worker monitors the installation and e-mails the administrators on a change of state, never on every round
+    ([ADR 0008](adr/0008-monitoring-and-alerts.md)).
 
 ## Lessons learnt
 

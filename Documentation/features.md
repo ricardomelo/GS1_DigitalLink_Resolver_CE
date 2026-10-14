@@ -24,6 +24,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 - [Portal: spreadsheets](#portal-spreadsheets)
 - [Portal: link checker](#portal-link-checker)
 - [Portal: governance](#portal-governance)
+- [Tenant API](#tenant-api)
 - [Portal: robustness and security](#portal-robustness-and-security)
 - [Portal: languages and look](#portal-languages-and-look)
 - [Home page and navigation](#home-page-and-navigation)
@@ -190,7 +191,16 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Support access | Read-only access of a server administrator to one organisation, with a reason recorded in its audit trail; a banner while it is open | `1590b7e`, `675b6ca` |
 | Audit trail per organisation | Each organisation sees its own trail; what the operator did to it is tagged; history and "changed by" per organisation | `1590b7e`, `675b6ca` |
 | E-mail per user | Optional, unique; where invitations, recovery links and notices go | `1590b7e`, `675b6ca`, `03c924b` |
+| API keys | Administrators create keys for their organisation's systems (the operator's records for a server administrator): scopes, optional prefixes, validity; shown once, stored as a hash, revocable; last use; e-mail when created and before expiry ([ADR 0005](adr/0005-tenant-api.md)) | `bb0b496`, `c469f29` |
 | Journal | One event per document in the portal's database, included in the backup; kept by age per category (sign-ins 180 days, record changes and administration for ever by default; `PORTAL_JOURNAL_*_DAYS`) | `71b15f2`, `d783f3d` |
+
+## Tenant API
+
+| Feature | What it does | Since |
+|---|---|---|
+| `/portal/api/v1` | Records listed in pages, read, created or replaced, deleted; labels (SVG, PNG); who am I — for an organisation's own systems, with an API key, under every rule of the portal ([ADR 0005](adr/0005-tenant-api.md)) | `bb0b496` |
+| OpenAPI description | `GET /portal/api/v1/openapi.json`, OpenAPI 3.1, public, checked against the routes by the tests | `bb0b496` |
+| Request limit | 120 requests per key and minute by default (`PORTAL_API_RATE_PER_MINUTE`), shared by every replica; 429 with `Retry-After` | `bb0b496` |
 
 ## Portal: robustness and security
 

@@ -2,6 +2,35 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Tenant API and API keys (backlog item 3.2)
+- **Architecture decision record** [ADR 0005](../adr/0005-tenant-api.md) (English and Portuguese): a versioned API
+  of the portal for organisations' own systems, keys owned by organisations and created by their administrators,
+  a request limit per key, an OpenAPI description. Commit `326566d`.
+- **The tenant API** (step 2), `/portal/api/v1`: who am I, records listed in pages, read, created or replaced
+  (`PUT`), deleted; labels in SVG or PNG; `GET /portal/api/v1/openapi.json` (OpenAPI 3.1, public). Every call gets
+  the scope of its key (organisation, role from the scopes, prefixes) and goes through the same functions as the
+  portal's endpoints, so every rule applies; changes are journalled with the user `api:<key id>`. No CORS: the
+  portal's Origin check refuses browser requests from other sites. Commit `bb0b496`.
+- **API keys**: `rk_<id>.<secret>`, shown once, only the secret's SHA-256 stored (`api_keys` collection); scopes
+  `records:read`, `records:write`, `labels:read`; optional prefixes inside the organisation's; a required validity
+  (90 days by default, `PORTAL_API_KEY_MAX_DAYS` at most); 20 active keys per organisation; revocation;
+  `api-key-create` / `api-key-revoke` in the organisation's trail. A server administrator's keys reach the
+  operator's records only. Commits `bb0b496`, `c469f29`.
+- **Request limit**: `PORTAL_API_RATE_PER_MINUTE` (120) per key and minute, counted in MongoDB for every replica
+  (`api_rate`, TTL); 429 with `Retry-After`. The first request of a minute records the key's last use. Commit `bb0b496`.
+- **E-mail**: the creator of a key is told when it is created and a week before it expires; the worker runs an
+  hourly housekeeping (`app.HOUSEKEEPING`, `Worker.housekeep()`) for the second. Commit `bb0b496`.
+- **API keys screen** (step 3, administrators): create (name, scopes, validity, prefixes), the key and an example
+  shown once and removed from the page when the screen is left, the list with last use and state, revoke; user
+  guides in both languages. **Fix:** choosing an item of the user menu with the mouse now closes the menu; it used to
+  stay open while the pointer was over it, covering the chosen page (found when the menu grew by one item).
+  Commit `c469f29`.
+- **Tests**: `test_api.py` (92 checks, 16 protections mutation-checked, the OpenAPI document against the routes
+  and the answers, no message key written twice in a language) and `test_api_e2e.py` (21). Commits `bb0b496`, `c469f29`.
+- **Authorship**: on the owner's decision of 14 October, the commits of items 2.4, 2.5 and 3.1 (not yet pushed)
+  were rewritten with Claude as author and the owner as co-author; their hashes changed and every document
+  citing them was updated in the same rewrite.
+
 ### E-mail (backlog item 3.1)
 - **Architecture decision record** [ADR 0004](../adr/0004-e-mail.md) (English and Portuguese): outgoing mail through
   an authenticated SMTP relay, messages as jobs of the worker, single-use links for invitations and password

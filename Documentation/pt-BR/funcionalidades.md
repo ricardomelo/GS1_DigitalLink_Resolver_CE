@@ -21,6 +21,7 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 - [Portal: planilhas](#portal-planilhas)
 - [Portal: verificador de links](#portal-verificador-de-links)
 - [Portal: governança](#portal-governança)
+- [API das organizações](#api-das-organizações)
 - [Portal: robustez e segurança](#portal-robustez-e-segurança)
 - [Portal: idiomas e aparência](#portal-idiomas-e-aparência)
 - [Página inicial e navegação](#página-inicial-e-navegação)
@@ -187,7 +188,16 @@ Como cada funcionalidade é construída: [guia do desenvolvedor](guia-do-desenvo
 | Acesso de suporte | Acesso só de leitura de um administrador do servidor a uma organização, com o motivo registrado na auditoria dela; uma faixa enquanto está aberto | `1590b7e`, `675b6ca` |
 | Auditoria por organização | Cada organização vê a sua trilha; o que o operador fez nela aparece marcado; histórico e "alterado por" por organização | `1590b7e`, `675b6ca` |
 | E-mail por usuário | Opcional, único; para onde vão convites, links de recuperação e avisos | `1590b7e`, `675b6ca`, `03c924b` |
+| Chaves de API | Os administradores criam chaves para os sistemas da sua organização (os cadastros do operador para um administrador do servidor): escopos, prefixos opcionais, validade; mostradas uma vez, guardadas como hash, revogáveis; último uso; e-mail na criação e antes de expirar ([ADR 0005](adr/0005-api-das-organizacoes.md)) | `bb0b496`, `c469f29` |
 | Diário | Um evento por documento no banco do portal, incluído no backup; guardado por idade, por categoria (entradas 180 dias, alterações de cadastros e administração para sempre por padrão; `PORTAL_JOURNAL_*_DAYS`) | `71b15f2`, `d783f3d` |
+
+## API das organizações
+
+| Funcionalidade | O que faz | Desde |
+|---|---|---|
+| `/portal/api/v1` | Cadastros listados em páginas, lidos, criados ou substituídos, excluídos; etiquetas (SVG, PNG); quem sou eu — para os sistemas da própria organização, com uma chave de API, sob todas as regras do portal ([ADR 0005](adr/0005-api-das-organizacoes.md)) | `bb0b496` |
+| Descrição OpenAPI | `GET /portal/api/v1/openapi.json`, OpenAPI 3.1, pública, conferida contra as rotas pelos testes | `bb0b496` |
+| Limite de requisições | 120 requisições por chave e minuto por padrão (`PORTAL_API_RATE_PER_MINUTE`), compartilhado por todas as réplicas; 429 com `Retry-After` | `bb0b496` |
 
 ## Portal: robustez e segurança
 

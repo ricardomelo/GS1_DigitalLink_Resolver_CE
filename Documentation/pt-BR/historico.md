@@ -26,8 +26,8 @@ o próximo começar.
 | 8 — backlog, ajustes rápidos, CI | 13/10 | `bc1c86b`, `1a1ca59`, `d68a883` e os commits de documentação | backlog reordenado em torno de tenants, e-mail, chaves de API e domínios próprios; sessão de 30 minutos sem uso com aviso e limite de 12 horas; quadro da sintaxe retirado da página inicial; aviso da comunidade; testes de desenvolvimento pelo pytest e no GitHub Actions |
 | 9 — arquitetura para escala | 13/10 | ADR 0001, depois três entregas de código (`d783f3d`, `a072e9d`, `20f3304`) e os commits de documentação | item 2.3: o estado do portal no MongoDB, as tarefas em segundo plano num serviço worker, réplicas de todos os serviços sem estado atrás de um proxy que as acha sozinho; gunicorn em todos os serviços web; nginx 1.30 |
 | 10 — tenants | 13/10 | ADR 0002, depois duas entregas de código (`1590b7e`, `675b6ca`), o commit de documentação e uma correção (`7c10048`) | item 2.4: organizações donas de prefixos de empresa GS1, o administrador do servidor, acesso de suporte, uma trilha de auditoria por organização, um e-mail por usuário |
-| 12 — e-mail | 14/10 | ADR 0004, uma correção do instalador (`f3d127d`), duas entregas de código (`03c924b`, `fbe86f0`) e o commit de documentação | item 3.1: e-mail por um relay autenticado, convites, recuperação de senha por link de uso único, avisos de segurança e avisos de tarefas terminadas com preferências por usuário |
 | 11 — uma fonte única para as regras GS1 | 13/10 | ADR 0003, depois três entregas de código (`8e3d9c7`, `6f6ce19`, `e7c5a6d`) e o commit de documentação | item 2.5: uma versão do engine para todos os serviços, chaves, qualificadores e formatos do GS1 Barcode Syntax Dictionary, as mensagens do engine traduzidas, uma verificação semanal de atualizações |
+| 12 — e-mail e a API das organizações | 14/10 | ADRs 0004 e 0005, uma correção do instalador (`f3d127d`), quatro entregas de código (`03c924b`, `fbe86f0`, `bb0b496`, `c469f29`) e dois commits de documentação | item 3.1: e-mail por um relay autenticado, convites, recuperação de senha por link de uso único, avisos de segurança e avisos de tarefas terminadas com preferências por usuário; item 3.2: uma API versionada para os sistemas das organizações, com chaves de API |
 
 Ao fim da sessão 4, o fork altera ou acrescenta 70 arquivos do projeto oficial (cerca de 16.000 linhas
 acrescentadas) e é coberto por 739 verificações nos testes de desenvolvimento, além do teste do
@@ -406,7 +406,7 @@ mudanças para a versão, cinco para o dicionário, oito para as mensagens). A A
 ambiente de trabalho, então a primeira execução real do workflow semanal será no GitHub. Ainda não confirmado na
 homologação nem no CI.
 
-## Sessão 12 — e-mail (item 3.1)
+## Sessão 12 — e-mail (item 3.1) e a API das organizações (item 3.2)
 
 O responsável ainda não conseguia chegar à estação de trabalho nem ao servidor para aplicar o bundle cumulativo dos
 itens 2.4 e 2.5, e pediu para seguir com o próximo item e entregar tudo num único bundle a partir de `fd8f67c`,
@@ -438,6 +438,33 @@ mutação; uma mutação (o link de uma conta desativada aceito) escapou no iní
 do Mailpit não pode ser baixada no ambiente de trabalho, então a primeira execução dela é na homologação. Ainda não
 confirmado na homologação nem no CI.
 
+**Item 3.2, na mesma noite.** Com o item 3.1 entregue, o responsável pediu para seguir com o próximo item, e decidiu
+que os commits ainda sem push deveriam ter o Claude como autor e ele como coautor (até então ele era o autor e o
+Claude o coautor). Os quinze commits a partir de `fd8f67c` foram reescritos em ordem: nos documentos de cada commit,
+os hashes dos commits anteriores já reescritos foram trocados, o que funcionou porque nenhum commit cita um posterior
+(conferido antes); o resultado diferia da árvore antiga só nesses hashes (94 linhas). Desde então os commits são
+feitos assim.
+
+Toda pergunta do [ADR 0005](adr/0005-api-das-organizacoes.md) foi decidida pela opção recomendada: a API servida pelo
+portal em `/portal/api/v1`, de modo que todas as regras valem sem mudança; chaves que pertencem às organizações e
+são criadas pelos seus administradores (um administrador do servidor só para os cadastros do operador);
+`rk_<id>.<segredo>` mostrada uma vez, só o SHA-256 guardado; escopos, prefixos opcionais, validade obrigatória; um
+limite de requisições por chave no MongoDB; criação e revogação de chaves no diário, mudanças como eventos de
+cadastro de `api:<id>`; e-mail quando uma chave é criada e antes de expirar; uma descrição OpenAPI 3.1 escrita à mão
+e conferida por um teste.
+
+| Commit | Mudança |
+|---|---|
+| `326566d` | docs: ADR 0005 nos dois idiomas (etapa 1) |
+| `bb0b496` | etapa 2: `apikeys.py`, `api_v1.py`, `openapi.json`; endpoints de chaves, `remove_record()` e `label_response()` compartilhados com a API, o aviso de validade e a limpeza de hora em hora do worker; `test_api.py` |
+| `c469f29` | etapa 3: a tela de chaves de API e as suas imagens, a correção do menu, os guias do usuário; `test_api_e2e.py` |
+
+As dezesseis proteções do servidor passaram por teste de mutação; uma mutação (o aviso de validade pego de novo)
+fez o `expiring()` girar para sempre, o que o teste não deixa passar, mas interrompeu o script de mutação por tempo
+esgotado. O teste no navegador achou dois defeitos antes da entrega: uma chave de mensagem escrita duas vezes no
+catálogo (o cabeçalho de coluna "Criada" substituía a mensagem "Chave … criada"), agora recusada por um teste, e uma
+chave nova deixada na página depois de sair da tela, agora retirada. Ainda não confirmado na homologação nem no CI.
+
 ## Como as principais áreas evoluíram
 
 | Área | 1.0.0 (sessão 1) | Agora |
@@ -446,11 +473,12 @@ confirmado na homologação nem no CI.
 | Etiquetas | PNG/SVG, HRI sim/não, marca opcional | HRI completo/chave/nenhum, versão e correção do QR, atributos de dados, sem marca |
 | Achar cadastros | abrir um GTIN por vez | lista de registros, busca por texto, filtros por tipo de chave, qualificador, autor e problemas de link, busca por código, outros cadastros da chave |
 | Trabalho em lote | nenhum | exportação XLSX/CSV e importação em duas etapas |
+| Integração | a API de cadastro oficial e o seu único token mestre | uma API versionada para os sistemas de cada organização, com chaves de API (escopos, prefixos, validade, um limite de requisições) e uma descrição OpenAPI |
 | Qualidade dos destinos | nenhuma | verificador de links no editor, em todos os cadastros e na importação |
 | Contas | usuários pela linha de comando, todos iguais | perfis, prefixos, organizações (tenants) com usuários e auditoria próprios, um administrador do servidor com acesso de suporte, tela de usuários, senhas temporárias ou convites por e-mail, recuperação de senha por e-mail, avisos de segurança, histórico, auditoria, no banco próprio do portal |
 | Instalação | manual, com patch | fork git, configuração em camadas, instalador para Ubuntu, backup |
 | Resolução | GTIN e lote, links comprimidos do Digital Link 1.1 | todas as chaves e qualificadores, as regras do Resolver 1.2.1, EPC em binário de etiquetas NFC (`/eh…`, `/ex…`) |
-| Testes | 69 verificações | 1.845 verificações em 23 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador (84); rodam pelo pytest e no GitHub Actions, o portal e seus workers de tarefas também num MongoDB real |
+| Testes | 69 verificações | 1.958 verificações em 25 programas de teste (um deles a própria suíte de testes da GS1), além do teste do instalador (84); rodam pelo pytest e no GitHub Actions, o portal e seus workers de tarefas também num MongoDB real |
 | Implantação | um contêiner por serviço, servidor embutido do Flask, proxy reiniciado à mão | quantas réplicas se queira dos quatro serviços sem estado (definidas no `.env`), gunicorn em todos os serviços web, um proxy que acompanha as réplicas pelo DNS do Docker |
 | Documentação | README do pacote, documento de passagem | README, guia do portal, funcionalidades, histórico, guia do desenvolvedor (em inglês e português), documentação das extensões, changelog |
 
@@ -490,6 +518,9 @@ confirmado na homologação nem no CI.
 14. O e-mail passa por um relay escolhido pelo operador, como tarefas do worker; sem relay nada muda. Os links de
     uso único são guardados como hash e levados no fragmento do endereço; a recuperação de senha responde igual
     para todos; os avisos de segurança não podem ser desligados ([ADR 0004](adr/0004-e-mail.md)).
+15. Os sistemas das organizações usam a API versionada do próprio portal (`/portal/api/v1`) com chaves que os seus
+    administradores criam; uma chave age como um usuário da sua organização agiria, sob todas as regras do portal;
+    só o hash de uma chave é guardado ([ADR 0005](adr/0005-api-das-organizacoes.md)).
 
 ## Lições aprendidas
 
@@ -545,7 +576,12 @@ confirmado na homologação nem no CI.
   revelou configurações gravadas duas vezes, o valor antigo por último, um defeito mais antigo que a
   funcionalidade. Confira a saída, não só os valores que deviam mudar.
 - Um link que difere da página aberta só depois do `#` não carrega a página de novo: um código que lê o fragmento
-  ao carregar também precisa escutar o `hashchange`.
+  ao carregar também precisa escutar o `hashchange`. O mesmo vale para o que uma visão deixa para trás: uma chave
+  mostrada uma vez ficava na página quando a visão mudava, até sair da visão passar a retirá-la.
+- Um catálogo de mensagens mantido à mão pode ter a mesma chave duas vezes, e a segunda vence em silêncio: um teste
+  agora recusa isso.
+- Uma mutação que faz o código girar para sempre é pega (o teste não passa), mas pode parar um laço de mutações que
+  espera por ela: dê a cada execução o seu próprio limite de tempo e trate o tempo esgotado como pego.
 
 ## Pendências
 
@@ -555,7 +591,7 @@ confirmado na homologação nem no CI.
 - A verificação final do instalador usa só o `/portal/healthz`; deveria também pedir algo ao Resolver pelo
   proxy (item 7.2).
 - Uma cópia do backup fora do servidor e um ensaio de restauração.
-- Os itens 2.4, 2.5 e 3.1 na homologação e no CI (sessões 10 a 12): faltam o push do responsável, o resumo do CI,
+- Os itens 2.4, 2.5, 3.1 e 3.2 na homologação e no CI (sessões 10 a 12): faltam o push do responsável, o resumo do CI,
   as conferências da atualização na homologação, a primeira execução da verificação semanal do engine, um primeiro
   teste do e-mail com o Mailpit e depois com o relay da organização.
 - Revisão dos 221 nomes de AIs em português e das mensagens do engine em português; decisão sobre o logotipo GS1

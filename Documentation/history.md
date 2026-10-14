@@ -26,8 +26,8 @@ the next one started.
 | 8 — backlog, quick wins, CI | 13 Oct | `bc1c86b`, `1a1ca59`, `d68a883` and the documentation commits | backlog reordered around tenants, e-mail, API keys and custom domains; 30-minute idle session with a warning and a 12-hour limit; syntax box removed from the home page; community notice; development tests through pytest and on GitHub Actions |
 | 9 — architecture for scale | 13 Oct | ADR 0001, then three code deliveries (`d783f3d`, `a072e9d`, `20f3304`) and the documentation commits | item 2.3: the portal's state in MongoDB, background jobs in a worker service, replicas of every stateless service behind a proxy that finds them by itself; gunicorn in every web service; nginx 1.30 |
 | 10 — tenants | 13 Oct | ADR 0002, then two code deliveries (`1590b7e`, `675b6ca`), the documentation commit and a fix (`7c10048`) | item 2.4: organisations that own GS1 Company Prefixes, the server administrator, support access, an audit trail per organisation, an e-mail address per user |
-| 12 — e-mail | 14 Oct | ADR 0004, an installer fix (`f3d127d`), two code deliveries (`03c924b`, `fbe86f0`) and the documentation commit | item 3.1: mail through an authenticated relay, invitations, password recovery by single-use link, security notices and notices of finished jobs with per-user preferences |
 | 11 — one source for the GS1 rules | 13 Oct | ADR 0003, then three code deliveries (`8e3d9c7`, `6f6ce19`, `e7c5a6d`) and the documentation commit | item 2.5: one engine release for every service, keys, qualifiers and formats from the GS1 Barcode Syntax Dictionary, the engine's messages translated, a weekly update check |
+| 12 — e-mail and the tenant API | 14 Oct | ADRs 0004 and 0005, an installer fix (`f3d127d`), four code deliveries (`03c924b`, `fbe86f0`, `bb0b496`, `c469f29`) and two documentation commits | item 3.1: mail through an authenticated relay, invitations, password recovery by single-use link, security notices and notices of finished jobs with per-user preferences; item 3.2: a versioned API for organisations' systems with API keys |
 
 At the end of session 4 the fork changes or adds 70 files of the official project (about 16,000 lines
 added) and is covered by 739 checks in the development tests, plus the installer test.
@@ -394,7 +394,7 @@ from the older dictionary). Every new test was mutation-checked (three changes f
 dictionary, eight for the messages). The GitHub API could not be reached from the sandbox, so the weekly
 workflow's first real run will be on GitHub. Not yet confirmed on staging nor in CI.
 
-## Session 12 — e-mail (item 3.1)
+## Session 12 — e-mail (item 3.1) and the tenant API (item 3.2)
 
 The owner still could not reach the workstation or the server to apply the cumulative bundle of items 2.4 and 2.5,
 and asked to go on with the next item and deliver everything in one bundle from `fd8f67c`, taking the recommended
@@ -425,6 +425,32 @@ address bar were mutation-checked; one mutation (a disabled account's link accep
 check. Mailpit's image cannot be pulled in the sandbox, so its first run is on staging. Not yet confirmed on
 staging nor in CI.
 
+**Item 3.2, the same night.** With item 3.1 delivered, the owner asked to go on with the next item, and decided
+that the commits not yet pushed should name Claude as author with himself as co-author (until then he was the
+author and Claude the co-author). The fifteen commits from `fd8f67c` were rewritten in order: each commit's
+documents had the hashes of the earlier rewritten commits replaced, which worked because no commit cites a later
+one (checked first); the result differed from the old tree only in those hashes (94 lines). From then on commits
+are made that way.
+
+Every question of [ADR 0005](adr/0005-tenant-api.md) was settled on the recommended option: the API served by the
+portal at `/portal/api/v1`, so every rule applies unchanged; keys owned by organisations and created by their
+administrators (a server administrator only for the operator's records); `rk_<id>.<secret>` shown once, only the
+SHA-256 stored; scopes, optional prefixes, a required validity; a request limit per key in MongoDB; key creation
+and revocation journalled, changes as record events of `api:<id>`; e-mail when a key is created and before it
+expires; a hand-written OpenAPI 3.1 description checked by a test.
+
+| Commit | Change |
+|---|---|
+| `326566d` | docs: ADR 0005 in both languages (step 1) |
+| `bb0b496` | step 2: `apikeys.py`, `api_v1.py`, `openapi.json`; key endpoints, `remove_record()` and `label_response()` shared with the API, the expiry notice and the worker's hourly housekeeping; `test_api.py` |
+| `c469f29` | step 3: the API keys screen and its images, the menu fix, the user guides; `test_api_e2e.py` |
+
+All sixteen protections of the server were mutation-checked; one mutation (the expiry notice taken again) made
+`expiring()` loop for ever, which the test cannot pass, but it stopped the mutation script with a timeout. The
+browser test found two defects before delivery: one message key written twice in the catalogue (the column heading
+"Created" replaced the message "Key … created"), now refused by a test, and a new key left in the page after
+leaving the screen, now removed. Not yet confirmed on staging nor in CI.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -433,11 +459,12 @@ staging nor in CI.
 | Labels | PNG/SVG, HRI on/off, optional branding | HRI full/key/none, QR version and correction, data attributes, no branding |
 | Finding records | open one GTIN at a time | record list, text search, filters by key type, qualifier, author and link problems, code search, other records of a key |
 | Bulk work | none | XLSX/CSV export and two-step import |
+| Integration | the official data entry API and its single master token | a versioned API for each organisation's systems, with API keys (scopes, prefixes, expiry, a request limit) and an OpenAPI description |
 | Quality of targets | none | link checker in the editor, for every record and on import |
 | Accounts | users from the command line, all equal | roles, prefixes, organisations (tenants) with their own users and audit trail, a server administrator with support access, users screen, temporary passwords or invitations by e-mail, password recovery by e-mail, security notices, history, audit trail, in the portal's own database |
 | Installation | manual, with a patch | git fork, layered configuration, Ubuntu installer, backup |
 | Resolution | GTIN and batch, compressed links of Digital Link 1.1 | every key and qualifier, the rules of Resolver 1.2.1, EPC binary strings from NFC tags (`/eh…`, `/ex…`) |
-| Tests | 69 checks | 1,845 checks in 23 test programs (one of them GS1's own test suite), plus the installer test (84); run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
+| Tests | 69 checks | 1,958 checks in 25 test programs (one of them GS1's own test suite), plus the installer test (84); run through pytest and on GitHub Actions, the portal and its job workers also on a real MongoDB |
 | Deployment | one container per service, Flask's built-in server, the proxy restarted by hand | any number of replicas of the four stateless services (set in `.env`), gunicorn in every web service, a proxy that follows replicas through Docker's DNS |
 | Documentation | README of the package, handover | README, user guide, features, history, developer guide (in English and Portuguese), extensions documentation, changelog |
 
@@ -475,6 +502,9 @@ staging nor in CI.
 14. E-mail goes through a relay the operator chooses, as jobs of the worker; without a relay nothing changes.
     Single-use links are stored as hashes and carried in the fragment of the address; password recovery answers
     the same for everyone; security notices cannot be switched off ([ADR 0004](adr/0004-e-mail.md)).
+15. Organisations' systems use the portal's own versioned API (`/portal/api/v1`) with keys their administrators
+    create; a key acts as a user of its organisation would, under every rule of the portal; only the hash of a key
+    is kept ([ADR 0005](adr/0005-tenant-api.md)).
 
 ## Lessons learnt
 
@@ -527,7 +557,11 @@ staging nor in CI.
   settings written twice, the old value last, a defect older than the feature. Check the output, not only the
   values that were meant to change.
 - A link that differs from the open page only after `#` does not load the page again: code that reads the
-  fragment at load time must also listen for `hashchange`.
+  fragment at load time must also listen for `hashchange`. The same holds for what a view leaves behind: a key shown
+  once stayed in the page when the view changed, until leaving the view removed it.
+- A message catalogue kept by hand can hold one key twice, and the second silently wins: a test now refuses it.
+- A mutation that makes the code loop for ever is caught (the test cannot pass) but can stop a mutation loop that
+  waits on it: give each run its own time limit and treat a timeout as caught.
 
 ## Open items
 
@@ -539,7 +573,7 @@ staging nor in CI.
 - An off-server backup copy and a restore rehearsal.
 - Review of the 221 Portuguese AI names and of the Portuguese engine messages; decision on the GS1 logo on the
   home page and resolver pages.
-- Items 2.4, 2.5 and 3.1 on staging and in CI (sessions 10 to 12): the owner's push, the CI summary, the staging
+- Items 2.4, 2.5, 3.1 and 3.2 on staging and in CI (sessions 10 to 12): the owner's push, the CI summary, the staging
   checks of the update, the first run of the weekly update check, a first try of e-mail with Mailpit and then
   with the organisation's relay are pending.
 

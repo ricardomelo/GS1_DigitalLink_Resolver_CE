@@ -12,7 +12,9 @@ Event: {"at", "user", "action", "category", "tenant"?, "byOperator"?, "anchor"?,
   user-update, user-reset, user-remove, export, tenant-create, tenant-update, tenant-remove, support-open,
   support-close, and with e-mail (Documentation/adr/0004-e-mail.md) password-recovery (a recovery link was
   sent), password-reset (a password chosen through a recovery or reset link), invite-accepted, preferences and
-  mail-failed (a message the relay refused; never the address).
+  mail-failed (a message the relay refused; never the address); with the tenant API
+  (Documentation/adr/0005-tenant-api.md) api-key-create and api-key-revoke. Changes made through the API are record
+  events whose user is "api:<key id>".
 
 "tenant" is the tenant whose audit trail the event belongs to (Documentation/adr/0002-tenants.md, section 3.5);
 none for the operator, which is also what events written before tenants existed are. "byOperator" marks what an

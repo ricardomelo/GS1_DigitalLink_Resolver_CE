@@ -13,7 +13,8 @@ Connection, from the environment:
   PORTAL_DB_NAME                      the database, also the user's authentication database
 
 Collections: users, tenants (tenants.py), record_meta, journal, login_failures, linkcheck_cache, settings, jobs
-and workers (jobs.py), tokens (tokens.py: invitation and recovery links). The indexes are made at
+and workers (jobs.py), tokens (tokens.py: invitation and recovery links), api_keys and api_rate (apikeys.py: the tenant
+API's keys and request counters). The indexes are made at
 the first use in each process (createIndex is allowed to the readWrite role). Dates are stored as BSON dates
 in UTC and come back as naive datetimes in UTC (pymongo's default).
 """
@@ -63,6 +64,13 @@ INDEXES = {
     "tokens": [
         ([("user", ASCENDING), ("purpose", ASCENDING)], {}),
         ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
+    ],
+    "api_keys": [
+        ([("tenant", ASCENDING), ("created", DESCENDING)], {}),
+        ([("expiresAt", ASCENDING)], {}),
+    ],
+    "api_rate": [
+        ([("at", ASCENDING)], {"expireAfterSeconds": 120}),
     ],
 }
 

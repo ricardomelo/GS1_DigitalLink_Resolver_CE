@@ -132,6 +132,35 @@ TEXTS = {
                   "Se foi você, espere e tente de novo, ou use \"Esqueceu a senha?\" na página de acesso. Se não "
                   "foi, alguém pode estar tentando usar a sua conta: avise o seu administrador."),
     },
+    "api-key-created": {
+        "en-GB": ("A new API key was created",
+                  "Hello,\n\n"
+                  "The user {user} created the API key \"{name}\" ({id}) for {scope} on {when} (UTC), with the "
+                  "scopes {scopes}. It expires on {expires} (UTC).\n\n"
+                  "Whoever holds the key can use the portal's API within those scopes until it expires or is revoked. "
+                  "If you did not create it, revoke it at once in the portal (API keys) and tell your administrator."),
+        "pt-BR": ("Uma nova chave de API foi criada",
+                  "Olá,\n\n"
+                  "O usuário {user} criou a chave de API \"{name}\" ({id}) para {scope} em {when} (UTC), com os "
+                  "escopos {scopes}. Ela expira em {expires} (UTC).\n\n"
+                  "Quem tem a chave pode usar a API do portal dentro desses escopos até ela expirar ou ser revogada. "
+                  "Se não foi você que a criou, revogue-a imediatamente no portal (Chaves de API) e avise o seu "
+                  "administrador."),
+    },
+    "api-key-expiring": {
+        "en-GB": ("An API key expires soon",
+                  "Hello,\n\n"
+                  "The API key \"{name}\" ({id}) you created for {scope} expires on {expires} (UTC). The systems that "
+                  "use it will then be refused.\n\n"
+                  "To keep them working, create a new key in the portal (API keys), put it in those systems and "
+                  "revoke the old one."),
+        "pt-BR": ("Uma chave de API expira em breve",
+                  "Olá,\n\n"
+                  "A chave de API \"{name}\" ({id}) que você criou para {scope} expira em {expires} (UTC). Os "
+                  "sistemas que a usam passarão a ser recusados.\n\n"
+                  "Para mantê-los funcionando, crie uma chave nova no portal (Chaves de API), coloque-a nesses "
+                  "sistemas e revogue a antiga."),
+    },
     "import-finished": {
         "en-GB": ("Your import has finished",
                   "Hello,\n\n"

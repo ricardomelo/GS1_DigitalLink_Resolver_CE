@@ -1,0 +1,216 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Link management portal — tenant API",
+  "version": "1.0.0",
+  "summary": "Records and labels of one organisation of a GS1 Digital Link resolver, for its own systems.",
+  "description": "Authenticate every call (except this description) with an API key created by an administrator in the portal (API keys): `Authorization: Bearer rk_<id>.<secret>`. A key belongs to an organisation (or to the operator) and reaches only its records, within the key's GS1 Company Prefixes when it has some; it has scopes, an expiry and a limit of requests per minute. Answers are JSON; errors carry a message `code` and its `params` (the portal's message codes). Records are addressed by primary key and value (`/records/01/09506000134352`) and, for a qualified record, its key qualifiers as a path in `qualifiers` (`?qualifiers=/10/L1`). The API follows the portal's rules: the GS1 rules of keys, qualifiers and formats, the registration model of GS1-Conformant Resolver 2.5.9, the default link type shared by every record of a key (`default.sharedMismatch`). It is meant for servers: it sends no CORS headers."
+ },
+ "servers": [{"url": "/portal/api/v1"}],
+ "security": [{"apiKey": []}],
+ "paths": {
+  "/": {
+   "get": {
+    "operationId": "whoami",
+    "summary": "The key itself, its organisation and its request limit",
+    "responses": {
+     "200": {"description": "The key", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WhoAmI"}}}},
+     "401": {"$ref": "#/components/responses/Unauthorised"},
+     "429": {"$ref": "#/components/responses/RateLimit"}
+    }
+   }
+  },
+  "/openapi.json": {
+   "get": {
+    "operationId": "openapi",
+    "summary": "This description",
+    "security": [],
+    "responses": {"200": {"description": "OpenAPI 3.1 document", "content": {"application/json": {}}}}
+   }
+  },
+  "/records": {
+   "get": {
+    "operationId": "listRecords",
+    "summary": "The records within the key's reach, a page at a time",
+    "description": "Scope `records:read`. Sorted by `id`; pass the `next` of an answer as `after` to get the next page.",
+    "parameters": [
+     {"name": "key", "in": "query", "description": "Only the records of this primary key (an Application Identifier, e.g. 01)", "schema": {"type": "string", "pattern": "^[0-9]{2,4}$"}},
+     {"name": "limit", "in": "query", "description": "Records per page", "schema": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100}},
+     {"name": "after", "in": "query", "description": "The `next` of the previous page", "schema": {"type": "string"}}
+    ],
+    "responses": {
+     "200": {"description": "A page of records", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RecordList"}}}},
+     "401": {"$ref": "#/components/responses/Unauthorised"},
+     "403": {"$ref": "#/components/responses/Forbidden"},
+     "422": {"$ref": "#/components/responses/Invalid"},
+     "429": {"$ref": "#/components/responses/RateLimit"}
+    }
+   }
+  },
+  "/records/{key}/{value}": {
+   "parameters": [
+    {"$ref": "#/components/parameters/Key"},
+    {"$ref": "#/components/parameters/Value"},
+    {"$ref": "#/components/parameters/Qualifiers"}
+   ],
+   "get": {
+    "operationId": "getRecord",
+    "summary": "One record",
+    "description": "Scope `records:read`.",
+    "responses": {
+     "200": {"description": "The record", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Record"}}}},
+     "401": {"$ref": "#/components/responses/Unauthorised"},
+     "403": {"$ref": "#/components/responses/Forbidden"},
+     "404": {"$ref": "#/components/responses/NotFound"},
+     "422": {"$ref": "#/components/responses/Invalid"},
+     "429": {"$ref": "#/components/responses/RateLimit"}
+    }
+   },
+   "put": {
+    "operationId": "putRecord",
+    "summary": "Creates or replaces one record",
+    "description": "Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed.",
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RecordInput"}}}},
+    "responses": {
+     "200": {"description": "Replaced", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Saved"}}}},
+     "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Saved"}}}},
+     "401": {"$ref": "#/components/responses/Unauthorised"},
+     "403": {"$ref": "#/components/responses/Forbidden"},
+     "415": {"$ref": "#/components/responses/Invalid"},
+     "422": {"$ref": "#/components/responses/Invalid"},
+     "429": {"$ref": "#/components/responses/RateLimit"},
+     "502": {"$ref": "#/components/responses/Upstream"}
+    }
+   },
+   "delete": {
+    "operationId": "deleteRecord",
+    "summary": "Deletes one record, keeping the key's others",
+    "description": "Scope `records:write`.",
+    "responses": {
+     "200": {"description": "Deleted", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Message"}}}},
+     "401": {"$ref": "#/components/responses/Unauthorised"},
+     "403": {"$ref": "#/components/responses/Forbidden"},
+     "404": {"$ref": "#/components/responses/NotFound"},
+     "429": {"$ref": "#/components/responses/RateLimit"},
+     "502": {"$ref": "#/components/responses/Upstream"}
+    }
+   }
+  },
+  "/labels/{key}/{value}": {
+   "parameters": [
+    {"$ref": "#/components/parameters/Key"},
+    {"$ref": "#/components/parameters/Value"},
+    {"$ref": "#/components/parameters/Qualifiers"}
+   ],
+   "get": {
+    "operationId": "getLabel",
+    "summary": "The record's QR code label",
+    "description": "Scope `labels:read`. The headers X-QR-Version, X-QR-Level and X-QR-Modules tell the symbol made.",
+    "parameters": [
+     {"name": "format", "in": "query", "description": "svg (default) or png, as a download", "schema": {"type": "string", "enum": ["svg", "png"]}},
+     {"name": "hri", "in": "query", "description": "Human readable text under the symbol", "schema": {"type": "string", "enum": ["full", "key", "none"], "default": "full"}},
+     {"name": "version", "in": "query", "description": "QR version, or auto", "schema": {"type": "string", "default": "auto"}},
+     {"name": "ecl", "in": "query", "description": "Error correction level", "schema": {"type": "string", "enum": ["l", "m", "q", "h"], "default": "m"}},
+     {"name": "attr", "in": "query", "description": "A GS1 Digital Link data attribute in the QR code, AI:value (repeatable; checked by the GS1 Barcode Syntax Engine)", "schema": {"type": "array", "items": {"type": "string"}}, "style": "form", "explode": true}
+    ],
+    "responses": {
+     "200": {"description": "The label", "content": {"image/svg+xml": {}, "image/png": {}}},
+     "401": {"$ref": "#/components/responses/Unauthorised"},
+     "403": {"$ref": "#/components/responses/Forbidden"},
+     "422": {"$ref": "#/components/responses/Invalid"},
+     "429": {"$ref": "#/components/responses/RateLimit"}
+    }
+   }
+  }
+ },
+ "components": {
+  "securitySchemes": {
+   "apiKey": {"type": "http", "scheme": "bearer", "bearerFormat": "rk_<id>.<secret>", "description": "An API key from the portal (API keys); shown once when it is created."}
+  },
+  "parameters": {
+   "Key": {"name": "key", "in": "path", "required": true, "description": "The primary key's Application Identifier (01, 00, 414, 8004…)", "schema": {"type": "string", "pattern": "^[0-9]{2,4}$"}},
+   "Value": {"name": "value", "in": "path", "required": true, "description": "The key's value (a GTIN of 8, 12, 13 or 14 digits is stored as GTIN-14); percent-encode / and other reserved characters", "schema": {"type": "string"}},
+   "Qualifiers": {"name": "qualifiers", "in": "query", "description": "The record's key qualifiers as a path (/22/V1/10/L1/21/S1); absent: the key's own record", "schema": {"type": "string"}}
+  },
+  "responses": {
+   "Unauthorised": {"description": "No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+   "Forbidden": {"description": "The key lacks the scope (api.scope), or the record is outside its reach (access.prefix)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+   "NotFound": {"description": "No record with those qualifiers (record.notFound)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+   "Invalid": {"description": "A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+   "RateLimit": {"description": "Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait", "headers": {"Retry-After": {"schema": {"type": "integer"}}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+   "Upstream": {"description": "The resolver's data entry API failed or refused the change (upstream.*)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+  },
+  "schemas": {
+   "Error": {
+    "type": "object", "required": ["code"],
+    "properties": {"code": {"type": "string", "description": "A message code of the portal"}, "params": {"type": "object"}}
+   },
+   "Message": {
+    "type": "object", "required": ["code"],
+    "properties": {"code": {"type": "string"}, "params": {"type": "object"}}
+   },
+   "Link": {
+    "type": "object", "required": ["linkType", "url", "hreflang"],
+    "properties": {
+     "linkType": {"type": "string", "description": "A GS1 link type, e.g. gs1:pip", "pattern": "^gs1:[A-Za-z]+$"},
+     "url": {"type": "string", "description": "An http or https address"},
+     "title": {"type": "string", "maxLength": 120},
+     "hreflang": {"type": "array", "minItems": 1, "items": {"type": "string"}, "description": "Languages of the target (pt, en, pt-BR…)"}
+    }
+   },
+   "RecordInput": {
+    "type": "object", "required": ["description", "links"],
+    "properties": {
+     "description": {"type": "string", "description": "What the item is (shown in the resolver's pages and the portal)"},
+     "links": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"$ref": "#/components/schemas/Link"}},
+     "defaultLinkType": {"type": "string", "description": "The link type of the default link (default: the first link's)"}
+    }
+   },
+   "Record": {
+    "type": "object", "required": ["key", "value", "qualifiers", "description", "defaultLinkType", "links", "digitalLink"],
+    "properties": {
+     "key": {"type": "string"}, "value": {"type": "string"},
+     "qualifiers": {"type": "string", "description": "The record's key qualifiers as a path, empty for the key's own record"},
+     "informative": {"type": "string", "description": "The variant and batch kept with a serial number (GS1-Conformant Resolver 2.5.9)"},
+     "description": {"type": "string"},
+     "defaultLinkType": {"type": ["string", "null"]},
+     "links": {"type": "array", "items": {"$ref": "#/components/schemas/Link"}},
+     "digitalLink": {"type": "string", "description": "The record's GS1 Digital Link URI"}
+    }
+   },
+   "RecordSummary": {
+    "type": "object", "required": ["id", "key", "value", "qualifiers", "description", "links"],
+    "properties": {
+     "id": {"type": "string", "description": "Sort key of the list (anchor|qualifiers)"},
+     "key": {"type": "string"}, "value": {"type": "string"}, "qualifiers": {"type": "string"},
+     "informative": {"type": "string"}, "description": {"type": "string"},
+     "defaultLinkType": {"type": ["string", "null"]}, "links": {"type": "integer", "description": "Number of links"}
+    }
+   },
+   "RecordList": {
+    "type": "object", "required": ["records", "next", "total"],
+    "properties": {
+     "records": {"type": "array", "items": {"$ref": "#/components/schemas/RecordSummary"}},
+     "next": {"type": ["string", "null"], "description": "The `after` of the next page; null on the last page"},
+     "total": {"type": "integer", "description": "Records within the key's reach (and the key filter)"}
+    }
+   },
+   "Saved": {
+    "type": "object", "required": ["code", "created", "digitalLink"],
+    "properties": {"code": {"type": "string", "enum": ["save.created", "save.updated"]}, "created": {"type": "boolean"}, "digitalLink": {"type": "string"}}
+   },
+   "WhoAmI": {
+    "type": "object", "required": ["key", "organisation", "rateLimit"],
+    "properties": {
+     "key": {"type": "object", "required": ["id", "name", "scopes", "prefixes", "expiresAt"], "properties": {
+      "id": {"type": "string"}, "name": {"type": "string"},
+      "scopes": {"type": "array", "items": {"type": "string", "enum": ["records:read", "records:write", "labels:read"]}},
+      "prefixes": {"type": "array", "items": {"type": "string"}}, "expiresAt": {"type": "string"}}},
+     "organisation": {"type": ["string", "null"], "description": "Null for the operator's keys"},
+     "rateLimit": {"type": "object", "properties": {"perMinute": {"type": "integer"}}},
+     "resolver": {"type": "string"}
+    }
+   }
+  }
+ }
+}

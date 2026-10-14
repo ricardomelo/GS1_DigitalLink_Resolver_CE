@@ -35,7 +35,7 @@ OPTIONAL = tuple(name for name, (optional, _) in CATEGORIES.items() if optional)
 TEMPLATES = {
     "invite": "account", "password-recovery": "account", "password-reset-admin": "account",
     "password-changed": "security", "email-changed-old": "security", "email-changed-new": "security",
-    "account-locked": "security",
+    "account-locked": "security", "api-key-created": "security", "api-key-expiring": "security",
     "import-finished": "jobs", "linkcheck-finished": "jobs",
 }
 # Waits before each new try after a temporary failure, in minutes; after the last, the message has failed.

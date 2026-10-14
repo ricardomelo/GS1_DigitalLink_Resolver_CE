@@ -119,6 +119,9 @@ portal/                          novo: o portal de gestão de links
   mailtexts.py                   os textos das mensagens de e-mail, nos dois idiomas
   tokens.py                      links de uso único: convites e recuperação de senha
   notify.py                      notificações: categorias, as escolhas do usuário, a tarefa "mail"
+  apikeys.py                     chaves da API das organizações: criação, hash, revogação, limite de requisições (ADR 0005)
+  api_v1.py                      a API das organizações, /portal/api/v1 (importada no fim do app.py)
+  openapi.json                   a sua descrição OpenAPI 3.1, servida em /portal/api/v1/openapi.json
   db_init.py                     cria o usuário do banco do portal (serviço portal-db-init)
   create_user.py                 administração de usuários pela linha de comando
   static/                        index.html, login.html, app.js, login.js, password.js, i18n.js, app.css
@@ -164,7 +167,8 @@ também lê `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD`, `PORTA
 `PORTAL_COOKIE_SECURE`, `PORTAL_LINKCHECK_TIMEOUT`, `PORTAL_WORKER`, `PORTAL_CONFIG_DIR` (e `PORTAL_*_FILE`, os
 arquivos que a migração lê) e, para o e-mail, `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`, `PORTAL_MAIL_SECURITY`,
 `PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM`, `PORTAL_MAIL_REPLY_TO`, `PORTAL_MAIL_CA_FILE`,
-`PORTAL_MAIL_TIMEOUT`, `PORTAL_INVITE_HOURS` e `PORTAL_RESET_MINUTES`. Só o `portal-db-init` recebe o `MONGO_URI` root; o do portal e o do worker ficam
+`PORTAL_MAIL_TIMEOUT`, `PORTAL_INVITE_HOURS` e `PORTAL_RESET_MINUTES`, e para a API das organizações
+`PORTAL_API_RATE_PER_MINUTE` e `PORTAL_API_KEY_MAX_DAYS`. Só o `portal-db-init` recebe o `MONGO_URI` root; o do portal e o do worker ficam
 vazios. O worker tem as configurações do portal (ele importa o `app.py` e faz a mesma inicialização, o que é
 seguro sob as travas compartilhadas).
 
@@ -352,7 +356,9 @@ O `jobs.py` é a fila: `create()`, `get()` (a tarefa do usuário, de um tipo, n�
 `workers_alive()`, `requeue_stale()`, `claim()` (a tarefa mais antiga da fila cujo `notBefore`, se houver, já
 passou), `Reporter` (`beat()`, `progress()`, `record()`, `check_stop()`, `finish(remove=…)`, `defer(seconds)` —
 de volta à fila para mais tarde, levantando `Deferred` —, `give_up(code)`), `release()`, `fail()`. Os tipos são
-`import`, `linkcheck` e `mail`. Os tempos são constantes no início (`HEARTBEAT_SECONDS` 10,
+`import`, `linkcheck` e `mail`. Entre as tarefas, mais ou menos uma vez por hora (`HOUSEKEEPING_SECONDS`), o
+worker roda o `app.HOUSEKEEPING` (`Worker.housekeep()`; uma tarefa que falha é registrada e as outras rodam): hoje o
+`notify_expiring_keys()`. Os tempos são constantes no início (`HEARTBEAT_SECONDS` 10,
 `STALE_SECONDS` 120, `MAX_ATTEMPTS` 3, `WORKER_ALIVE_SECONDS` 30, `STALLED_SECONDS` 15, validades de 30 minutos
 e de um dia). O `worker.py` tem `Worker` (`run_once()`, `loop()`, `stop()`), `start_embedded()`, `wake()` e
 `main()` (o serviço: SIGTERM e SIGINT o param depois do item em mãos); `IN_WORKER_PROCESS` impede que o
@@ -397,6 +403,26 @@ e-mail ligado e um endereço; o `reset_user()` envia um link quando pode (um nov
 e senão gera uma senha temporária como antes. O `users.py` ganha os campos `invited`, `language`,
 `languageChosen` e `notify`, e `clear_password()`, `find_login()` (um nome de usuário, sem diferenciar maiúsculas,
 ou um endereço), `note_language()` e `set_preferences()`; `create()` sem senha cria uma conta convidada.
+
+### `apikeys.py`, `api_v1.py`, `openapi.json` — a API das organizações
+
+[ADR 0005](adr/0005-api-das-organizacoes.md). O `apikeys.py` mantém a coleção `api_keys`: `create(name, scopes, days,
+prefixes, tenant, created_by)` confere nome, escopos, dias e prefixos (`users._check_scope()`, sob a trava `users`),
+recusa mais de `MAX_ACTIVE_KEYS` chaves ativas por escopo e devolve `rk_<id>.<segredo>` uma vez (só o SHA-256 do
+segredo é guardado); `load(tenant)`, `public()`, `state()` (`active`, `expired`, `revoked`), `revoke()` (no escopo),
+`authenticate()` (formato, id, comparação do hash em tempo constante, situação), `count_request()` (um contador por
+chave e minuto em `api_rate`, compartilhado pelas réplicas; a primeira requisição de um minuto grava `lastUsed`) e
+`expiring()` (pega cada chave que expira em até uma semana uma vez, de forma atômica).
+
+O `api_v1.py` acrescenta as rotas de `/portal/api/v1` à aplicação do portal. `require_key(scope)` lê a chave do
+cabeçalho, a recusa (401 `api.keyMissing` / `api.keyInvalid`, também para uma organização desativada), conta a
+requisição (429 `api.rateLimit` com `Retry-After`), confere o escopo (403 `api.scope`) e chama
+`app.set_scope("api:<id>", …)` com a organização da chave, o perfil que os seus escopos implicam e os seus prefixos,
+de modo que o `allowed()` e todas as regras valem. Os tratadores usam `build_document()`, `store_record()`,
+`remove_record()` e `label_response()`, que os endpoints do próprio portal também usam. O `openapi.json` é escrito à
+mão; o `test_api.py` o confere contra as rotas e valida respostas com os seus esquemas. No `app.py`: os endpoints de
+chaves (`list_api_keys()`, `create_api_key()`, `revoke_api_key()`, sempre no escopo da própria conta),
+`notify_expiring_keys()` e `HOUSEKEEPING`.
 
 ### `migrate.py`, `db_init.py`
 
@@ -446,6 +472,11 @@ elementos `.needs-mail`: a caixa de convite do formulário de novo usuário, a s
 texto do botão seguem ela). `init()` encerra a sessão e volta à página de entrada quando encontra um fragmento de
 convite ou recuperação (um link aberto com alguém conectado: a página de entrada redirecionou para cá).
 
+**Chaves de API ([ADR 0005](adr/0005-api-das-organizacoes.md)).** A visão `#apikeys` (administradores) lista as
+chaves do escopo da própria conta (`loadApiKeys()`, `apiKeyRow()`), cria uma (`createApiKey()`: a chave e um exemplo
+aparecem uma vez) e revoga (`revokeApiKey()`). `forgetNewKey()` retira uma chave nova da página quando se sai da
+visão.
+
 **Lista de registros.** `loadRecords()` busca `/records` uma vez; `renderRecords()` filtra no navegador por
 tipo de chave (`#records-key`), qualificador (`qualifierMatches()`), autor, problemas de link e texto
 (`fold()` ignora maiúsculas e acentos). `parseCode()` lê um GS1 Digital Link colado ou uma element string
@@ -488,6 +519,11 @@ acesso de suporte, ou o operador) e aos prefixos de empresa GS1 do usuário. Err
 | `POST /digital-link` `{key, value, qualifiers, attributes:[{ai, value}]}` | leitor | Digital Link com atributos de dados conferidos pelo engine; nada é gravado |
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&attr=AI:valor` | leitor | Etiqueta; cabeçalhos `X-QR-Version`, `X-QR-Level`, `X-QR-Modules`; 422 `qr.tooSmall` / `qr.tooLong` |
 | `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable", "mail": "on"\|"off"}` |
+| `GET /keys` · `POST /keys` `{name, scopes, days, prefixes}` · `DELETE /keys/{id}` | administrador | Chaves da API das organizações no escopo da própria conta (a organização de um administrador de organização; o operador para um administrador do servidor, também em acesso de suporte): a lista com `scopes`, `maxDays`, `defaultDays`, `ratePerMinute`; a criação responde `key` (mostrada uma vez) e `item`; o DELETE revoga |
+
+A **API das organizações** (`/portal/api/v1`, uma chave de API em vez da sessão) está descrita no
+`portal/openapi.json` e no README (*API das organizações*): `GET /`, `GET /records`, `GET`/`PUT`/`DELETE
+/records/{key}/{value}`, `GET /labels/{key}/{value}`, `GET /openapi.json`.
 
 ## 8. Dados do portal
 
@@ -499,10 +535,12 @@ Decisões e seus motivos: [ADR 0001](adr/0001-estado-do-portal-no-mongodb.md).
 | `users` | nome de usuário; `hash` (vazio enquanto convidado, ou depois de uma redefinição por link), `role`, `prefixes`, `tenant` (ausente nos usuários do operador), `email` (opcional), `disabled`, `mustChange`, `created`, `lastLogin`, `invited`, `language`, `languageChosen`, `notify` (os quatro últimos ausentes quando vazios) | — |
 | `tenants` | `t-` + 12 dígitos hexadecimais; `name`, `prefixes`, `disabled`, `created`, `createdBy` ([ADR 0002](adr/0002-organizacoes.md)) | — |
 | `record_meta` | chave do cadastro (GTIN pelos 14 dígitos, as outras chaves por `AI/valor`, mais o caminho dos qualificadores); `createdAt`, `createdBy`, `updatedAt`, `updatedBy`, `tenant` (ausente para o operador) | — |
-| `journal` | ObjectId (`jsonl-<linha>` nos eventos migrados); `at` (data), `user`, `action`, `category`, `tenant` (ausente para o operador), `byOperator`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Ações de cadastro `create`, `update`, `delete` (com o conteúdo do cadastro), `import`; outras: `login`, `login-failed`, `login-refused`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`, `tenant-create`, `tenant-update`, `tenant-remove`, `support-open` (o motivo em `detail`), `support-close`, `password-recovery`, `password-reset`, `invite-accepted`, `preferences`, `mail-failed` (nunca um endereço de e-mail) | data; cadastro + data; usuário + data; tenant + data; categoria; TTL em `expiresAt` |
+| `journal` | ObjectId (`jsonl-<linha>` nos eventos migrados); `at` (data), `user`, `action`, `category`, `tenant` (ausente para o operador), `byOperator`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Ações de cadastro `create`, `update`, `delete` (com o conteúdo do cadastro), `import`; outras: `login`, `login-failed`, `login-refused`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`, `tenant-create`, `tenant-update`, `tenant-remove`, `support-open` (o motivo em `detail`), `support-close`, `password-recovery`, `password-reset`, `invite-accepted`, `preferences`, `mail-failed` (nunca um endereço de e-mail), `api-key-create`, `api-key-revoke`; as mudanças feitas pela API das organizações levam o usuário `api:<id da chave>` | data; cadastro + data; usuário + data; tenant + data; categoria; TTL em `expiresAt` |
 | `login_failures` | `key` (`user:<nome>` ou `addr:<endereço>`; pedidos de recuperação `forgot-user:<entrada>` e `forgot-addr:<endereço>`; links inválidos `link-addr:<endereço>`), `at` | chave + data; TTL de 15 minutos em `at` |
 | `linkcheck_cache` | endereço; `result`, `expiresAt` | TTL em `expiresAt` |
 | `jobs` | token; `type` (`import`, `linkcheck`, `mail`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `expiresAt`, `error`, `notBefore`; importações `plan`, `keyRecords`, `results`; verificações de links `scope`, `urls` (`[{url, records}]`), `problems`, `records` (`[{record, problems}]`); mensagens `to`, `subject`, `text` e `html` (retirados depois de enviada ou falhada), `template`, `tries`, `lastError`, `sent` ou `skipped` | estado + criação; TTL em `expiresAt` |
+| `api_keys` | 12 dígitos hexadecimais (o id da chave); `hash` (SHA-256 do segredo), `name`, `tenant` (ausente para o operador), `scopes`, `prefixes`, `created`, `createdBy`, `expiresAt`, `lastUsed`, `revoked`, `revokedBy`, `expiryNotice` ([ADR 0005](adr/0005-api-das-organizacoes.md)) | tenant + criação; validade |
+| `api_rate` | `<id da chave>:<minuto>`; `n`, `at` | TTL de 2 minutos em `at` |
 | `tokens` | SHA-256 do token de um link de uso único; `purpose` (`invite`, `reset`), `user`, `created`, `expiresAt` ([ADR 0004](adr/0004-e-mail.md)) | usuário + propósito; TTL em `expiresAt` |
 | `workers` | nome do worker (`host:pid:modo`); `seen`, `mode`, `job` | TTL de 10 minutos em `seen` |
 | `settings` | `lastFullCheck` (a do operador) e `lastFullCheck:<tenant>`, `journalRetention`, `migration` e os documentos `lock:<nome>` | — |
@@ -646,11 +684,13 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 | `portal/test_store.py` | 58 | a camada de dados do portal: configurações de conexão, índices, a trava compartilhada (também entre dois administradores ao mesmo tempo), usuários, metadados dos cadastros, diário e retenção, bloqueio de entrada, migração dos arquivos antigos (também interrompida e retomada) |
 | `portal/test_tenants.py` | 82 | tenants ([ADR 0002](adr/0002-organizacoes.md)): uma instalação sem tenants igual a antes; tenants e seus prefixos (nomes, sobreposições, redundância, usuários do operador no caminho); os cadastros e usuários do operador; administradores de tenant e seus usuários; endereços de e-mail; cadastros, histórico, lista, exportação e importações por tenant, e a conferência do worker antes de cada cadastro; prefixos mudando de dono; a trilha de auditoria por tenant e seu CSV; acesso de suporte; tenants desativados e removidos; resultados da verificação de links por escopo; posse por tipo de chave; a linha de comando; as mensagens dos dois idiomas (mesmas chaves, toda chave da página e todo código de mensagem do servidor traduzidos) |
 | `portal/test_mail.py` | 138 | e-mail ([ADR 0004](adr/0004-e-mail.md)) contra um relay SMTP do próprio teste (`fake_smtp.py`: STARTTLS ou TLS com um certificado descartável, autenticação, recusas sob demanda): configurações que não combinam, envio com STARTTLS e TLS, cabeçalhos e a alternativa HTML, falhas temporárias e definitivas, credenciais nunca enviadas sem criptografia, o comando de teste; os textos dos dois idiomas; links de uso único (só o hash, uma vez, substituídos, expirados, apagados); `notBefore` e `defer()`; com o e-mail desligado nada muda; convites, recuperação de senha (a mesma resposta e o mesmo tempo para qualquer entrada, limites, quem não recebe nada), redefinições por um administrador, avisos de segurança, preferências, avisos de tarefas terminadas; novas tentativas, falhas, uma mensagem pulada para uma conta desativada no meio do caminho, nenhum endereço no diário; todo código de mensagem traduzido. Toda proteção conferida por mutação |
+| `portal/test_api.py` | 92 | a API das organizações e as suas chaves ([ADR 0005](adr/0005-api-das-organizacoes.md)): chaves criadas, listadas e revogadas só no escopo do próprio administrador (também em acesso de suporte), as regras de uma chave (nome, escopos, dias, prefixos, 20 ativas), a chave completa uma vez e só o hash guardado, o criador avisado por e-mail; autenticação (ausente, errada, revogada, expirada, organização desativada), sessões e chaves separadas; cadastros listados em páginas, lidos, gravados (regras GS1, cadastro de outro dono recusado, sem CORS), excluídos; etiquetas; escopos, os prefixos de uma chave, as chaves do operador; o diário (`api:<id>`); o limite de requisições e o último uso; o aviso de validade e a limpeza do worker; a descrição OpenAPI contra as rotas e as respostas; os dois idiomas. Toda proteção conferida por mutação |
 | `portal/test_jobs.py` | 70 | tarefas em segundo plano: estados, validade, retirada atômica, posse das gravações, workers calados devolvidos e falha depois de três tentativas, o anúncio do worker, `stalled`, a verificação de saúde, o laço do worker (erros, sinal de vida, parada e devolução, `JobLost`), o worker embutido e `PORTAL_WORKER`; importações pela API (fila, worker, diário, outro usuário, um worker que morre antes e depois de gravar um cadastro, uma falha); verificações de links pela API (todos os cadastros, uma lista, uma parada que cancela os endereços pendentes) |
 | `portal/test_worker_processes.py` | 13 | o `worker.py` como processos reais num MongoDB real (rodado pelo `test_store_mongodb.py`): dois workers dividem a fila sem pegar a mesma tarefa duas vezes; o SIGTERM devolve a tarefa e o outro worker a termina; depois de um SIGKILL, um worker novo continua a tarefa quando o sinal de vida fica velho |
 | `portal/test_store_mongodb.py` | 161 | num MongoDB real (`PORTAL_TEST_MONGO_URI`, só no CI): o usuário criado pelo `db_init.py` e suas permissões; `test_store.py`, `test_jobs.py` e `test_worker_processes.py` de novo como esse usuário (com suas linhas repassadas); o monitor de TTL, também para tarefas e anúncios antigos de workers |
 | `portal/test_registration.py` | 26 | §2.5.9 pela API do portal: qualificadores informativos (salvar, abrir, histórico, lista, exportar, importar), cadastros contra a regra 2, o cadastro da chave ao salvar e ao importar |
 | `portal/test_mail_e2e.py` | 37 | as telas de e-mail no Chromium com o relay do `fake_smtp.py`: recuperação na página de entrada (a mesma resposta para qualquer entrada), um convite pela tela de usuários, a página que um link abre (nome de usuário, o token fora da barra de endereço, senhas curtas e diferentes recusadas, a largura de um celular), um link usado duas vezes, um link aberto com outra pessoa conectada, uma recuperação encerrando a sessão aberta do usuário, Opções → E-mail mantido, uma redefinição por link, todo texto da página de entrada traduzido, e as mesmas telas com o e-mail desligado |
+| `portal/test_api_e2e.py` | 21 | a tela de chaves de API no Chromium: o administrador de uma organização cria uma chave (mostrada uma vez com um exemplo), um sistema a usa por `/portal/api/v1`, o cadastro mostra `api:<id>`, sair da tela retira a chave da página, revogar na tela a para na hora, a auditoria, os dois idiomas, a largura de um celular, as chaves do operador para um administrador do servidor, nenhuma tela para um editor |
 | `portal/test_portal_e2e.py` | 211 | o portal no Chromium contra o `mock_data_entry.py`, desktop e celular, com um worker embutido (também parado: as mensagens de fila e de "não está em execução", uma tarefa que falha); organizações, um administrador de tenant e o acesso de suporte nos dois idiomas; também roda sem o engine (166) |
 | `home/test_home.py` | 68 | página inicial com um nginx real (1.27.3 ou posterior: `NGINX_BIN` ou o PATH), sem o quadro da sintaxe, aviso da comunidade; rotas do proxy, incluindo que o cabeçalho Host enviado a cada upstream é aceito pelo Werkzeug; réplicas por um servidor DNS simulado que responde os nomes dos serviços com endereços `127.0.0.x`: o nginx inicia quando um serviço não tem endereço e o acha depois, reparte as requisições entre duas réplicas, acompanha uma terceira acrescentada e duas retiradas sem reiniciar, e nenhuma requisição falha enquanto réplicas param |
 | `install/test_install.sh` | 84 | instalador com simulações (Compose v2), incluindo um portal cujo worker de tarefas não sobe; quantidades de réplicas gravadas, mantidas, tomadas do ambiente e recusadas quando inválidas; o relay de e-mail (desligado por padrão, gravado com STARTTLS ou TLS, a senha mantida e nunca mostrada, desligado, um relay de teste definido à mão mantido, recusas); nenhuma configuração gravada duas vezes no `.env` |
@@ -660,7 +700,7 @@ MongoDB real, rodam contra ele. Preparação e comandos em
 pytest (um subprocesso a partir da raiz do repositório): status 0 sem linha `FAIL` passa; caso contrário, o
 relatório mostra as linhas `FAIL` e o fim da saída; um programa que só imprimiu `SKIP` é pulado. Marcadores
 os agrupam: `resolver` (Resolver, EPC binário, API de cadastro, suíte da GS1), `portal` (os programas do
-portal sem navegador), `e2e` (`test_portal_e2e.py` com e sem o engine, `test_session.py`, `test_mail_e2e.py`), `home`, `install`
+portal sem navegador), `e2e` (`test_portal_e2e.py` com e sem o engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`), `home`, `install`
 (o instalador por `sudo` sem senha quando não se é root, e o `test_deploy.py`), `database` (`test_store_mongodb.py`). O `dev-tests/conftest.py` impede que o pytest importe os
 programas, registra os marcadores e imprime ao final a contagem de verificações de cada programa (e também
 no resumo da execução do GitHub Actions). Com `DEV_TESTS_STRICT=1`, um programa falha quando uma variável de

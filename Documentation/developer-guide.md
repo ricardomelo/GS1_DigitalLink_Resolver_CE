@@ -116,6 +116,9 @@ portal/                          new: the link management portal
   mailtexts.py                   the texts of the e-mail messages, in both languages
   tokens.py                      single-use links: invitations and password recovery
   notify.py                      notifications: categories, the user's choices, the "mail" job
+  apikeys.py                     API keys of the tenant API: creation, hash, revocation, request limit (ADR 0005)
+  api_v1.py                      the tenant API, /portal/api/v1 (imported at the end of app.py)
+  openapi.json                   its OpenAPI 3.1 description, served at /portal/api/v1/openapi.json
   db_init.py                     creates the portal's database user (portal-db-init service)
   create_user.py                 command-line user administration
   static/                        index.html, login.html, app.js, login.js, password.js, i18n.js, app.css
@@ -163,7 +166,7 @@ reads `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD`, `PORTAL_DB_H
 `PORTAL_*_FILE`, the files the migration reads) and, for e-mail, `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`,
 `PORTAL_MAIL_SECURITY`, `PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM`,
 `PORTAL_MAIL_REPLY_TO`, `PORTAL_MAIL_CA_FILE`, `PORTAL_MAIL_TIMEOUT`, `PORTAL_INVITE_HOURS` and
-`PORTAL_RESET_MINUTES`. `portal-db-init` alone receives the root `MONGO_URI`; the
+`PORTAL_RESET_MINUTES`, and for the tenant API `PORTAL_API_RATE_PER_MINUTE` and `PORTAL_API_KEY_MAX_DAYS`. `portal-db-init` alone receives the root `MONGO_URI`; the
 portal's and the worker's are blanked. The worker has the portal's settings (it imports `app.py` and runs the
 same start-up, which is safe under the shared locks).
 
@@ -345,7 +348,9 @@ checks `allowed()` again before writing each record.
 `workers_alive()`, `requeue_stale()`, `claim()` (the oldest queued job whose `notBefore`, if any, has
 passed), `Reporter` (`beat()`, `progress()`, `record()`, `check_stop()`, `finish(remove=…)`, `defer(seconds)`
 — back in the queue for later, raising `Deferred` —, `give_up(code)`), `release()`, `fail()`. The types are
-`import`, `linkcheck` and `mail`. Timings are constants at the top (`HEARTBEAT_SECONDS` 10,
+`import`, `linkcheck` and `mail`. Between jobs, about once an hour (`HOUSEKEEPING_SECONDS`), the worker
+runs `app.HOUSEKEEPING` (`Worker.housekeep()`; a failing task is logged and the others run): today
+`notify_expiring_keys()`. Timings are constants at the top (`HEARTBEAT_SECONDS` 10,
 `STALE_SECONDS` 120, `MAX_ATTEMPTS` 3, `WORKER_ALIVE_SECONDS` 30, `STALLED_SECONDS` 15, expiries 30 minutes
 and one day). `worker.py` has `Worker` (`run_once()`, `loop()`, `stop()`), `start_embedded()`, `wake()` and
 `main()` (the service: SIGTERM and SIGINT stop it after the item in hand); `IN_WORKER_PROCESS` keeps
@@ -389,6 +394,25 @@ an import and a check of every record. `create_user()` invites when asked, mail 
 password as before. `users.py` gains the fields `invited`, `language`, `languageChosen` and `notify`, and
 `clear_password()`, `find_login()` (a user name, ignoring case, or an address), `note_language()` and
 `set_preferences()`; `create()` without a password makes an invited account.
+
+### `apikeys.py`, `api_v1.py`, `openapi.json` — the tenant API
+
+[ADR 0005](adr/0005-tenant-api.md). `apikeys.py` keeps the `api_keys` collection: `create(name, scopes, days,
+prefixes, tenant, created_by)` checks the name, scopes, days and prefixes (`users._check_scope()`, under the `users`
+lock), refuses more than `MAX_ACTIVE_KEYS` active keys per scope and returns `rk_<id>.<secret>` once (only the
+secret's SHA-256 is stored); `load(tenant)`, `public()`, `state()` (`active`, `expired`, `revoked`), `revoke()`
+(scoped), `authenticate()` (format, id, constant-time hash comparison, state), `count_request()` (a counter per key
+and minute in `api_rate`, shared by the replicas; the first request of a minute writes `lastUsed`) and `expiring()`
+(takes each key expiring within a week once, atomically).
+
+`api_v1.py` adds the routes of `/portal/api/v1` to the portal's application. `require_key(scope)` reads the bearer
+key, refuses it (401 `api.keyMissing` / `api.keyInvalid`, also for a disabled organisation), counts the request (429
+`api.rateLimit` with `Retry-After`), checks the scope (403 `api.scope`) and calls `app.set_scope("api:<id>", …)`
+with the key's organisation, the role its scopes imply and its prefixes, so `allowed()` and every rule apply. The
+handlers use `build_document()`, `store_record()`, `remove_record()` and `label_response()`, which the portal's own
+endpoints use too. `openapi.json` is written by hand; `test_api.py` checks it against the routes and validates
+answers with its schemas. In `app.py`: the key endpoints (`list_api_keys()`, `create_api_key()`,
+`revoke_api_key()`, always in the account's own scope), `notify_expiring_keys()` and `HOUSEKEEPING`.
 
 ### `migrate.py`, `db_init.py`
 
@@ -436,6 +460,10 @@ dictionary); nothing in `app.js` repeats a length or a format. The server checks
 the button's label follow it). `init()` signs out and goes back to the sign-in page when it finds an invitation or
 recovery fragment (a link opened while someone was signed in: the sign-in page redirected here).
 
+**API keys ([ADR 0005](adr/0005-tenant-api.md)).** The `#apikeys` view (administrators) lists the keys of the
+account's own scope (`loadApiKeys()`, `apiKeyRow()`), creates one (`createApiKey()`: the key and an example are
+shown once) and revokes (`revokeApiKey()`). `forgetNewKey()` removes a new key from the page when the view is left.
+
 **Record list.** `loadRecords()` fetches `/records` once; `renderRecords()` filters in the browser by key
 type (`#records-key`), qualifier (`qualifierMatches()`), author, link problems and text (`fold()` ignores
 case and accents). `parseCode()` reads a pasted GS1 Digital Link or bracketed element string, and
@@ -476,7 +504,12 @@ operator.
 | `GET /audit` · `GET /audit.csv` (`user`, `from`, `to`, `q`, `limit`) | admin | Audit trail of the scope: a tenant's; the operator's plus what operator users did to tenants; a tenant's during support access. Events carry `tenant`, `tenantName`, `byOperator`; the CSV adds `organisation` and `by_operator` |
 | `POST /digital-link` `{key, value, qualifiers, attributes:[{ai, value}]}` | reader | Digital Link with data attributes checked by the engine; nothing stored |
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&attr=AI:value` | reader | Label; headers `X-QR-Version`, `X-QR-Level`, `X-QR-Modules`; 422 `qr.tooSmall` / `qr.tooLong` |
+| `GET /keys` · `POST /keys` `{name, scopes, days, prefixes}` · `DELETE /keys/{id}` | admin | API keys of the account's own scope (a tenant administrator's organisation; the operator for a server administrator, also during support access): the list with `scopes`, `maxDays`, `defaultDays`, `ratePerMinute`; creation answers `key` (shown once) and `item`; delete revokes |
 | `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable", "mail": "on"\|"off"}` |
+
+The **tenant API** (`/portal/api/v1`, an API key instead of the session) is described in `portal/openapi.json`
+and in the README (*Tenant API*): `GET /`, `GET /records`, `GET`/`PUT`/`DELETE /records/{key}/{value}`,
+`GET /labels/{key}/{value}`, `GET /openapi.json`.
 
 ## 8. Portal data
 
@@ -488,10 +521,12 @@ Decisions and the reasons for them: [ADR 0001](adr/0001-portal-state-in-mongodb.
 | `users` | user name; `hash` (empty while invited, or after a reset by link), `role`, `prefixes`, `tenant` (absent for the operator's users), `email` (optional), `disabled`, `mustChange`, `created`, `lastLogin`, `invited`, `language`, `languageChosen`, `notify` (the last four absent when empty) | — |
 | `tenants` | `t-` + 12 hexadecimal digits; `name`, `prefixes`, `disabled`, `created`, `createdBy` ([ADR 0002](adr/0002-tenants.md)) | — |
 | `record_meta` | record key (GTIN records by the 14 digits, other keys by `AI/value`, plus the qualifier path); `createdAt`, `createdBy`, `updatedAt`, `updatedBy`, `tenant` (absent for the operator) | — |
-| `journal` | ObjectId (`jsonl-<line>` for migrated events); `at` (date), `user`, `action`, `category`, `tenant` (absent for the operator), `byOperator`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Record actions `create`, `update`, `delete` (with the record's content), `import`; others `login`, `login-failed`, `login-refused`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`, `tenant-create`, `tenant-update`, `tenant-remove`, `support-open` (the reason in `detail`), `support-close`, `password-recovery`, `password-reset`, `invite-accepted`, `preferences`, `mail-failed` (never an e-mail address) | date; record + date; user + date; tenant + date; category; TTL on `expiresAt` |
+| `journal` | ObjectId (`jsonl-<line>` for migrated events); `at` (date), `user`, `action`, `category`, `tenant` (absent for the operator), `byOperator`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Record actions `create`, `update`, `delete` (with the record's content), `import`; others `login`, `login-failed`, `login-refused`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`, `tenant-create`, `tenant-update`, `tenant-remove`, `support-open` (the reason in `detail`), `support-close`, `password-recovery`, `password-reset`, `invite-accepted`, `preferences`, `mail-failed` (never an e-mail address), `api-key-create`, `api-key-revoke`; changes made through the tenant API carry the user `api:<key id>` | date; record + date; user + date; tenant + date; category; TTL on `expiresAt` |
 | `login_failures` | `key` (`user:<name>` or `addr:<address>`; recovery requests `forgot-user:<entry>` and `forgot-addr:<address>`; invalid links `link-addr:<address>`), `at` | key + date; TTL 15 minutes on `at` |
 | `linkcheck_cache` | address; `result`, `expiresAt` | TTL on `expiresAt` |
 | `jobs` | token; `type` (`import`, `linkcheck`, `mail`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `expiresAt`, `error`, `notBefore`; imports `plan`, `keyRecords`, `results`; link checks `scope`, `urls` (`[{url, records}]`), `problems`, `records` (`[{record, problems}]`); messages `to`, `subject`, `text` and `html` (removed once sent or failed), `template`, `tries`, `lastError`, `sent` or `skipped` | state + creation; TTL on `expiresAt` |
+| `api_keys` | 12 hexadecimal digits (the key's id); `hash` (SHA-256 of the secret), `name`, `tenant` (absent for the operator), `scopes`, `prefixes`, `created`, `createdBy`, `expiresAt`, `lastUsed`, `revoked`, `revokedBy`, `expiryNotice` ([ADR 0005](adr/0005-tenant-api.md)) | tenant + creation; expiry |
+| `api_rate` | `<key id>:<minute>`; `n`, `at` | TTL 2 minutes on `at` |
 | `tokens` | SHA-256 of a single-use link's token; `purpose` (`invite`, `reset`), `user`, `created`, `expiresAt` ([ADR 0004](adr/0004-e-mail.md)) | user + purpose; TTL on `expiresAt` |
 | `workers` | worker name (`host:pid:mode`); `seen`, `mode`, `job` | TTL 10 minutes on `seen` |
 | `settings` | `lastFullCheck` (the operator's) and `lastFullCheck:<tenant>`, `journalRetention`, `migration`, and the `lock:<name>` documents | — |
@@ -627,11 +662,13 @@ run against it. Setup and commands are in
 | `portal/test_store.py` | 58 | the portal's database layer: connection settings, indexes, the shared lock (also between two administrators at once), users, record metadata, journal and its retention, sign-in throttle, migration of the old files (also interrupted and resumed) |
 | `portal/test_tenants.py` | 82 | tenants ([ADR 0002](adr/0002-tenants.md)): an installation without tenants unchanged; tenants and their prefixes (names, overlaps, redundancy, operator users in the way); the operator's records and users; tenant administrators and their users; e-mail addresses; records, history, record list, export and imports per tenant, and the worker's check before each record; prefixes moving between owners; the audit trail per tenant and its CSV; support access; disabled and removed tenants; link check results per scope; ownership by key type; the command line; the messages of both languages (same keys, every key of the page and every message code of the server translated) |
 | `portal/test_mail.py` | 138 | e-mail ([ADR 0004](adr/0004-e-mail.md)) against an SMTP relay of the test's own (`fake_smtp.py`: STARTTLS or TLS with a throwaway certificate, authentication, refusals on demand): settings that do not fit, sending with STARTTLS and TLS, headers and the HTML alternative, temporary and permanent failures, credentials never sent without encryption, the test command; the texts of both languages; single-use links (hash only, once, replaced, expired, purged); `notBefore` and `defer()`; with mail off nothing changes; invitations, password recovery (the same answer and time for every input, limits, who gets nothing), resets by an administrator, security notices, preferences, notices of finished jobs; retries, failures, a message skipped for an account disabled meanwhile, no address in the journal; every message code translated. Every protection mutation-checked |
+| `portal/test_api.py` | 92 | the tenant API and its keys ([ADR 0005](adr/0005-tenant-api.md)): keys created, listed and revoked only in the administrator's own scope (also during support access), the rules of a key (name, scopes, days, prefixes, 20 active), the full key once and only its hash stored, the creator told by e-mail; authentication (missing, wrong, revoked, expired, disabled organisation), sessions and keys kept apart; records listed in pages, read, written (GS1 rules, another owner's record refused, no CORS), deleted; labels; scopes, a key's prefixes, the operator's keys; the journal (`api:<id>`); the request limit and the last use; the expiry notice and the worker's housekeeping; the OpenAPI description against the routes and the answers; both languages. Every protection mutation-checked |
 | `portal/test_jobs.py` | 70 | background jobs: states, expiry, atomic claim, ownership of writes, silent workers given back and failed after three attempts, the worker's announcement, `stalled`, the health check, the worker loop (errors, heartbeat, stop and hand-back, `JobLost`), the embedded worker and `PORTAL_WORKER`; imports through the API (queue, worker, journal, another user, a worker dying before and after writing a record, a failure); link checks through the API (every record, a list, a stop that cancels pending addresses) |
 | `portal/test_worker_processes.py` | 13 | `worker.py` as real processes on a real MongoDB (run by `test_store_mongodb.py`): two workers share the queue without taking a job twice; SIGTERM hands the job back and the other worker finishes it; after SIGKILL a new worker continues the job once its heartbeat is old |
 | `portal/test_store_mongodb.py` | 161 | on a real MongoDB (`PORTAL_TEST_MONGO_URI`, CI only): the user made by `db_init.py` and its privileges; `test_store.py`, `test_jobs.py` and `test_worker_processes.py` again as that user (their lines relayed); the TTL monitor, also for jobs and old worker announcements |
 | `portal/test_registration.py` | 26 | §2.5.9 through the portal API: informative qualifiers (save, open, history, list, export, import), records against rule 2, the key's own record when saving and importing |
 | `portal/test_mail_e2e.py` | 37 | the e-mail screens in Chromium with the relay of `fake_smtp.py`: recovery on the sign-in page (the same answer for every entry), an invitation from the users screen, the page a link opens (user name, the token gone from the address bar, short and different passwords refused, a phone's width), a link used twice, a link opened while someone else is signed in, a recovery ending the user's open session, Options → E-mail kept, a reset by link, every text of the sign-in page translated, and the same screens with e-mail off |
+| `portal/test_api_e2e.py` | 21 | the API keys screen in Chromium: an organisation's administrator creates a key (shown once with an example), a system uses it through `/portal/api/v1`, the record shows `api:<id>`, leaving the screen removes the key from the page, revoking on screen stops it at once, the audit trail, both languages, a phone's width, the operator's keys for a server administrator, no screen for an editor |
 | `portal/test_portal_e2e.py` | 211 | the portal in Chromium against `mock_data_entry.py`, desktop and phone, with an embedded worker (also stopped: the queue and "not running" messages, a job that fails); organisations, a tenant administrator and support access in both languages; also run without the engine (166) |
 | `home/test_home.py` | 68 | home page through a real nginx (1.27.3 or later: `NGINX_BIN` or the PATH), no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts; replicas through a stub DNS server answering the service names with `127.0.0.x` addresses: nginx starts while a service has no address and finds it later, shares the requests between two replicas, follows a third added and two removed without a restart, and no request fails while replicas stop |
 | `install/test_install.sh` | 84 | installer through shims (Compose v2), including a portal whose job worker does not start; replica counts written, kept, taken from the environment and refused when invalid; the e-mail relay (off by default, written with STARTTLS or TLS, its password kept and never shown, switched off, a test relay set by hand kept, refusals); no setting written twice in `.env` |
@@ -641,7 +678,7 @@ run against it. Setup and commands are in
 test (a subprocess from the repository root): exit status 0 without a `FAIL` line passes; otherwise the
 report shows the `FAIL` lines and the end of the output; a program that only printed `SKIP` is skipped.
 Markers group them: `resolver` (resolver, EPC binary, data entry, GS1 suite), `portal` (the portal programs
-without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`), `home`,
+without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`), `home`,
 `install` (the installer through password-less `sudo` when not root, and `test_deploy.py`), `database` (`test_store_mongodb.py`). `dev-tests/conftest.py` keeps the programs from
 being imported by pytest, registers the markers and prints the check counts of each program at the end (and
 in the GitHub Actions run summary). With `DEV_TESTS_STRICT=1` a program fails when an environment variable

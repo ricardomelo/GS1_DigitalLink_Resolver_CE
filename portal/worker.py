@@ -13,7 +13,8 @@ PORTAL_WORKER chooses where it runs:
 The loop: give the jobs of silent workers back to the queue, claim the oldest queued job, run it while a
 thread renews its heartbeat, look again after a second when there is nothing to do. On SIGTERM (docker stop)
 the worker finishes the record it is writing, gives the job back to the queue and stops; the next worker
-continues from there.
+continues from there. About once an hour, between jobs, it also runs the portal's housekeeping (app.HOUSEKEEPING:
+the notices of API keys about to expire); each task is safe to run in several workers at once.
 """
 import logging
 import os
@@ -30,6 +31,7 @@ log = logging.getLogger("portal.worker")
 IDLE_SECONDS = 1             # look for work this often when there is none
 ERROR_SECONDS = 5            # wait this long after a database error
 ANNOUNCE_SECONDS = 10        # renew the worker's announcement this often
+HOUSEKEEPING_SECONDS = 3600  # run the housekeeping tasks this often (the first time at start)
 
 # Set by main() before it imports app, so that app does not also start an embedded worker in this process.
 IN_WORKER_PROCESS = False
@@ -56,8 +58,10 @@ def mode() -> str:
 class Worker:
     """One worker: a loop that claims and runs jobs until stop() is called."""
 
-    def __init__(self, runners: dict, worker_mode: str):
+    def __init__(self, runners: dict, worker_mode: str, housekeeping=()):
         self.runners = runners
+        self.housekeeping = list(housekeeping)
+        self._housekept = None
         self.mode = worker_mode
         self.name = jobs.worker_name(worker_mode)
         self._stop = threading.Event()
@@ -76,6 +80,21 @@ class Worker:
         if force or self._announced is None or now - self._announced >= ANNOUNCE_SECONDS:
             jobs.announce(self.name, self.mode, job)
             self._announced = now
+
+    def housekeep(self, force: bool = False) -> None:
+        """Runs the housekeeping tasks when HOUSEKEEPING_SECONDS have passed (or at once with force); a failing task
+        is logged and the others still run."""
+        now = time.monotonic()
+        if not force and self._housekept is not None and now - self._housekept < HOUSEKEEPING_SECONDS:
+            return
+        self._housekept = now
+        for task in self.housekeeping:
+            try:
+                done = task()
+                if done:
+                    log.info("Housekeeping %s: %s.", getattr(task, "__name__", task), done)
+            except Exception:                               # noqa: BLE001 — one task never stops the worker
+                log.exception("Housekeeping %s failed.", getattr(task, "__name__", task))
 
     def run_once(self) -> bool:
         """Runs at most one job; returns whether there was one."""
@@ -139,6 +158,7 @@ class Worker:
         while not self.stopping():
             try:
                 self._announce()
+                self.housekeep()
                 if not self.run_once():
                     _WAKE.wait(IDLE_SECONDS)
                     _WAKE.clear()
@@ -152,9 +172,9 @@ class Worker:
         log.info("Worker %s stopped.", self.name)
 
 
-def start_embedded(runners: dict) -> Worker:
+def start_embedded(runners: dict, housekeeping=()) -> Worker:
     """Starts a worker thread inside the calling process (PORTAL_WORKER=embedded)."""
-    worker = Worker(runners, "embedded")
+    worker = Worker(runners, "embedded", housekeeping)
     threading.Thread(target=worker.loop, name="portal-worker", daemon=True).start()
     return worker
 
@@ -166,7 +186,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     import app                                      # the portal's start-up and its job runners
 
-    worker = Worker(app.JOB_RUNNERS, "external")
+    worker = Worker(app.JOB_RUNNERS, "external", app.HOUSEKEEPING)
 
     def on_signal(signum, _frame):
         log.info("Signal %d received: stopping after the current item.", signum)

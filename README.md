@@ -98,7 +98,7 @@ the official Postman collection is at
 | Area | Addition |
 |---|---|
 | **Portal** (`/portal/`) | Sign-in with per-user passwords (with a show/hide button); editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; QR code labels (PNG/SVG) with the dimensions of the *QR Codes powered by GS1* guidelines, a choice of QR version, error correction and human readable text, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search and filters by key type and qualifier; spreadsheet import/export (XLSX, CSV) with preview; link checker |
-| **Governance** | Roles (administrator, editor, reader); organisations (tenants) that own GS1 Company Prefixes, each with its own users and audit trail, and a server administrator with recorded, read-only support access; access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords or, with an e-mail relay, invitations by e-mail; password recovery by e-mail; security notices; history of every record with restore; audit trail with filters and CSV export |
+| **Governance** | Roles (administrator, editor, reader); organisations (tenants) that own GS1 Company Prefixes, each with its own users and audit trail, and a server administrator with recorded, read-only support access; access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords or, with an e-mail relay, invitations by e-mail; API keys for the organisations' own systems (tenant API); password recovery by e-mail; security notices; history of every record with restore; audit trail with filters and CSV export |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, built from the GS1 Barcode Syntax Dictionary of the engine release every service uses |
 | **Data attributes** | Every data attribute of URI Syntax §4.10 in QR codes, validated by the GS1 Barcode Syntax Engine (formats, check digits, dates, code lists and the association rules of the General Specifications), its messages in the user's language; passed on by the resolver to the targets |
 | **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, the default link unless the request decides a language variant, request paths checked by the GS1 Barcode Syntax Engine, values with `%2F`, the query string passed on exactly as sent, EPC binary strings (`/eh…`, `/ex…`) from NFC tags decompressed, HTML pages in pt-BR / en-GB for browsers |
@@ -390,6 +390,31 @@ checks the user's role and GS1 Company Prefixes.
 | `GET /users`, `POST /users`, `PUT /users/{name}`, `POST /users/{name}/reset`, `DELETE /users/{name}` | User administration (administrators) |
 | `GET /audit`, `GET /audit.csv` (`user`, `from`, `to`, `q`) | Audit trail (administrators) |
 | `GET /portal/healthz` | Health of the portal, of its access to the API and of its job worker (`worker`: `ok` or `unavailable`); whether e-mail is configured (`mail`: `on` or `off`) |
+| `GET /keys`, `POST /keys`, `DELETE /keys/{id}` | API keys of the tenant API (administrators, for their own organisation or the operator) |
+
+### Tenant API (`/portal/api/v1`, API key)
+
+For an organisation's own systems (an ERP, a PIM, a shop): the same rules as the portal, limited to the
+organisation's records ([ADR 0005](Documentation/adr/0005-tenant-api.md)). An administrator creates a key in the
+portal (user menu → **API keys**: scopes, optional prefixes, validity) and sees it once; every call sends it as
+`Authorization: Bearer rk_<id>.<secret>`. The description is public: `GET /portal/api/v1/openapi.json`
+(OpenAPI 3.1). Requests are limited per key (120 a minute by default; then 429 with `Retry-After`).
+
+| Operation | Scope | Purpose |
+|---|---|---|
+| `GET /portal/api/v1/` | any | The key, its organisation, its limit |
+| `GET /portal/api/v1/records?key=&limit=&after=` | `records:read` | The records within reach, a page at a time |
+| `GET /portal/api/v1/records/{key}/{value}?qualifiers=/10/L1` | `records:read` | One record: description, links, Digital Link |
+| `PUT /portal/api/v1/records/{key}/{value}?qualifiers=` | `records:write` | Create (201) or replace (200): `{description, links: [{linkType, url, title, hreflang}]}` |
+| `DELETE /portal/api/v1/records/{key}/{value}?qualifiers=` | `records:write` | Delete one record |
+| `GET /portal/api/v1/labels/{key}/{value}?format=svg\|png&…` | `labels:read` | The QR code label, with the options of the portal's |
+
+```bash
+curl -s -H "Authorization: Bearer $KEY" https://id.example.org/portal/api/v1/records/01/09506000134352
+curl -s -X PUT -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+  -d '{"description":"Organic açaí 500 g","links":[{"linkType":"gs1:pip","url":"https://brand.example/acai","hreflang":["en"]}]}' \
+  https://id.example.org/portal/api/v1/records/01/09506000134352
+```
 
 ## System requirements
 
@@ -499,6 +524,7 @@ never committed).
 | `PORTAL_SECRET_KEY` | Key that signs the portal's sessions; every portal replica must share it (the installer generates it; empty: a key kept in the portal's volume) |
 | `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS` (0), `PORTAL_JOURNAL_ADMIN_DAYS` (0) | Days the journal keeps sign-ins, record changes and administration events (0 = for ever) |
 | `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`, `PORTAL_MAIL_SECURITY` (`starttls`), `PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM` | The portal's e-mail relay ([ADR 0004](Documentation/adr/0004-e-mail.md)): invitations, password recovery, security notices; empty host: e-mail off. Port 587 (STARTTLS) or 465 (TLS); the installer asks for them; details and a test command in [the extensions documentation](Documentation/extensions/README.md#e-mail) |
+| `PORTAL_API_RATE_PER_MINUTE` (120), `PORTAL_API_KEY_MAX_DAYS` (365) | The tenant API: requests per key and minute; the longest validity of an API key |
 | `PORTAL_WORKER` (`external`) | Where imports and link checks run: `external`, the `portal-worker` service; `embedded`, a thread of the portal, for a set-up without that service |
 | `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_COOKIE_SECURE` | Optional portal settings: minutes without use and hours after the sign-in before the session ends, Secure cookie |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Host addresses of ports 8080 and 27017 (read by Compose from `.env` only) |
@@ -607,7 +633,9 @@ GS1 Company Prefixes, the server administrator and support access, an audit trai
 formats from the GS1 Barcode Syntax Dictionary, one engine release for every service, the engine's messages
 translated, a weekly update check; [ADR 0003](Documentation/adr/0003-gs1-rules-from-the-dictionary.md)), and item
 3.1, e-mail (an authenticated relay, invitations, password recovery by single-use link, notifications with
-per-user preferences; [ADR 0004](Documentation/adr/0004-e-mail.md)), are complete too. What was
+per-user preferences; [ADR 0004](Documentation/adr/0004-e-mail.md)), and item 3.2, the tenant API (a versioned API of
+the portal for organisations' own systems, API keys with scopes, expiry and a request limit;
+[ADR 0005](Documentation/adr/0005-tenant-api.md)), are complete too. What was
 done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
 The items below are in the agreed order; sizes are relative (S, M, L). The order puts first what later items
 build on: the portal's data store and tenants come before the API, e-mail and analytics, which all need to
@@ -615,7 +643,6 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Platform services | 3.2 | **Tenant API and API keys**: a versioned API of the portal for records, labels and later analytics, described in OpenAPI, limited to the tenant's prefixes; keys created by the tenant administrator in the portal (random, stored only as a hash, shown once, with scopes, expiry, revocation, last use and rate limits); the official data entry API and its token stay internal | L | 2.4, 2.5 |
 | Resolution log and analytics | 4.1 | **Log of resolver requests** (key, qualifiers, data attribute AIs, link type, outcome and level, latency, language, device, referrer, EPC scheme), asynchronous, privacy by design, raw events with an expiry plus daily aggregates | L | 2.3 |
 | | 4.2 | **Home page after sign-in with indicators**, each tenant seeing only its own prefixes and keys (the server administrator sees the whole installation): usage, resolution quality (404 for unknown codes first), record quality, operation, governance; export to Excel and CSV | L | 4.1, 2.4 |
 | | 4.3 | **Monitoring and alerts** by e-mail: resolver down (checked through the proxy), failed backup, spikes of 404, certificate expiry | M | 4.2, 3.1 |

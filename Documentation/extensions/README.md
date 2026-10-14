@@ -613,6 +613,44 @@ Put the copy back (`mv .env.before-mailpit .env`, then `docker compose up -d`) a
 (`docker compose --profile mail-test rm -sf mailpit`) when done. Never use it in production: it keeps every
 message, links included.
 
+## Tenant API
+
+An organisation's own systems reach its records through `/portal/api/v1` with an API key
+([ADR 0005](../adr/0005-tenant-api.md)); the operations are in the README (*Tenant API*) and in the public
+description `GET /portal/api/v1/openapi.json` (OpenAPI 3.1, the installation's address as its server).
+
+**Keys.** Administrators create them in the portal (user menu → **API keys**): a tenant administrator for his
+organisation, a server administrator for the operator's records only (a server administrator never gets a key
+into an organisation; support access stays the only way in). A key has a name, scopes (`records:read`,
+`records:write`, `labels:read`), optional GS1 Company Prefixes inside the organisation's, and a validity of 1 to
+`PORTAL_API_KEY_MAX_DAYS` days (90 by default); at most 20 active keys per organisation. The key —
+`rk_<12 hex>.<43 characters>` — is shown once; only the SHA-256 of its secret is stored, so a lost key is revoked
+and replaced. Revoking takes effect on the next request. The administrator who created a key receives an e-mail
+when it is created and a week before it expires (installations with e-mail); revoked and expired keys stay listed.
+
+**What a key may do.** Exactly what a user of its organisation with the matching role may do: `records:write`
+gives the editor's rights, otherwise the reader's; its prefixes limit it further. Every rule of the portal applies
+(GS1 rules, 2.5.9, the default link type shared by the records of a key). A key of a disabled or removed
+organisation is refused. Changes appear in the history and the audit trail with the user `api:<key id>`;
+`api-key-create` and `api-key-revoke` are recorded in the organisation's trail.
+
+**Limits.** `PORTAL_API_RATE_PER_MINUTE` requests per key and minute (120 by default), counted in the portal's
+database for every replica; above it the answer is 429 with `Retry-After`. Pages of `GET /records` hold up to 1,000
+records (`limit`, `after`). The API is for servers: it sends no CORS headers, and a browser request from another
+site is refused by the portal's Origin check.
+
+**Trying it.**
+
+```bash
+KEY='rk_…'                                       # from the API keys screen
+curl -s -H "Authorization: Bearer $KEY" https://id.example.org/portal/api/v1/
+curl -s -H "Authorization: Bearer $KEY" 'https://id.example.org/portal/api/v1/records?limit=5'
+curl -s -o label.svg -H "Authorization: Bearer $KEY" 'https://id.example.org/portal/api/v1/labels/01/09506000134352?format=svg'
+```
+
+Errors come as `{"code": "...", "params": {...}}` with the portal's message codes (`api.keyMissing`,
+`api.keyInvalid`, `api.scope`, `api.rateLimit`, `access.prefix`, `record.notFound`, the GS1 and validation codes).
+
 ## Home page
 
 `https://<FQDN>/` shows a home page in the same look and feel as the portal, with a menu to:

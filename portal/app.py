@@ -30,6 +30,7 @@ import gs1
 import jobs
 import journal
 import label
+import apikeys
 import linkcheck
 import mail
 import meta
@@ -1096,6 +1097,13 @@ def delete_record():
     anchor = request_key(request.args)
     check_access(anchor)
     pairs, _ = request_record(request.args, anchor)
+    remove_record(anchor, pairs)
+    return message("delete.done")
+
+
+def remove_record(anchor: str, pairs: list) -> None:
+    """Deletes one record of a key, keeping the others (the editor and the tenant API). ValidationError
+    record.notFound when the key has no record with those qualifiers."""
     entries, _ = read_entries(anchor)
     target = find_entry(entries, gs1.qualifier_list(pairs))
     if target is None:
@@ -1115,7 +1123,6 @@ def delete_record():
 
     audit.info("user=%s action=delete anchor=%s%s", g.user, anchor, gs1.qualifier_path(pairs))
     record_change(anchor, pairs, target, "delete")
-    return message("delete.done")
 
 
 @app.get("/portal/api/records")
@@ -1697,6 +1704,72 @@ def remove_user(username):
     return message("users.removed", 200, params={"user": username})
 
 
+# --------------------------------------------------------------------------- API keys (administrators)
+def scope_label(tenant_id: str | None, language: str | None = None) -> str:
+    """How a message names the scope of a key: the organisation's name, or the operator's records."""
+    if tenant_id:
+        return tenant_name(tenant_id) or tenant_id
+    return "os cadastros do operador" if (language or "").startswith("pt") else "the operator's records"
+
+
+@app.get("/portal/api/keys")
+@require_login
+@admin_required
+def list_api_keys():
+    """The API keys of the administrator's own scope (his organisation, or the operator's for a server
+    administrator, also during support access), newest first, without their hashes."""
+    return jsonify({"keys": [apikeys.public(d) for d in apikeys.load(g.account_tenant)],
+                    "scopes": list(apikeys.SCOPES), "maxDays": apikeys.max_days(),
+                    "defaultDays": apikeys.DEFAULT_DAYS, "ratePerMinute": apikeys.rate_per_minute()})
+
+
+@app.post("/portal/api/keys")
+@require_login
+@admin_required
+def create_api_key():
+    """Creates an API key for the administrator's own scope; the full key is in the answer, once
+    (Documentation/adr/0005-tenant-api.md)."""
+    data = request.get_json(silent=True) or {}
+    key, doc = apikeys.create(data.get("name"), data.get("scopes"), data.get("days"), data.get("prefixes"),
+                              g.account_tenant, g.user)
+    audit.info("user=%s action=api-key-create key=%s tenant=%s", g.user, doc["_id"], g.account_tenant or "-")
+    log_event("api-key-create", tenant=g.account_tenant,
+              detail=f'{doc["_id"]} {doc["name"]} scopes={",".join(doc["scopes"])} prefixes={",".join(doc["prefixes"])} '
+                     f'expires={store.iso(doc["expiresAt"])[:10]}')
+    language = (users.get(g.user) or {}).get("language")
+    notify.send(g.user, "api-key-created", name=doc["name"], id=doc["_id"], scope=scope_label(g.account_tenant, language),
+                scopes=", ".join(doc["scopes"]), when=notify.now_text(),
+                expires=store.iso(doc["expiresAt"]).replace("T", " ")[:16])
+    return message("apikeys.created", 201, params={"name": doc["name"]}, key=key, item=apikeys.public(doc))
+
+
+@app.delete("/portal/api/keys/<key_id>")
+@require_login
+@admin_required
+def revoke_api_key(key_id):
+    """Revokes an API key of the administrator's own scope; it stops working at once."""
+    doc = apikeys.revoke(key_id, g.account_tenant, g.user)
+    audit.info("user=%s action=api-key-revoke key=%s", g.user, doc["_id"])
+    log_event("api-key-revoke", tenant=g.account_tenant, detail=f'{doc["_id"]} {doc["name"]}')
+    return message("apikeys.revoked", 200, params={"name": doc["name"]})
+
+
+def notify_expiring_keys() -> int:
+    """Housekeeping of the worker (hourly): tells each creator of a key that expires within a week, once."""
+    told = 0
+    for doc in apikeys.expiring():
+        creator = users.get(doc.get("createdBy") or "")
+        if not creator:
+            continue
+        with app.test_request_context():
+            g.tenants = tenants.load()
+            sent = notify.send(doc["createdBy"], "api-key-expiring", name=doc["name"], id=doc["_id"],
+                               scope=scope_label(doc.get("tenant"), creator.get("language")),
+                               expires=store.iso(doc["expiresAt"]).replace("T", " ")[:16])
+        told += int(sent)
+    return told
+
+
 # --------------------------------------------------------------------------- tenants (server administrators)
 def record_owners() -> dict | None:
     """How many records each tenant holds ({tenant id or None: count}), from the resolver's summary; None when
@@ -1905,18 +1978,24 @@ def qrcode():
     hri=0 omits the human readable interpretation."""
     anchor = request_key(request.args)
     check_access(anchor)
-    pairs = request_qualifiers(request.args, anchor)
-    uri, attribute_lines = digital_link_for(anchor, pairs, request_attributes(request.args))
+    return label_response(anchor, request.args)
+
+
+def label_response(anchor: str, args) -> Response:
+    """The label of a key (whose access was checked) from the request's options: the portal's and the tenant
+    API's (qualifiers, attr, hri, version, ecl, format)."""
+    pairs = request_qualifiers(args, anchor)
+    uri, attribute_lines = digital_link_for(anchor, pairs, request_attributes(args))
     lines = gs1.hri_lines(anchor, pairs) + attribute_lines
-    hri = HRI_MODES.get(request.args.get("hri", "full"))
+    hri = HRI_MODES.get(args.get("hri", "full"))
     if hri is None:
         raise ValidationError("qr.hri")
     options = label.LabelOptions(
         uri=uri,
         hri_lines=tuple(lines[:1] if hri == "key" else lines),
         show_hri=hri != "none",
-        version=qr_version(request.args.get("version")),
-        error=qr_error_level(request.args.get("ecl")),
+        version=qr_version(args.get("version")),
+        error=qr_error_level(args.get("ecl")),
     )
     try:
         qr = label.symbol(options)
@@ -1927,7 +2006,7 @@ def qrcode():
     ai, value = gs1.split_anchor(anchor)
     suffix = "".join(f"_{q}_{v}" for q, v in pairs)
     filename = f"qrcode_{ai}_{value}{suffix}"
-    download_format = request.args.get("format")
+    download_format = args.get("format")
     if download_format == "png":
         return Response(label.render_png(options), mimetype="image/png",
                         headers={"Content-Disposition": f'attachment; filename="{filename}.png"', **qr_headers})
@@ -1939,5 +2018,11 @@ def qrcode():
 # What the worker runs for each type of job (worker.py). With PORTAL_WORKER=embedded a worker thread runs
 # them inside this process; otherwise the portal-worker service does.
 JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job, "mail": notify.run_mail_job}
-EMBEDDED_WORKER = (worker.start_embedded(JOB_RUNNERS)
+# What the worker runs about once an hour, outside any job (worker.HOUSEKEEPING_SECONDS)
+HOUSEKEEPING = [notify_expiring_keys]
+EMBEDDED_WORKER = (worker.start_embedded(JOB_RUNNERS, HOUSEKEEPING)
                    if worker.mode() == "embedded" and not worker.IN_WORKER_PROCESS else None)
+
+# The tenant API (/portal/api/v1, Documentation/adr/0005-tenant-api.md) adds its routes to this application; it is
+# imported last because it uses the functions above.
+import api_v1  # noqa: E402,F401

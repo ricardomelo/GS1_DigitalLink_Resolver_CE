@@ -717,6 +717,34 @@ journalled as `overview-export`. API keys with the scope `stats:read` read usage
 `GET /portal/api/v1/stats?days=30`. Nothing is configured: the overview needs the request log (`RESOLVER_LOG_DAYS`
 above 0) for its usage and quality figures.
 
+## Monitoring and alerts
+
+The job worker checks the installation every `PORTAL_MONITOR_MINUTES` (5; 0 switches it off), one replica at a time
+([ADR 0008](../adr/0008-monitoring-and-alerts.md)), and keeps the state of each check in the portal's collection
+`alerts`:
+
+| Check | How | Alert |
+|---|---|---|
+| Resolver | `GET PORTAL_MONITOR_URL` through the proxy (the description file, 200 within 10 s); with `PORTAL_MONITOR_PROBE`, that registered code too (2xx or 3xx, not followed) | after two failed rounds in a row |
+| Backup | the record `scripts/resolver-backup.sh` writes after each run (setting `backup.last`: when, OK or the error, the file, its size, the last good run) | the last run failed, or the last good one is older than `PORTAL_MONITOR_BACKUP_HOURS` (26); unknown until the first record |
+| Certificate | a TLS connection to `PORTAL_MONITOR_TLS_HOST` (`FQDN`) on port 443, once an hour | expires within `PORTAL_MONITOR_CERT_DAYS` (21) or does not verify; unknown when the host cannot be reached or is `localhost` |
+| 404 spikes | requests answered "code not registered" in the last hour, for the installation and for each organisation | at least `PORTAL_ALERT_404_MIN` (20) and `PORTAL_ALERT_404_FACTOR` (3) times the usual hour of the 7 days before |
+
+**Messages** (with e-mail on): one when a check goes into alert, a reminder every 24 hours while it lasts, one when it
+is resolved (spikes simply end). Server administrators receive the resolver, backup, certificate and installation's
+spikes; an organisation's administrators its own spikes. The category *alerts* is on by default; each user may switch
+it off in Options → E-mail. Without e-mail the states are still shown in the overview's *Operation* group (every check
+for server administrators; the organisation's spikes for its users).
+
+**The backup's record** is written with `mongosh` inside the database container into the portal's database
+(`PORTAL_DB_NAME` from `.env`, `resolver_portal` by default); when it cannot be written the backup still succeeds and
+its log says `WARNING: the result was not recorded`. Looking at it on the server:
+
+```bash
+docker compose exec database-service sh -c 'mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
+  --authenticationDatabase admin resolver_portal --quiet --eval "db.settings.findOne({_id: \"backup.last\"}); db.alerts.find().toArray()"'
+```
+
 ## Home page
 
 `https://<FQDN>/` shows a home page in the same look and feel as the portal, with a menu to:

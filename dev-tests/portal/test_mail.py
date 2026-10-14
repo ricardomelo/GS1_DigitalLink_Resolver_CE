@@ -330,7 +330,7 @@ check("server administrator signs in", r.status_code == 200, r.get_json())
 cfg = root.get("/portal/api/config").get_json()
 check("configuration: mail on, the user's preferences", cfg["mail"] == {"enabled": True}
       and cfg["preferences"] == {"email": "root@example.org", "language": "pt-BR", "languageChosen": False,
-                                 "notify": {"jobs": False}}, cfg.get("preferences"))
+                                 "notify": {"jobs": False, "alerts": True}}, cfg.get("preferences"))
 check("sign-in page: recovery offered", portal.app.test_client().get("/portal/api/login/options").get_json()
       == {"passwordRecovery": True})
 check("health check: mail on", portal.app.test_client().get("/portal/healthz").get_json()["mail"] == "on")
@@ -550,9 +550,9 @@ check("a recovery opens a locked account", client("maria", "maria-fifth-password
 maria_session, _ = client("maria", "maria-fifth-password", language="pt-BR")
 prefs = maria_session.get("/portal/api/preferences").get_json()
 check("preferences: the address, the page's language until chosen, jobs off by default",
-      prefs == {"email": "maria.new@example.org", "language": "pt-BR", "languageChosen": False, "notify": {"jobs": False}}, prefs)
+      prefs == {"email": "maria.new@example.org", "language": "pt-BR", "languageChosen": False, "notify": {"jobs": False, "alerts": True}}, prefs)
 r = maria_session.put("/portal/api/preferences", json={"language": "en-GB", "notify": {"jobs": True}}, headers=ORIGIN)
-check("preferences saved", code(r) == "preferences.saved" and r.get_json()["preferences"]["notify"] == {"jobs": True}
+check("preferences saved", code(r) == "preferences.saved" and r.get_json()["preferences"]["notify"] == {"jobs": True, "alerts": True}
       and r.get_json()["preferences"]["languageChosen"] is True)
 client("maria", "maria-fifth-password", language="pt-BR")
 check("a chosen language is not changed by the page", users.get("maria")["language"] == "en-GB")

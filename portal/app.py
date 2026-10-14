@@ -35,6 +35,7 @@ import linkcheck
 import mail
 import meta
 import migrate
+import monitor
 import notify
 import overview
 import requestlog
@@ -2067,6 +2068,10 @@ def overview_operation(last_check: dict) -> dict:
     """The operation group: the last check of every link; for server administrators also the worker, e-mail and the
     request log's counts."""
     out = {"lastCheck": last_check.get("checkedAt"), "logDays": requestlog.log_days()}
+    alerts = monitor.states(g.tenant, g.server_admin and not g.support)
+    out["alerts"] = alerts["active"]
+    if g.server_admin and not g.support:
+        out["checks"] = alerts["checks"]
     if g.server_admin:
         try:
             out["worker"] = jobs.workers_alive()
@@ -2210,7 +2215,10 @@ def label_response(anchor: str, args) -> Response:
 JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job, "mail": notify.run_mail_job}
 # What the worker runs about once an hour, outside any job (worker.HOUSEKEEPING_SECONDS)
 HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate]
-EMBEDDED_WORKER = (worker.start_embedded(JOB_RUNNERS, HOUSEKEEPING)
+# What the worker runs every PORTAL_MONITOR_MINUTES (Documentation/adr/0008-monitoring-and-alerts.md)
+MONITORING = [monitor.run]
+MONITOR_SECONDS = monitor.minutes() * 60
+EMBEDDED_WORKER = (worker.start_embedded(JOB_RUNNERS, HOUSEKEEPING, MONITORING, MONITOR_SECONDS)
                    if worker.mode() == "embedded" and not worker.IN_WORKER_PROCESS else None)
 
 # The tenant API (/portal/api/v1, Documentation/adr/0005-tenant-api.md) adds its routes to this application; it is

@@ -189,6 +189,128 @@ TEXTS = {
                   "A lista de cadastros mostra quais cadastros têm problemas.\n\n"
                   "Você recebe esta mensagem porque a escolheu em Opções → E-mail."),
     },
+    "alert-resolver-down": {
+        "en-GB": ("Alert: the resolver is not answering",
+                  "Hello,\n\n"
+                  "The resolver of {operator} has not answered the portal's checks through the proxy since {since}. "
+                  "Scans of GS1 Digital Link QR codes may be failing.\n\n"
+                  "Address checked: {url}\nProblem: {problem}\n\n"
+                  "On the server, \"docker compose ps\" shows which service is down and \"docker compose logs "
+                  "--tail=50 web-service frontend-proxy-service\" why. You will receive a message when it answers "
+                  "again, and a reminder every 24 hours meanwhile.\n\n"
+                  "You receive this message as a server administrator; you can switch alerts off in Options → "
+                  "E-mail."),
+        "pt-BR": ("Alerta: o Resolver não está respondendo",
+                  "Olá,\n\n"
+                  "O Resolver de {operator} não responde às verificações do portal pelo proxy desde {since}. As "
+                  "leituras de QR codes GS1 Digital Link podem estar falhando.\n\n"
+                  "Endereço verificado: {url}\nProblema: {problem}\n\n"
+                  "No servidor, \"docker compose ps\" mostra qual serviço parou e \"docker compose logs --tail=50 "
+                  "web-service frontend-proxy-service\" o motivo. Você receberá uma mensagem quando ele voltar a "
+                  "responder, e um lembrete a cada 24 horas enquanto isso.\n\n"
+                  "Você recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → "
+                  "E-mail."),
+    },
+    "alert-resolver-up": {
+        "en-GB": ("Resolved: the resolver is answering again",
+                  "Hello,\n\n"
+                  "The resolver of {operator} answers the portal's checks again ({url}). It had stopped answering "
+                  "on {since}.\n\n"
+                  "You receive this message as a server administrator; you can switch alerts off in Options → "
+                  "E-mail."),
+        "pt-BR": ("Resolvido: o Resolver voltou a responder",
+                  "Olá,\n\n"
+                  "O Resolver de {operator} voltou a responder às verificações do portal ({url}). Ele tinha parado "
+                  "de responder em {since}.\n\n"
+                  "Você recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → "
+                  "E-mail."),
+    },
+    "alert-backup-failed": {
+        "en-GB": ("Alert: the daily backup did not succeed",
+                  "Hello,\n\n"
+                  "The daily backup of the resolver of {operator} needs attention.\n\n"
+                  "Last run: {at}\nProblem: {error}\nLast good backup: {lastOk}\n\n"
+                  "On the server, /var/log/resolver-backup.log has the message of each run, and \"sudo "
+                  "scripts/resolver-backup.sh\" runs one now. You will receive a message when a backup succeeds "
+                  "again, and a reminder every 24 hours meanwhile.\n\n"
+                  "You receive this message as a server administrator; you can switch alerts off in Options → "
+                  "E-mail."),
+        "pt-BR": ("Alerta: o backup diário não deu certo",
+                  "Olá,\n\n"
+                  "O backup diário do Resolver de {operator} precisa de atenção.\n\n"
+                  "Última execução: {at}\nProblema: {error}\nÚltimo backup bom: {lastOk}\n\n"
+                  "No servidor, /var/log/resolver-backup.log tem a mensagem de cada execução, e \"sudo "
+                  "scripts/resolver-backup.sh\" executa um agora. Você receberá uma mensagem quando um backup "
+                  "voltar a dar certo, e um lembrete a cada 24 horas enquanto isso.\n\n"
+                  "Você recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → "
+                  "E-mail."),
+    },
+    "alert-backup-ok": {
+        "en-GB": ("Resolved: the daily backup succeeded",
+                  "Hello,\n\n"
+                  "The backup of the resolver of {operator} succeeded on {at}. The problem had been reported on "
+                  "{since}.\n\n"
+                  "You receive this message as a server administrator; you can switch alerts off in Options → "
+                  "E-mail."),
+        "pt-BR": ("Resolvido: o backup diário deu certo",
+                  "Olá,\n\n"
+                  "O backup do Resolver de {operator} deu certo em {at}. O problema tinha sido avisado em "
+                  "{since}.\n\n"
+                  "Você recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → "
+                  "E-mail."),
+    },
+    "alert-certificate": {
+        "en-GB": ("Alert: the certificate of {host} needs renewing",
+                  "Hello,\n\n"
+                  "The HTTPS certificate of {host}, the address printed in the QR codes of {operator}, expires on "
+                  "{expires} ({days} days left), or could not be verified: {error}\n\n"
+                  "When it expires, phones refuse to open the scanned links. With Certbot, \"sudo certbot renew\" "
+                  "renews it and \"sudo systemctl list-timers | grep certbot\" shows whether automatic renewal "
+                  "is scheduled.\n\n"
+                  "You receive this message as a server administrator; you can switch alerts off in Options → "
+                  "E-mail."),
+        "pt-BR": ("Alerta: o certificado de {host} precisa ser renovado",
+                  "Olá,\n\n"
+                  "O certificado HTTPS de {host}, o endereço impresso nos QR codes de {operator}, vence em "
+                  "{expires} (faltam {days} dias), ou não pôde ser verificado: {error}\n\n"
+                  "Quando ele vencer, os celulares recusarão abrir os links lidos. Com o Certbot, \"sudo certbot "
+                  "renew\" o renova e \"sudo systemctl list-timers | grep certbot\" mostra se a renovação "
+                  "automática está agendada.\n\n"
+                  "Você recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → "
+                  "E-mail."),
+    },
+    "alert-certificate-ok": {
+        "en-GB": ("Resolved: the certificate of {host} is valid",
+                  "Hello,\n\n"
+                  "The HTTPS certificate of {host} is valid until {expires} ({days} days). The problem had been "
+                  "reported on {since}.\n\n"
+                  "You receive this message as a server administrator; you can switch alerts off in Options → "
+                  "E-mail."),
+        "pt-BR": ("Resolvido: o certificado de {host} está válido",
+                  "Olá,\n\n"
+                  "O certificado HTTPS de {host} vale até {expires} ({days} dias). O problema tinha sido avisado "
+                  "em {since}.\n\n"
+                  "Você recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → "
+                  "E-mail."),
+    },
+    "alert-404-spike": {
+        "en-GB": ("Alert: many scans of codes nobody registered",
+                  "Hello,\n\n"
+                  "In the last hour the resolver answered \"code not registered\" (404) {count} times for the "
+                  "codes in your reach, against about {usual} in a usual hour. A label may have been printed "
+                  "with a code that has no record yet. The codes scanned most:\n\n"
+                  "{codes}\n\n"
+                  "The portal's Overview lists them with a button to register each one.\n\n"
+                  "You receive this message as an administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Alerta: muitas leituras de códigos sem cadastro",
+                  "Olá,\n\n"
+                  "Na última hora o Resolver respondeu \"código não cadastrado\" (404) {count} vezes para os "
+                  "códigos ao seu alcance, contra cerca de {usual} numa hora comum. Pode ter sido impressa "
+                  "uma etiqueta com um código que ainda não tem cadastro. Os códigos mais lidos:\n\n"
+                  "{codes}\n\n"
+                  "A Visão geral do portal os lista com um botão para cadastrar cada um.\n\n"
+                  "Você recebe esta mensagem como administrador; pode desligar os alertas em Opções → E-mail."),
+    },
     "test": {
         "en-GB": ("Test message from the link management portal",
                   "Hello,\n\n"

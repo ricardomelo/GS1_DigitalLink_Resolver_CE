@@ -667,7 +667,8 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .overview-codes { margin: 0; padding-left: 1.2rem; font-family: var(--mono); font-size: .875rem; columns: 2 14rem; }
 .overview-facts { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1.25rem; margin: 0; }
 .overview-facts dt { color: var(--muted); font-weight: 500; }
-.overview-facts dd { margin: 0; }
+.overview-facts dd { margin: 0; white-space: pre-line; }
+.overview-facts dd.is-alert { color: var(--err); font-weight: 600; }
 #overview-privacy { margin-top: 1.75rem; }
 @media (max-width: 720px) {
   /* the overview's tables are narrow: they stay tables on a phone */

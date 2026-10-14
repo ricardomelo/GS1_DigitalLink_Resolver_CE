@@ -136,8 +136,8 @@ with sync_playwright() as p:
     check("…listed with a Register button", rows and rows[0].startswith("/01/" + UNKNOWN) and "Register" in rows[0], rows)
     records = page.inner_text("#overview-records-tiles")
     check("records: one record, scanned", "Records\n1" in records and "Keys not scanned\n0" in records, records)
-    check("operation: never checked", "never checked" in page.inner_text("#overview-operation"),
-          page.inner_text("#overview-operation"))
+    check("operation: never checked, no active alerts", "never checked" in page.inner_text("#overview-operation")
+          and "Active alerts\nnone" in page.inner_text("#overview-operation"), page.inner_text("#overview-operation"))
     check("governance for an administrator: record changes and users",
           page.is_visible("#overview-governance") and "Record changes\n1" in page.inner_text("#overview-governance-tiles")
           and "ana" in page.inner_text("#overview-users-body"), page.inner_text("#overview-governance-tiles"))
@@ -201,6 +201,8 @@ with sync_playwright() as p:
     operation = root.inner_text("#overview-operation")
     check("…with the worker, e-mail and the daily counts", "Job worker" in operation and "E-mail" in operation
           and "Daily counts complete up to" in operation, operation)
+    check("…and the state of each monitoring check", "Resolver (through the proxy)" in operation
+          and "Daily backup" in operation and "HTTPS certificate" in operation, operation)
     shot(root, "overview-root")
     root_ctx.close()
 

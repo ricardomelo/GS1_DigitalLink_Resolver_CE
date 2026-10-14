@@ -83,6 +83,18 @@ def backup_checks() -> None:
     options = {word.split("=", 1)[0] for word in shlex.split(command.replace('"$', '"X'))[1:] if word.startswith("-")}
     check(command and options <= MONGODUMP_OPTIONS,
           "backup: mongodump is given only options mongodump has", sorted(options - MONGODUMP_OPTIONS))
+    # the JavaScript the result's record gives mongosh is valid (node checks its syntax; db is mongosh's)
+    found = re.search(r'--eval "(.*?)"\'', text, re.S)
+    script_js = found.group(1).replace('\\"', '"') if found else ""
+    node = shutil.which("node")
+    if node and script_js:
+        js = Path(tempfile.mkdtemp()) / "record.js"
+        js.write_text("const db = {settings: {findOne() {}, replaceOne() {}}};\n" + script_js)
+        syntax = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+        check(syntax.returncode == 0 and "backup.last" in script_js, "backup: the record's mongosh script is valid JavaScript",
+              syntax.stderr[-300:])
+    else:
+        check(bool(script_js), "backup: the record's mongosh script is found", text[-300:])
     for outcome, docker in (("fails", 'echo "error parsing command line options" >&2; exit 2'),
                             ("works", 'printf "ARCHIVE-BYTES"')):
         work = Path(tempfile.mkdtemp(prefix="backup-test-"))
@@ -90,7 +102,12 @@ def backup_checks() -> None:
         bin_dir.mkdir()
         stand_in = bin_dir / "docker"
         # "docker compose exec …" dumps (or fails); "docker compose ps" lists no running portal
-        stand_in.write_text("#!/bin/sh\ncase \"$*\" in *mongodump*) " + docker + " ;; *) exit 0 ;; esac\n")
+        # "docker compose exec … mongosh" records the result: its arguments are kept in a file (the result's record
+        # fails in the first run, which must not change the backup's outcome)
+        recorded = work / "recorded"
+        record = f'echo "$*" >> {recorded}; ' + ("exit 1" if outcome == "fails" else "exit 0")
+        stand_in.write_text("#!/bin/sh\ncase \"$*\" in *mongosh*) " + record + " ;; *mongodump*) " + docker
+                            + " ;; *) exit 0 ;; esac\n")
         stand_in.chmod(0o755)
         run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60,
                              env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
@@ -100,11 +117,20 @@ def backup_checks() -> None:
             check(run.returncode == 1 and "ERROR: database backup failed" in run.stdout and not left,
                   "backup: a failed dump says ERROR, exits 1 and leaves no partial file",
                   (run.returncode, run.stdout[-200:], left))
+            noted = recorded.read_text() if recorded.exists() else ""
+            check("BACKUP_OK=0" in noted and "BACKUP_ERROR=the database dump failed" in noted
+                  and "BACKUP_DB=resolver_portal" in noted and "database-service" in noted,
+                  "backup: a failure is recorded for the portal's monitoring (ADR 0008)", noted[:300])
+            check("WARNING: the result was not recorded" in run.stdout and run.returncode == 1,
+                  "backup: a record that cannot be written is only a warning", run.stdout[-200:])
         else:
             archives = [n for n in left if n.endswith(".archive.gz")]
             check(run.returncode == 0 and " OK " in run.stdout and len(archives) == 1
                   and (backups / archives[0]).read_text() == "ARCHIVE-BYTES" and not any(n.endswith(".tmp") for n in left),
                   "backup: a good dump writes the archive and says OK", (run.returncode, run.stdout[-200:], left))
+            noted = recorded.read_text() if recorded.exists() else ""
+            check("BACKUP_OK=1" in noted and f"BACKUP_FILE={backups / archives[0]}" in noted if archives else False,
+                  "backup: a good run is recorded with its file", noted[:300])
         shutil.rmtree(work, ignore_errors=True)
 
 

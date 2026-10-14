@@ -2231,7 +2231,24 @@ function renderOverview() {
   if ("worker" in op) facts.push(["overview.op.worker", op.worker ? t("overview.op.workers", { n: op.worker }) : t("overview.op.noWorker")]);
   if ("mail" in op) facts.push(["overview.op.mail", t(op.mail === "on" ? "overview.on" : "overview.off")]);
   if ("countedUntil" in op) facts.push(["overview.op.countedUntil", op.countedUntil ? day(op.countedUntil) : "—"]);
-  $("#overview-operation").replaceChildren(...facts.flatMap(([k, v]) => [el("dt", "", t(k)), el("dd", "", v)]));
+  // Monitoring (Documentation/adr/0008-monitoring-and-alerts.md): each check's state for server administrators
+  const checkText = c => {
+    if (!c) return t("overview.state.unknown");
+    const d = c.detail || {};
+    const extra = c.kind === "backup" && d.at ? t("overview.check.backupAt", { when: formatWhen(d.at) })
+      : c.kind === "certificate" && d.expires ? t("overview.check.certExpires", { when: formatWhen(d.expires), days: d.days })
+      : "";
+    return t("overview.state." + (c.state || "unknown")) + (extra ? " · " + extra : "");
+  };
+  if (op.checks) ["resolver", "backup", "certificate"].forEach(name => facts.push(["overview.check." + name, checkText(op.checks[name])]));
+  facts.push(["overview.op.alerts", (op.alerts || []).length
+    ? op.alerts.map(a => t("overview.alert." + a.kind, { count: a.detail?.count ?? "" }) + " · " +
+                         t("overview.alertSince", { when: formatWhen(a.since) })).join("\n")
+    : t("overview.op.noAlerts")]);
+  $("#overview-operation").replaceChildren(...facts.flatMap(([k, v]) => {
+    const dd = el("dd", k === "overview.op.alerts" && (op.alerts || []).length ? "is-alert" : "", v);
+    return [el("dt", "", t(k)), dd];
+  }));
 
   // Governance (administrators)
   const gov = d.governance;
@@ -3441,6 +3458,7 @@ function fillPreferences() {
   if (!select.options.length) select.replaceChildren(...I18N.SUPPORTED.map(loc => new Option(I18N.nameOf(loc), loc)));
   select.value = prefs.language || I18N.locale;
   $("#prefs-jobs").checked = Boolean(prefs.notify?.jobs);
+  $("#prefs-alerts").checked = prefs.notify?.alerts !== false;
   prefsStatus(null, null);
 }
 
@@ -3450,7 +3468,8 @@ async function savePreferences(event) {
   button.disabled = true;
   try {
     const result = await api("PUT", "preferences", { language: $("#prefs-language").value,
-                                                     notify: { jobs: $("#prefs-jobs").checked } });
+                                                     notify: { jobs: $("#prefs-jobs").checked,
+                                                               alerts: $("#prefs-alerts").checked } });
     CONFIG.preferences = result.preferences;
     prefsStatus("ok", result.code);
   } catch (e) {

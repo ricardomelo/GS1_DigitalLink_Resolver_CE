@@ -153,14 +153,18 @@ account (another browser, another computer) is signed out; the current one stays
 With e-mail, **Options** also shows **E-mail**: the address messages go to (only an administrator can change it),
 the **Language of the messages** (at first the language of the page you sign in with) and the messages you want.
 Security notices are always sent; **When an import or link check I started has finished** is optional, useful for
-long imports and for **Check every record's links**. Select **Save preferences**.
+long imports and for **Check every record's links**. Administrators also choose **Monitoring alerts** (on until
+switched off): the resolver not answering, a daily backup that failed or is late, the HTTPS certificate about to
+expire, and spikes of scans of codes nobody registered (an organisation's administrators receive these for its codes
+only). Select **Save preferences**.
 
 ## 4. The editor at a glance
 
 ![The editor when the portal opens](images/guide/editor-start.png)
 
-The page that opens after signing in is the **editor**. It has three numbered steps and, under them, the
-**label block** with the QR code:
+The **editor** opens from **Link editor** in the user menu, from the portal's own address (`/portal/`) and from a code
+chosen in the record list or the overview (the page that opens after signing in is the **Overview**, section 17). It
+has three numbered steps and, under them, the **label block** with the QR code:
 
 1. **What does the code identify?** — the identifier type, the identifier and its qualifiers, and the
    **Open record** button.
@@ -706,8 +710,10 @@ is registered but not for the batch or serial scanned.
 GS1-Conformant Resolver 2.5.9); records **without a description**; the **keys nobody scanned** in the period; and the
 records with problems in the **last check of every link** (section 13).
 
-**Operation.** When every link was last checked and how long requests are kept. The server administrator also sees
-whether the job worker runs, whether e-mail is on and up to which day the daily counts are complete.
+**Operation.** When every link was last checked, how long requests are kept and the **active alerts** of your scope
+(an organisation's users see its spikes of codes nobody registered). The server administrator also sees whether the
+job worker runs, whether e-mail is on, up to which day the daily counts are complete and the state of each check of
+the monitoring: the resolver through the proxy, the daily backup and the HTTPS certificate.
 
 **Governance** (administrators). Record changes (created, changed, deleted, imports) and by user, sign-ins and
 refused sign-ins, exports, active API keys and those expiring within 14 days, calls to the tenant API and how many

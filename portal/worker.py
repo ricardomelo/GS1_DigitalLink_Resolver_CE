@@ -14,7 +14,8 @@ The loop: give the jobs of silent workers back to the queue, claim the oldest qu
 thread renews its heartbeat, look again after a second when there is nothing to do. On SIGTERM (docker stop)
 the worker finishes the record it is writing, gives the job back to the queue and stops; the next worker
 continues from there. About once an hour, between jobs, it also runs the portal's housekeeping (app.HOUSEKEEPING:
-the notices of API keys about to expire, the daily counts of resolver requests); each task is safe to run in several
+the notices of API keys about to expire, the daily counts of resolver requests), and every PORTAL_MONITOR_MINUTES the
+monitoring (app.MONITORING, Documentation/adr/0008-monitoring-and-alerts.md); each task is safe to run in several
 workers at once.
 """
 import logging
@@ -59,10 +60,13 @@ def mode() -> str:
 class Worker:
     """One worker: a loop that claims and runs jobs until stop() is called."""
 
-    def __init__(self, runners: dict, worker_mode: str, housekeeping=()):
+    def __init__(self, runners: dict, worker_mode: str, housekeeping=(), monitoring=(), monitor_seconds: float = 0):
         self.runners = runners
         self.housekeeping = list(housekeeping)
         self._housekept = None
+        self.monitoring = list(monitoring)
+        self.monitor_seconds = monitor_seconds          # 0: no monitoring
+        self._monitored = None
         self.mode = worker_mode
         self.name = jobs.worker_name(worker_mode)
         self._stop = threading.Event()
@@ -83,13 +87,21 @@ class Worker:
             self._announced = now
 
     def housekeep(self, force: bool = False) -> None:
-        """Runs the housekeeping tasks when HOUSEKEEPING_SECONDS have passed (or at once with force); a failing task
-        is logged and the others still run."""
+        """Runs the housekeeping tasks when HOUSEKEEPING_SECONDS have passed (or at once with force), and the
+        monitoring tasks every monitor_seconds; a failing task is logged and the others still run."""
         now = time.monotonic()
+        if self.monitor_seconds and self.monitoring and (
+                force or self._monitored is None or now - self._monitored >= self.monitor_seconds):
+            self._monitored = now
+            self._run_tasks(self.monitoring)
         if not force and self._housekept is not None and now - self._housekept < HOUSEKEEPING_SECONDS:
             return
         self._housekept = now
-        for task in self.housekeeping:
+        self._run_tasks(self.housekeeping)
+
+    @staticmethod
+    def _run_tasks(tasks) -> None:
+        for task in tasks:
             try:
                 done = task()
                 if done:
@@ -173,9 +185,9 @@ class Worker:
         log.info("Worker %s stopped.", self.name)
 
 
-def start_embedded(runners: dict, housekeeping=()) -> Worker:
+def start_embedded(runners: dict, housekeeping=(), monitoring=(), monitor_seconds: float = 0) -> Worker:
     """Starts a worker thread inside the calling process (PORTAL_WORKER=embedded)."""
-    worker = Worker(runners, "embedded", housekeeping)
+    worker = Worker(runners, "embedded", housekeeping, monitoring, monitor_seconds)
     threading.Thread(target=worker.loop, name="portal-worker", daemon=True).start()
     return worker
 
@@ -187,7 +199,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     import app                                      # the portal's start-up and its job runners
 
-    worker = Worker(app.JOB_RUNNERS, "external", app.HOUSEKEEPING)
+    worker = Worker(app.JOB_RUNNERS, "external", app.HOUSEKEEPING, app.MONITORING, app.MONITOR_SECONDS)
 
     def on_signal(signum, _frame):
         log.info("Signal %d received: stopping after the current item.", signum)

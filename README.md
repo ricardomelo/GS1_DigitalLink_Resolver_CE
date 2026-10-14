@@ -51,6 +51,7 @@ adds what an organisation needs to run one for its members:
 | [Tenant API](Documentation/adr/0005-tenant-api.md) | ADR 0005: a versioned API of the portal for organisations, API keys with scopes, expiry and a request limit |
 | [Request log](Documentation/adr/0006-resolver-request-log.md) | ADR 0006: the resolver records each request without personal data, daily aggregates per key, each organisation seeing its own |
 | [Overview](Documentation/adr/0007-overview-indicators.md) | ADR 0007: the page after sign-in with indicators of usage, resolution quality, records, operation and governance |
+| [Monitoring and alerts](Documentation/adr/0008-monitoring-and-alerts.md) | ADR 0008: the worker checks the resolver, the backup, the certificate and spikes of 404, and e-mails the administrators |
 
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).
@@ -104,7 +105,7 @@ the official Postman collection is at
 | **Configuration** | `.env.example` defaults + optional `.env` for every service; description file (`/.well-known/gs1resolver`) built from the configuration; bind addresses for the published ports |
 | **Request log** | The resolver records each request it answers — code, outcome, level, target, time, language, device class — without the client's address, User-Agent, serial numbers or data attribute values; daily counts per key; a *Requests* screen per user's reach, with a CSV export; the tenant API's calls ([ADR 0006](Documentation/adr/0006-resolver-request-log.md)); an **overview** opened after sign-in — usage, scanned codes nobody registered, record quality, operation and governance for the last 7, 30 or 90 days against the period before, exported to Excel and CSV and read by organisations' systems through the tenant API ([ADR 0007](Documentation/adr/0007-overview-indicators.md)) |
 | **Home page** (`/`) | Menu to the portal, the API documentation, the GS1 Digital Link standard, gs1.org and this code; domain independent |
-| **Operations** | Interactive installer for Ubuntu 22.04 / 24.04; daily backup of the database and the portal's configuration; Compose restarts the proxy when a service behind it is recreated |
+| **Operations** | Interactive installer for Ubuntu 22.04 / 24.04; daily backup of the database and the portal's configuration; monitoring by the worker with alerts by e-mail — the resolver down through the proxy, a failed or late backup, the certificate expiring, spikes of codes nobody registered ([ADR 0008](Documentation/adr/0008-monitoring-and-alerts.md)); Compose restarts the proxy when a service behind it is recreated |
 | **Quality** | Development tests for the resolver, the data entry API, the portal (unit and browser end-to-end), the home page, the installer and the link checker; comparison with the GS1 Syntax Engine; GS1's own resolver test suite passed (31 of 31) and also run in the development tests |
 
 The full change log is in [Documentation/extensions/CHANGELOG.md](Documentation/extensions/CHANGELOG.md) and
@@ -527,6 +528,7 @@ never committed).
 | `PORTAL_API_RATE_PER_MINUTE` (120), `PORTAL_API_KEY_MAX_DAYS` (365) | The tenant API: requests per key and minute; the longest validity of an API key |
 | `RESOLVER_LOG_DAYS` (90), `RESOLVER_LOG_COUNTRY_HEADER` | The log of resolver requests ([ADR 0006](Documentation/adr/0006-resolver-request-log.md)): days each event (and each call of the tenant API) is kept, 0 switches it off; a header with a two-letter country set by a proxy in front (empty: no country) |
 | `PORTAL_TIME_ZONE` (UTC), `PORTAL_STATS_DAYS` (800) | The days of the daily request counts (an IANA name; the installer writes the server's) and how long the counts are kept |
+| `PORTAL_MONITOR_MINUTES` (5), `PORTAL_MONITOR_URL`, `PORTAL_MONITOR_PROBE`, `PORTAL_MONITOR_BACKUP_HOURS` (26), `PORTAL_MONITOR_TLS_HOST` (`FQDN`), `PORTAL_MONITOR_CERT_DAYS` (21), `PORTAL_ALERT_404_MIN` (20), `PORTAL_ALERT_404_FACTOR` (3) | Monitoring and alerts by e-mail ([ADR 0008](Documentation/adr/0008-monitoring-and-alerts.md)): how often the worker checks (0: off), the resolver's address through the proxy and a registered code to try, the longest time without a good backup, the certificate's host and days of warning, what makes a spike of 404 |
 | `PORTAL_WORKER` (`external`) | Where imports and link checks run: `external`, the `portal-worker` service; `embedded`, a thread of the portal, for a set-up without that service |
 | `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_COOKIE_SECURE` | Optional portal settings: minutes without use and hours after the sign-in before the session ends, Secure cookie |
 | `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Host addresses of ports 8080 and 27017 (read by Compose from `.env` only) |
@@ -627,7 +629,7 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 
 ## Open backlog
 
-Status on 14 October 2026 (item 4.2 done in session 14). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+Status on 14 October 2026 (items 4.2 and 4.3 done in session 14). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
 the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
@@ -645,7 +647,9 @@ the portal for organisations' own systems, API keys with scopes, expiry and a re
 by the resolver without personal data, daily counts per key, a Requests screen;
 [ADR 0006](Documentation/adr/0006-resolver-request-log.md)), and item 4.2, the overview after sign-in (indicators of
 usage, resolution quality, records, operation and governance per scope, exports, `/v1/stats`;
-[ADR 0007](Documentation/adr/0007-overview-indicators.md)), are complete too. What was
+[ADR 0007](Documentation/adr/0007-overview-indicators.md)), and item 4.3, monitoring and alerts by e-mail (the
+resolver through the proxy, the backup, the certificate, spikes of 404;
+[ADR 0008](Documentation/adr/0008-monitoring-and-alerts.md)), are complete too. What was
 done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
 The items below are in the agreed order; sizes are relative (S, M, L). The order puts first what later items
 build on: the portal's data store and tenants come before the API, e-mail and analytics, which all need to
@@ -653,7 +657,6 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Resolution log and analytics | 4.3 | **Monitoring and alerts** by e-mail: resolver down (checked through the proxy), failed backup, spikes of 404, certificate expiry | M | 4.2, 3.1 |
 | Custom domains and label studio | 5.1 | **The tenant's own domain in the QR code** (URI Syntax 4.11): domains registered per tenant and proved by a DNS record; default per prefix, chosen when the label is made (installation domain when none is set); either the domain points at the resolver (certificate issued per domain) or the tenant's server redirects to it keeping path and query string; a domain answers only for its tenant's prefixes; optional path stem | L | 2.4, 2.5 |
 | | 5.2 | **X-dimension choice and PDF export** | M | 5.1 |
 | | 5.3 | **QR code with EAN-13/UPC-A (and EAN-8/UPC-E)** for the transition to 2D, with the HRI rules of the GS1 General Specifications | M | 5.2 |

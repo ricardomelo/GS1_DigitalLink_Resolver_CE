@@ -197,8 +197,8 @@ check("…a batch without a key record", rec["noKeyRecord"] == 1 and rec["breaks
       rec)
 check("…keys nobody scanned in the period", rec["notScanned"] == 1 and rec["notScannedSample"] == [f"/01/{ACME_B}"], rec)
 check("…no link check yet", rec["lastCheck"] is None and rec["linkProblems"] == 0, rec)
-check("operation for an organisation: the last link check and the log's retention, no server details",
-      data["operation"] == {"lastCheck": None, "logDays": 90}, data["operation"])
+check("operation for an organisation: the last link check, the log's retention and its alerts, no server details",
+      data["operation"] == {"lastCheck": None, "logDays": 90, "alerts": []}, data["operation"])
 
 leo_data = leo.get("/portal/api/overview").get_json()
 check("a user limited to a prefix: only that prefix's requests (A and C, not B or the unknown code)",
@@ -222,7 +222,7 @@ check("…but only codes in the lists of codes", all(c["key"] == "01" and c["val
 check("…the slowest day's 95th percentile (the whole installation's daily counts)",
       root_data["quality"]["p95Max"] == 20, root_data["quality"]["p95Max"])
 check("…the server's operation: worker, e-mail, the last day counted",
-      set(root_data["operation"]) == {"lastCheck", "logDays", "worker", "mail", "countedUntil"}
+      set(root_data["operation"]) == {"lastCheck", "logDays", "worker", "mail", "countedUntil", "alerts", "checks"}
       and root_data["operation"]["mail"] == "off" and root_data["operation"]["countedUntil"], root_data["operation"])
 root.post("/portal/api/support", json={"tenant": acme["id"], "reason": "Ticket 9"}, headers=ORIGIN)
 support = root.get("/portal/api/overview").get_json()

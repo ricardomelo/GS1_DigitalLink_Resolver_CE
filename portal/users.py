@@ -342,7 +342,8 @@ def set_preferences(username: str, language=None, notify: dict | None = None) ->
                 raise UserError("preferences.languageInvalid")
             account["languageChosen"] = True
         if notify is not None:
-            account["notify"] = {k: True for k, v in notify.items() if v}
+            # both values are kept: a category on by default (alerts) is switched off by an explicit false
+            account["notify"] = {**(account.get("notify") or {}), **{k: bool(v) for k, v in notify.items()}}
         _save(username, account)
         return account
 

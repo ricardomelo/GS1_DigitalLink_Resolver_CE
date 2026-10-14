@@ -10,8 +10,8 @@ Categories (TEMPLATES maps each message to one):
   account     messages the user or an administrator asked for (invitation, recovery and reset links): always
   security    the password or the e-mail address was changed, the account was locked: always
   jobs        an import or a link check the user started has finished: optional, off by default
-
-Later items add categories (4.3 alerts, 4.4 weekly summary) to CATEGORIES and their texts to mailtexts.py.
+  alerts      monitoring (Documentation/adr/0008-monitoring-and-alerts.md): the resolver down, the backup, the
+              certificate, spikes of 404 — to administrators: optional, on by default
 """
 import logging
 import os
@@ -30,13 +30,16 @@ import worker
 log = logging.getLogger("portal.notify")
 
 # category → (optional, default for a user who has not chosen)
-CATEGORIES = {"account": (False, True), "security": (False, True), "jobs": (True, False)}
+CATEGORIES = {"account": (False, True), "security": (False, True), "jobs": (True, False), "alerts": (True, True)}
 OPTIONAL = tuple(name for name, (optional, _) in CATEGORIES.items() if optional)
 TEMPLATES = {
     "invite": "account", "password-recovery": "account", "password-reset-admin": "account",
     "password-changed": "security", "email-changed-old": "security", "email-changed-new": "security",
     "account-locked": "security", "api-key-created": "security", "api-key-expiring": "security",
     "import-finished": "jobs", "linkcheck-finished": "jobs",
+    "alert-resolver-down": "alerts", "alert-resolver-up": "alerts", "alert-backup-failed": "alerts",
+    "alert-backup-ok": "alerts", "alert-certificate": "alerts", "alert-certificate-ok": "alerts",
+    "alert-404-spike": "alerts",
 }
 # Waits before each new try after a temporary failure, in minutes; after the last, the message has failed.
 RETRY_MINUTES = (1, 5, 15, 60, 120)

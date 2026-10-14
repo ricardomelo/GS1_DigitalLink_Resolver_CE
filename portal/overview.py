@@ -231,6 +231,8 @@ def summary_rows(data: dict, labels: dict) -> list[list]:
     for name in ("worker", "mail", "logDays", "countedUntil"):
         if name in op:
             add("operation", "overview.op." + name, op[name])
+    if "alerts" in op:
+        add("operation", "overview.op.alerts", len(op["alerts"]))
     gov = data.get("governance")
     if gov:
         for action, n in sorted(gov["changes"].items()):

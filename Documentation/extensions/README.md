@@ -717,6 +717,42 @@ journalled as `overview-export`. API keys with the scope `stats:read` read usage
 `GET /portal/api/v1/stats?days=30`. Nothing is configured: the overview needs the request log (`RESOLVER_LOG_DAYS`
 above 0) for its usage and quality figures.
 
+## Organisations' own domains
+
+An organisation's QR codes can carry its own domain instead of the installation's
+([ADR 0009](../adr/0009-tenant-domains.md); GS1 Digital Link URI Syntax 1.7, section 4.11): `https://id.acme.example/01/…`
+or, with a path stem, `https://id.acme.example/gs1/01/…`.
+
+**In the portal** (user menu → **Domains**, administrators): an organisation's administrators add its domains, a server
+administrator the operator's (and sees every domain); at most 10 per organisation. A name is a lower-case host name
+(internationalised names in Punycode), never the installation's own, unique in the installation; a stem has one to three
+segments, none of 2 to 4 digits. Each domain is proved by a DNS TXT record `_gs1resolver.<domain>` =
+`gs1resolver-verify=<token>` (**Verify**); it stays verified afterwards, the worker looking at the record once a day to
+show when it was last seen. **Default for the prefixes** makes it the default of the labels of those prefixes (the
+longest prefix wins); the label panel's *Domain in the QR code* chooses another for one label. The record's
+`digitalLink`, the editor's preview, the label and the tenant API's labels (`domain=`) follow the same rule.
+**Test** requests through the domain (public addresses only).
+
+**Points at this server** (`direct`): the domain's DNS points at the server (CNAME or A/AAAA); the resolver recognises
+it from the public host the proxy passes (`X-Forwarded-Host`), reading the verified domains from the portal's database
+every minute, removes the stem and answers only for the organisation's prefixes (the operator's domains: the keys no
+organisation holds); other codes answer 404 like a code nobody registered. Its description file names it as
+`resolverRoot`. Certificates are the host's: after verifying a domain run
+
+```bash
+sudo scripts/custom-domains.sh list     # each verified direct domain and whether it has a site and a certificate
+sudo scripts/custom-domains.sh apply    # a site from the installer's template and a Let's Encrypt certificate for each new one
+```
+
+(`CERTBOT_EMAIL` from `.env`; the domain's DNS must already point at the server and port 80 be open). A daily cron line
+such as `17 3 * * * root /path/to/scripts/custom-domains.sh apply >> /var/log/resolver-domains.log 2>&1` keeps new
+domains served without a visit; sites of domains removed in the portal are listed and deleted by hand.
+
+**My server redirects** (`redirect`): the organisation's own server answers `https://<domain><stem>/<path>?<query>`
+with a redirect (301, 302, 307 or 308) to `https://<FQDN>/<path>?<query>`; for nginx
+`location ~ ^/gs1(/.*)$ { return 307 https://<FQDN>$1$is_args$args; }`, for Apache
+`RedirectMatch 307 ^/gs1/(.*)$ https://<FQDN>/$1`. Nothing is installed on this server.
+
 ## Monitoring and alerts
 
 The job worker checks the installation every `PORTAL_MONITOR_MINUTES` (5; 0 switches it off), one replica at a time

@@ -182,7 +182,7 @@ def v1_get_record(key, value):
     return jsonify({"key": ai, "value": val, "qualifiers": gs1.qualifier_path(pairs, encode=False),
                     "informative": gs1.qualifier_path(stored, encode=False),
                     "description": target.get("itemDescription") or "", "defaultLinkType": default, "links": links,
-                    "digitalLink": gs1.digital_link(portal.RESOLVER_PUBLIC_URL, anchor,
+                    "digitalLink": gs1.digital_link(portal.link_base(anchor), anchor,
                                                     gs1.join_informative(pairs, informative or stored))})
 
 
@@ -200,7 +200,7 @@ def v1_put_record(key, value):
     anchor, pairs, doc = portal.build_document(data)
     portal.check_access(anchor)
     created = portal.store_record(anchor, pairs, doc)
-    uri = gs1.digital_link(portal.RESOLVER_PUBLIC_URL, anchor,
+    uri = gs1.digital_link(portal.link_base(anchor), anchor,
                            gs1.join_informative(pairs, gs1.pairs_from(doc.get("informativeQualifiers"))))
     return portal.message("save.created" if created else "save.updated", 201 if created else 200,
                           created=created, digitalLink=uri)
@@ -224,7 +224,7 @@ def v1_delete_record(key, value):
 @portal.app.get(PREFIX + "/labels/<key>/<path:value>")
 @require_key("labels:read")
 def v1_get_label(key, value):
-    """The record's label, as the portal makes it (format=svg|png, hri, version, ecl, attr=AI:value)."""
+    """The record's label, as the portal makes it (format=svg|png, hri, version, ecl, attr=AI:value, domain)."""
     anchor = _anchor(key, value)
     return portal.label_response(anchor, request.args)
 

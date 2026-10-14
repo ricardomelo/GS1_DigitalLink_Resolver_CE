@@ -5,6 +5,7 @@ from flask_cors import CORS
 import logging
 import os
 from typing import Any
+import domains
 import request_log
 from web_namespace import web_namespace
 from mongo_db_init import mongo, init_mongo
@@ -73,6 +74,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         request_log.WRITER.collection = lambda: mongo.cx[request_log.DB_NAME][request_log.COLLECTION]
     app.before_request(request_log.start)
     app.after_request(request_log.record)
+
+    # The organisations' own domains (Documentation/adr/0009-tenant-domains.md): read from the portal's database with
+    # the same connection; the middleware removes a domain's path stem before the routes see the path.
+    if domains.MAP.database is None:
+        domains.MAP.database = lambda: mongo.cx[domains.portal_db_name()]
+    app.wsgi_app = domains.Middleware(app.wsgi_app)
 
     @app.after_request
     def add_headers(response: Response) -> Response:

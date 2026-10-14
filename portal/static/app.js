@@ -427,7 +427,7 @@ let previewSeq = 0;
 function renderPreview() {
   const g = readKey();
   const l = readQualifiers();
-  const host = CONFIG ? CONFIG.resolver : "";
+  const host = domainBase(g);
   const shown = g.ok ? g.value : "______________";
   const pairs = l.ok ? l.pairs : [];
   const ready = g.ok && l.ok;
@@ -446,7 +446,7 @@ function renderPreview() {
   clearTimeout(attrTimer);
   attrTimer = setTimeout(async () => {
     const body = { key: g.ai, value: g.value, qualifiers: Object.fromEntries(pairs),
-                   attributes: attributes.map(([ai, value]) => ({ ai, value })) };
+                   attributes: attributes.map(([ai, value]) => ({ ai, value })), domain: $("#opt-domain").value };
     try {
       const result = await api("POST", "digital-link", body);
       if (seq !== previewSeq) return;
@@ -955,7 +955,39 @@ const LABEL_OPTIONS_KEY = "gs1resolver.portal.labelOptions";
 const LABEL_DEFAULTS = { hri: "full", version: "auto", ecl: "m" };
 
 function labelOptionsQuery() {
-  return new URLSearchParams({ hri: $("#opt-hri").value, version: $("#opt-version").value, ecl: $("#opt-ecl").value }).toString();
+  const params = new URLSearchParams({ hri: $("#opt-hri").value, version: $("#opt-version").value, ecl: $("#opt-ecl").value });
+  if ($("#opt-domain").value) params.set("domain", $("#opt-domain").value);
+  return params.toString();
+}
+
+/* The domain in the QR code (Documentation/adr/0009-tenant-domains.md): "" (the default of the record's prefix, else
+   the installation's), "installation", or a verified domain of the scope. The same rule as the server's
+   domains.label_base(), so that the address drawn under the code is the one in it. */
+function fillDomainOption() {
+  const list = CONFIG?.domains?.verified || [];
+  const select = $("#opt-domain");
+  const previous = select.value;
+  $("#opt-domain-field").hidden = !list.length;
+  const host = url => url.replace(/^https?:\/\//, "");
+  select.replaceChildren(i18nOption("label.domainDefault", ""),
+    new Option(host(CONFIG?.domains?.installation || CONFIG?.resolver || ""), "installation"),
+    ...list.map(d => new Option(host(d.url), d.domain)));
+  select.value = [...select.options].some(o => o.value === previous) ? previous : "";
+}
+
+function domainBase(g) {
+  if (!CONFIG) return "";
+  const list = CONFIG.domains?.verified || [];
+  const choice = $("#opt-domain").value;
+  if (choice === "installation") return CONFIG.resolver;
+  if (choice) return (list.find(d => d.domain === choice) || { url: CONFIG.resolver }).url;
+  if (!g.ok) return CONFIG.resolver;
+  const part = ["01", "8006", "00", "8003"].includes(g.ai) ? g.value.slice(1) : g.value;
+  let best = null, length = -1;
+  list.forEach(d => (d.defaultFor || []).forEach(p => {
+    if (part.startsWith(p) && p.length > length) { best = d; length = p.length; }
+  }));
+  return best ? best.url : CONFIG.resolver;
 }
 
 function setupLabelOptions() {
@@ -1251,7 +1283,7 @@ const records = { all: [], loaded: false };
 function isRecordsView() { return location.hash === "#records"; }
 
 const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants", "#apikeys": "apikeys",
-                "#requests": "requests", "#overview": "overview" };
+                "#requests": "requests", "#overview": "overview", "#domains": "domains" };
 
 /* Shows the editor, the record list, the user administration, the organisations or the audit trail, following
    the address (#records, #users, #tenants, #audit), so the browser's back button and bookmarks work. Users and the
@@ -1259,7 +1291,8 @@ const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#t
    still an administrator); organisations are for server administrators. */
 function applyView() {
   let view = VIEWS[location.hash] || "editor";
-  if ((view === "users" || view === "audit" || view === "apikeys") && CONFIG && CONFIG.accountRole !== "admin") view = "editor";
+  if ((view === "users" || view === "audit" || view === "apikeys" || view === "domains") && CONFIG
+      && CONFIG.accountRole !== "admin") view = "editor";
   if (view === "tenants" && CONFIG && !CONFIG.serverAdmin) view = "editor";
   $("#editor-view").hidden = view !== "editor";
   $("#records-view").hidden = view !== "records";
@@ -1269,9 +1302,10 @@ function applyView() {
   $("#apikeys-view").hidden = view !== "apikeys";
   $("#requests-view").hidden = view !== "requests";
   $("#overview-view").hidden = view !== "overview";
+  $("#domains-view").hidden = view !== "domains";
   if (view !== "apikeys") forgetNewKey();
   const titles = { editor: "intro", records: "records", users: "users", audit: "audit", tenants: "tenants",
-                   apikeys: "apikeys", requests: "requests", overview: "overview" };
+                   apikeys: "apikeys", requests: "requests", overview: "overview", domains: "domains" };
   I18N.set($("#hero-title"), `${titles[view]}.title`);
   I18N.set($("#hero-lede"), `${titles[view]}.lede`);
   const link = $("#hero-link");
@@ -1284,6 +1318,7 @@ function applyView() {
   if (view === "apikeys" && CONFIG) loadApiKeys();
   if (view === "requests" && CONFIG) loadRequestsView();
   if (view === "overview" && CONFIG) loadOverview();
+  if (view === "domains" && CONFIG) loadDomains();
 }
 
 /* ------------------------------------------------------------------ roles */
@@ -2034,6 +2069,133 @@ async function loadApiCalls(event, more = false) {
   } catch (e) {
     I18N.set($("#requests-api-count"), e.code, e.params);
   }
+}
+
+/* ------------------------------------------------------------------ domains (Documentation/adr/0009-tenant-domains.md)
+   The organisation's own domains in the QR code: added, proved by a DNS TXT record, checked, given default prefixes,
+   removed. A server administrator sees every domain and manages the operator's; support access is read only. */
+const domainsState = { data: null };
+
+function domainsStatus(kind, key, params) {
+  const box = $("#domains-status");
+  box.hidden = !key;
+  box.className = "status" + (kind ? " is-" + kind : "");
+  if (key) I18N.set(box, key, params);
+}
+
+async function loadDomains() {
+  try {
+    const data = await api("GET", "domains");
+    domainsState.data = data;
+    renderDomains();
+  } catch (e) {
+    domainsStatus("error", e.code, e.params);
+  }
+}
+
+function renderDomains() {
+  const data = domainsState.data;
+  if (!data) return;
+  const who = CONFIG.support ? CONFIG.support.name : CONFIG.tenant ? CONFIG.tenant.name : t("users.operatorName");
+  I18N.set($("#domains-scope"), data.every ? "domains.scopeEvery" : "domains.scope", { who });
+  $("#domains-readonly").hidden = !data.readOnly;
+  $("#domains-create").hidden = data.readOnly;
+  $("#domains-list").replaceChildren(...data.domains.map(domainCard));
+  $("#domains-empty").hidden = data.domains.length > 0;
+  $("#domains-redirect-example").textContent =
+    `# nginx (${t("domains.yourServer")})\nlocation ~ ^/gs1(/.*)$ {\n    return 307 https://${data.installation}$1$is_args$args;\n}\n\n` +
+    `# Apache\nRedirectMatch 307 ^/gs1/(.*)$ https://${data.installation}/$1`;
+}
+
+function domainCard(d) {
+  const editable = !domainsState.data.readOnly && !(domainsState.data.every && d.organisation);
+  const card = el("article", "domain-card" + (d.verified ? " is-verified" : ""));
+  card.dataset.domain = d.domain;
+  const head = el("div", "domain-head");
+  head.append(el("strong", "domain-name", d.domain + (d.stem || "")));
+  head.append(el("span", "badge " + (d.verified ? "badge-created" : "badge-unchanged"),
+                 t(d.verified ? "domains.verifiedBadge" : "domains.pendingBadge")));
+  head.append(el("span", "badge badge-update", t("domains.mode." + d.mode)));
+  if (domainsState.data.every) head.append(el("span", "muted", d.organisation || t("users.operatorName")));
+  card.append(head);
+  if (!d.verified) {
+    const txt = el("div", "domain-txt");
+    txt.append(el("p", "", t("domains.txtIntro")));
+    const dl = el("dl", "overview-facts");
+    dl.append(el("dt", "", t("domains.txtName")), el("dd", "code", d.txtName),
+              el("dt", "", t("domains.txtValue")), el("dd", "code", d.txtValue));
+    txt.append(dl);
+    card.append(txt);
+  } else {
+    card.append(el("p", "field-msg", t("domains.seen", { verified: formatWhen(d.verifiedAt), seen: formatWhen(d.seenAt) })));
+  }
+  if (d.check) {
+    const ok = d.check.ok;
+    card.append(el("p", "field-msg " + (ok ? "is-ok" : "is-error"),
+      t(ok ? "domains.checkOk" : d.check.problem, { domain: d.domain, detail: d.check.detail || "", url: d.check.url })
+      + " · " + formatWhen(d.check.at)));
+  }
+  card.append(el("p", "field-msg", t("domains.defaultsNow", {
+    prefixes: d.defaultFor.length ? d.defaultFor.join(", ") : t("domains.noDefaults") })));
+  if (editable) {
+    const form = el("form", "domain-edit");
+    form.noValidate = true;
+    const field = (labelKey, input) => { const l = el("label", "domain-field"); l.append(el("span", "", t(labelKey)), input); return l; };
+    const prefixes = el("input"); prefixes.value = d.defaultFor.join(", "); prefixes.className = "domain-defaults";
+    prefixes.placeholder = (domainsState.data.prefixes || []).join(", ");
+    const stem = el("input"); stem.value = d.stem; stem.className = "domain-stem";
+    const mode = el("select"); mode.className = "domain-mode";
+    domainsState.data.modes.forEach(m => mode.append(i18nOption("domains.mode." + m, m)));
+    mode.value = d.mode;
+    form.append(field("domains.defaults", prefixes), field("domains.stem", stem), field("domains.mode", mode));
+    const save = el("button", "btn btn-ghost", t("domains.save")); save.type = "submit";
+    form.append(save);
+    form.addEventListener("submit", e => { e.preventDefault(); domainCall("PUT", d, "",
+      { defaultFor: prefixesFrom(prefixes.value), stem: stem.value, mode: mode.value }); });
+    card.append(form);
+    const actions = el("div", "user-actions");
+    const button = (key, cls, fn) => { const b = el("button", "btn " + cls, t(key)); b.type = "button"; b.addEventListener("click", fn); actions.append(b); };
+    if (!d.verified) button("domains.verify", "btn-primary", () => domainCall("POST", d, "/verify", {}));
+    button("domains.check", "btn-ghost", () => domainCall("POST", d, "/check", {}));
+    button("domains.remove", "btn-danger-ghost", () => {
+      if (confirm(t("domains.confirmRemove", { domain: d.domain }))) domainCall("DELETE", d, "");
+    });
+    card.append(actions);
+  }
+  return card;
+}
+
+async function domainCall(method, d, suffix, body) {
+  try {
+    const result = await api(method, "domains/" + encodeURIComponent(d.domain) + suffix, body);
+    domainsStatus(result.code && result.code !== "domains.checkOk" && suffix === "/check" ? "error" : "ok", result.code, result.params);
+    await refreshDomainConfig();
+    loadDomains();
+  } catch (e) {
+    domainsStatus("error", e.code, e.params);
+  }
+}
+
+async function createDomain(event) {
+  event.preventDefault();
+  try {
+    const result = await api("POST", "domains", { domain: $("#new-domain").value.trim(),
+      stem: $("#new-domain-stem").value.trim(), mode: $("#new-domain-mode").value });
+    domainsStatus("ok", result.code, result.params);
+    $("#new-domain").value = ""; $("#new-domain-stem").value = "";
+    loadDomains();
+  } catch (e) {
+    domainsStatus("error", e.code, e.params);
+  }
+}
+
+/* A domain verified or given defaults changes what the label panel offers. */
+async function refreshDomainConfig() {
+  try {
+    const fresh = await api("GET", "config");
+    CONFIG.domains = fresh.domains;
+    fillDomainOption();
+  } catch { /* the next page load will have it */ }
 }
 
 /* ------------------------------------------------------------------ overview (Documentation/adr/0007-overview-indicators.md)
@@ -3388,7 +3550,8 @@ function setupUserMenu() {
   const dismiss = () => { close(false); menu.classList.add("is-dismissed"); };
   menu.addEventListener("mouseleave", () => menu.classList.remove("is-dismissed"));
   $("#menu-options").addEventListener("click", () => { dismiss(); openOptions(); });
-  ["#menu-overview", "#menu-editor", "#menu-records", "#menu-requests", "#menu-users", "#menu-tenants", "#menu-apikeys", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", dismiss));
+  ["#menu-overview", "#menu-editor", "#menu-records", "#menu-requests", "#menu-users", "#menu-tenants", "#menu-domains",
+   "#menu-apikeys", "#menu-audit"].forEach(sel => $(sel).addEventListener("click", dismiss));
   $("#menu-logout").addEventListener("click", signOut);
 }
 
@@ -3566,6 +3729,9 @@ async function init() {
   $("#requests-api-filters").addEventListener("submit", e => loadApiCalls(e));
   $("#requests-api-more").addEventListener("click", () => loadApiCalls(null, true));
   $("#overview-days").addEventListener("change", () => loadOverview());
+  $("#domains-create").addEventListener("submit", createDomain);
+  $("#opt-domain").addEventListener("change", renderPreview);
+  document.addEventListener("localechange", () => { if (domainsState.data && !$("#domains-view").hidden) renderDomains(); });
   $("#overview-xlsx").addEventListener("click", () => exportOverview("xlsx"));
   $("#overview-csv").addEventListener("click", () => exportOverview("csv"));
   document.addEventListener("localechange", () => { if (overviewState.data && !$("#overview-view").hidden) renderOverview(); });
@@ -3612,6 +3778,7 @@ async function init() {
   showTenant();
   SessionClock.start(CONFIG.session);
   setupAttributes();
+  fillDomainOption();
   fillKeyTypes();
   onKeyTypeChange();
   applyView();                                   // administrator views need the role

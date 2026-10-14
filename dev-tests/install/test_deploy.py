@@ -134,6 +134,66 @@ def backup_checks() -> None:
         shutil.rmtree(work, ignore_errors=True)
 
 
+# --------------------------------------------------------------------------- the organisations' own domains
+def domains_script_checks() -> None:
+    """scripts/custom-domains.sh (Documentation/adr/0009-tenant-domains.md) with stand-in docker, nginx, systemctl and
+    certbot: the verified direct domains read from the portal's database, a site written from the installer's template
+    for each new one and Certbot asked for its certificate, names that are not host names refused before any file or
+    command, sites of domains no longer verified reported, and CERTBOT_EMAIL required."""
+    script = REPO / "scripts" / "custom-domains.sh"
+    work = Path(tempfile.mkdtemp(prefix="domains-test-"))
+    bin_dir, available, enabled, calls = work / "bin", work / "available", work / "enabled", work / "calls"
+    bin_dir.mkdir()
+    (work / "scripts" / "templates").mkdir(parents=True)
+    shutil.copy(REPO / "scripts" / "templates" / "nginx-site-http.conf", work / "scripts" / "templates")
+    names = "id.acme.example\nbad;rm -rf x\nshop.beta.example\n"
+    stand_ins = {
+        # "docker compose exec … mongosh": the verified direct domains, one per line (one of them not a host name)
+        "docker": f'echo "docker $*" >> {calls}; case "$*" in *mongosh*) printf "{names}" ;; esac',
+        "nginx": f'echo "nginx $*" >> {calls}',
+        "systemctl": f'echo "systemctl $*" >> {calls}',
+        # certbot adds the HTTPS server to the site, as the real one does
+        "certbot": f'echo "certbot $*" >> {calls}; d=$(echo "$*" | sed -n "s/.*-d \\([^ ]*\\).*/\\1/p"); '
+                   f'echo "    ssl_certificate /etc/letsencrypt/live/$d/fullchain.pem;" >> {available}/gs1resolver-domain-$d',
+    }
+    for name, body in stand_ins.items():
+        (bin_dir / name).write_text("#!/bin/sh\n" + body + "\n")
+        (bin_dir / name).chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
+           "NGINX_AVAILABLE": str(available), "NGINX_ENABLED": str(enabled)}
+    env.pop("CERTBOT_EMAIL", None)
+    run = subprocess.run(["bash", str(script), "apply"], capture_output=True, text=True, timeout=60, env=env)
+    check(run.returncode == 1 and "CERTBOT_EMAIL is not set" in run.stdout,
+          "custom domains: apply needs CERTBOT_EMAIL", run.stdout[-200:])
+    (work / ".env").write_text("CERTBOT_EMAIL='ops@example.org'\nPORTAL_DB_NAME=resolver_portal\n")
+    run = subprocess.run(["bash", str(script), "list"], capture_output=True, text=True, timeout=60, env=env)
+    check(run.returncode == 0 and "id.acme.example: no site yet" in run.stdout and "bad;rm -rf x: refused" in run.stdout,
+          "custom domains: list shows each verified direct domain and refuses a name that is not a host name", run.stdout)
+    run = subprocess.run(["bash", str(script), "apply"], capture_output=True, text=True, timeout=60, env=env)
+    log = calls.read_text() if calls.exists() else ""
+    site = available / "gs1resolver-domain-id.acme.example"
+    text = site.read_text() if site.exists() else ""
+    check(run.returncode == 0 and "server_name id.acme.example;" in text and "proxy_pass http://127.0.0.1:8080;" in text
+          and "proxy_set_header Host $host;" in text and (enabled / "gs1resolver-domain-id.acme.example").is_symlink(),
+          "custom domains: apply writes a site from the installer's template and enables it", (run.stdout, text[:300]))
+    check("certbot --nginx -d id.acme.example --non-interactive --agree-tos -m ops@example.org" in log
+          and "certbot --nginx -d shop.beta.example" in log and "nginx -t" in log and "systemctl reload nginx" in log,
+          "custom domains: nginx checked and reloaded, Certbot asked for each certificate", log)
+    check("rm -rf" not in log.replace("bad;rm -rf x", "") and not any("bad" in p.name for p in available.iterdir())
+          and "resolver_portal" in log and "PORTAL_DB=resolver_portal" in log,
+          "custom domains: a name that is not a host name reaches no file or command", log)
+    certbot_calls = log.count("certbot --nginx")
+    run = subprocess.run(["bash", str(script), "apply"], capture_output=True, text=True, timeout=60, env=env)
+    log = calls.read_text()
+    check(log.count("certbot --nginx") == certbot_calls and "id.acme.example: already served" in run.stdout,
+          "custom domains: a domain already served is left alone", run.stdout)
+    (available / "gs1resolver-domain-old.example").write_text("server {}\n")
+    run = subprocess.run(["bash", str(script), "list"], capture_output=True, text=True, timeout=60, env=env)
+    check("old.example: site of a domain no longer verified" in run.stdout and "id.acme.example: site and certificate"
+          in run.stdout, "custom domains: list reports sites of domains no longer verified", run.stdout)
+    shutil.rmtree(work, ignore_errors=True)
+
+
 # --------------------------------------------------------------------------- docker-compose.yml
 def compose_config(env_lines: list[str]) -> tuple[dict | None, str]:
     """The configuration as Compose resolves it, with these lines as the installation's .env (and
@@ -419,6 +479,7 @@ def main() -> int:
         return 1
     compose_checks()
     backup_checks()
+    domains_script_checks()
     release_checks()
     proxy_checks()
     no_db = "mongodb://127.0.0.1:9/?serverSelectionTimeoutMS=300"

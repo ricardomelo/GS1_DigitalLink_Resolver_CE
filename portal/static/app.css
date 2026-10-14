@@ -684,3 +684,21 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
   .overview-facts dd { margin-bottom: .5rem; }
   .overview-share-bar { width: auto; }
 }
+
+/* ---------------------------------------------------------------- domains (ADR 0009) */
+.domains-create { align-items: end; }
+.domains-list { display: grid; gap: 1rem; }
+.domain-card { border: 1px solid var(--line); border-left: 4px solid var(--gs1-orange); border-radius: 4px; padding: .9rem 1rem; }
+.domain-card.is-verified { border-left-color: var(--ok); }
+.domain-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-bottom: .4rem; }
+.domain-name { font-family: var(--mono); color: var(--gs1-blue); font-size: 1.05rem; overflow-wrap: anywhere; }
+.domain-txt { background: var(--page); border-radius: 4px; padding: .6rem .8rem; margin: .5rem 0; }
+.domain-txt p { margin: 0 0 .4rem; }
+.domain-txt dd.code { font-family: var(--mono); overflow-wrap: anywhere; }
+.domain-edit { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; margin: .6rem 0; }
+.domain-field { display: flex; flex-direction: column; gap: .2rem; font-weight: 500; font-size: .875rem; }
+.domain-field input, .domain-field select { width: auto; min-width: 12rem; }
+.domains-help { margin-top: 1.5rem; }
+.domains-help summary { cursor: pointer; color: var(--gs1-blue); font-weight: 600; }
+.opt-domain select { max-width: 100%; }
+.domain-card .user-actions { display: flex; flex-wrap: wrap; gap: .5rem; }

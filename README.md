@@ -51,6 +51,7 @@ adds what an organisation needs to run one for its members:
 | [Tenant API](Documentation/adr/0005-tenant-api.md) | ADR 0005: a versioned API of the portal for organisations, API keys with scopes, expiry and a request limit |
 | [Request log](Documentation/adr/0006-resolver-request-log.md) | ADR 0006: the resolver records each request without personal data, daily aggregates per key, each organisation seeing its own |
 | [Overview](Documentation/adr/0007-overview-indicators.md) | ADR 0007: the page after sign-in with indicators of usage, resolution quality, records, operation and governance |
+| [The organisation's own domain](Documentation/adr/0009-tenant-domains.md) | ADR 0009: domains proved by DNS, default per prefix, the resolver answering on them for their organisation only, certificates on the host |
 | [Monitoring and alerts](Documentation/adr/0008-monitoring-and-alerts.md) | ADR 0008: the worker checks the resolver, the backup, the certificate and spikes of 404, and e-mails the administrators |
 
 This README covers the overview, the API, installation and operation. The index of every document is
@@ -98,6 +99,7 @@ the official Postman collection is at
 |---|---|
 | **Portal** (`/portal/`) | Sign-in with per-user passwords (with a show/hide button); editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; QR code labels (PNG/SVG) with the dimensions of the *QR Codes powered by GS1* guidelines, a choice of QR version, error correction and human readable text, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search and filters by key type and qualifier; spreadsheet import/export (XLSX, CSV) with preview; link checker |
 | **Governance** | Roles (administrator, editor, reader); organisations (tenants) that own GS1 Company Prefixes, each with its own users and audit trail, and a server administrator with recorded, read-only support access; access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords or, with an e-mail relay, invitations by e-mail; API keys for the organisations' own systems (tenant API); password recovery by e-mail; security notices; history of every record with restore; audit trail with filters and CSV export |
+| **Own domains** | An organisation's own domain in its QR codes (URI Syntax §4.11), with an optional path stem: proved by a DNS TXT record, default per GS1 Company Prefix or chosen on the label; either pointing at the resolver (which then answers on it for that organisation's codes only, certificates by `scripts/custom-domains.sh`) or redirected by the organisation's own server ([ADR 0009](Documentation/adr/0009-tenant-domains.md)) |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, built from the GS1 Barcode Syntax Dictionary of the engine release every service uses |
 | **Data attributes** | Every data attribute of URI Syntax §4.10 in QR codes, validated by the GS1 Barcode Syntax Engine (formats, check digits, dates, code lists and the association rules of the General Specifications), its messages in the user's language; passed on by the resolver to the targets |
 | **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, the default link unless the request decides a language variant, request paths checked by the GS1 Barcode Syntax Engine, values with `%2F`, the query string passed on exactly as sent, EPC binary strings (`/eh…`, `/ex…`) from NFC tags decompressed, HTML pages in pt-BR / en-GB for browsers |
@@ -334,7 +336,8 @@ content no longer fits the chosen QR version.
 | `Accept-Language`, `Accept`, `context` | Choose between links of the same type by language, media type or context |
 | Browser (`Accept: text/html`) on an error | HTML page (not found, information not available with the available links, invalid code), pt-BR / en-GB |
 | `GET /eh{hexadecimal}`, `GET /ex{base 64}` | EPC binary string (e.g. from an NFC tag) resolved as the GS1 Digital Link it stands for; data attributes it carries are passed on in the query string; `400` if it does not decode |
-| `GET /.well-known/gs1resolver` | Resolver description file; `resolverRoot` and `contact` from the configuration |
+| `GET /.well-known/gs1resolver` | Resolver description file; `resolverRoot` and `contact` from the configuration (`resolverRoot` is the organisation's domain and stem when asked on one) |
+| The same requests on an organisation's verified domain (`https://id.brand.example[/stem]/01/…`) | Resolved for that organisation's codes only (others: `404`), the stem removed ([ADR 0009](Documentation/adr/0009-tenant-domains.md)) |
 | `GET /` | Home page |
 
 The query string of the scan is passed on to the target exactly as it was sent (GS1-Conformant Resolver 2.12).
@@ -407,7 +410,7 @@ portal (user menu → **API keys**: scopes, optional prefixes, validity) and see
 | `GET /portal/api/v1/records/{key}/{value}?qualifiers=/10/L1` | `records:read` | One record: description, links, Digital Link |
 | `PUT /portal/api/v1/records/{key}/{value}?qualifiers=` | `records:write` | Create (201) or replace (200): `{description, links: [{linkType, url, title, hreflang}]}` |
 | `DELETE /portal/api/v1/records/{key}/{value}?qualifiers=` | `records:write` | Delete one record |
-| `GET /portal/api/v1/labels/{key}/{value}?format=svg\|png&…` | `labels:read` | The QR code label, with the options of the portal's |
+| `GET /portal/api/v1/labels/{key}/{value}?format=svg\|png&…` | `labels:read` | The QR code label, with the options of the portal's (also `domain=default\|installation\|<verified domain>`) |
 | `GET /portal/api/v1/stats?days=7\|30\|90` | `stats:read` | Usage, resolution quality and record quality of the key's reach, as on the portal's overview |
 
 ```bash
@@ -629,7 +632,7 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 
 ## Open backlog
 
-Status on 14 October 2026 (items 4.2 and 4.3 done in session 14). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+Status on 14 October 2026 (items 4.2, 4.3 and 5.1 done in session 14). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
 the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
@@ -649,7 +652,8 @@ by the resolver without personal data, daily counts per key, a Requests screen;
 usage, resolution quality, records, operation and governance per scope, exports, `/v1/stats`;
 [ADR 0007](Documentation/adr/0007-overview-indicators.md)), and item 4.3, monitoring and alerts by e-mail (the
 resolver through the proxy, the backup, the certificate, spikes of 404;
-[ADR 0008](Documentation/adr/0008-monitoring-and-alerts.md)), are complete too. What was
+[ADR 0008](Documentation/adr/0008-monitoring-and-alerts.md)), and item 5.1, the organisation's own domain in the QR
+code ([ADR 0009](Documentation/adr/0009-tenant-domains.md)), are complete too. What was
 done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
 The items below are in the agreed order; sizes are relative (S, M, L). The order puts first what later items
 build on: the portal's data store and tenants come before the API, e-mail and analytics, which all need to
@@ -657,8 +661,7 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Custom domains and label studio | 5.1 | **The tenant's own domain in the QR code** (URI Syntax 4.11): domains registered per tenant and proved by a DNS record; default per prefix, chosen when the label is made (installation domain when none is set); either the domain points at the resolver (certificate issued per domain) or the tenant's server redirects to it keeping path and query string; a domain answers only for its tenant's prefixes; optional path stem | L | 2.4, 2.5 |
-| | 5.2 | **X-dimension choice and PDF export** | M | 5.1 |
+| Custom domains and label studio | 5.2 | **X-dimension choice and PDF export** | M | 5.1 |
 | | 5.3 | **QR code with EAN-13/UPC-A (and EAN-8/UPC-E)** for the transition to 2D, with the HRI rules of the GS1 General Specifications | M | 5.2 |
 | | 5.4 | **Every label format in one zip** | S | 5.3 |
 | Landing page | 6.1 | **Page of the item's links** as the default target: generated by the resolver, mobile first, an icon per link type, logo and colours per prefix, languages, clicks logged | L | 4.1, 5.1 |
@@ -693,7 +696,8 @@ portal/                         link management portal: app.py, gs1.py (keys, qu
                                 meta.py, store.py (database), jobs.py and worker.py (background jobs),
                                 syntax.py (data attributes), static/ (HTML, CSS, JS, i18n),
                                 tools/build-syntax-engine.sh (GS1 Barcode Syntax Engine)
-scripts/                        install.sh, templates/ (nginx), resolver-backup.sh and its cron entry
+scripts/                        install.sh, templates/ (nginx), resolver-backup.sh and its cron entry,
+                                custom-domains.sh (sites and certificates of organisations' own domains)
 dev-tests/                      development tests (see above)
 .github/                        workflows/dev-tests.yml (continuous integration), actions/dev-tests-setup/
 CLAUDE.md, .claude/             conventions and the session start hook for Claude Code cloud sessions

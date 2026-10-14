@@ -31,6 +31,7 @@ import jobs
 import journal
 import label
 import apikeys
+import domains
 import linkcheck
 import mail
 import meta
@@ -553,11 +554,18 @@ def request_attributes(source) -> list[tuple[str, str]]:
     return [(gs1.without_invisible(ai).strip("() "), gs1.without_invisible(value).strip()) for ai, value in items]
 
 
-def digital_link_for(anchor: str, pairs, attributes) -> tuple[str, list[str]]:
-    """The record's GS1 Digital Link URI, with data attributes (validated by the syntax engine) if any."""
+def link_base(anchor: str, choice: str | None = None) -> str:
+    """The address in front of a record's GS1 path: the default domain of its prefix, the installation's, or the
+    verified domain chosen (Documentation/adr/0009-tenant-domains.md)."""
+    return domains.label_base(anchor, getattr(g, "tenant", None), choice, RESOLVER_PUBLIC_URL)
+
+
+def digital_link_for(anchor: str, pairs, attributes, domain: str | None = None) -> tuple[str, list[str]]:
+    """The record's GS1 Digital Link URI on its domain, with data attributes (validated by the syntax engine) if any."""
+    base = link_base(anchor, domain)
     if not attributes:
-        return gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, pairs), []
-    return syntax.ENGINE.digital_link(RESOLVER_PUBLIC_URL, anchor, pairs, attributes)
+        return gs1.digital_link(base, anchor, pairs), []
+    return syntax.ENGINE.digital_link(base, anchor, pairs, attributes)
 
 
 def build_document(data: dict) -> tuple[str, str | None, dict]:
@@ -897,6 +905,9 @@ def config():
         session=session_info(),
         mail={"enabled": mail.enabled()},
         requestLog={"days": requestlog.log_days(), "whole": log_sees_everything()},
+        domains={"installation": RESOLVER_PUBLIC_URL,
+                 "verified": [{"domain": d["_id"], "url": domains.base_url(d), "defaultFor": d.get("defaultFor") or []}
+                              for d in domains.verified(g.tenant)]},
         preferences=preferences_of(users.get(g.user) or {}),
     )
 
@@ -985,7 +996,7 @@ def get_record():
         "key": ai, "value": value, "anchor": anchor, "qualifiers": [list(p) for p in pairs],
         # the serial number's variant and batch typed now, and those kept with the record
         "informative": [list(p) for p in informative], "storedInformative": [list(p) for p in stored],
-        "digitalLink": gs1.digital_link(RESOLVER_PUBLIC_URL, anchor, gs1.join_informative(pairs, informative or stored)),
+        "digitalLink": gs1.digital_link(link_base(anchor), anchor, gs1.join_informative(pairs, informative or stored)),
         "exists": target is not None,
         # section 2.5.9: whether the key has a record of its own (the editor offers one when saving)
         "hasKeyRecord": any(not e.get("qualifiers") for e in entries),
@@ -1013,7 +1024,7 @@ def save_record():
     data = request.get_json(silent=True) or {}
     anchor, pairs, doc = build_document(data)
     check_access(anchor)
-    uri = gs1.digital_link(RESOLVER_PUBLIC_URL, anchor,
+    uri = gs1.digital_link(link_base(anchor), anchor,
                            gs1.join_informative(pairs, gs1.pairs_from(doc.get("informativeQualifiers"))))
     key_doc = key_record_document(anchor, pairs, doc, data.get("keyRecord"))
     if key_doc:
@@ -2040,6 +2051,119 @@ def tenant_api_calls():
         return _log_unavailable(exc)
 
 
+# --------------------------------------------------------------------------- domains (ADR 0009)
+def _installation_host() -> str:
+    return (RESOLVER_PUBLIC_URL.split("://", 1)[-1].split("/", 1)[0].split(":")[0]).lower()
+
+
+def domain_scope() -> tuple[str | None, bool]:
+    """Whose domains the request manages (the account's own scope, as API keys; during support access the
+    organisation's, read only) and whether it sees every domain (a server administrator outside support access)."""
+    if g.support:
+        return g.support, False
+    return g.account_tenant, bool(g.server_admin)
+
+
+def _sample_anchor(tenant: str | None) -> str | None:
+    """A record of the scope, for checking a redirecting domain."""
+    try:
+        for record in visible_records():
+            if record.get("kind") != "other":
+                return record["anchor"]
+    except UpstreamError:
+        pass
+    return None
+
+
+@app.get("/portal/api/domains")
+@require_login
+@admin_required
+def list_domains():
+    """The domains of the administrator's scope (a server administrator: every domain, with its organisation)."""
+    tenant, every = domain_scope()
+    names = {t["id"]: t["name"] for t in g.tenants}
+    docs = domains.load(tenant, every=every)
+    return jsonify(domains=[domains.public(d, names if every else None) for d in docs], every=every,
+                   readOnly=bool(g.support), installation=_installation_host(), max=domains.MAX_PER_SCOPE,
+                   txtName=domains.TXT_NAME, prefixes=(tenants.get(tenant) or {}).get("prefixes", [])
+                   if tenant else [], modes=list(domains.MODES))
+
+
+class ReadOnlySupport(Exception):
+    """A change asked during support access, which is read only."""
+
+
+@app.errorhandler(ReadOnlySupport)
+def on_read_only_support(err):
+    return message("domains.readOnly", 403)
+
+
+def _domain_write_scope() -> str | None:
+    """The scope a change of domains applies to: the account's own (never during support access)."""
+    if g.support:
+        raise ReadOnlySupport()
+    return g.account_tenant
+
+
+@app.post("/portal/api/domains")
+@require_login
+@admin_required
+def create_domain():
+    data = request.get_json(silent=True) or {}
+    tenant = _domain_write_scope()
+    doc = domains.create(data.get("domain"), data.get("mode"), data.get("stem"), tenant, g.user, _installation_host())
+    log_event("domain-create", tenant=tenant, detail=f'{doc["_id"]} mode={doc["mode"]} stem={doc["stem"] or "-"}')
+    return message("domains.created", 201, params={"domain": doc["_id"]}, item=domains.public(doc))
+
+
+@app.put("/portal/api/domains/<name>")
+@require_login
+@admin_required
+def update_domain(name):
+    data = request.get_json(silent=True) or {}
+    tenant = _domain_write_scope()
+    before, after = domains.update(name, tenant, mode=data.get("mode"), stem=data.get("stem"),
+                                   default_prefixes=data.get("defaultFor"))
+    log_event("domain-update", tenant=tenant,
+              detail=f'{after["_id"]} mode={after.get("mode")} stem={after.get("stem") or "-"} '
+                     f'default={",".join(after.get("defaultFor") or []) or "-"}')
+    return message("domains.saved", 200, params={"domain": after["_id"]}, item=domains.public(after))
+
+
+@app.post("/portal/api/domains/<name>/verify")
+@require_login
+@admin_required
+def verify_domain(name):
+    tenant = _domain_write_scope()
+    was = domains.get(name, tenant).get("verified")
+    doc = domains.verify(name, tenant)
+    if not was:
+        log_event("domain-verify", tenant=tenant, detail=doc["_id"])
+    return message("domains.verified", 200, params={"domain": doc["_id"]}, item=domains.public(doc))
+
+
+@app.post("/portal/api/domains/<name>/check")
+@require_login
+@admin_required
+def check_domain(name):
+    tenant = _domain_write_scope()
+    doc = domains.check(name, tenant, RESOLVER_PUBLIC_URL, _sample_anchor(tenant))
+    result = doc["check"]
+    return message("domains.checkOk" if result["ok"] else result["problem"], 200,
+                   params={"domain": doc["_id"], "detail": result.get("detail") or "", "url": result["url"]},
+                   item=domains.public(doc))
+
+
+@app.delete("/portal/api/domains/<name>")
+@require_login
+@admin_required
+def remove_domain(name):
+    tenant = _domain_write_scope()
+    doc = domains.remove(name, tenant)
+    log_event("domain-remove", tenant=tenant, detail=doc["_id"])
+    return message("domains.removed", 200, params={"domain": doc["_id"]})
+
+
 # --------------------------------------------------------------------------- overview (ADR 0007)
 @app.errorhandler(overview.PeriodError)
 def on_period_error(err):
@@ -2162,7 +2286,7 @@ def digital_link_preview():
     anchor = request_key(data)
     check_access(anchor)
     pairs = request_qualifiers(data, anchor)
-    uri, attribute_lines = digital_link_for(anchor, pairs, request_attributes(data))
+    uri, attribute_lines = digital_link_for(anchor, pairs, request_attributes(data), data.get("domain"))
     return jsonify(uri=uri, hri=gs1.hri_lines(anchor, pairs) + attribute_lines)
 
 
@@ -2178,9 +2302,9 @@ def qrcode():
 
 def label_response(anchor: str, args) -> Response:
     """The label of a key (whose access was checked) from the request's options: the portal's and the tenant
-    API's (qualifiers, attr, hri, version, ecl, format)."""
+    API's (qualifiers, attr, hri, version, ecl, format, domain)."""
     pairs = request_qualifiers(args, anchor)
-    uri, attribute_lines = digital_link_for(anchor, pairs, request_attributes(args))
+    uri, attribute_lines = digital_link_for(anchor, pairs, request_attributes(args), args.get("domain"))
     lines = gs1.hri_lines(anchor, pairs) + attribute_lines
     hri = HRI_MODES.get(args.get("hri", "full"))
     if hri is None:
@@ -2214,7 +2338,7 @@ def label_response(anchor: str, args) -> Response:
 # them inside this process; otherwise the portal-worker service does.
 JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job, "mail": notify.run_mail_job}
 # What the worker runs about once an hour, outside any job (worker.HOUSEKEEPING_SECONDS)
-HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate]
+HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate, domains.recheck_all]
 # What the worker runs every PORTAL_MONITOR_MINUTES (Documentation/adr/0008-monitoring-and-alerts.md)
 MONITORING = [monitor.run]
 MONITOR_SECONDS = monitor.minutes() * 60

@@ -6,4 +6,5 @@ fonttools>=4.50,<5
 pillow>=10.4,<13
 openpyxl>=3.1,<4
 pymongo>=4.16,<5
+dnspython>=2.6,<3   # the DNS proof of the organisations' own domains (domains.py)
 tzdata>=2024.1   # time zones for the daily request counts (PORTAL_TIME_ZONE), whatever the image holds

@@ -90,6 +90,7 @@ web_server/src/
                                  /eh… and /ex… requests
   epc_binary.py                  new: EPC binary strings (eh/ex) decoded to GS1 Digital Link
   request_log.py                 new: the log of resolver requests: what is kept, a queue and a writer thread (ADR 0006)
+  domains.py                     new: organisations' own domains: stem removed, keys limited to their prefixes (ADR 0009)
   tdt/                           new: EPC Tag Data Translation 2.2 artefacts (GS1's files, unchanged)
   web_pages.py                   new: HTML pages (errors, linkset) in pt-BR and en-GB
   public/gs1resolver.json        description file template
@@ -120,6 +121,7 @@ portal/                          new: the link management portal
   requestlog.py                  the request log as the portal reads it: scope, listing, daily counts, API calls (ADR 0006)
   overview.py                    the overview's indicators and their exports (ADR 0007)
   monitor.py                     monitoring: the checks, their states and the alerts by e-mail (ADR 0008)
+  domains.py                     organisations' own domains: rules, DNS proof, defaults, label address, checks (ADR 0009)
   openapi.json                   its OpenAPI 3.1 description, served at /portal/api/v1/openapi.json
   db_init.py                     creates the portal's database user (portal-db-init service)
   create_user.py                 command-line user administration
@@ -482,6 +484,21 @@ are the enabled server administrators or an organisation's administrators; `noti
 active alerts) and, for a server administrator outside support access, `operation.checks`. `run()` returns only the
 messages sent, so the worker's log stays quiet when nothing changes.
 
+### `domains.py` — organisations' own domains
+
+[ADR 0009](adr/0009-tenant-domains.md). `clean_name()` (IDNA, host name rules, not the installation's), `clean_stem()`,
+`clean_mode()`; `create()`, `update()` (mode, stem, `defaultFor` checked by `_check_defaults()`: the organisation's
+prefixes, or for the operator none of an organisation's, one domain per prefix), `remove()`, all in the scope of the
+account (`app.domain_scope()`, read only during support access: `ReadOnlySupport`, 403 `domains.readOnly`).
+`verify()` looks for `gs1resolver-verify=<token>` among `txt_records("_gs1resolver.<domain>")` (dnspython; the tests
+replace it) and never un-verifies; `recheck_all()` (in `app.HOUSEKEEPING`) records `seenAt` once a day.
+`label_base(anchor, tenant, choice, installation)` gives the address in front of the GS1 path: the default domain of
+the record's company part (`default_for()`, longest prefix), the installation's, or a verified domain of the scope
+(else `domains.unusable`); `app.link_base()` uses it for the editor's preview, labels, the record's `digitalLink` and the
+tenant API. `check()` requests through the domain with `probe()` (no redirects followed, the link checker's guard
+against private addresses): the description file at the domain's root, or a redirect of a code of the organisation to
+the installation's same path and query.
+
 ### `migrate.py`, `db_init.py`
 
 `migrate.run(config_dir)` moves `users.json`, `records-meta.json` and `journal.jsonl` into empty collections
@@ -548,6 +565,13 @@ the period of `#overview-days` (`loadOverview()`, a newer request winning over a
 governance group (`.needs-admin`). `exportOverview()` posts the period and every `overview.*` text of the current
 language (`overviewLabels()`, `I18N.keys()`) and saves the file. The tables stay tables on a phone.
 
+**Domains ([ADR 0009](adr/0009-tenant-domains.md)).** The `#domains` view (administrators) lists the scope's domains
+as cards (`loadDomains()`, `domainCard()`: the TXT record while pending, defaults, stem and mode to change, *Verify*,
+*Test*, *Remove*) and adds one (`createDomain()`); `refreshDomainConfig()` reloads `CONFIG.domains` after a change.
+The label panel's `#opt-domain` (`fillDomainOption()`) offers the default, the installation and the verified domains;
+`domainBase()` repeats the server's rule for the address drawn under the code, and `labelOptionsQuery()` and the
+preview's request pass `domain`.
+
 **Record list.** `loadRecords()` fetches `/records` once; `renderRecords()` filters in the browser by key
 type (`#records-key`), qualifier (`qualifierMatches()`), author, link problems and text (`fold()` ignores
 case and accents). `parseCode()` reads a pasted GS1 Digital Link or bracketed element string, and
@@ -593,6 +617,7 @@ operator.
 | `GET /requests.csv` (same filters) | any | Up to 50,000 of them as CSV (UTF-8 with BOM, `;`, cells protected); journal `requests-export` |
 | `GET /requests/daily?days=30` | any | `days`: `[{day, total, automated, outcome}]`, oldest first, in the scope (past days from `request_daily`, today from the events); `timeZone` |
 | `GET /requests/api?from=&to=&key=&before=&limit=` | admin | The tenant API's calls of the scope (every organisation's for a server administrator): `calls` (`at`, `key`, `keyName`, `organisation`, `method`, `operation`, `status`, `ms`), `next`, `whole` |
+| `GET /domains` · `POST /domains` `{domain, mode, stem}` · `PUT /domains/{domain}` `{mode, stem, defaultFor}` · `POST /domains/{domain}/verify` · `POST /domains/{domain}/check` · `DELETE /domains/{domain}` | admin | The organisations' own domains ([ADR 0009](adr/0009-tenant-domains.md)) of the account's scope (a server administrator lists every domain with `organisation`; support access: read only, 403 `domains.readOnly`); `domains.*` codes |
 | `GET /overview?days=7\|30\|90` | any | The overview of the scope ([ADR 0007](adr/0007-overview-indicators.md)): `period`, `whole`, `logDays`, `usage`, `quality`, `records`, `operation`, `governance` (administrators; otherwise `null`); 422 `overview.badPeriod`, 503 `requests.unavailable` |
 | `POST /overview/export` `{format: xlsx\|csv, days, labels}` | any | The overview as a file (lists up to 100); journal `overview-export` |
 | `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable", "mail": "on"\|"off"}` |
@@ -620,6 +645,7 @@ Decisions and the reasons for them: [ADR 0001](adr/0001-portal-state-in-mongodb.
 | `tokens` | SHA-256 of a single-use link's token; `purpose` (`invite`, `reset`), `user`, `created`, `expiresAt` ([ADR 0004](adr/0004-e-mail.md)) | user + purpose; TTL on `expiresAt` |
 | `workers` | worker name (`host:pid:mode`); `seen`, `mode`, `job` | TTL 10 minutes on `seen` |
 | `request_daily` | `<day>\|<AI>\|<value>` (a key's day) or `<day>\|*` (the installation's day); `day`, `ai`, `v`, `cp`, `total`, `automated`, `outcome`, `device`, `form` (counts by name), `language`, `linkType` (`[[name, count]]`, 20 at most), `ms` (sum), `msMax`, on the installation's day also `keys`, `p50`, `p95`, `p99`; `run`, `expiresAt` ([ADR 0006](adr/0006-resolver-request-log.md)) | day; company part + day; TTL on `expiresAt` |
+| `domains` | the domain (lower case, Punycode); `tenant`, `mode`, `stem`, `defaultFor`, `token`, `verified`, `verifiedAt`, `seenAt`, `check`, `created`, `createdBy` | — (read by the resolver too) |
 | `alerts` | `resolver`, `backup`, `certificate`, `404:*`, `404:<tenant id>`; `state` (`ok`, `alert`, `unknown`), `since`, `checkedAt`, `failures`, `detail`, `notifiedAt`, `resolvedAt`, `tenant` | — (a handful of documents) |
 | `api_requests` | ObjectId; `t`, `key` (absent without a valid key), `tenant` (absent for the operator), `m`, `op` (the route's template), `s`, `ms`, `expiresAt` | date; tenant + date; TTL on `expiresAt` |
 | `settings` | `lastFullCheck` (the operator's) and `lastFullCheck:<tenant>`, `journalRetention`, `migration`, `requestStats.finalUntil` (the last finished day counted), and the `lock:<name>` documents | — |
@@ -688,6 +714,15 @@ which mount the same volume), and the files of earlier versions renamed `*.migra
   - `tdt/` holds GS1's files as published (2024-11-18 drafts for TDT 2.2), with `+` in the names as in
     the manifest; to update, replace the files and run `dev-tests/resolver/test_epc_binary.py`.
     `TDT_DIR` points elsewhere if needed.
+- `domains.py` (new, [ADR 0009](adr/0009-tenant-domains.md)): `Middleware` wraps `app.wsgi_app` in `create_app()`;
+  `request_host()` reads `X-Forwarded-Host` (else `Host`), lower case, without port; `DomainMap.lookup()` reads the
+  verified `direct` domains and the tenants' prefixes from `PORTAL_DB_NAME` (`resolver_portal`) through
+  `mongo.cx` at most every `CACHE_SECONDS` (60), keeping the last list when the read fails; for a domain, the
+  stem is removed from `PATH_INFO` and `RAW_URI`/`REQUEST_URI` (after the `/api` mount) and the entry (`host`,
+  `stem`, `prefixes` or the `excluded` prefixes of the operator's domains) put in `environ[ENV_KEY]`.
+  `allows(environ, ai, value)` compares `request_log.company_part()`; `_process_response()` answers a refused key as
+  `read_document()` answers an unknown one (404, outcome `unknown`) and does not list its link types on the HTML
+  page; `_resolver_description()` gives the domain and stem as `resolverRoot`.
 - `request_log.py` (new, [ADR 0006](adr/0006-resolver-request-log.md)): `note()` (called by the routes; marks the
   request as one to log), `start()` and `record()` (the application's `before_request` / `after_request` hooks, set in
   `create_app()`), `event()` (the stored document: `qualifiers()` keeps only the AI of 21 and 235, `attribute_ais()`
@@ -724,7 +759,9 @@ The table of every behaviour change, with the clause of the standard, is in the 
 `nginx.conf` serves `/` and `/home/…` from the image, sends `/` paths to web-service (the raw request URI,
 `proxy_pass http://resolver-web/api$request_uri`, so that `%2F` and the query string arrive as sent; the upstream's
 name is also the Host header the web server receives, so it must be a valid host name), `/api` and
-`/swaggerui` to data-entry-service, and `/portal/` to portal-service (with `/portal` → `/portal/`).
+`/swaggerui` to data-entry-service, and `/portal/` to portal-service (with `/portal` → `/portal/`). The
+resolver's location also passes `X-Forwarded-Host: $host`, the public name asked (an organisation's own domain,
+ADR 0009).
 Each service is an upstream block (`resolver-web`, `data-entry`, `portal`) whose server is the service name
 with `resolve` and a shared `zone`: nginx asks Docker's DNS (`resolver 127.0.0.11 valid=10s`) for every
 replica's address, again every 10 seconds, shares the requests among them in turn, and goes on to another
@@ -744,6 +781,11 @@ portal.
 - `resolver-backup.sh` + `resolver-backup.cron`: MongoDB dump through the container (every database, the
   portal's and the request log included) and archive of the portal volume, 14 days kept; a failed dump says
   `ERROR`, leaves no partial file and exits with status 1.
+- `custom-domains.sh` (ADR 0009): `list` and `apply` the organisations' verified `direct` domains (read with
+  `mongosh` inside the database container): a site `gs1resolver-domain-<domain>` from `templates/nginx-site-http.conf`
+  and `certbot --nginx` for each new one; a name that is not a host name never reaches a file or a command; sites of
+  domains no longer verified are listed.
+- `resolver-backup.sh` also records each run in the portal's database (`backup.last`, ADR 0008).
 - `install.sh` also writes `PORTAL_TIME_ZONE` (not asked: the environment, the existing `.env`, else the server's time
   zone from `timedatectl`, `/etc/timezone` or the `/etc/localtime` link, else UTC).
 
@@ -760,6 +802,7 @@ run against it. Setup and commands are in
 | `resolver/test_epc_binary.py` | 163 | EPC binary decoder: EPCB examples, every vector of TDS 2.3 annex E.3 (`eh` and `ex`), +AIDC data, `++` hostnames, refusals, RE3, TDT artefacts against their schema; 800 random EPCs against `epc-tds` when `EPC_TDS` is set (162 without) |
 | `resolver/test_gs1_suite.py` | 215 | GS1's resolver test suite, its JavaScript unchanged in Chromium, against the web server code over HTTP; a Python version of its `tester.php`; seven scenarios; needs `GS1_RESOLVER_TESTSUITE` and `AJV_DIST` (skipped without) |
 | `resolver/test_data_entry_api.py` | 53 | token on every protected operation; registration rules of §2.5.9 and informative qualifiers |
+| `resolver/test_domains_resolver.py` | 29 | organisations' own domains in the resolver ([ADR 0009](adr/0009-tenant-domains.md)): a domain with a stem resolving its organisation's codes (also a batch with `%2F`, the raw URI stripped), refusing others with 404 and without their link types or linkset, the description file's `resolverRoot`; a domain without a stem; `X-Forwarded-Host`, `Host`, ports, capitals, several hosts; the operator's domain; hosts that are not registered domains, pending ones, redirecting ones; the cache, a database that cannot be read; the proxy's header |
 | `resolver/test_request_log.py` | 73 | the log of resolver requests ([ADR 0006](adr/0006-resolver-request-log.md)) through Flask's test client into mongomock: every field of a redirect's event, levels, unit qualifiers kept as AIs only, every outcome (unknown code, missing link type, choice, linkset, invalid request, probe, compressed link, `?compress`, EPC binary string), HEAD, languages, what is never stored (address, User-Agent, full referrer, values of data attributes and serial numbers), routes not logged, answers unchanged, the country header, retention and the switch, indexes, device classes, and that a database that does not answer or fails never holds a request up (events lost and counted, batches of 500) |
 | `portal/test_dictionary.py` | 30 | the GS1 rules from the dictionary (ADR 0003): `gs1_dictionary.json` exactly what the pinned release's dictionary gives, the parser, keys, shapes, order and formats built from it with the portal's exceptions, a longer format or a new key handled with no code, an unknown linter or shape stopping the build, the rules sent to the browser, AIs (7041) and (8040)–(8043) and their Portuguese names, the comparison of the weekly issue |
 | `portal/test_engine_messages.py` | 26 | the engine's messages (ADR 0003): `engine_messages.json` exactly what the pinned release's sources give, both languages of every message with the same parameters (the English one the engine's text), every message and linter's message recognised as itself, the portal's refusals carrying the message, the comparison of the weekly issue |
@@ -776,6 +819,7 @@ run against it. Setup and commands are in
 | `portal/test_mail.py` | 138 | e-mail ([ADR 0004](adr/0004-e-mail.md)) against an SMTP relay of the test's own (`fake_smtp.py`: STARTTLS or TLS with a throwaway certificate, authentication, refusals on demand): settings that do not fit, sending with STARTTLS and TLS, headers and the HTML alternative, temporary and permanent failures, credentials never sent without encryption, the test command; the texts of both languages; single-use links (hash only, once, replaced, expired, purged); `notBefore` and `defer()`; with mail off nothing changes; invitations, password recovery (the same answer and time for every input, limits, who gets nothing), resets by an administrator, security notices, preferences, notices of finished jobs; retries, failures, a message skipped for an account disabled meanwhile, no address in the journal; every message code translated. Every protection mutation-checked |
 | `portal/test_api.py` | 92 | the tenant API and its keys ([ADR 0005](adr/0005-tenant-api.md)): keys created, listed and revoked only in the administrator's own scope (also during support access), the rules of a key (name, scopes, days, prefixes, 20 active), the full key once and only its hash stored, the creator told by e-mail; authentication (missing, wrong, revoked, expired, disabled organisation), sessions and keys kept apart; records listed in pages, read, written (GS1 rules, another owner's record refused, no CORS), deleted; labels; scopes, a key's prefixes, the operator's keys; the journal (`api:<id>`); the request limit and the last use; the expiry notice and the worker's housekeeping; the OpenAPI description against the routes and the answers; both languages. Every protection mutation-checked |
 | `portal/test_overview.py` | 66 | the overview ([ADR 0007](adr/0007-overview-indicators.md)): the period and the previous one (a period refused), usage before and after the worker counted (past days from the aggregates, today from the raw events, the same figures either way), per day, the most scanned codes, shares, quality (a compressed link's answer counted as answered), unknown and noLink codes with whether the key has records; record quality (no key record, keys nobody scanned); operation; each scope (an organisation, a user's prefixes, the operator, the whole installation with requests without a key but only codes in the lists, support access); 7 and 90 days; governance (changes by kind and user, within an administrator's prefixes; users; API keys expiring); `/v1/stats` and its scope, a key's prefixes; the exports (sheet names, labels, protected cells, the journal, the origin); the resolver or the log unreadable; the texts in both languages, the description, the sign-in's landing. 18 mutations, all caught |
+| `portal/test_domains.py` | 59 | organisations' own domains in the portal ([ADR 0009](adr/0009-tenant-domains.md)): who manages which (organisation administrators, the operator's by server administrators who list every domain, support access read only, not editors); names, stems, modes, uniqueness, Punycode, the limit; the DNS proof (refused with the record to add, verified, kept when the record goes, the daily look again); default prefixes (the organisation's, one domain each, the operator's not an organisation's); the address of the preview, the record, labels and the tenant API (default, installation, chosen, refused); the check of both modes (resolver, not the resolver, no answer, private address, a redirect that loses the path) and the real probe's guard; removal; the journal; both languages. 25 mutations with the resolver's, all caught |
 | `portal/test_monitor.py` | 62 | monitoring ([ADR 0008](adr/0008-monitoring-and-alerts.md)): the settings; the resolver through a stand-in proxy (two failed rounds, no repeat, a reminder after 24 hours, resolved; the probe; no answer); the backup's record (unknown, late, failed, good again, the error in the message); the certificate (valid, once an hour, expiring, invalid, unreachable without a message, valid again); spikes per scope (the last hour only, the codes, the usual hour, both settings, the end without a message); recipients (server administrators, an organisation's administrators, not readers, not a user who switched alerts off, not disabled accounts); the overview's alerts per scope and support access; the lock; the worker's schedule; the category and a user's choice; messages in the recipient's language and both languages' placeholders; the screen's texts. 18 mutations, all caught |
 | `portal/test_requestlog.py` | 74 | the request log in the portal ([ADR 0006](adr/0006-resolver-request-log.md)): who sees which events (an organisation, a user's prefixes, the operator, server administrators with each event's organisation, a limited server administrator, support access, a prefix moving between organisations), filters (outcome, device, automated, code as GTIN-13, GTIN-14, prefix, anchor; days of `PORTAL_TIME_ZONE`), pages with ties, the CSV (formulas protected, the organisation column, the journal), the daily aggregates (per key and for the installation, percentiles, expiry, finished days, replacement, the lock, the switch, an unknown time zone), requests per day per scope, the tenant API's calls (never the record or the secret; who sees them), the configuration, an unreadable log, the messages of both languages |
 | `portal/test_jobs.py` | 70 | background jobs: states, expiry, atomic claim, ownership of writes, silent workers given back and failed after three attempts, the worker's announcement, `stalled`, the health check, the worker loop (errors, heartbeat, stop and hand-back, `JobLost`), the embedded worker and `PORTAL_WORKER`; imports through the API (queue, worker, journal, another user, a worker dying before and after writing a record, a failure); link checks through the API (every record, a list, a stop that cancels pending addresses) |
@@ -786,16 +830,17 @@ run against it. Setup and commands are in
 | `portal/test_requests_e2e.py` | 28 | the Requests screen in Chromium ([ADR 0006](adr/0006-resolver-request-log.md)): the menu item for every user (and the menu closing), 30 bars from the aggregates and today's events, the latest requests (organisation column for a server administrator, EPC scheme, level, serial as `/21/*`), the next page, filters (not found, a GTIN-13, automated requests), the CSV export, support access, English, an organisation's reader (no organisation column, no API tab), an administrator's API calls without the key's secret, a phone's width, the log switched off |
 | `portal/test_api_e2e.py` | 21 | the API keys screen in Chromium: an organisation's administrator creates a key (shown once with an example), a system uses it through `/portal/api/v1`, the record shows `api:<id>`, leaving the screen removes the key from the page, revoking on screen stops it at once, the audit trail, both languages, a phone's width, the operator's keys for a server administrator, no screen for an editor |
 | `portal/test_overview_e2e.py` | 28 | the overview in Chromium: sign-in lands on it, its groups for an organisation's administrator, the period selector, *Register* opening the editor on the code, the Excel and CSV exports, the menu items, Portuguese, a reader without governance, a server administrator's whole installation and server facts, a phone's width |
+| `portal/test_domains_e2e.py` | 20 | the Domains screen and the label's domain in Chromium: adding, the TXT record, verifying before and after it exists, defaults, a check, the label offering the domain (default of the prefix, installation, chosen; the address under the code and the downloads), Portuguese, removal, an editor without the screen, a phone's width |
 | `portal/test_portal_e2e.py` | 212 | the portal in Chromium against `mock_data_entry.py`, desktop and phone, with an embedded worker (also stopped: the queue and "not running" messages, a job that fails); organisations, a tenant administrator and support access in both languages; also run without the engine (167) |
 | `home/test_home.py` | 68 | home page through a real nginx (1.27.3 or later: `NGINX_BIN` or the PATH), no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts; replicas through a stub DNS server answering the service names with `127.0.0.x` addresses: nginx starts while a service has no address and finds it later, shares the requests between two replicas, follows a third added and two removed without a restart, and no request fails while replicas stop |
 | `install/test_install.sh` | 87 | installer through shims (Compose v2), including a portal whose job worker does not start; replica counts written, kept, taken from the environment and refused when invalid; the time zone of the request counts (the server's, from the environment, refused when not a name); the e-mail relay (off by default, written with STARTTLS or TLS, its password kept and never shown, switched off, a test relay set by hand kept, refusals); no setting written twice in `.env` |
-| `install/test_deploy.py` | 66 | the daily backup with a stand-in `docker` (only options `mongodump` has; a failed dump: `ERROR`, status 1, no partial file; a good one: the archive, `OK`; each run recorded for the portal's monitoring, a record that cannot be written only a warning, the record's mongosh script valid JavaScript); `docker compose config` of the replicas and process counts (defaults, values from `.env`, a refused value, names kept by the database and the proxy); the proxy image's nginx version and `resolve` in every upstream; each image's gunicorn `CMD` started locally (three processes, an answer, the request logged, a clean stop on SIGTERM within 10 s); the portal's fallback session key with six processes starting together and eight threads while writing it is slow; the portal started from the files the `COPY` lines of its Dockerfile put in the image, every module and data file of `portal/` among them; one engine release, in `docker-compose.yml` only, given to every image (ADR 0003) |
+| `install/test_deploy.py` | 73 | the daily backup with a stand-in `docker` (only options `mongodump` has; a failed dump: `ERROR`, status 1, no partial file; a good one: the archive, `OK`; each run recorded for the portal's monitoring, a record that cannot be written only a warning, the record's mongosh script valid JavaScript); `custom-domains.sh` with stand-in `docker`, `nginx`, `systemctl` and `certbot` (CERTBOT_EMAIL needed, sites from the template, Certbot per domain, a name that is not a host name refused, domains already served left alone, orphan sites listed); `docker compose config` of the replicas and process counts (defaults, values from `.env`, a refused value, names kept by the database and the proxy); the proxy image's nginx version and `resolve` in every upstream; each image's gunicorn `CMD` started locally (three processes, an answer, the request logged, a clean stop on SIGTERM within 10 s); the portal's fallback session key with six processes starting together and eight threads while writing it is slow; the portal started from the files the `COPY` lines of its Dockerfile put in the image, every module and data file of `portal/` among them; one engine release, in `docker-compose.yml` only, given to every image (ADR 0003) |
 
 **pytest and continuous integration.** `dev-tests/test_programs.py` runs each program above as one pytest
 test (a subprocess from the repository root): exit status 0 without a `FAIL` line passes; otherwise the
 report shows the `FAIL` lines and the end of the output; a program that only printed `SKIP` is skipped.
 Markers group them: `resolver` (resolver, EPC binary, data entry, GS1 suite), `portal` (the portal programs
-without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`, `test_requests_e2e.py`, `test_overview_e2e.py`), `home`,
+without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`, `test_requests_e2e.py`, `test_overview_e2e.py`, `test_domains_e2e.py`), `home`,
 `install` (the installer through password-less `sudo` when not root, and `test_deploy.py`), `database` (`test_store_mongodb.py`). `dev-tests/conftest.py` keeps the programs from
 being imported by pytest, registers the markers and prints the check counts of each program at the end (and
 in the GitHub Actions run summary). With `DEV_TESTS_STRICT=1` a program fails when an environment variable

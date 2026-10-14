@@ -366,6 +366,10 @@ part: resolver address, identifier, qualifiers, data attributes) and a legend.
   40 (177 × 177), when the artwork needs a constant size.
 - **Error correction** — L (7 %), M (15 %, the default), Q (25 %) or H (30 %): how much of the code can
   be damaged and still be read. The level is applied exactly as chosen.
+- **Domain in the QR code** (shown when your organisation has a verified domain, section 14) — *Default of the
+  prefix*: the domain set as the default of the record's GS1 Company Prefix, otherwise the resolver's address; the
+  resolver's address; or one of your verified domains. The address under the code and the downloads follow the
+  choice. A longer address needs a larger QR version.
 
 Under the code the portal shows the version, size and correction actually used, for example
 *Version 4 · 33 × 33 modules · correction M*. When the content does not fit the chosen version, the code
@@ -613,6 +617,31 @@ belong to no organisation (the operator's).
 
 **Creating an organisation takes its records away from the operator's users, you included.** You see them again,
 without changing them, only through support access.
+
+### Domains (administrators)
+
+![Domains](images/guide/domains.png)
+
+**Domains** (user menu, administrators) lets the QR codes carry your organisation's own domain —
+`https://id.yourbrand.com/01/…`, or with a **path stem** `https://id.yourbrand.com/gs1/01/…` — instead of the
+resolver's address (GS1 Digital Link URI Syntax 4.11). A server administrator manages the operator's domains and
+sees every domain of the installation with its organisation; during support access the list is read only.
+
+**Add a domain**: its name, an optional path stem (one to three parts; a part of only 2 to 4 digits is refused,
+because it would read as a GS1 Application Identifier) and **how it reaches the resolver**:
+
+- **Points at this server** — in DNS, a CNAME (or A/AAAA) record from the domain to the resolver's address; the
+  server administrator then issues its HTTPS certificate (`sudo scripts/custom-domains.sh apply`). The resolver
+  answers on the domain only for your organisation's codes.
+- **My server redirects** — your own web server answers each scan with a redirect to the resolver, keeping the path
+  (without the stem) and the query string. *How to set up each mode* shows the rule for nginx and Apache.
+
+**Prove it is yours**: the card shows a TXT record (`_gs1resolver.<domain>` = `gs1resolver-verify=…`); create it in
+the domain's DNS and select **Verify**. A verified domain stays verified even if the record is removed later (printed
+codes keep working); the card shows when it was last seen. **Default for the prefixes**: the GS1 Company Prefixes
+whose QR codes carry this domain by default (one domain per prefix). **Test** requests through the domain — the
+resolver's description file, or a redirect of one of your codes — and shows the result. **Remove** deletes the domain
+from the portal: labels already printed with it keep working only while the domain still reaches the resolver.
 
 ### Support access
 

@@ -7,6 +7,7 @@ from urllib.parse import quote, unquote, urlsplit
 from flask import request, abort, Response, send_from_directory, jsonify, make_response
 from flask_restx import Namespace, Resource
 
+import domains
 import epc_binary
 import request_log
 import web_logic
@@ -288,6 +289,9 @@ def _resolver_description() -> Response:
     fqdn = os.getenv('FQDN', '').strip()
     if fqdn:
         description['resolverRoot'] = f'https://{fqdn}'
+    domain = request.environ.get(domains.ENV_KEY)
+    if domain:                                       # an organisation's own domain (ADR 0009)
+        description['resolverRoot'] = f"https://{domain['host']}{domain['stem']}"
 
     org_name = os.getenv('RESOLVER_ORG_NAME', '').strip()
     if org_name:
@@ -402,9 +406,14 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
         response_data = web_logic.get_compressed_link(uncompressed_link)
         return response_data, 200
 
-    response_data, link_header = web_logic.read_document(identifiers, doc_id, qualifier_path, linktype,
-                                                         accept_language_list, context, media_types_list,
-                                                         linkset_requested)
+    if domains.allows(request.environ, *identifiers.strip('/').split('/', 1)):
+        response_data, link_header = web_logic.read_document(identifiers, doc_id, qualifier_path, linktype,
+                                                             accept_language_list, context, media_types_list,
+                                                             linkset_requested)
+    else:
+        # a registered domain answers only for its organisation's keys (ADR 0009): as a code nobody registered
+        response_data, link_header = {'response_status': 404, 'error': f'No document found for anchor: {doc_id}',
+                                      '_outcome': 'unknown'}, None
     status = response_data['response_status']
     # private keys for the request log, never part of an answer (ADR 0006)
     request_log.note(level=response_data.pop('_level', None), outcome=response_data.pop('_outcome', None))
@@ -413,7 +422,7 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
     if status >= 400:
         if _wants_html():
             available = None
-            if status == 404 and linktype:
+            if status == 404 and linktype and domains.allows(request.environ, *identifiers.strip('/').split('/', 1)):
                 # Section 2.6.2: on a 404 for a missing linkType the resolver MAY list the links that are available.
                 ls_data, _ = web_logic.read_document(identifiers, doc_id, qualifier_path, None,
                                                      accept_language_list, context, None, True)

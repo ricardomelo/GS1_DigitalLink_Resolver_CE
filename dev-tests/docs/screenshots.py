@@ -284,6 +284,7 @@ def guide_images(locale: str, folder: str, description: str) -> None:
         tenant_images(page, folder, locale)
         mail_images(browser, folder, locale)
         apikey_images(browser, folder, locale)
+        domain_images(browser, folder, locale)
         requests_images(browser, folder, locale)
         browser.close()
 
@@ -374,6 +375,33 @@ def apikey_images(browser, folder: str, locale: str) -> None:
     for button in page.query_selector_all("#apikeys-body button.btn-danger-ghost"):   # the next run starts clean
         page.once("dialog", lambda d: d.accept())
         button.click(); page.wait_for_timeout(400)
+    ctx.close()
+
+
+def domain_images(browser, folder: str, locale: str) -> None:
+    """The Domains screen with one domain verified and one waiting for its DNS record
+    (Documentation/adr/0009-tenant-domains.md); DNS is answered by the script itself."""
+    import domains
+    records = {}
+    domains.txt_records = lambda name: records.get(name, [])
+    ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1300})
+    page = ctx.new_page()
+    page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+    page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
+    page.click("#login-submit"); page.wait_for_timeout(1000)
+    page.goto(BASE + "#domains"); page.wait_for_timeout(900)
+    for name, stem in (("id.brand.example", "/gs1"), ("qr.brand.example", "")):
+        page.fill("#new-domain", name); page.fill("#new-domain-stem", stem)
+        page.click("#domains-create button[type=submit]"); page.wait_for_timeout(900)
+    card = page.locator(".domain-card[data-domain='id.brand.example']")
+    records["_gs1resolver.id.brand.example"] = [card.locator("dd.code").nth(1).inner_text()]
+    card.locator("button.btn-primary").click(); page.wait_for_timeout(900)
+    page.locator(".domain-card[data-domain='id.brand.example'] input.domain-defaults").fill("9506000")
+    page.locator(".domain-card[data-domain='id.brand.example'] button[type=submit]").click(); page.wait_for_timeout(900)
+    save(page, f"{folder}/domains.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1300})
+    for name in ("id.brand.example", "qr.brand.example"):                # the next run starts clean
+        page.once("dialog", lambda d: d.accept())
+        page.locator(f".domain-card[data-domain='{name}'] button.btn-danger-ghost").click(); page.wait_for_timeout(500)
     ctx.close()
 
 

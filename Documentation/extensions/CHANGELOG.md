@@ -2,6 +2,25 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### The item's page and Verified by GS1 (backlog items 6.1 and 6.2)
+- **Architecture decision record** [ADR 0011](../adr/0011-item-page.md).
+- **The item's page** (resolver; deliberate change to the official linkset page for browsers): the item's description
+  as title, the brand of the record's prefix, a large button per link with an icon for its type, the visitor's language
+  first, the levels, JSON-LD as before; no web fonts or other external content on it. Commit `3d59bc2`.
+- **Default target: the item's page** in the editor, `landingPage` in the tenant API and the portal API, a row of type
+  `gs1:defaultLink` in spreadsheets: a `gs1:defaultLink` to `?linkType=linkset&view=page`, redirected to like any
+  default; shared by the records of a key like the default type; the key's own record gets its own page. Commit `3d59bc2`.
+- **Clicks** through `/_click` (the link found again in the record: no open redirect) and **page views** in the request
+  log (form `landing`, outcomes `page` and `click`; an automated client's logged as plain answers); the overview counts
+  them apart from scans (`pageViews`, `clicks`, also in `/v1/stats`); the Requests screen filters them. Commit `3d59bc2`.
+- **Item page** screen (administrators): brands per GS1 Company Prefix with an uploaded logo (PNG, JPEG, WebP up to
+  200 KB; SVG refused) and two colours; the operator's and the installation's default (`*`) for server administrators;
+  collection `branding`, read by the resolver every minute; logos served at `/_brand/<prefix>`; journal
+  `branding-save`, `branding-remove`. Commit `3d59bc2`.
+- **Verified by GS1** on the page for GTINs and GLNs when `RESOLVER_VERIFIED_BY_GS1_URL` is set (empty by default) and
+  the brand has not switched it off; never in the linkset. Commit `3d59bc2`.
+- The check of every record's links leaves the items' pages out. Commit `3d59bc2`.
+
 ### The label studio (backlog items 5.2, 5.3 and 5.4)
 - **Architecture decision record** [ADR 0010](../adr/0010-label-studio.md).
 - **Size** of the label: 80, 90, 100, 120, 150 or 200 % of the target X-dimension (QR code 0.396 to 0.990 mm), the

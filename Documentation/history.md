@@ -536,9 +536,9 @@ category (off by default) but would have made alerts impossible to switch off. T
 text "mongodump failed" matched the stand-in's own pattern for the dump: the record now says "the database dump
 failed". The CI job on a real MongoDB failed on `b9bd4ed` (a commit without code) and on `16ceb9f`; its logs cannot be
 downloaded from the session (the log storage host is outside the network policy), so the job was run again to tell a
-flaky run from a defect. It failed again: not flaky. The failure started with `b9bd4ed`, which changed no code, so
-something outside the branch changed between two runs (an unpinned package or the `mongo:7` image); the owner is
-asked for the end of that job's log.
+flaky run from a defect. It failed again on that run, and then passed on every run from the docs commit of item 4.3
+onwards without a change to the code it tests: a cause outside the branch (an unpinned package or the `mongo:7`
+image) that went away. The failed runs' log is still worth a look when the owner can download it.
 
 **Item 5.1, the organisation's own domain** ([ADR 0009](adr/0009-tenant-domains.md), recommended options). Domains in
 the portal proved by a DNS TXT record and never un-verified by a DNS hiccup; a default per prefix or a choice on the
@@ -561,6 +561,22 @@ the GTIN, names inside the zip — and the test gained a check for each: 18 of 1
 0.990 mm, EAN/UPC 0.330 mm at 80 to 200 %, 22.85 mm bars) were checked against GS1 UK's and GS1 Canada's guides; a
 draft of the General Specifications seen on the way lists other QR figures (0.375/0.625 mm), to be confirmed against
 the ratified release.
+
+**Items 6.1 and 6.2, the item's page** ([ADR 0011](adr/0011-item-page.md), one record for both, recommended options).
+The resolver's linkset page for browsers became the item's page and a record's default target through a
+`gs1:defaultLink` to `?linkType=linkset&view=page`, so a scan is still a conformant redirect and nothing changes for
+apps; brands per prefix with logos uploaded to the portal and served by the resolver; clicks through a route that finds
+the link again in the record; Verified by GS1 from an installation's URL template, off by default because the
+service's address could not be confirmed from the session. Commit `3d59bc2`: `web_server/src/landing.py`,
+`portal/branding.py`, the editor's option, the Item page view, the overview's page views and clicks,
+`test_landing.py` (58), `test_item_page.py` (67), `test_item_page_e2e.py` (27); 41 mutations, all caught after seven
+of the first escaped and the tests gained a check each (the longest prefix, the fallback when no link is in the
+visitor's language, a key without Verified by GS1 answering 500, the branding cache, a server administrator's prefix
+inside an organisation's, the installation's default for others, a `gs1:defaultLink` that is not the page). Writing it
+found three things on the way: an automated client's views and clicks would have made the overview's scans wrong
+(they are now logged as plain answers); the key's own record created with a batch would have copied the batch's page
+(it gets its own); and the resolver's pages load Google's web fonts, which on a page every scan reaches would tell a
+third party about each scan — the item's page now loads none (the other resolver pages are unchanged).
 
 ## How the main areas evolved
 

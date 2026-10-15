@@ -165,6 +165,17 @@ with sync_playwright() as p:
     check("…no linear barcode for an SSCC", page.is_hidden("#opt-linear-field"))
     page.select_option("#key-type", "01"); page.select_option("#opt-size", "100"); page.select_option("#opt-linear", "none")
     page.wait_for_timeout(300)
+    # RFID and NFC: the SGTIN of a serial number (portal/epc.py)
+    check("RFID/NFC: not offered without a serial number", page.is_hidden("#epc"))
+    page.fill("#key-value", ACME); page.fill("#q-21", "1001"); page.wait_for_timeout(900)
+    page.click("#epc summary"); page.wait_for_timeout(1200)
+    out = page.inner_text("#epc-out")
+    check("…with one: the SGTIN-96, the organisation's prefix length, the link for NFC",
+          "SGTIN-96" in out and "urn:epc:tag:sgtin-96:1.7891234." in out and "/eh30" in out
+          and "7 digits" in page.inner_text("#epc-msg"), (out, page.inner_text("#epc-msg")))
+    page.select_option("#epc-filter", "3"); page.wait_for_timeout(1000)
+    check("…another filter changes the EPC", "urn:epc:tag:sgtin-96:3.7891234." in page.inner_text("#epc-out"))
+    page.fill("#q-21", ""); page.wait_for_timeout(300)
 
     # An editor: no screen
     editor_ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900})

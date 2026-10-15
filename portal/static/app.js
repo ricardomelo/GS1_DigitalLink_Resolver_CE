@@ -424,7 +424,55 @@ function query(g, qual) {
 let qrTimer = null;
 let previewSeq = 0;
 
+/* RFID and NFC (the backlog's EPC/NFC label option): for a GTIN with a serial number, the SGTIN for the tag and the
+   compressed GS1 Digital Link an NFC tag emits (eh…, ex…), computed by the server (portal/epc.py). */
+let epcSeq = 0;
+
+function fillEpcOptions() {
+  const prefix = $("#epc-prefix"), filter = $("#epc-filter");
+  const keepPrefix = prefix.value, keepFilter = filter.value || "1";
+  prefix.replaceChildren(i18nOption("epc.prefixAuto", ""), ...[6, 7, 8, 9, 10, 11, 12].map(n =>
+    new Option(t("epc.prefixDigits", { n }), String(n))));
+  filter.replaceChildren(...[0, 1, 2, 3, 4, 5, 6, 7].map(n => new Option(`${n} — ${t("epc.filter." + n)}`, String(n))));
+  prefix.value = keepPrefix;
+  filter.value = keepFilter;
+}
+
+async function refreshEpc() {
+  const g = readKey(), l = readQualifiers();
+  const serialised = g.ok && g.ai === "01" && l.ok && (l.pairs || []).some(([q]) => q === "21");
+  $("#epc").hidden = !serialised;
+  if (!serialised || !$("#epc").open) return;
+  const seq = ++epcSeq;
+  const params = new URLSearchParams(query(g, l));
+  params.set("filter", $("#epc-filter").value || "1");
+  if ($("#epc-prefix").value) params.set("prefixLength", $("#epc-prefix").value);
+  if ($("#opt-domain").value) params.set("domain", $("#opt-domain").value);
+  try {
+    const e = await api("GET", "epc?" + params.toString());
+    if (seq !== epcSeq) return;
+    const rows = [["epc.scheme", e.scheme.toUpperCase()], ["epc.hex", e.hex, true], ["epc.tagUri", e.tagUri],
+                  ["epc.nfc", e.compressedHex, true], ["epc.nfcBase64", e.compressedBase64, true]];
+    $("#epc-out").replaceChildren(...rows.flatMap(([key, value, copy]) => {
+      const dd = el("dd", "", value);
+      if (copy) {
+        const b = el("button", "link-button", t("epc.copy"));
+        b.type = "button";
+        b.addEventListener("click", () => navigator.clipboard?.writeText(value));
+        dd.append(b);
+      }
+      return [el("dt", "", t(key)), dd];
+    }));
+    I18N.set($("#epc-msg"), e.prefixFrom === "prefixes" ? "epc.prefixFound" : null, { n: e.prefixLength });
+  } catch (err) {
+    if (seq !== epcSeq) return;
+    $("#epc-out").replaceChildren();
+    I18N.set($("#epc-msg"), err.code, err.params);
+  }
+}
+
 function renderPreview() {
+  refreshEpc();
   const g = readKey();
   // EAN/UPC beside the QR code: for GTINs of consumer units only (indicator 0), as the server decides
   $("#opt-linear-field").hidden = !(g.ai === "01" && (!g.ok || g.value.startsWith("0")));
@@ -4152,6 +4200,11 @@ async function init() {
   $("#overview-days").addEventListener("change", () => loadOverview());
   $("#domains-create").addEventListener("submit", createDomain);
   $("#branding-form").addEventListener("submit", saveBranding);
+  fillEpcOptions();
+  $("#epc").addEventListener("toggle", refreshEpc);
+  $("#epc-prefix").addEventListener("change", refreshEpc);
+  $("#epc-filter").addEventListener("change", refreshEpc);
+  document.addEventListener("localechange", () => { fillEpcOptions(); refreshEpc(); });
   $("#sso-add").addEventListener("submit", e => {
     e.preventDefault();
     ssoState.extra.push($("#sso-add-scope").value);

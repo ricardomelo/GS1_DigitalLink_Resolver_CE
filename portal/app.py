@@ -35,6 +35,7 @@ import linear
 import apikeys
 import branding
 import domains
+import epc
 import linkcheck
 import mail
 import meta
@@ -2429,6 +2430,41 @@ def remove_branding(prefix):
     doc = branding.remove(prefix, tenant, server)
     log_event("branding-remove", tenant=tenant, detail=doc["_id"])
     return message("branding.removed", 200, params={"prefix": doc["_id"]})
+
+
+# --------------------------------------------------------------------------- EPC for RFID and NFC tags
+@app.errorhandler(epc.EpcError)
+def on_epc_error(err):
+    return message(err.code, 422, params=err.params)
+
+
+@app.get("/portal/api/epc")
+@require_login
+def epc_of_record():
+    """The SGTIN of a GTIN with a serial number for an RFID or NFC tag (portal/epc.py): the EPC in hexadecimal and as
+    URIs, and the compressed GS1 Digital Link an NFC tag emits (eh…, ex…) on the label's domain. The company prefix's
+    length comes from prefixLength, else from the organisation's (or the user's) prefixes."""
+    anchor = request_key(request.args)
+    check_access(anchor)
+    ai, value = gs1.split_anchor(anchor)
+    pairs, _ = request_record(request.args, anchor)
+    serial = dict(pairs).get("21")
+    if ai != "01" or not serial:
+        raise epc.EpcError("epc.notSerialised")
+    try:
+        filter_value = int(request.args.get("filter", "1"))
+        chosen = int(request.args["prefixLength"]) if request.args.get("prefixLength") else None
+    except ValueError:
+        raise epc.EpcError("epc.filterInvalid")
+    held = (tenants.get(g.tenant) or {}).get("prefixes", []) if g.tenant else []
+    length = chosen or epc.prefix_length_for(value, list(held) + list(g.prefixes or []))
+    if not length:
+        raise epc.EpcError("epc.prefixLength")
+    found = epc.sgtin(value, serial, length, filter_value)
+    base = link_base(anchor, request.args.get("domain") or None)
+    return jsonify(scheme=found.scheme, hex=found.hex, base64=found.base64, tagUri=found.tag_uri,
+                   pureIdentity=found.pure_identity, prefixLength=length, prefixFrom="chosen" if chosen else "prefixes",
+                   compressedHex=f"{base}/eh{found.hex}", compressedBase64=f"{base}/ex{found.base64}")
 
 
 # --------------------------------------------------------------------------- reading a scanned code (record search)

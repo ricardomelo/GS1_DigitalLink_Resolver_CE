@@ -100,7 +100,7 @@ the official Postman collection is at
 
 | Area | Addition |
 |---|---|
-| **Portal** (`/portal/`) | Sign-in with per-user passwords (with a show/hide button); editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; QR code labels (SVG, PNG, PDF, or all three in a ZIP) with the dimensions of the *QR Codes powered by GS1* guidelines, sizes from 80 to 200 %, an optional EAN-13, UPC-A, EAN-8 or UPC-E beside the QR code for the transition to 2D, a choice of QR version, error correction and human readable text, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search and filters by key type and qualifier; spreadsheet import/export (XLSX, CSV) with preview; link checker |
+| **Portal** (`/portal/`) | Sign-in with per-user passwords (with a show/hide button); editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; QR code labels (SVG, PNG, PDF, or all three in a ZIP) with the dimensions of the *QR Codes powered by GS1* guidelines, sizes from 80 to 200 %, an optional EAN-13, UPC-A, EAN-8 or UPC-E beside the QR code for the transition to 2D, a choice of QR version, error correction and human readable text, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search and filters by key type and qualifier; spreadsheet import/export (XLSX, CSV) with preview; link checker; for a serial number, its EPC (SGTIN-96 or SGTIN-198) and the compressed link (`eh…`, `ex…`) for RFID and NFC tags |
 | **Governance** | Roles (administrator, editor, reader); organisations (tenants) that own GS1 Company Prefixes, each with its own users and audit trail, and a server administrator with recorded, read-only support access; access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords or, with an e-mail relay, invitations by e-mail; API keys for the organisations' own systems (tenant API); password recovery by e-mail; security notices; history of every record with restore; audit trail with filters and CSV export; single sign-on with each organisation's own identity provider (OpenID Connect), password sign-in off per organisation; per-role limits on exports ([ADR 0012](Documentation/adr/0012-single-sign-on.md)) |
 | **Own domains** | An organisation's own domain in its QR codes (URI Syntax §4.11), with an optional path stem: proved by a DNS TXT record, default per GS1 Company Prefix or chosen on the label; either pointing at the resolver (which then answers on it for that organisation's codes only, certificates by `scripts/custom-domains.sh`) or redirected by the organisation's own server ([ADR 0009](Documentation/adr/0009-tenant-domains.md)) |
 | **Item page** | A page of all the links of an item as the default target of its code: made by the resolver, mobile first, an icon per link type, the visitor's language first, the logo and colours of the brand of each GS1 Company Prefix (uploaded in the portal), page views and clicks counted apart from scans, and a link to Verified by GS1 for GTINs and GLNs when the installation switches it on ([ADR 0011](Documentation/adr/0011-item-page.md)) |
@@ -686,10 +686,9 @@ know whose data they handle.
 | | 7.4 | **Load test and scale-out rehearsal** on staging with `dev-tests/load/load_test.py` (done): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded ([procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)) | S | 2.3 |
 | Standards | 8.1 | **Errata and Work Requests to GS1** (drafted; to be reviewed and sent by the owner): E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
 
-Later, when convenient:
-
-- An EPC/NFC label option: a record's SGTIN as `eh…`/`ex…` for programming NFC or hybrid tags (needs an
-  encoder).
+The items of the "later" list are done: the record search reads scanners and RFID readers, exports follow the
+filters (which stay in the address), serial numbers registered with their batch can be fixed, the data entry API
+checks values with the engine, and the label offers the EPC of a serial number for RFID and NFC tags.
 
 ## Repository layout
 

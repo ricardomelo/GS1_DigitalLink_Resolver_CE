@@ -398,6 +398,13 @@ Under the code the portal shows the version, size and correction actually used, 
 is replaced by an explanation and the ways out: a higher version, *Automatic*, a lower correction level or
 a shorter content.
 
+**RFID and NFC (EPC).** For a GTIN with a serial number the block offers *RFID and NFC (EPC)*: the item's EPC as the
+EPC Tag Data Standard encodes it — SGTIN-96 for a numeric serial number, SGTIN-198 otherwise — in hexadecimal (to write
+into an RFID tag) and as a tag URI, and the **link for NFC**, the compressed GS1 Digital Link (`…/eh…`, `…/ex…`) to
+write into an NFC or hybrid tag; this resolver reads it like the QR code. The EPC needs the length of the GS1 Company
+Prefix: the portal takes your organisation's; for other codes choose it. The **filter** says what the item is (1, a
+point-of-sale item, by default). **Copy** puts a value on the clipboard.
+
 ## 10. Data attributes in the QR code
 
 *(Available when the installation includes the GS1 Barcode Syntax Engine; otherwise the option is not

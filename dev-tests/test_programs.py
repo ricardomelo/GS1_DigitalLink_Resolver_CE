@@ -60,6 +60,7 @@ PROGRAMS = [
     Program("domains_resolver", "resolver", "resolver/test_domains_resolver.py"),
     Program("landing", "resolver", "resolver/test_landing.py"),
     Program("load", "resolver", "load/test_load.py"),
+    Program("epc_label", "resolver", "portal/test_epc.py", ("EPC_TDS",), ("node",)),
     Program("keys", "portal", "portal/test_keys.py", ("GS1_SYNTAX_ENGINE",), ("node",)),
     Program("dictionary", "portal", "portal/test_dictionary.py", ("GS1_SYNTAX_ENGINE_DIR",)),
     Program("engine_messages", "portal", "portal/test_engine_messages.py", ("GS1_SYNTAX_ENGINE_DIR",)),

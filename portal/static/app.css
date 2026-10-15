@@ -709,6 +709,12 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .domains-help summary { cursor: pointer; color: var(--gs1-blue); font-weight: 600; }
 .opt-domain select { max-width: 100%; }
 .domain-card .user-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+/* RFID and NFC: the record's SGTIN */
+.epc { margin: .75rem 0; border: 1px solid var(--line); border-radius: 4px; padding: .5rem .8rem; }
+.epc summary { cursor: pointer; font-weight: 600; }
+.epc-out { display: grid; grid-template-columns: max-content 1fr; gap: .3rem .8rem; margin: .6rem 0 0; font-size: .875rem; }
+.epc-out dd { margin: 0; word-break: break-all; font-family: ui-monospace, Consolas, monospace; }
+.epc-out dd button { margin-left: .4rem; font-family: inherit; }
 /* Sign-in with the organisation's account (ADR 0012) */
 .sso-callback code { word-break: break-all; background: var(--page); padding: .1rem .35rem; border-radius: 3px; }
 .sso-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: .6rem 1rem; margin: .6rem 0; }

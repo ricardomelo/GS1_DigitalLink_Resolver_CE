@@ -338,6 +338,17 @@
             <button type="button" class="btn btn-ghost" id="attr-add" data-i18n="attrs.add"></button>
             <p class="field-msg" id="attr-msg" role="status" aria-live="polite"></p>
           </div>
+          <!-- RFID and NFC (the backlog's EPC/NFC label option): the SGTIN of a GTIN with a serial number -->
+          <details class="epc" id="epc" hidden>
+            <summary data-i18n="epc.title"></summary>
+            <p class="hint" data-i18n="epc.intro"></p>
+            <div class="opt-grid">
+              <label class="opt-field"><span data-i18n="epc.prefixLength"></span><select id="epc-prefix"></select></label>
+              <label class="opt-field"><span data-i18n="epc.filter"></span><select id="epc-filter"></select></label>
+            </div>
+            <dl class="epc-out" id="epc-out"></dl>
+            <p class="field-msg" id="epc-msg" aria-live="polite"></p>
+          </details>
           <a class="dl code" id="dl" target="_blank" rel="noopener" data-i18n-attr="aria-label:preview.dlAria"></a>
           <dl class="legend">
             <div><dt><span class="sw sw-host"></span><span data-i18n="legend.host"></span></dt><dd data-i18n="legend.hostHelp"></dd></div>

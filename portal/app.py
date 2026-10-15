@@ -1200,20 +1200,131 @@ def remove_record(anchor: str, pairs: list) -> None:
     if target is None:
         raise ValidationError("record.notFound")
     others = [e for e in entries if e is not target]
+    rewrite_document(anchor, entries, others)
 
+    audit.info("user=%s action=delete anchor=%s%s", g.user, anchor, gs1.qualifier_path(pairs))
+    record_change(anchor, pairs, target, "delete")
+
+
+def rewrite_refusals(entries: list[dict]) -> list[dict]:
+    """What the data entry API would refuse in entries about to be written back ([{"item", "error"}]), asked before
+    anything is deleted; [] from an API older than POST /validate (as before)."""
+    if not entries:
+        return []
+    status, body = resolver("POST", "/validate", entries)
+    if status != 200 or not isinstance(body, dict):
+        return []
+    return body.get("problems") or []
+
+
+def rewrite_document(anchor: str, entries: list[dict], new_entries: list[dict]) -> None:
+    """Writes a key's document again with new_entries (the API deletes whole documents only): checked first, so
+    that nothing is deleted that could not be written back — records made before a rule or by other tools that the
+    API now refuses — and the original restored if writing fails."""
+    problems = rewrite_refusals(new_entries)
+    if problems:
+        first = problems[0]
+        entry = new_entries[first.get("item", 1) - 1] if 0 < first.get("item", 1) <= len(new_entries) else {}
+        raise ValidationError("record.rewriteRefused", record=describe_entry(entry).get("path") or anchor,
+                              detail=str(first.get("error", ""))[:200])
     status, body = resolver("DELETE", anchor)
     if not is_success(status, body):
         raise UpstreamError("upstream.deleteFailed", 502, body)
-    if others:
-        # The API cannot remove a whole qualifier entry: recreate the document with the remaining
-        # entries and restore the original if that fails.
-        status, body = resolver("POST", "/new", others)
+    if new_entries:
+        status, body = resolver("POST", "/new", new_entries)
         if not is_success(status, body):
             resolver("POST", "/new", entries)
             raise UpstreamError("upstream.deleteRestored", 502, body)
 
-    audit.info("user=%s action=delete anchor=%s%s", g.user, anchor, gs1.qualifier_path(pairs))
-    record_change(anchor, pairs, target, "delete")
+
+def fixed_serial_entry(entry: dict) -> dict | None:
+    """A serial-number record registered with its variant or batch (before rule 2 of GS1-Conformant Resolver
+    1.2.1, section 2.5.9, was applied) as the rule wants it: the serial number alone, the variant and batch kept
+    as informative qualifiers. None when the entry does not break the rule."""
+    ai, _ = gs1.split_anchor(entry.get("anchor", ""))
+    pairs = gs1.pairs_from(entry.get("qualifiers"))
+    own, informative = gs1.split_informative(ai, pairs)
+    if not informative:
+        return None
+    fixed = {k: v for k, v in entry.items() if k not in ("qualifiers", "informativeQualifiers")}
+    fixed["qualifiers"] = gs1.qualifier_list(own)
+    fixed["informativeQualifiers"] = gs1.qualifier_list(informative)
+    return fixed
+
+
+def fix_serial_records(anchor: str) -> tuple[int, list[str]]:
+    """Fixes every rule-2 record of a key in one rewrite of its document (written back whole, it must be valid as a
+    whole): (records fixed, paths of the records left because their serial number already has a record of its own
+    with other targets — the key is then left unchanged). A rule-2 record that only repeats the serial number's own
+    record (same description and targets) is removed."""
+    entries, _ = read_entries(anchor)
+    singles = {tuple(sorted(gs1.pairs_from(e.get("qualifiers")))): e for e in entries}
+    new_entries, fixed, dropped, conflicts = [], [], [], []
+
+    def same(a, b):
+        links = lambda e: sorted((l.get("linktype"), l.get("href"), tuple(l.get("hreflang") or [])) for l in e.get("links") or [])
+        return (a.get("itemDescription") or "") == (b.get("itemDescription") or "") and links(a) == links(b)
+
+    for entry in entries:
+        change = fixed_serial_entry(entry)
+        if not change:
+            new_entries.append(entry)
+            continue
+        own = tuple(sorted(gs1.pairs_from(change["qualifiers"])))
+        if own in singles:
+            if same(entry, singles[own]):
+                dropped.append(entry)
+            else:
+                conflicts.append(describe_entry(entry).get("path") or "")
+            continue
+        singles[own] = change
+        new_entries.append(change)
+        fixed.append((entry, change))
+    if conflicts:
+        return 0, conflicts
+    if fixed or dropped:
+        rewrite_document(anchor, entries, new_entries)
+        for old, new in fixed:
+            record_change(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete")
+            record_change(anchor, gs1.pairs_from(new["qualifiers"]), new, "create")
+        for old in dropped:
+            record_change(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete")
+        audit.info("user=%s action=fix-serials anchor=%s fixed=%d duplicates=%d", g.user, anchor, len(fixed), len(dropped))
+    return len(fixed) + len(dropped), []
+
+
+@app.post("/portal/api/records/fix-serials")
+@require_login
+@role_required("editor")
+def fix_serials():
+    """Serial-number records registered with their variant or batch, registered again as the serial number alone
+    with the variant and batch as information (the record list's status "Serial registered with batch or
+    variant"): those of one key ({key, value}) or every one in reach ({"all": true})."""
+    data = request.get_json(silent=True) or {}
+    if data.get("all"):
+        anchors = sorted({line["anchor"] for line in summary_with_links()
+                          if allowed(line["anchor"]) and describe_entry(line)["kind"] == "qualified"
+                          and gs1.split_informative(gs1.split_anchor(line["anchor"])[0],
+                                                    gs1.pairs_from(line.get("qualifiers")))[1]})
+        targets = [(a, None) for a in anchors]
+    else:
+        anchor = request_key(data)
+        check_access(anchor)
+        targets = [(anchor, None)]
+    fixed, conflicts, refused = 0, [], []
+    for anchor, _ in targets:
+        try:
+            done, left = fix_serial_records(anchor)
+        except ValidationError as exc:
+            refused.append({"anchor": anchor, "code": exc.code, "params": exc.params})
+            continue
+        fixed += done
+        conflicts += [anchor + path for path in left]
+    if fixed:
+        log_event("fix-serials", detail=f"fixed={fixed} conflicts={len(conflicts)} refused={len(refused)}")
+    code = "rules.fixed" if fixed and not (conflicts or refused) else "rules.fixedSome" if fixed else "rules.fixedNone"
+    return message(code, 200, params={"fixed": fixed, "conflicts": len(conflicts), "refused": len(refused)},
+                   conflicts=conflicts, refused=refused)
 
 
 @app.get("/portal/api/records")

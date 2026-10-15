@@ -85,6 +85,7 @@ PROGRAMS = [
     Program("exports", "portal", "portal/test_exports.py"),
     Program("sso", "portal", "portal/test_sso.py"),
     Program("scan_search", "portal", "portal/test_scan_search.py", ("GS1_SYNTAX_ENGINE_DIR",)),
+    Program("fix_serials", "portal", "portal/test_fix_serials.py"),
     Program("store_mongodb", "database", "portal/test_store_mongodb.py", needs_var=("PORTAL_TEST_MONGO_URI",)),
     Program("portal_e2e", "e2e", "portal/test_portal_e2e.py", ("GS1_SYNTAX_ENGINE_DIR",)),
     Program("portal_e2e_without_engine", "e2e", "portal/test_portal_e2e.py",

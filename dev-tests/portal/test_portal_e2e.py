@@ -829,6 +829,21 @@ with sync_playwright() as p:
           and len(page.query_selector_all("#records-body tr")) == flagged
           and "Coffee C77" in page.inner_text("#records-body"), page.inner_text("#records-body"))
     page.click("#records-clear"); page.wait_for_timeout(200)
+    # A serial number registered with its batch (before rule 2 of 2.5.9), as an older version left it: fixed from the list
+    mock_data_entry.DB["01_09506000134369"] = {"default": "gs1:pip", "entries": [
+        {"qualifiers": [], "itemDescription": "Old pump", "informative": [],
+         "links": [{"linktype": "gs1:pip", "href": "https://example.org/pump", "title": "P", "hreflang": ["en"]}]},
+        {"qualifiers": [{"10": "B7"}, {"21": "S7"}], "itemDescription": "Old pump S7", "informative": [],
+         "links": [{"linktype": "gs1:pip", "href": "https://example.org/pump/S7", "title": "P", "hreflang": ["en"]}]}]}
+    page.goto(BASE); page.wait_for_timeout(300); page.goto(BASE + "#records"); page.wait_for_timeout(900)
+    check("record list: alert for serial numbers registered with their batch", page.is_visible("#records-rules-alert")
+          and page.inner_text("#records-rules-text").startswith("1 serial number"), page.inner_text("#records-rules-text"))
+    row = page.query_selector("#records-body tr:has-text('Old pump S7')")
+    row.query_selector(".records-fix").click(); page.wait_for_timeout(1200)
+    entries = mock_data_entry.DB["01_09506000134369"]["entries"]
+    check("…Fix on its row: the serial number alone, its batch kept as information", page.is_hidden("#records-rules-alert")
+          and entries[1]["qualifiers"] == [{"21": "S7"}] and entries[1]["informative"] == [{"10": "B7"}]
+          and "1 record(s) fixed" in page.inner_text("#records-count"), (entries[1], page.inner_text("#records-count")))
 
     page.click("#user-button"); page.click("#menu-audit"); page.wait_for_timeout(900)
     audit_text = page.inner_text("#audit-body")

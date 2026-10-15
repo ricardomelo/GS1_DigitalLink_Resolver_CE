@@ -191,6 +191,22 @@ def value_problem(entry: dict[str, Any]) -> str | None:
     return None
 
 
+def validate_documents(data: dict[str, Any] | list[dict[str, Any]]) -> dict[str, Any]:
+    """What POST /new would refuse in these entries, without storing anything: {"problems": [{"item", "error"}]}
+    (item counted from 1). Clients that rewrite a whole document (the API deletes documents only) ask first, so
+    that they never delete what they could not write back."""
+    items = data if isinstance(data, list) else [data]
+    problems = []
+    for position, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            problems.append({"item": position, "error": "not an object"})
+            continue
+        problem = registration_problem(item) or value_problem(item)
+        if problem:
+            problems.append({"item": position, "error": problem})
+    return {"response_status": 200, "problems": problems}
+
+
 def _validate_data(data: dict[str, Any]) -> dict[str, Any]:
     # TODO - Implement data validation using calls to your own applications where necessary.
     #        For example, you may wish to ensure a product with matching GTIN exists in your product database,

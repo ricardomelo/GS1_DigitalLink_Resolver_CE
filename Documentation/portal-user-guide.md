@@ -458,6 +458,11 @@ ignored (*acai* finds *Açaí*).
   whose identifier has no record of its own, so other codes of it answer 404) and *Serial registered with
   batch or variant* (made before the GS1 rule was applied). A badge marks each one in the list, and an
   alert above the list offers **Show only these** while there are records without their key's record.
+  Serial numbers registered with their batch or variant have an alert of their own: editors select **Fix** on the
+  row, or **Fix them all**, and each is registered again as the serial number alone, with the batch and variant
+  kept as information; the targets do not change. All such records of one identifier are fixed together. If the
+  serial number already has a record of its own with other targets, the identifier is left as it is and the
+  message says so (a record that only repeats it is removed).
 
   ![Records without their key's record](images/guide/records-status.png)
 - **Only with problems** — after a link check, only the records whose targets had problems.

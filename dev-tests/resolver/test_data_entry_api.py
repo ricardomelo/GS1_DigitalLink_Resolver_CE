@@ -163,6 +163,18 @@ data = client.get("/api/01/09506000134352", headers=AUTH).get_json()["data"]
 check("POST /new on an existing serial record updates its informative qualifiers", any(
     e.get("qualifiers") == [{"21": "S1"}] and e.get("informativeQualifiers") == [{"10": "B9"}] for e in data), data)
 
+# ---------------------------------------------------------------- POST /validate: what POST /new would refuse, nothing stored
+before = copy.deepcopy(STORE)
+r = client.post("/api/validate", json=[entry(qualifiers=[{"10": "B1"}]), entry(qualifiers=[{"10": "B1"}, {"21": "S1"}])],
+                headers=AUTH)
+problems = (r.get_json() or {}).get("problems")
+check("POST /validate names the item POST /new would refuse and why", r.status_code == 200 and len(problems) == 1
+      and problems[0]["item"] == 2 and "rule 2" in problems[0]["error"], r.get_json())
+check("…and stores nothing", STORE == before)
+r = client.post("/api/validate", json=entry(), headers=AUTH)
+check("…one entry, valid: no problem", r.status_code == 200 and r.get_json()["problems"] == [], r.get_json())
+check("…needs the token", client.post("/api/validate", json=entry()).status_code == 401)
+
 # ---------------------------------------------------------------- values checked by the GS1 Barcode Syntax Engine (F11)
 ENGINE = os.environ.get("GS1_SYNTAX_ENGINE")
 if ENGINE:

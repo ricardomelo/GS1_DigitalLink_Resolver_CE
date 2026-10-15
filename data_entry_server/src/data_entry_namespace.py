@@ -100,6 +100,22 @@ class NewDocOperations(TokenResource):
             abort(500, description="Error creating document:" + str(e))
 
 
+@data_entry_namespace.route('/validate')
+@data_entry_namespace.doc(security='BearerAuth', responses={401: 'Missing Authorization Header', 403: 'Token is invalid.'})
+class ValidateOperations(TokenResource):
+    @data_entry_namespace.doc(description="Checks one or more v3 entries as POST /new would (registration rules and "
+                                          "values) and stores nothing: {\"problems\": [{\"item\", \"error\"}]}")
+    def post(self) -> tuple[Any, int] | Response:
+        token_result = self.is_auth_token_ok()
+        if not token_result['result'] and token_result['message'] == "Missing Authorization Header":
+            return token_result['message'], 401
+        elif not token_result['result']:
+            return token_result['message'], 403
+        if not request.is_json:
+            return "Request must be in JSON format", 415
+        return data_entry_logic.validate_documents(request.json), 200
+
+
 # Every protected resource declares the BearerAuth scheme so that Swagger UI's "Authorize" value is
 # sent with its requests (without it the page calls these endpoints without the token and gets 401).
 @data_entry_namespace.route('/summary')

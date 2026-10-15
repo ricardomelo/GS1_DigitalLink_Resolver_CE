@@ -94,5 +94,12 @@ def summary():
             lines.append(line)
     if not lines: return jsonify(response_status=404,error="none"),404
     return jsonify(response_status=200,data=lines)
+@app.post("/api/validate")
+def validate():
+    if not auth(): return "", 401
+    d = request.get_json()
+    items = d if isinstance(d, list) else [d]
+    return jsonify(response_status=200, problems=[{"item": i, "error": "rule 2"} for i, x in enumerate(items, 1)
+                                                  if rule2(x.get("qualifiers"))])
 @app.get("/api/heartbeat")
 def hb(): return {"response_message":"ok"}

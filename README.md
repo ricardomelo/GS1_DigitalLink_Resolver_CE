@@ -362,6 +362,7 @@ documentation: `https://<FQDN>/api/docs` (**Authorize** with `Bearer <token>`).
 | `DELETE /api/{AI}/{value}` | official | Delete the document, or only the links sent in the body |
 | `GET /api/index` | official, **now protected** | Identifiers of every document |
 | `GET /api/summary[?links=true]` | **new** | One line per record: anchor, qualifiers, description, default link type, number of links (and the links) |
+| `POST /api/validate` | **new** | What `POST /new` would refuse in one or more entries (registration rules and values), nothing stored: `{"problems": [{"item", "error"}]}` |
 | `GET /api/heartbeat` | official | Liveness (public) |
 
 ```bash
@@ -689,7 +690,6 @@ Later, when convenient:
 
 - An EPC/NFC label option: a record's SGTIN as `eh…`/`ex…` for programming NFC or hybrid tags (needs an
   encoder).
-- A way to fix records registered before rule 2 of 2.5.9 was enforced (today they are only flagged).
 
 ## Repository layout
 

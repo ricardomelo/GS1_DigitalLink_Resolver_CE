@@ -2820,6 +2820,20 @@ function fillStateFilter() {
   keepChoice(select, previous);
   $("#records-alert").hidden = !nokey;
   if (nokey) I18N.set($("#records-alert-text"), nokey === 1 ? "records.alert.one" : "records.alert.many", { count: nokey });
+  $("#records-rules-alert").hidden = !rules;
+  if (rules) I18N.set($("#records-rules-text"), "records.rules.alert", { count: rules });
+}
+
+/* Serial numbers registered with their batch or variant: registered again as the serial number alone, the batch and
+   variant kept as information (rule 2 of section 2.5.9). One record (from its row) or every one. */
+async function fixSerials(body) {
+  try {
+    const result = await api("POST", "records/fix-serials", body);
+    await loadRecords();
+    I18N.set($("#records-count"), result.code, result.params);
+  } catch (e) {
+    I18N.set($("#records-count"), e.code, e.params);
+  }
 }
 
 /* The list's filters in the address (#records?text=…&key=01&qualifier=…&user=…&state=…&problems=1), so that a
@@ -3132,7 +3146,14 @@ function renderRecords() {
     // section 2.5.9: no default link above this record, or a serial number registered with its batch
     if (r.noKeyRecord) scope.append(document.createElement("br"), warnBadge("records.badge.nokey", {
       what: r.key === "01" ? t("scope.everyUnit") : t("scope.wholeKey", { name: t(`key.${r.key}.short`) }) }));
-    if (r.breaksRules) scope.append(document.createElement("br"), warnBadge("records.badge.rules", {}));
+    if (r.breaksRules) {
+      scope.append(document.createElement("br"), warnBadge("records.badge.rules", {}));
+      const fix = el("button", "link-button needs-editor records-fix", t("records.rules.fix"));
+      fix.type = "button";
+      fix.addEventListener("click", () => fixSerials({ key: r.key, value: r.value,
+                                                     qualifiers: (r.qualifiers || []).map(([q, v]) => `/${q}/${v}`).join("") }));
+      scope.append(" ", fix);
+    }
     const linksCell = cell("records.col.links", String(r.links), "num");
     const problems = problemsOf(r);
     if (problems.length) {
@@ -4095,6 +4116,10 @@ async function init() {
   $("#copy-pop").addEventListener("keydown", e => { if (e.key === "Escape") { closeCopy(); $("#copy-from").focus(); } });
   $("#records-state").addEventListener("change", renderRecords);
   $("#records-alert-show").addEventListener("click", () => { $("#records-state").value = "nokey"; renderRecords(); });
+  $("#records-rules-show").addEventListener("click", () => { $("#records-state").value = "rules"; renderRecords(); });
+  $("#records-rules-fix").addEventListener("click", () => {
+    if (confirm(t("records.rules.confirmAll"))) fixSerials({ all: true });
+  });
   $("#form").addEventListener("submit", save);
   $("#delete").addEventListener("click", remove);
   $("#copy").addEventListener("click", async e => {

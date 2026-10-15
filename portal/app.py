@@ -2320,6 +2320,54 @@ def remove_branding(prefix):
     return message("branding.removed", 200, params={"prefix": doc["_id"]})
 
 
+# --------------------------------------------------------------------------- reading a scanned code (record search)
+EPC_TEXT = re.compile(r"^(?:(e[hx])([0-9A-Za-z_-]{8,200})|([0-9A-Fa-f]{24,64}))$", re.IGNORECASE)
+
+
+def resolver_base() -> str:
+    """The resolver as the portal reaches it inside the installation (through the proxy, as the monitoring does)."""
+    return monitor.monitor_url().split("/.well-known/", 1)[0].rstrip("/")
+
+
+def read_epc(text: str) -> str:
+    """The bracketed element string of an EPC binary string (an RFID reader's hexadecimal, or eh…/ex… of a
+    compressed GS1 Digital Link URI), read by the resolver, which decodes them (item 1.6): the anchor of the
+    linkset it answers. Only codes with a record are found that way, which is what a search needs."""
+    found = EPC_TEXT.match(text.strip())
+    segment = (found.group(1).lower() + found.group(2)) if found.group(1) else "eh" + found.group(3).lower()
+    try:
+        answer = requests.get(f"{resolver_base()}/{segment}", params={"linkType": "linkset"}, timeout=10,
+                              allow_redirects=False, headers={"Accept": "application/linkset+json"})
+    except requests.RequestException as exc:
+        raise UpstreamError("code.epcUnavailable", 502, type(exc).__name__)
+    if answer.status_code == 400:
+        raise ValidationError("code.epcInvalid")
+    if answer.status_code == 404:
+        raise ValidationError("code.epcNoRecord")
+    try:
+        anchor = answer.json()["linkset"][0]["anchor"]
+    except (ValueError, KeyError, IndexError, TypeError):
+        raise UpstreamError("code.epcUnavailable", 502, f"HTTP {answer.status_code}")
+    parts = [requests.utils.unquote(p) for p in requests.utils.urlparse(anchor).path.split("/") if p]
+    start = next((i for i, p in enumerate(parts) if p in gs1.PRIMARY_KEYS and i + 1 < len(parts)), None)
+    if start is None:
+        raise UpstreamError("code.epcUnavailable", 502, anchor)
+    return "".join(f"({parts[i]}){parts[i + 1]}" for i in range(start, len(parts) - 1, 2))
+
+
+@app.post("/portal/api/code/read")
+@require_login
+def read_code():
+    """What the record list's search box received from a scanner — raw scan data with a symbology identifier, an
+    element string without brackets, or an RFID EPC — as a bracketed element string the list then searches."""
+    text = str((request.get_json(silent=True) or {}).get("text", "")).strip()
+    if not text:
+        raise ValidationError("code.unreadable", detail="")
+    if EPC_TEXT.match(text) and not text.isdigit():
+        return jsonify(bracketed=read_epc(text), source="epc")
+    return jsonify(bracketed=syntax.ENGINE.read_scan(text), source="scan")
+
+
 # --------------------------------------------------------------------------- single sign-on (ADR 0012)
 SSO_CALLBACK = PORTAL_ORIGIN + "/portal/sso/callback"
 

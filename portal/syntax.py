@@ -153,6 +153,27 @@ class Engine:
             raise ValidationError("attr.inPath", ai=next(iter(seen)))
         return uri, [f"({ai}){value}" for ai, value in attributes]
 
+    def read_scan(self, text: str) -> str:
+        """The bracketed element string of what a barcode scanner sends (the backlog's code search from raw scanner
+        data): with a symbology identifier (]d2 DataMatrix, ]Q3 QR, ]C1 GS1-128, ]e0 DataBar…) as scan data, the
+        group separator (or ^) between fields; without one, an element string without brackets, ^ or the group
+        separator for FNC1. Raises ValidationError("code.unreadable") with the engine's message."""
+        if not self.available:
+            raise ValidationError("code.engineUnavailable")
+        raw = str(text or "").strip()[:2000]
+        with self._lock:
+            try:
+                if raw.startswith("]"):
+                    self._encoder.scan_data = raw.replace("^", "\x1d")
+                else:
+                    self._encoder.data_str = "^" + raw.lstrip("^").replace("\x1d", "^")
+                bracketed = self._encoder.ai_data_str
+            except Exception as exc:  # noqa: BLE001 — the binding's exceptions (scan data has a class of its own)
+                raise ValidationError("code.unreadable", detail=str(exc)[:200]) from exc
+        if not bracketed:
+            raise ValidationError("code.unreadable", detail="")
+        return bracketed
+
     def resolve_decimal(self, ai: str, value: str) -> tuple[str, str]:
         """AIs whose last digit is the number of decimal places (310n net weight, 392n price…) as people
         write numbers: "310n" with "123,45" becomes (3102) 012345; a member such as "3922" with "12,5"

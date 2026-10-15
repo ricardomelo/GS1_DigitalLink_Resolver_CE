@@ -2913,7 +2913,41 @@ function qualifierMatches(r, choice) {
    string with the AIs in brackets, pasted or scanned into the search box:
    { key, value, pairs, ignored } or null when the text is neither. Pairs are the key qualifiers of that
    key; other AIs (data attributes such as (17)) are listed in ignored, as the portal never stores them. */
+/* What a scanner sends without brackets — raw scan data with a symbology identifier (]d2, ]Q3, ]C1…), an element
+   string with ^ or the group separator, a long string of digits — or an RFID reader's EPC (hexadecimal, eh…, ex…):
+   read by the server (the GS1 Barcode Syntax Engine, or the resolver for EPCs) into a bracketed element string. */
+const SCANNED = /^(?:\][A-Za-z][0-9A-Za-z]|\d{16,}$)|[\x1d^]/;
+const EPC = /^(?:eh[0-9a-f]{20,}|ex[0-9A-Za-z_-]{16,}|(?=[0-9a-f]*[a-f])[0-9a-f]{24,64})$/i;
+const scans = new Map();            // text → {bracketed, source} or {code, params}
+let scanTimer = null;
+
+function scannedText(raw) {
+  return (SCANNED.test(raw) || EPC.test(raw)) && !raw.startsWith("(") && !/^https?:\/\//i.test(raw);
+}
+
+function readScanned(raw) {
+  if (scans.has(raw)) return;
+  clearTimeout(scanTimer);
+  scanTimer = setTimeout(async () => {
+    try {
+      scans.set(raw, await api("POST", "code/read", { text: raw }));
+    } catch (e) {
+      scans.set(raw, { code: e.code, params: e.params });
+    }
+    if ($("#records-search").value.replace(INVISIBLE, "").trim() === raw) renderRecords();
+  }, 250);
+}
+
 function parseCode(text) {
+  const typed = text.replace(INVISIBLE, "").trim();
+  if (scannedText(typed)) {
+    const read = scans.get(typed);
+    if (!read) { readScanned(typed); return null; }
+    if (!read.bracketed) return null;
+    const code = parseCode(read.bracketed);
+    if (code) code.read = { from: read.source, as: read.bracketed };
+    return code;
+  }
   const raw = text.replace(INVISIBLE, "").trim();
   const known = new Set((CONFIG?.keys || []).map(k => k.code));
   let elements = [], extra = [];
@@ -3023,7 +3057,8 @@ function renderRecords() {
   const text = $("#records-search").value;
   // A GS1 Digital Link or a bracketed element string finds the records of that code; other text is searched word by word.
   const code = parseCode(text);
-  const words = code ? [] : fold(text).split(/\s+/).filter(Boolean);
+  // scanner data or an RFID EPC is a code, never words: while it is being read, nothing is filtered by text
+  const words = code || scannedText(text.replace(INVISIBLE, "").trim()) ? [] : fold(text).split(/\s+/).filter(Boolean);
   const key = $("#records-key").value;
   const qualifier = $("#records-qualifier").value;
   const user = $("#records-user").value;
@@ -3051,10 +3086,15 @@ function renderRecords() {
                     || (a.qpath || "").localeCompare(b.qpath || ""));
 
   const hint = $("#records-code");
-  hint.hidden = !code;
+  const typed = text.replace(INVISIBLE, "").trim();
+  const scanned = !code && scannedText(typed) ? (scans.get(typed) || { pending: true }) : null;
+  hint.hidden = !code && !scanned;
   if (code) {
     hint.textContent = t("records.code", { code: codeText(code) })
+      + (code.read ? " " + t(code.read.from === "epc" ? "records.codeReadEpc" : "records.codeRead", { as: code.read.as }) : "")
       + (code.ignored.length ? " " + t("records.codeIgnored", { ais: code.ignored.map(q => `(${q})`).join(" ") }) : "");
+  } else if (scanned) {
+    hint.textContent = scanned.pending ? t("records.codeReading") : t(scanned.code || "code.unreadable", scanned.params || {});
   }
   $("#records-clear").hidden = !filtersActive();
 

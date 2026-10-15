@@ -687,8 +687,6 @@ know whose data they handle.
 
 Later, when convenient:
 
-- Code search reading raw scanner data (no brackets, FNC1/GS, symbology identifiers `]d2`/`]Q3`) through
-  the engine, and EPC binary strings (`eh…`, `ex…`, hexadecimal) read from an RFID reader.
 - An EPC/NFC label option: a record's SGTIN as `eh…`/`ex…` for programming NFC or hybrid tags (needs an
   encoder).
 - A way to fix records registered before rule 2 of 2.5.9 was enforced (today they are only flagged).

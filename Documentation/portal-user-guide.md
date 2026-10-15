@@ -485,6 +485,13 @@ and names the parts that are not qualifiers of that identifier (data attributes 
 ignored because they are never stored. A GTIN of 8, 12 or 13 digits is completed to 14. A Digital Link
 of the identifier alone lists every record of that identifier.
 
+**With a scanner or an RFID reader.** Click the search box and scan: what a barcode scanner sends — with a
+symbology identifier such as `]d2` (DataMatrix), `]Q3` (QR) or `]C1` (GS1-128), the separator between fields, or the
+AIs without brackets — is read by the portal (the GS1 Barcode Syntax Engine) and searched as above; the line under the
+filters says *read from the scanner as …*, or why the code could not be read (a wrong check digit, for example). An
+RFID reader's EPC (hexadecimal) or a compressed link (`eh…`, `ex…`) is read by the resolver and finds the records of
+its code; an EPC whose code has no record is said so.
+
 ## 12. Spreadsheets: export and import
 
 ### Export

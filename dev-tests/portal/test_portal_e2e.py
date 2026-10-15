@@ -465,6 +465,20 @@ with sync_playwright() as p:
     check("an incomplete code is looked up as a code", shown() == 0 and page.is_visible("#records-code"))
     page.fill("#records-search", "https://example.org/acai"); page.wait_for_timeout(150)
     check("an address that is not a Digital Link is searched as text", not page.is_visible("#records-code"))
+    # what a scanner sends (backlog: code search from raw scanner data), read by the server's engine
+    page.fill("#records-search", f"]d201{MANY}10L2026-09\x1d21S0003"); page.wait_for_timeout(1200)
+    if portal.syntax.ENGINE.available:
+        rows = page.query_selector_all("#records-body tr")
+        check("scanner data (]d2, a group separator): the records of its code, the exact one first",
+              len(rows) == 3 and "Exact" in rows[0].inner_text() and "Serial S0003" in rows[0].inner_text(), len(rows))
+        check("…said to be read from the scanner", f"read from the scanner as (01){MANY}(10)L2026-09(21)S0003"
+              in page.inner_text("#records-code"), page.inner_text("#records-code"))
+        page.fill("#records-search", f"]d201{MANY[:-1]}9"); page.wait_for_timeout(1200)
+        check("…a scan with a wrong check digit: the engine's reason", "could not be read" in page.inner_text("#records-code")
+              and "check digit" in page.inner_text("#records-code"), page.inner_text("#records-code"))
+    else:
+        check("without the engine: reading a scan is said to be unavailable", "not available"
+              in page.inner_text("#records-code"), page.inner_text("#records-code"))
     page.click("#records-clear")
 
     # Key qualifiers (URI Syntax 4.4, 4.6, 4.9)

@@ -120,7 +120,9 @@ try:
     check("db_init again with a new password: user brought up to date",
           run.returncode == 0 and "up to date" in run.stdout, run.stderr[-300:])
     check("… the old password no longer works, the new one does", not can_sign_in(first) and can_sign_in(second))
-    check("… roles unchanged", root[NAME].command("usersInfo", USER)["users"][0]["roles"] == roles)
+    # MongoDB keeps roles as a set: usersInfo may list them in another order after updateUser
+    check("… roles unchanged", sorted(root[NAME].command("usersInfo", USER)["users"][0]["roles"], key=lambda r: r["db"])
+          == sorted(roles, key=lambda r: r["db"]))
     check("db_init refuses the official database", db_init(PORTAL_DB_PASSWORD=second, PORTAL_DB_NAME="resolver_ce").returncode == 1)
     check("db_init refuses the request log's database", db_init(PORTAL_DB_PASSWORD=second, PORTAL_DB_NAME="resolver_log").returncode == 1)
     check("db_init refuses an empty password", db_init(PORTAL_DB_PASSWORD="").returncode == 1)

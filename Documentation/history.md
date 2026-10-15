@@ -627,6 +627,15 @@ the key's records: the data entry API now answers `POST /validate` and the porta
 offers the EPC of a serial number for RFID and NFC tags (`e1b6917`), its encoder checked against the Tag Data
 Standard's example, the resolver's decoder and the independent `epc-tds`.
 
+**The first load test on staging** (15 October, the owner running the staging test plan): at 100 requests a second
+through HTTPS the resolver answered 26.6 a second, p50 6.2 s, 29 % without an answer; `docker stats` under load showed
+both resolver containers at 90–100 % CPU and their process count rising from 27 to about 110, the database at 2 %
+and the proxy at 1 %. The cause was in the official code: a Node.js process started for every syntax check of a
+request path (about 46 ms each here). The resolver now asks the engine's C library in its own process (`653ffc6`,
+the owner's choice among three options; about 2 µs a check), built into its image with the portal's script at the
+same release, Node.js kept as the fallback; `test_resolver.py` checks that both answer alike, and GS1's suite runs
+through the new check.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

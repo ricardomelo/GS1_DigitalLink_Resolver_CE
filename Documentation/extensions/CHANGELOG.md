@@ -2,6 +2,13 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### The resolver's syntax check in its own process (load test of item 7.4)
+- **The resolver checks each request path with the GS1 Barcode Syntax Engine in its own process**
+  (`web_server/src/gs1_syntax.py`), the engine's C library at the compose file's release built into its image; the
+  official code started a Node.js process per request, which made the resolver CPU-bound at about 26 resolutions a
+  second on staging. The answers are the same; Node.js is kept as the fallback when the library is missing.
+  Commit `653ffc6`.
+
 ### The backlog's "later" list
 - **Exports follow the filters**: with filters on, the record list's exports hold only the records it shows; the
   filters and the search text are kept in the address (`#records?key=01&qualifier=10…`). Commit `3df0c50`.

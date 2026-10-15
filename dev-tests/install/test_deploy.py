@@ -418,6 +418,18 @@ def release_checks() -> None:
     portal = (REPO / "portal" / "Dockerfile").read_text()
     check("ARG GS1_SYNTAX_ENGINE_RELEASE" in portal and 'build-syntax-engine.sh /opt/gs1-syntax-engine "$GS1_SYNTAX_ENGINE_RELEASE"' in portal,
           "engine release: portal/Dockerfile builds the engine at the build argument's release")
+    # the resolver checks each GS1 Digital Link with the engine in its own process (web_server/src/gs1_syntax.py),
+    # built in the image with the portal's script, which Compose hands over as the build context "engine-tools"
+    web = (REPO / "web_server" / "Dockerfile").read_text()
+    contexts = (((config or {}).get("services", {}).get("web-service", {}).get("build") or {})
+                .get("additional_contexts") or {})
+    check('build-syntax-engine.sh /opt/gs1-syntax-engine "$GS1_SYNTAX_ENGINE_RELEASE"' in web
+          and "COPY --from=engine-tools build-syntax-engine.sh" in web
+          and "COPY --from=syntax-engine /opt/gs1-syntax-engine /opt/gs1-syntax-engine" in web
+          and "ENV GS1_SYNTAX_ENGINE_DIR=/opt/gs1-syntax-engine" in web
+          and Path(contexts.get("engine-tools", "/nonexistent")).resolve() == (REPO / "portal" / "tools").resolve(),
+          "engine release: web_server/Dockerfile builds the engine for the resolver's process with the portal's script",
+          contexts)
     script = (REPO / "portal" / "tools" / "build-syntax-engine.sh").read_text()
     action = (REPO / ".github" / "actions" / "dev-tests-setup" / "action.yml").read_text()
     pinned = re.compile(r"(RELEASE=\$\{2:-\d|GS1ENCODER_VERSION=\d)")

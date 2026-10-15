@@ -38,6 +38,7 @@ jobs:
       - uses: ./.github/actions/dev-tests-setup
         with:
           npm: "true"
+          syntax-engine: "true"
           gs1-suite: "true"
           playwright: "true"
       - run: python -m pytest dev-tests -m resolver -ra

@@ -1,3 +1,14 @@
+# The GS1 Barcode Syntax Engine's native library and Python binding (deliberate change to the official image): every
+# resolution checks the GS1 Digital Link with it in-process (src/gs1_syntax.py) instead of starting Node.js. Built in a
+# separate stage with the portal's script (the build context "engine-tools" of docker-compose.yml) at the release
+# docker-compose.yml gives every service (ADR 0003), so that the compiler does not end up in the image.
+FROM python:3.12-slim-bookworm AS syntax-engine
+ARG GS1_SYNTAX_ENGINE_RELEASE
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates make gcc libc6-dev \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=engine-tools build-syntax-engine.sh /tmp/
+RUN bash /tmp/build-syntax-engine.sh /opt/gs1-syntax-engine "$GS1_SYNTAX_ENGINE_RELEASE"
+
 FROM python:3.12-slim-bookworm
 LABEL authors="nick"
 
@@ -22,6 +33,8 @@ RUN test -n "$GS1_SYNTAX_ENGINE_RELEASE" || { echo "GS1_SYNTAX_ENGINE_RELEASE is
  && npm install --save "gs1encoder@$GS1_SYNTAX_ENGINE_RELEASE"
 
 WORKDIR /app
+COPY --from=syntax-engine /opt/gs1-syntax-engine /opt/gs1-syntax-engine
+ENV GS1_SYNTAX_ENGINE_DIR=/opt/gs1-syntax-engine
 
 # Add requirements.txt before rest of repo for caching
 ADD src/requirements.txt /app/

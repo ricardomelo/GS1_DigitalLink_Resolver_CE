@@ -61,6 +61,7 @@ os.environ.setdefault("FQDN", "id.example.org")
 os.environ["RESOLVER_ORG_NAME"] = "Example Org"      # an operator is configured from start-up (footer of the pages)
 os.environ.setdefault("MONGO_URI", "mongodb://unused")
 import web_logic  # noqa: E402
+REAL_TOOLKIT = web_logic._call_gs1_toolkit           # the production check (gs1_syntax.py, else Node.js)
 web_logic._call_gs1_toolkit = lambda s: True
 ENGINE = os.environ.get("GS1_SYNTAX_ENGINE")        # optional: the real GS1 Barcode Syntax Engine
 
@@ -530,6 +531,90 @@ if ENGINE:
     check("DSGTIN+ with its date passes the engine", location_of(DSGTIN)[0] == 307, location_of(DSGTIN))
 else:
     print("SKIP real syntax engine checks (set GS1_SYNTAX_ENGINE, see dev-tests/portal/test_keys.py)")
+
+# ---------------------------------------------------------------- the engine in the resolver's process (gs1_syntax.py)
+ENGINE_DIR = os.environ.get("GS1_SYNTAX_ENGINE_DIR")
+if ENGINE_DIR:
+    import subprocess  # noqa: E402
+    import threading  # noqa: E402
+    import time  # noqa: E402
+    import gs1_syntax  # noqa: E402
+    check("the GS1 Barcode Syntax Engine loads in the resolver's process", gs1_syntax.available())
+    DL = "https://id.gs1.org"
+    PARITY = [G, G + "/10/ABC", G + "/22/V1/10/L1/21/S1", G + "/21/S1/10/L1", G + "/17/261231", G + "/99/ABC", G + "/10",
+              "/01/07898357410016", G + "/10/A%2FB", G + "/10/ABC?17=261231", G + "?17=261399", G + "?3103=000500",
+              "/00/095060001343520000", "/00/095060001343520001", "/414/9506000134376/254/D1", "/8006/095060001343520102/22/V1",
+              "/8006/095060001343520102/21/S1", "/253/9506000134376ABC", "/01/9506000134352"]
+    if ENGINE:
+        differing = [(path, gs1_syntax.check(DL + path), engine_check(DL + path)) for path in PARITY
+                     if gs1_syntax.check(DL + path) != engine_check(DL + path)]
+        check(f"in-process answers equal Node.js's for {len(PARITY)} URIs, valid and invalid", not differing, differing)
+        differing = [s for s in ("(01)07898357410015(10)ABC", "(01)07898357410016", "(01)07898357410015(17)261399",
+                                     "(17)261231", "(22)V1", "(255)95060001343761234(01)09506000134352",
+                                     "(91)ABC", "(400)ORD1")
+                     if gs1_syntax.check(s) != engine_check(s)]
+        check("…and for element strings", not differing, differing)
+    check("valid and invalid URIs told apart in-process",
+          gs1_syntax.check(DL + G + "/10/ABC") is True and gs1_syntax.check(DL + G + "/21/S1/10/L1") is False
+          and gs1_syntax.check(DL + "/01/07898357410016") is False)
+
+    # a resolution with the production check starts no Node.js process
+    started = []
+    real_popen = web_logic.subprocess.Popen
+    web_logic.subprocess.Popen = lambda *a, **k: started.append(a) or real_popen(*a, **k)
+    web_logic._call_gs1_toolkit = REAL_TOOLKIT
+    r_ok, r_bad = get(G + "/10/ABC"), get(G + "/21/S1/10/L1")
+    check("production check: a valid code resolves and an invalid one is 400, without starting Node.js",
+          r_ok.status_code in (300, 307) and r_bad.status_code == 400 and not started,
+          (r_ok.status_code, r_bad.status_code, started))
+
+    # without the library the check falls back to Node.js, as the official code always did
+    class FakeProcess:
+        returncode = 1
+
+        def communicate(self):
+            return b"", b"Error: refused"
+    web_logic.subprocess.Popen = lambda args, **k: started.append(args) or FakeProcess()
+    loaded = gs1_syntax._module
+    gs1_syntax._module = False
+    answer = REAL_TOOLKIT(DL + G + "/10/ABC")
+    gs1_syntax._module = loaded
+    web_logic.subprocess.Popen = real_popen
+    web_logic._call_gs1_toolkit = lambda s: True
+    check("without the engine's library the check starts Node.js and follows its answer",
+          answer is False and len(started) == 1 and started[0][1].endswith("callGS1encoder.js")
+          and started[0][2] == DL + G + "/10/ABC", (answer, started))
+    run = subprocess.run([sys.executable, "-c", "import gs1_syntax; gs1_syntax.check('y'); print(gs1_syntax.available(), gs1_syntax.check('x'))"],
+                         cwd=os.path.join(REPO, "web_server", "src"), capture_output=True, text=True,
+                         env={**os.environ, "GS1_SYNTAX_ENGINE_DIR": "/nonexistent"})
+    check("a missing library is reported once and answers None (the caller then starts Node.js)",
+          run.stdout.strip() == "False None" and run.stderr.count("each check starts Node.js") == 1, (run.stdout, run.stderr[-300:]))
+
+    # recent answers are kept; every thread has its own engine context
+    before = gs1_syntax._verdict.cache_info().hits
+    gs1_syntax.check(DL + G + "/10/ABC")
+    check("a repeated check is answered from the cache", gs1_syntax._verdict.cache_info().hits == before + 1)
+    wrong = []
+
+    def worker(n):
+        for i in range(300):
+            path = f"{G}/10/T{n}-{i}" if i % 3 else f"{G}/21/S{n}-{i}/10/L"
+            if gs1_syntax.check(DL + path) is not bool(i % 3):
+                wrong.append(path)
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    check("eight threads checking at once get every answer right", not wrong, wrong[:5])
+    start = time.perf_counter()
+    for i in range(2000):
+        gs1_syntax._verdict.__wrapped__(f"{DL}{G}/21/SPEED{i}")
+    per_check = (time.perf_counter() - start) / 2000 * 1000
+    check(f"an uncached check takes well under a millisecond ({per_check:.3f} ms; Node.js: tens of ms)", per_check < 1,
+          per_check)
+else:
+    print("SKIP the engine in the resolver's process (set GS1_SYNTAX_ENGINE_DIR, see dev-tests/README.md)")
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

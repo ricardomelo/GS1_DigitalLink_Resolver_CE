@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Any
 import domains
+import gs1_syntax
 import landing
 import request_log
 from web_namespace import web_namespace
@@ -24,6 +25,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     # Enable CORS (cross-site scripting allowed)
     CORS(app)
+
+    # the GS1 Barcode Syntax Engine loaded before the first request (its absence is logged now, not at a scan)
+    gs1_syntax.available()
 
     server_description = f"The web server is running at https://{os.getenv('FQDN', 'set-domain-name-in-env-variable-FQDN.com')}"
     logger.info(server_description)

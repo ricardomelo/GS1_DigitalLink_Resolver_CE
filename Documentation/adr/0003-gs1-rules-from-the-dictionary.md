@@ -140,6 +140,12 @@ read`, `issues: write`. It never changes the branch.
   `gen_engine_messages.py --summary` gives the weekly issue the messages that need a translation.
 - The new AIs got Portuguese names (221 named in all); being neither data attributes nor qualifiers in 1.4.1, they
   appear only where a message names them.
+- Later (session 14, after the load test on staging): the resolver checks each request path with the engine's C
+  library in its own process (`web_server/src/gs1_syntax.py`), built into its image by the same
+  `build-syntax-engine.sh` at the same release (Compose hands `portal/tools` to the build as the context
+  `engine-tools`); the WebAssembly build through a Node.js process per request is kept only as the fallback when the
+  library cannot be loaded. Both builds are the same C code at the same release, and `test_resolver.py` checks that
+  they give the same answers.
 
 ## 4. Options considered
 

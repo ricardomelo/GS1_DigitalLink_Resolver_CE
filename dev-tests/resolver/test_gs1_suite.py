@@ -91,7 +91,11 @@ def engine_check(data):
     return subprocess.run(["node", script, data], cwd=ENGINE, capture_output=True).returncode == 0
 
 
-web_logic._call_gs1_toolkit = engine_check if ENGINE else (lambda s: True)
+# the production check (the engine in the resolver's process, gs1_syntax.py) when its library is here; else the
+# engine through Node.js, as the official code; else a stub that accepts everything
+import gs1_syntax  # noqa: E402
+if not gs1_syntax.available():
+    web_logic._call_gs1_toolkit = engine_check if ENGINE else (lambda s: True)
 from __init__ import create_app  # noqa: E402
 from werkzeug.serving import make_server  # noqa: E402
 

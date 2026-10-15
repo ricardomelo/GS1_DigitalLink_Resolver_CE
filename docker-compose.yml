@@ -49,6 +49,8 @@ services:
   web-service:
     build:
       context: './web_server'
+      additional_contexts:
+        engine-tools: './portal/tools'   # build-syntax-engine.sh, shared with the portal (ADR 0003)
       args:
         GS1_SYNTAX_ENGINE_RELEASE: *gs1-syntax-engine
     env_file:

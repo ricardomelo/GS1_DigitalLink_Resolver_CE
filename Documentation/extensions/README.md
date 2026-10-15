@@ -1294,6 +1294,13 @@ A rehearsal, on staging:
 4. Record each run (`--json`), the replica and process counts, the server's size and the rates in the history; the
    agreed target load decides the production sizing.
 
+The first rehearsal on staging (two replicas of each service, 15 October 2026) saturated at about 26 requests a
+second, the resolver's containers at 100 % CPU and everything else idle: the official code started a Node.js process
+for every check of a request's syntax. The resolver now checks in its own process (`web_server/src/gs1_syntax.py`)
+and starts Node.js only when the engine's library is missing from its image, which its log says at start-up
+(`GS1 Barcode Syntax Engine not loaded … each check starts Node.js`). To check a running installation:
+`docker compose exec web-service python -c "import gs1_syntax; print(gs1_syntax.available())"` answers `True`.
+
 Scans are reads: MongoDB on the same server is rarely the limit before the CPU of the resolver's processes. When it
 is, or for availability, a MongoDB replica set (three members on separate machines, `MONGO_URI` and `PORTAL_DB_URI`
 listing them with `replicaSet=`) is the next step; the services need no change for it.

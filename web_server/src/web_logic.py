@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import quote, unquote
 
 
+import gs1_syntax
 import web_db
 
 logger = logging.getLogger(__name__)
@@ -27,10 +28,15 @@ def _validate_gs1_input(value: str) -> str:
 def _call_gs1_toolkit(ai_data_string: str) -> bool:
     """
     This function calls the GS1 Digital Link Toolkit to validate the syntax of a GS1 Digital Link URL.
+    The GS1 Barcode Syntax Engine answers in this process when its library is installed (gs1_syntax.py: a Node.js
+    process for every resolution made the resolver CPU-bound); Node.js is started only when it is not.
     :param ai_data_string:
     :return:
     """
     _validate_gs1_input(ai_data_string)
+    verdict = gs1_syntax.check(ai_data_string)
+    if verdict is not None:
+        return verdict
     node_path = "/usr/bin/node"
     toolkit_path = "/app/gs1-digitallink-toolkit/callGS1encoder.js"
 

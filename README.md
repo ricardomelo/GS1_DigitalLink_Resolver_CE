@@ -692,7 +692,6 @@ Later, when convenient:
 - An EPC/NFC label option: a record's SGTIN as `eh…`/`ex…` for programming NFC or hybrid tags (needs an
   encoder).
 - A way to fix records registered before rule 2 of 2.5.9 was enforced (today they are only flagged).
-- Data entry API: check values with the engine, not only the structure (rest of finding F11).
 
 ## Repository layout
 

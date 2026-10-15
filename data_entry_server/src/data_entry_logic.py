@@ -1,6 +1,8 @@
 import json
 import logging
+import os
 import re
+import shutil
 import subprocess
 from typing import Any
 
@@ -131,6 +133,61 @@ def registration_problem(entry: dict[str, Any]) -> str | None:
         for ai in informative:
             if ai not in INFORMATIVE_QUALIFIERS[key]:
                 return f'AI {ai} cannot be an informative qualifier'
+    return None
+
+
+# The values of a registration checked by the GS1 Barcode Syntax Engine (conformance review F11): check digits,
+# formats, character sets and the associations between AIs, as the portal checks them. The engine of this image is
+# called through the toolkit's script with the element string as one argument (no shell). A value written as a
+# template, e.g. {lotnumber}, is left out of the check: records made by other tools use them.
+TOOLKIT = os.environ.get("DATA_ENTRY_TOOLKIT", "/app/gs1-digitallink-toolkit/callGS1encoder.js")
+_TEMPLATE = re.compile(r'^\{[^{}]*\}$')
+_toolkit_missing_noted = False
+
+
+def _engine_accepts(element_string: str) -> tuple[bool | None, str]:
+    """(True, "") or (False, the engine's message) for an element string; (None, "") when the engine is not
+    installed (development without the image), in which case values are not checked."""
+    global _toolkit_missing_noted
+    node = shutil.which("node") or "/usr/bin/node"
+    if not os.path.exists(TOOLKIT) or not os.path.exists(node):
+        if not _toolkit_missing_noted:
+            logger.warning("GS1 Barcode Syntax Engine not found (%s): registration values are not checked", TOOLKIT)
+            _toolkit_missing_noted = True
+        return None, ""
+    try:
+        run = subprocess.run([node, TOOLKIT, element_string], capture_output=True, timeout=10,
+                             cwd=os.path.dirname(TOOLKIT))
+    except subprocess.TimeoutExpired:
+        logger.error("GS1 Barcode Syntax Engine: no answer for %s", element_string)
+        return False, "the GS1 Barcode Syntax Engine did not answer"
+    if run.returncode == 0:
+        return True, ""
+    text = (run.stdout or run.stderr or b"").decode("utf-8", errors="replace").strip().splitlines()
+    message = next((line.split("Error: ", 1)[1] for line in text if "Error: " in line), "refused")
+    return False, message[:200]
+
+
+def value_problem(entry: dict[str, Any]) -> str | None:
+    """Why the values of a v3 entry are not valid GS1 data, or None: the key, its qualifiers and its informative
+    qualifiers as one element string, checked by the GS1 Barcode Syntax Engine; template values left out."""
+    anchor = entry.get('anchor')
+    if not isinstance(anchor, str) or anchor.count('/') != 2 or not anchor.startswith('/'):
+        return None
+    key, value = anchor.split('/')[1:]
+    if _TEMPLATE.match(value):
+        return None
+    pairs = [(key, value)]
+    for field in ('qualifiers', 'informativeQualifiers'):
+        for item in entry.get(field) or []:
+            (ai, qualifier_value), = item.items()
+            if not _TEMPLATE.match(qualifier_value):
+                pairs.append((ai, qualifier_value))
+    # in a bracketed element string a "(" inside a value is written "\("
+    element_string = ''.join(f'({ai}){v.replace("(", chr(92) + "(")}' for ai, v in pairs)
+    accepted, message = _engine_accepts(element_string)
+    if accepted is False:
+        return f'{element_string} is not valid GS1 data: {message}'
     return None
 
 
@@ -500,7 +557,7 @@ def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[s
             create_results_list = []  # Initialize a list to store results
 
             for position, item in enumerate(data, start=1):
-                problem = registration_problem(item) if isinstance(item, dict) else None
+                problem = (registration_problem(item) or value_problem(item)) if isinstance(item, dict) else None
                 if problem:
                     return {"response_status": 400, "error": f"Item {position}: {problem}"}, 400
 
@@ -532,7 +589,7 @@ def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[s
 
             # If 'data' is a dictionary (i.e., a single entry and not a list)
         elif isinstance(data, dict):
-            problem = registration_problem(data)
+            problem = registration_problem(data) or value_problem(data)
             if problem:
                 return {"response_status": 400, "error": problem}, 400
             authored_linkset_doc = _author_db_linkset_document(data)
@@ -675,7 +732,7 @@ def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, A
         for field in ['itemDescription', 'defaultLinktype', 'informativeQualifiers']:
             if field in data:
                 matched_v3[field] = data[field]
-        problem = registration_problem(matched_v3)
+        problem = registration_problem(matched_v3) or value_problem(matched_v3)
         if problem:
             return {"response_status": 400, "error": problem}, 400
 

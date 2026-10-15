@@ -163,5 +163,50 @@ data = client.get("/api/01/09506000134352", headers=AUTH).get_json()["data"]
 check("POST /new on an existing serial record updates its informative qualifiers", any(
     e.get("qualifiers") == [{"21": "S1"}] and e.get("informativeQualifiers") == [{"10": "B9"}] for e in data), data)
 
+# ---------------------------------------------------------------- values checked by the GS1 Barcode Syntax Engine (F11)
+ENGINE = os.environ.get("GS1_SYNTAX_ENGINE")
+if ENGINE:
+    import shutil  # noqa: E402
+    # the image's own toolkit script, beside the engine of the tests (its import "gs1encoder" resolves there)
+    script = os.path.join(ENGINE, "_data_entry_check.mjs")
+    shutil.copyfile(os.path.join(REPO, "data_entry_server", "src", "gs1-digitallink-toolkit", "callGS1encoder.js"), script)
+    data_entry_logic.TOOLKIT = script
+    STORE.clear()
+    for name, doc, good in [
+            ("a GTIN with a wrong check digit", entry("/01/09506000134353"), False),
+            ("a GTIN of 13 digits", entry("/01/9506000134352"), False),
+            ("a batch longer than 20 characters", entry(qualifiers=[{"10": "B" * 21}]), False),
+            ("a serial with a character outside the set (é)", entry(qualifiers=[{"21": "Sé1"}]), False),
+            ("an informative batch too long", entry(qualifiers=[{"21": "S1"}], informativeQualifiers=[{"10": "B" * 21}]), False),
+            ("an SSCC with a wrong check digit", entry("/00/095060001343520001"), False),
+            ("a valid GTIN with variant and batch", entry(qualifiers=[{"22": "V1"}, {"10": "B1"}]), True),
+            ("a batch with brackets and other characters of the set", entry(qualifiers=[{"10": "A(1)-B/2+%"}]), True),
+            ("a template batch (left out of the check)", entry(qualifiers=[{"10": "{lotnumber}"}]), True),
+            ("a valid SSCC", entry("/00/095060001343520000"), True),
+            ("a valid GLN with extension", entry("/414/9506000134376", qualifiers=[{"254": "D1"}]), True)]:
+        r = post(doc)
+        if good:
+            check(f"engine: POST /new accepts {name}", r.status_code in (200, 201), r.get_data(as_text=True))
+        else:
+            error = (r.get_json(silent=True) or {}).get("error", "")
+            check(f"engine: POST /new refuses {name} → 400, saying so", r.status_code == 400 and "not valid GS1 data" in error,
+                  (r.status_code, error))
+    r = post([entry(qualifiers=[{"10": "B2"}]), entry("/01/09506000134353")])
+    check("engine: a list with one invalid item refused whole, naming it", r.status_code == 400
+          and "Item 2" in r.get_json().get("error", ""), r.get_data(as_text=True))
+    r = client.put("/api/01/09506000134352", json={"qualifiers": [{"22": "V1"}, {"10": "B1"}],
+                                                    "informativeQualifiers": []}, headers=AUTH)
+    check("engine: PUT of a valid record accepted", r.status_code == 200, r.get_data(as_text=True))
+    post(entry(qualifiers=[{"21": "S7"}]))
+    r = client.put("/api/01/09506000134352", json={"qualifiers": [{"21": "S7"}],
+                                                    "informativeQualifiers": [{"10": "B" * 21}]}, headers=AUTH)
+    check("engine: PUT refuses an invalid value (an informative batch too long) → 400", r.status_code == 400
+          and "not valid GS1 data" in r.get_json().get("error", ""), r.get_data(as_text=True))
+    data_entry_logic.TOOLKIT = os.path.join(ENGINE, "missing-script.mjs")
+    r = post(entry("/01/09506000134353"))
+    check("without the engine (no script): values not checked, as before", r.status_code in (200, 201), r.status_code)
+else:
+    print("SKIP values checked by the GS1 Barcode Syntax Engine (set GS1_SYNTAX_ENGINE)")
+
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

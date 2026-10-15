@@ -16,7 +16,8 @@
 - **RFID and NFC on the label**: the EPC of a serial number (SGTIN-96 or SGTIN-198) and its compressed link for NFC
   tags. Commit `e1b6917`.
 - Development tests: failed checks become annotations of the GitHub job (`bd6e0d9`); `test_exports.py` empties the
-  shared request log on a real MongoDB (`45fe9d7`).
+  shared request log on a real MongoDB (`45fe9d7`); `test_store_mongodb.py` compares the portal user's roles as a set
+  (`0855a82`).
 
 ### Single sign-on per organisation and per-role limits on exports (backlog item 7.1)
 - **Architecture decision record** [ADR 0012](../adr/0012-single-sign-on.md).

@@ -612,8 +612,9 @@ earlier items, now named in both languages and guarded by a test.
 **The CI job on a real MongoDB, again.** It failed on one run and its log could not be read from the session; the test
 runner now turns each failed program's `FAIL` lines into an annotation of the job (`bd6e0d9`), which the API returns.
 The next failure named `test_exports.py`: on a real MongoDB the request log's database is shared by every program of a
-run, and another program's events were counted (`45fe9d7`). The two earlier failures of that job remain unexplained;
-any new one will now say what failed.
+run, and another program's events were counted (`45fe9d7`). The one after named `test_store_mongodb.py`'s check that
+`db_init` keeps the portal user's roles: it compared two lists in order, while MongoDB keeps roles as a set and may list
+them in another order after `updateUser` — likely the cause of the two earlier, unexplained failures (`0855a82`).
 
 **The backlog's "later" list**, all of it (recommended options). Exports follow the record list's filters, which stay in
 the address (`3df0c50`). The data entry API checks the values of a registration with the engine of its image
@@ -760,11 +761,11 @@ Standard's example, the resolver's decoder and the independent `epc-tds`.
 ## Open items
 
 - Security notice to the official maintainers about the public `GET /api/index` (drafted).
-- Rotation of the development secrets of the staging installation (an installer option is a candidate).
+- Rotation of the development secrets of the staging installation, with `scripts/rotate-secrets.sh` (item 7.2).
 - A fresh installation with `scripts/install.sh` on a clean machine (only the re-run path is proven).
-- The installer's final check uses `/portal/healthz` only; it should also request the resolver through the
-  proxy (item 7.2).
-- An off-server backup copy and a restore rehearsal.
+- The off-server backup copy's destination and a restore rehearsal on the servers (`BACKUP_COPY_TO`,
+  `scripts/restore-rehearsal.sh`, item 7.2); the load test's rehearsal on staging (item 7.4).
+- The items delivered in session 14 (4.2 to 7.4 and the "later" list) are still to be confirmed on staging.
 - Review of the 221 Portuguese AI names and of the Portuguese engine messages; decision on the GS1 logo on the
   home page and resolver pages.
 - Items 2.4, 2.5, 3.1, 3.2 and 4.1 were confirmed on staging and in CI on 14 October (session 13); a real e-mail

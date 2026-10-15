@@ -609,6 +609,23 @@ checked there); an empty secret field, as the screen sends it, would have wiped 
 through a mutation and the code keeps it); and the audit trail showed raw codes for eight journal actions of this and
 earlier items, now named in both languages and guarded by a test.
 
+**The CI job on a real MongoDB, again.** It failed on one run and its log could not be read from the session; the test
+runner now turns each failed program's `FAIL` lines into an annotation of the job (`bd6e0d9`), which the API returns.
+The next failure named `test_exports.py`: on a real MongoDB the request log's database is shared by every program of a
+run, and another program's events were counted (`45fe9d7`). The two earlier failures of that job remain unexplained;
+any new one will now say what failed.
+
+**The backlog's "later" list**, all of it (recommended options). Exports follow the record list's filters, which stay in
+the address (`3df0c50`). The data entry API checks the values of a registration with the engine of its image
+(`a1131bb`, F11; about 50 ms a registration, so a 5,000-record import takes about four minutes more). The record search
+reads raw scanner data with the portal's engine and RFID EPCs through the resolver, which already decodes them
+(`576b48a`). Serial numbers registered with their batch can be fixed from the list (`8dbc85d`); writing it found that
+deleting one record of a key rewrites the key's whole document, and that a sibling the API now refuses (an old rule-2
+record, or — since `a1131bb` — a value the engine rejects) would have made both the rewrite and its restore fail, losing
+the key's records: the data entry API now answers `POST /validate` and the portal asks it before any rewrite. The label
+offers the EPC of a serial number for RFID and NFC tags (`e1b6917`), its encoder checked against the Tag Data
+Standard's example, the resolver's decoder and the independent `epc-tds`.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

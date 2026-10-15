@@ -63,6 +63,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | `BearerAuth` in Swagger | Every protected operation declares the bearer scheme, so **Authorize** in `/api/docs` works | `1941e75` |
 | Registration rules | `POST /new` and `PUT` refuse qualifiers the key does not take, 415 without 8020, 235 with other qualifiers and 22 or 10 with 21 (GS1-Conformant Resolver 2.5.9, rules 1 and 2); a list is refused whole, naming the item | `61babe1` |
 | `informativeQualifiers` | A serial-number record of a GTIN or ITIP keeps the unit's variant and batch as information: stored, returned by `GET` and `/summary`, replaced by `PUT`; never used to choose a record, never in the public linkset | `61babe1` |
+| Values checked | The GS1 Barcode Syntax Engine checks the values of every registration (templates left out) | `a1131bb` |
+| `POST /api/validate` | What `POST /new` would refuse, nothing stored; the portal asks it before rewriting a key's document | `8dbc85d` |
 
 ## Portal: access and accounts
 
@@ -123,6 +125,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | "Does not fit" panel | Explains the needed version or the fitting level instead of a broken image (422 `qr.tooSmall` / `qr.tooLong`) | `1525f82` |
 | Label block layout | Under the form at every width: code and buttons on the left, options on the right; one column on phones | `1746f19` |
 | Try now, Copy link address | Opens or copies the Digital Link | `126f507` |
+| RFID and NFC | For a serial number: its EPC (SGTIN-96 or SGTIN-198) in hexadecimal and as a tag URI, and the compressed link (`eh…`, `ex…`) for NFC tags; the company prefix's length from the organisation, the filter chosen | `e1b6917` |
 
 ## Portal: data attributes
 
@@ -152,6 +155,9 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Records made elsewhere | Listed (templates such as `{lotnumber}`), not opened | `db56b22`, `7339e3c` |
 | Informative qualifiers in lists | Filters, text search and code search find a serial number by its informative batch or variant; the scope shows them | `83d1ba0` |
 | Status filter and alert | *Status*: records of keys without a record of their own (with an alert and *Show only these*) and serial numbers registered with their batch before rule 2; a badge on each | `3a49ca9` |
+| Scanners and RFID readers in the search | Raw scan data (`]d2`, `]Q3`, `]C1`…, the group separator, AIs without brackets) read by the GS1 Barcode Syntax Engine; RFID EPCs (hexadecimal, `eh…`, `ex…`) read by the resolver; the line under the filters says how | `576b48a` |
+| Filters in the address | The list's filters and search text kept in the address, for bookmarks and colleagues | `3df0c50` |
+| Fix serial numbers registered with their batch | Registered again as the serial number alone with the batch and variant as information (rule 2 of §2.5.9), one identifier or all at once | `8dbc85d` |
 
 ## Portal: spreadsheets
 
@@ -165,6 +171,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Excel-friendly | Windows-1252, UTF-8 and UTF-16 ("Unicode text") files; separator detected; scientific notation detected; formula protection on export | `429dce7`, `1b58bfd` |
 | Informative qualifiers in spreadsheets | `(10)B42(21)S1` is exported for a serial number with an informative batch and imported back the same way; a change of batch is shown in the preview | `83d1ba0` |
 | Keys without a record of their own | The preview lists them and, ticked by default, creates each key's record with the targets of its first row | `3a49ca9` |
+| Export of the filtered records | With filters on, the exports hold only the records the list shows | `3df0c50` |
 
 ## Portal: link checker
 

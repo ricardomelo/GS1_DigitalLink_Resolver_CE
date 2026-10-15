@@ -2,6 +2,22 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### The backlog's "later" list
+- **Exports follow the filters**: with filters on, the record list's exports hold only the records it shows; the
+  filters and the search text are kept in the address (`#records?key=01&qualifier=10…`). Commit `3df0c50`.
+- **Data entry API checks values** with the GS1 Barcode Syntax Engine of its image (check digits, lengths, character
+  sets, associations), templates such as `{lotnumber}` left out; conformance review F11 fixed. Commit `a1131bb`.
+- **The record search reads scanners and RFID readers**: raw scan data with a symbology identifier (`]d2`, `]Q3`,
+  `]C1`…), element strings without brackets, EPCs in hexadecimal or `eh…`/`ex…`. Commit `576b48a`.
+- **Serial numbers registered with their batch or variant** (before rule 2 of §2.5.9) fixed from the record list.
+  Commit `8dbc85d`.
+- **`POST /api/validate`** in the data entry API, and the portal asking it before rewriting a key's document, so that
+  a deletion never removes what could not be written back. Commit `8dbc85d`.
+- **RFID and NFC on the label**: the EPC of a serial number (SGTIN-96 or SGTIN-198) and its compressed link for NFC
+  tags. Commit `e1b6917`.
+- Development tests: failed checks become annotations of the GitHub job (`bd6e0d9`); `test_exports.py` empties the
+  shared request log on a real MongoDB (`45fe9d7`).
+
 ### Single sign-on per organisation and per-role limits on exports (backlog item 7.1)
 - **Architecture decision record** [ADR 0012](../adr/0012-single-sign-on.md).
 - **Organisation sign-in** (user menu, administrators): each organisation's OpenID Connect provider — issuer, client

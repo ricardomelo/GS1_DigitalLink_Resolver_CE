@@ -66,6 +66,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | `informativeQualifiers` | A serial-number record of a GTIN or ITIP keeps the unit's variant and batch as information: stored, returned by `GET` and `/summary`, replaced by `PUT`; never used to choose a record, never in the public linkset | `61babe1` |
 | Values checked | The GS1 Barcode Syntax Engine checks the values of every registration (templates left out) | `a1131bb` |
 | `POST /api/validate` | What `POST /new` would refuse, nothing stored; the portal asks it before rewriting a key's document | `8dbc85d` |
+| `gs1:defaultLink` links returned | A record's own links of type `gs1:defaultLink` (the item's page, explicit default links) are returned by `GET` and `/summary` and kept by `PUT` and `DELETE`; the official code dropped them | `cb67cf5` |
 
 ## Portal: access and accounts
 
@@ -221,6 +222,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Tenant API calls | Each call of `/portal/api/v1` recorded (key, organisation, operation, status, time) and listed for administrators | `d633fcb`, `7b8967a` |
 | Overview after sign-in | Indicators of the user's scope for 7, 30 or 90 days against the period before: usage, resolution quality with the scanned codes nobody registered first, record quality, operation and governance; Excel and CSV exports ([ADR 0007](adr/0007-overview-indicators.md)) | `16ceb9f` |
 | Item page | A page of all the links of an item as the default target of its code, made by the resolver for phones: the brand of the prefix (logo uploaded in the portal, colours), an icon per link type, the visitor's language first, nothing loaded from other sites; views and clicks counted apart from scans ([ADR 0011](adr/0011-item-page.md)) | `3d59bc2` |
+| Item page per record | Each record chooses its page or its own target as default (explicit `gs1:defaultLink` links per record when a key uses the page); the editor shows the key's other records' choices; each link type once on the page, in the visitor's best language; the brand's logo as favicon; brands owned through their prefix ([ADR 0011 §8](adr/0011-item-page.md)) | `cb67cf5` |
 | Verified by GS1 | On the item's page, a link that looks a GTIN or GLN up in Verified by GS1, on when the installation sets its address and the brand allows it; never in the linkset | `3d59bc2` |
 | Label studio | Sizes 80–200 %, a vector PDF, an EAN-13/UPC-A/EAN-8/UPC-E beside the QR code for the transition to 2D, every format in one ZIP ([ADR 0010](adr/0010-label-studio.md)) | `d60421f` |
 | Organisation's own domain | QR codes on the organisation's domain with an optional path stem, proved by DNS, default per prefix or chosen on the label; the resolver answers on it for that organisation only; certificates by a host script ([ADR 0009](adr/0009-tenant-domains.md)) | `0a6e42a` |

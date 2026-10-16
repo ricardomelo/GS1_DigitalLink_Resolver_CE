@@ -647,6 +647,24 @@ README's backlog (item's page per record, administration and navigation, DataMat
 type and language, browser and city in the request log without the IP address, domains without the terminal, nine
 more interface languages), on the recommended options.
 
+## Session 15 — the staging feedback, items 9.1 to 9.7
+
+The owner, away from the server until 20 October, asked for packages P1 to P7 (items 9.1 to 9.7) in order, each a
+complete delivery, every question on the recommended option (the triage of 16 October, section 4).
+
+**Item 9.1, the item's page per record** (`cb67cf5`; ADR 0011 amended). Bug B1 was reproduced first, at its source: a new
+test program, `test_mock_parity.py`, makes the portal's calls on its stand-in and on the real data entry API and
+compares the records; before the fix it failed eleven times (the API dropping links of type `gs1:defaultLink`, and a
+partial `DELETE` on such a record answering 400). The fix is in the API, which now returns the record's own
+`gs1:defaultLink` links. Of the two models the triage left open, the ADR chose explicit default links per record — the
+official model's own link type for a record's default — over the page as the address of a link of the key's shared
+default type, which would have told applications asking for that type that the resolver's page was the brand's. The
+records saved with the earlier, shared option were already in the new form, so nothing was migrated. B2 (a brand kept
+by its old owner after its prefix moved) was fixed by deriving the owner at query time; the same pattern was looked for
+in domains and single sign-on, which belong to the organisation itself, and found only in a domain's default prefixes.
+The item's page now shows each link type once in the visitor's best language and uses the brand's logo as favicon.
+2,621 checks in 39 programs without a browser; 24 mutations, all caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -775,6 +793,8 @@ more interface languages), on the recommended options.
 - A test double can do more than the real thing in a way that hides a defect: mongomock removes expired documents
   when they are read, so an expiry of zero days looked like a log switched off. Check the side effect itself (what
   was written), not only what a query returns.
+- Hold a test double to the real component with a test that runs both: a stand-in corrected by hand drifts again, a
+  comparison fails as soon as it does (item 9.1, bug B1).
 - A mutation that makes the code loop for ever is caught (the test cannot pass) but can stop a mutation loop that
   waits on it: give each run its own time limit and treat a timeout as caught.
 

@@ -2,6 +2,27 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Staging feedback of 16 October: the item's page per record (backlog item 9.1)
+- **Each record chooses its default target** — its item's page, or its own first target: the product can open its page
+  while a batch or serial number goes to its own target. A scan of the GTIN alone, or of a batch without a record,
+  follows the product's record. A key whose records use the page has **explicit default links**: its default link type
+  is `gs1:defaultLink` and every record has its own (its page, or copies of its default targets), written and hidden by
+  the portal; taking the page turns the key's other records, each keeping its target (checked with `POST
+  /api/validate` first). Keys without the page are unchanged; stored records need no conversion
+  ([ADR 0011, amendment](../adr/0011-item-page.md#8-amendment-of-17-october-2026--the-items-page-per-record-item-91)).
+  Commit `cb67cf5`.
+- **The editor shows how the key's other records use the page**, above the targets; a new batch starts with the
+  product's choice. Commit `cb67cf5`.
+- **Fixed (B1): the option was lost when a record was reopened**, and saving it then failed: the data entry API left
+  links of type `gs1:defaultLink` out of what it returns. It now returns them (a change to the official data entry
+  API), which also lets a link be removed from such a record. A new test compares the portal's stand-in with the real
+  API. Commit `cb67cf5`.
+- **Fixed (B2): a brand stayed with its old owner** when its prefix moved to an organisation; brands now belong to
+  whoever holds their prefix, and an organisation's domains are the default only for prefixes it still holds.
+  Commit `cb67cf5`.
+- **The item's page shows each link type once**, in the visitor's best language, the language marked when it is not
+  the page's; the other translations under *Other languages*. **The brand's logo is the page's favicon.** Commit `cb67cf5`.
+
 ### The resolver's syntax check in its own process (load test of item 7.4)
 - **The resolver checks each request path with the GS1 Barcode Syntax Engine in its own process**
   (`web_server/src/gs1_syntax.py`), the engine's C library at the compose file's release built into its image; the

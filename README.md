@@ -647,7 +647,7 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 
 ## Open backlog
 
-Status on 16 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly; items 9.1 to 9.7 from the staging tests of 15 and 16 October). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+Status on 17 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly; items 9.1 to 9.7 from the staging tests of 15 and 16 October, 9.1 done in session 15). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
 the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
@@ -671,7 +671,8 @@ resolver through the proxy, the backup, the certificate, spikes of 404;
 code ([ADR 0009](Documentation/adr/0009-tenant-domains.md)), and items 5.2 to 5.4, the label studio (sizes, PDF, an
 EAN/UPC beside the QR code, every format in a zip; [ADR 0010](Documentation/adr/0010-label-studio.md)), and items
 6.1 and 6.2, the item's page (the resolver's page of an item's links as the default target, branded per prefix, with
-Verified by GS1; [ADR 0011](Documentation/adr/0011-item-page.md)), and item 7.1, single sign-on per organisation
+Verified by GS1; [ADR 0011](Documentation/adr/0011-item-page.md)), and item 9.1, the item's page per record (each
+record choosing its page or its own target, brands owned through their prefix), and item 7.1, single sign-on per organisation
 with OpenID Connect and per-role limits on exports ([ADR 0012](Documentation/adr/0012-single-sign-on.md)), are
 complete too. What was
 done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
@@ -685,8 +686,7 @@ know whose data they handle.
 | | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages (default link titles in the link's language, conformance review F21: done) | S | — |
 | | 7.4 | **Load test and scale-out rehearsal** on staging with `dev-tests/load/load_test.py` (done): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded ([procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)) | S | 2.3 |
 | Standards | 8.1 | **Errata and Work Requests to GS1** (drafted; to be reviewed and sent by the owner): E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
-| Staging feedback | 9.1 | **Item's page per record**: each record's default target may be its page, each batch or serial number deciding for itself (fixes the editor losing the option on reopening: the data entry API drops a `gs1:defaultLink`); the key's other records shown when a new one is made; the page grouped by link type, each in the phone's language or the best one available; the brand's logo as favicon; brands owned through their prefix (a moved prefix kept its brand with the old owner) | M | 6.1 |
-| | 9.2 | **Administration and navigation**: a collapsible left sidebar (the current menu on phones) and every screen reviewed at phone width; an organisation's page with its prefixes, users, domains, brands, single sign-on, API keys and alerts; prefixes as rows with add and remove buttons; users' prefixes picked from the organisation's; the portal's own dialogs instead of the browser's; the overview filtered by organisation for server administrators, *Operation* for them only; a history of alerts with filters | L | 2.4, 4.3 |
+| Staging feedback | 9.2 | **Administration and navigation**: a collapsible left sidebar (the current menu on phones) and every screen reviewed at phone width; an organisation's page with its prefixes, users, domains, brands, single sign-on, API keys and alerts; prefixes as rows with add and remove buttons; users' prefixes picked from the organisation's; the portal's own dialogs instead of the browser's; the overview filtered by organisation for server administrators, *Operation* for them only; a history of alerts with filters | L | 2.4, 4.3 |
 | | 9.3 | **Labels**: GS1 DataMatrix and DataMatrix with a GS1 Digital Link URI; HRI as editable text in the SVG (option); module size by scanning environment from the General Specifications' symbol specification tables | M | 5.2 |
 | | 9.4 | **Every link type and language of the targets**: the GS1 Web Vocabulary's link types generated with a check, ordered by key type; every ISO 639 language in a searchable list | S | 2.5 |
 | | 9.5 | **Request log**: browser family and approximate location (country, region, city) derived at capture, the IP address never stored; retention set in the portal, global and per organisation | M | 4.1 |

@@ -1,7 +1,8 @@
 """
 The item's page in a real browser (Playwright/Chromium; Documentation/adr/0011-item-page.md): the editor's option
-"Default target: the item's page" (ticked, saved, read back, the first row no longer marked as the default, the shared
-default explained for a batch), the Item page screen of an organisation's administrator (a brand with an uploaded
+"Default target: the item's page" (ticked, saved, read back, the first row no longer marked as the default; each
+record's own choice, item 9.1: a batch of the product going to its own target, the other records' choices shown above
+the targets), the Item page screen of an organisation's administrator (a brand with an uploaded
 logo, its preview in the brand's colours, edited, its logo removed, the brand removed), an editor without the screen,
 the Requests screen's new outcomes, Portuguese and a phone's width.
 
@@ -115,21 +116,32 @@ with sync_playwright() as p:
     check("opened again: ticked, the page link hidden", page.is_checked("#landing-page")
           and page.locator(".link-row").count() == 2, page.locator(".link-row").count())
 
-    # A batch of the same GTIN: the shared default
+    # A batch of the same GTIN: each record chooses (item 9.1)
     opened = page.evaluate("""async () => (await (await fetch('api/record?key=01&value=%s&qualifiers=/10/L1',
                                   {credentials: 'same-origin'})).json())""" % ACME)
-    check("a batch of that GTIN: the page is the shared default", opened.get("sharedDefaultLinkType") == "gs1:defaultLink",
-          opened)
+    check("a batch of that GTIN: no shared default to keep, the product's choice known",
+          opened.get("sharedDefaultLinkType") is None and opened.get("keyRecordLanding") is True, opened)
     page.fill("#q-10", "L1"); page.wait_for_timeout(200); page.click("#open"); page.wait_for_timeout(900)
-    check("…opened in the editor: ticked, the shared default said", page.is_checked("#landing-page")
-          and "use the item's page" in page.inner_text("#default-msg").lower()
-          or "item's page is the default target shared" in page.inner_text("#default-msg"),
-          page.inner_text("#default-msg"))
+    check("…a new batch opened: ticked like the product, the product's choice said above the targets",
+          page.is_checked("#landing-page") and page.is_visible("#landing-others")
+          and "Using the item's page: the GTIN itself (every unit)" in page.inner_text("#landing-others"),
+          page.inner_text("#landing-others"))
     page.uncheck("#landing-page"); page.wait_for_timeout(200)
-    check("…unticked: the mismatch shown as an error", "Tick the option above" in page.inner_text("#default-msg")
-          and "is-error" in (page.get_attribute("#default-msg", "class") or ""), page.inner_text("#default-msg"))
+    page.fill("#description", "Acme coffee, batch L1"); page.fill(".link-row .url", "https://acme.example.com/l1")
+    page.click("#description")
+    check("…unticked: no error, its first target the default", "is-error" not in (page.get_attribute("#default-msg", "class")
+          or "") and page.is_visible(".link-row:first-child .row-badge"), page.inner_text("#default-msg"))
     shot(page, "item-page-shared")
-    page.check("#landing-page")
+    page.click("#save"); page.wait_for_timeout(900)
+    default, links = links_of(ACME, [("10", "L1")])
+    check("…saved: the batch goes to its own target", default == "gs1:defaultLink"
+          and [l["href"] for l in links if l["linktype"] == "gs1:defaultLink"] == ["https://acme.example.com/l1"]
+          and "created" in page.inner_text("#status").lower(),
+          (default, links, page.inner_text("#status")))
+    page.fill("#q-10", ""); page.wait_for_timeout(200); page.click("#open"); page.wait_for_timeout(900)
+    check("the product opened again: still its page, the batch's choice listed",
+          page.is_checked("#landing-page") and "Going to their own default target: Batch L1"
+          in page.inner_text("#landing-others"), page.inner_text("#landing-others"))
 
     # The Item page screen
     page.click("#user-button")

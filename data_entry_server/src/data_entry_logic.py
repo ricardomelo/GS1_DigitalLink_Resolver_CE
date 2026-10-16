@@ -300,8 +300,12 @@ def _convert_mongo_linkset_to_v3(mongo_linkset_format: dict[str, Any]) -> list[d
 
             for linkset in item['linkset']:
                 for key in linkset:
+                    # gs1:defaultLink is stored as the derived default (one object: href and title), except when
+                    # the record has links of that type itself: they replace it as a list, and are returned like
+                    # any other link (the portal's item page and explicit default links, ADR 0011)
+                    derived_default = key == 'https://gs1.org/voc/defaultLink' and not isinstance(linkset[key], list)
                     if key.startswith(
-                            'https://gs1.org/voc/') and key != 'https://gs1.org/voc/defaultLink' and key != 'https://gs1.org/voc/defaultLinkMulti':
+                            'https://gs1.org/voc/') and not derived_default and key != 'https://gs1.org/voc/defaultLinkMulti':
                         linktype = 'gs1:' + key.split('/')[-1]
                         output_item['itemDescription'] = linkset['itemDescription']
 

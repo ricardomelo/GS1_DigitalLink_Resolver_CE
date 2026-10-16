@@ -178,12 +178,12 @@ def v1_get_record(key, value):
         return _refuse("record.notFound", 404)
     stored = gs1.pairs_from(target.get("informativeQualifiers"))
     ai, val = gs1.split_anchor(anchor)
-    links = sorted((_link_out(l) for l in target.get("links") or [] if not gs1.is_landing(l)),
-                   key=lambda l: l["linkType"] != default)
+    shown, landing, own_default = gs1.record_view(target.get("links") or [], default)
+    links = [_link_out(l) for l in shown]
     return jsonify({"key": ai, "value": val, "qualifiers": gs1.qualifier_path(pairs, encode=False),
                     "informative": gs1.qualifier_path(stored, encode=False),
-                    "description": target.get("itemDescription") or "", "defaultLinkType": default, "links": links,
-                    "landingPage": any(gs1.is_landing(l) for l in target.get("links") or []),
+                    "description": target.get("itemDescription") or "", "defaultLinkType": own_default, "links": links,
+                    "landingPage": landing,
                     "digitalLink": gs1.digital_link(portal.link_base(anchor), anchor,
                                                     gs1.join_informative(pairs, informative or stored))})
 

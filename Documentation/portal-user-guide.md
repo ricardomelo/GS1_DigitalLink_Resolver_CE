@@ -280,12 +280,17 @@ the ones in the form) or **Replace the targets**. Nothing is saved until you sel
 **Check targets** asks each address whether it answers (section 13); it never stops you from saving.
 
 **Default target: the item's page.** Tick this option (above the targets) when the code should open a page with
-**all** the targets instead of only the first one: the resolver makes that page — mobile first, a large button with an
-icon for each target, the targets in the language of the phone first (the others under *Other languages*), the batch's
-and the product's targets when a batch is scanned, and the brand of your GS1 Company Prefix (logo and colours, set by an
-administrator under **Item page**, section 14). With the option no target is marked as the default. Like the default
-type, the option is shared by every record of the identifier: when the product uses it, a batch must use it too (the
-message under the targets says so). The page counts its **views** and the **clicks** on its buttons (section 16);
+**all** the targets instead of only the first one: the resolver makes that page — mobile first, one large button with an
+icon for each type of target, in the language of the phone when the target exists in it, otherwise in the best
+language available, marked with that language (the other translations under *Other languages*: nothing is hidden), the
+batch's and the product's targets when a batch is scanned, and the brand of your GS1 Company Prefix (logo — also the
+page's icon in the browser's tab — and colours, set by an administrator under **Item page**, section 14). With the
+option no target is marked as the default. **Each record chooses for itself**: the product can open its page while a
+batch or serial number goes to its own first target, or the other way round. A scan of the GTIN alone, or of a batch
+that has no record, follows the product's choice. Above the targets the editor lists how the identifier's other
+records do it (*Using the item's page: …*, *Going to their own default target: …*), and a new batch starts with the
+product's choice. Behind the scenes each record then carries its own default link (`gs1:defaultLink`); the portal
+writes it and does not show it, and nothing changes for the other records' targets. The page counts its **views** and the **clicks** on its buttons (section 16);
 nothing about the person is kept. When the installation has switched it on, the page also offers **Check this code in
 Verified by GS1** for a GTIN or a GLN, where anyone can see who licensed the code.
 
@@ -716,7 +721,8 @@ one, for a brand of its own — a **brand name**, a **logo** (PNG, JPEG or WebP,
 two colours: the **main colour** of the page's header and buttons and the **button colour** of its highlights. The text
 on them is black or white, whichever reads better; the card shows a preview. The page uses the brand of the longest
 prefix the code starts with, else the installation's default (set by the server administrator, who also brands the
-operator's prefixes). **Offer to check the code in Verified by GS1** can be switched off per brand; when the
+operator's prefixes). A brand belongs to whoever holds its prefix: when a prefix moves to another organisation, its
+brand moves with it. **Offer to check the code in Verified by GS1** can be switched off per brand; when the
 installation has not switched the service on, the screen says so. **Edit** fills the form with a brand, **Remove logo**
 keeps the brand without a logo, **Remove brand** goes back to the brand above it. A change shows on the page within a
 minute. During support access the list is read only.

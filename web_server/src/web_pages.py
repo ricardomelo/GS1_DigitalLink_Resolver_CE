@@ -115,6 +115,7 @@ _BASE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>{{ title }} | {{ product }}</title>
+{% if icon %}<link rel="icon" href="{{ icon }}">{% endif %}
 {% if fonts %}<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">{% endif %}
 <style>
@@ -284,10 +285,11 @@ def _hri(identifiers: str, qualifier_path: str | None) -> str:
     return '  '.join(f'({parts[i]}) {parts[i + 1]}' for i in range(0, len(parts) - 1, 2))
 
 
-def _page(locale: str, title: str, body: str, fonts: bool = True) -> str:
+def _page(locale: str, title: str, body: str, fonts: bool = True, icon: str | None = None) -> str:
     """A whole HTML page: header, language menu, body and the operator footer from the configuration. Without fonts,
-    nothing is loaded from other sites (the item's page, which every scan of some codes reaches: ADR 0011)."""
-    return render_template_string(_BASE, locale=locale, title=title, product=PRODUCT_NAME, logo=LOGO_DATA_URI, fonts=fonts,
+    nothing is loaded from other sites (the item's page, which every scan of some codes reaches: ADR 0011); icon: the
+    page's own favicon (the brand's logo on the item's page)."""
+    return render_template_string(_BASE, locale=locale, title=title, product=PRODUCT_NAME, logo=LOGO_DATA_URI, fonts=fonts, icon=icon,
                                   org=ORG_NAME, org_url=ORG_URL, footer=_t(locale, 'footer'),
                                   language_label=_t(locale, 'language'), home_label=_t(locale, 'home'),
                                   locales=SUPPORTED_LOCALES,

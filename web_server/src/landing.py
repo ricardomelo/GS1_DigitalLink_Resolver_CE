@@ -4,7 +4,8 @@ who opens ?linkType=linkset in a browser — or who scans a code whose default l
 "Default target: the item's page", a gs1:defaultLink to <the record>?linkType=linkset&view=page).
 
   render_page()  the page: the brand of the record's prefix (logo, colours, name), the item's description, one button
-                 per link with an icon for its type, the visitor's language first, the levels (serial, batch,
+                 per link type with an icon, each in the visitor's best language (the type's other translations under
+                 "Other languages"), the brand's logo as favicon, the levels (serial, batch,
                  product), the code in human readable form, Verified by GS1 (item 6.2) when switched on;
   click()        /_click?a=<path>&l=<level>&i=<link>&t=<type>: the link looked up again in the record (never an
                  address taken from the request), logged as a click, redirected to (302);
@@ -157,11 +158,58 @@ def page_levels(linkset: list[dict]) -> list[dict]:
     return levels
 
 
-def _speaks(link: dict, locale: str) -> bool:
-    """Whether a link is in the page's language (or in none in particular)."""
-    language = locale.split('-')[0].lower()
-    tags = [t.lower() for t in link['hreflang']]
-    return not tags or 'und' in tags or any(t == language or t.startswith(language + '-') for t in tags)
+def _preferences(locale: str) -> list[str]:
+    """The visitor's languages, best first: the page's, then the others of the browser's Accept-Language (q-values
+    honoured), as primary subtags."""
+    ranked = []
+    for position, part in enumerate(request.headers.get('Accept-Language', '').split(',')):
+        pieces = part.strip().split(';')
+        quality = 1.0
+        for piece in pieces[1:]:
+            if piece.strip().startswith('q='):
+                try:
+                    quality = float(piece.strip()[2:])
+                except ValueError:
+                    quality = 0.0
+        tag = pieces[0].strip().lower().split('-')[0]
+        if tag and tag != '*' and quality > 0:
+            ranked.append((-quality, position, tag))
+    found = [locale.split('-')[0].lower()]
+    for _, _, tag in sorted(ranked):
+        if tag not in found:
+            found.append(tag)
+    return found
+
+
+def _rank(link: dict, preferences: list[str]) -> int:
+    """How well a link's language suits the visitor: the position of its language among the visitor's (0: the
+    page's own), then a link in no language in particular, then any other."""
+    tags = [t.lower().split('-')[0] for t in link['hreflang']]
+    for position, language in enumerate(preferences):
+        if language in tags:
+            return position
+    return len(preferences) if not tags or 'und' in tags else len(preferences) + 1
+
+
+def group_links(links: list[dict], preferences: list[str]) -> tuple[list[tuple[int, dict, bool]], list[tuple[int, dict]]]:
+    """Each link type once (item 9.1): for each type, in the order the record gives them, its links in the best
+    language the visitor reads (or, when it has none of those, in its first language) — (position, link, whether its
+    language is shown: not the page's own); the type's other translations apart, for "Other languages"."""
+    by_type: dict[str, list[tuple[int, dict]]] = {}
+    for position, link in enumerate(links):
+        by_type.setdefault(link['term'], []).append((position, link))
+    shown, others = [], []
+    neutral = len(preferences)
+    for items in by_type.values():
+        best = min(_rank(link, preferences) for _, link in items)
+        if best > neutral:                                # no language the visitor reads: the type's first one
+            first = tuple(items[0][1]['hreflang'])
+            chosen = [(p, l) for p, l in items if tuple(l['hreflang']) == first]
+        else:
+            chosen = [(p, l) for p, l in items if _rank(l, preferences) == best]
+        shown += [(p, l, best not in (0, neutral)) for p, l in chosen]
+        others += [(p, l) for p, l in items if (p, l) not in chosen]
+    return shown, others
 
 
 def verified_url(identifiers: str, brand: dict | None) -> str | None:
@@ -226,21 +274,20 @@ def render_page(identifiers: str, qualifier_path: str | None, linkset: list[dict
     brand = BRANDS.for_part(request_log.company_part(parts[0], parts[1]) if len(parts) > 1 else None)
     colour = _colour((brand or {}).get('colour'), DEFAULT_COLOUR)
     accent = _colour((brand or {}).get('accent'), DEFAULT_ACCENT)
+    preferences = _preferences(locale)
+
+    def button(index, position, link, show_language=True):
+        return {'title': link['title'], 'label': web_pages._label(locale, link['term']),
+                'lang': ', '.join(link['hreflang']) if show_language else '', 'icon': _I[ICONS.get(link['term'], 'link')],
+                'click': (stem + '/_click?' + urlencode({'a': path, 'l': index, 'i': position, 't': link['term']}))
+                if link['href'] else None}
+
     levels = []
     for index, level in enumerate(page_levels(linkset)):
-        mine, others = [], []
-        for position, link in enumerate(level['links']):
-            shown = {
-                'title': link['title'], 'label': web_pages._label(locale, link['term']),
-                'lang': ', '.join(link['hreflang']), 'icon': _I[ICONS.get(link['term'], 'link')],
-                'click': (stem + '/_click?' + urlencode({'a': path, 'l': index, 'i': position, 't': link['term']}))
-                if link['href'] else None,
-            }
-            (mine if _speaks(link, locale) else others).append(shown)
-        if not mine:                                   # nothing in the visitor's language: show everything
-            mine, others = others, []
+        shown, others = group_links(level['links'], preferences)
         levels.append({'label': web_pages._level_label(locale, level['anchor']), 'description': level['description'],
-                       'mine': mine, 'others': others})
+                       'mine': [button(index, p, l, marked) for p, l, marked in shown],
+                       'others': [button(index, p, l) for p, l in others]})
     title = next((lv['description'] for lv in page_levels(linkset) if lv['description']), None) \
         or web_pages._t(locale, 'linkset.title')
     logo = f"{stem}/_brand/{quote(brand['_id'], safe='')}?v={brand.get('logo', {}).get('etag', '')}" \
@@ -253,7 +300,7 @@ def render_page(identifiers: str, qualifier_path: str | None, linkset: list[dict
     if json_ld is not None:
         data = web_pages.json.dumps(json_ld, ensure_ascii=False).replace('<', '\\u003c')
         body += f'<script type="application/ld+json">{data}</script>'
-    return web_pages._page(locale, title, body, fonts=False)
+    return web_pages._page(locale, title, body, fonts=False, icon=logo)
 
 
 # ----------------------------------------------------------------------------------------------- clicks and logos

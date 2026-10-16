@@ -127,6 +127,43 @@ def is_landing(link: dict) -> bool:
     return link.get("linktype") == LANDING_TYPE and str(link.get("href") or "").endswith(LANDING_QUERY)
 
 
+# Explicit default links (ADR 0011, amendment of 17 October 2026): when a record of a key uses its page, the key's
+# shared default link type is gs1:defaultLink and every record of the key has links of that type of its own — its
+# page, or copies of its default targets (its links of the type of its first target, every language). The portal
+# writes them and hides them; the editor shows the targets with the default first, and the option.
+def explicit_default_links(links: list[dict], link_type: str) -> list[dict]:
+    """Copies, as gs1:defaultLink, of the links of one type (the record's default targets)."""
+    copies = []
+    for link in links:
+        if link.get("linktype") == link_type:
+            copy = {k: v for k, v in link.items() if k in ("href", "title", "type", "hreflang", "context")}
+            copies.append({"linktype": LANDING_TYPE, **copy})
+    return copies
+
+
+def record_view(links: list[dict], key_default: str | None) -> tuple[list[dict], bool, str | None]:
+    """A record's stored links as the portal shows them: (its targets, the default ones first; whether its default
+    target is its page; its own default link type). A link of type gs1:defaultLink is hidden when it is the page or a
+    copy of another link of the record; one that copies nothing (written by another tool) is shown as a target."""
+    explicit = [l for l in links if l.get("linktype") == LANDING_TYPE]
+    others = [l for l in links if l.get("linktype") != LANDING_TYPE]
+    landing = any(is_landing(l) for l in explicit)
+    hrefs = {l.get("href") for l in others}
+    pointers = [l.get("href") for l in explicit if not is_landing(l) and l.get("href") in hrefs]
+    orphans = [l for l in explicit if not is_landing(l) and l.get("href") not in hrefs]
+    targets = orphans + others
+    if key_default != LANDING_TYPE:
+        default = key_default
+        first = lambda l: l.get("linktype") == default                  # noqa: E731
+    elif landing or orphans or not pointers:
+        default = LANDING_TYPE if landing or orphans else (others[0].get("linktype") if others else None)
+        first = lambda l: l in orphans or (not landing and not orphans and l.get("linktype") == default)  # noqa: E731
+    else:
+        default = next(l.get("linktype") for l in others if l.get("href") == pointers[0])
+        first = lambda l: l.get("linktype") == default and l.get("href") in pointers  # noqa: E731
+    return sorted(targets, key=lambda l: not first(l)), landing, default
+
+
 # BCP 47 language tags offered in the editor's menu (names are rendered by the browser). Any other
 # well-formed tag (pt-BR, en-US, vi, …) is accepted too: records created with other tools use them.
 LANGUAGES = ["pt", "en", "es", "fr", "de", "it", "zh", "ja"]

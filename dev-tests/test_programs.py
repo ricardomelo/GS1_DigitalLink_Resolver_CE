@@ -56,6 +56,7 @@ PROGRAMS = [
             ("GS1_RESOLVER_TESTSUITE", "AJV_DIST", "GS1_SYNTAX_ENGINE", "GS1_SYNTAX_ENGINE_DIR"), ("node",)),
     Program("epc_binary", "resolver", "resolver/test_epc_binary.py", ("EPC_TDS",), ("node",)),
     Program("data_entry_api", "resolver", "resolver/test_data_entry_api.py", ("GS1_SYNTAX_ENGINE",), ("node",)),
+    Program("mock_parity", "resolver", "resolver/test_mock_parity.py"),
     Program("request_log", "resolver", "resolver/test_request_log.py"),
     Program("domains_resolver", "resolver", "resolver/test_domains_resolver.py"),
     Program("landing", "resolver", "resolver/test_landing.py"),

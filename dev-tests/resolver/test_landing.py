@@ -126,6 +126,22 @@ author({"anchor": GLN, "itemDescription": "Acme plant", "defaultLinktype": "gs1:
         "links": links("acme.example.com")[:1]})
 author({"anchor": SSCC, "itemDescription": "Pallet", "defaultLinktype": "gs1:pip",
         "links": links("acme.example.com")[:1]})
+# Item 9.1: each record chooses — the product's page, a batch with its own target through an explicit default link
+ACME3 = "/01/07891234700018"
+author({"anchor": ACME3, "itemDescription": "Acme juice", "defaultLinktype": "gs1:defaultLink",
+        "links": links("acme.example.com")[:1] + [page_link(ACME3)]})
+author({"anchor": ACME3, "qualifiers": [{"10": "OWN"}], "itemDescription": "Acme juice, batch OWN",
+        "defaultLinktype": "gs1:defaultLink",
+        "links": [{"linktype": "gs1:pip", "href": "https://acme.example.com/own", "title": "Own", "type": "text/html",
+                   "hreflang": ["en"]},
+                  {"linktype": "gs1:defaultLink", "href": "https://acme.example.com/own", "title": "Own",
+                   "type": "text/html", "hreflang": ["en"]}]})
+# Links in languages the visitor may not read: German and Spanish product pages, recipes in French only
+ACME4 = "/01/07891234800015"
+author({"anchor": ACME4, "itemDescription": "Acme biscuits", "defaultLinktype": "gs1:pip", "links": [
+    {"linktype": "gs1:pip", "href": "https://acme.example.com/de", "title": "Produktseite", "hreflang": ["de"]},
+    {"linktype": "gs1:pip", "href": "https://acme.example.com/es", "title": "Página de producto", "hreflang": ["es"]},
+    {"linktype": "gs1:recipeInfo", "href": "https://acme.example.com/fr", "title": "Recettes", "hreflang": ["fr"]}]})
 PORTAL["tenants"].insert_one({"_id": "t-acme", "name": "Acme", "prefixes": ["7891234"]})
 PORTAL["domains"].insert_many([
     {"_id": "id.acme.example", "tenant": "t-acme", "mode": "direct", "stem": "/gs1", "verified": True},
@@ -223,11 +239,44 @@ check("a batch's page: its level and the product's", html3.count("<h2>") == 2 an
       and "Product page" in html3)
 check("…the alert icon for the recall status", landing._I["alert"] in html3)
 
+check("…the brand's logo as the page's favicon", '<link rel="icon" href="/_brand/7891234?v=abc123">' in html2)
+check("…none on a page whose brand has no logo", 'rel="icon"' not in html)
+check("…the visitor's own language not marked on its links, the folded ones marked",
+      "· en</small>" not in html.split("Other languages")[0] and "· pt</small>" in html.split("Other languages")[1])
+
+r, _ = ask(ACME4 + PAGE, language="es-ES, fr;q=0.5")
+html4 = r.get_data(as_text=True)
+shown4 = html4.split("Other languages")[0] if "Other languages" in html4 else html4
+check("each link type once: the product page in the visitor's language (Spanish), the German one folded",
+      "Página de producto" in shown4 and "Produktseite" not in shown4 and "Produktseite" in html4, shown4[-600:])
+check("…recipes only in French, the visitor's second language: shown, its language marked",
+      "Recettes" in shown4 and "· fr</small>" in shown4, shown4[-600:])
+r, _ = ask(ACME4 + PAGE, language="ja")
+html4 = r.get_data(as_text=True)
+shown4 = html4.split("Other languages")[0] if "Other languages" in html4 else html4
+check("…no language the visitor reads: each type in its first language, marked; the rest folded",
+      "Produktseite" in shown4 and "· de</small>" in shown4 and "Recettes" in shown4
+      and "Página de producto" not in shown4 and "Other languages (1)" in html4, shown4[-600:])
+
+r, _ = ask(ACME3, accept="*/*")
+check("each record chooses: the product's scan reaches its page", r.status_code == 307
+      and r.headers.get("Location", "").endswith(ACME3 + PAGE), r.headers.get("Location"))
+r, _ = ask(ACME3 + "/10/OWN", accept="*/*")
+check("…a batch with its own default link: its own target", r.status_code == 307
+      and r.headers.get("Location") == "https://acme.example.com/own", r.headers.get("Location"))
+r, _ = ask(ACME3 + "/10/UNREGISTERED", accept="*/*")
+check("…a batch without a record: the product's page", r.status_code == 307
+      and r.headers.get("Location", "").endswith(ACME3 + PAGE), r.headers.get("Location"))
+r, _ = ask(ACME3 + "/10/OWN" + PAGE)
+html6 = r.get_data(as_text=True)
+check("…the batch's page shows its target once (the explicit default link is not a button)",
+      [parse_qs(urlparse(u).query)["t"][0] for u in clicks(html6)] == ["pip", "pip"], clicks(html6))
+
 r, _ = ask(OPER + "?linkType=linkset")
 check("a code no organisation holds: the installation's brand", "The Operator" in r.get_data(as_text=True))
 r, _ = ask(OPER + "?linkType=linkset", language="pt-BR")
 html5 = r.get_data(as_text=True)
-check("no link in the visitor's language: every link shown, none folded", "Outros idiomas" not in html5
+check("no link in the visitor's language: its only link shown, nothing folded", "Outros idiomas" not in html5
       and len(clicks(html5)) == 1, clicks(html5))
 
 # ---------------------------------------------------------------- clicks

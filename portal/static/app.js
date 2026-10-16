@@ -1193,6 +1193,7 @@ function otherApplies(entry) {
 
 function renderOthers(entries) {
   othersState.entries = entries || [];
+  renderLandingUse();
   const box = $("#others");
   box.hidden = !othersState.entries.length;
   if (box.hidden) return;
@@ -1311,8 +1312,8 @@ async function openRecord() {
     state.sharedDefaultLinkType = record.sharedDefaultLinkType;
     $("#description").value = record.description || "";
     $("#links").replaceChildren();
-    $("#landing-page").checked = !!record.landingPage
-      || (!record.exists && record.sharedDefaultLinkType === "gs1:defaultLink");
+    // a new record starts with the choice of the key's own record
+    $("#landing-page").checked = !!record.landingPage || (!record.exists && !!record.keyRecordLanding);
     if (record.links.length) record.links.forEach(addRow);
     else addRow({ linkType: record.sharedDefaultLinkType && record.sharedDefaultLinkType !== "gs1:defaultLink"
                             ? record.sharedDefaultLinkType : "gs1:pip" });
@@ -3720,9 +3721,10 @@ function addRow(data = {}) {
   return li;
 }
 
-/* The first target is the default link (gs1:defaultLink), unless the item's page is (then the default link type is
-   gs1:defaultLink itself). When other records share the GTIN (product/batches), the default link type is shared and
-   must be kept. */
+/* The first target is the default link (gs1:defaultLink), unless the item's page is. Each record chooses for itself
+   (ADR 0011, amendment): a key whose records use the page has explicit default links, one per record, written by the
+   server. Otherwise, when other records share the key (product/batches), the default link type is shared and must be
+   kept; ticking the page turns them to explicit default links on saving, each keeping its own target. */
 const LANDING_TYPE = "gs1:defaultLink";
 
 function currentDefaultType() {
@@ -3732,20 +3734,32 @@ function currentDefaultType() {
 
 function refreshDefault() {
   const msg = $("#default-msg");
-  $("#links").classList.toggle("landing", $("#landing-page").checked);
-  const current = currentDefaultType();
-  if (!current || !state.sharedDefaultLinkType) {
-    I18N.set(msg, null);
+  const landing = $("#landing-page").checked;
+  $("#links").classList.toggle("landing", landing);
+  const current = currentDefaultType(), shared = state.sharedDefaultLinkType;
+  if (!current || !shared || landing) {
+    I18N.set(msg, landing && shared ? "landing.switches" : null);
     msg.className = "field-msg";
     return;
   }
-  const mismatch = current !== state.sharedDefaultLinkType;
-  const shared = state.sharedDefaultLinkType === LANDING_TYPE;
-  I18N.set(msg, mismatch ? (shared ? "landing.sharedLocal" : current === LANDING_TYPE ? "landing.sharedOther"
-                                                                                     : "default.sharedLocal")
-                         : (shared ? "landing.shared" : "default.shared"),
-           { linkType: state.sharedDefaultLinkType });
+  const mismatch = current !== shared;
+  I18N.set(msg, mismatch ? "default.sharedLocal" : "default.shared", { linkType: shared });
   msg.className = "field-msg" + (mismatch ? " is-error" : "");
+}
+
+/* How the key's other records use the item's page, above the targets: the choice for this record is made knowing
+   theirs (a scan of the key alone, or of a batch without a record, reaches the key's own record). */
+function renderLandingUse() {
+  const box = $("#landing-others");
+  const entries = othersState.entries;
+  box.hidden = !entries.length;
+  if (box.hidden) return;
+  const name = e => e.kind === "product" ? t("landing.keyRecord", { key: t(`key.${readKey().ai}.short`) }) : otherApplies(e);
+  const list = items => items.slice(0, 3).map(name).join("; ")
+    + (items.length > 3 ? " " + t("landing.more", { count: items.length - 3 }) : "");
+  const page = entries.filter(e => e.landingPage), own = entries.filter(e => !e.landingPage);
+  box.textContent = [page.length ? t("landing.othersPage", { list: list(page) }) : "",
+                     own.length ? t("landing.othersOwn", { list: list(own) }) : ""].filter(Boolean).join(" ");
 }
 
 function collect() {

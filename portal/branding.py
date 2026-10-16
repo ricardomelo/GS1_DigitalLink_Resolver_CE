@@ -3,9 +3,13 @@ The brands of the item's page (Documentation/adr/0011-item-page.md): per GS1 Com
 colours the resolver shows on the page of an item's links, and whether it offers Verified by GS1. One document per
 prefix in the "branding" collection of the portal's database (the resolver reads it, web_server/src/landing.py):
 
-    {"_id": "7891234" | "*", "tenant": "t-…" (absent for the operator), "name": "Acme", "colour": "#002C6C",
-     "accent": "#F26334", "verified": true, "logo": {"type": "image/png", "data": <bytes>, "etag": "…",
-     "width", "height"}, "updated", "updatedBy"}
+    {"_id": "7891234" | "*", "name": "Acme", "colour": "#002C6C", "accent": "#F26334", "verified": true,
+     "logo": {"type": "image/png", "data": <bytes>, "etag": "…", "width", "height"}, "updated", "updatedBy"}
+
+A brand belongs to the organisation whose prefixes cover its prefix, the operator's otherwise — derived when it is
+read, as records' ownership is (ADR 0002): a prefix moved to another organisation takes its brand along (bug B2 of the
+staging tests: brands once recorded their owner when saved, and a moved prefix left its brand behind). A "tenant" field
+written by earlier versions is ignored and removed on the next save.
 
 Rules: an organisation's administrators brand prefixes inside its own (one of them or a longer one); server
 administrators the operator's (prefixes no organisation holds) and the installation's default "*". A logo is a PNG,
@@ -48,9 +52,20 @@ def public(doc: dict) -> dict:
             "updated": store.iso(doc.get("updated")), "updatedBy": doc.get("updatedBy")}
 
 
+def owner(prefix: str, tenant_list: list[dict] | None = None) -> str | None:
+    """The organisation whose prefixes cover a brand's prefix, None for the operator (and the installation's "*")."""
+    if prefix == "*":
+        return None
+    for tenant in tenant_list if tenant_list is not None else tenants.load():
+        if any(prefix.startswith(p) for p in tenant.get("prefixes") or []):
+            return tenant["id"]
+    return None
+
+
 def load(tenant: str | None, every: bool = False) -> list[dict]:
-    query = {} if every else ({"tenant": tenant} if tenant else {"tenant": None})
-    return sorted(_col().find(query), key=lambda d: (d["_id"] != "*", d["_id"]))
+    tenant_list = tenants.load()
+    found = [d for d in _col().find({}) if every or owner(d["_id"], tenant_list) == (tenant or None)]
+    return sorted(found, key=lambda d: (d["_id"] != "*", d["_id"]))
 
 
 def _check_prefix(prefix: str, tenant: str | None, server_admin: bool) -> str:
@@ -102,8 +117,6 @@ def save(prefix, data: dict, tenant: str | None, server_admin: bool, by: str) ->
     prefix = _check_prefix(prefix, tenant, server_admin)
     with users.locked():
         doc = _col().find_one({"_id": prefix}) or {"_id": prefix}
-        if doc.get("tenant", None) != (tenant or None) and "name" in doc:
-            raise UserError("branding.prefixOutside")
         name = " ".join(str(data.get("name", doc.get("name", "")) or "").split())
         if len(name) > NAME_MAX or not name.isprintable():
             raise UserError("branding.nameInvalid", max=NAME_MAX)
@@ -116,24 +129,22 @@ def save(prefix, data: dict, tenant: str | None, server_admin: bool, by: str) ->
             change[field] = str(value).upper()
         if "logo" in data:
             change["logo"] = read_logo(data["logo"]) if data["logo"] else None
-        if tenant:
-            change["tenant"] = tenant
-        _col().update_one({"_id": prefix}, {"$set": change}, upsert=True)
+        _col().update_one({"_id": prefix}, {"$set": change, "$unset": {"tenant": ""}}, upsert=True)
         return _col().find_one({"_id": prefix})
 
 
 def logo(prefix, tenant: str | None) -> dict | None:
     """The stored logo of a brand of the scope (None when there is none, or the brand is someone else's)."""
     doc = _col().find_one({"_id": str(prefix)})
-    if not doc or doc.get("tenant", None) != (tenant or None):
+    if not doc or owner(doc["_id"]) != (tenant or None):
         return None
     return doc.get("logo") or None
 
 
 def remove(prefix, tenant: str | None, server_admin: bool) -> dict:
     prefix = _check_prefix(prefix, tenant, server_admin)
-    doc = _col().find_one({"_id": prefix, "tenant": tenant} if tenant else {"_id": prefix, "tenant": None})
-    if not doc:
+    doc = _col().find_one({"_id": prefix})
+    if not doc or owner(prefix) != (tenant or None):
         raise UserError("branding.unknown")
     _col().delete_one({"_id": prefix})
     return doc

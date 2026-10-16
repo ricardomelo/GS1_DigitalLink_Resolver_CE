@@ -639,7 +639,8 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
     links, seen = [], {}
     for position, row in enumerate(rows, start=1):
         link_type = row.get("linkType")
-        if link_type not in gs1.LINK_TYPE_CODES:
+        # gs1:defaultLink as a target of its own: an explicit default link written by another tool (gs1.record_view)
+        if link_type not in gs1.LINK_TYPE_CODES and link_type != gs1.LANDING_TYPE:
             raise ValidationError("link.typeRequired", position=position)
         href = gs1.normalise_url(row.get("url"), position)
         hreflang = [gs1.normalise_language(h) for h in (row.get("hreflang") or []) if isinstance(h, str) and h]
@@ -664,12 +665,15 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
         seen[key] = position
         links.append(link)
 
-    # The first link is the default (gs1:defaultLink); its type becomes the key's defaultLinktype.
+    # The first link is the default (gs1:defaultLink); its type becomes the key's defaultLinktype, unless the key
+    # uses explicit default links (store_record() turns the record to them: ADR 0011, amendment).
     default = data.get("defaultLinkType") or links[0]["linktype"]
     if data.get("landingPage"):
         # The item's page as the default target (Documentation/adr/0011-item-page.md): a gs1:defaultLink to the
         # resolver's page of these links, on the record's domain
-        links.append(landing_link(anchor, pairs))
+        links = [l for l in links if l["linktype"] != gs1.LANDING_TYPE] + [landing_link(anchor, pairs)]
+        default = gs1.LANDING_TYPE
+    elif any(l["linktype"] == gs1.LANDING_TYPE for l in links):
         default = gs1.LANDING_TYPE
     if default not in {l["linktype"] for l in links}:
         raise ValidationError("default.required")
@@ -1057,7 +1061,8 @@ def get_record():
         # targets and the last change made through the portal
         other = describe_entry(entry)
         info = meta.visible(known.get(meta.key(anchor, other.get("path", ""))), g.tenant) if other["kind"] != "other" else {}
-        other.update(description=entry.get("itemDescription") or "", links=len(entry.get("links") or []),
+        shown, landing, _ = gs1.record_view(entry.get("links") or [], default)
+        other.update(description=entry.get("itemDescription") or "", links=len(shown), landingPage=landing,
                      updatedAt=info.get("updatedAt"), updatedBy=info.get("updatedBy"))
         others.append(other)
     ai, value = gs1.split_anchor(anchor)
@@ -1071,21 +1076,27 @@ def get_record():
         # section 2.5.9: whether the key has a record of its own (the editor offers one when saving)
         "hasKeyRecord": any(not e.get("qualifiers") for e in entries),
         "otherEntries": others,
-        # With other entries on the same key the default link type is shared and cannot change here.
-        "sharedDefaultLinkType": default if others else None,
+        # With other entries on the same key the default link type is shared and cannot change here, unless the key
+        # uses explicit default links (each record then has its own default target: ADR 0011, amendment).
+        "sharedDefaultLinkType": default if others and default != gs1.LANDING_TYPE else None,
+        "explicitDefaults": default == gs1.LANDING_TYPE,
+        # whether the key's own record uses its page: a new record of the key starts with the same choice
+        "keyRecordLanding": any(not e.get("qualifiers") and gs1.record_view(e.get("links") or [], default)[1]
+                                for e in entries),
         "defaultLinkType": default,
         "description": "", "links": [], "landingPage": False,
     }
     if target:
+        shown, landing, own_default = gs1.record_view(target.get("links") or [], default)
         result["description"] = target.get("itemDescription", "")
-        result["landingPage"] = any(gs1.is_landing(l) for l in target.get("links", []))
-        result["links"] = [{
+        result["landingPage"] = landing
+        result["defaultLinkType"] = own_default
+        result["links"] = [{        # default link first
             # a title the portal gave is shown empty, so that it follows the language if that changes (F21)
             "linkType": l.get("linktype"), "url": l.get("href"),
             "title": "" if gs1.is_default_title(l.get("linktype"), l.get("title") or "") else l.get("title") or "",
             "hreflang": l.get("hreflang") or ["pt"], "context": l.get("context") or [],
-        } for l in target.get("links", []) if not gs1.is_landing(l)]
-        result["links"].sort(key=lambda l: l["linkType"] != default)   # default link first
+        } for l in shown]
     return jsonify(result)
 
 
@@ -1144,7 +1155,15 @@ def store_record(anchor: str, pairs: list, doc: dict) -> bool:
     target = find_entry(entries, qualifiers)
     others = [e for e in entries if e is not target]
 
-    if others and doc["defaultLinktype"] != current_default:
+    # Explicit default links (ADR 0011, amendment): a key whose records use them takes this record's default target
+    # as its own links of type gs1:defaultLink; a record that uses its page turns the key's other records to them
+    # first, each keeping its own default target. Otherwise the default link type is shared (section 2.5.9 model).
+    if others and current_default == gs1.LANDING_TYPE and doc["defaultLinktype"] != gs1.LANDING_TYPE:
+        doc["links"] = doc["links"] + gs1.explicit_default_links(doc["links"], doc["defaultLinktype"])
+        doc["defaultLinktype"] = gs1.LANDING_TYPE
+    if others and doc["defaultLinktype"] == gs1.LANDING_TYPE and current_default != gs1.LANDING_TYPE:
+        turn_to_explicit_defaults(anchor, others, current_default)
+    elif others and doc["defaultLinktype"] != current_default:
         raise ValidationError("default.sharedMismatch", linkType=current_default,
                               entries=[describe_entry(e) for e in others])
 
@@ -1177,6 +1196,33 @@ def store_record(anchor: str, pairs: list, doc: dict) -> bool:
                g.user, anchor, gs1.qualifier_path(pairs), len(doc["links"]), len(removed))
     record_change(anchor, pairs, doc, "update")
     return False
+
+
+def turn_to_explicit_defaults(anchor: str, entries: list[dict], key_default: str) -> None:
+    """Gives each record of a key links of type gs1:defaultLink copying its default targets (its links of the key's
+    default link type), and the key that default link type: nothing else changes, every record keeps its target.
+    All are checked with the data entry API before any is written."""
+    changed = []
+    for entry in entries:
+        links = entry.get("links") or []
+        doc = {"anchor": anchor, "itemDescription": entry.get("itemDescription") or "",
+               "defaultLinktype": gs1.LANDING_TYPE,
+               "links": links + gs1.explicit_default_links(links, key_default)}
+        for field in ("qualifiers", "informativeQualifiers"):
+            if entry.get(field):
+                doc[field] = entry[field]
+        changed.append(doc)
+    problems = rewrite_refusals(changed)
+    if problems:
+        first = problems[0]
+        entry = entries[first.get("item", 1) - 1] if 0 < first.get("item", 1) <= len(entries) else {}
+        raise ValidationError("record.rewriteRefused", record=describe_entry(entry).get("path") or anchor,
+                              detail=str(first.get("error", ""))[:200])
+    for doc in changed:
+        status, body = resolver("PUT", anchor, doc)
+        if not is_success(status, body):
+            raise UpstreamError("upstream.updateRejected", 502, body)
+    audit.info("user=%s action=explicit-defaults anchor=%s records=%d", g.user, anchor, len(changed))
 
 
 @app.delete("/portal/api/record")
@@ -1406,10 +1452,14 @@ def export_records():
             continue
         ai, value = gs1.split_anchor(line["anchor"])
         # the spreadsheet writes the qualifiers of the record's GS1 Digital Link, informative ones included
+        # the item's page as a row of type gs1:defaultLink (read back as the option); copies of the default targets
+        # left out: they follow the default column (ADR 0011, amendment)
+        shown, landing, own_default = gs1.record_view(line.get("links") or [], line.get("defaultLinktype"))
+        page = [l for l in line.get("links") or [] if gs1.is_landing(l)][:1]
         records.append({"key": ai, "value": value,
                         "qualifiers": gs1.join_informative(entry.get("qualifiers", []), entry.get("informative", [])),
                         "description": line.get("itemDescription") or "",
-                        "defaultLinkType": line.get("defaultLinktype"), "links": line.get("links") or []})
+                        "defaultLinkType": own_default, "links": page + shown})
     refused = export_refused(len(records))
     if refused:
         return refused
@@ -1471,7 +1521,7 @@ def import_preview():
     for line in summary_with_links():
         existing.setdefault(line["anchor"], []).append(line)
 
-    report, plan, file_defaults, to_check = [], [], {}, []
+    report, plan, file_defaults, to_check, candidates = [], [], {}, [], []
     rows_with_errors = {e["row"] for e in errors}
     for record in parsed:
         item = {"rows": record["rows"], "key": record["key"] or "01", "value": record["value"],
@@ -1481,9 +1531,11 @@ def import_preview():
             item["action"] = "error"
             report.append(item)
             continue
-        # A row of type gs1:defaultLink is the item's page of an exported record (ADR 0011): read back as the option
-        landing = any(l["linkType"] == gs1.LANDING_TYPE for l in record["links"])
-        record["links"] = [l for l in record["links"] if l["linkType"] != gs1.LANDING_TYPE]
+        # A row of type gs1:defaultLink to the record's page is the item's page of an exported record (ADR 0011):
+        # read back as the option; one to another address is an explicit default link of its own
+        page_rows = [l for l in record["links"] if gs1.is_landing({"linktype": l["linkType"], "href": l["url"]})]
+        landing = bool(page_rows)
+        record["links"] = [l for l in record["links"] if l not in page_rows]
         defaults = [l for l in record["links"] if l["default"]]
         if len(defaults) > 1:
             errors.append({"row": defaults[1]["row"], "code": "import.defaultMany",
@@ -1499,7 +1551,7 @@ def import_preview():
                 # a template such as {lotnumber}, created by other tools
                 row_errors.append({"row": record["rows"][0], "code": "import.lotNotEditable", "params": {"value": v}})
         for link in record["links"]:
-            if link["linkType"] not in gs1.LINK_TYPE_CODES:
+            if link["linkType"] not in gs1.LINK_TYPE_CODES and link["linkType"] != gs1.LANDING_TYPE:
                 row_errors.append({"row": link["row"], "code": "link.typeRequired", "params": {"value": link["linkType"]}})
             try:
                 gs1.normalise_url(link["url"], 0)
@@ -1541,11 +1593,23 @@ def import_preview():
             item["action"] = "error"
             report.append(item)
             continue
+        candidates.append((item, record, anchor, pairs, doc, informative))
+
+    # Keys with explicit default links (ADR 0011, amendment): stored so, or a record of the file uses its page. Their
+    # records each keep their own default target: no shared default to agree on; compared in the form they are stored.
+    explicit = {anchor for anchor, lines in existing.items() if lines and lines[0].get("defaultLinktype") == gs1.LANDING_TYPE}
+    explicit |= {c[2] for c in candidates if c[4]["defaultLinktype"] == gs1.LANDING_TYPE}
+    for item, record, anchor, pairs, doc, informative in candidates:
         entries = existing.get(anchor, [])
         target = find_entry(entries, doc.get("qualifiers", []))
         others = [e for e in entries if e is not target]
+        if anchor in explicit and doc["defaultLinktype"] != gs1.LANDING_TYPE:
+            doc["links"] = doc["links"] + gs1.explicit_default_links(doc["links"], doc["defaultLinktype"])
+            doc["defaultLinktype"] = gs1.LANDING_TYPE
         first = file_defaults.setdefault(anchor, (doc["defaultLinktype"], record["rows"][0]))
-        if first[0] != doc["defaultLinktype"]:
+        if anchor in explicit:
+            item["action"] = "create" if target is None else "unchanged" if _same_record(target, doc) else "update"
+        elif first[0] != doc["defaultLinktype"]:
             errors.append({"row": record["rows"][0], "code": "import.defaultConflict",
                            "params": {"linkType": first[0], "row": first[1]}})
             item["action"] = "error"
@@ -1569,6 +1633,7 @@ def import_preview():
             to_check.extend({"row": link["row"], "url": link["url"]} for link in record["links"])
         report.append(item)
 
+    report.sort(key=lambda i: i["rows"][0])
     plan.sort(key=lambda p: (p["anchor"], len(p["pairs"])))
     # Section 2.5.9: keys that would be left with qualified records only. The preview lists them; on applying,
     # the user may create each key's own record with the targets of its first qualified record in the file.
@@ -1579,8 +1644,8 @@ def import_preview():
         if (item["pairs"] and anchor not in in_file and anchor not in key_records and gs1.has_key_level(gs1.split_anchor(anchor)[0])
                 and not any(not e.get("qualifiers") for e in existing.get(anchor, []))):
             doc = {k: v for k, v in item["doc"].items() if k not in ("qualifiers", "informativeQualifiers")}
-            if doc["defaultLinktype"] == gs1.LANDING_TYPE:     # the key's own page, not the qualified record's
-                doc["links"] = [l for l in doc["links"] if not gs1.is_landing(l)] + [landing_link(anchor, [])]
+            if any(gs1.is_landing(l) for l in doc["links"]):     # the key's own page, not the qualified record's
+                doc["links"] = [l for l in doc["links"] if l["linktype"] != gs1.LANDING_TYPE] + [landing_link(anchor, [])]
             key_records[anchor] = {"anchor": anchor, "pairs": [], "doc": doc, "rows": item["rows"]}
     for item in report:
         anchor = gs1.anchor_for(item["key"], item["value"]) if item.get("action") in ("create", "update") else None
@@ -1750,7 +1815,7 @@ def start_link_job():
                 continue
             key = f'{line["anchor"]}|{entry.get("path", "")}'
             for link in line.get("links") or []:
-                if not gs1.is_landing(link):          # the item's page is the resolver's own (ADR 0011)
+                if link.get("linktype") != gs1.LANDING_TYPE:  # the item's page and copies of targets (ADR 0011)
                     urls.setdefault(link.get("href"), []).append(key)
         scope = "all"
     else:

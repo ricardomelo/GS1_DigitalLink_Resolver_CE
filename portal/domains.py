@@ -125,13 +125,23 @@ def verified(tenant: str | None) -> list[dict]:
     return [d for d in load(tenant) if d.get("verified")]
 
 
+def still_held(doc: dict, prefix: str, tenant_list: list[dict]) -> bool:
+    """Whether a domain's organisation (the operator without one) still holds a prefix it is the default for: a prefix
+    moved to another organisation leaves a stale entry, ignored (prefixes are owned at query time, ADR 0002)."""
+    if doc.get("tenant"):
+        held = next((t.get("prefixes") or [] for t in tenant_list if t["id"] == doc["tenant"]), [])
+        return any(prefix.startswith(h) for h in held)
+    return not any(tenants.overlap(prefix, p) for t in tenant_list for p in t.get("prefixes") or [])
+
+
 def default_for(anchor: str, tenant: str | None) -> dict | None:
     """The verified domain whose default prefixes cover the record's company part (the longest prefix wins)."""
     part = gs1.company_part(anchor)
     best, length = None, -1
+    tenant_list = tenants.load()
     for doc in verified(tenant):
         for prefix in doc.get("defaultFor") or []:
-            if part.startswith(prefix) and len(prefix) > length:
+            if part.startswith(prefix) and len(prefix) > length and still_held(doc, prefix, tenant_list):
                 best, length = doc, len(prefix)
     return best
 
@@ -164,7 +174,8 @@ def _check_defaults(prefixes, tenant: str | None, own: str | None) -> list[str]:
         if any(tenants.overlap(p, t) for p in cleaned for t in taken):
             raise UserError("domains.prefixOutside")
     for doc in _col().find({"defaultFor": {"$in": cleaned}, "_id": {"$ne": own}}):
-        raise UserError("domains.prefixTaken", domain=doc["_id"])
+        if any(still_held(doc, p, tenant_list) for p in cleaned if p in (doc.get("defaultFor") or [])):
+            raise UserError("domains.prefixTaken", domain=doc["_id"])
     return cleaned
 
 

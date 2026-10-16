@@ -203,6 +203,11 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Journal | One event per document in the portal's database, included in the backup; kept by age per category (sign-ins 180 days, record changes and administration for ever by default; `PORTAL_JOURNAL_*_DAYS`) | `71b15f2`, `d783f3d` |
 | Single sign-on | Each organisation's OpenID Connect provider (Entra ID, Google, Okta, Keycloak…) for its users' sign-in, chosen by the e-mail's domain; accounts matched by e-mail, never created; password sign-in off per organisation, never for server administrators ([ADR 0012](adr/0012-single-sign-on.md)) | `732b5c0` |
 | Export limits per role | `PORTAL_EXPORT_LIMITS`: the most rows one export of a role may hold, or none; refusals journalled, buttons hidden | `732b5c0` |
+| Sidebar and phone width | The screens of the user menu in a foldable left sidebar on wide screens; every screen fits a phone ([ADR 0013](adr/0013-administration-and-navigation.md)) | `a3b3cea` |
+| An organisation's page | Prefixes, users, domains, brands, single sign-on, API keys and alerts of an organisation in one place | `a3b3cea` |
+| Prefixes as rows, picked | Organisations' prefixes one per row (*Add GCP*, remove, checked as typed, a refused row marked); users' prefixes picked from the organisation's own | `a3b3cea` |
+| The portal's own dialogs | Confirmations in the portal's style instead of the browser's | `a3b3cea` |
+| Overview by organisation | Server administrators choose an organisation (or the operator) on the overview; *Operation* is theirs only | `a3b3cea` |
 
 ## Tenant API
 
@@ -226,6 +231,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Verified by GS1 | On the item's page, a link that looks a GTIN or GLN up in Verified by GS1, on when the installation sets its address and the brand allows it; never in the linkset | `3d59bc2` |
 | Label studio | Sizes 80–200 %, a vector PDF, an EAN-13/UPC-A/EAN-8/UPC-E beside the QR code for the transition to 2D, every format in one ZIP ([ADR 0010](adr/0010-label-studio.md)) | `d60421f` |
 | Organisation's own domain | QR codes on the organisation's domain with an optional path stem, proved by DNS, default per prefix or chosen on the label; the resolver answers on it for that organisation only; certificates by a host script ([ADR 0009](adr/0009-tenant-domains.md)) | `0a6e42a` |
+| Alert history | Each alert raised and ended, kept 400 days, listed on the *Alerts* screen by organisation, kind and date ([ADR 0013](adr/0013-administration-and-navigation.md)) | `a3b3cea` |
 | Monitoring and alerts | The worker checks the resolver through the proxy, the daily backup, the certificate and spikes of codes nobody registered every 5 minutes, and e-mails the administrators when something goes wrong and when it is right again; states in the overview ([ADR 0008](adr/0008-monitoring-and-alerts.md)) | `57a5420` |
 | Statistics through the tenant API | `GET /portal/api/v1/stats` with the scope `stats:read`: the overview's usage, quality and records for an organisation's own systems | `16ceb9f` |
 

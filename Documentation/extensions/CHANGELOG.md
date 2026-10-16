@@ -2,6 +2,20 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Staging feedback of 16 October: administration and navigation (backlog item 9.2)
+- **Architecture decision record** [ADR 0013](../adr/0013-administration-and-navigation.md).
+- **A left sidebar** on wide screens with every screen of the user menu, foldable to its icons; the current screen
+  marked; every screen fits a phone's width. Commit `a3b3cea`.
+- **An organisation's page**: its prefixes, users, domains, item page brands, single sign-on, API keys and alerts in
+  one place (*Organisation* in the menu; *Open* on the organisations' list). Commit `a3b3cea`.
+- **Prefixes one per row** with *Add GCP* and a remove button, checked as typed; **users' prefixes picked** from their
+  organisation's own. Commit `a3b3cea`.
+- **The portal's own confirmation dialog** instead of the browser's. Commit `a3b3cea`.
+- **The overview by organisation** for server administrators; *Operation* for them only, its lines that matter to
+  everyone under *Record quality*. Commit `a3b3cea`.
+- **Alert history**: each alert raised and ended is kept (collection `alert_history`, 400 days) and listed on a new
+  *Alerts* screen with filters. Commit `a3b3cea`.
+
 ### Staging feedback of 16 October: the item's page per record (backlog item 9.1)
 - **Each record chooses its default target** — its item's page, or its own first target: the product can open its page
   while a batch or serial number goes to its own target. A scan of the GTIN alone, or of a batch without a record,

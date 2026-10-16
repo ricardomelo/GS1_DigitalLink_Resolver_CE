@@ -665,6 +665,16 @@ in domains and single sign-on, which belong to the organisation itself, and foun
 The item's page now shows each link type once in the visitor's best language and uses the brand's logo as favicon.
 2,621 checks in 39 programs without a browser; 24 mutations, all caught.
 
+**Item 9.2, administration and navigation** (`a3b3cea`; ADR 0013). A sidebar built from the user menu rather than a
+second list; an organisation's page that reads the modules the screens already use, with links to them, rather than
+moving twelve screens into it; prefixes as rows and a prefix picker; the portal's own dialog for the fourteen
+`confirm()` calls; the overview filtered by organisation for server administrators, with *Operation* theirs only; an
+alert history from now on (earlier alerts were never recorded). The phone-width review became a test that opens every
+screen at 390 pixels and measures the page's width. The e2e programs that confirmed through the browser's dialog now
+click the portal's, and the guide's screenshots, which clicked near the left edge to close the user menu, clicked the
+new sidebar instead: they now click in the hero band. 2,663 checks without a browser, 648 in Chromium; 24 mutations, all
+caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

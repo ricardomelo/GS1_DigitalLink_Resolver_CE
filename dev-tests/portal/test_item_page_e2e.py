@@ -192,7 +192,8 @@ with sync_playwright() as p:
     page.select_option("#locale", "en-GB"); page.wait_for_timeout(300)
     page.goto(BASE + "#branding"); page.wait_for_timeout(900)
     page.locator(".domain-card[data-prefix='7891234'] button", has_text="Remove brand").click()
-    page.wait_for_timeout(900)
+    page.wait_for_timeout(300)
+    page.click("#ask-ok"); page.wait_for_timeout(900)                     # the portal's own confirmation (ADR 0013)
     check("the brand removed (after a confirmation)", page.locator(".domain-card").count() == 0
           and page.is_visible("#branding-empty"))
 

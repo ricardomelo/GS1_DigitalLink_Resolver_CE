@@ -20,7 +20,7 @@ import os
 import re
 import secrets
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 import requests
@@ -1022,7 +1022,8 @@ def save_preferences():
 def tenant_summary(tenant_id: str | None) -> dict | None:
     """{"id", "name", "disabled"} of a tenant of this request, or None."""
     tenant = next((t for t in getattr(g, "tenants", None) or [] if t["id"] == tenant_id), None) if tenant_id else None
-    return {"id": tenant["id"], "name": tenant["name"], "disabled": tenant["disabled"]} if tenant else None
+    return {"id": tenant["id"], "name": tenant["name"], "disabled": tenant["disabled"],
+            "prefixes": tenant["prefixes"]} if tenant else None
 
 
 def session_info() -> dict:
@@ -2134,6 +2135,74 @@ def remove_tenant(tenant_id):
     return message("tenants.removed", 200, params={"name": tenant["name"]})
 
 
+@app.get("/portal/api/organisation")
+@require_login
+@admin_required
+def organisation_page():
+    """An organisation's settings in one place (Documentation/adr/0013-administration-and-navigation.md): its prefixes,
+    users, domains, item page brands, single sign-on, API keys and alerts. An organisation's administrators get their
+    own; a server administrator any (?id=<tenant id>, or "operator" for the installation's own), in support access the
+    one in support."""
+    if not g.server_admin:
+        chosen = g.account_tenant
+    elif g.support:
+        chosen = g.support
+    else:
+        chosen = str(request.args.get("id") or "operator").strip()
+        if chosen == "operator":
+            chosen = None
+        elif not any(t["id"] == chosen for t in g.tenants):
+            return message("tenants.unknown", 404)
+    tenant = next((t for t in g.tenants if t["id"] == chosen), None)
+    accounts = [users.public(name, a) for name, a in sorted(users.load().items()) if a.get("tenant") == chosen]
+    try:
+        records = record_owners()
+    except UpstreamError:
+        records = None
+    return jsonify({
+        "id": chosen or "operator", "name": tenant["name"] if tenant else "", "operator": tenant is None,
+        "prefixes": tenant["prefixes"] if tenant else [], "disabled": bool(tenant and tenant["disabled"]),
+        "records": None if records is None else records.get(chosen, 0),
+        "users": accounts,
+        "domains": [domains.public(d) for d in domains.load(chosen)],
+        "brands": [branding.public(d) for d in branding.load(chosen)],
+        "sso": [sso.public(d) for d in sso.load(sso.scope_id(chosen))],
+        "apikeys": [apikeys.public(d) for d in apikeys.load(chosen)],
+        "alerts": monitor.history(chosen, False, limit=20) if chosen else monitor.history(None, True, "-", limit=20),
+        "canEditPrefixes": bool(g.server_admin and not g.support and tenant),
+        "readOnly": bool(g.support),
+    })
+
+
+@app.get("/portal/api/alerts")
+@require_login
+@admin_required
+def alert_history():
+    """The alerts raised, newest first, with filters: tenant (server administrators: an organisation's id, or "-" for
+    the installation's own checks), kind (resolver, backup, certificate, 404), from and to (YYYY-MM-DD, the installation's
+    time zone is not applied: UTC days)."""
+    args = request.args
+    kind = str(args.get("kind") or "").strip() or None
+    if kind and kind not in monitor.KINDS:
+        raise ValidationError("alerts.kindUnknown")
+    days = []
+    for name in ("from", "to"):
+        text = str(args.get(name) or "").strip()
+        try:
+            days.append(datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=timezone.utc) if text else None)
+        except ValueError:
+            raise ValidationError("alerts.dateInvalid")
+    since, until = days[0], days[1] + timedelta(days=1) if days[1] else None
+    server = bool(g.server_admin and not g.support)
+    found = monitor.history(g.support if g.server_admin and g.support else g.account_tenant, server,
+                            str(args.get("tenant") or "").strip() or None, kind, since, until)
+    names = {t["id"]: t["name"] for t in g.tenants}
+    for entry in found:
+        entry["organisation"] = names.get(entry["tenant"], entry["tenant"]) if entry["tenant"] else None
+    return jsonify({"alerts": found, "kinds": list(monitor.KINDS), "historyDays": monitor.HISTORY_DAYS,
+                    "tenants": [{"id": t["id"], "name": t["name"]} for t in g.tenants] if server else []})
+
+
 SUPPORT_REASON = (5, 200)
 
 
@@ -2243,8 +2312,21 @@ def request_log_scope() -> tuple[dict, bool]:
 
 def log_sees_everything() -> bool:
     """A server administrator outside support access and not limited to prefixes sees the whole installation's
-    requests and API calls."""
-    return bool(g.server_admin and not g.support and not g.prefixes)
+    requests and API calls (unless the overview is filtered to one organisation: scoped_view())."""
+    return bool(g.server_admin and not g.support and not g.prefixes and not getattr(g, "scoped", False))
+
+
+def scoped_view(choice) -> None:
+    """A server administrator's look at one organisation's figures ("<tenant id>") or the operator's ("operator"),
+    as their administrators see them (Documentation/adr/0013-administration-and-navigation.md): the request's scope
+    narrowed, read only. Nothing for anyone else, or for no choice."""
+    choice = str(choice or "").strip()
+    if not choice or not g.server_admin or g.support or g.prefixes:
+        return
+    if choice != "operator" and not any(t["id"] == choice for t in g.tenants):
+        raise ValidationError("tenants.unknown")
+    g.tenant = None if choice == "operator" else choice
+    g.scoped = True
 
 
 def _log_unavailable(exc: Exception):
@@ -2735,9 +2817,12 @@ def overview_operation(last_check: dict) -> dict:
     return out
 
 
-def overview_data(days, top: int = overview.TOP_SCREEN) -> dict:
-    """Every indicator of the overview in the scope of the request."""
+def overview_data(days, top: int = overview.TOP_SCREEN, organisation=None) -> dict:
+    """Every indicator of the overview in the scope of the request (a server administrator's choice of organisation:
+    scoped_view()). Operation is the installation's, for server administrators only."""
     per = overview.period(days)
+    operation = overview_operation(overview_last_check()) if g.server_admin and not g.support else None
+    scoped_view(organisation)
     scope, whole = request_log_scope()
     last_check = overview_last_check()
     governance_of = None
@@ -2747,8 +2832,15 @@ def overview_data(days, top: int = overview.TOP_SCREEN) -> dict:
         def governance_of(p, n):
             return overview.governance(audit_scope, lambda anchor: gs1.within_prefixes(anchor, g.prefixes), p,
                                        g.tenant, whole, n)
-    return overview.build(per, scope, whole, overview_records(), last_check, overview_operation(last_check),
-                          governance_of, top)
+    data = overview.build(per, scope, whole, overview_records(), last_check, operation, governance_of, top)
+    # what matters to an organisation from operation: the last check of every link, how long requests are kept and
+    # the scope's active alerts (its spikes of 404), with record quality
+    data["records"]["lastCheckAt"] = last_check.get("checkedAt")
+    data["records"]["alerts"] = monitor.states(g.tenant, False)["active"] if not whole else \
+        monitor.states(None, True)["active"]
+    data["organisation"] = g.tenant if getattr(g, "scoped", False) else None
+    data["scoped"] = bool(getattr(g, "scoped", False))
+    return data
 
 
 @app.get("/portal/api/overview")
@@ -2756,7 +2848,7 @@ def overview_data(days, top: int = overview.TOP_SCREEN) -> dict:
 def get_overview():
     """The overview's indicators for the last 7, 30 or 90 days (Documentation/adr/0007-overview-indicators.md)."""
     try:
-        return jsonify(overview_data(request.args.get("days")))
+        return jsonify(overview_data(request.args.get("days"), organisation=request.args.get("tenant")))
     except PyMongoError as exc:
         return _log_unavailable(exc)
 
@@ -2773,7 +2865,7 @@ def export_overview():
     labels = data.get("labels") if isinstance(data.get("labels"), dict) else {}
     labels = {str(k): str(v) for k, v in labels.items()}
     try:
-        found = overview_data(data.get("days"), overview.TOP_EXPORT)
+        found = overview_data(data.get("days"), overview.TOP_EXPORT, organisation=data.get("tenant"))
     except PyMongoError as exc:
         return _log_unavailable(exc)
     stamp = time.strftime("%Y%m%d-%H%M")

@@ -144,7 +144,8 @@ with sync_playwright() as p:
     check("…the screen too", "Domínios" in page.inner_text("#hero-title") and "Verificado" in page.inner_text("#domains-list"))
     page.select_option("#locale", "en-GB"); page.wait_for_timeout(300)
 
-    page.locator(".domain-card[data-domain='id.acme.example'] button", has_text="Remove").click(); page.wait_for_timeout(900)
+    page.locator(".domain-card[data-domain='id.acme.example'] button", has_text="Remove").click(); page.wait_for_timeout(300)
+    page.click("#ask-ok"); page.wait_for_timeout(900)                     # the portal's own confirmation (ADR 0013)
     check("removed (after a confirmation)", page.locator(".domain-card").count() == 0 and page.is_visible("#domains-empty"))
     page.goto(BASE); page.wait_for_timeout(900)
     check("…the label no longer offers it", page.is_hidden("#opt-domain-field"))

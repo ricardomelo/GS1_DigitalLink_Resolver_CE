@@ -197,8 +197,9 @@ check("…a batch without a key record", rec["noKeyRecord"] == 1 and rec["breaks
       rec)
 check("…keys nobody scanned in the period", rec["notScanned"] == 1 and rec["notScannedSample"] == [f"/01/{ACME_B}"], rec)
 check("…no link check yet", rec["lastCheck"] is None and rec["linkProblems"] == 0, rec)
-check("operation for an organisation: the last link check, the log's retention and its alerts, no server details",
-      data["operation"] == {"lastCheck": None, "logDays": 90, "alerts": []}, data["operation"])
+check("for an organisation: no Operation (ADR 0013); the last link check, the log's retention and its alerts with records",
+      data["operation"] is None and data["records"]["lastCheckAt"] is None and data["logDays"] == 90
+      and data["records"]["alerts"] == [], (data["operation"], data["records"].get("alerts")))
 
 leo_data = leo.get("/portal/api/overview").get_json()
 check("a user limited to a prefix: only that prefix's requests (A and C, not B or the unknown code)",

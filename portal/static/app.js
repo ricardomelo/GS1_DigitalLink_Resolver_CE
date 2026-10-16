@@ -1271,7 +1271,7 @@ function hasUnsavedChanges(targetsOnly = false) {
 }
 
 async function openOther(entry) {
-  if (hasUnsavedChanges() && !confirm(t("others.confirmDiscard"))) return;
+  if (hasUnsavedChanges() && !await ask(t("others.confirmDiscard"), { danger: true })) return;
   state.snapshot = editorSnapshot();         // confirmed: do not ask again in openRecord
   const values = Object.fromEntries([...(entry.qualifiers || []), ...(entry.informative || [])]);
   for (const field of document.querySelectorAll("#qualifiers .qual-field")) {
@@ -1285,7 +1285,7 @@ async function openOther(entry) {
 async function openRecord() {
   const g = readKey(), l = readQualifiers();
   if (!CONFIG || !g.ok || !l.ok) return;
-  if ((state.pendingUnsaved || hasUnsavedChanges()) && !confirm(t("others.confirmDiscard"))) return;
+  if ((state.pendingUnsaved || hasUnsavedChanges()) && !await ask(t("others.confirmDiscard"), { danger: true })) return;
   state.pendingUnsaved = false;
   const button = $("#open");
   button.disabled = true;
@@ -1353,7 +1353,7 @@ function isRecordsView() { return location.hash.split("?")[0] === "#records"; }
 
 const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants", "#apikeys": "apikeys",
                 "#requests": "requests", "#overview": "overview", "#domains": "domains",
-                "#branding": "branding", "#sso": "sso" };
+                "#branding": "branding", "#sso": "sso", "#organisation": "organisation", "#alerts": "alerts" };
 
 /* Shows the editor, the record list, the user administration, the organisations or the audit trail, following
    the address (#records, #users, #tenants, #audit), so the browser's back button and bookmarks work. Users and the
@@ -1362,7 +1362,7 @@ const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#t
 function applyView() {
   let view = VIEWS[location.hash.split("?")[0]] || "editor";      // "#records?key=01&…": the list's filters
   if ((view === "users" || view === "audit" || view === "apikeys" || view === "domains"
-       || view === "branding" || view === "sso") && CONFIG
+       || view === "branding" || view === "sso" || view === "organisation" || view === "alerts") && CONFIG
       && CONFIG.accountRole !== "admin") view = "editor";
   if (view === "tenants" && CONFIG && !CONFIG.serverAdmin) view = "editor";
   $("#editor-view").hidden = view !== "editor";
@@ -1376,10 +1376,13 @@ function applyView() {
   $("#domains-view").hidden = view !== "domains";
   $("#branding-view").hidden = view !== "branding";
   $("#sso-view").hidden = view !== "sso";
+  $("#organisation-view").hidden = view !== "organisation";
+  $("#alerts-view").hidden = view !== "alerts";
+  markCurrent(view);
   if (view !== "apikeys") forgetNewKey();
   const titles = { editor: "intro", records: "records", users: "users", audit: "audit", tenants: "tenants",
                    apikeys: "apikeys", requests: "requests", overview: "overview", domains: "domains",
-                   branding: "branding", sso: "sso" };
+                   branding: "branding", sso: "sso", organisation: "org", alerts: "alerts" };
   I18N.set($("#hero-title"), `${titles[view]}.title`);
   I18N.set($("#hero-lede"), `${titles[view]}.lede`);
   const link = $("#hero-link");
@@ -1395,6 +1398,387 @@ function applyView() {
   if (view === "domains" && CONFIG) loadDomains();
   if (view === "branding" && CONFIG) loadBranding();
   if (view === "sso" && CONFIG) loadSso();
+  if (view === "organisation" && CONFIG) loadOrganisation();
+  if (view === "alerts" && CONFIG) loadOrganisations().then(() => loadAlerts());
+}
+
+/* ------------------------------------------------------------------ navigation (ADR 0013) */
+/* The sidebar of wide screens: the screens of the user menu (.nav-item), with the same rules of who sees which (their
+   classes), folded to icons on request (remembered in this browser). */
+const SIDEBAR_KEY = "portal.sidebar";
+
+function buildSidebar() {
+  const list = $("#sidebar-list");
+  list.replaceChildren(...$$(".menu-panel a.nav-item").map(item => {
+    const li = el("li");
+    const link = item.cloneNode(true);
+    link.removeAttribute("id");
+    link.removeAttribute("role");
+    link.className = item.className.replace("menu-item", "sidebar-item");
+    link.dataset.for = item.id;
+    const label = $("span", link);
+    if (label) link.title = t(label.dataset.i18n);
+    li.append(link);
+    return li;
+  }));
+  I18N.apply(list);
+  let folded = false;
+  try { folded = localStorage.getItem(SIDEBAR_KEY) === "folded"; } catch { /* storage refused: unfolded */ }
+  foldSidebar(folded);
+  markCurrent(VIEWS[location.hash.split("?")[0]] || "editor");
+}
+
+function foldSidebar(folded) {
+  document.body.classList.toggle("sidebar-folded", folded);
+  $("#sidebar-toggle").setAttribute("aria-expanded", String(!folded));
+  $("#sidebar-toggle").setAttribute("aria-label", t(folded ? "nav.unfold" : "nav.fold"));
+  $("#sidebar-toggle").title = t(folded ? "nav.unfold" : "nav.fold");
+  try { localStorage.setItem(SIDEBAR_KEY, folded ? "folded" : "open"); } catch { /* not remembered */ }
+}
+
+/* The current screen marked in the sidebar and the menu. */
+function markCurrent(view) {
+  const target = view === "editor" ? "#editor" : "#" + view;
+  for (const link of $$(".sidebar-item, .menu-panel a.nav-item")) {
+    if (link.getAttribute("href") === target) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+}
+
+/* ------------------------------------------------------------------ prefixes as rows (ADR 0013) */
+/* One GS1 Company Prefix per row, with "Add GCP" and a remove button on each; each row checked as it is typed (4 to
+   12 digits); mark(prefix) points out the row a refusal of the server names. Returns { values(), mark() }. */
+function prefixRows(container, values = [], { editable = true } = {}) {
+  container.replaceChildren();
+  const list = el("ul", "prefix-list");
+  const add = el("button", "btn btn-ghost prefix-add");
+  add.type = "button";
+  I18N.set(add, "prefixes.add");
+  const row = value => {
+    const li = el("li", "prefix-row");
+    const input = el("input");
+    input.value = value || ""; input.inputMode = "numeric"; input.autocomplete = "off"; input.maxLength = 12;
+    input.setAttribute("aria-label", t("prefixes.one"));
+    input.disabled = !editable;
+    const msg = el("span", "field-msg is-error prefix-msg");
+    input.addEventListener("input", () => {
+      const v = input.value.trim();
+      const bad = v && !/^\d{4,12}$/.test(v);
+      li.classList.toggle("is-invalid", Boolean(bad));
+      input.setAttribute("aria-invalid", String(Boolean(bad)));
+      msg.textContent = bad ? t("prefixes.invalid") : "";
+    });
+    li.append(input);
+    if (editable) {
+      const remove = el("button", "btn btn-danger-ghost prefix-remove", "×");
+      remove.type = "button";
+      remove.setAttribute("aria-label", t("prefixes.remove"));
+      remove.title = t("prefixes.remove");
+      remove.addEventListener("click", () => { li.remove(); if (!list.children.length) list.append(row("")); });
+      li.append(remove);
+    }
+    li.append(msg);
+    return li;
+  };
+  (values.length ? values : [""]).forEach(v => list.append(row(v)));
+  add.addEventListener("click", () => { const li = row(""); list.append(li); $("input", li).focus(); });
+  container.append(list);
+  if (editable) container.append(add);
+  return {
+    values: () => $$("input", list).map(i => i.value.trim()).filter(Boolean),
+    valid: () => $$("input", list).every(i => !i.value.trim() || /^\d{4,12}$/.test(i.value.trim())),
+    mark(prefix) {
+      for (const li of $$(".prefix-row", list)) {
+        const hit = prefix && $("input", li).value.trim() === prefix;
+        li.classList.toggle("is-invalid", hit);
+        if (hit) $("input", li).focus();
+      }
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ users' prefixes picked (ADR 0013) */
+/* A searchable list of the organisation's prefixes with checkboxes; a longer prefix inside one of them can be added
+   from the search box. Without prefixes to pick from (the operator's users), a text field as before. */
+function prefixPicker(available, selected = [], label = "users.prefixes") {
+  if (!available || !available.length) {
+    const input = el("input");
+    input.value = selected.join(", ");
+    input.autocomplete = "off";
+    input.setAttribute("aria-label", t(label));
+    input.placeholder = t("users.allPrefixes");
+    input.value_ = () => prefixesFrom(input.value);
+    input.getValues = () => prefixesFrom(input.value);
+    return input;
+  }
+  const box = el("details", "prefix-picker");
+  const summary = el("summary");
+  const panel = el("div", "picker-panel");
+  const search = el("input");
+  search.type = "search"; search.autocomplete = "off";
+  search.setAttribute("aria-label", t("prefixes.search"));
+  search.placeholder = t("prefixes.search");
+  const list = el("ul", "picker-list");
+  const addButton = el("button", "btn btn-ghost picker-add");
+  addButton.type = "button"; addButton.hidden = true;
+  const chosen = new Set(selected);
+  const options = [...new Set([...available, ...selected])].sort();
+  const refreshSummary = () => {
+    summary.textContent = chosen.size ? (chosen.size <= 3 ? [...chosen].sort().join(", ")
+      : t("prefixes.count", { count: chosen.size })) : t("users.allPrefixes");
+  };
+  const draw = () => {
+    const words = search.value.trim();
+    list.replaceChildren(...options.filter(p => p.includes(words)).map(p => {
+      const li = el("li");
+      const lab = el("label", "choice");
+      const cb = el("input");
+      cb.type = "checkbox"; cb.value = p; cb.checked = chosen.has(p);
+      cb.addEventListener("change", () => { cb.checked ? chosen.add(p) : chosen.delete(p); refreshSummary(); });
+      lab.append(cb, el("span", "", p));
+      li.append(lab);
+      return li;
+    }));
+    const longer = /^\d{5,12}$/.test(words) && !options.includes(words) && available.some(p => words.startsWith(p));
+    addButton.hidden = !longer;
+    if (longer) addButton.textContent = t("prefixes.addLonger", { prefix: words });
+  };
+  addButton.addEventListener("click", () => {
+    const p = search.value.trim();
+    options.push(p); options.sort(); chosen.add(p); search.value = ""; draw(); refreshSummary();
+  });
+  search.addEventListener("input", draw);
+  panel.append(search, list, addButton);
+  box.append(summary, panel);
+  box.setAttribute("aria-label", t(label));
+  refreshSummary(); draw();
+  box.getValues = () => [...chosen].sort();
+  return box;
+}
+
+/* The prefixes an organisation's users may be limited to: its own (null for the operator's users). */
+function tenantPrefixes(tenantId) {
+  if (!tenantId) return null;
+  if (CONFIG.tenant && CONFIG.tenant.id === tenantId) return CONFIG.tenant.prefixes || [];
+  return (people.tenants.find(tn => tn.id === tenantId) || {}).prefixes || [];
+}
+
+function newUserPicker() {
+  const tenant = CONFIG.serverAdmin ? $("#new-user-tenant").value : CONFIG.tenant?.id;
+  const picker = prefixPicker(tenantPrefixes(tenant), [], "users.prefixes");
+  picker.id = "new-user-prefixes";
+  $("#new-user-prefixes").replaceWith(picker);
+}
+
+/* ------------------------------------------------------------------ organisations for server administrators */
+let organisations = [];
+
+async function loadOrganisations() {
+  if (!CONFIG?.serverAdmin || CONFIG.support) return;
+  try {
+    organisations = (await api("GET", "tenants")).tenants || [];
+  } catch { organisations = []; }
+  for (const box of [$("#overview-tenant"), $("#alerts-tenant")]) {
+    const was = box.value;
+    box.replaceChildren(i18nOption(box.id === "overview-tenant" ? "overview.scopeWhole" : "users.anyTenant", ""),
+                        i18nOption(box.id === "overview-tenant" ? "users.operatorName" : "alerts.installation",
+                                   box.id === "overview-tenant" ? "operator" : "-"),
+                        ...organisations.map(o => new Option(o.name, o.id)));
+    box.value = [...box.options].some(o => o.value === was) ? was : "";
+  }
+}
+
+/* ------------------------------------------------------------------ an organisation's page (ADR 0013) */
+const orgState = { data: null, tab: "prefixes", rows: null };
+
+function orgId() {
+  return new URLSearchParams(location.hash.split("?")[1] || "").get("id") || "";
+}
+
+async function loadOrganisation() {
+  const id = orgId();
+  I18N.set($("#org-summary"), "records.loading");
+  try {
+    orgState.data = await api("GET", "organisation" + (id ? "?id=" + encodeURIComponent(id) : ""));
+    renderOrganisation();
+  } catch (e) {
+    orgStatus("error", e.code, e.params);
+  }
+}
+
+function orgStatus(kind, key, params) {
+  const box = $("#org-status");
+  box.hidden = !key;
+  box.className = "status " + (kind === "ok" ? "is-ok" : "is-error");
+  I18N.set(box, key, params);
+}
+
+function renderOrganisation() {
+  const d = orgState.data;
+  if (!d) return;
+  $("#org-name").textContent = d.operator ? t("org.operatorTitle") : d.name;
+  $("#org-summary").textContent = [
+    d.operator ? t("org.operatorNote") : t(d.disabled ? "users.disabled" : "users.active"),
+    d.records === null ? "" : t("org.records", { count: d.records }),
+    t("org.usersCount", { count: d.users.length })].filter(Boolean).join(" · ");
+  if (d.operator && orgState.tab === "prefixes") orgState.tab = "users";       // the operator holds no prefix of its own
+  for (const tab of $$("#org-tabs [role=tab]")) {
+    const on = tab.dataset.tab === orgState.tab;
+    tab.setAttribute("aria-selected", String(on));
+    tab.tabIndex = on ? 0 : -1;
+    tab.hidden = d.operator && tab.dataset.tab === "prefixes";
+  }
+  const panel = $("#org-panel");
+  panel.setAttribute("aria-labelledby", "org-tab-" + orgState.tab);
+  panel.replaceChildren(...orgPanel(d, orgState.tab));
+}
+
+/* A link to the screen that changes a part, or the way there for a server administrator (support access). */
+function orgManage(screen, ownScreen) {
+  const d = orgState.data;
+  const p = el("p", "org-manage");
+  const mine = !CONFIG.serverAdmin || CONFIG.support || d.operator || ownScreen;
+  if (mine) {
+    const a = el("a", "", t("org.manage"));
+    a.href = screen;
+    p.append(a);
+  } else if (!d.operator) {
+    const b = el("button", "btn btn-ghost", t("org.throughSupport"));
+    b.type = "button";
+    b.addEventListener("click", () => openSupport({ id: d.id, name: d.name }));
+    p.append(b);
+  }
+  return p;
+}
+
+function orgTable(headers, rows) {
+  const wrap = el("div", "table-wrap");
+  const table = el("table", "records-table org-table");
+  const head = el("tr");
+  headers.forEach(h => head.append(Object.assign(el("th", "", t(h)), { scope: "col" })));
+  const thead = el("thead"); thead.append(head);
+  const tbody = el("tbody");
+  rows.forEach(cells => {
+    const tr = el("tr");
+    cells.forEach((c, i) => { const td = el("td", "", c); td.dataset.label = t(headers[i]); tr.append(td); });
+    tbody.append(tr);
+  });
+  table.append(thead, tbody);
+  wrap.append(table);
+  return wrap;
+}
+
+function orgPanel(d, tab) {
+  const empty = key => el("p", "records-empty", t(key));
+  if (tab === "prefixes") {
+    const box = el("div", "prefix-rows");
+    orgState.rows = prefixRows(box, d.prefixes, { editable: d.canEditPrefixes });
+    const out = [el("p", "field-msg", t(d.canEditPrefixes ? "org.prefixesHint" : "org.prefixesReadOnly")), box];
+    if (d.canEditPrefixes) {
+      const save = el("button", "btn btn-primary", t("org.savePrefixes"));
+      save.type = "button";
+      save.id = "org-save-prefixes";
+      save.addEventListener("click", saveOrgPrefixes);
+      out.push(save);
+    }
+    return out;
+  }
+  if (tab === "users") {
+    return d.users.length ? [orgTable(["users.name", "users.role", "users.prefixes", "users.email", "users.state"],
+      d.users.map(u => [u.username, t("role." + u.role), u.prefixes.length ? u.prefixes.join(", ") : t("users.allPrefixes"),
+                        u.email || "—", t(u.disabled ? "users.disabled" : u.invited ? "users.invitedState" : "users.active")])),
+      orgManage("#users", true)] : [empty("org.noUsers"), orgManage("#users", true)];
+  }
+  if (tab === "domains") {
+    return [d.domains.length ? orgTable(["domains.domain", "org.domainState", "domains.defaults"],
+      d.domains.map(x => [x.domain, t(x.verified ? "org.domainVerified" : "org.domainPending"),
+                          (x.defaultFor || []).join(", ") || "—"])) : empty("org.noDomains"), orgManage("#domains", true)];
+  }
+  if (tab === "brands") {
+    return [d.brands.length ? orgTable(["branding.prefix", "branding.name", "org.logo"],
+      d.brands.map(b => [b.prefix === "*" ? t("branding.installation") : b.prefix, b.name || "—",
+                         b.logo ? t("org.yes") : t("org.no")])) : empty("org.noBrands"), orgManage("#branding", false)];
+  }
+  if (tab === "sso") {
+    const c = d.sso[0];
+    return [c ? orgTable(["sso.issuer", "sso.domains", "org.ssoState"], [[c.issuer, c.domains.join(", ") || "—",
+      t(c.enabled ? (c.passwordOff ? "org.ssoOnlySso" : "org.ssoOn") : "org.ssoOff")]]) : empty("org.noSso"),
+      orgManage("#sso", true)];
+  }
+  if (tab === "apikeys") {
+    return [d.apikeys.length ? orgTable(["apikeys.name", "apikeys.scopes", "apikeys.expires", "users.state"],
+      d.apikeys.map(k => [k.name, k.scopes.join(", "), formatWhen(k.expiresAt), t("apikeys.state." + k.state)]))
+      : empty("org.noKeys"), orgManage("#apikeys", false)];
+  }
+  const link = el("p", "org-manage");
+  const a = el("a", "", t("org.allAlerts"));
+  a.href = "#alerts" + (CONFIG.serverAdmin && !CONFIG.support ? "?tenant=" + encodeURIComponent(d.operator ? "-" : d.id) : "");
+  link.append(a);
+  return [d.alerts.length ? alertsTable(d.alerts, false) : empty("alerts.none"), link];
+}
+
+async function saveOrgPrefixes() {
+  const d = orgState.data, rows = orgState.rows;
+  if (!rows.valid()) { orgStatus("error", "prefixes.invalid"); return; }
+  const prefixes = rows.values();
+  if (!await ask(t("tenants.confirmPrefixes", { name: d.name }))) return;
+  try {
+    const result = await api("PUT", "tenants/" + encodeURIComponent(d.id), { prefixes });
+    orgStatus("ok", result.code, result.params);
+    await loadOrganisation();
+  } catch (e) {
+    orgStatus("error", e.code, e.params);
+    rows.mark(e.params?.prefix);
+  }
+}
+
+/* ------------------------------------------------------------------ alert history (ADR 0013) */
+function alertText(a) {
+  const d = a.detail || {};
+  const what = a.kind === "404" ? t("overview.alert.404", { count: d.count ?? "" })
+    : t("overview.check." + a.kind);
+  const extra = d.error || d.reason || (d.host ? d.host : "") || "";
+  return extra ? `${what} · ${extra}` : what;
+}
+
+function alertsTable(list, withOrganisation) {
+  const headers = ["alerts.raised", "alerts.ended", "alerts.kind", ...(withOrganisation ? ["alerts.organisation"] : []),
+                   "alerts.detail"];
+  return orgTable(headers, list.map(a => [formatWhen(a.raisedAt), a.endedAt ? formatWhen(a.endedAt) : t("alerts.ongoing"),
+    t("alerts.kind." + a.kind), ...(withOrganisation ? [a.organisation || t("alerts.installation")] : []), alertText(a)]));
+}
+
+async function loadAlerts(event) {
+  event?.preventDefault();
+  const kinds = $("#alerts-kind");
+  if (!kinds.options.length) {
+    kinds.replaceChildren(i18nOption("alerts.anyKind", ""),
+                          ...["resolver", "backup", "certificate", "404"].map(k => i18nOption("alerts.kind." + k, k)));
+  }
+  const fromHash = new URLSearchParams(location.hash.split("?")[1] || "").get("tenant");
+  if (fromHash !== null && !event) $("#alerts-tenant").value = fromHash;
+  const query = new URLSearchParams();
+  if (CONFIG.serverAdmin && !CONFIG.support && $("#alerts-tenant").value) query.set("tenant", $("#alerts-tenant").value);
+  for (const [name, box] of [["kind", "#alerts-kind"], ["from", "#alerts-from"], ["to", "#alerts-to"]]) {
+    if ($(box).value) query.set(name, $(box).value);
+  }
+  try {
+    const data = await api("GET", "alerts?" + query);
+    const operator = CONFIG.serverAdmin && !CONFIG.support;
+    $("#alerts-body").replaceChildren(...data.alerts.map(a => {
+      const tr = el("tr");
+      const cells = [formatWhen(a.raisedAt), a.endedAt ? formatWhen(a.endedAt) : t("alerts.ongoing"), t("alerts.kind." + a.kind),
+                     ...(operator ? [a.organisation || t("alerts.installation")] : []), alertText(a)];
+      if (!a.endedAt) tr.className = "is-alert";
+      cells.forEach(c => tr.append(el("td", "", c)));
+      return tr;
+    }));
+    $("#alerts-empty").hidden = data.alerts.length > 0;
+    I18N.set($("#alerts-count"), "alerts.count", { count: data.alerts.length });
+    I18N.set($("#alerts-note"), "alerts.note", { days: data.historyDays });
+  } catch (e) {
+    I18N.set($("#alerts-count"), e.code, e.params);
+  }
 }
 
 /* ------------------------------------------------------------------ roles */
@@ -1470,6 +1854,22 @@ function restoreVersion(version) {
   $("#description").focus();
 }
 
+/* ------------------------------------------------------------------ the portal's own dialogs */
+/* A confirmation in the portal's style (Documentation/adr/0013-administration-and-navigation.md), in place of the
+   browser's confirm(): resolves true when confirmed, false when cancelled or closed (Escape). danger: the confirming
+   button in red, for what cannot be undone. */
+function ask(text, { danger = false } = {}) {
+  const dialog = $("#ask-dialog");
+  $("#ask-text").textContent = text;
+  $("#ask-ok").className = "btn " + (danger ? "btn-danger" : "btn-primary");
+  dialog.returnValue = "";
+  return new Promise(resolve => {
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "ok"), { once: true });
+    dialog.showModal();
+    $(danger ? "#ask-cancel" : "#ask-ok").focus();
+  });
+}
+
 /* ------------------------------------------------------------------ user administration */
 function prefixesFrom(text) {
   return String(text || "").split(/[\s,;]+/).map(p => p.trim()).filter(Boolean);
@@ -1542,6 +1942,7 @@ async function loadUsers() {
     people.all = data.users;
     people.tenants = data.tenants || [];
     if (CONFIG.serverAdmin) fillTenantSelectors();
+    newUserPicker();
     renderUsers();
   } catch (e) {
     usersStatus("error", e.code, e.params);
@@ -1563,10 +1964,8 @@ function userRow(u) {
   const role = roleSelect(u.role);
   role.setAttribute("aria-label", t("users.role"));
   cell("users.role", role);
-  const prefixes = document.createElement("input");
-  prefixes.value = u.prefixes.join(", ");
-  prefixes.setAttribute("aria-label", t("users.prefixes"));
-  prefixes.placeholder = t("users.allPrefixes");
+  // the organisation's own prefixes to pick from (ADR 0013); the operator's users type them
+  const prefixes = prefixPicker(tenantPrefixes(u.tenant), u.prefixes, "users.prefixes");
   cell("users.prefixes", prefixes);
   const email = document.createElement("input");
   email.type = "email"; email.maxLength = 254; email.autocomplete = "off";
@@ -1586,7 +1985,7 @@ function userRow(u) {
     b.addEventListener("click", handler);
     actions.append(b);
   };
-  button("users.save", () => saveUser(u.username, { role: role.value, prefixes: prefixesFrom(prefixes.value),
+  button("users.save", () => saveUser(u.username, { role: role.value, prefixes: prefixes.getValues(),
                                                     email: email.value.trim() }), "btn-secondary");
   if (u.username !== CONFIG.user) {                // your own password: user menu → Options
     button(mailLink(u) && u.invited ? "users.resendInvite" : "users.resetPassword", () => resetUser(u));
@@ -1608,7 +2007,7 @@ async function createUser(event) {
   try {
     const result = await api("POST", "users", {
       username: $("#new-user-name").value.trim(), role: $("#new-user-role").value,
-      prefixes: prefixesFrom($("#new-user-prefixes").value), email: $("#new-user-email").value.trim(),
+      prefixes: $("#new-user-prefixes").getValues(), email: $("#new-user-email").value.trim(),
       invite: Boolean(CONFIG.mail?.enabled && $("#new-user-invite").checked),
       ...(CONFIG.serverAdmin ? { tenant: $("#new-user-tenant").value } : {}),
     });
@@ -1618,6 +2017,7 @@ async function createUser(event) {
     $("#users-create").reset();
     $("#new-user-role").value = "editor";
     $("#new-user-tenant").value = tenant;
+    newUserPicker();
     loadUsers();
   } catch (e) {
     usersStatus("error", e.code, e.params);
@@ -1637,7 +2037,7 @@ async function saveUser(username, changes) {
 async function resetUser(u) {
   const username = u.username;
   const question = !mailLink(u) ? "users.confirmReset" : u.invited ? "users.confirmResendInvite" : "users.confirmResetLink";
-  if (!confirm(t(question, { user: username }))) return;
+  if (!await ask(t(question, { user: username }))) return;
   $("#temp-password").hidden = true;
   try {
     const result = await api("POST", `users/${encodeURIComponent(username)}/reset`, {});
@@ -1650,7 +2050,7 @@ async function resetUser(u) {
 }
 
 async function removeUser(username) {
-  if (!confirm(t("users.confirmRemove", { user: username }))) return;
+  if (!await ask(t("users.confirmRemove", { user: username }), { danger: true })) return;
   try {
     const result = await api("DELETE", "users/" + encodeURIComponent(username));
     usersStatus("ok", result.code, result.params);
@@ -1759,7 +2159,7 @@ async function createApiKey(event) {
 }
 
 async function revokeApiKey(k) {
-  if (!confirm(t("apikeys.confirmRevoke", { name: k.name }))) return;
+  if (!await ask(t("apikeys.confirmRevoke", { name: k.name }), { danger: true })) return;
   try {
     const result = await api("DELETE", "keys/" + encodeURIComponent(k.id));
     apikeysStatus("ok", result.code, result.params);
@@ -1777,7 +2177,10 @@ function tenantsStatus(kind, key, params) {
   if (key) I18N.set(box, key, params);
 }
 
+let newTenantRows = null;
+
 async function loadTenants() {
+  if (!newTenantRows) newTenantRows = prefixRows($("#new-tenant-prefixes"));
   try {
     const data = await api("GET", "tenants");
     $("#tenants-body").replaceChildren(...data.tenants.map(tenantRow));
@@ -1808,8 +2211,7 @@ function tenantRow(tn) {
   const name = input("name", tn.name, "tenants.name");
   name.maxLength = 80;
   cell("tenants.name", name);
-  const prefixes = input("prefixes", tn.prefixes.join(", "), "tenants.prefixes");
-  cell("tenants.prefixes", prefixes);
+  cell("tenants.prefixes", tn.prefixes.join(", ")).classList.add("code");     // changed on the organisation's page
   cell("tenants.users", String(tn.users)).classList.add("count");
   cell("tenants.records", tn.records === null ? "—" : String(tn.records)).classList.add("count");
   cell("users.state", t(tn.disabled ? "users.disabled" : "users.active"));
@@ -1823,7 +2225,8 @@ function tenantRow(tn) {
     actions.append(b);
     return b;
   };
-  button("users.save", () => saveTenant(tn, { name: name.value, prefixes: prefixesFrom(prefixes.value) }), "btn-secondary");
+  button("users.save", () => saveTenant(tn, { name: name.value, prefixes: tn.prefixes }), "btn-secondary");
+  button("tenants.open", () => { location.hash = "#organisation?id=" + encodeURIComponent(tn.id); });
   button(tn.disabled ? "users.enable" : "users.disable", () => toggleTenant(tn));
   button("tenants.support", () => openSupport(tn));
   const remove = button("users.remove", () => removeTenant(tn), "btn-danger-ghost");
@@ -1837,31 +2240,34 @@ function tenantRow(tn) {
 
 async function createTenant(event) {
   event.preventDefault();
-  const name = $("#new-tenant-name").value.trim(), prefixes = prefixesFrom($("#new-tenant-prefixes").value);
-  if (prefixes.length && !confirm(t("tenants.confirmCreate", { name, prefixes: prefixes.join(", ") }))) return;
+  if (!newTenantRows.valid()) { tenantsStatus("error", "prefixes.invalid"); return; }
+  const name = $("#new-tenant-name").value.trim(), prefixes = newTenantRows.values();
+  if (prefixes.length && !await ask(t("tenants.confirmCreate", { name, prefixes: prefixes.join(", ") }))) return;
   try {
     const result = await api("POST", "tenants", { name, prefixes });
     tenantsStatus("ok", result.code, result.params);
     $("#tenants-create").reset();
+    newTenantRows = prefixRows($("#new-tenant-prefixes"));
     loadTenants();
   } catch (e) {
     tenantsStatus("error", e.code, e.params);
+    newTenantRows.mark(e.params?.prefix);
   }
 }
 
 async function saveTenant(tn, changes) {
   const same = changes.prefixes.slice().sort().join(",") === tn.prefixes.join(",");
-  if (!same && !confirm(t("tenants.confirmPrefixes", { name: tn.name }))) return;
+  if (!same && !await ask(t("tenants.confirmPrefixes", { name: tn.name }))) return;
   await tenantCall("PUT", tn, same ? { name: changes.name } : changes);
 }
 
 async function toggleTenant(tn) {
-  if (!tn.disabled && !confirm(t("tenants.confirmDisable", { name: tn.name }))) return;
+  if (!tn.disabled && !await ask(t("tenants.confirmDisable", { name: tn.name }), { danger: true })) return;
   await tenantCall("PUT", tn, { disabled: !tn.disabled });
 }
 
 async function removeTenant(tn) {
-  if (!confirm(t("tenants.confirmRemove", { name: tn.name }))) return;
+  if (!await ask(t("tenants.confirmRemove", { name: tn.name }), { danger: true })) return;
   await tenantCall("DELETE", tn);
 }
 
@@ -2250,8 +2656,8 @@ function domainCard(d) {
     const button = (key, cls, fn) => { const b = el("button", "btn " + cls, t(key)); b.type = "button"; b.addEventListener("click", fn); actions.append(b); };
     if (!d.verified) button("domains.verify", "btn-primary", () => domainCall("POST", d, "/verify", {}));
     button("domains.check", "btn-ghost", () => domainCall("POST", d, "/check", {}));
-    button("domains.remove", "btn-danger-ghost", () => {
-      if (confirm(t("domains.confirmRemove", { domain: d.domain }))) domainCall("DELETE", d, "");
+    button("domains.remove", "btn-danger-ghost", async () => {
+      if (await ask(t("domains.confirmRemove", { domain: d.domain }), { danger: true })) domainCall("DELETE", d, "");
     });
     card.append(actions);
   }
@@ -2390,8 +2796,8 @@ function ssoCard(c) {
   }
   if (!c.blank) {
     button("sso.test", "btn-ghost", () => ssoCall("POST", c.scope, "/test", {}));
-    if (editable) button("sso.remove", "btn-danger-ghost", () => {
-      if (confirm(t("sso.confirmRemove"))) ssoCall("DELETE", c.scope, "");
+    if (editable) button("sso.remove", "btn-danger-ghost", async () => {
+      if (await ask(t("sso.confirmRemove"), { danger: true })) ssoCall("DELETE", c.scope, "");
     });
   }
   card.append(actions);
@@ -2495,8 +2901,8 @@ function brandCard(b) {
       $("#brand-name").focus();
     });
     if (b.logo) button("branding.removeLogo", "btn-ghost", () => brandingCall("PUT", b.prefix, { logo: "" }));
-    button("branding.remove", "btn-danger-ghost", () => {
-      if (confirm(t("branding.confirmRemove", { prefix: b.prefix }))) brandingCall("DELETE", b.prefix);
+    button("branding.remove", "btn-danger-ghost", async () => {
+      if (await ask(t("branding.confirmRemove", { prefix: b.prefix }), { danger: true })) brandingCall("DELETE", b.prefix);
     });
     card.append(actions);
   }
@@ -2621,7 +3027,9 @@ async function loadOverview() {
   const ticket = ++overviewState.loading;
   I18N.set($("#overview-status"), "records.loading");
   try {
-    const data = await api("GET", "overview?days=" + encodeURIComponent(days));
+    const tenant = CONFIG?.serverAdmin && !CONFIG.support ? $("#overview-tenant").value : "";
+    const data = await api("GET", "overview?days=" + encodeURIComponent(days)
+                                  + (tenant ? "&tenant=" + encodeURIComponent(tenant) : ""));
     if (ticket !== overviewState.loading) return;          // a newer period was chosen meanwhile
     overviewState.data = data;
     $("#overview-status").textContent = "";
@@ -2637,8 +3045,10 @@ function renderOverview() {
   const days = d.period.days;
   const fmt = new Intl.DateTimeFormat(I18N.locale, { day: "2-digit", month: "2-digit", year: "numeric" });
   const day = iso => fmt.format(new Date(iso + "T12:00:00"));
-  const who = d.whole ? t("overview.scopeWhole")
-    : CONFIG.support ? CONFIG.support.name : CONFIG.tenant ? CONFIG.tenant.name : t("users.operatorName");
+  const chosen = d.scoped ? (d.organisation ? (organisations.find(o => o.id === d.organisation)?.name || d.organisation)
+                                            : t("users.operatorName")) : null;
+  const who = d.whole ? t("overview.scopeWhole") : chosen
+    || (CONFIG.support ? CONFIG.support.name : CONFIG.tenant ? CONFIG.tenant.name : t("users.operatorName"));
   $("#overview-scope").textContent = t("overview.scope", { who, from: day(d.period.from), to: day(d.period.to),
                                                             zone: d.period.timeZone });
   $("#overview-off").hidden = d.logDays > 0;
@@ -2729,15 +3139,26 @@ function renderOverview() {
     tile("overview.r.linkProblems", check ? r.linkProblems : null, { warn: r.linkProblems > 0,
          note: check ? t("overview.checkedAt", { when: formatWhen(check.at) }) : t("overview.neverChecked") }),
   ] : []));
+  // From operation, what matters to every scope (ADR 0013): the last check of every link, how long requests are kept,
+  // the scope's active alerts
+  const alerts = r.alerts || [];
+  const recordFacts = [
+    ["overview.lastCheck", r.lastCheckAt ? formatWhen(r.lastCheckAt) : t("overview.neverChecked")],
+    ["overview.op.logDays", d.logDays ? t("overview.op.logDaysValue", { days: d.logDays }) : t("overview.off")],
+    ["overview.op.alerts", alerts.length ? alerts.map(a => t("overview.alert." + a.kind, { count: a.detail?.count ?? "" })
+      + " · " + t("overview.alertSince", { when: formatWhen(a.since) })).join("\n") : t("overview.op.noAlerts")]];
+  $("#overview-records-facts").replaceChildren(...recordFacts.flatMap(([k, v]) =>
+    [el("dt", "", t(k)), el("dd", k === "overview.op.alerts" && alerts.length ? "is-alert" : "", v)]));
   $("#overview-bykey").replaceChildren(r.available
     ? shareTable(null, Object.entries(r.byKey).sort((a, b) => b[1] - a[1]), ai => keyName(ai)) : "");
   $("#overview-quiet").replaceChildren(...(r.notScannedSample || []).map(a => el("li", "code", a)));
   $("#overview-quiet-empty").hidden = !r.available || (r.notScannedSample || []).length > 0;
 
   // Operation
+  // Operation: the installation's, server administrators only (ADR 0013)
   const op = d.operation || {};
-  const facts = [["overview.lastCheck", op.lastCheck ? formatWhen(op.lastCheck) : t("overview.neverChecked")],
-                 ["overview.op.logDays", d.logDays ? t("overview.op.logDaysValue", { days: d.logDays }) : t("overview.off")]];
+  $("#overview-operation-group").hidden = !d.operation;
+  const facts = [];
   if ("worker" in op) facts.push(["overview.op.worker", op.worker ? t("overview.op.workers", { n: op.worker }) : t("overview.op.noWorker")]);
   if ("mail" in op) facts.push(["overview.op.mail", t(op.mail === "on" ? "overview.on" : "overview.off")]);
   if ("countedUntil" in op) facts.push(["overview.op.countedUntil", op.countedUntil ? day(op.countedUntil) : "—"]);
@@ -2751,7 +3172,7 @@ function renderOverview() {
     return t("overview.state." + (c.state || "unknown")) + (extra ? " · " + extra : "");
   };
   if (op.checks) ["resolver", "backup", "certificate"].forEach(name => facts.push(["overview.check." + name, checkText(op.checks[name])]));
-  facts.push(["overview.op.alerts", (op.alerts || []).length
+  if (d.operation) facts.push(["overview.op.alerts", (op.alerts || []).length
     ? op.alerts.map(a => t("overview.alert." + a.kind, { count: a.detail?.count ?? "" }) + " · " +
                          t("overview.alertSince", { when: formatWhen(a.since) })).join("\n")
     : t("overview.op.noAlerts")]);
@@ -2804,7 +3225,8 @@ async function exportOverview(format) {
   try {
     const res = await fetch(BASE + "api/overview/export", {
       method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ format, days: Number(days), labels: overviewLabels() }),
+      body: JSON.stringify({ format, days: Number(days), labels: overviewLabels(),
+                             tenant: CONFIG?.serverAdmin && !CONFIG.support ? $("#overview-tenant").value : "" }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -3974,7 +4396,7 @@ async function remove() {
   const target = own.length
     ? t("delete.targetQualified", { qualifiers: qualText(own), key: keyText(g.ai, g.value) })
     : t("delete.targetBase", { key: keyText(g.ai, g.value) });
-  if (!confirm(t("delete.confirm", { target }))) return;
+  if (!await ask(t("delete.confirm", { target }), { danger: true })) return;
   try {
     const result = await api("DELETE", "record?" + query(g, l));
     showStatus("ok", result.code);
@@ -4179,8 +4601,8 @@ async function init() {
   $("#records-state").addEventListener("change", renderRecords);
   $("#records-alert-show").addEventListener("click", () => { $("#records-state").value = "nokey"; renderRecords(); });
   $("#records-rules-show").addEventListener("click", () => { $("#records-state").value = "rules"; renderRecords(); });
-  $("#records-rules-fix").addEventListener("click", () => {
-    if (confirm(t("records.rules.confirmAll"))) fixSerials({ all: true });
+  $("#records-rules-fix").addEventListener("click", async () => {
+    if (await ask(t("records.rules.confirmAll"))) fixSerials({ all: true });
   });
   $("#form").addEventListener("submit", save);
   $("#delete").addEventListener("click", remove);
@@ -4254,6 +4676,27 @@ async function init() {
     $("#key-value").focus();
   });
   window.addEventListener("hashchange", applyView);
+  $("#ask-ok").addEventListener("click", () => $("#ask-dialog").close("ok"));
+  $("#ask-cancel").addEventListener("click", () => $("#ask-dialog").close("cancel"));
+  $("#sidebar-toggle").addEventListener("click", () => foldSidebar(!document.body.classList.contains("sidebar-folded")));
+  $("#new-user-tenant").addEventListener("change", newUserPicker);
+  $("#overview-tenant").addEventListener("change", loadOverview);
+  $("#alerts-filters").addEventListener("submit", loadAlerts);
+  for (const tab of $$("#org-tabs [role=tab]")) {
+    tab.addEventListener("click", () => { orgState.tab = tab.dataset.tab; renderOrganisation(); });
+  }
+  $("#org-tabs").addEventListener("keydown", e => {             // arrow keys move between the tabs
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const tabs = $$("#org-tabs [role=tab]").filter(x => !x.hidden);
+    const at = tabs.indexOf(document.activeElement);
+    const next = tabs[(at + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+    orgState.tab = next.dataset.tab; renderOrganisation(); next.focus();
+  });
+  document.addEventListener("localechange", () => {
+    buildSidebar();
+    if (!$("#organisation-view").hidden) renderOrganisation();
+    if (!$("#alerts-view").hidden) loadAlerts({ preventDefault() {} });
+  });
   document.addEventListener("localechange", () => {            // dates, scope texts and filter names follow the language
     if (records.loaded) fillFilters();
     renderRecords();
@@ -4273,6 +4716,8 @@ async function init() {
   document.body.dataset.operatorView = String(Boolean(CONFIG.serverAdmin && !CONFIG.support));
   document.body.dataset.mail = CONFIG.mail?.enabled ? "on" : "off";
   showTenant();
+  buildSidebar();
+  loadOrganisations();
   SessionClock.start(CONFIG.session);
   setupAttributes();
   fillDomainOption();

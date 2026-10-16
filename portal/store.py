@@ -79,6 +79,11 @@ INDEXES = {
         ([("cp", ASCENDING), ("day", ASCENDING)], {}),
         ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
     ],
+    "alert_history": [
+        ([("raisedAt", DESCENDING)], {}),
+        ([("tenant", ASCENDING), ("raisedAt", DESCENDING)], {}),
+        ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
+    ],
     "api_requests": [
         ([("t", DESCENDING)], {}),
         ([("tenant", ASCENDING), ("t", DESCENDING)], {}),

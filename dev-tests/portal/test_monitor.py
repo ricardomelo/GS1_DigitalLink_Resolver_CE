@@ -299,16 +299,19 @@ check("overview of a server administrator: every active alert and the state of e
       sorted(a["kind"] for a in op["alerts"]) == ["404", "404", "backup", "resolver"] and set(op["checks"]) == {"resolver", "backup",
                                                                                                     "certificate"},
       op.get("alerts"))
+# Operation is the server administrators' only (ADR 0013); everyone else's alerts come with record quality
 ana = client("ana", "ana-password-long")
-op = ana.get("/portal/api/overview").get_json()["operation"]
-check("…an organisation's administrator: its own spike only, no checks",
-      [a["id"] for a in op["alerts"]] == [f"404:{acme['id']}"] and "checks" not in op, op)
+data = ana.get("/portal/api/overview").get_json()
+check("…an organisation's administrator: its own spike only, no checks (no Operation)",
+      [a["id"] for a in data["records"]["alerts"]] == [f"404:{acme['id']}"] and data["operation"] is None, data["records"])
 oto = client("oto", "oto-password-long")
-op = oto.get("/portal/api/overview").get_json()["operation"]
-check("…an operator user: no installation alerts", op["alerts"] == [] and "checks" not in op, op)
+data = oto.get("/portal/api/overview").get_json()
+check("…an operator user: no installation alerts", data["records"]["alerts"] == [] and data["operation"] is None,
+      data["records"])
 root.post("/portal/api/support", json={"tenant": acme["id"], "reason": "Ticket 1"}, headers=ORIGIN)
-op = root.get("/portal/api/overview").get_json()["operation"]
-check("…support access: the organisation's alerts", [a["id"] for a in op["alerts"]] == [f"404:{acme['id']}"], op["alerts"])
+data = root.get("/portal/api/overview").get_json()
+check("…support access: the organisation's alerts", [a["id"] for a in data["records"]["alerts"]] == [f"404:{acme['id']}"]
+      and data["operation"] is None, data["records"]["alerts"])
 root.delete("/portal/api/support", headers=ORIGIN)
 ANSWER["/.well-known/gs1resolver"] = 200
 

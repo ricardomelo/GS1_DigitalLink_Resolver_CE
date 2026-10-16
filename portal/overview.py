@@ -6,7 +6,8 @@ see, the audit trail of the scope) and computed on request from what the portal 
 
   usage, quality   the daily aggregates and today's raw events of the request log (requestlog.collect());
   records          the records of the record list (app.visible_records()) and the last check of every link;
-  operation        the last check of every link; for server administrators the worker, e-mail and the log's counts;
+  operation        server administrators only (ADR 0013): the worker, e-mail, the monitoring checks and the log's
+                   counts; the last check of every link, the log's days and the scope's alerts are with records;
   governance       the journal, the user accounts, the API keys and the tenant API's calls (administrators).
 
 app.py gathers the scope and calls build(); export_rows() and write_xlsx() turn the answer into the files.
@@ -237,9 +238,12 @@ def summary_rows(data: dict, labels: dict) -> list[list]:
     else:
         add("records", "overview.r.unavailable", "")
     if r.get("lastCheck"):
-        add("operation", "overview.lastCheck", r["lastCheck"]["at"])
-    op = data.get("operation") or {}
-    for name in ("worker", "mail", "logDays", "countedUntil"):
+        add("records", "overview.lastCheck", r["lastCheck"]["at"])
+    add("records", "overview.op.logDays", data.get("logDays"))
+    if r.get("alerts") is not None:
+        add("records", "overview.op.alerts", len(r["alerts"]))
+    op = data.get("operation") or {}       # server administrators only (ADR 0013)
+    for name in ("worker", "mail", "countedUntil"):
         if name in op:
             add("operation", "overview.op." + name, op[name])
     if "alerts" in op:

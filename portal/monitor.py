@@ -7,7 +7,12 @@ checks (the "monitor" lock, not waited for). Each check keeps a document in the 
     {_id: "resolver" | "backup" | "certificate" | "404:*" | "404:<tenant id>", state: "ok" | "alert" | "unknown",
      since, checkedAt, failures, detail, notifiedAt, tenant}
 
-and a change of state decides the messages (category "alerts" of notify.py): one when a check goes into alert, a
+Each alert raised is also recorded in "alert_history" (Documentation/adr/0013-administration-and-navigation.md):
+
+    {_id, check: "resolver" | … | "404:<scope>", kind, tenant, raisedAt, endedAt (None while it lasts), endedAs
+     ("ok" | "unknown"), detail, expiresAt}
+
+kept HISTORY_DAYS after it was raised. A change of state decides the messages (category "alerts" of notify.py): one when a check goes into alert, a
 reminder every REMIND_HOURS while it lasts, one when it is resolved (not for spikes of 404, which simply end).
 Server administrators receive the installation's alerts; an organisation's administrators its spikes of 404.
 
@@ -49,6 +54,9 @@ BASELINE_DAYS = 7
 TOP_CODES = 5
 DEFAULT_URL = "http://frontend-proxy-service/.well-known/gs1resolver"
 CHECKS = ("resolver", "backup", "certificate")
+HISTORY = "alert_history"
+HISTORY_DAYS = 400
+KINDS = CHECKS + ("404",)
 
 
 # ----------------------------------------------------------------------------------------------- settings
@@ -262,7 +270,26 @@ def _update(doc_id: str, state: str, detail: dict, now: datetime, templates: tup
                 sent = "resolved"
         doc["notifiedAt"] = None
     _col().update_one({"_id": doc_id}, {"$set": doc}, upsert=True)
+    _remember(doc_id, was, state, now, detail, tenant)
     return sent
+
+
+def _kind(doc_id: str) -> str:
+    return "404" if doc_id.startswith("404:") else doc_id
+
+
+def _remember(doc_id: str, was: str | None, state: str, now: datetime, detail: dict, tenant: str | None) -> None:
+    """The alert history: a raised alert recorded, an ended one closed; a failure never stops the checks."""
+    try:
+        history = store.col(HISTORY)
+        if state == "alert" and was != "alert":
+            history.insert_one({"_id": f"{doc_id}@{now.strftime('%Y%m%dT%H%M%S')}", "check": doc_id,
+                                "kind": _kind(doc_id), "tenant": tenant, "raisedAt": now, "endedAt": None,
+                                "detail": detail, "expiresAt": now + timedelta(days=HISTORY_DAYS)})
+        elif was == "alert" and state != "alert":
+            history.update_many({"check": doc_id, "endedAt": None}, {"$set": {"endedAt": now, "endedAs": state}})
+    except PyMongoError as exc:
+        log.warning("Alert history not written (%s): %s", doc_id, exc)
 
 
 def _text(moment) -> str:
@@ -343,6 +370,27 @@ def states(tenant: str | None, server_admin: bool) -> dict:
         if doc.get("state") == "alert":
             out["active"].append(entry)
     out["active"].sort(key=lambda e: e["since"] or "")
+    return out
+
+
+def history(tenant: str | None, server_admin: bool, only_tenant: str | None = None, kind: str | None = None,
+            since: datetime | None = None, until: datetime | None = None, limit: int = 500) -> list[dict]:
+    """The alerts raised, newest first: a server administrator's every alert (or one organisation's: only_tenant, "-"
+    for the installation's own); an organisation's administrator their organisation's spikes of 404."""
+    query: dict = {}
+    if not server_admin:
+        query["tenant"] = tenant or "-none-"
+    elif only_tenant:
+        query["tenant"] = None if only_tenant == "-" else only_tenant
+    if kind:
+        query["kind"] = kind
+    if since or until:
+        query["raisedAt"] = {**({"$gte": since} if since else {}), **({"$lt": until} if until else {})}
+    out = []
+    for doc in store.col(HISTORY).find(query).sort("raisedAt", -1).limit(limit):
+        out.append({"id": doc["_id"], "check": doc["check"], "kind": doc["kind"], "tenant": doc.get("tenant"),
+                    "raisedAt": store.iso(doc.get("raisedAt")), "endedAt": store.iso(doc.get("endedAt")),
+                    "endedAs": doc.get("endedAs"), "detail": _public(doc.get("detail") or {})})
     return out
 
 

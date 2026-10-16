@@ -136,8 +136,9 @@ with sync_playwright() as p:
     check("…listed with a Register button", rows and rows[0].startswith("/01/" + UNKNOWN) and "Register" in rows[0], rows)
     records = page.inner_text("#overview-records-tiles")
     check("records: one record, scanned", "Records\n1" in records and "Keys not scanned\n0" in records, records)
-    check("operation: never checked, no active alerts", "never checked" in page.inner_text("#overview-operation")
-          and "Active alerts\nnone" in page.inner_text("#overview-operation"), page.inner_text("#overview-operation"))
+    check("record quality: links never checked, no active alerts (from Operation, ADR 0013)",
+          "never checked" in page.inner_text("#overview-records-facts")
+          and "Active alerts\nnone" in page.inner_text("#overview-records-facts"), page.inner_text("#overview-records-facts"))
     check("governance for an administrator: record changes and users",
           page.is_visible("#overview-governance") and "Record changes\n1" in page.inner_text("#overview-governance-tiles")
           and "ana" in page.inner_text("#overview-users-body"), page.inner_text("#overview-governance-tiles"))

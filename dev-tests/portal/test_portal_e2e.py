@@ -61,6 +61,18 @@ def check(name, condition, detail=""):
         failures.append(name)
 
 
+def answer(page, accept=True, into=None, wait=300):
+    """Answers the portal's own confirmation (Documentation/adr/0013-administration-and-navigation.md) when an action
+    opened one, its question kept in `into`; True when there was one."""
+    page.wait_for_timeout(wait)
+    if not page.is_visible("#ask-dialog"):
+        return False
+    if into is not None:
+        into.append(page.inner_text("#ask-text"))
+    page.click("#ask-ok" if accept else "#ask-cancel")
+    return True
+
+
 with sync_playwright() as p:
     browser = p.chromium.launch()
     ctx = browser.new_context(locale="en-GB", viewport={"width": 1360, "height": 1000})
@@ -358,29 +370,21 @@ with sync_playwright() as p:
     check("search by description", len(rows) == 3 and page.inner_text("#others-foot") == "Showing 3 of 21", len(rows))
     # unsaved change: cancelling the confirmation keeps the record, accepting opens the other one
     page.fill("#description", "Café 500 g (edited)")
-    page.once("dialog", lambda d: d.dismiss())
-    page.click("#others-body tr:nth-child(2) .others-open"); page.wait_for_timeout(600)
+    page.click("#others-body tr:nth-child(2) .others-open"); answer(page, accept=False); page.wait_for_timeout(300)
     check("unsaved changes: cancelling keeps the record being edited",
           page.input_value("#description") == "Café 500 g (edited)" and page.input_value("#q-22") == "")
     messages = []
-    page.once("dialog", lambda d: (messages.append(d.message), d.accept()))
-    page.click("#others-body tr:nth-child(2) .others-open"); page.wait_for_timeout(900)
+    page.click("#others-body tr:nth-child(2) .others-open"); answer(page, into=messages); page.wait_for_timeout(600)
     check("accepting opens the chosen record", page.input_value("#q-22") == "V2"
           and page.input_value("#description") == "Café 500 g variante V2"
           and "unsaved changes" in (messages[0] if messages else ""), (page.input_value("#q-22"), messages))
     check("the list now shows the product among the others", "Every unit" in page.inner_text("#others-body")
           and page.inner_text("#others-title") == "Other records of this GTIN (21)")
     opened = []
-
-    def record_dialog(dialog):
-        opened.append(dialog.message)
-        dialog.accept()
-    page.on("dialog", record_dialog)
     page.fill("#others-search", "lote 3"); page.wait_for_timeout(150)
-    page.click("#others-body tr:first-child .others-open"); page.wait_for_timeout(900)
+    page.click("#others-body tr:first-child .others-open"); answer(page, into=opened); page.wait_for_timeout(600)
     check("no confirmation without changes", not opened and page.input_value("#q-10") == "L2026-03"
           and page.input_value("#q-22") == "", opened)
-    page.remove_listener("dialog", record_dialog)
 
     # The label block sits under the form at every width, QR code and options side by side
     for width in (1024, 1360, 1920):
@@ -519,18 +523,14 @@ with sync_playwright() as p:
     check("changing the informative batch keeps the record open", not page.is_disabled("#description"))
     page.fill("#q-22", ""); page.fill("#q-10", ""); page.wait_for_timeout(100)
     asked = []
-    def accept_discard(dialog):
-        asked.append(dialog.message); dialog.accept()
-    page.on("dialog", accept_discard)            # the batch typed differs from the saved one: unsaved change
-    page.click("#open"); page.wait_for_timeout(700)
+    page.click("#open"); answer(page, into=asked); page.wait_for_timeout(400)   # the batch typed differs: unsaved change
     check("Open record asks before discarding an unsaved change", len(asked) == 1, asked)
     check("a serial number opened without its batch shows the stored variant and batch",
           page.input_value("#q-22") == "V1" and page.input_value("#q-10") == "L1", (page.input_value("#q-22"), page.input_value("#q-10")))
-    page.fill("#q-10", "L9"); page.click("#open"); page.wait_for_timeout(700)
+    page.fill("#q-10", "L9"); page.click("#open"); answer(page); page.wait_for_timeout(400)
     check("a different batch typed is kept and pointed out", page.input_value("#q-10") == "L9"
           and "registered with Variant V1 · Batch L1" in page.inner_text("#qual-msg"), page.inner_text("#qual-msg"))
-    page.fill("#q-10", "L1"); page.click("#open"); page.wait_for_timeout(700)
-    page.remove_listener("dialog", accept_discard)
+    page.fill("#q-10", "L1"); page.click("#open"); answer(page); page.wait_for_timeout(400)
 
     # GS1 Digital Link data attributes (URI Syntax 4.10): only in the QR code, checked by the syntax engine
     if not portal.syntax.ENGINE.available:
@@ -809,11 +809,7 @@ with sync_playwright() as p:
     # Open record asks before discarding the unsaved targets of the record being edited
     page.fill("#q-10", "C78"); page.wait_for_timeout(200)
     asked = []
-    def dismiss_discard(dialog):
-        asked.append(dialog.message); dialog.dismiss()
-    page.on("dialog", dismiss_discard)
-    page.click("#open"); page.wait_for_timeout(500)
-    page.remove_listener("dialog", dismiss_discard)
+    page.click("#open"); answer(page, accept=False, into=asked); page.wait_for_timeout(200)
     check("Open record asks before discarding unsaved targets; cancelling keeps them", len(asked) == 1
           and page.input_value(".link-row .url") == "https://example.org/tea/L1", asked)
     page.goto(BASE + "#records"); page.wait_for_timeout(900)
@@ -863,11 +859,6 @@ with sync_playwright() as p:
     # Organisations (tenants, Documentation/adr/0002-tenants.md): the server administrator, a tenant administrator,
     # support access
     confirmations = []
-
-    def accept_dialog(dialog):
-        confirmations.append(dialog.message)
-        dialog.accept()
-    page.on("dialog", accept_dialog)
     page.click("#user-button")
     check("server administrator: Organisations in the menu, named in the account menu",
           page.is_visible("#menu-tenants") and page.inner_text("#user-tenant") == "Server administrator")
@@ -875,14 +866,14 @@ with sync_playwright() as p:
     check("organisations view: none yet, every record the operator's", page.is_visible("#tenants-view")
           and page.is_visible("#tenants-empty") and "the operator's" in page.inner_text("#tenants-operator"),
           page.inner_text("#tenants-operator"))
-    page.fill("#new-tenant-name", "Acme Foods"); page.fill("#new-tenant-prefixes", "7898357")
-    page.click("#tenants-create button[type=submit]"); page.wait_for_timeout(900)
+    page.fill("#new-tenant-name", "Acme Foods"); page.fill("#new-tenant-prefixes .prefix-row input", "7898357")
+    page.click("#tenants-create button[type=submit]"); answer(page, into=confirmations); page.wait_for_timeout(900)
     row = page.inner_text("#tenants-body")
     check("organisation created after confirming; its records counted", "Organisation Acme Foods created." in page.inner_text("#tenants-status")
-          and "7898357" in page.input_value("#tenants-body tr input[data-field=prefixes]") and confirmations
+          and "7898357" in row and confirmations
           and "Acme Foods" in confirmations[-1], (row, confirmations))
-    page.fill("#new-tenant-name", "Beta"); page.fill("#new-tenant-prefixes", "78983574")
-    page.click("#tenants-create button[type=submit]"); page.wait_for_timeout(700)
+    page.fill("#new-tenant-name", "Beta"); page.fill("#new-tenant-prefixes .prefix-row input", "78983574")
+    page.click("#tenants-create button[type=submit]"); answer(page); page.wait_for_timeout(700)
     check("an overlapping prefix is refused with the reason", "overlaps 7898357, which belongs to the organisation Acme Foods"
           in page.inner_text("#tenants-status"), page.inner_text("#tenants-status"))
     page.goto(BASE + "#records"); page.wait_for_timeout(900)
@@ -920,7 +911,6 @@ with sync_playwright() as p:
     check("server administrator's audit trail: the organisation column, the operator's actions marked",
           page.is_visible("th.audit-tenant-col") and "Acme Foods" in page.inner_text("#audit-body")
           and page.query_selector("#audit-body .by-operator") is not None)
-    page.remove_listener("dialog", accept_dialog)
 
     acme_ctx = browser.new_context(locale="pt-BR", viewport={"width": 1280, "height": 900})
     acme = acme_ctx.new_page()

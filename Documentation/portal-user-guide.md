@@ -140,7 +140,13 @@ your password?** at once and tell your administrator.
 The round button at the top right opens the user menu: your user name, **Home page** (the resolver's
 home page), **Overview** (section 17), **Link editor** (sections 4 to 10), **Registered records** (section 11),
 **Requests** (section 16), **Users**, **API keys** and **Audit
-trail** (administrators only; **Organisations** for server administrators), **Options** and **Sign out**.
+trail**, **Organisation** and **Alerts** (administrators only; **Organisations** for server administrators),
+**Options** and **Sign out**. On a wide screen (1,100 pixels or more) the same screens are also in a **side menu** on
+the left, the current one marked; the button at its top folds it to its icons and opens it again (the browser
+remembers the choice). On a phone every screen fits the width; wide tables scroll sideways inside their own box.
+
+Questions such as *Remove this user?* open in the portal's own window: **Confirm** goes ahead, **Cancel** (or the Esc
+key) keeps everything as it was. What cannot be undone has a red button.
 
 ### Changing your password
 
@@ -594,8 +600,10 @@ redirects, an internal network address (never contacted) or an invalid address. 
 **Users** (user menu, administrators) manages who may use the portal.
 
 **Create a user.** Enter the **User** name (3 to 64 letters, digits, `.`, `-`, `_` or `@`), choose the
-**Role** and, optionally, the **GS1 Company Prefixes** (4 to 12 digits each, separated by commas; empty
-means every identifier), then **Create user**. The portal shows a **temporary password once**: copy it
+**Role** and, optionally, the **GS1 Company Prefixes** (empty means every identifier), then **Create user**. For a
+user of an organisation the prefixes are **picked from the organisation's own**: open the list, tick them (type to
+search); a longer prefix inside one of them can be typed in the search box and added with **Add …**. For the
+operator's users they are typed, 4 to 12 digits each, separated by commas. The portal shows a **temporary password once**: copy it
 (**Copy password**) and send it through a secure channel. The user must change it at the first sign-in.
 
 ![Inviting a user by e-mail](images/guide/users-invite.png)
@@ -673,11 +681,13 @@ its operations.
 their GS1 Company Prefixes, number of users and records, and status. Below the table, the number of records that
 belong to no organisation (the operator's).
 
-- **Create an organisation**: a **name** and its **GS1 Company Prefixes**, then **Create organisation**, and
+- **Create an organisation**: a **name** and its **GS1 Company Prefixes**, one per row (**Add GCP** adds a row, ×
+  removes one; a row that is not 4 to 12 digits is pointed out as you type), then **Create organisation**, and
   confirm. Then create its first administrator in **Users**. Each prefix belongs to one organisation only: a
   prefix that overlaps another organisation's is refused, naming it.
-- **Save** a new name or new prefixes (confirmed: records change owner at once). A prefix one of the
-  organisation's users is limited to cannot be taken away first.
+- **Save** a new name. **Open** shows the organisation's page (below), where its prefixes are changed (confirmed:
+  records change owner at once). A prefix one of the organisation's users is limited to cannot be taken away first;
+  a refused prefix is marked in its row.
 - **Disable** / **Enable**: a disabled organisation's users cannot sign in and their sessions end; its records
   still resolve.
 - **Remove**: only an organisation without users; its prefixes and records go back to the operator, and its audit
@@ -685,6 +695,24 @@ belong to no organisation (the operator's).
 
 **Creating an organisation takes its records away from the operator's users, you included.** You see them again,
 without changing them, only through support access.
+
+### An organisation's page (administrators)
+
+![An organisation's page](images/guide/organisation.png)
+
+**Organisation** (user menu) gathers an organisation's settings in one place, each in a tab: its **Prefixes**, its
+**Users** with their prefixes, its **Domains**, its **Item page** brands, its **Organisation sign-in**, its **API
+keys** and its **Alerts**. Each tab links to the screen that changes it. An organisation's administrators see their
+own; the server administrator opens any organisation from **Organisations** (**Open**), changes its prefixes on the
+**Prefixes** tab, and reaches another organisation's brands and API keys through support access; without choosing
+an organisation, the page shows the operator's own settings.
+
+### Alerts (administrators)
+
+**Alerts** (user menu) lists every alert the monitoring raised (section 17): when it started, when it ended (or
+*Ongoing*), its kind (resolver down, backup, certificate, spike of unregistered codes) and its detail, filtered by
+kind and dates and, for the server administrator, by organisation. An organisation's administrators see their
+organisation's spikes. Alerts are listed from this version on (kept 400 days); earlier ones were not recorded.
 
 ### Domains (administrators)
 
@@ -825,10 +853,14 @@ is registered but not for the batch or serial scanned.
 GS1-Conformant Resolver 2.5.9); records **without a description**; the **keys nobody scanned** in the period; and the
 records with problems in the **last check of every link** (section 13).
 
-**Operation.** When every link was last checked, how long requests are kept and the **active alerts** of your scope
-(an organisation's users see its spikes of codes nobody registered). The server administrator also sees whether the
-job worker runs, whether e-mail is on, up to which day the daily counts are complete and the state of each check of
-the monitoring: the resolver through the proxy, the daily backup and the HTTPS certificate.
+Under it, when every link was last checked, how long requests are kept and the **active alerts** of your scope (an
+organisation's users see its spikes of codes nobody registered).
+
+**Operation** (server administrator only). Whether the job worker runs, whether e-mail is on, up to which day the
+daily counts are complete, the installation's active alerts and the state of each check of the monitoring: the
+resolver through the proxy, the daily backup and the HTTPS certificate. The server administrator can also choose an
+**Organisation** at the top of the page: the figures are then that organisation's, as its administrators see them (or
+the operator's codes); Operation stays the installation's.
 
 **Governance** (administrators). Record changes (created, changed, deleted, imports) and by user, sign-ins and
 refused sign-ins, exports, active API keys and those expiring within 14 days, calls to the tenant API and how many

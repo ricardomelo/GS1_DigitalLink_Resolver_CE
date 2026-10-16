@@ -196,8 +196,10 @@ with sync_playwright() as p:
     sign_in(root, "root", "root-password-long")
     root.goto(BASE + "#users"); root.wait_for_timeout(800)
     asked = []
-    root.once("dialog", lambda d: (asked.append(d.message), d.accept()))
     root.locator("#users-body tr", has_text="maria").locator("button", has_text="Reset password").click()
+    root.wait_for_timeout(300)
+    if root.is_visible("#ask-dialog"):                  # the portal's own confirmation (ADR 0013)
+        asked.append(root.inner_text("#ask-text")); root.click("#ask-ok")
     root.wait_for_timeout(900)
     check("reset of a user with an address: the question says a link goes by e-mail",
           asked and "link" in asked[0] and "stops working at once" in asked[0], asked)

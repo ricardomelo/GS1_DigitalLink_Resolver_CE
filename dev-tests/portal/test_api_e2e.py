@@ -114,8 +114,10 @@ with sync_playwright() as p:
           (page.is_visible("#apikey-new"), page.inner_text("#apikeys-body tr:first-child")))
 
     asked = []
-    page.once("dialog", lambda d: (asked.append(d.message), d.accept()))
-    page.click("#apikeys-body tr:first-child button.btn-danger-ghost"); page.wait_for_timeout(900)
+    page.click("#apikeys-body tr:first-child button.btn-danger-ghost"); page.wait_for_timeout(300)
+    if page.is_visible("#ask-dialog"):                  # the portal's own confirmation (ADR 0013)
+        asked.append(page.inner_text("#ask-text")); page.click("#ask-ok")
+    page.wait_for_timeout(900)
     check("revoke: asked first, then the state says who", asked and "Integração ERP" in asked[0]
           and "Revogada por ana" in page.inner_text("#apikeys-body tr:first-child")
           and page.locator("#apikeys-body tr:first-child button").count() == 0, page.inner_text("#apikeys-body"))

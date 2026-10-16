@@ -103,6 +103,14 @@ for anchor, qualifiers, description, default, links, user in EXAMPLES:
         meta.touch(anchor, "".join(f"/{k}/{v}" for q in qualifiers for k, v in q.items()), user)
 
 
+
+def confirm_portal(page, wait: int = 400) -> None:
+    """Confirms the portal's own dialog (ADR 0013) when an action asked for it."""
+    page.wait_for_timeout(200)
+    if page.is_visible("#ask-dialog"):
+        page.click("#ask-ok")
+    page.wait_for_timeout(wait)
+
 def save(page, name, clip=None, full=False):
     page.add_style_tag(content=NO_LOGO)
     page.wait_for_timeout(100)
@@ -142,13 +150,14 @@ def sign_in(browser, locale, viewport=None):
 
 def open_record(page, value, qualifiers=None):
     """Opens a GTIN record in the editor, with the qualifiers given ({"22": "V1", …}); others cleared."""
+    confirm_portal(page, 0)                              # "discard unsaved changes?" between pictures (ADR 0013)
     page.select_option("#key-type", "01"); page.fill("#key-value", value)
     for field in page.query_selector_all("#qualifiers .qual-field input"):
         field.fill("")
     for ai, qualifier in (qualifiers or {}).items():
         page.fill(f"#q-{ai}", qualifier)
     page.wait_for_timeout(300)
-    page.click("#open"); page.wait_for_timeout(900)
+    page.click("#open"); confirm_portal(page, 700)
 
 
 def add_attributes(page):
@@ -238,7 +247,7 @@ def guide_images(locale: str, folder: str, description: str) -> None:
         save_element(page, f"{folder}/history.png", "#history-panel")
         page.click("#user-button"); page.wait_for_timeout(300)
         save(page, f"{folder}/user-menu.png", clip={"x": 900, "y": 0, "width": 380, "height": 420})
-        page.keyboard.press("Escape"); page.mouse.click(5, 300); page.wait_for_timeout(200)
+        page.keyboard.press("Escape"); page.mouse.click(700, 150); page.wait_for_timeout(200)
 
         # Other records of the key, then the label block of a serial number
         open_record(page, "09506000134376")
@@ -305,7 +314,12 @@ def tenant_images(page, folder: str, locale: str) -> None:
                                     "links": [pip(f"https://acme.example/{value}")]})
     page.goto(BASE + "#tenants"); page.wait_for_timeout(900)
     save(page, f"{folder}/organisations.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1000})
-    page.click("#tenants-body tr:first-child button.btn-ghost >> nth=1"); page.wait_for_timeout(300)
+    acme_id = tenants.find("Acme Foods")["id"]
+    page.goto(BASE + "#organisation?id=" + acme_id); page.wait_for_timeout(900)              # ADR 0013
+    page.click("#org-tab-users"); page.wait_for_timeout(300)
+    save(page, f"{folder}/organisation.png", clip={"x": 0, "y": 0, "width": 1280, "height": 900})
+    page.goto(BASE + "#tenants"); page.wait_for_timeout(900)
+    page.click("#tenants-body tr:first-child button.btn-ghost >> nth=2"); page.wait_for_timeout(300)  # Support access
     page.fill("#support-reason", "Ticket 42: wrong target")
     save_element(page, f"{folder}/support-dialog.png", "#support-dialog", pad=4)
     page.click("#support-open"); page.wait_for_timeout(1500)
@@ -376,8 +390,7 @@ def apikey_images(browser, folder: str, locale: str) -> None:
     page.click("#apikeys-create button[type=submit]"); page.wait_for_timeout(1200)
     save(page, f"{folder}/api-keys.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1100})
     for button in page.query_selector_all("#apikeys-body button.btn-danger-ghost"):   # the next run starts clean
-        page.once("dialog", lambda d: d.accept())
-        button.click(); page.wait_for_timeout(400)
+        button.click(); confirm_portal(page)
     ctx.close()
 
 
@@ -403,8 +416,7 @@ def domain_images(browser, folder: str, locale: str) -> None:
     page.locator(".domain-card[data-domain='id.brand.example'] button[type=submit]").click(); page.wait_for_timeout(900)
     save(page, f"{folder}/domains.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1300})
     for name in ("id.brand.example", "qr.brand.example"):                # the next run starts clean
-        page.once("dialog", lambda d: d.accept())
-        page.locator(f".domain-card[data-domain='{name}'] button.btn-danger-ghost").click(); page.wait_for_timeout(500)
+        page.locator(f".domain-card[data-domain='{name}'] button.btn-danger-ghost").click(); confirm_portal(page)
     ctx.close()
 
 
@@ -437,8 +449,8 @@ def item_page_images(browser, folder: str, locale: str) -> None:
     page.fill("#brand-colour", "#4a1d5c"); page.fill("#brand-accent", "#7bb03a"); page.set_input_files("#brand-logo", logo)
     page.click("#branding-form button[type=submit]"); page.wait_for_timeout(1000)
     save(page, f"{folder}/item-page.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1150})
-    page.once("dialog", lambda d: d.accept())                              # the next run starts clean
-    page.locator(".domain-card[data-prefix='9506000'] button.btn-danger-ghost").click(); page.wait_for_timeout(500)
+    page.locator(".domain-card[data-prefix='9506000'] button.btn-danger-ghost").click()  # the next run starts clean
+    confirm_portal(page)
     ctx.close()
     html = subprocess.run([sys.executable, os.path.join(HERE, "item_page_html.py"), logo, locale], check=True,
                           capture_output=True, text=True).stdout

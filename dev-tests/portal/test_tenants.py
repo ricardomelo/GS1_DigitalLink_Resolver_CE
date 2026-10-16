@@ -172,7 +172,8 @@ bia, _ = client("bia", bia_pw)
 bia.post("/portal/api/password", json={"currentPassword": bia_pw, "newPassword": "bia-password-long"})
 cfg = ana.get("/portal/api/config").get_json()
 check("configuration of a tenant administrator: the tenant, not a server administrator",
-      cfg["tenant"] == {"id": acme["id"], "name": "Acme Foods", "disabled": False} and cfg["serverAdmin"] is False, cfg)
+      cfg["tenant"] == {"id": acme["id"], "name": "Acme Foods", "disabled": False, "prefixes": acme["prefixes"]}
+      and cfg["serverAdmin"] is False, cfg)
 check("a tenant administrator does not manage tenants", ana.get("/portal/api/tenants").status_code == 403
       and ana.post("/portal/api/support", json={"tenant": beta["id"], "reason": "curious"}).status_code == 403)
 r = ana.post("/portal/api/users", json={"username": "caio", "role": "editor", "tenant": beta["id"], "prefixes": ["78912345"],

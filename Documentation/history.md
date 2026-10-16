@@ -636,6 +636,17 @@ the owner's choice among three options; about 2 µs a check), built into its ima
 same release, Node.js kept as the fallback; `test_resolver.py` checks that both answer alike, and GS1's suite runs
 through the new check.
 
+**The staging tests of 15 and 16 October** confirmed the update to `0244bb8` (backup, settings, installer re-run,
+monitoring alerts after correcting the plan: an alert needs two failed rounds five minutes apart) and produced
+twenty-three notes from the owner. Two were bugs, both hidden by test doubles that did more than the real components:
+the editor lost *Default target: the item's page* on reopening a record, because the official data entry API keeps a
+`gs1:defaultLink` only as the document's `defaultLink` and leaves it out of what it returns, which the portal's
+stand-in API did not; and a brand stayed with its old owner after its prefix moved to an organisation, because brands
+recorded their owner when saved instead of deriving it from the prefixes. The rest became items 9.1 to 9.7 of the
+README's backlog (item's page per record, administration and navigation, DataMatrix and label options, every link
+type and language, browser and city in the request log without the IP address, domains without the terminal, nine
+more interface languages), on the recommended options.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

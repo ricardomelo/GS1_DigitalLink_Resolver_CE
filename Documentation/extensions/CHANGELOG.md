@@ -2,6 +2,18 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Staging feedback of 16 October: domains without the terminal (backlog item 9.6)
+- **A domain verified in the portal is served within about 5 minutes, certificate included**: the installer schedules
+  `scripts/custom-domains.sh apply --quiet` every 5 minutes as root when it set up Let's Encrypt
+  (`/etc/cron.d/resolver-domains`); the portal itself still never touches the host
+  ([ADR 0009, section 7](../adr/0009-tenant-domains.md#7-amendment-of-17-october-2026--domains-without-the-terminal-item-96)).
+  Commit `0bfe208`.
+- **The domain's card shows the certificate's state**: *pending*, *served over HTTPS* until a date, or *failed* with the
+  reason and the next attempt; the script reports each domain into the portal's database (`domain_hosts`) and each run
+  (`domains.hostRun`), which server administrators see above the list, with a warning when it has not run for 15
+  minutes. After a failed certificate the next attempt waits longer each time (5 minutes doubling up to 6 hours), below
+  Let's Encrypt's limits; a run holds a lock. Commit `0bfe208`.
+
 ### Staging feedback of 16 October: the request log's browser, location and retention (backlog item 9.5)
 - **The browser and the approximate location of each scan** — country, region and city — are worked out when the
   request arrives and kept; the visitor's address is used for the lookup and forgotten, never stored

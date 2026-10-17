@@ -700,6 +700,13 @@ the staging checks. Retention needed the portal to delete events, which its data
 second writer, a role with the single right to delete events of the log. 27 mutations, all caught, two of them after the tests were strengthened (the database role
 is checked on CI only).
 
+**Item 9.6, domains without the terminal** (`0bfe208`; ADR 0009 amended). The portal was kept away from the host: a web
+application able to write nginx sites and run Certbot would be root to whoever took it over, so the operator's script
+runs on a schedule instead and reports what it did into the portal's database, which the card reads. Running it every 5
+minutes made Let's Encrypt's limits matter — a domain whose DNS is not ready would fail twelve times an hour — hence the
+growing waits. The script's JavaScript for mongosh now travels as an environment variable of the container rather than
+inside a quoted command line. 16 mutations, all caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

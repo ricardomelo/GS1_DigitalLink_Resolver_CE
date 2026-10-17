@@ -2,8 +2,10 @@
 The log of resolver requests as the portal reads it (Documentation/adr/0006-resolver-request-log.md), through the
 portal's Flask test client: who sees which events (organisations, the operator, a user's own prefixes, server
 administrators, support access), the filters, pages and the CSV export, the daily aggregates the worker makes (time
-zone, finished days, replacement, the lock, retention), the requests per day, and the log of the tenant API's calls.
-Events are written straight into resolver_log.requests, as the resolver would.
+zone, finished days, replacement, the lock, retention), the requests per day, and the log of the tenant API's calls;
+the browser family and the approximate location in rows, filters, the CSV and the aggregates, and the retention set in
+the portal, global and per organisation, with the housekeeping that applies it (ADR 0006, section 8). Events are
+written straight into resolver_log.requests, as the resolver would.
 
 Runs against mongomock unless PORTAL_DB_URI names a real MongoDB (the portal's user may only read resolver_log there,
 so this program is not run on a real database).
@@ -342,6 +344,154 @@ api_client.get("/portal/api/v1/", headers=auth)
 check("RESOLVER_LOG_DAYS=0: calls are not recorded", store.col("api_requests").count_documents({}) == 3)
 del os.environ["RESOLVER_LOG_DAYS"]
 
+# ================================================================== browser, location, retention (ADR 0006, section 8)
+EVENTS.delete_many({})
+requestlog.daily().delete_many({})
+store.col("settings").delete_one({"_id": requestlog.SETTING_FINAL})
+located = {
+    "chrome": event(ACME_IN, br="chrome", c="BR", rg="Sao Paulo", ci="Campinas"),
+    "safari": event(ACME_IN, br="safari", c="BR", rg="Sao Paulo", ci="Campinas"),
+    "app": event(ACME_OUT, br="app", c="PT", rg="Lisbon", ci="Lisbon"),
+    "country": event(OPER, br="chrome", c="ZA"),
+}
+rows = {e["id"]: e for e in root.get("/portal/api/requests").get_json()["events"]}
+row = rows.get(str(located["chrome"]), {})
+check("a row: browser, region and city beside the country", (row.get("browser"), row.get("country"), row.get("region"),
+                                                             row.get("city")) == ("chrome", "BR", "Sao Paulo", "Campinas"), row)
+check("…a country alone", rows.get(str(located["country"]), {}).get("city") is None
+      and rows.get(str(located["country"]), {}).get("country") == "ZA", rows.get(str(located["country"])))
+_, found = seen(root, "?browser=chrome")
+check("filter by browser", found == {str(located["chrome"]), str(located["country"])}, found)
+_, found = seen(root, "?country=br")
+check("filter by country (either case)", found == {str(located["chrome"]), str(located["safari"])}, found)
+check("…an unknown browser or a malformed country refused", code(root.get("/portal/api/requests?browser=netscape"))
+      == "requests.badFilter" and code(root.get("/portal/api/requests?country=BRA")) == "requests.badFilter")
+_, found = seen(ana, "?country=PT")
+check("…within the scope only", found == {str(located["app"])}, found)
+text = root.get("/portal/api/requests.csv?browser=chrome").get_data().decode("utf-8").lstrip("\ufeff")
+table = list(csv.reader(io.StringIO(text), delimiter=";"))
+head = table[0]
+check("CSV: browser, region and city after the country", head[head.index("country"):head.index("country") + 4]
+      == ["country", "browser", "region", "city"] and any(r[head.index("city")] == "Campinas" for r in table[1:]), head)
+requestlog.count_day(requestlog.today())
+doc = requestlog.daily().find_one({"_id": f"{requestlog.today().isoformat()}|01|0{ACME_IN}"}) or {}
+check("aggregates: browsers, countries and places per key", doc.get("browser") == {"chrome": 1, "safari": 1}
+      and doc.get("country") == {"BR": 2} and doc.get("place") == [["BR|Sao Paulo|Campinas", 2]], doc)
+whole = requestlog.daily().find_one({"_id": f"{requestlog.today().isoformat()}|*"}) or {}
+check("…and for the installation", whole.get("browser") == {"chrome": 2, "safari": 1, "app": 1}
+      and whole.get("country") == {"BR": 2, "PT": 1, "ZA": 1}
+      and sorted(whole.get("place") or []) == [["BR|Sao Paulo|Campinas", 2], ["PT|Lisbon|Lisbon", 1]], whole)
+usage = root.get("/portal/api/overview?days=7").get_json()["usage"]
+check("the overview: browsers, countries and cities", usage.get("browser") == [["chrome", 2], ["app", 1], ["safari", 1]]
+      and usage.get("country")[0] == ["BR", 2] and usage.get("place")[0] == ["BR|Sao Paulo|Campinas", 2], usage)
+usage = ana.get("/portal/api/overview?days=7").get_json()["usage"]
+check("…an organisation's own", dict(usage.get("country")) == {"BR": 2, "PT": 1}, usage.get("country"))
+r = root.post("/portal/api/overview/export", json={"days": 7, "format": "csv",
+                                                  "labels": {"requests.browser.chrome": "Chrome"}}, headers=ORIGIN)
+text = r.get_data().decode("utf-8")
+check("…in the overview's export", r.status_code == 200 and "Campinas, Sao Paulo, BR: 2" in text and "Chrome: 2" in text,
+      text[:300])
+
+# ------------------------------------------------------------------ retention
+r = root.get("/portal/api/requests/retention")
+ret = r.get_json() or {}
+check("retention: the installation's days, its default (RESOLVER_LOG_DAYS) and the maximum",
+      (ret.get("enabled"), ret.get("days"), ret.get("default"), ret.get("max")) == (True, 90, 90, 3650), ret)
+acme_row = next((o for o in ret.get("organisations", []) if o["id"] == acme["id"]), {})
+check("…a server administrator sets it and every organisation's", ret.get("canSetGlobal") is True
+      and acme_row.get("editable") is True and acme_row.get("days") == 90 and acme_row.get("logDays") is None, ret)
+check("…the space: the log's events (sizes when the database says them), an organisation's events",
+      ret.get("space", {}).get("events") == 4 and acme_row.get("space", {}).get("events") == 3, (ret.get("space"), acme_row))
+ret = ana.get("/portal/api/requests/retention").get_json()
+check("an organisation's administrator: its own organisation only, editable, not the installation's",
+      [o["id"] for o in ret["organisations"]] == [acme["id"]] and ret["organisations"][0]["editable"]
+      and ret["canSetGlobal"] is False and ret["space"] is None, ret)
+ret = leo.get("/portal/api/requests/retention").get_json()
+check("a reader: the days that apply, nothing to manage", ret["organisations"] == [] and ret["scopeDays"] == 90, ret)
+r = ana.put("/portal/api/requests/retention", json={"days": 30}, headers=ORIGIN)
+check("an organisation's administrator cannot set the installation's", r.status_code == 403, r.status_code)
+r = leo.put("/portal/api/requests/retention", json={"tenant": acme["id"], "days": 30}, headers=ORIGIN)
+check("a reader cannot set its organisation's", r.status_code == 403, r.status_code)
+for bad in (0, -5, "abc", 4000, True, 2.5):
+    r = root.put("/portal/api/requests/retention", json={"days": bad}, headers=ORIGIN)
+    check(f"the installation's days {bad!r} refused", r.status_code == 422 and code(r) == "requests.retentionInvalid"
+          and r.get_json()["params"]["max"] == 3650, r.get_json())
+r = root.put("/portal/api/requests/retention", json={"days": 120}, headers=ORIGIN)
+check("a server administrator sets the installation's days", r.status_code == 200 and r.get_json()["days"] == 120
+      and store.get_setting(requestlog.SETTING_DAYS) == 120, r.get_json())
+check("…the operator's users see them", oto.get("/portal/api/config").get_json()["requestLog"]["days"] == 120)
+r = ana.put("/portal/api/requests/retention", json={"tenant": acme["id"], "days": 200}, headers=ORIGIN)
+check("an organisation cannot keep longer than the installation", r.status_code == 422
+      and code(r) == "requests.retentionInvalid" and r.get_json()["params"]["max"] == 120, r.get_json())
+r = ana.put("/portal/api/requests/retention", json={"tenant": acme["id"], "days": 30}, headers=ORIGIN)
+check("its administrator sets fewer days", r.status_code == 200 and r.get_json()["days"] == 30
+      and store.col("tenants").find_one({"_id": acme["id"]}).get("logDays") == 30, r.get_json())
+check("…its users see them", leo.get("/portal/api/config").get_json()["requestLog"]["days"] == 30
+      and ana.get("/portal/api/requests").get_json()["days"] == 30)
+check("…the operator's do not", oto.get("/portal/api/config").get_json()["requestLog"]["days"] == 120)
+r = ana.put("/portal/api/requests/retention", json={"tenant": "no-such", "days": 30}, headers=ORIGIN)
+check("an unknown organisation: 404", r.status_code == 404, r.status_code)
+other = tenants.create("Other Org", ["7790002"], "root")
+r = ana.put("/portal/api/requests/retention", json={"tenant": other["id"], "days": 10}, headers=ORIGIN)
+check("an administrator cannot set another organisation's", r.status_code == 403, r.status_code)
+events_now = journal.search(limit=50)
+check("each change is a journal event, in the organisation's trail and the operator's",
+      any(e["action"] == "requestlog-retention" and e.get("tenant") == acme["id"] and e["detail"] == "days=30"
+          for e in events_now)
+      and any(e["action"] == "requestlog-retention" and not e.get("tenant") and e["detail"] == "global days=120"
+              for e in events_now), [e for e in events_now if e["action"] == "requestlog-retention"])
+root.put("/portal/api/requests/retention", json={"days": 20}, headers=ORIGIN)
+ret = root.get("/portal/api/requests/retention").get_json()
+acme_row = next(o for o in ret["organisations"] if o["id"] == acme["id"])
+check("the installation's days lowered below an organisation's: the organisation keeps the installation's",
+      acme_row["logDays"] == 30 and acme_row["days"] == 20 and leo.get("/portal/api/config").get_json()["requestLog"]["days"] == 20,
+      acme_row)
+r = root.put("/portal/api/requests/retention", json={"tenant": acme["id"], "days": None}, headers=ORIGIN)
+check("an organisation's days removed: the installation's again", r.status_code == 200 and r.get_json()["days"] == 20
+      and "logDays" not in store.col("tenants").find_one({"_id": acme["id"]}), r.get_json())
+r = root.post("/portal/api/support", json={"tenant": acme["id"], "reason": "checking the retention"}, headers=ORIGIN)
+r = root.put("/portal/api/requests/retention", json={"tenant": acme["id"], "days": 10}, headers=ORIGIN)
+check("support access is read only", r.status_code == 403, r.status_code)
+root.delete("/portal/api/support", headers=ORIGIN)
+
+# ------------------------------------------------------------------ the housekeeping that applies it
+EVENTS.delete_many({})
+store.col("api_requests").delete_many({})
+store.set_setting(requestlog.SETTING_DAYS, 60)
+store.col("tenants").update_one({"_id": acme["id"]}, {"$set": {"logDays": 30}})
+old = {"acme40": event(ACME_IN, t=NOW - timedelta(days=40)), "acme20": event(ACME_OUT, t=NOW - timedelta(days=20)),
+       "oper40": event(OPER, t=NOW - timedelta(days=40)), "oper70": event(OPER, t=NOW - timedelta(days=70)),
+       "probe70": event(None, t=NOW - timedelta(days=70), o="invalid", s=400, p="/x")}
+store.col("api_requests").insert_many([{"t": NOW - timedelta(days=40), "tenant": acme["id"], "op": "/a"},
+                                       {"t": NOW - timedelta(days=40), "op": "/b"}])
+deleted = requestlog.apply_retention()
+left = {name for name, i in old.items() if EVENTS.find_one({"_id": i})}
+check("housekeeping: an organisation's events older than its days deleted, the installation's older than its own",
+      left == {"acme20", "oper40"} and deleted == 3, (left, deleted))
+check("…and the tenant API's calls likewise", [c["op"] for c in store.col("api_requests").find()] == ["/b"],
+      list(store.col("api_requests").find({}, {"_id": 0})))
+store.set_setting(requestlog.SETTING_DAYS, 35)
+requestlog.apply_retention()
+check("…the installation's days shortened: its older events go at the next run",
+      {name for name, i in old.items() if EVENTS.find_one({"_id": i})} == {"acme20"})
+with store.lock("request-retention"):
+    check("…another replica holding the lock: skipped", requestlog.apply_retention() == 0)
+check("…run by the worker's housekeeping", requestlog.apply_retention in portal.HOUSEKEEPING)
+key_doc = {"_id": "k1", "tenant": acme["id"]}
+requestlog.record_api_call(key_doc, "GET", "/portal/api/v1/", 200, 3)
+call = store.col("api_requests").find_one({"key": "k1"})
+check("a tenant API call is kept its organisation's days", round((call["expiresAt"] - call["t"]).total_seconds() / 86400) == 30,
+      call)
+os.environ["RESOLVER_LOG_DAYS"] = "0"
+check("RESOLVER_LOG_DAYS=0: nothing applied, nothing to set", requestlog.apply_retention() == 0
+      and code(root.put("/portal/api/requests/retention", json={"days": 10}, headers=ORIGIN)) == "requests.retentionOff"
+      and root.get("/portal/api/requests/retention").get_json()["enabled"] is False)
+del os.environ["RESOLVER_LOG_DAYS"]
+store.col("settings").delete_one({"_id": requestlog.SETTING_DAYS})
+store.col("tenants").update_many({}, {"$unset": {"logDays": ""}})
+tenants.remove(other["id"])
+EVENTS.delete_many({})
+
 # ================================================================== configuration and failures
 cfg = ana.get("/portal/api/config").get_json()
 check("configuration: the log's retention and the scope", cfg.get("requestLog") == {"days": 90, "whole": False}, cfg.get("requestLog"))
@@ -362,7 +512,8 @@ check("the log cannot be read: 503 requests.unavailable", r.status_code == 503 a
 requestlog.events = saved
 
 i18n = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read()
-for message_code in ("requests.badDate", "requests.badFilter", "requests.unavailable"):
+for message_code in ("requests.badDate", "requests.badFilter", "requests.unavailable", "requests.retentionInvalid",
+                     "requests.retentionOff", "requests.retentionSaved", "audit.action.requestlog-retention"):
     check(f"{message_code} in both languages", i18n.count(f'"{message_code}"') == 2, i18n.count(f'"{message_code}"'))
 
 print(f"\n{len(failures)} failure(s)")

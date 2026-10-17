@@ -109,6 +109,7 @@ run_installer() {   # extra environment as arguments; answers (if any) on stdin
   env -i PATH="$SB/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME=/root TERM=dumb \
     INSTALL_LOG_FILE="$SB/state/install.log" INSTALL_NGINX_AVAILABLE="$SB/nginx/sites-available" \
     INSTALL_NGINX_ENABLED="$SB/nginx/sites-enabled" INSTALL_CRON_FILE="$SB/state/cron" \
+    INSTALL_GEOIP_CRON_FILE="$SB/state/geoip-cron" \
     INSTALL_HEALTH_TIMEOUT=30 INSTALL_PROXY_RESTART_AFTER=5 INSTALL_WORKER_TIMEOUT=5 INSTALL_DOCKER_GROUP_USER= "$@" \
     bash "$SB/repo/scripts/install.sh" ${INSTALLER_ARGS:---non-interactive} > "$SB/state/out" 2>&1
 }
@@ -150,6 +151,9 @@ check "A: time zone of the daily request counts written (the server's, else UTC)
 check "A: a scan through the proxy checked at the end (404: not registered, but the resolver answered)" "grep -q 'https://id.example.org/01/09506000134352 → 404 (a scan reaches the resolver' $SB/state/out"
 check "A: the portal checked through HTTPS at the end" "grep -q 'https://id.example.org/portal/ answers' $SB/state/out"
 check "A: backup cron points at the repository" "grep -q \"root $SB/repo/scripts/resolver-backup.sh\" $SB/state/cron"
+check "A: the GeoIP database's monthly update scheduled from the repository" "grep -q \"root $SB/repo/scripts/geoip-update.sh\" $SB/state/geoip-cron && [[ \$(stat -c %a $SB/state/geoip-cron) == 644 ]]"
+check "A: its first download tried at once; a failure only a warning" "grep -q 'The GeoIP database was not downloaded' $SB/state/out && grep -q 'not downloaded' $SB/state/install.log"
+check "A: scan locations in the summary" "grep -q 'Scan locations *yes' $SB/state/out"
 A_TOKEN=$(envval SESSION_TOKEN); A_PWD=$(envval MONGO_INITDB_ROOT_PASSWORD)
 A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY)
 
@@ -227,12 +231,13 @@ check "D: certbot not used" "! grep -q '^certbot' $SB/state/calls"
 echo "--- E. external mode"
 new_sandbox
 run_installer FQDN=id.example.org TLS_MODE=external PROXY_BIND_ADDRESS=0.0.0.0 RESOLVER_ORG_NAME=Org \
-  INSTALL_BACKUP_CRON=no; rc=$?
+  INSTALL_BACKUP_CRON=no INSTALL_GEOIP=no; rc=$?
 check "E: exit status 0" "[[ $rc == 0 ]]"
 check "E: no nginx site" "[[ ! -e $SB/nginx/sites-available/gs1resolver ]]"
 check "E: proxy published on 0.0.0.0" "compose_cfg | grep -B3 'published: \"8080\"' | grep -q 'host_ip: 0.0.0.0'"
 check "E: database stays on 127.0.0.1" "compose_cfg | grep -B3 'published: \"27017\"' | grep -q 'host_ip: 127.0.0.1'"
 check "E: no cron when declined" "[[ ! -e $SB/state/cron ]]"
+check "E: no GeoIP update when declined" "[[ ! -e $SB/state/geoip-cron ]] && grep -q 'Not recorded (no GeoIP database' $SB/state/out"
 
 # ------------------------------------------------------------------------------ F. interactive
 echo "--- F. interactive answers"
@@ -243,7 +248,7 @@ answers=$(printf '%s\n' \
   "Example Org" "ftp://bad" "https://www.example.org" "" "Rio de Janeiro" "RJ" "" "Brazil" "" \
   "maria" "short" "it's a long password" "correct horse battery" "correct horse battery" \
   "" \
-  "" "" "y")
+  "" "" "" "y")
 INSTALLER_ARGS=" " run_installer <<< "$answers"; rc=$?
 check "F: exit status 0" "[[ $rc == 0 ]]"
 check "F: invalid domain rejected, then accepted" "grep -q 'Enter a domain name' $SB/state/out && [[ \$(envval FQDN) == id.example.org ]]"

@@ -1,6 +1,7 @@
 """
 Creates, or brings up to date, the portal's own MongoDB user: readWrite on the portal's database, read on the
-resolver's request log (resolver_log, Documentation/adr/0006-resolver-request-log.md) and nothing else
+resolver's request log (resolver_log, Documentation/adr/0006-resolver-request-log.md) and the right to delete its events
+(the role PRUNE_ROLE: the retention set in the portal, section 8 of the ADR), and nothing else
 (Documentation/adr/0001-portal-state-in-mongodb.md, section 3.1).
 
 Run by the one-shot Compose service portal-db-init before the portal starts, on every "docker compose up",
@@ -19,6 +20,8 @@ from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
 LOG_DB = "resolver_log"                                   # written by the resolver, read by the portal
+PRUNE_ROLE = "requestLogPrune"                            # deletes events of resolver_log.requests, nothing else
+PRUNE_PRIVILEGES = [{"resource": {"db": LOG_DB, "collection": "requests"}, "actions": ["remove"]}]
 RESERVED = {"admin", "local", "config", "resolver_ce", LOG_DB}     # never the portal's own database
 
 
@@ -36,10 +39,15 @@ def main() -> int:
     if name in RESERVED:
         print(f"portal-db-init: PORTAL_DB_NAME may not be {name!r}.", file=sys.stderr)
         return 1
-    roles = [{"role": "readWrite", "db": name}, {"role": "read", "db": LOG_DB}]
+    roles = [{"role": "readWrite", "db": name}, {"role": "read", "db": LOG_DB}, {"role": PRUNE_ROLE, "db": LOG_DB}]
     timeout = int(os.environ.get("PORTAL_DB_INIT_TIMEOUT_MS", "60000"))   # the database may still be starting
     try:
         with MongoClient(root_uri, serverSelectionTimeoutMS=timeout, appname="portal-db-init") as client:
+            log_db = client[LOG_DB]
+            if log_db.command("rolesInfo", PRUNE_ROLE)["roles"]:
+                log_db.command("updateRole", PRUNE_ROLE, privileges=PRUNE_PRIVILEGES, roles=[])
+            else:
+                log_db.command("createRole", PRUNE_ROLE, privileges=PRUNE_PRIVILEGES, roles=[])
             database = client[name]
             exists = database.command("usersInfo", username)["users"]
             if exists:

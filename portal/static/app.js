@@ -2408,23 +2408,27 @@ function downloadAudit() {
 /* ------------------------------------------------------------------ requests to the resolver (#requests)
    The log of resolver requests (Documentation/adr/0006-resolver-request-log.md), in the scope of the account: the
    last 30 days as bars, the latest requests with filters and pages, a CSV export, and for administrators the calls
-   of the tenant API. Nothing here identifies the people who scan: the server never stores it. */
+   of the tenant API, and how long requests are kept (section 8). Nothing here identifies the people who scan: the
+   server never stores it; the browser family and the approximate location (city) are derived when a scan arrives. */
 const REQUEST_OUTCOMES = ["redirect", "notFound", "unknown", "noLink", "choice", "linkset", "invalid", "error", "compressed",
                           "page", "click"];
 const REQUEST_DEVICES = ["mobile", "tablet", "desktop", "automated", "unknown"];
-const requestsState = { next: null, apiNext: null, tab: "resolver" };
+const REQUEST_BROWSERS = ["chrome", "safari", "firefox", "edge", "samsung", "opera", "app", "other"];
+const requestsState = { next: null, apiNext: null, tab: "resolver", retention: null };
 
 function fillRequestFilters() {
-  const outcome = $("#requests-outcome"), device = $("#requests-device");
+  const outcome = $("#requests-outcome"), device = $("#requests-device"), browser = $("#requests-browser");
   if (outcome.options.length) return;
   outcome.append(i18nOption("requests.any", ""), ...REQUEST_OUTCOMES.map(o => i18nOption("requests.outcome." + o, o)));
   device.append(i18nOption("requests.any", ""), ...REQUEST_DEVICES.map(d => i18nOption("requests.device." + d, d)));
+  browser.append(i18nOption("requests.any", ""), ...REQUEST_BROWSERS.map(b => i18nOption("requests.browser." + b, b)));
 }
 
 function requestsQuery() {
   const params = new URLSearchParams();
   [["from", "#requests-from"], ["to", "#requests-to"], ["code", "#requests-code"], ["outcome", "#requests-outcome"],
-   ["device", "#requests-device"]].forEach(([name, sel]) => { if ($(sel).value.trim()) params.set(name, $(sel).value.trim()); });
+   ["device", "#requests-device"], ["browser", "#requests-browser"], ["country", "#requests-country"]]
+    .forEach(([name, sel]) => { if ($(sel).value.trim()) params.set(name, $(sel).value.trim()); });
   if ($("#requests-automated").checked) params.set("automated", "1");
   return params;
 }
@@ -2442,11 +2446,40 @@ function loadRequestsView() {
 
 function showRequestsTab(tab) {
   requestsState.tab = tab;
-  $("#requests-resolver").hidden = tab !== "resolver";
-  $("#requests-api").hidden = tab !== "api";
-  $("#requests-tab-resolver").setAttribute("aria-selected", String(tab === "resolver"));
-  $("#requests-tab-api").setAttribute("aria-selected", String(tab === "api"));
+  for (const name of ["resolver", "api", "retention"]) {
+    $("#requests-" + name).hidden = tab !== name;
+    $("#requests-tab-" + name).setAttribute("aria-selected", String(tab === name));
+  }
   if (tab === "api") loadApiCalls();
+  if (tab === "retention") loadRetention();
+}
+
+/* A place as "Campinas, Sao Paulo, BR", and the address that opens it in Google Maps: searched by its names, so the
+   map shows the city itself and nothing more precise than the log holds (ADR 0006, section 8). */
+function placeText(city, region, country) {
+  return [city, region, country].filter(Boolean).join(", ");
+}
+
+function placeFromKey(key) {
+  const [country, region, city] = String(key).split("|");
+  return placeText(city, region, country);
+}
+
+function mapLink(text, place) {
+  const a = el("a", "", text);
+  a.href = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(place);
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.title = t("requests.mapTitle", { place });
+  return a;
+}
+
+function formatBytes(n) {
+  if (n === null || n === undefined) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0, v = n;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${new Intl.NumberFormat(I18N.locale, { maximumFractionDigits: i ? 1 : 0 }).format(v)} ${units[i]}`;
 }
 
 /* The last 30 days: one bar per day, requests answered (redirects, choices, linksets) and not found (404) stacked;
@@ -2520,8 +2553,14 @@ function requestRow(e) {
   if (e.target) answer.push("→ " + e.target);
   if (!answer.length) answer.push(String(e.status ?? ""));
   requestCell(tr, "requests.answer", answer.join(" · "));
-  requestCell(tr, "requests.device", t("requests.device." + (e.device || "unknown")) + (e.referrer ? ` · ${e.referrer}` : ""));
-  requestCell(tr, "requests.language", [e.language, e.country].filter(Boolean).join(" · ") || "—");
+  requestCell(tr, "requests.device", [t("requests.device." + (e.device || "unknown")),
+                                       e.browser ? t("requests.browser." + e.browser) : "", e.referrer || ""]
+    .filter(Boolean).join(" · "));
+  requestCell(tr, "requests.language", e.language || "—");
+  // "Campinas, BR" in the table; the region in the link's title and in the map's search
+  const place = placeText(e.city, e.region, e.country);
+  requestCell(tr, "requests.location", e.city ? mapLink(placeText(e.city, null, e.country), place) : (place || "—"),
+              "requests-place");
   requestCell(tr, "requests.ms", e.ms ?? "—", "num");
   requestCell(tr, "audit.tenant", e.organisation || t("users.operatorName"), "requests-org-col");
   return tr;
@@ -2531,10 +2570,15 @@ async function loadRequests(event, more = false) {
   if (event) event.preventDefault();
   const params = requestsQuery();
   if (more && requestsState.next) params.set("before", requestsState.next);
-  if (!more) { $("#requests-body").replaceChildren(); I18N.set($("#requests-count"), "records.loading"); }
+  if (!more) {
+    $("#requests-body").replaceChildren();
+    $("#requests-geo").hidden = true;
+    I18N.set($("#requests-count"), "records.loading");
+  }
   try {
     const data = await api("GET", "requests?" + params.toString());
     $("#requests-body").append(...data.events.map(requestRow));
+    if (data.events.some(e => e.country)) $("#requests-geo").hidden = false;
     requestsState.next = data.next;
     $("#requests-more").hidden = !data.next;
     const shown = $("#requests-body").children.length;
@@ -2599,6 +2643,91 @@ async function loadApiCalls(event, more = false) {
     I18N.set($("#requests-api-count"), data.next ? "requests.countMore" : "requests.count", { count: shown });
   } catch (e) {
     I18N.set($("#requests-api-count"), e.code, e.params);
+  }
+}
+
+/* How long requests are kept (ADR 0006, section 8): the installation's days, set by server administrators, and each
+   organisation's, the same or fewer, set by its administrators; the space the log uses. */
+async function loadRetention() {
+  const box = $("#retention-status");
+  box.hidden = true;
+  try {
+    requestsState.retention = await api("GET", "requests/retention");
+    renderRetention();
+  } catch (e) {
+    box.hidden = false;
+    box.className = "status is-error";
+    I18N.set(box, e.code, e.params);
+  }
+}
+
+function renderRetention() {
+  const r = requestsState.retention;
+  if (!r) return;
+  $("#retention-off").hidden = r.enabled;
+  $("#retention-global").hidden = !r.enabled;
+  $("#retention-global-days").value = r.days;
+  $("#retention-global-days").max = r.max;
+  $("#retention-global-days").disabled = !r.canSetGlobal;
+  $("#retention-global-save").hidden = !r.canSetGlobal;
+  I18N.set($("#retention-default"), "requests.retentionDefault", { days: r.default });
+  const space = $("#retention-space");
+  space.hidden = !r.space;
+  if (r.space) {
+    if (r.space.bytes === null || r.space.bytes === undefined) {
+      I18N.set(space, "requests.retentionSpaceUnknown", { events: nf(r.space.events) });
+    } else {
+      I18N.set(space, "requests.retentionSpace", { size: formatBytes(r.space.bytes), index: formatBytes(r.space.indexBytes),
+                                                  events: nf(r.space.events) });
+    }
+  }
+  $("#retention-orgs").hidden = !r.enabled || !r.organisations.length;
+  $("#retention-orgs-body").replaceChildren(...r.organisations.map(o => {
+    const tr = el("tr");
+    tr.dataset.tenant = o.id;
+    const days = el("input");
+    days.type = "number"; days.min = "1"; days.max = String(r.days); days.inputMode = "numeric";
+    days.className = "retention-days";
+    days.value = o.logDays ?? "";
+    days.placeholder = t("requests.retentionFollow", { days: r.days });
+    days.disabled = !o.editable;
+    days.setAttribute("aria-label", t("requests.retentionDaysOf", { name: o.name }));
+    const daysCell = el("td");
+    daysCell.dataset.label = t("requests.retentionDays");
+    daysCell.append(days);
+    const action = el("td");
+    if (o.editable) {
+      const save = el("button", "btn btn-ghost btn-small", t("users.save"));
+      save.type = "button";
+      save.addEventListener("click", () => saveRetention({ tenant: o.id, days: days.value.trim() === "" ? null : days.value.trim() }));
+      action.append(save);
+    }
+    const name = el("td", "", o.name);
+    name.dataset.label = t("audit.tenant");
+    const events = el("td", "num", nf(o.space?.events ?? 0));
+    events.dataset.label = t("requests.retentionEvents");
+    const size = el("td", "num", formatBytes(o.space?.bytes));
+    size.dataset.label = t("requests.retentionEstimate");
+    tr.append(name, daysCell, events, size, action);
+    return tr;
+  }));
+}
+
+async function saveRetention(body) {
+  const box = $("#retention-status");
+  try {
+    const answer = await api("PUT", "requests/retention", body);
+    box.hidden = false;
+    box.className = "status is-ok";
+    I18N.set(box, "requests.retentionSavedDays", { days: answer.days });
+    await loadRetention();
+    box.hidden = false;
+    CONFIG.requestLog.days = requestsState.retention.scopeDays;
+    I18N.set($("#requests-privacy"), "requests.privacy", { days: CONFIG.requestLog.days });
+  } catch (e) {
+    box.hidden = false;
+    box.className = "status is-error";
+    I18N.set(box, e.code, e.params);
   }
 }
 
@@ -3128,7 +3257,10 @@ function renderOverview() {
     shareTable("overview.byDevice", devices, name => t("requests.device." + name)),
     shareTable("overview.byForm", forms, name => t("overview.form." + name)),
     shareTable("overview.byLanguage", u.language),
-    shareTable("overview.byLinkType", u.linkType));
+    shareTable("overview.byLinkType", u.linkType),
+    shareTable("overview.byBrowser", u.browser || [], name => t("requests.browser." + name)),
+    shareTable("overview.byCountry", u.country || []),
+    shareTable("overview.byPlace", u.place || [], placeFromKey));
 
   // Resolution quality (every request, automated ones included)
   const q = d.quality;
@@ -3247,7 +3379,7 @@ function keyName(ai) {
 function overviewLabels() {
   const labels = {};
   for (const key of I18N.keys()) {
-    if (key.startsWith("overview.") || key.startsWith("requests.device.")) labels[key] = t(key, { days: overviewState.data?.period.days ?? 30 });
+    if (key.startsWith("overview.") || key.startsWith("requests.device.") || key.startsWith("requests.browser.")) labels[key] = t(key, { days: overviewState.data?.period.days ?? 30 });
   }
   return labels;
 }
@@ -4697,6 +4829,11 @@ async function init() {
   $("#requests-csv").addEventListener("click", downloadRequests);
   $("#requests-tab-resolver").addEventListener("click", () => showRequestsTab("resolver"));
   $("#requests-tab-api").addEventListener("click", () => showRequestsTab("api"));
+  $("#requests-tab-retention").addEventListener("click", () => showRequestsTab("retention"));
+  $("#retention-global").addEventListener("submit", e => {
+    e.preventDefault();
+    saveRetention({ days: $("#retention-global-days").value.trim() });
+  });
   $("#requests-api-filters").addEventListener("submit", e => loadApiCalls(e));
   $("#requests-api-more").addEventListener("click", () => loadApiCalls(null, true));
   $("#overview-days").addEventListener("change", () => loadOverview());

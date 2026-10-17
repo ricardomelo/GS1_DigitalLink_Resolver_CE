@@ -39,9 +39,11 @@ def _tenants():
 
 
 def _tenant(doc: dict) -> dict:
-    """A tenant as the rest of the portal sees it: {"id", "name", "prefixes", "disabled", "created", "createdBy"}."""
+    """A tenant as the rest of the portal sees it: {"id", "name", "prefixes", "disabled", "created", "createdBy",
+    "logDays"} (logDays: how long its requests are kept, None for the installation's; requestlog.py)."""
     return {"id": doc["_id"], "name": doc.get("name", ""), "prefixes": list(doc.get("prefixes") or []),
-            "disabled": bool(doc.get("disabled")), "created": doc.get("created"), "createdBy": doc.get("createdBy")}
+            "disabled": bool(doc.get("disabled")), "created": doc.get("created"), "createdBy": doc.get("createdBy"),
+            "logDays": doc.get("logDays")}
 
 
 def load() -> list[dict]:

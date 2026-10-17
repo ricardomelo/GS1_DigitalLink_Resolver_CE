@@ -12,9 +12,15 @@ event in a bounded queue in memory. A background thread of each server process w
 answer never waits for the database; a full queue or a failing database drops events, counts them and says so in the
 resolver's output at most once a minute.
 
+The browser family and the approximate location (country, region, city; geoip.py) are derived when the request
+arrives; the client's address is used for the lookup and forgotten (ADR 0006, section 8). How long an event is kept is
+set in the portal, for the installation and per organisation (Retention, read from the portal's database).
+
 Settings, read at every request (so a test can change them):
-  RESOLVER_LOG_DAYS             days an event is kept (its expiresAt, a TTL index); 0 switches the log off; default 90
+  RESOLVER_LOG_DAYS             the default number of days an event is kept (its expiresAt, a TTL index) until the
+                                portal sets one; 0 switches the log off; default 90
   RESOLVER_LOG_COUNTRY_HEADER   a header with a two-letter country code set by a proxy in front (default: none)
+  RESOLVER_GEOIP_DB, RESOLVER_LOG_ADDRESS_HEADER   the GeoIP database and the client's address (geoip.py)
 """
 import atexit
 import logging
@@ -29,6 +35,8 @@ from urllib.parse import unquote, urlsplit
 
 from flask import Response, g, request
 
+import geoip
+
 log = logging.getLogger(__name__)
 
 DB_NAME = "resolver_log"
@@ -42,6 +50,9 @@ UNIT_QUALIFIERS = {"21", "235"}        # they name a single unit: only the AI is
 COMPANY_AFTER_FIRST_DIGIT = {"01", "8006", "00", "8003"}   # indicator, extension or filler digit before the prefix
 MAX_VALUE = 100
 MAX_PATH = 200
+MAX_DAYS = 3650                # the longest retention the portal accepts
+RETENTION_SECONDS = 60         # the portal's retention settings are read again after this
+SETTING_DAYS = "requestLog.days"
 
 _AI = re.compile(r"\d{2,4}")
 _LANGUAGE = re.compile(r"[a-z]{1,8}(-[a-z0-9]{1,8}){0,2}")
@@ -56,6 +67,17 @@ _TABLET = re.compile(r"ipad|tablet|kindle|silk/|playbook|android(?!.*mobile)", r
 _NATIVE_APP = re.compile(r"dalvik|okhttp|cfnetwork", re.IGNORECASE)   # HTTP stacks of Android and iOS apps
 _MOBILE = re.compile(r"mobi|iphone|ipod|android|windows phone|blackberry|opera mini", re.IGNORECASE)
 _DESKTOP = re.compile(r"windows nt|macintosh|mac os x|x11|cros|linux", re.IGNORECASE)
+# Browser families, checked in this order (Edge, Opera and Samsung Internet also say "Chrome"; Chrome also says
+# "Safari"). Apps: native HTTP stacks, browsers inside apps, Android's web view ("; wv)").
+_IN_APP = re.compile(r"dalvik|okhttp|cfnetwork|fban|fbav|fb_iab|instagram|whatsapp|micromessenger|\bline/|kakaotalk"
+                     r"|snapchat|tiktok|musical_ly|; wv\)", re.IGNORECASE)
+_BROWSERS = [("edge", re.compile(r"edg/|edga/|edgios/|edge/", re.IGNORECASE)),
+             ("opera", re.compile(r"opr/|opera|opios/|opt/", re.IGNORECASE)),
+             ("samsung", re.compile(r"samsungbrowser/", re.IGNORECASE)),
+             ("firefox", re.compile(r"firefox/|fxios/", re.IGNORECASE)),
+             ("chrome", re.compile(r"chrome/|crios/|chromium/", re.IGNORECASE)),
+             ("safari", re.compile(r"safari/", re.IGNORECASE))]
+_IOS_WEB_VIEW = re.compile(r"(iphone|ipad|ipod).*applewebkit", re.IGNORECASE)   # iOS without "Safari/": an app
 
 
 def days() -> int:
@@ -88,6 +110,20 @@ def device_class(user_agent: str | None) -> str:
     if _DESKTOP.search(ua):
         return "desktop"
     return "unknown"
+
+
+def browser_family(user_agent: str | None) -> str:
+    """chrome, safari, firefox, edge, samsung, opera, app (native apps and browsers inside apps) or other; the
+    User-Agent itself is not kept."""
+    ua = (user_agent or "").strip()
+    if _IN_APP.search(ua):
+        return "app"
+    for name, pattern in _BROWSERS:
+        if pattern.search(ua):
+            return name
+    if _IOS_WEB_VIEW.search(ua):
+        return "app"
+    return "other"
 
 
 def language(ranges: list[str]) -> str | None:
@@ -183,8 +219,7 @@ def event(noted: dict[str, Any], response: Response) -> dict[str, Any]:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     status = response.status_code
     started = g.get("request_started")
-    doc: dict[str, Any] = {"t": now, "expiresAt": now + timedelta(days=days()), "m": request.method,
-                           "f": noted.get("form", "uri"), "s": status}
+    doc: dict[str, Any] = {"t": now, "m": request.method, "f": noted.get("form", "uri"), "s": status}
     if noted.get("epc"):
         doc["epc"] = str(noted["epc"])[:40]
     ai, value = noted.get("ai"), noted.get("value")
@@ -195,6 +230,7 @@ def event(noted: dict[str, Any], response: Response) -> dict[str, Any]:
             doc["cp"] = cp
     elif noted.get("path"):
         doc["p"] = str(noted["path"])[:MAX_PATH]
+    doc["expiresAt"] = now + timedelta(days=RETENTION.days_for(doc.get("cp")))
     q = qualifiers(noted.get("qualifiers") or [])
     if q:
         doc["q"] = q
@@ -216,6 +252,8 @@ def event(noted: dict[str, Any], response: Response) -> dict[str, Any]:
     if lang:
         doc["lang"] = lang
     doc["dev"] = device_class(request.headers.get("User-Agent"))
+    if doc["dev"] not in ("automated", "unknown"):
+        doc["br"] = browser_family(request.headers.get("User-Agent"))
     if doc["dev"] == "automated" and doc["o"] in ("page", "click"):
         # Page views and clicks count people following a scan: an automated client's are plain answers, already
         # counted apart as automated (ADR 0011)
@@ -223,10 +261,15 @@ def event(noted: dict[str, Any], response: Response) -> dict[str, Any]:
     referrer = host_of(request.headers.get("Referer"))
     if referrer:
         doc["ref"] = referrer
+    # The approximate location; the address goes no further than the lookup (ADR 0006, section 8)
+    doc.update(geoip.LOCATOR.locate(geoip.client_address(request.headers, request.remote_addr)))
     header = os.environ.get("RESOLVER_LOG_COUNTRY_HEADER", "").strip()
     if header:
         country = (request.headers.get(header) or "").strip()
         if _COUNTRY.fullmatch(country):
+            if doc.get("c") not in (None, country.upper()):
+                doc.pop("rg", None)           # the database's region and city are of another country
+                doc.pop("ci", None)
             doc["c"] = country.upper()
     return doc
 
@@ -249,6 +292,73 @@ def outcome(status: int, noted: dict[str, Any]) -> str:
     if status < 500:
         return "invalid"
     return "error"
+
+
+# ----------------------------------------------------------------------------------------------- retention
+class Retention:
+    """How long an event is kept, as the portal sets it (ADR 0006, section 8): the installation's days (the setting
+    "requestLog.days"; RESOLVER_LOG_DAYS until one is set) and each organisation's, never longer. Read from the
+    portal's database at most every RETENTION_SECONDS; when it cannot be read the last values are kept."""
+
+    def __init__(self, database: Callable[[], Any] | None = None):
+        self.database = database        # a function giving the portal's database (pymongo), set by create_app
+        self._global: int | None = None
+        self._tenants: list[tuple[str, int]] = []      # (prefix, days), longest prefix first
+        self._loaded = 0.0
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _valid(value) -> int | None:
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            return None
+        return n if 1 <= n <= MAX_DAYS else None
+
+    def _load(self) -> None:
+        db = self.database()
+        setting = db["settings"].find_one({"_id": SETTING_DAYS}) or {}
+        found = self._valid(setting.get("value"))
+        tenants = []
+        for doc in db["tenants"].find({"logDays": {"$exists": True}}, {"prefixes": 1, "logDays": 1}):
+            n = self._valid(doc.get("logDays"))
+            if n:
+                tenants += [(str(p), n) for p in doc.get("prefixes") or [] if p]
+        self._global = found
+        self._tenants = sorted(tenants, key=lambda pd: -len(pd[0]))
+
+    def _fresh(self) -> None:
+        if self.database is None:
+            return
+        now = time.monotonic()
+        if now - self._loaded >= RETENTION_SECONDS:
+            with self._lock:
+                if now - self._loaded >= RETENTION_SECONDS:
+                    try:
+                        self._load()
+                    except Exception as exc:          # noqa: BLE001 — the resolver keeps answering
+                        log.warning("Request log retention not read (%s); the last values are kept.", exc)
+                    self._loaded = now
+
+    def global_days(self) -> int:
+        self._fresh()
+        return self._global or days()
+
+    def days_for(self, cp: str | None) -> int:
+        """The days an event of this company part is kept: its organisation's, at most the installation's."""
+        whole = self.global_days()
+        if cp:
+            for prefix, n in self._tenants:
+                if cp.startswith(prefix):
+                    return min(n, whole)
+        return whole
+
+    def forget(self) -> None:
+        """Reads the settings again at the next request (tests)."""
+        self._loaded = 0.0
+
+
+RETENTION = Retention()
 
 
 # ----------------------------------------------------------------------------------------------- the writer

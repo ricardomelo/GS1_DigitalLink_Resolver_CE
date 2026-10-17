@@ -74,9 +74,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         app.register_blueprint(api_blueprint)
 
     # The log of resolver requests (ADR 0006): the routes note what they resolved, these hooks time the request and
-    # queue its event; a background thread writes it to resolver_log.requests. A test may set its own collection.
+    # queue its event; a background thread writes it to resolver_log.requests. A test may set its own collection. How
+    # long events are kept is read from the portal's database (section 8 of the ADR).
     if request_log.WRITER.collection is None:
         request_log.WRITER.collection = lambda: mongo.cx[request_log.DB_NAME][request_log.COLLECTION]
+    if request_log.RETENTION.database is None:
+        request_log.RETENTION.database = lambda: mongo.cx[domains.portal_db_name()]
     app.before_request(request_log.start)
     app.after_request(request_log.record)
 

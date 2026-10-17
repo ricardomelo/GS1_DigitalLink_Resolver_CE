@@ -117,6 +117,9 @@ def usage_and_quality(scope: dict, whole: bool, per: dict, top: int, registered:
                      for (ai, v), e in scanned[:top]],
         "device": dict(total["device"]), "form": {f: n for f, n in total["form"].items() if f != "landing"},
         "language": _sorted_pairs(total["language"], top), "linkType": _sorted_pairs(total["linkType"], top),
+        # the browser family and the approximate location (ADR 0006, section 8); a place is "country|region|city"
+        "browser": _sorted_pairs(total["browser"], top), "country": _sorted_pairs(total["country"], top),
+        "place": _sorted_pairs(total["place"], top),
     }
 
     def worst(outcome):
@@ -187,12 +190,13 @@ def governance(audit_scope: dict, allowed, per: dict, tenant: str | None, whole:
 
 # ----------------------------------------------------------------------------------------------- the whole answer
 def build(per: dict, scope: dict, whole: bool, records: list[dict] | None, last_check: dict,
-          operation: dict, governance_of=None, top: int = TOP_SCREEN) -> dict:
+          operation: dict, governance_of=None, top: int = TOP_SCREEN, log_days: int | None = None) -> dict:
     """The overview of a period (ADR 0007, section 3.2). governance_of: a function of (period, top) giving the
-    governance group, or None when the user is not an administrator."""
+    governance group, or None when the user is not an administrator. log_days: how long the scope's requests are kept
+    (ADR 0006, section 8; the installation's when not given)."""
     registered = {r["anchor"] for r in records} if records is not None else None
     usage, quality, requested = usage_and_quality(scope, whole, per, top, registered)
-    return {"period": _iso_period(per), "whole": whole, "logDays": requestlog.log_days(),
+    return {"period": _iso_period(per), "whole": whole, "logDays": requestlog.global_days() if log_days is None else log_days,
             "usage": usage, "quality": quality,
             "records": record_quality(records, requested, last_check, max(top, NOT_SCANNED_SAMPLE)),
             "operation": operation,
@@ -200,6 +204,12 @@ def build(per: dict, scope: dict, whole: bool, records: list[dict] | None, last_
 
 
 # ----------------------------------------------------------------------------------------------- files
+def place_text(place: str) -> str:
+    """"BR|Sao Paulo|Campinas" → "Campinas, Sao Paulo, BR"."""
+    country, region, city = (place.split("|") + ["", ""])[:3]
+    return ", ".join(part for part in (city, region, country) if part)
+
+
 def _label(labels: dict, code: str) -> str:
     return labels.get(code) or code
 
@@ -225,6 +235,12 @@ def summary_rows(data: dict, labels: dict) -> list[list]:
         add("usage", "overview.language", f"{name}: {n}")
     for name, n in u["linkType"]:
         add("usage", "overview.linkType", f"{name}: {n}")
+    for name, n in u.get("browser", []):
+        add("usage", "overview.browser", f"{_label(labels, 'requests.browser.' + name)}: {n}")
+    for name, n in u.get("country", []):
+        add("usage", "overview.country", f"{name}: {n}")
+    for name, n in u.get("place", []):
+        add("usage", "overview.place", f"{place_text(name)}: {n}")
     for name in ("requests", "answered", "unknown", "noLink", "invalid", "error"):
         add("quality", "overview.q." + name, q[name], q["previous"][name])
     add("quality", "overview.avgMs", q["avgMs"])

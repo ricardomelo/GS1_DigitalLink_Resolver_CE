@@ -74,7 +74,9 @@ runs:
       run: |
         python -m pip install -q -r web_server/src/requirements.txt -r portal/requirements.txt \
           -r data_entry_server/src/requirements.txt pytest jsonschema playwright opencv-python-headless pillow mongomock \
-          "zxing-cpp>=2.2,<4"   # reads the Data Matrix symbols of the labels back (test_datamatrix.py)
+          "zxing-cpp>=2.2,<4" \
+          "mmdb-writer>=0.2.7,<0.3"   # zxing-cpp reads the labels' Data Matrix back (test_datamatrix.py); mmdb-writer
+                                      # writes the GeoIP database test_request_log.py looks addresses up in
         echo "PLAYWRIGHT_VERSION=$(python -m pip show playwright | sed -n 's/^Version: //p')" >> "$GITHUB_ENV"
 
     - if: inputs.npm == 'true' || inputs.gs1-suite == 'true'

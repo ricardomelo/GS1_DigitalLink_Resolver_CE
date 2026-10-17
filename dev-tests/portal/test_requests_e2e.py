@@ -69,7 +69,8 @@ def event(value=None, minutes=5, o="redirect", s=307, dev="mobile", **extra):
 
 
 # today: Acme's scans, the operator's, a probe and a crawler; earlier days for the bars
-event(ACME, 2, lang="pt-br", lvl="", to="www.acme.example", ref="www.instagram.com")
+event(ACME, 2, lang="pt-br", lvl="", to="www.acme.example", ref="www.instagram.com", br="chrome", c="BR",
+      rg="Sao Paulo", ci="Campinas")
 event(ACME, 3, o="unknown", s=404, lang="en", q={"10": "L7", "21": None})
 event(ACME, 4, f="epc", epc="SGTIN+", lvl="/10/L7", to="batch.acme.example", da=["17"], q={"10": "L7", "21": None})
 event(OPER, 5, dev="desktop", lt="pip", lvl="", to="www.example.org")
@@ -138,6 +139,15 @@ with sync_playwright() as p:
     check("an event's row: outcome, answer, device, referrer, language",
           "Redirecionada" in listed[0] and "www.acme.example" in listed[0] and "Celular" in listed[0]
           and "www.instagram.com" in listed[0] and "pt-br" in listed[0], listed[0])
+    check("…its browser and approximate location (ADR 0006, section 8)", "Chrome" in listed[0]
+          and "Campinas, BR" in listed[0], listed[0])
+    link = page.eval_on_selector("#requests-body tr:first-child td.requests-place a",
+                                 "a => [a.href, a.target, a.rel, a.title]")
+    check("…the city opens Google Maps searched by its names, in a new tab",
+          link[0] == "https://www.google.com/maps/search/?api=1&query=Campinas%2C%20Sao%20Paulo%2C%20BR"
+          and link[1] == "_blank" and "noopener" in link[2] and "Campinas, Sao Paulo, BR" in link[3], link)
+    check("…the location's source credited (DB-IP, CC BY)", page.is_visible("#requests-geo")
+          and page.get_attribute("#requests-geo a", "href") == "https://db-ip.com", page.inner_text("#requests-geo"))
     check("a server administrator sees the organisation of each request", page.is_visible("#requests-body tr .requests-org-col")
           and "Acme Foods" in listed[0], listed[0])
     check("an EPC binary string shows its scheme and the level that answered",
@@ -148,6 +158,15 @@ with sync_playwright() as p:
     page.click("#requests-more"); page.wait_for_timeout(800)
     check("…which adds the next page", len(rows(page)) > 200 and not page.is_visible("#requests-more"), len(rows(page)))
 
+    page.select_option("#requests-browser", "chrome"); page.click("#requests-filters button[type=submit]")
+    page.wait_for_timeout(800)
+    listed = rows(page)
+    check("filter: a browser", len(listed) == 1 and "Chrome" in listed[0], listed[:3])
+    page.select_option("#requests-browser", ""); page.fill("#requests-country", "br")
+    page.click("#requests-filters button[type=submit]"); page.wait_for_timeout(800)
+    listed = rows(page)
+    check("filter: a country, typed in either case", len(listed) == 1 and "Campinas" in listed[0], listed[:3])
+    page.fill("#requests-country", "")
     page.select_option("#requests-outcome", "notFound"); page.click("#requests-filters button[type=submit]")
     page.wait_for_timeout(800)
     listed = rows(page)
@@ -171,6 +190,27 @@ with sync_playwright() as p:
     page.click("#requests-tab-api"); page.wait_for_timeout(600)
     check("administrators have the tenant API's tab (no call yet)", page.is_visible("#requests-api")
           and page.is_visible("#requests-api-empty"))
+
+    # how long requests are kept (ADR 0006, section 8)
+    page.click("#requests-tab-retention"); page.wait_for_timeout(800)
+    check("a Retention tab: the installation's days, the default, the space", page.is_visible("#requests-retention")
+          and page.input_value("#retention-global-days") == "90" and "RESOLVER_LOG_DAYS" in page.inner_text("#retention-default")
+          and page.is_visible("#retention-space") and "requisições" in page.inner_text("#retention-space"),
+          page.inner_text("#requests-retention")[:300])
+    org_rows = rows(page, "#retention-orgs-body")
+    check("…every organisation with its requests kept", len(org_rows) == 1 and "Acme Foods" in org_rows[0], org_rows)
+    page.fill("#retention-global-days", "5000"); page.click("#retention-global-save"); page.wait_for_timeout(600)
+    check("…too many days refused with the limit", "3.650" in page.inner_text("#retention-status")
+          and requestlog.global_days() == 90, page.inner_text("#retention-status"))
+    page.fill("#retention-global-days", "120"); page.click("#retention-global-save"); page.wait_for_timeout(800)
+    check("…the installation's days saved", "120" in page.inner_text("#retention-status") and requestlog.global_days() == 120
+          and page.input_value("#retention-global-days") == "120", page.inner_text("#retention-status"))
+    page.fill(f"#retention-orgs-body tr[data-tenant='{acme['id']}'] input", "30")
+    page.click(f"#retention-orgs-body tr[data-tenant='{acme['id']}'] button"); page.wait_for_timeout(800)
+    check("…an organisation's fewer days saved", tenants.get(acme["id"])["logDays"] == 30
+          and page.input_value(f"#retention-orgs-body tr[data-tenant='{acme['id']}'] input") == "30",
+          page.inner_text("#retention-status"))
+    shot(page, "requests-retention")
     page.click("#requests-tab-resolver")
 
     # support access: the organisation's requests only
@@ -218,6 +258,15 @@ with sync_playwright() as p:
           and "/portal/api/v1/" in listed[0] and "200" in listed[0], listed)
     check("…never the key's secret", key.split(".")[1] not in page.content())
     shot(page, "requests-api")
+    page.click("#requests-tab-retention"); page.wait_for_timeout(800)
+    check("…its Retention tab: the installation's days read only, its organisation's editable",
+          page.is_disabled("#retention-global-days") and not page.is_visible("#retention-global-save")
+          and page.input_value(f"#retention-orgs-body tr[data-tenant='{acme['id']}'] input") == "30"
+          and not page.is_visible("#retention-space"), page.inner_text("#requests-retention")[:300])
+    page.fill(f"#retention-orgs-body tr[data-tenant='{acme['id']}'] input", "200")
+    page.click(f"#retention-orgs-body tr[data-tenant='{acme['id']}'] button"); page.wait_for_timeout(600)
+    check("…never longer than the installation's", "120" in page.inner_text("#retention-status")
+          and tenants.get(acme["id"])["logDays"] == 30, page.inner_text("#retention-status"))
     ctx.close()
 
     # ------------------------------------------------------------ a phone; the log switched off
@@ -231,6 +280,9 @@ with sync_playwright() as p:
           and page.eval_on_selector("#requests-body td", "td => getComputedStyle(td, '::before').content").startswith('"'),
           width)
     shot(page, "requests-phone")
+    page.click("#requests-tab-retention"); page.wait_for_timeout(800)
+    width = page.evaluate("() => document.documentElement.scrollWidth")
+    check("…the Retention tab too", width <= 392 and page.is_visible("#retention-orgs-body tr"), width)
     os.environ["RESOLVER_LOG_DAYS"] = "0"
     page.reload(); page.wait_for_timeout(1200)
     check("the log switched off: a notice", page.is_visible("#requests-off"))

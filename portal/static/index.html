@@ -1094,6 +1094,8 @@
                 aria-controls="requests-resolver" data-i18n="requests.tabResolver"></button>
         <button type="button" role="tab" class="requests-tab" id="requests-tab-api" aria-selected="false"
                 aria-controls="requests-api" data-i18n="requests.tabApi"></button>
+        <button type="button" role="tab" class="requests-tab" id="requests-tab-retention" aria-selected="false"
+                aria-controls="requests-retention" data-i18n="requests.tabRetention"></button>
       </div>
 
       <div id="requests-resolver" role="tabpanel" aria-labelledby="requests-tab-resolver">
@@ -1119,6 +1121,15 @@
             <label for="requests-device" data-i18n="requests.device"></label>
             <select id="requests-device"></select>
           </div>
+          <div>
+            <label for="requests-browser" data-i18n="requests.browser"></label>
+            <select id="requests-browser"></select>
+          </div>
+          <div class="requests-country">
+            <label for="requests-country" data-i18n="requests.country"></label>
+            <input id="requests-country" maxlength="2" autocomplete="off" autocapitalize="characters"
+                   data-i18n-attr="placeholder:requests.countryPlaceholder">
+          </div>
           <label class="choice requests-automated"><input type="checkbox" id="requests-automated">
             <span data-i18n="requests.automated"></span></label>
           <button type="submit" class="btn btn-primary" data-i18n="audit.filter"></button>
@@ -1135,6 +1146,7 @@
                 <th scope="col" data-i18n="requests.answer"></th>
                 <th scope="col" data-i18n="requests.device"></th>
                 <th scope="col" data-i18n="requests.language"></th>
+                <th scope="col" data-i18n="requests.location"></th>
                 <th scope="col" class="num" data-i18n="requests.ms"></th>
                 <th scope="col" class="requests-org-col" data-i18n="audit.tenant"></th>
               </tr>
@@ -1145,6 +1157,8 @@
         <p class="records-empty" id="requests-empty" data-i18n="requests.none" hidden></p>
         <button type="button" class="btn btn-ghost" id="requests-more" data-i18n="requests.more" hidden></button>
         <p class="field-msg" id="requests-privacy" data-i18n="requests.privacy"></p>
+        <p class="field-msg" id="requests-geo" hidden><span data-i18n="requests.geoNote"></span>
+          <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">IP Geolocation by DB-IP</a></p>
       </div>
 
       <div id="requests-api" role="tabpanel" aria-labelledby="requests-tab-api" hidden>
@@ -1178,6 +1192,39 @@
         </div>
         <p class="records-empty" id="requests-api-empty" data-i18n="requests.apiNone" hidden></p>
         <button type="button" class="btn btn-ghost" id="requests-api-more" data-i18n="requests.more" hidden></button>
+      </div>
+
+      <div id="requests-retention" role="tabpanel" aria-labelledby="requests-tab-retention" hidden>
+        <h2 data-i18n="requests.retentionTitle"></h2>
+        <p class="hint" data-i18n="requests.retentionIntro"></p>
+        <p class="status" id="retention-status" role="status" hidden></p>
+        <p class="status is-warn" id="retention-off" data-i18n="requests.retentionOff" hidden></p>
+        <form class="audit-filters retention-global" id="retention-global" novalidate>
+          <div>
+            <label for="retention-global-days" data-i18n="requests.retentionGlobal"></label>
+            <input type="number" id="retention-global-days" min="1" inputmode="numeric" aria-describedby="retention-default">
+          </div>
+          <button type="submit" class="btn btn-primary" id="retention-global-save" data-i18n="users.save"></button>
+        </form>
+        <p class="field-msg" id="retention-default"></p>
+        <p class="field-msg" id="retention-space" hidden></p>
+        <div id="retention-orgs" hidden>
+          <h3 data-i18n="requests.retentionOrgs"></h3>
+          <div class="table-wrap">
+            <table class="records-table retention-table">
+              <thead>
+                <tr>
+                  <th scope="col" data-i18n="audit.tenant"></th>
+                  <th scope="col" data-i18n="requests.retentionDays"></th>
+                  <th scope="col" class="num" data-i18n="requests.retentionEvents"></th>
+                  <th scope="col" class="num" data-i18n="requests.retentionEstimate"></th>
+                  <th scope="col"><span class="visually-hidden" data-i18n="users.save"></span></th>
+                </tr>
+              </thead>
+              <tbody id="retention-orgs-body"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
   </main>

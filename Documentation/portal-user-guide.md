@@ -823,15 +823,19 @@ code carried an expiry date, whose value is not kept), the **Outcome** (*Redirec
 of that type*, *Choice of links*, *Linkset*, *Invalid request*, *Item page* — a view of the item's page reached by a
 scan —, *Click on the item page*…), the **Answer** (the link type asked, the level of the
 record that answered — the key's or a batch's — and the site the person was sent to), the **Device** class (phone,
-tablet, computer, automated) and the site the person came from, the **Language** of the phone and the time the
-resolver took, in milliseconds. Filter by date (**From**, **To**), **Code** (a GTIN, a GS1 Company Prefix or a
-Digital Link path such as `/01/…`), **Outcome** (*Not found (404)* gathers both kinds of 404) and **Device**; tick
-**Include automated requests** to see the machines' requests too. **Export CSV** downloads what the filters show, up
-to 50,000 requests, for Excel.
+tablet, computer, automated) with the **browser** (Chrome, Safari, Firefox, Edge, Samsung Internet, Opera, *App* for
+scanner apps and the browsers inside apps such as Instagram's) and the site the person came from, the **Language** of
+the phone, the **Approximate location** (city and country, the region when you point at it; the city opens Google Maps on that city) and the time
+the resolver took, in milliseconds. Filter by date (**From**, **To**), **Code** (a GTIN, a GS1 Company Prefix or a
+Digital Link path such as `/01/…`), **Outcome** (*Not found (404)* gathers both kinds of 404), **Device**,
+**Browser** and **Country** (two letters, such as `BR`); tick **Include automated requests** to see the machines'
+requests too. **Export CSV** downloads what the filters show, up to 50,000 requests, for Excel.
 
-**What is kept.** Nothing that identifies the people who scan: not their address, not their browser, not serial
-numbers, not the values of data attributes. Each request is kept for a number of days set by the installation (90
-by default, shown under the list); the daily counts behind the bars are kept longer.
+**What is kept.** Nothing that identifies the people who scan: not their address, not their browser's full
+identification, not serial numbers, not the values of data attributes. The browser family and the approximate
+location are worked out when the scan arrives, and the address is then forgotten; the location comes from DB-IP's
+free database (credited under the list) and can be wrong behind a VPN or a mobile network. Each request is kept for
+the number of days of the **Retention** tab (shown under the list); the daily counts behind the bars are kept longer.
 
 **Who sees what.** Each user sees the requests of the codes in his reach (his organisation, his GS1 Company
 Prefixes). The server administrator sees the whole installation, with an **Organisation** column, including
@@ -840,6 +844,15 @@ invalid requests that have no code; during support access, the organisation's.
 **Tenant API** (administrators). The second tab lists the calls the organisation's systems made with API keys
 (section 14): when, which key, the operation, the answer's status and the time taken — never the records or data
 they sent.
+
+**Retention** (administrators). The third tab says how long requests are kept. The server administrator sets the
+days of the whole installation (1 to 3,650; the server's default, `RESOLVER_LOG_DAYS`, is shown below the field) and
+sees how much space the log takes on disk; each organisation can keep its requests as long or fewer days, set by its
+administrators (or the server administrator) in the table, empty meaning the installation's. When a period is
+shortened, older requests are deleted within the hour; when it is lengthened, the new period applies to new requests.
+The daily counts of the bars and of the overview are not affected. Each change is in the audit trail.
+
+![Retention](images/guide/requests-retention.png)
 
 ## 17. The overview
 

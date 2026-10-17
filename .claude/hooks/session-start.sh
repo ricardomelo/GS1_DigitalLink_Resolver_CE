@@ -27,7 +27,8 @@ mkdir -p "$DEV_TOOLS/bin"
 # Python packages (pip skips what is already installed)
 python3 -m pip install -q --break-system-packages --ignore-installed blinker \
   -r web_server/src/requirements.txt -r portal/requirements.txt -r data_entry_server/src/requirements.txt \
-  pytest jsonschema "playwright==$PLAYWRIGHT_VERSION" opencv-python-headless pillow pypdf mongomock "zxing-cpp>=2.2,<4"
+  pytest jsonschema "playwright==$PLAYWRIGHT_VERSION" opencv-python-headless pillow pypdf mongomock "zxing-cpp>=2.2,<4" \
+  "mmdb-writer>=0.2.7,<0.3"
 
 # npm packages: the resolver's engine, the EPC library and the JSON schema validator of GS1's suite
 npm_package() {  # <folder> <package@version> [module]

@@ -7,3 +7,5 @@ bcrypt==5.0.0
 flask-pymongo==3.0.1
 pymongo==4.16.0
 gunicorn==26.2.0
+# The approximate location of a request for its log (ADR 0006, section 8): reads the GeoIP database file
+maxminddb==3.2.0

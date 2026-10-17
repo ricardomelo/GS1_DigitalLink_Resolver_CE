@@ -704,23 +704,45 @@ the query string, the link type asked, the status and the outcome — `redirect`
 `unknown` (no record applies: a code nobody registered), `noLink` (a record applies but has no link of that type),
 `invalid` (400), `error`, `compressed` — the level of the record that answered (unit values as `*`), the target's
 host, the time taken, the preferred language, a device class (`mobile`, `tablet`, `desktop`, `automated`,
-`unknown`), the referrer's host and, when `RESOLVER_LOG_COUNTRY_HEADER` names a header set by a proxy in front, a
-two-letter country. For an invalid request whose key cannot be read, the first 200 characters of the path.
+`unknown`), the browser family (`chrome`, `safari`, `firefox`, `edge`, `samsung`, `opera`, `app`, `other`), the
+referrer's host and the approximate location: country, region and city from the GeoIP database (below), the country
+from the header `RESOLVER_LOG_COUNTRY_HEADER` names when a proxy in front sets one. For an invalid request whose key
+cannot be read, the first 200 characters of the path.
 
 **What is never stored.** The client's address in any form, the User-Agent, the full referrer, cookies, the values of
-data attributes and of serial numbers, any other header. A privacy notice of the operator can say so.
+data attributes and of serial numbers, any other header, coordinates. A privacy notice of the operator can say so,
+and that the browser family and the city are derived when a scan arrives (section 8 of the ADR).
+
+**Approximate location (GeoIP).** The resolver looks up the client's address — from `RESOLVER_LOG_ADDRESS_HEADER`,
+`X-Real-IP` by default, which the host's nginx sets; behind an external proxy, the header that proxy sets — in the
+file `RESOLVER_GEOIP_DB` (`/geoip/dbip-city-lite.mmdb`, the repository's `geoip/` folder mounted read only) and
+forgets it. `scripts/geoip-update.sh` downloads DB-IP's *IP to City Lite* (free, Creative Commons Attribution 4.0:
+the portal credits "IP Geolocation by DB-IP" beside the locations) into that folder; the installer schedules it
+monthly (`/etc/cron.d/resolver-geoip`, log `/var/log/resolver-geoip.log`) and runs it once. `GEOIP_URL` in `.env`
+takes another source of the same MMDB format, such as MaxMind's GeoLite2 City with an account's licence key. The
+resolver notices a new file within a minute, without a restart; without a file requests are logged without a
+location. By hand:
+
+```bash
+sudo scripts/geoip-update.sh        # 2026-10-20T04:20:01+00:00 OK: …/geoip/dbip-city-lite.mmdb from … (… bytes)
+```
 
 **Writing.** Events go into a queue of 10,000 per server process and a background thread writes them in batches
 of up to 500, so a scan never waits for the database. When the queue is full or the database does not answer,
 events are lost and the resolver writes `Request log: N event(s) lost (…)` in its output, at most once a minute.
 
-**Retention.** `RESOLVER_LOG_DAYS` (90) days, by an expiry date on each event; `0` switches the log off (nothing is
-captured; the tenant API's calls are not recorded either). The portal's worker counts each day's events per key
+**Retention.** Set in the portal (*Requests → Retention*): the installation's days (server administrators, 1 to
+3,650) and each organisation's, the same or fewer; until the portal sets them, `RESOLVER_LOG_DAYS` (90). Each event
+carries its expiry date, worked out by the resolver from its owner's days; a shortened period is applied by the
+worker's hourly housekeeping, which deletes older events (the portal's user may delete events, nothing else). `0` in
+`RESOLVER_LOG_DAYS` switches the log off (nothing is captured; the tenant API's calls are not recorded either). The
+space the log uses is shown on the same tab. The portal's worker counts each day's events per key
 once an hour into the portal's collection `request_daily`, in the days of `PORTAL_TIME_ZONE` (the installer writes
 the server's), kept `PORTAL_STATS_DAYS` (800) days. The daily backup keeps `resolver_log` too (`mongodump` cannot leave
 a whole database out).
 
-**Who reads it.** The portal's database user may read `resolver_log`, never write it (`portal-db-init`). Each user
+**Who reads it.** The portal's database user may read `resolver_log` and delete its events, never insert or change
+one (`portal-db-init`). Each user
 sees the events of the records in his reach; a server administrator not limited to prefixes sees the whole
 installation, also requests without a key; ownership comes from the company part at query time, so a prefix given
 to an organisation takes its history along. The portal's API: `GET /portal/api/requests`, `/requests.csv`,

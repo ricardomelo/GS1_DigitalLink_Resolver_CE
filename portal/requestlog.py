@@ -10,10 +10,14 @@ The resolver writes one event per resolution request into the collection "reques
   - lists events (newest first, in pages) and turns them into rows for the screen and the CSV export;
   - counts each day's events per primary key into the portal's collection "request_daily" (aggregate(), run by the
     worker's hourly housekeeping), in the installation's time zone, kept PORTAL_STATS_DAYS;
-  - records the tenant API's calls (record_api_call(), collection "api_requests") and lists them.
+  - records the tenant API's calls (record_api_call(), collection "api_requests") and lists them;
+  - keeps the retention set in the portal (ADR 0006, section 8): the installation's days (server administrators) and
+    each organisation's, never longer; the resolver reads both to date each event's expiry, and the worker's
+    housekeeping deletes what a shortened retention no longer keeps (apply_retention()); the space the log uses.
 
 Settings:
-  RESOLVER_LOG_DAYS    days raw events and API calls are kept (the resolver reads it too); 0: the log is off (90)
+  RESOLVER_LOG_DAYS    the default days raw events and API calls are kept until the portal sets them (the resolver
+                       reads it too); 0: the log is off (90)
   PORTAL_TIME_ZONE     the time zone of the aggregates' days, an IANA name (UTC)
   PORTAL_STATS_DAYS    days the daily aggregates are kept (800)
 """
@@ -40,6 +44,7 @@ API_CALLS = "api_requests"
 # page and click: the item's page and its buttons, people following a scan (Documentation/adr/0011-item-page.md)
 OUTCOMES = ("redirect", "choice", "linkset", "unknown", "noLink", "invalid", "error", "compressed", "page", "click")
 DEVICES = ("mobile", "tablet", "desktop", "automated", "unknown")
+BROWSERS = ("chrome", "safari", "firefox", "edge", "samsung", "opera", "app", "other")
 FORMS = ("uri", "compressed", "epc", "landing")
 MAX_PAGE = 500
 DEFAULT_PAGE = 200
@@ -47,6 +52,8 @@ MAX_EXPORT = 50_000
 FINAL_AFTER = timedelta(minutes=10)        # a day is counted for the last time this long after it ended
 TOP = 20                                   # languages and link types kept per key and day
 SETTING_FINAL = "requestStats.finalUntil"
+SETTING_DAYS = "requestLog.days"            # the installation's retention (the resolver reads it: request_log.py)
+MAX_DAYS = 3650
 
 
 # ----------------------------------------------------------------------------------------------- settings
@@ -62,6 +69,120 @@ def _int_env(name: str, default: int) -> int:
 def log_days() -> int:
     """RESOLVER_LOG_DAYS (0: the log is off)."""
     return _int_env("RESOLVER_LOG_DAYS", 90)
+
+
+def global_days() -> int:
+    """The installation's retention: the portal's setting, or RESOLVER_LOG_DAYS until one is set; 0 when the log is
+    off."""
+    if not log_days():
+        return 0
+    value = store.get_setting(SETTING_DAYS)
+    return value if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= MAX_DAYS else log_days()
+
+
+def tenant_days(tenant: dict | None, whole: int | None = None) -> int:
+    """The days an organisation's events are kept: its own, never longer than the installation's (0: the log is off)."""
+    whole = global_days() if whole is None else whole
+    own = (tenant or {}).get("logDays")
+    return min(own, whole) if isinstance(own, int) and own >= 1 and whole else whole
+
+
+def days_for(tenant_id: str | None, tenant_list: list[dict]) -> int:
+    """The retention that applies to a scope: an organisation's, or the installation's for the operator."""
+    tenant = next((t for t in tenant_list if t["id"] == tenant_id), None) if tenant_id else None
+    return tenant_days(tenant)
+
+
+class RetentionError(ValueError):
+    def __init__(self, code: str, **params):
+        super().__init__(code)
+        self.code, self.params = code, params
+
+
+def _days_value(value, maximum: int):
+    if isinstance(value, bool):
+        raise RetentionError("requests.retentionInvalid", max=maximum)
+    try:
+        n = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise RetentionError("requests.retentionInvalid", max=maximum)
+    if not 1 <= n <= maximum:
+        raise RetentionError("requests.retentionInvalid", max=maximum)
+    return n
+
+
+def set_global_days(value) -> int:
+    """Sets the installation's retention (1 to MAX_DAYS days); returns it."""
+    if not log_days():
+        raise RetentionError("requests.retentionOff")
+    n = _days_value(value, MAX_DAYS)
+    store.set_setting(SETTING_DAYS, n)
+    return n
+
+
+def set_tenant_days(tenant_id: str, value) -> int | None:
+    """Sets an organisation's retention (1 to the installation's days), or None to follow the installation's."""
+    if not log_days():
+        raise RetentionError("requests.retentionOff")
+    if value is None or str(value).strip() == "":
+        store.col("tenants").update_one({"_id": tenant_id}, {"$unset": {"logDays": ""}})
+        return None
+    n = _days_value(value, global_days())
+    store.col("tenants").update_one({"_id": tenant_id}, {"$set": {"logDays": n}})
+    return n
+
+
+def apply_retention(now: datetime | None = None, tenant_list: list[dict] | None = None) -> int:
+    """The worker's hourly housekeeping: deletes the events (and tenant API calls) older than the retention that applies
+    to them — an organisation's by its prefixes, the rest by the installation's. Events carry their expiry, so this
+    matters only after a retention was shortened. One replica at a time; returns the number of events deleted."""
+    if not log_days():
+        return 0
+    try:
+        with store.lock("request-retention", hold_seconds=1800, wait_seconds=0):
+            return _apply_retention(now, tenant_list)
+    except store.LockTimeout:
+        return 0
+
+
+def _apply_retention(now: datetime | None, tenant_list: list[dict] | None) -> int:
+    import tenants as tenants_module
+    moment = utc_naive(now or datetime.now(timezone.utc))
+    tenant_list = tenants_module.load() if tenant_list is None else tenant_list
+    whole = global_days()
+    deleted = events().delete_many({"t": {"$lt": moment - timedelta(days=whole)}}).deleted_count
+    api_calls().delete_many({"t": {"$lt": moment - timedelta(days=whole)}})
+    for tenant in tenant_list:
+        days = tenant_days(tenant, whole)
+        if days < whole:
+            cutoff = moment - timedelta(days=days)
+            if tenant.get("prefixes"):
+                deleted += events().delete_many({"cp": {"$regex": _prefix_pattern(tenant["prefixes"])},
+                                                 "t": {"$lt": cutoff}}).deleted_count
+            api_calls().delete_many({"tenant": tenant["id"], "t": {"$lt": cutoff}})
+    if deleted:
+        log.info("Request log: %d event(s) older than their retention deleted.", deleted)
+    return deleted
+
+
+def space(scope: dict | None = None) -> dict:
+    """The space the log uses: the whole collection (size on disk, indexes, events) when scope is None; otherwise the
+    scope's events and an estimate of their size (events × the average event). Sizes are None when the database does
+    not say (mongomock)."""
+    stats = {}
+    try:
+        stats = store.db().client[LOG_DB].command("collstats", EVENTS)
+    except Exception:          # noqa: BLE001 — no such command (mongomock), no collection yet, no right
+        stats = {}
+    average = stats.get("avgObjSize")
+    if scope is None:
+        count = stats.get("count")
+        if count is None:
+            count = events().estimated_document_count()
+        return {"events": count, "bytes": stats.get("storageSize"), "indexBytes": stats.get("totalIndexSize"),
+                "dataBytes": stats.get("size")}
+    count = events().count_documents(scope)
+    return {"events": count, "bytes": round(count * average) if average else None}
 
 
 def stats_days() -> int:
@@ -215,6 +336,16 @@ def event_query(args, scope: dict) -> dict:
             parts.append({"o": outcome})
         else:
             raise FilterError("requests.badFilter", name="outcome")
+    browser = (args.get("browser") or "").strip()
+    if browser:
+        if browser not in BROWSERS:
+            raise FilterError("requests.badFilter", name="browser")
+        parts.append({"br": browser})
+    country = (args.get("country") or "").strip().upper()
+    if country:
+        if not re.fullmatch(r"[A-Z]{2}", country):
+            raise FilterError("requests.badFilter", name="country")
+        parts.append({"c": country})
     device = (args.get("device") or "").strip()
     if device:
         if device not in DEVICES:
@@ -260,7 +391,8 @@ def row(doc: dict, tenant_names: dict | None = None, tenant_list: list[dict] | N
         "qualifiers": qualifier_path(doc.get("q")), "attributes": doc.get("da") or [],
         "linkType": doc.get("lt"), "status": doc.get("s"), "outcome": doc.get("o"), "level": doc.get("lvl"),
         "target": doc.get("to"), "ms": doc.get("ms"), "language": doc.get("lang"), "device": doc.get("dev"),
-        "referrer": doc.get("ref"), "country": doc.get("c"), "path": doc.get("p"),
+        "referrer": doc.get("ref"), "country": doc.get("c"), "browser": doc.get("br"), "region": doc.get("rg"),
+        "city": doc.get("ci"), "path": doc.get("p"),
     }
     if tenant_names is not None:
         owner = owner_of(doc.get("cp"), tenant_list or [])
@@ -343,7 +475,28 @@ def _top(counter: dict) -> list[list]:
 
 def _empty() -> dict:
     return {"total": 0, "automated": 0, "outcome": {}, "device": {}, "form": {}, "language": {}, "linkType": {},
-            "ms": 0, "msMax": 0}
+            "browser": {}, "country": {}, "place": {}, "ms": 0, "msMax": 0}
+
+
+def place_of(group: dict) -> str | None:
+    """"BR|Sao Paulo|Campinas" for a group with a city (region may be empty), None otherwise."""
+    if not group.get("ci"):
+        return None
+    return f'{group.get("c") or ""}|{group.get("rg") or ""}|{group["ci"]}'
+
+
+def _group_doc(g: dict, n: int, ms: int, longest: int) -> dict:
+    """A group of raw events (count_day, collect) as an aggregate document."""
+    place = place_of(g)
+    return {"total": n, "automated": n if g.get("dev") == "automated" else 0, "ms": ms or 0, "msMax": longest or 0,
+            "outcome": {g.get("o") or "-": n}, "device": {g.get("dev") or "-": n}, "form": {g.get("f") or "-": n},
+            "language": {g["lang"]: n} if g.get("lang") else {}, "linkType": {g["lt"]: n} if g.get("lt") else {},
+            "browser": {g["br"]: n} if g.get("br") else {}, "country": {g["c"]: n} if g.get("c") else {},
+            "place": {place: n} if place else {}}
+
+
+GROUP_ID = {"ai": "$ai", "v": "$v", "cp": "$cp", "o": "$o", "dev": "$dev", "f": "$f", "lang": "$lang", "lt": "$lt",
+            "br": "$br", "c": "$c", "rg": "$rg", "ci": "$ci"}
 
 
 def _percentile(match: dict, count: int, percent: int):
@@ -363,42 +516,30 @@ def count_day(day: date, run: str | None = None) -> int:
     match = {"t": {"$gte": start, "$lt": end}}
     groups = events().aggregate([
         {"$match": match},
-        {"$group": {"_id": {"ai": "$ai", "v": "$v", "cp": "$cp", "o": "$o", "dev": "$dev", "f": "$f",
-                            "lang": "$lang", "lt": "$lt"},
-                    "n": {"$sum": 1}, "ms": {"$sum": "$ms"}, "max": {"$max": "$ms"}}}])
+        {"$group": {"_id": GROUP_ID, "n": {"$sum": 1}, "ms": {"$sum": "$ms"}, "max": {"$max": "$ms"}}}])
     keys: dict[tuple, dict] = {}
     whole = _empty()
     for group in groups:
         g, n = group["_id"], group["n"]
-        targets = [whole]
+        doc = _group_doc(g, n, group.get("ms"), group.get("max"))
+        _add(whole, doc)
         if g.get("cp"):
             entry = keys.get((g.get("ai"), g.get("v")))
             if entry is None:
                 entry = keys[(g.get("ai"), g.get("v"))] = {**_empty(), "cp": g["cp"]}
-            targets.append(entry)
-        for t in targets:
-            t["total"] += n
-            if g.get("dev") == "automated":
-                t["automated"] += n
-            _bump(t["outcome"], g.get("o"), n)
-            _bump(t["device"], g.get("dev"), n)
-            _bump(t["form"], g.get("f"), n)
-            if g.get("lang"):
-                _bump(t["language"], g["lang"], n)
-            if g.get("lt"):
-                _bump(t["linkType"], g["lt"], n)
-            t["ms"] += group.get("ms") or 0
-            t["msMax"] = max(t["msMax"], group.get("max") or 0)
+            _add(entry, doc)
     expires = utc_naive(datetime.combine(day + timedelta(days=1), time(0), timezone.utc)) + timedelta(days=stats_days())
     key = day.isoformat()
     target = daily()
     for (ai, value), entry in keys.items():
         target.replace_one({"_id": f"{key}|{ai}|{value}"},
                            {"day": key, "ai": ai, "v": value, **entry, "language": _top(entry["language"]),
-                            "linkType": _top(entry["linkType"]), "run": run, "expiresAt": expires}, upsert=True)
+                            "linkType": _top(entry["linkType"]), "place": _top(entry["place"]), "run": run,
+                            "expiresAt": expires}, upsert=True)
     timed = events().count_documents({**match, "ms": {"$exists": True}})
     target.replace_one({"_id": f"{key}|*"},
                        {"day": key, **whole, "language": _top(whole["language"]), "linkType": _top(whole["linkType"]),
+                        "place": _top(whole["place"]),
                         "keys": len(keys), "p50": _percentile(match, timed, 50), "p95": _percentile(match, timed, 95),
                         "p99": _percentile(match, timed, 99), "run": run, "expiresAt": expires}, upsert=True)
     target.delete_many({"day": key, "run": {"$ne": run}})
@@ -428,7 +569,7 @@ def _aggregate(now: datetime | None) -> int:
     else:
         oldest = next(iter(events().find({}, {"t": 1}).sort("t", 1).limit(1)), None)
         first = local_day(oldest["t"]) if oldest else current
-    first = max(first, current - timedelta(days=log_days()))
+    first = max(first, current - timedelta(days=global_days()))
     counted = 0
     day = first
     while day <= current:
@@ -450,10 +591,10 @@ def _add(target: dict, doc: dict) -> None:
     target["automated"] += doc.get("automated", 0)
     target["ms"] += doc.get("ms") or 0
     target["msMax"] = max(target["msMax"], doc.get("msMax") or 0)
-    for name in ("outcome", "device", "form"):
+    for name in ("outcome", "device", "form", "browser", "country"):
         for value, n in (doc.get(name) or {}).items():
             _bump(target[name], value, n)
-    for name in ("language", "linkType"):
+    for name in ("language", "linkType", "place"):
         found = doc.get(name) or []
         for value, n in (found.items() if isinstance(found, dict) else found):
             _bump(target[name], value, n)
@@ -462,7 +603,8 @@ def _add(target: dict, doc: dict) -> None:
 def collect(scope: dict, whole: bool, first: date, last: date, keys: bool = True) -> dict:
     """The requests of the days [first, last] of the installation's time zone in a scope (ADR 0007, section 3.2):
     {"total": entry, "days": {day: entry}, "keys": {(ai, value): entry with "cp"}, "p95": [daily p95 values]}, an
-    entry being {"total", "automated", "outcome", "device", "form", "language", "linkType", "ms", "msMax"} with
+    entry being {"total", "automated", "outcome", "device", "form", "language", "linkType", "browser", "country",
+    "place", "ms", "msMax"} with
     dictionaries of counts. Finished days come from the aggregates, today from the raw events. For the whole
     installation the totals come from the installation's documents (requests without a key included); otherwise
     from the documents per key of the scope."""
@@ -492,16 +634,11 @@ def collect(scope: dict, whole: bool, first: date, last: date, keys: bool = True
         query = {"$and": [scope, match]} if scope else match
         groups = events().aggregate([
             {"$match": query},
-            {"$group": {"_id": {"ai": "$ai", "v": "$v", "cp": "$cp", "o": "$o", "dev": "$dev", "f": "$f",
-                                "lang": "$lang", "lt": "$lt"},
-                        "n": {"$sum": 1}, "ms": {"$sum": "$ms"}, "max": {"$max": "$ms"}}}])
+            {"$group": {"_id": GROUP_ID, "n": {"$sum": 1}, "ms": {"$sum": "$ms"}, "max": {"$max": "$ms"}}}])
         today_entry = days.setdefault(current.isoformat(), _empty())
         for group in groups:
             g, n = group["_id"], group["n"]
-            doc = {"total": n, "automated": n if g.get("dev") == "automated" else 0, "ms": group.get("ms") or 0,
-                   "msMax": group.get("max") or 0, "outcome": {g.get("o") or "-": n}, "device": {g.get("dev") or "-": n},
-                   "form": {g.get("f") or "-": n}, "language": {g["lang"]: n} if g.get("lang") else {},
-                   "linkType": {g["lt"]: n} if g.get("lt") else {}}
+            doc = _group_doc(g, n, group.get("ms"), group.get("max"))
             _add(total, doc)
             _add(today_entry, doc)
             if keys and g.get("cp"):
@@ -511,11 +648,16 @@ def collect(scope: dict, whole: bool, first: date, last: date, keys: bool = True
 
 
 # ----------------------------------------------------------------------------------------------- tenant API calls
+def _tenant_list() -> list[dict]:
+    import tenants as tenants_module
+    return tenants_module.load()
+
+
 def record_api_call(key: dict | None, method: str, operation: str | None, status: int, ms: int) -> None:
     """One call of /portal/api/v1 (ADR 0006, decision 8): never the record, the query string or the key's secret."""
-    days = log_days()
-    if not days:
+    if not log_days():
         return
+    days = days_for(key.get("tenant") if key else None, _tenant_list())
     now = store.now()
     doc = {"t": now, "expiresAt": now + timedelta(days=days), "m": method, "op": (operation or "")[:120],
            "s": status, "ms": ms}

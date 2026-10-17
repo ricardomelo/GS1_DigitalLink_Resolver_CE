@@ -627,11 +627,16 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .requests-legend .swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; }
 .requests-legend .swatch-ok { background: var(--gs1-blue); }
 .requests-legend .swatch-missing { background: var(--gs1-orange); margin-left: .6rem; }
-.requests-tabs { display: flex; gap: .25rem; margin: 1.75rem 0 0; border-bottom: 1px solid var(--line); }
+.requests-tabs { display: flex; flex-wrap: wrap; gap: .25rem; margin: 1.75rem 0 0; border-bottom: 1px solid var(--line); }
 .requests-tab { border: 0; background: none; padding: .6rem 1rem; font: inherit; font-weight: 600; color: var(--muted);
   border-bottom: 3px solid transparent; cursor: pointer; }
 .requests-tab[aria-selected="true"] { color: var(--gs1-blue); border-bottom-color: var(--gs1-orange); }
 .requests-automated { align-self: center; margin: 0; font-size: .875rem; }
+.requests-country input { width: 5rem; text-transform: uppercase; }
+.requests-place a { color: inherit; }
+.retention-global input { width: 8rem; }
+.retention-table .retention-days { width: 12rem; }
+.retention-table td { vertical-align: middle; }
 .requests-table td { font-size: .875rem; }
 .requests-table td.code { white-space: normal; word-break: break-all; }
 .requests-outcome.is-redirect, .requests-outcome.is-linkset, .requests-outcome.is-choice,

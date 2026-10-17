@@ -15,7 +15,7 @@ Event: {"at", "user", "action", "category", "tenant"?, "byOperator"?, "anchor"?,
   mail-failed (a message the relay refused; never the address); with the tenant API
   (Documentation/adr/0005-tenant-api.md) api-key-create and api-key-revoke. Changes made through the API are record
   events whose user is "api:<key id>". requests-export: the log of resolver requests exported as CSV
-  (Documentation/adr/0006-resolver-request-log.md).
+  (Documentation/adr/0006-resolver-request-log.md); requestlog-retention: how long it is kept, changed (section 8).
 
 "tenant" is the tenant whose audit trail the event belongs to (Documentation/adr/0002-tenants.md, section 3.5);
 none for the operator, which is also what events written before tenants existed are. "byOperator" marks what an

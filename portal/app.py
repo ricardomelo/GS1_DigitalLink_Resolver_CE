@@ -979,7 +979,7 @@ def config():
         dataAttributes=syntax.ENGINE.describe(),
         session=session_info(),
         mail={"enabled": mail.enabled()},
-        requestLog={"days": requestlog.log_days(), "whole": log_sees_everything()},
+        requestLog={"days": requestlog.days_for(g.tenant, g.tenants), "whole": log_sees_everything()},
         domains={"installation": RESOLVER_PUBLIC_URL,
                  "verified": [{"domain": d["_id"], "url": domains.base_url(d), "defaultFor": d.get("defaultFor") or []}
                               for d in domains.verified(g.tenant)]},
@@ -2303,12 +2303,19 @@ def audit_csv():
 
 # --------------------------------------------------------------------------- request log (ADR 0006)
 REQUEST_CSV_COLUMNS = ["at", "method", "form", "epc", "key", "value", "qualifiers", "attributes", "linkType", "status",
-                       "outcome", "level", "target", "ms", "language", "device", "referrer", "country", "path"]
+                       "outcome", "level", "target", "ms", "language", "device", "referrer", "country", "browser",
+                       "region", "city", "path"]
 
 
 @app.errorhandler(requestlog.FilterError)
 def on_filter_error(err):
     """A filter of the request log cannot be read: 422 with the message code."""
+    return message(err.code, 422, params=err.params)
+
+
+@app.errorhandler(requestlog.RetentionError)
+def on_retention_error(err):
+    """A retention of the request log refused: 422 with the message code."""
     return message(err.code, 422, params=err.params)
 
 
@@ -2352,7 +2359,7 @@ def list_requests():
         found = requestlog.list_events(request.args, scope, organisations=g.tenants if whole else None)
     except PyMongoError as exc:
         return _log_unavailable(exc)
-    return jsonify(**found, days=requestlog.log_days(), whole=whole)
+    return jsonify(**found, days=requestlog.days_for(g.tenant, g.tenants), whole=whole)
 
 
 @app.get("/portal/api/requests.csv")
@@ -2400,6 +2407,68 @@ def requests_per_day():
         return jsonify(days=requestlog.per_day(scope, whole, days), timeZone=str(requestlog.zone()))
     except PyMongoError as exc:
         return _log_unavailable(exc)
+
+
+def _retention_editable(tenant_id: str | None) -> bool:
+    """Who sets an organisation's retention: a server administrator outside support access, or the organisation's own
+    administrators."""
+    if g.account_role != "admin" or g.support:
+        return False
+    return bool(g.server_admin and not g.prefixes) or (tenant_id is not None and g.account_tenant == tenant_id)
+
+
+@app.get("/portal/api/requests/retention")
+@require_login
+def request_retention():
+    """How long the requests are kept (Documentation/adr/0006-resolver-request-log.md, section 8): the installation's
+    days and default, the days of the user's scope; to administrators the organisations they manage with the space
+    their events use; to a server administrator every organisation and the whole log's space."""
+    whole = requestlog.global_days()
+    server = bool(g.server_admin and not g.support and not g.prefixes)
+    if server:
+        managed = g.tenants
+    elif g.account_role == "admin" and (g.support or g.account_tenant):
+        managed = [t for t in g.tenants if t["id"] == (g.support or g.account_tenant)]
+    else:
+        managed = []
+    try:
+        organisations = [{"id": t["id"], "name": t["name"], "logDays": t.get("logDays"),
+                          "days": requestlog.tenant_days(t, whole), "editable": _retention_editable(t["id"]),
+                          **({"space": requestlog.space(requestlog.scope_filter(g.tenants, t["id"], [], False))}
+                             if t.get("prefixes") else {"space": {"events": 0, "bytes": 0}})}
+                         for t in managed]
+        total = requestlog.space() if server else None
+    except PyMongoError as exc:
+        return _log_unavailable(exc)
+    return jsonify(enabled=bool(requestlog.log_days()), default=requestlog.log_days(), days=whole,
+                   max=requestlog.MAX_DAYS, scopeDays=requestlog.days_for(g.tenant, g.tenants),
+                   canSetGlobal=server and g.account_role == "admin", organisations=organisations, space=total)
+
+
+@app.put("/portal/api/requests/retention")
+@require_login
+@admin_required
+def set_request_retention():
+    """{"days": n}: the installation's retention (server administrators); {"tenant": id, "days": n or null}: an
+    organisation's, at most the installation's (its administrators or a server administrator). A journal event."""
+    data = request.get_json(silent=True) or {}
+    if "tenant" in data:
+        tenant = next((t for t in g.tenants if t["id"] == str(data.get("tenant") or "")), None)
+        if not tenant:
+            return message("tenants.unknown", 404)
+        if not _retention_editable(tenant["id"]):
+            return message("access.role", 403, params={"role": "admin"})
+        days = requestlog.set_tenant_days(tenant["id"], data.get("days"))
+        audit.info("user=%s action=requestlog-retention tenant=%s days=%s", g.user, tenant["id"], days or "-")
+        log_event("requestlog-retention", tenant=tenant["id"], detail=f"days={days or '-'}")
+        return message("requests.retentionSaved", 200, params={"name": tenant["name"]},
+                       days=requestlog.tenant_days({**tenant, "logDays": days}))
+    if not (g.server_admin and not g.support and not g.prefixes):
+        return message("access.serverAdmin", 403)
+    days = requestlog.set_global_days(data.get("days"))
+    audit.info("user=%s action=requestlog-retention global days=%s", g.user, days)
+    log_event("requestlog-retention", tenant=None, detail=f"global days={days}")
+    return message("requests.retentionSaved", 200, params={"name": ""}, days=days)
 
 
 @app.get("/portal/api/requests/api")
@@ -2811,7 +2880,7 @@ def overview_last_check() -> dict:
 def overview_operation(last_check: dict) -> dict:
     """The operation group: the last check of every link; for server administrators also the worker, e-mail and the
     request log's counts."""
-    out = {"lastCheck": last_check.get("checkedAt"), "logDays": requestlog.log_days()}
+    out = {"lastCheck": last_check.get("checkedAt"), "logDays": requestlog.days_for(g.tenant, g.tenants)}
     alerts = monitor.states(g.tenant, g.server_admin and not g.support)
     out["alerts"] = alerts["active"]
     if g.server_admin and not g.support:
@@ -2841,7 +2910,8 @@ def overview_data(days, top: int = overview.TOP_SCREEN, organisation=None) -> di
         def governance_of(p, n):
             return overview.governance(audit_scope, lambda anchor: gs1.within_prefixes(anchor, g.prefixes), p,
                                        g.tenant, whole, n)
-    data = overview.build(per, scope, whole, overview_records(), last_check, operation, governance_of, top)
+    data = overview.build(per, scope, whole, overview_records(), last_check, operation, governance_of, top,
+                          requestlog.days_for(g.tenant, g.tenants))
     # what matters to an organisation from operation: the last check of every link, how long requests are kept and
     # the scope's active alerts (its spikes of 404), with record quality
     data["records"]["lastCheckAt"] = last_check.get("checkedAt")
@@ -3038,7 +3108,7 @@ def label_response(anchor: str, args) -> Response:
 # them inside this process; otherwise the portal-worker service does.
 JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job, "mail": notify.run_mail_job}
 # What the worker runs about once an hour, outside any job (worker.HOUSEKEEPING_SECONDS)
-HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate, domains.recheck_all]
+HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate, requestlog.apply_retention, domains.recheck_all]
 # What the worker runs every PORTAL_MONITOR_MINUTES (Documentation/adr/0008-monitoring-and-alerts.md)
 MONITORING = [monitor.run]
 MONITOR_SECONDS = monitor.minutes() * 60

@@ -20,6 +20,10 @@ Checks, without Docker:
   * the daily backup (scripts/resolver-backup.sh) with a stand-in "docker": mongodump is given only options
     mongodump has (--nsExclude is mongorestore's: the backup failed on a server with it), a failed dump says
     ERROR, exits with status 1 and leaves no partial file, a good one writes the archive and says OK;
+  * the GeoIP database's monthly update (scripts/geoip-update.sh) with a stand-in "curl": the month's DB-IP file, or the
+    previous month's, or GEOIP_URL from .env (never printed with its query string), gzip-compressed or not, checked
+    and put in place in one step; a download that is not an MMDB keeps the old file, says ERROR and exits 1; and the
+    resolver's container mounts the folder read only;
   * the portal image's files: the portal server is started from a folder assembled by the COPY instructions
     of portal/Dockerfile (not from the source folder), and every module and data file of portal/ is in it,
     so a file left out of the image fails here rather than on a server.
@@ -174,6 +178,74 @@ def backup_copy_checks() -> None:
         else:
             check(run.returncode == 0 and not calls, "backup copy: nothing copied without BACKUP_COPY_TO", calls)
         shutil.rmtree(work, ignore_errors=True)
+
+
+def geoip_checks() -> None:
+    """scripts/geoip-update.sh (ADR 0006, section 8) with a stand-in curl that serves an MMDB-like file."""
+    script = REPO / "scripts" / "geoip-update.sh"
+    marker = b"\xab\xcd\xefMaxMind.com"
+    database = b"\0" * 2000 + marker + b"metadata"
+    import gzip
+    month = time.strftime("%Y-%m", time.gmtime())
+    for case in ("this month", "previous month", "GEOIP_URL", "not a database", "nothing"):
+        work = Path(tempfile.mkdtemp(prefix="geoip-test-"))
+        bin_dir, served, calls = work / "bin", work / "served", work / "calls"
+        bin_dir.mkdir()
+        served.mkdir()
+        (served / "good.gz").write_bytes(gzip.compress(database))
+        (served / "plain").write_bytes(database)
+        (served / "html").write_bytes(b"<html>" + b"x" * 3000 + b"</html>")
+        # curl -fsSL --retry 2 --max-time 900 -o FILE URL: the last argument is the address, the one after -o the file
+        rules = {"this month": f'*{month}*) cp {served}/good.gz "$out" ;;',
+                 "previous month": f'*{month}*) exit 22 ;; *dbip-city-lite-*) cp {served}/good.gz "$out" ;;',
+                 "GEOIP_URL": f'*geolite.example.org*) cp {served}/plain "$out" ;;',
+                 "not a database": f'*) cp {served}/html "$out" ;;',
+                 "nothing": ''}[case]
+        (bin_dir / "curl").write_text('#!/bin/bash\nout=""; prev=""\nfor a in "$@"; do [[ $prev == -o ]] && out=$a; '
+                                      f'prev=$a; done\necho "${{@: -1}}" >> {calls}\ncase "${{@: -1}}" in {rules} '
+                                      '*) exit 22 ;; esac\n')
+        (bin_dir / "curl").chmod(0o755)
+        target = work / "geoip" / "dbip-city-lite.mmdb"
+        target.parent.mkdir()
+        target.write_bytes(b"OLD")
+        if case == "GEOIP_URL":
+            (work / ".env").write_text("GEOIP_URL='https://geolite.example.org/City.mmdb?license_key=SECRET42'\n")
+        env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
+               "GEOIP_MIN_BYTES": "1000"}
+        env.pop("GEOIP_URL", None)
+        run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60, env=env)
+        asked = calls.read_text().split() if calls.exists() else []
+        leftovers = [p.name for p in target.parent.iterdir() if p.name != target.name]
+        if case in ("this month", "previous month", "GEOIP_URL"):
+            check(run.returncode == 0 and " OK: " in run.stdout and target.read_bytes() == database and not leftovers
+                  and oct(target.stat().st_mode & 0o777) == "0o644",
+                  f"GeoIP update ({case}): the file checked, put in place readable by the resolver, nothing left behind",
+                  (run.returncode, run.stdout[-300:], leftovers))
+        if case == "this month":
+            check(asked == [f"https://download.db-ip.com/free/dbip-city-lite-{month}.mmdb.gz"],
+                  "GeoIP update: DB-IP's City Lite of the month by default", asked)
+        elif case == "previous month":
+            check(len(asked) == 2 and month in asked[0] and month not in asked[1] and "dbip-city-lite-" in asked[1],
+                  "GeoIP update: the previous month's while the month's is not out", asked)
+        elif case == "GEOIP_URL":
+            check(asked == ["https://geolite.example.org/City.mmdb?license_key=SECRET42"]
+                  and "SECRET42" not in run.stdout + run.stderr,
+                  "GeoIP update: GEOIP_URL from .env (a file not compressed), its query string never printed",
+                  (asked, run.stdout[-200:]))
+        else:
+            check(run.returncode == 1 and "ERROR" in run.stdout and target.read_bytes() == b"OLD" and not leftovers,
+                  f"GeoIP update ({case}): ERROR, status 1, the old file kept, nothing left behind",
+                  (run.returncode, run.stdout[-300:], leftovers))
+        shutil.rmtree(work, ignore_errors=True)
+    cron = (REPO / "scripts" / "geoip-update.cron").read_text()
+    check(re.search(r"^\d+ \d+ \d+ \* \* root REPOSITORY/scripts/geoip-update\.sh ", cron, re.M),
+          "GeoIP update: scheduled monthly as root by its cron file", cron[-200:])
+    compose = (REPO / "docker-compose.yml").read_text()
+    web = compose.split("  web-service:", 1)[1].split("\n  portal-db-init:", 1)[0]
+    check("- ./geoip:/geoip:ro" in web, "GeoIP update: the resolver mounts the folder read only", web[-400:])
+    env_example = (REPO / ".env.example").read_text()
+    check("RESOLVER_GEOIP_DB=/geoip/dbip-city-lite.mmdb" in env_example and "RESOLVER_LOG_ADDRESS_HEADER=X-Real-IP"
+          in env_example, "GeoIP update: .env.example names the file the resolver reads and the address header")
 
 
 def rehearsal_checks() -> None:
@@ -679,6 +751,7 @@ def main() -> int:
     compose_checks()
     backup_checks()
     backup_copy_checks()
+    geoip_checks()
     rehearsal_checks()
     rotation_checks()
     domains_script_checks()

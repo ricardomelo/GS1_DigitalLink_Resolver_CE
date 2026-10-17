@@ -16,7 +16,8 @@
 #   5. configures the host nginx as reverse proxy (checking that ports 80/443 are free) and obtains
 #      a Let's Encrypt certificate, or uses an existing certificate, or leaves TLS to an external proxy;
 #   6. builds and starts the services and waits until they answer;
-#   7. schedules the daily backup and prints a summary.
+#   7. schedules the daily backup and the monthly update of the GeoIP database (the approximate location of scans in
+#      the request log), and prints a summary.
 #
 # Running it again is safe: existing secrets, users and data are kept. Options:
 #   --non-interactive   take every answer from environment variables (see "Settings" below)
@@ -28,7 +29,8 @@
 #   TLS_KEY_FILE, PROXY_BIND_ADDRESS, RESOLVER_ORG_NAME, RESOLVER_ORG_URL, RESOLVER_CONTACT_STREET,
 #   RESOLVER_CONTACT_LOCALITY, RESOLVER_CONTACT_REGION, RESOLVER_CONTACT_POSTCODE,
 #   RESOLVER_CONTACT_COUNTRY, RESOLVER_CONTACT_TELEPHONE, PORTAL_ADMIN_USERNAME,
-#   PORTAL_ADMIN_PASSWORD (empty: generated), INSTALL_BACKUP_CRON (yes | no),
+#   PORTAL_ADMIN_PASSWORD (empty: generated), INSTALL_BACKUP_CRON (yes | no), INSTALL_GEOIP (yes | no: the
+#   approximate location of scans, DB-IP's free database updated monthly),
 #   INSTALL_DOCKER_GROUP_USER (user to add to the docker group; empty: none),
 #   WEB_SERVICE_REPLICAS, DATA_ENTRY_SERVICE_REPLICAS, PORTAL_SERVICE_REPLICAS, PORTAL_WORKER_REPLICAS
 #   (containers of each service, 1–20; not asked: default 1, or the value in the existing .env),
@@ -53,6 +55,7 @@ LOG_FILE="${INSTALL_LOG_FILE:-/var/log/gs1-resolver-install.log}"
 NGINX_AVAILABLE="${INSTALL_NGINX_AVAILABLE:-/etc/nginx/sites-available}"
 NGINX_ENABLED="${INSTALL_NGINX_ENABLED:-/etc/nginx/sites-enabled}"
 CRON_FILE="${INSTALL_CRON_FILE:-/etc/cron.d/resolver-backup}"
+GEOIP_CRON_FILE="${INSTALL_GEOIP_CRON_FILE:-/etc/cron.d/resolver-geoip}"
 SITE_NAME="gs1resolver"
 HEALTH_TIMEOUT="${INSTALL_HEALTH_TIMEOUT:-240}"
 CHECK_CODE="${INSTALL_CHECK_CODE:-/01/09506000134352}"   # a GS1 Digital Link path for the final check of a scan
@@ -561,6 +564,9 @@ collect_settings() {
   printf '\n    %sOperation%s\n' "$C_BOLD" "$C_OFF"
   INSTALL_BACKUP_CRON=${INSTALL_BACKUP_CRON:-yes}
   ask INSTALL_BACKUP_CRON "Schedule the daily backup at 02:30 (yes/no)" "yes" valid_yes_no
+  INSTALL_GEOIP=${INSTALL_GEOIP:-yes}
+  ask INSTALL_GEOIP "Record the approximate location of scans (city; DB-IP's free database, updated monthly) (yes/no)" \
+    "yes" valid_yes_no
   if [[ -z ${INSTALL_DOCKER_GROUP_USER+x} ]]; then INSTALL_DOCKER_GROUP_USER=${SUDO_USER:-}; fi
   [[ $INSTALL_DOCKER_GROUP_USER == root ]] && INSTALL_DOCKER_GROUP_USER=""
   ask INSTALL_DOCKER_GROUP_USER "User allowed to run docker without sudo (empty: none)" "" valid_user_or_empty
@@ -683,6 +689,7 @@ summary_before() {
   fi
   printf '      Time zone        %s (daily counts of resolver requests)\n' "$PORTAL_TIME_ZONE"
   printf '      Daily backup     %s\n' "$INSTALL_BACKUP_CRON"
+  printf '      Scan locations   %s (GeoIP database, monthly)\n' "$INSTALL_GEOIP"
   printf '\n'
   confirm "Proceed with the installation?" y || die "Nothing was changed."
 }
@@ -794,6 +801,27 @@ schedule_backup() {
   ok "Daily at 02:30 → /var/backups/resolver (14 days); log /var/log/resolver-backup.log"
 }
 
+# The GeoIP database of the request log (Documentation/adr/0006-resolver-request-log.md, section 8): the monthly update
+# scheduled and run once now. A failed download is only a warning: the resolver then logs requests without a location.
+schedule_geoip() {
+  step "Scan locations"
+  if [[ $INSTALL_GEOIP != yes ]]; then
+    rm -f "$GEOIP_CRON_FILE"
+    info "Not recorded (no GeoIP database; scripts/geoip-update.sh adds it later)."
+    return
+  fi
+  chmod 755 "$REPO_DIR/scripts/geoip-update.sh"
+  umask 022
+  sed "s|REPOSITORY|$REPO_DIR|" "$REPO_DIR/scripts/geoip-update.cron" > "$GEOIP_CRON_FILE"
+  chmod 644 "$GEOIP_CRON_FILE"
+  umask 077
+  if "$REPO_DIR/scripts/geoip-update.sh" >> "$LOG_FILE" 2>&1; then
+    ok "GeoIP database in $REPO_DIR/geoip, updated monthly; log /var/log/resolver-geoip.log"
+  else
+    warn "The GeoIP database was not downloaded (see $LOG_FILE): requests are logged without a location until the monthly update, or run scripts/geoip-update.sh"
+  fi
+}
+
 final_checks() {
   step "Checks"
   local base="https://$FQDN" code
@@ -854,6 +882,7 @@ main() {
   start_services
   configure_https
   schedule_backup
+  schedule_geoip
   final_checks
   summary_after
 }

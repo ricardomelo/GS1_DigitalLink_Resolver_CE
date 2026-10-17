@@ -71,10 +71,14 @@ try:
     check("db_init: user created, exit status 0", run.returncode == 0 and "created" in run.stdout, run.stderr[-300:])
     check("db_init: the password is never printed", first not in run.stdout + run.stderr)
     roles = root[NAME].command("usersInfo", USER)["users"][0]["roles"]
-    check("db_init: readWrite on the portal's database, read on the request log, nothing else",
-          sorted(roles, key=lambda r: r["db"]) == sorted([{"role": "readWrite", "db": NAME},
-                                                          {"role": "read", "db": "resolver_log"}], key=lambda r: r["db"]),
-          roles)
+    check("db_init: readWrite on the portal's database, read on the request log and deleting its events, nothing else",
+          sorted(roles, key=lambda r: (r["db"], r["role"])) == sorted(
+              [{"role": "readWrite", "db": NAME}, {"role": "read", "db": "resolver_log"},
+               {"role": "requestLogPrune", "db": "resolver_log"}], key=lambda r: (r["db"], r["role"])), roles)
+    prune = root["resolver_log"].command("rolesInfo", "requestLogPrune", showPrivileges=True)["roles"]
+    check("db_init: the role deletes events of resolver_log.requests only",
+          prune and [(p["resource"], sorted(p["actions"])) for p in prune[0]["privileges"]]
+          == [({"db": "resolver_log", "collection": "requests"}, ["remove"])], prune)
     # the request log (ADR 0006): written by the resolver (root here), read by the portal
     root["resolver_log"]["requests"].insert_one({"_id": "probe-event", "t": datetime(2026, 10, 14), "cp": "7898357410015",
                                                  "o": "redirect", "dev": "mobile", "ms": 5})
@@ -105,6 +109,20 @@ try:
             check("portal user: cannot write the request log", False)
         except OperationFailure as exc:
             check("portal user: cannot write the request log", exc.code == 13, exc.code)
+        try:
+            log.update_one({"_id": "probe-event"}, {"$set": {"o": "forged"}})
+            check("portal user: cannot change an event of the request log", False)
+        except OperationFailure as exc:
+            check("portal user: cannot change an event of the request log", exc.code == 13, exc.code)
+        root["resolver_log"]["requests"].insert_one({"_id": "old-event", "t": datetime(2026, 1, 1), "cp": "7898357"})
+        check("portal user: deletes old events of the request log (the retention set in the portal)",
+              log.delete_many({"t": {"$lt": datetime(2026, 2, 1)}}).deleted_count == 1
+              and log.find_one({"_id": "probe-event"}) is not None)
+        try:
+            client["resolver_log"]["other"].delete_many({})
+            check("portal user: deletes nothing else in resolver_log", False)
+        except OperationFailure as exc:
+            check("portal user: deletes nothing else in resolver_log", exc.code == 13, exc.code)
         try:
             client["resolver_ce"]["resolver"].insert_one({"_id": "x"})
             check("portal user: cannot write the resolver's records", False)

@@ -15,3 +15,5 @@ __pycache__/
 # Portal user store and session key, if /app/config is ever bind-mounted here instead of the volume
 portal/config/
 .pytest_cache/
+# The GeoIP database of the request log, downloaded by scripts/geoip-update.sh (never committed)
+geoip/

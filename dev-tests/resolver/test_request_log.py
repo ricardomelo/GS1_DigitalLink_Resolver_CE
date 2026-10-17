@@ -1,10 +1,12 @@
 """
 Development test of the log of resolver requests (Documentation/adr/0006-resolver-request-log.md): what the resolver
 records for each kind of request, what it never records, that answers do not change and that writing never holds a
-request up. No Docker, no MongoDB: documents are authored with the real data entry code, resolved with the real web
-server code through Flask's test client, and events are written to mongomock.
+request up; the browser family, the approximate location from a GeoIP database (written here with mmdb-writer, the
+client's address never kept) and the retention the portal sets, per organisation (ADR 0006, section 8). No Docker, no
+MongoDB: documents are authored with the real data entry code, resolved with the real web server code through Flask's
+test client, and events are written to mongomock.
 
-  pip install -r web_server/src/requirements.txt mongomock
+  pip install -r web_server/src/requirements.txt mongomock mmdb-writer
   python dev-tests/resolver/test_request_log.py
 """
 import copy
@@ -16,7 +18,12 @@ import threading
 import time
 import types
 
+import logging
+import tempfile
+
 import mongomock
+from mmdb_writer import MMDBWriter
+from netaddr import IPSet
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.environ.get("RESOLVER_REPO", os.path.join(HERE, "..", ".."))
@@ -54,8 +61,11 @@ os.environ["FQDN"] = "id.example.org"
 os.environ["MONGO_URI"] = "mongodb://unused"
 os.environ.pop("RESOLVER_LOG_DAYS", None)
 os.environ.pop("RESOLVER_LOG_COUNTRY_HEADER", None)
+os.environ.pop("RESOLVER_LOG_ADDRESS_HEADER", None)
+os.environ["RESOLVER_GEOIP_DB"] = ""          # no location until the GeoIP section
 import web_logic  # noqa: E402
 import request_log  # noqa: E402
+import geoip  # noqa: E402
 
 web_logic._call_gs1_toolkit = lambda s: True
 web_logic.uncompress_gs1_digital_link = lambda link: (
@@ -63,8 +73,11 @@ web_logic.uncompress_gs1_digital_link = lambda link: (
     else {"SUCCESS": False, "error": "not compressed"})
 web_logic.compress_gs1_digital_link = lambda link: {"SUCCESS": True, "COMPRESSED": "https://id.example.org/AbCdEf"}
 
-EVENTS = mongomock.MongoClient()["resolver_log"]["requests"]
+MONGO = mongomock.MongoClient()
+EVENTS = MONGO["resolver_log"]["requests"]
+PORTAL_DB = MONGO["resolver_portal"]
 request_log.WRITER.collection = lambda: EVENTS
+request_log.RETENTION.database = lambda: PORTAL_DB
 from __init__ import create_app  # noqa: E402
 
 client = create_app().test_client()
@@ -130,8 +143,10 @@ check("never the client's address", "203.0.113" not in text, text)
 check("never the User-Agent", "iPhone" not in text and "Mozilla" not in text, text)
 check("never the full referrer", "secret" not in text and "/page" not in text, text)
 check("never the values of data attributes", "261231" not in text and "000500" not in text, text)
+check("the browser family", e.get("br") == "app", e)       # an iPhone User-Agent without "Safari/": an app's web view
 check("only the documented fields", set(e) <= {"t", "expiresAt", "m", "f", "epc", "ai", "v", "cp", "q", "da", "lt", "s",
-                                                "o", "lvl", "to", "ms", "lang", "dev", "ref", "c", "p"}, sorted(e))
+                                                "o", "lvl", "to", "ms", "lang", "dev", "br", "ref", "c", "rg", "ci",
+                                                "p"}, sorted(e))
 check("no country without RESOLVER_LOG_COUNTRY_HEADER", "c" not in e, e)
 
 # ---------------------------------------------------------------- levels and unit qualifiers
@@ -194,7 +209,9 @@ check("no Accept-Language: no language", e and "lang" not in e, e)
 r, e = ask(G, language="*")
 check("Accept-Language '*': no language", e and "lang" not in e, e)
 r, e = ask(G, agent="")
-check("no User-Agent: device 'unknown'", e and e.get("dev") == "unknown", e)
+check("no User-Agent: device 'unknown', no browser", e and e.get("dev") == "unknown" and "br" not in e, e)
+r, e = ask(G, agent="curl/8.5.0")
+check("an automated client: no browser", e and e.get("dev") == "automated" and "br" not in e, e)
 
 # ---------------------------------------------------------------- not recorded
 for path in ["/heartbeat", "/favicon.ico", "/robots.txt", "/.well-known/gs1resolver"]:
@@ -241,6 +258,171 @@ for agent, expected in [
     ("Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0", "desktop"), ("", "unknown")]:
     check(f"device class of {agent[:50]!r}: {expected}", request_log.device_class(agent) == expected,
           request_log.device_class(agent))
+
+# ---------------------------------------------------------------- browser families
+for agent, expected in [
+    ("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36", "chrome"),
+    ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/129.0 Mobile/15E148 Safari/604.1", "chrome"),
+    ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", "safari"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15", "safari"),
+    ("Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0", "firefox"),
+    ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/131.0 Mobile/15E148 Safari/605.1.15", "firefox"),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36 Edg/129.0", "edge"),
+    ("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36 OPR/84.0", "opera"),
+    ("Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0 Mobile Safari/537.36", "samsung"),
+    ("Mozilla/5.0 (Linux; Android 14; Pixel 8; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/129.0 Mobile Safari/537.36", "app"),
+    ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 350.0", "app"),
+    ("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/129.0 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/480.0;]", "app"),
+    ("okhttp/4.12.0", "app"), ("Scanner/3 CFNetwork/1490 Darwin/23.2.0", "app"),
+    ("Mozilla/5.0 (Windows NT 10.0) Gecko Trident/7.0; rv:11.0", "other")]:
+    check(f"browser family of {agent[:60]!r}…: {expected}", request_log.browser_family(agent) == expected,
+          request_log.browser_family(agent))
+
+# ---------------------------------------------------------------- approximate location (GeoIP)
+WORK = tempfile.mkdtemp(prefix="geoip-test-")
+
+
+def write_geoip(path, networks):
+    """An MMDB in the GeoIP2 City layout, as DB-IP's City Lite."""
+    writer = MMDBWriter(ip_version=6, database_type="DBIP-City-Lite", languages=["en"],
+                        description={"en": "dev-tests"}, ipv4_compatible=True)
+    for network, country, region, city in networks:
+        record = {"country": {"iso_code": country, "names": {"en": country}},
+                  "location": {"latitude": -22.9, "longitude": -47.06}}
+        if region:
+            record["subdivisions"] = [{"names": {"en": region}}]
+        if city:
+            record["city"] = {"names": {"en": city, "pt-BR": city + " (pt)"}}
+        writer.insert_network(IPSet([network]), record)
+    writer.to_db_file(path)
+
+
+DBFILE = os.path.join(WORK, "dbip-city-lite.mmdb")
+write_geoip(DBFILE, [("191.0.0.0/16", "BR", "Sao Paulo", "Campinas"), ("2804:1::/32", "BR", "Parana", "Curitiba"),
+                     ("81.2.69.0/24", "GB", "England", "London"), ("41.0.0.0/16", "ZA", None, None),
+                     # private networks in the file too: such an address is never looked up
+                     ("10.0.0.0/8", "XX", "Private", "Nowhere"), ("192.168.0.0/16", "XX", "Private", "Nowhere")])
+os.environ["RESOLVER_GEOIP_DB"] = DBFILE
+geoip.CHECK_SECONDS = 0
+messages = []
+
+
+class Keep(logging.Handler):
+    def emit(self, record):
+        messages.append(record.getMessage())
+
+
+logging.getLogger().addHandler(Keep())
+logging.getLogger().setLevel(logging.INFO)
+r, e = ask(G, **{"X-Real-IP": "191.0.5.77"})
+check("the location of the address in X-Real-IP: country, region and city", e and (e.get("c"), e.get("rg"), e.get("ci"))
+      == ("BR", "Sao Paulo", "Campinas"), e)
+check("…the names in English", e and e.get("ci") == "Campinas", e)
+check("…never the address, nor coordinates", e and "191.0" not in json.dumps(e, default=str)
+      and "22.9" not in json.dumps(e, default=str) and not {"lat", "lon", "ll", "ip"} & set(e), e)
+check("…the answer is the same", r.status_code == 307 and r.headers["Location"] == "https://www.example.org/product",
+      r.headers.get("Location"))
+r, e = ask(G, **{"X-Real-IP": "2804:1:abcd::7"})
+check("an IPv6 address", e and (e.get("c"), e.get("rg"), e.get("ci")) == ("BR", "Parana", "Curitiba"), e)
+r, e = ask(G, **{"X-Real-IP": "41.0.3.3"})
+check("a network the database knows only by country", e and e.get("c") == "ZA" and "rg" not in e and "ci" not in e, e)
+for address in ("10.1.2.3", "127.0.0.1", "192.168.0.9", "fd00::1", "203.0.113.9", "not-an-address", "8.8.8.8"):
+    r, e = ask(G, **{"X-Real-IP": address})
+    check(f"no location for {address!r} (private, reserved, malformed or not in the database)", e and "c" not in e
+          and "ci" not in e and r.status_code == 307, e)
+r, e = ask(G, **{"X-Real-IP": "81.2.69.160:51000"})
+check("an address with its port", e and e.get("ci") == "London", e)
+r, e = ask(G, **{"X-Real-IP": "::ffff:81.2.69.1"})
+check("an IPv4-mapped IPv6 address", e and e.get("ci") == "London", e)
+r, e = ask(G, **{"X-Forwarded-For": "81.2.69.1, 191.0.5.77"})
+check("X-Forwarded-For is not read by default (anyone can write it)", e and "ci" not in e, e)
+os.environ["RESOLVER_LOG_ADDRESS_HEADER"] = "X-Forwarded-For"
+r, e = ask(G, **{"X-Forwarded-For": "81.2.69.1, 191.0.5.77"})
+check("RESOLVER_LOG_ADDRESS_HEADER names another header: its first address", e and e.get("ci") == "London", e)
+os.environ["RESOLVER_LOG_ADDRESS_HEADER"] = ""
+request_log.WRITER.flush()
+EVENTS.delete_many({})
+client.get("/api" + G, headers={"User-Agent": IPHONE, "X-Real-IP": "81.2.69.1"}, environ_base={"REMOTE_ADDR": "191.0.9.9"})
+request_log.WRITER.flush()
+e = EVENTS.find_one({}) or {}
+check("an empty RESOLVER_LOG_ADDRESS_HEADER: the connection's address", e.get("ci") == "Campinas", e)
+del os.environ["RESOLVER_LOG_ADDRESS_HEADER"]
+os.environ["RESOLVER_LOG_COUNTRY_HEADER"] = "CF-IPCountry"
+r, e = ask(G, **{"X-Real-IP": "191.0.5.77", "CF-IPCountry": "BR"})
+check("a country header that agrees keeps the region and city", e and (e.get("c"), e.get("ci")) == ("BR", "Campinas"), e)
+r, e = ask(G, **{"X-Real-IP": "191.0.5.77", "CF-IPCountry": "PT"})
+check("a country header that disagrees wins, without the database's region and city", e and e.get("c") == "PT"
+      and "rg" not in e and "ci" not in e, e)
+del os.environ["RESOLVER_LOG_COUNTRY_HEADER"]
+time.sleep(0.05)
+write_geoip(DBFILE + ".new", [("191.0.0.0/16", "BR", "Sao Paulo", "Sao Paulo")])
+os.replace(DBFILE + ".new", DBFILE)
+os.utime(DBFILE, (time.time() + 5, time.time() + 5))
+r, e = ask(G, **{"X-Real-IP": "191.0.5.77"})
+check("a newer file replacing the database is read without a restart", e and e.get("ci") == "Sao Paulo", e)
+with open(DBFILE, "wb") as fh:
+    fh.write(b"not a database")
+os.utime(DBFILE, (time.time() + 10, time.time() + 10))
+r, e = ask(G, **{"X-Real-IP": "191.0.5.77"})
+check("a broken file: no location, the same answer", e and "c" not in e and r.status_code == 307, e)
+os.environ["RESOLVER_GEOIP_DB"] = os.path.join(WORK, "missing.mmdb")
+r, e = ask(G, **{"X-Real-IP": "191.0.5.77"})
+check("no file: no location, the same answer", e and "c" not in e and r.status_code == 307, e)
+check("the client's address is never written in the resolver's output",
+      messages and not any("191.0" in m or "81.2.69" in m or "2804:1" in m for m in messages),
+      [m for m in messages if "191.0" in m or "81.2" in m])
+check("…which says when there is no database", any("No GeoIP database" in m for m in messages), messages[-5:])
+os.environ["RESOLVER_GEOIP_DB"] = ""
+
+# ---------------------------------------------------------------- retention set in the portal
+def kept_days(e):
+    return round((e["expiresAt"] - e["t"]).total_seconds() / 86400) if e else None
+
+
+PORTAL_DB["settings"].insert_one({"_id": "requestLog.days", "value": 200})
+PORTAL_DB["tenants"].insert_many([
+    {"_id": "t-acme", "name": "Acme", "prefixes": ["789835"], "logDays": 30},
+    {"_id": "t-wide", "name": "Wide", "prefixes": ["952114"], "logDays": 900},
+    {"_id": "t-none", "name": "None", "prefixes": ["9506"]}])
+request_log.RETENTION.forget()
+r, e = ask(G)
+check("an organisation's events are kept its days (the prefix that starts the company part)", kept_days(e) == 30, e)
+r, e = ask("/01/79521141123453")
+check("…never longer than the installation's", kept_days(e) == 200, e)
+r, e = ask("/01/09506000000000")
+check("an organisation without its own days: the installation's (the portal's setting)", kept_days(e) == 200, e)
+r, e = ask("/wp-login.php")
+check("a request without a key: the installation's", kept_days(e) == 200, e)
+PORTAL_DB["tenants"].insert_one({"_id": "t-longer", "name": "Longer", "prefixes": ["78983574"], "logDays": 7})
+request_log.RETENTION.forget()
+r, e = ask(G)
+check("the longest prefix decides", kept_days(e) == 7, e)
+PORTAL_DB["settings"].update_one({"_id": "requestLog.days"}, {"$set": {"value": 45}})
+r, e = ask("/01/09506000000000")
+check("a change is read after a minute at most, not at every request", kept_days(e) == 200, e)
+request_log.RETENTION.forget()
+r, e = ask("/01/09506000000000")
+check("…then followed", kept_days(e) == 45, e)
+PORTAL_DB["settings"].update_one({"_id": "requestLog.days"}, {"$set": {"value": "many"}})
+request_log.RETENTION.forget()
+r, e = ask("/01/09506000000000")
+check("a setting that is not a number of days: RESOLVER_LOG_DAYS", kept_days(e) == 90, e)
+PORTAL_DB["settings"].update_one({"_id": "requestLog.days"}, {"$set": {"value": 60}})
+request_log.RETENTION.forget()
+saved_database = request_log.RETENTION.database
+request_log.RETENTION.database = lambda: (_ for _ in ()).throw(RuntimeError("portal database down"))
+r, e = ask(G)
+check("the portal's database unreadable: the last values kept, the same answer", kept_days(e) == 7
+      and r.status_code == 307, e)
+request_log.RETENTION.database = saved_database
+request_log.RETENTION.forget()
+os.environ["RESOLVER_LOG_DAYS"] = "0"
+r, e = ask(G)
+check("RESOLVER_LOG_DAYS=0 still switches the log off whatever the portal sets", e is None, e)
+del os.environ["RESOLVER_LOG_DAYS"]
+PORTAL_DB["settings"].delete_many({})
+PORTAL_DB["tenants"].delete_many({})
+request_log.RETENTION.forget()
 
 # ---------------------------------------------------------------- writing never holds a request up
 class Blocking:

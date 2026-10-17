@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (the log on the server: capture in the resolver, daily aggregates and reading in the portal, the tenant API's calls), 3 (the *Requests* screen) |
-| Backlog item | 4.1 — log of resolver requests |
+| Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (the log on the server: capture in the resolver, daily aggregates and reading in the portal, the tenant API's calls), 3 (the *Requests* screen). **Amended** on 17 October 2026 (section 8, item 9.5) |
+| Backlog items | 4.1 — log of resolver requests; 9.5 — browser, approximate location and retention set in the portal |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 |
 
 ## 1. Context
@@ -208,3 +208,116 @@ access. `/portal/api/config` gains `requestLog: {"days": …}` (0: the log is of
    `portal/requestlog.py` (scope, reading, aggregates in the worker's housekeeping), the tenant API's calls, the
    portal's endpoints; the installer's time zone; development tests.
 3. The *Requests* screen, the end-to-end test, images, the user and developer guides.
+
+## 8. Amendment of 17 October 2026 — browser, approximate location, retention set in the portal (item 9.5)
+
+### 8.1 Context
+
+The staging tests asked to keep the visitor's IP address, browser and approximate location, and to set how long the
+log is kept from the portal, globally and per organisation. Keeping the address would make every event personal data
+(LGPD, GDPR) and goes against decision 2. What the questions need — which browsers open the codes, in which cities they
+are scanned — can be **derived when the request arrives**, and the address then forgotten. A neighbourhood or exact
+coordinates cannot be derived reliably from an address; a city can, most of the time.
+
+### 8.2 Decision
+
+1. **Browser family** (`br`), worked out from the User-Agent like the device class, from a fixed list: `chrome`,
+   `safari`, `firefox`, `edge`, `samsung`, `opera`, `app` (the HTTP stacks of native apps and the browsers inside apps:
+   okhttp, Dalvik, CFNetwork, an iOS web view, Facebook, Instagram, WhatsApp, WeChat, Line…) or `other`. Not recorded for
+   automated clients or without a User-Agent. The User-Agent itself is still never stored.
+2. **Approximate location**: country (`c`, as before), region (`rg`, the first subdivision) and city (`ci`), names in
+   English, looked up in a **GeoIP database file** (MMDB, the GeoIP2/GeoLite2 *City* layout) by the resolver at the
+   moment of the request. The address comes from the header named by **`RESOLVER_LOG_ADDRESS_HEADER`** (`X-Real-IP` by
+   default: the host's nginx sets it to the connection's address, overwriting what the client sent, and the
+   installation's proxy passes it on unchanged), or the connection's address without one. It is used for the lookup
+   only: never stored, never written in a log line, not even hashed. Private, loopback and reserved addresses have no
+   location. A country header (`RESOLVER_LOG_COUNTRY_HEADER`), when set and present, still gives the country.
+3. **No coordinates are stored.** The *Requests* screen links a city to Google Maps by its names (city, region,
+   country): the map opens on the city, and nothing suggests a precision the address does not have.
+4. **The database**: **DB-IP *IP to City Lite*** (Creative Commons Attribution 4.0, free, no account, monthly), at
+   **`RESOLVER_GEOIP_DB`** (`/geoip/dbip-city-lite.mmdb` in the resolver's container, the repository's `geoip/` folder
+   mounted read only). The resolver opens it at the first request, looks again at most once a minute for a newer file,
+   and without one records no location (one line in its output). **`scripts/geoip-update.sh`** downloads the month's
+   file (the previous month's while the current one is not out), checks it is an MMDB, and replaces the old one in one
+   step; the installer schedules it monthly (`/etc/cron.d/resolver-geoip`) and runs it once. `GEOIP_URL` takes another
+   source in the same format (MaxMind GeoLite2 City with an account's licence key, for instance). The licence asks for
+   the attribution *IP geolocation by DB-IP*, shown on the screens that show locations and in the documentation.
+5. **Retention set in the portal**: a **global** number of days (server administrators; 1 to 3,650; the default is
+   `RESOLVER_LOG_DAYS`, which stays the installation's default and its switch: `0` turns the log off) and, **per
+   organisation**, the same or fewer days (its administrators or a server administrator; empty: the global). The
+   operator's records and the requests without a key follow the global. The resolver reads both from the portal's
+   database with its connection, at most once a minute as it reads the domains (ADR 0009), and gives each event the
+   expiry of its company part's owner. When a retention is **shortened**, the worker's hourly housekeeping deletes the
+   events already older than it (per organisation by its prefixes; the rest by the global); when it is **lengthened**,
+   events already stored keep their expiry and only new ones get the longer one — rewriting every stored event was not
+   chosen. The tenant API's calls follow their organisation's days. A change is a journal event
+   (`requestlog-retention`).
+6. **The space the log uses** is shown, not limited: for a server administrator the collection's size on disk, its
+   indexes and its number of events; for an organisation its number of events and an estimate (events × the average
+   event's size). A limit by size was not chosen: the age of what is deleted is predictable, the size is not.
+7. **Aggregates and screens**: the daily aggregates count browsers (`browser`), countries (`country`) and places
+   (`place`, the 20 most frequent `country|region|city` of a key and day). The *Requests* screen shows the browser
+   beside the device and a *Location* column, filters by browser and country, and a *Retention* tab; the overview's
+   usage shows browsers, countries and cities, also in its exports.
+
+### 8.3 Design
+
+An event gains:
+
+```
+{"br": "chrome", "c": "BR", "rg": "Sao Paulo", "ci": "Campinas"}
+```
+
+| Field | Content |
+|---|---|
+| `br` | browser family (decision 1); absent for `automated` and `unknown` devices |
+| `c` | two-letter country code: the country header when configured and present, otherwise the GeoIP database |
+| `rg`, `ci` | region and city in English from the GeoIP database (at most 100 characters each), when it knows them |
+
+- `web_server/src/geoip.py`: `Locator` (the file, opened lazily, reopened when its modification time changes,
+  `maxminddb` in memory-mapped mode), `client_address()` (the header's first address, or the connection's) and
+  `locate(address)` → `{"c", "rg", "ci"}` or `{}`. `request_log.event()` calls it; the address never leaves the
+  function.
+- `request_log.Retention`: the global days (`settings`, `_id: "requestLog.days"`) and each organisation's prefixes and
+  `logDays` (`tenants`), cached 60 seconds, the last values kept when the database cannot be read; `days_for(cp)` gives
+  an event's days (the longest prefix that starts the company part decides, as everywhere).
+- Portal: `requestlog.retention()` (the global, the default, each organisation's), `set_global_days()`,
+  `set_tenant_days()`, `apply_retention()` (the worker's housekeeping, under the lock `request-retention`) and
+  `space(scope)`; routes `GET /portal/api/requests/retention` (any user: what applies to them; administrators see the
+  organisations they manage, a server administrator every one and the space) and `PUT /portal/api/requests/retention`
+  (`{"days": n}` global, server administrators; `{"tenant": id, "days": n | null}`, the organisation's administrators
+  or a server administrator). `/portal/api/config`'s `requestLog.days` is the days that apply to the user's scope.
+- Listing and CSV: `browser`, `region`, `city` in each row (CSV columns after `country`); filters `browser` and
+  `country`.
+
+### 8.4 Options considered
+
+| Point | Chosen (recommended) | Not chosen |
+|---|---|---|
+| The address | used for the lookup, then forgotten | stored (personal data); stored hashed (still pseudonymous data) |
+| Precision | country, region, city | coordinates or a neighbourhood (not reliable from an address; would suggest a precision it does not have) |
+| The map | Google Maps searched by the city's names | stored coordinates of the city (the database's are those of the network for some sources) |
+| GeoIP source | DB-IP City Lite (CC BY 4.0, no account) by default, any MMDB of the same layout | MaxMind GeoLite2 by default (needs an account and a licence key); an online lookup service (sends every visitor's address to a third party) |
+| Where it is looked up | in the resolver, at the request | in the portal's worker afterwards (the address would have to be stored until then) |
+| Retention | by age, global and per organisation (never longer) | by size (unpredictable; only shown) |
+| A longer retention | new events only | rewriting the expiry of every stored event (a long write on a large collection) |
+
+### 8.5 Consequences
+
+- The log answers *which browsers* and *where, roughly* without holding anything about the person: the address is in
+  the resolver's memory for the time of one lookup. City, browser and time together are coarse; a privacy notice of the
+  operator can say what is derived and how long it is kept.
+- A location is wrong when the visitor uses a VPN, a mobile carrier's distant gateway or a relay (iCloud Private
+  Relay); the screens say *approximate*.
+- The GeoIP file (about 130 MB uncompressed) lives on the server, outside the backup; a missing file costs only the
+  location. DB-IP's download site could not be reached from the session that wrote this, so the first monthly
+  download is checked on staging.
+- An organisation can keep less than the installation, never more; the operator decides the ceiling.
+
+### 8.6 Configuration added
+
+| Variable | Default | |
+|---|---|---|
+| `RESOLVER_LOG_ADDRESS_HEADER` | `X-Real-IP` | the header with the client's address, set by the proxy in front; empty: the connection's address |
+| `RESOLVER_GEOIP_DB` | `/geoip/dbip-city-lite.mmdb` | the GeoIP database file in the resolver's container; empty: no location |
+| `GEOIP_URL` | DB-IP City Lite of the month | for `scripts/geoip-update.sh`: another source of an MMDB file, gzip-compressed or not |

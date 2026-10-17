@@ -60,6 +60,10 @@ services:
         required: false
     environment:
       WEB_CONCURRENCY: ${WEB_SERVICE_PROCESSES:-2}   # gunicorn processes in each container
+    volumes:
+      # the GeoIP database of the request log (scripts/geoip-update.sh; Documentation/adr/0006-resolver-request-log.md,
+      # section 8), read only; without a file there requests are logged without a location
+      - ./geoip:/geoip:ro
     deploy:
       replicas: ${WEB_SERVICE_REPLICAS:-1}
     depends_on:

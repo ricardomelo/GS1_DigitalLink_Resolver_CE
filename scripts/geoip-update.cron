@@ -1,0 +1,6 @@
+# Monthly update of the GeoIP database (approximate location in the request log), on the 3rd at 04:20: DB-IP publishes
+# each month's file at its start. Install as /etc/cron.d/resolver-geoip (owned by root, mode 644, no extension in the
+# file name) after replacing REPOSITORY with the repository's absolute path.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+20 4 3 * * root REPOSITORY/scripts/geoip-update.sh >> /var/log/resolver-geoip.log 2>&1

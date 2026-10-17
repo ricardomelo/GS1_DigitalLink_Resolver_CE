@@ -683,6 +683,14 @@ current release; general distribution was left out for want of a source. Regener
 since item 9.2 the element pictures were cut: a full-page capture lays the page out again without the sidebar, so an
 element in view is now captured as it stands. 22 mutations, all caught.
 
+**Item 9.4, every link type and language** (`1e40f8c`). The link types are generated from the vocabulary's JSON-LD
+rather than typed in: gs1.org is refused here, so the tests read version 1.16 from the vocabulary's GitHub repository at
+a pinned commit, as the GS1 rules are read from the dictionary. The deprecated types and the resolver's own
+`gs1:defaultLink` and `gs1:defaultLinkMulti` are left out. The English titles the portal gave before were kept rather
+than replaced by the vocabulary's, so that records saved with them still read as the portal's own. The language field
+became a search over a list rather than a longer menu, the names given by the browser so that they follow the
+interface's language. 15 mutations, all caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

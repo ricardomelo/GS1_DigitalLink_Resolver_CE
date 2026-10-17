@@ -2,6 +2,14 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Staging feedback of 16 October: every link type and language (backlog item 9.4)
+- **Every link type of the GS1 Web Vocabulary** in the editor (57 in version 1.16, against 29 before), each named and
+  explained in both languages, in groups ordered by the key type (places first for a GLN, business to business for an
+  SSCC, the organisation for a GSRN…); the menu follows a change of key type. `portal/gs1_link_types.json` is written by
+  `portal/tools/gen_link_types.py` from the vocabulary and the development tests check it. Commit `1e40f8c`.
+- **Every language for a target**: a searched list of every ISO 639-1 language and the usual regional tags, named in the
+  user's language; several separated by commas; a malformed one is pointed out before saving. Commit `1e40f8c`.
+
 ### Staging feedback of 16 October: labels (backlog item 9.3)
 - **GS1 DataMatrix** (the record's element string with FNC1) and **Data Matrix with the GS1 Digital Link URI** on the
   label, besides the QR code, in every format and the zip; made with libzint (`zint-bindings`, a new dependency of the

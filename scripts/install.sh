@@ -16,8 +16,8 @@
 #   5. configures the host nginx as reverse proxy (checking that ports 80/443 are free) and obtains
 #      a Let's Encrypt certificate, or uses an existing certificate, or leaves TLS to an external proxy;
 #   6. builds and starts the services and waits until they answer;
-#   7. schedules the daily backup and the monthly update of the GeoIP database (the approximate location of scans in
-#      the request log), and prints a summary.
+#   7. schedules the daily backup, the monthly update of the GeoIP database (the approximate location of scans in the
+#      request log) and, with Let's Encrypt, the organisations' own domains every 5 minutes, and prints a summary.
 #
 # Running it again is safe: existing secrets, users and data are kept. Options:
 #   --non-interactive   take every answer from environment variables (see "Settings" below)
@@ -56,6 +56,7 @@ NGINX_AVAILABLE="${INSTALL_NGINX_AVAILABLE:-/etc/nginx/sites-available}"
 NGINX_ENABLED="${INSTALL_NGINX_ENABLED:-/etc/nginx/sites-enabled}"
 CRON_FILE="${INSTALL_CRON_FILE:-/etc/cron.d/resolver-backup}"
 GEOIP_CRON_FILE="${INSTALL_GEOIP_CRON_FILE:-/etc/cron.d/resolver-geoip}"
+DOMAINS_CRON_FILE="${INSTALL_DOMAINS_CRON_FILE:-/etc/cron.d/resolver-domains}"
 SITE_NAME="gs1resolver"
 HEALTH_TIMEOUT="${INSTALL_HEALTH_TIMEOUT:-240}"
 CHECK_CODE="${INSTALL_CHECK_CODE:-/01/09506000134352}"   # a GS1 Digital Link path for the final check of a scan
@@ -822,6 +823,24 @@ schedule_geoip() {
   fi
 }
 
+# The organisations' own domains (Documentation/adr/0009-tenant-domains.md, section 7): every 5 minutes, a site and a
+# certificate for each domain verified in the portal. Only where this installer set up Let's Encrypt: the script needs
+# the host's nginx, Certbot and CERTBOT_EMAIL.
+schedule_domains() {
+  step "Organisations' own domains"
+  if [[ $TLS_MODE != letsencrypt ]]; then
+    [[ -e $DOMAINS_CRON_FILE ]] && rm -f -- "$DOMAINS_CRON_FILE"
+    info "Not scheduled (the server's certificates are not Let's Encrypt's): with Certbot and CERTBOT_EMAIL in .env, install scripts/custom-domains.cron as $DOMAINS_CRON_FILE."
+    return
+  fi
+  chmod 755 "$REPO_DIR/scripts/custom-domains.sh"
+  umask 022
+  sed "s|REPOSITORY|$REPO_DIR|" "$REPO_DIR/scripts/custom-domains.cron" > "$DOMAINS_CRON_FILE"
+  chmod 644 "$DOMAINS_CRON_FILE"
+  umask 077
+  ok "Every 5 minutes: each domain verified in the portal gets its site and certificate; log /var/log/resolver-domains.log"
+}
+
 final_checks() {
   step "Checks"
   local base="https://$FQDN" code
@@ -883,6 +902,7 @@ main() {
   configure_https
   schedule_backup
   schedule_geoip
+  schedule_domains
   final_checks
   summary_after
 }

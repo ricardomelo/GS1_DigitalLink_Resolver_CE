@@ -35,10 +35,13 @@ import users  # noqa: E402
 import tenants  # noqa: E402
 import app as portal  # noqa: E402
 import domains  # noqa: E402
+import store  # noqa: E402
+from datetime import datetime, timedelta  # noqa: E402
 
 acme = tenants.create("Acme Foods", ["7891234", "7891235"], "root")
 users.create("ana", "ana-password-long", "admin", tenant=acme["id"], must_change=False)
 users.create("edu", "edu-password-long", "editor", tenant=acme["id"], must_change=False)
+users.create("root", "root-password-long", "admin", must_change=False)
 for application, port in [(mock_data_entry.app, DATA_ENTRY_PORT), (portal.app, PORT)]:
     threading.Thread(target=make_server("127.0.0.1", port, application, threaded=True).serve_forever, daemon=True).start()
 
@@ -115,6 +118,26 @@ with sync_playwright() as p:
     card.locator("button", has_text="Test").click(); page.wait_for_timeout(900)
     check("a check through the domain", "reaches the resolver" in page.inner_text("#domains-status"),
           page.inner_text("#domains-status"))
+    # the certificate on the host, as the server's task reports it (ADR 0009, section 7)
+    card = page.locator(".domain-card[data-domain='id.acme.example']")
+    check("verified: certificate pending, within 5 minutes", card.locator(".domain-cert.is-pending").count() == 1
+          and "within 5 minutes" in card.inner_text(), card.inner_text()[:400])
+    check("…the server's task is not an organisation's business", page.is_hidden("#domains-host-run"))
+    store.col("domain_hosts").insert_one({"_id": "id.acme.example", "state": "failed", "attempts": 1, "error": "certificate",
+                                          "nextAttemptAt": store.now() + timedelta(minutes=5), "checkedAt": store.now()})
+    page.reload(); page.wait_for_timeout(1000)
+    card = page.locator(".domain-card[data-domain='id.acme.example']")
+    check("…failed: the reason and the next attempt", card.locator(".domain-cert.is-failed").count() == 1
+          and "Let's Encrypt did not validate the domain" in card.inner_text() and "next attempt at" in card.inner_text(),
+          card.inner_text()[:400])
+    store.col("domain_hosts").update_one({"_id": "id.acme.example"}, {"$set": {
+        "state": "served", "attempts": 0, "error": None, "nextAttemptAt": None,
+        "certificateUntil": datetime(2027, 1, 15, 12, 0)}})
+    page.reload(); page.wait_for_timeout(1000)
+    card = page.locator(".domain-card[data-domain='id.acme.example']")
+    check("…served, with the certificate's end", card.locator(".domain-cert.is-served").count() == 1
+          and "Served over HTTPS" in card.inner_text() and "valid until 15/01/2027" in card.inner_text(),
+          card.inner_text()[:400])
     shot(page, "domains-verified")
 
     # The label panel
@@ -177,6 +200,21 @@ with sync_playwright() as p:
     page.select_option("#epc-filter", "3"); page.wait_for_timeout(1000)
     check("…another filter changes the EPC", "urn:epc:tag:sgtin-96:3.7891234." in page.inner_text("#epc-out"))
     page.fill("#q-21", ""); page.wait_for_timeout(300)
+
+    # A server administrator: when the server's task last ran
+    admin_ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900})
+    admin = admin_ctx.new_page()
+    admin.on("pageerror", lambda e: errors.append(str(e)))
+    sign_in(admin, "root", "root-password-long")
+    admin.goto(BASE + "#domains"); admin.wait_for_timeout(1000)
+    check("a server administrator: the server's task never ran, said with what to do", admin.is_visible("#domains-host-run")
+          and "has not run yet" in admin.inner_text("#domains-host-run")
+          and "is-error" in (admin.get_attribute("#domains-host-run", "class") or ""), admin.inner_text("#domains-host-run"))
+    store.set_setting("domains.hostRun", {"at": store.now() - timedelta(minutes=3), "ok": True})
+    admin.reload(); admin.wait_for_timeout(1000)
+    check("…ran 3 minutes ago: when, and that it runs every 5 minutes", "last ran at" in admin.inner_text("#domains-host-run")
+          and "is-error" not in (admin.get_attribute("#domains-host-run", "class") or ""), admin.inner_text("#domains-host-run"))
+    admin_ctx.close()
 
     # An editor: no screen
     editor_ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900})

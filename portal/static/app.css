@@ -821,3 +821,8 @@ body:not([data-operator-view="true"]) .needs-operator-view { display: none !impo
 /* ---------------------------------------------------------------- a target's languages, searched (item 9.4) */
 .link-row .language { width: 100%; font-family: var(--mono); }
 .link-row .language.is-invalid { border-color: var(--err); box-shadow: 0 0 0 1px var(--err); }
+
+/* the certificate's state on a domain's card (ADR 0009, section 7) */
+.domain-cert.is-pending { background: #FFF4E0; color: #9A5B00; }
+.domain-cert.is-served { background: #E7F4EC; color: var(--ok); }
+.domain-cert.is-failed { background: #FDECEA; color: var(--err); }

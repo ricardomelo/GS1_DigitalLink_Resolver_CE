@@ -1,0 +1,7 @@
+# The organisations' own domains on the host every 5 minutes (Documentation/adr/0009-tenant-domains.md, section 7): a
+# site and a certificate for each domain verified in the portal, reported back to the portal. Install as
+# /etc/cron.d/resolver-domains (owned by root, mode 644, no extension in the file name) after replacing REPOSITORY with
+# the repository's absolute path.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/5 * * * * root REPOSITORY/scripts/custom-domains.sh apply --quiet >> /var/log/resolver-domains.log 2>&1

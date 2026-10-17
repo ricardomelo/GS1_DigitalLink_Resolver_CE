@@ -423,6 +423,14 @@ def domain_images(browser, folder: str, locale: str) -> None:
     card.locator("button.btn-primary").click(); page.wait_for_timeout(900)
     page.locator(".domain-card[data-domain='id.brand.example'] input.domain-defaults").fill("9506000")
     page.locator(".domain-card[data-domain='id.brand.example'] button[type=submit]").click(); page.wait_for_timeout(900)
+    # the server's task has run and served the verified domain (ADR 0009, section 7), as on an installation
+    import store
+    from datetime import datetime, timedelta
+    store.set_setting("domains.hostRun", {"at": store.now() - timedelta(minutes=2), "ok": True})
+    store.col("domain_hosts").replace_one({"_id": "id.brand.example"}, {
+        "state": "served", "checkedAt": store.now(), "attempts": 0, "nextAttemptAt": None, "error": None,
+        "certificateUntil": datetime(2027, 1, 15, 12, 0)}, upsert=True)
+    page.reload(); page.wait_for_timeout(900)
     save(page, f"{folder}/domains.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1300})
     for name in ("id.brand.example", "qr.brand.example"):                # the next run starts clean
         page.locator(f".domain-card[data-domain='{name}'] button.btn-danger-ghost").click(); confirm_portal(page)

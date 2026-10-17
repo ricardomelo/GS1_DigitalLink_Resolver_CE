@@ -16,6 +16,11 @@ Rules: a lower-case host name with at least two labels, not an address, not the 
 to three segments of letters, digits, "-", ".", "_", "~", none of them 2 to 4 digits (it would read as an AI); a
 default prefix is one of the organisation's prefixes (for the operator, any prefix no organisation holds) and is the
 default of one domain at most.
+
+What the host did for a verified "direct" domain (ADR 0009, section 7) is reported by scripts/custom-domains.sh, which
+the installer runs every 5 minutes, into the collection "domain_hosts" (one document per domain: "state" served or
+failed, "checkedAt", "attempts", "nextAttemptAt", "error" nginx or certificate, "certificateUntil") and the setting
+"domains.hostRun" ({"at", "ok"}); the portal only reads them (certificate(), host_run()).
 """
 import re
 import secrets
@@ -39,6 +44,7 @@ STEM_SEGMENT = re.compile(r"^[A-Za-z0-9._~-]{1,40}$")
 RECHECK = timedelta(days=1)
 REDIRECTS = (301, 302, 307, 308)
 TIMEOUT = 10
+HOST_RUN_LATE = timedelta(minutes=15)      # the server's task runs every 5 minutes; three missed runs: a warning
 
 
 def _col():
@@ -89,8 +95,43 @@ def base_url(doc: dict) -> str:
 
 
 # ----------------------------------------------------------------------------------------------- reading
-def public(doc: dict, tenant_names: dict | None = None) -> dict:
-    """What the Domains screen shows (the token too: the administrator writes it in DNS)."""
+def certificate(doc: dict, host: dict | None) -> dict | None:
+    """The certificate's state on the host for the card: None for a domain that needs none here (not verified, or
+    redirected by the organisation's own server); otherwise {"state": "pending" | "served" | "failed", "checkedAt",
+    "until", "nextAttemptAt", "error", "attempts"} — pending until the server's task has reported."""
+    if not doc.get("verified") or doc.get("mode", "direct") != "direct":
+        return None
+    host = host or {}
+    state = host.get("state") if host.get("state") in ("served", "failed") else "pending"
+    return {"state": state, "checkedAt": store.iso(host.get("checkedAt")), "until": store.iso(host.get("certificateUntil")),
+            "nextAttemptAt": store.iso(host.get("nextAttemptAt")), "error": host.get("error"),
+            "attempts": host.get("attempts") or 0}
+
+
+def host_states(names) -> dict:
+    """The host's reports of these domains, by name."""
+    names = list(names)
+    return {d["_id"]: d for d in store.col("domain_hosts").find({"_id": {"$in": names}})} if names else {}
+
+
+def with_hosts(docs: list[dict]) -> list[tuple[dict, dict | None]]:
+    """Each domain with the host's report of it."""
+    hosts = host_states(d["_id"] for d in docs)
+    return [(d, hosts.get(d["_id"])) for d in docs]
+
+
+def host_run(now=None) -> dict:
+    """The last run of the server's task: {"at", "ok", "late"} (late: none for HOST_RUN_LATE, or never)."""
+    value = store.get_setting("domains.hostRun") or {}
+    at = value.get("at") if isinstance(value, dict) else None
+    at = store.parse_iso(at) if isinstance(at, str) else at
+    late = at is None or (now or store.now()) - at > HOST_RUN_LATE
+    return {"at": store.iso(at), "ok": bool(value.get("ok")) if isinstance(value, dict) else False, "late": late}
+
+
+def public(doc: dict, tenant_names: dict | None = None, host: dict | None = None) -> dict:
+    """What the Domains screen shows (the token too: the administrator writes it in DNS); host: the server's report of
+    the domain (domain_hosts), for the certificate's state."""
     out = {"domain": doc["_id"], "mode": doc.get("mode", "direct"), "stem": doc.get("stem") or "",
            "defaultFor": list(doc.get("defaultFor") or []), "verified": bool(doc.get("verified")),
            "verifiedAt": store.iso(doc.get("verifiedAt")), "seenAt": store.iso(doc.get("seenAt")),
@@ -98,7 +139,7 @@ def public(doc: dict, tenant_names: dict | None = None) -> dict:
            "check": {**(doc.get("check") or {}), "at": store.iso((doc.get("check") or {}).get("at"))}
            if doc.get("check") else None,
            "created": store.iso(doc.get("created")), "createdBy": doc.get("createdBy"),
-           "url": base_url(doc)}
+           "url": base_url(doc), "certificate": certificate(doc, host)}
     if tenant_names is not None:
         out["organisation"] = tenant_names.get(doc.get("tenant")) if doc.get("tenant") else None
     return out
@@ -211,8 +252,11 @@ def update(name, tenant: str | None, mode=None, stem=None, default_prefixes=None
 
 
 def remove(name, tenant: str | None) -> dict:
+    """Removes a domain; the host's report of it goes too, so the domain starts over if it is added again (its site on
+    the host stays until removed by hand: custom-domains.sh list)."""
     doc = get(name, tenant)
     _col().delete_one({"_id": doc["_id"]})
+    store.col("domain_hosts").delete_one({"_id": doc["_id"]})
     return doc
 
 

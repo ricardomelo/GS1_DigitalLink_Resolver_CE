@@ -109,7 +109,7 @@ run_installer() {   # extra environment as arguments; answers (if any) on stdin
   env -i PATH="$SB/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME=/root TERM=dumb \
     INSTALL_LOG_FILE="$SB/state/install.log" INSTALL_NGINX_AVAILABLE="$SB/nginx/sites-available" \
     INSTALL_NGINX_ENABLED="$SB/nginx/sites-enabled" INSTALL_CRON_FILE="$SB/state/cron" \
-    INSTALL_GEOIP_CRON_FILE="$SB/state/geoip-cron" \
+    INSTALL_GEOIP_CRON_FILE="$SB/state/geoip-cron" INSTALL_DOMAINS_CRON_FILE="$SB/state/domains-cron" \
     INSTALL_HEALTH_TIMEOUT=30 INSTALL_PROXY_RESTART_AFTER=5 INSTALL_WORKER_TIMEOUT=5 INSTALL_DOCKER_GROUP_USER= "$@" \
     bash "$SB/repo/scripts/install.sh" ${INSTALLER_ARGS:---non-interactive} > "$SB/state/out" 2>&1
 }
@@ -154,6 +154,7 @@ check "A: backup cron points at the repository" "grep -q \"root $SB/repo/scripts
 check "A: the GeoIP database's monthly update scheduled from the repository" "grep -q \"root $SB/repo/scripts/geoip-update.sh\" $SB/state/geoip-cron && [[ \$(stat -c %a $SB/state/geoip-cron) == 644 ]]"
 check "A: its first download tried at once; a failure only a warning" "grep -q 'The GeoIP database was not downloaded' $SB/state/out && grep -q 'not downloaded' $SB/state/install.log"
 check "A: scan locations in the summary" "grep -q 'Scan locations *yes' $SB/state/out"
+check "A: the organisations' own domains applied every 5 minutes, quietly" "grep -q \"^\\*/5 \\* \\* \\* \\* root $SB/repo/scripts/custom-domains.sh apply --quiet\" $SB/state/domains-cron && [[ \$(stat -c %a $SB/state/domains-cron) == 644 ]]"
 A_TOKEN=$(envval SESSION_TOKEN); A_PWD=$(envval MONGO_INITDB_ROOT_PASSWORD)
 A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY)
 
@@ -226,6 +227,7 @@ check "D: exit status 0" "[[ $rc == 0 ]]"
 check "D: HTTPS site with the given files" "grep -Eq \"ssl_certificate +$SB/state/cert.pem;\" $SB/nginx/sites-available/gs1resolver"
 check "D: nginx -t passed with the certificate" "grep -q '^nginx -t' $SB/state/calls && ! grep -q 'rejected' $SB/state/out"
 check "D: certbot not used" "! grep -q '^certbot' $SB/state/calls"
+check "D: no schedule for the organisations' domains (no Let's Encrypt), and how to add one" "[[ ! -e $SB/state/domains-cron ]] && grep -q 'install scripts/custom-domains.cron' $SB/state/out"
 
 # ------------------------------------------------------------------------------ E. external proxy
 echo "--- E. external mode"
@@ -237,6 +239,7 @@ check "E: no nginx site" "[[ ! -e $SB/nginx/sites-available/gs1resolver ]]"
 check "E: proxy published on 0.0.0.0" "compose_cfg | grep -B3 'published: \"8080\"' | grep -q 'host_ip: 0.0.0.0'"
 check "E: database stays on 127.0.0.1" "compose_cfg | grep -B3 'published: \"27017\"' | grep -q 'host_ip: 127.0.0.1'"
 check "E: no cron when declined" "[[ ! -e $SB/state/cron ]]"
+check "E: no schedule for the organisations' domains behind an external proxy" "[[ ! -e $SB/state/domains-cron ]]"
 check "E: no GeoIP update when declined" "[[ ! -e $SB/state/geoip-cron ]] && grep -q 'Not recorded (no GeoIP database' $SB/state/out"
 
 # ------------------------------------------------------------------------------ F. interactive

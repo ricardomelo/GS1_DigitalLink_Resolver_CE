@@ -799,16 +799,24 @@ longest prefix wins); the label panel's *Domain in the QR code* chooses another 
 it from the public host the proxy passes (`X-Forwarded-Host`), reading the verified domains from the portal's database
 every minute, removes the stem and answers only for the organisation's prefixes (the operator's domains: the keys no
 organisation holds); other codes answer 404 like a code nobody registered. Its description file names it as
-`resolverRoot`. Certificates are the host's: after verifying a domain run
+`resolverRoot`. Certificates are the host's, made by `scripts/custom-domains.sh`, which the installer schedules every
+5 minutes when it set up Let's Encrypt (`/etc/cron.d/resolver-domains`, `apply --quiet`, log
+`/var/log/resolver-domains.log`; [ADR 0009, section 7](../adr/0009-tenant-domains.md)): a domain verified in the
+portal is served within minutes, without the terminal. By hand:
 
 ```bash
 sudo scripts/custom-domains.sh list     # each verified direct domain and whether it has a site and a certificate
 sudo scripts/custom-domains.sh apply    # a site from the installer's template and a Let's Encrypt certificate for each new one
 ```
 
-(`CERTBOT_EMAIL` from `.env`; the domain's DNS must already point at the server and port 80 be open). A daily cron line
-such as `17 3 * * * root /path/to/scripts/custom-domains.sh apply >> /var/log/resolver-domains.log 2>&1` keeps new
-domains served without a visit; sites of domains removed in the portal are listed and deleted by hand.
+(`CERTBOT_EMAIL` from `.env`; the domain's DNS must already point at the server and port 80 be open). Each run reports
+to the portal — the collection `domain_hosts` (served with the certificate's end, or failed with the next attempt) and
+the setting `domains.hostRun` — which the domain's card and the server administrator's Domains screen show. After a
+failed certificate the next attempt waits 5, 10, 20… up to 360 minutes (Let's Encrypt allows 5 failed validations an
+hour per name); a run holds a lock (`/run/lock/gs1resolver-domains.lock`). With an existing certificate or an external
+proxy the installer does not schedule it: with Certbot and `CERTBOT_EMAIL`, install `scripts/custom-domains.cron` as
+`/etc/cron.d/resolver-domains` after replacing `REPOSITORY`. Sites of domains removed in the portal are listed and
+deleted by hand.
 
 **My server redirects** (`redirect`): the organisation's own server answers `https://<domain><stem>/<path>?<query>`
 with a redirect (301, 302, 307 or 308) to `https://<FQDN>/<path>?<query>`; for nginx

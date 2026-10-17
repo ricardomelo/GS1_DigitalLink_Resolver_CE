@@ -398,58 +398,137 @@ def domains_script_checks() -> None:
     """scripts/custom-domains.sh (Documentation/adr/0009-tenant-domains.md) with stand-in docker, nginx, systemctl and
     certbot: the verified direct domains read from the portal's database, a site written from the installer's template
     for each new one and Certbot asked for its certificate, names that are not host names refused before any file or
-    command, sites of domains no longer verified reported, and CERTBOT_EMAIL required."""
+    command, sites of domains no longer verified reported, and CERTBOT_EMAIL required. Since section 7 of the ADR (item
+    9.6): each domain's state reported to the portal (served with the certificate's end, failed with the next attempt),
+    waits growing after failures, a domain waiting left alone, the run recorded, --quiet, the lock, the cron file."""
+    import fcntl
     script = REPO / "scripts" / "custom-domains.sh"
     work = Path(tempfile.mkdtemp(prefix="domains-test-"))
     bin_dir, available, enabled, calls = work / "bin", work / "available", work / "enabled", work / "calls"
+    listing = work / "domains.tsv"
     bin_dir.mkdir()
     (work / "scripts" / "templates").mkdir(parents=True)
     shutil.copy(REPO / "scripts" / "templates" / "nginx-site-http.conf", work / "scripts" / "templates")
-    names = "id.acme.example\nbad;rm -rf x\nshop.beta.example\n"
+    cert = work / "fullchain.pem"
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", str(work / "key.pem"),
+                    "-out", str(cert), "-days", "30", "-subj", "/CN=id.acme.example"], capture_output=True, check=True)
+    end = subprocess.run(["openssl", "x509", "-enddate", "-noout", "-in", str(cert)], capture_output=True,
+                         text=True).stdout.strip().split("=", 1)[1]
+    until = int(subprocess.run(["date", "-d", end, "+%s"], capture_output=True, text=True).stdout)
+    now = int(time.time())
+    # name, failed attempts, next attempt, state, the certificate's end — as the portal's database gives them
+    listing.write_text("id.acme.example\t0\t0\t\t0\nbad;rm -rf x\t0\t0\t\t0\nshop.beta.example\t0\t0\t\t0\n"
+                       f"late.example\t2\t{now + 3600}\tfailed\t0\nretry.example\t3\t{now - 60}\tfailed\t0\n"
+                       f"cap.example\t9\t{now - 60}\tfailed\t0\n")
     stand_ins = {
-        # "docker compose exec … mongosh": the verified direct domains, one per line (one of them not a host name)
-        "docker": f'echo "docker $*" >> {calls}; case "$*" in *mongosh*) printf "{names}" ;; esac',
+        # "docker compose exec … mongosh": the domains for the script's query, every call kept (the values travel as
+        # -e NAME=value, one per line in the file)
+        "docker": f'printf "docker" >> {calls}; for a in "$@"; do printf " %s" "$a" >> {calls}; done; echo >> {calls}\n'
+                  f'case "$*" in *"db.domains.find("*) cat {listing} ;; esac',
         "nginx": f'echo "nginx $*" >> {calls}',
         "systemctl": f'echo "systemctl $*" >> {calls}',
-        # certbot adds the HTTPS server to the site, as the real one does
+        # certbot adds the HTTPS server to the site, as the real one does; it fails for the domains not pointing here
         "certbot": f'echo "certbot $*" >> {calls}; d=$(echo "$*" | sed -n "s/.*-d \\([^ ]*\\).*/\\1/p"); '
-                   f'echo "    ssl_certificate /etc/letsencrypt/live/$d/fullchain.pem;" >> {available}/gs1resolver-domain-$d',
+                   f'case $d in id.acme.example) ;; *) exit 1 ;; esac; '
+                   f'echo "    ssl_certificate {cert};" >> {available}/gs1resolver-domain-$d',
     }
     for name, body in stand_ins.items():
-        (bin_dir / name).write_text("#!/bin/sh\n" + body + "\n")
+        (bin_dir / name).write_text("#!/bin/bash\n" + body + "\n")
         (bin_dir / name).chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
-           "NGINX_AVAILABLE": str(available), "NGINX_ENABLED": str(enabled)}
+           "NGINX_AVAILABLE": str(available), "NGINX_ENABLED": str(enabled), "LOCK_FILE": str(work / "lock")}
     env.pop("CERTBOT_EMAIL", None)
-    run = subprocess.run(["bash", str(script), "apply"], capture_output=True, text=True, timeout=60, env=env)
-    check(run.returncode == 1 and "CERTBOT_EMAIL is not set" in run.stdout,
-          "custom domains: apply needs CERTBOT_EMAIL", run.stdout[-200:])
+
+    def run(*args):
+        if calls.exists():
+            calls.unlink()
+        done = subprocess.run(["bash", str(script), *args], capture_output=True, text=True, timeout=60, env=env)
+        return done, calls.read_text() if calls.exists() else ""
+
+    def recorded(log, domain):
+        """The values of the state recorded for a domain ({} when none)."""
+        for line in log.splitlines():
+            if f"D_NAME={domain} " in line + " ":
+                return dict(re.findall(r"(D_[A-Z]+)=(\S*)", line))
+        return {}
+
+    result, log = run("apply")
+    check(result.returncode == 1 and "CERTBOT_EMAIL is not set" in result.stdout and "D_OK=0" in log,
+          "custom domains: apply needs CERTBOT_EMAIL (a failed run recorded)", result.stdout[-200:])
     (work / ".env").write_text("CERTBOT_EMAIL='ops@example.org'\nPORTAL_DB_NAME=resolver_portal\n")
-    run = subprocess.run(["bash", str(script), "list"], capture_output=True, text=True, timeout=60, env=env)
-    check(run.returncode == 0 and "id.acme.example: no site yet" in run.stdout and "bad;rm -rf x: refused" in run.stdout,
-          "custom domains: list shows each verified direct domain and refuses a name that is not a host name", run.stdout)
-    run = subprocess.run(["bash", str(script), "apply"], capture_output=True, text=True, timeout=60, env=env)
-    log = calls.read_text() if calls.exists() else ""
+    result, log = run("list")
+    check(result.returncode == 0 and "id.acme.example: no site yet" in result.stdout
+          and "bad;rm -rf x: refused" in result.stdout,
+          "custom domains: list shows each verified direct domain and refuses a name that is not a host name",
+          result.stdout)
+    result, log = run("apply")
     site = available / "gs1resolver-domain-id.acme.example"
     text = site.read_text() if site.exists() else ""
-    check(run.returncode == 0 and "server_name id.acme.example;" in text and "proxy_pass http://127.0.0.1:8080;" in text
+    check("server_name id.acme.example;" in text and "proxy_pass http://127.0.0.1:8080;" in text
           and "proxy_set_header Host $host;" in text and (enabled / "gs1resolver-domain-id.acme.example").is_symlink(),
-          "custom domains: apply writes a site from the installer's template and enables it", (run.stdout, text[:300]))
+          "custom domains: apply writes a site from the installer's template and enables it", (result.stdout, text[:300]))
     check("certbot --nginx -d id.acme.example --non-interactive --agree-tos -m ops@example.org" in log
           and "certbot --nginx -d shop.beta.example" in log and "nginx -t" in log and "systemctl reload nginx" in log,
-          "custom domains: nginx checked and reloaded, Certbot asked for each certificate", log)
+          "custom domains: nginx checked and reloaded, Certbot asked for each certificate", log[-600:])
     check("rm -rf" not in log.replace("bad;rm -rf x", "") and not any("bad" in p.name for p in available.iterdir())
-          and "resolver_portal" in log and "PORTAL_DB=resolver_portal" in log,
-          "custom domains: a name that is not a host name reaches no file or command", log)
-    certbot_calls = log.count("certbot --nginx")
-    run = subprocess.run(["bash", str(script), "apply"], capture_output=True, text=True, timeout=60, env=env)
-    log = calls.read_text()
-    check(log.count("certbot --nginx") == certbot_calls and "id.acme.example: already served" in run.stdout,
-          "custom domains: a domain already served is left alone", run.stdout)
+          and "PORTAL_DB=resolver_portal" in log and "D_NAME=bad" not in log,
+          "custom domains: a name that is not a host name reaches no file or command", log[-600:])
+    served = recorded(log, "id.acme.example")
+    check(served.get("D_STATE") == "served" and served.get("D_UNTIL") == str(until) and served.get("D_ATTEMPTS") == "0",
+          "custom domains: a domain served reported to the portal with its certificate's end", served)
+    failed = recorded(log, "shop.beta.example")
+    check(failed.get("D_STATE") == "failed" and failed.get("D_ERROR") == "certificate" and failed.get("D_ATTEMPTS") == "1"
+          and abs(int(failed.get("D_NEXT", 0)) - now - 5 * 60) < 30 and result.returncode == 1
+          and "ERROR: Certbot could not obtain the certificate of shop.beta.example" in result.stdout,
+          "custom domains: a failed certificate reported, the next attempt in 5 minutes, the run failing",
+          (failed, result.stdout[-300:]))
+    later = recorded(log, "retry.example")
+    capped = recorded(log, "cap.example")
+    check(later.get("D_ATTEMPTS") == "4" and abs(int(later.get("D_NEXT", 0)) - now - 40 * 60) < 30
+          and capped.get("D_ATTEMPTS") == "10" and abs(int(capped.get("D_NEXT", 0)) - now - 360 * 60) < 30,
+          "custom domains: each failure waits twice as long, at most 6 hours", (later, capped))
+    check("certbot --nginx -d late.example" not in log and not recorded(log, "late.example")
+          and "late.example: waiting after 2 failed attempt(s)" in result.stdout,
+          "custom domains: a domain still waiting is left alone", result.stdout[-400:])
+    check("D_OK=0" in log and "domains.hostRun" in log, "custom domains: the run recorded for the portal (failed)", log[-300:])
+    check("--eval \"$JS\"" in log and "MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase" in log
+          and "ops@example.org" not in "".join(l for l in log.splitlines() if "mongosh" in l),
+          "custom domains: the JavaScript goes to mongosh as a variable inside the container", log[:300])
+
+    listing.write_text(f"id.acme.example\t0\t0\tserved\t{until}\nlate.example\t2\t{now + 3600}\tfailed\t0\n")
+    result, log = run("apply", "--quiet")
+    check(result.returncode == 0 and result.stdout == "" and log.count("certbot") == 0
+          and not recorded(log, "id.acme.example") and "D_OK=1" in log,
+          "custom domains: --quiet with nothing to do prints nothing, reports nothing new, records the run",
+          (result.stdout, log[-300:]))
+    listing.write_text(f"id.acme.example\t0\t0\tserved\t{until - 86400}\n")
+    result, log = run("apply", "--quiet")
+    check(recorded(log, "id.acme.example").get("D_UNTIL") == str(until) and result.stdout == "",
+          "custom domains: a renewed certificate reported again", log[-300:])
+    with open(work / "lock", "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        result, log = run("apply")
+    check(result.returncode == 0 and "Another run is in progress" in result.stdout and log == "",
+          "custom domains: a run while another holds the lock does nothing", (result.stdout, log[:200]))
     (available / "gs1resolver-domain-old.example").write_text("server {}\n")
-    run = subprocess.run(["bash", str(script), "list"], capture_output=True, text=True, timeout=60, env=env)
-    check("old.example: site of a domain no longer verified" in run.stdout and "id.acme.example: site and certificate"
-          in run.stdout, "custom domains: list reports sites of domains no longer verified", run.stdout)
+    listing.write_text("id.acme.example\t0\t0\tserved\t0\n")
+    result, log = run("list")
+    check("old.example: site of a domain no longer verified" in result.stdout and "id.acme.example: site and certificate"
+          in result.stdout, "custom domains: list reports sites of domains no longer verified", result.stdout)
+    node = shutil.which("node")
+    scripts_js = dict(re.findall(r"^(\w+_JS)='(.*?)'$", script.read_text(), re.M | re.S))
+    if node:
+        bad = []
+        for name, js in scripts_js.items():
+            path = work / f"{name}.js"
+            path.write_text("const db = {};\n" + js)
+            if subprocess.run([node, "--check", str(path)], capture_output=True).returncode:
+                bad.append(name)
+        check(sorted(scripts_js) == ["DOMAINS_JS", "RECORD_JS", "RUN_JS"] and not bad,
+              "custom domains: the mongosh scripts are valid JavaScript", (sorted(scripts_js), bad))
+    cron = (REPO / "scripts" / "custom-domains.cron").read_text()
+    check(re.search(r"^\*/5 \* \* \* \* root REPOSITORY/scripts/custom-domains\.sh apply --quiet ", cron, re.M),
+          "custom domains: scheduled every 5 minutes as root by its cron file, quiet", cron[-200:])
     shutil.rmtree(work, ignore_errors=True)
 
 

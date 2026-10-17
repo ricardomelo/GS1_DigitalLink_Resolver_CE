@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). Implemented in one delivery |
-| Backlog item | 5.1 — the tenant's own domain in the QR code |
+| Status | **Accepted** (14 October 2026). Implemented in one delivery. **Amended** on 17 October 2026 (section 7, item 9.6) |
+| Backlog items | 5.1 — the tenant's own domain in the QR code; 9.6 — domains without the terminal |
 | Decided by | the owner of the branch, away during the session, who asked for the recommended option on every point of section 4 |
 
 ## 1. Context
@@ -48,7 +48,7 @@ Constraints:
    nobody registered). A host that is not a registered domain is served as before.
 5. **Certificates on the host**: `scripts/custom-domains.sh` lists the verified `direct` domains and, for each one
    without a site, writes an nginx site from the installer's template and asks Certbot for its certificate (`apply`);
-   run by hand or from cron by the server administrator.
+   run by hand or from cron by the server administrator (scheduled every 5 minutes by the installer since section 7).
 6. **`redirect` mode**: the organisation's server answers `https://<domain><stem>/<path>?<query>` with a redirect
    (301, 302, 307 or 308) to `https://FQDN/<path>?<query>`. The user guide gives the rule for nginx and Apache. *Check*
    in the portal requests a code of the organisation through the domain without following redirects and compares the
@@ -113,3 +113,56 @@ This record; `portal/domains.py`, the endpoints and the *Domains* view, the labe
 `domain=`; `web_server/src/domains.py`; the proxy's header; `scripts/custom-domains.sh` and its template; tests
 `test_domains.py` (portal), `test_domains_resolver.py`, `test_domains_e2e.py`, the host script in `test_deploy.py`;
 the documentation.
+
+## 7. Amendment of 17 October 2026 — domains without the terminal (item 9.6)
+
+### 7.1 Context
+
+On staging, a verified `direct` domain answered only after the server administrator ran `scripts/custom-domains.sh
+apply` in a terminal; the portal had no way to say whether the site and its certificate existed. The question was
+whether a domain could be added entirely in the interface, certificate included.
+
+### 7.2 Decision
+
+1. **The portal does not touch the host.** Writing nginx sites and running Certbot need root; giving them to a web
+   application would hand root to anyone who took over the portal. The existing script stays the only thing that
+   changes the host.
+2. **The installer schedules the script every 5 minutes** as root (`/etc/cron.d/resolver-domains`, `apply --quiet`)
+   when it set up Let's Encrypt for the installation (the script needs Certbot and `CERTBOT_EMAIL`); with an existing
+   certificate or an external proxy it says how to schedule it by hand. A run holds a lock (`flock`), so a slow
+   Certbot never overlaps the next run.
+3. **The script reports to the portal**: after each run it writes, through `mongosh` in the database container (the
+   credentials stay there), one document per domain in the portal's collection **`domain_hosts`** — `state`
+   (`served`, `failed`), `checkedAt`, `attempts`, `nextAttemptAt`, `error` (`nginx` or `certificate`, never Certbot's
+   text) and `certificateUntil` (the certificate's end date, read with `openssl`) — and the setting
+   **`domains.hostRun`** (`at`, `ok`).
+4. **Failures wait longer each time**: after a failed certificate the next attempt waits 5, 10, 20, 40, 80, 160 and
+   then 360 minutes, so that a domain whose DNS does not point here yet never reaches Let's Encrypt's limit of failed
+   validations (5 an hour per name); a domain served or verified again starts over.
+5. **The domain card shows the certificate's state**: for a verified `direct` domain, *certificate pending* (no report
+   yet: within 5 minutes), *served, certificate until …*, or *certificate failed* with the reason and the next
+   attempt; a server administrator also sees when the server's task last ran, and a warning when it has not run for 15
+   minutes (not scheduled, or failing). `redirect` domains need no certificate here and show none.
+
+### 7.3 Options considered
+
+| Point | Chosen (recommended) | Not chosen |
+|---|---|---|
+| Who changes the host | the operator's script, scheduled as root | the portal running nginx and Certbot (root inside a web application); a separate privileged service listening for the portal (another moving part with root) |
+| How often | every 5 minutes | daily (a day's wait after verifying); a trigger from the portal (needs a channel into root) |
+| The state on the card | reported by the script into the portal's database | the portal probing the domain (it already does with *Check*, but cannot tell a missing certificate from a DNS not pointing here) |
+| Repeated failures | waits growing to 6 hours | every run (Let's Encrypt's limits); giving up (a DNS fixed later would never be served) |
+
+### 7.4 Consequences
+
+- A domain verified in the portal is served within about 5 minutes once its DNS points here, without the terminal.
+- The host runs the script 288 times a day; with nothing to do it reads the domains and writes nothing to its log
+  (`--quiet`), a few lines when something changes (`/var/log/resolver-domains.log`).
+- The portal's database holds what the host did (`domain_hosts`); removing a domain in the portal still leaves its site
+  on the host until it is deleted by hand (`list` reports it).
+
+### 7.5 Delivery
+
+`scripts/custom-domains.sh` (the report, the waits, the lock, `--quiet`) and `scripts/custom-domains.cron`; the
+installer's schedule; `portal/domains.py` (`host_states()`, the state in `public()`), the list's `hostRun`; the card;
+tests in `test_deploy.py`, `test_install.sh`, `test_domains.py` and `test_domains_e2e.py`; the documentation.

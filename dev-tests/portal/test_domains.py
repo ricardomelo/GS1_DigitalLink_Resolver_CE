@@ -4,7 +4,8 @@ test client: who manages which domains (an organisation's administrators, the op
 every domain listed for them, support access read only, nobody else); the rules of a name, a stem, a mode, uniqueness
 and the limit; the proof by a DNS TXT record (looked up through a replaced domains.txt_records) and the daily look
 again; default prefixes; the domain a label, the Digital Link preview, a record and the tenant API carry; the check
-through the domain (domains.probe replaced); the journal; the texts in both languages.
+through the domain (domains.probe replaced); the certificate's state as the server's task reports it and the task's last
+run (ADR 0009, section 7); the journal; the texts in both languages.
 
   pip install -r portal/requirements.txt mongomock
   python dev-tests/portal/test_domains.py
@@ -266,9 +267,54 @@ except PermissionError:
 check("the real probe refuses a private address (the link checker's guard)", refused)
 domains.probe, domains.txt_records = probe, (lambda name: list(TXT.get(name, [])))
 
+# ================================================================== the certificate on the host (ADR 0009, section 7)
+def card(c, name):
+    return next((d for d in c.get("/portal/api/domains").get_json()["domains"] if d["domain"] == name), {})
+
+
+hosts = store.col("domain_hosts")
+cert = card(ana, "id.acme.example").get("certificate")
+check("a verified domain pointing here: certificate pending until the server's task reports",
+      cert and cert["state"] == "pending" and cert["until"] is None, cert)
+check("…a domain redirected by the organisation's own server needs none here",
+      card(ana, "two.acme.example").get("certificate") is None, card(ana, "two.acme.example"))
+until = store.now() + timedelta(days=80)
+hosts.insert_one({"_id": "id.acme.example", "state": "served", "checkedAt": store.now(), "attempts": 0,
+                  "nextAttemptAt": None, "error": None, "certificateUntil": until})
+cert = card(ana, "id.acme.example").get("certificate")
+check("…served, with the certificate's end", cert and cert["state"] == "served" and cert["until"] == store.iso(until), cert)
+nxt = store.now() + timedelta(minutes=20)
+hosts.update_one({"_id": "id.acme.example"}, {"$set": {"state": "failed", "attempts": 3, "nextAttemptAt": nxt,
+                                                        "error": "certificate", "certificateUntil": None}})
+cert = card(ana, "id.acme.example").get("certificate")
+check("…failed, with the reason, the attempts and the next attempt", cert and (cert["state"], cert["error"], cert["attempts"],
+      cert["nextAttemptAt"]) == ("failed", "certificate", 3, store.iso(nxt)), cert)
+hosts.update_one({"_id": "id.acme.example"}, {"$set": {"state": "whatever"}})
+check("…a state the portal does not know reads as pending", card(ana, "id.acme.example")["certificate"]["state"] == "pending")
+store.col("domains").insert_one({"_id": "new.acme.example", "tenant": acme["id"], "mode": "direct", "verified": False,
+                                 "token": "x" * 32, "defaultFor": []})
+hosts.insert_one({"_id": "new.acme.example", "state": "served"})
+check("…none for a domain not verified, whatever the host says", card(ana, "new.acme.example").get("certificate") is None)
+store.col("domains").delete_one({"_id": "new.acme.example"})
+hosts.delete_one({"_id": "new.acme.example"})
+page = root.get(f"/portal/api/organisation?id={acme['id']}").get_json()
+check("the organisation's page shows the state too", any(d["domain"] == "id.acme.example" and d["certificate"]
+                                                         for d in page["domains"]), page["domains"])
+listing = root.get("/portal/api/domains").get_json()
+check("the server's task never ran: late, for server administrators", listing["hostRun"] == {"at": None, "ok": False,
+                                                                                             "late": True}, listing["hostRun"])
+check("…not shown to an organisation's administrators", ana.get("/portal/api/domains").get_json()["hostRun"] is None)
+store.set_setting("domains.hostRun", {"at": store.now() - timedelta(minutes=4), "ok": True})
+run = root.get("/portal/api/domains").get_json()["hostRun"]
+check("…ran 4 minutes ago: not late", run["late"] is False and run["ok"] is True and run["at"], run)
+store.set_setting("domains.hostRun", {"at": store.now() - timedelta(minutes=16), "ok": True})
+check("…16 minutes ago: late (it runs every 5)", root.get("/portal/api/domains").get_json()["hostRun"]["late"] is True)
+hosts.insert_one({"_id": "two.acme.example", "state": "failed", "attempts": 1})
+
 # ================================================================== removal and the journal
 r = ana.delete("/portal/api/domains/two.acme.example", headers=ORIGIN)
 check("removed", code(r) == "domains.removed" and store.col("domains").count_documents({"_id": "two.acme.example"}) == 0)
+check("…with the host's report of it: added again, it starts over", hosts.count_documents({"_id": "two.acme.example"}) == 0)
 actions = {e["action"] for e in store.col("journal").find({"tenant": acme["id"]})}
 check("the journal: added, verified, changed, removed", {"domain-create", "domain-verify", "domain-update",
                                                          "domain-remove"} <= actions, actions)
@@ -277,7 +323,10 @@ check("the journal: added, verified, changed, removed", {"domain-create", "domai
 i18n = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read()
 codes = set(re.findall(r'"(domains\.[A-Za-z.]+)"', open(os.path.join(PORTAL, "domains.py")).read()
                        + open(os.path.join(PORTAL, "app.py")).read()))
-codes |= {"menu.domains", "label.domain", "label.domainDefault", "domains.mode.direct", "domains.mode.redirect"}
+codes |= {"menu.domains", "label.domain", "label.domainDefault", "domains.mode.direct", "domains.mode.redirect",
+          "domains.cert.pending", "domains.cert.served", "domains.cert.failed", "domains.certPending", "domains.certServed",
+          "domains.certServedUntil", "domains.certFailed", "domains.certError.certificate", "domains.certError.nginx",
+          "domains.hostRun", "domains.hostRunLate", "domains.hostRunNever"}
 missing = sorted(c for c in codes if i18n.count(f'"{c}"') != 2)
 check(f"every domains text in both languages ({len(codes)})", not missing, missing)
 

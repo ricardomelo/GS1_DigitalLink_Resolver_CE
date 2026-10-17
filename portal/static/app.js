@@ -2760,6 +2760,17 @@ function renderDomains() {
   I18N.set($("#domains-scope"), data.every ? "domains.scopeEvery" : "domains.scope", { who });
   $("#domains-readonly").hidden = !data.readOnly;
   $("#domains-create").hidden = data.readOnly;
+  // the server's task that gives verified domains their site and certificate (ADR 0009, section 7): server administrators
+  const run = $("#domains-host-run");
+  run.hidden = !data.hostRun;
+  if (data.hostRun) {
+    run.className = "field-msg" + (data.hostRun.late ? " is-error" : "");
+    if (data.hostRun.late) {
+      I18N.set(run, data.hostRun.at ? "domains.hostRunLate" : "domains.hostRunNever", { at: formatWhen(data.hostRun.at) });
+    } else {
+      I18N.set(run, "domains.hostRun", { at: formatWhen(data.hostRun.at) });
+    }
+  }
   $("#domains-list").replaceChildren(...data.domains.map(domainCard));
   $("#domains-empty").hidden = data.domains.length > 0;
   $("#domains-redirect-example").textContent =
@@ -2776,6 +2787,9 @@ function domainCard(d) {
   head.append(el("span", "badge " + (d.verified ? "badge-created" : "badge-unchanged"),
                  t(d.verified ? "domains.verifiedBadge" : "domains.pendingBadge")));
   head.append(el("span", "badge badge-update", t("domains.mode." + d.mode)));
+  if (d.certificate) {
+    head.append(el("span", "badge domain-cert is-" + d.certificate.state, t("domains.cert." + d.certificate.state)));
+  }
   if (domainsState.data.every) head.append(el("span", "muted", d.organisation || t("users.operatorName")));
   card.append(head);
   if (!d.verified) {
@@ -2789,6 +2803,7 @@ function domainCard(d) {
   } else {
     card.append(el("p", "field-msg", t("domains.seen", { verified: formatWhen(d.verifiedAt), seen: formatWhen(d.seenAt) })));
   }
+  if (d.certificate) card.append(certificateLine(d.certificate));
   if (d.check) {
     const ok = d.check.ok;
     card.append(el("p", "field-msg " + (ok ? "is-ok" : "is-error"),
@@ -2823,6 +2838,21 @@ function domainCard(d) {
     card.append(actions);
   }
   return card;
+}
+
+/* What the server did for a verified domain pointing at it: pending until its task reports, then served (with the
+   certificate's end) or failed (the reason and the next attempt). */
+function certificateLine(c) {
+  const p = el("p", "field-msg domain-cert-line" + (c.state === "served" ? " is-ok" : c.state === "failed" ? " is-error" : ""));
+  if (c.state === "served") {
+    p.textContent = c.until ? t("domains.certServedUntil", { until: formatWhen(c.until) }) : t("domains.certServed");
+  } else if (c.state === "failed") {
+    p.textContent = t("domains.certFailed", { reason: t("domains.certError." + (c.error || "certificate")),
+                                              next: formatWhen(c.nextAttemptAt), attempts: c.attempts });
+  } else {
+    p.textContent = t("domains.certPending");
+  }
+  return p;
 }
 
 async function domainCall(method, d, suffix, body) {

@@ -2173,7 +2173,7 @@ def organisation_page():
         "prefixes": tenant["prefixes"] if tenant else [], "disabled": bool(tenant and tenant["disabled"]),
         "records": None if records is None else records.get(chosen, 0),
         "users": accounts,
-        "domains": [domains.public(d) for d in domains.load(chosen)],
+        "domains": [domains.public(d, host=host) for d, host in domains.with_hosts(domains.load(chosen))],
         "brands": [branding.public(d) for d in branding.load(chosen)],
         "sso": [sso.public(d) for d in sso.load(sso.scope_id(chosen))],
         "apikeys": [apikeys.public(d) for d in apikeys.load(chosen)],
@@ -2517,10 +2517,13 @@ def list_domains():
     tenant, every = domain_scope()
     names = {t["id"]: t["name"] for t in g.tenants}
     docs = domains.load(tenant, every=every)
-    return jsonify(domains=[domains.public(d, names if every else None) for d in docs], every=every,
+    hosts = domains.host_states(d["_id"] for d in docs)
+    return jsonify(domains=[domains.public(d, names if every else None, hosts.get(d["_id"])) for d in docs], every=every,
                    readOnly=bool(g.support), installation=_installation_host(), max=domains.MAX_PER_SCOPE,
                    txtName=domains.TXT_NAME, prefixes=(tenants.get(tenant) or {}).get("prefixes", [])
-                   if tenant else [], modes=list(domains.MODES))
+                   if tenant else [], modes=list(domains.MODES),
+                   # the server's task (ADR 0009, section 7), for server administrators
+                   hostRun=domains.host_run() if g.server_admin and not g.support else None)
 
 
 class ReadOnlySupport(Exception):

@@ -344,7 +344,9 @@ def _decode_tdt_scheme(scheme: dict, bits: str) -> DecodedEpc:
             number = int(raw, 2) if raw else 0
             if 'decimalMaximum' in spec and not int(spec.get('decimalMinimum', 0)) <= number <= int(spec['decimalMaximum']):
                 raise EpcDecodeError(f'{spec["name"]} of {name} is out of range')
-            value = str(number)
+            # a field of no digits (the location, asset type, document type or coupon reference of a 12-digit company
+            # prefix: TDT 'length' 0, one bit that must be 0) is the empty string, not "0"
+            value = '' if str(spec.get('length')) == '0' else str(number)
         # TDT Figure 3-6: pad as the output level (or, failing that, the tag-encoding level) defines the field
         value = _pad(value, target_fields.get(spec['name']) or tag_fields.get(spec['name']))
         if spec['name'] == 'filter':

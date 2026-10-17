@@ -200,6 +200,34 @@ with sync_playwright() as p:
     page.select_option("#epc-filter", "3"); page.wait_for_timeout(1000)
     check("…another filter changes the EPC", "urn:epc:tag:sgtin-96:3.7891234." in page.inner_text("#epc-out"))
     page.fill("#q-21", ""); page.wait_for_timeout(300)
+    # Every key with an EPC (item 9.10): a GLN alone (the extension 0), its extension, an SSCC; filter 0 by default
+    page.select_option("#key-type", "414"); page.fill("#key-value", "7891234500014"); page.wait_for_timeout(900)
+    check("RFID/NFC for a GLN without extension: offered", page.is_visible("#epc"))
+    if not page.evaluate("document.getElementById('epc').open"):
+        page.click("#epc summary")
+    page.wait_for_timeout(1200)
+    out = page.inner_text("#epc-out")
+    filters = page.eval_on_selector_all("#epc-filter option", "os => os.map(o => o.textContent)")
+    check("…its SGLN-96 with the extension 0, filter 0 (all others) by default, the link for NFC",
+          "SGLN-96" in out and "urn:epc:tag:sgln-96:0.7891234.50001.0" in out and "/eh32" in out
+          and page.input_value("#epc-filter") == "0" and filters[0] == "0 — All others" and filters[1] == "1", (out, filters))
+    page.fill("#q-254", "DOCK-3"); page.wait_for_timeout(1200)
+    if SHOTS:                                     # the label studio's EPC block, as it stands
+        page.locator("#epc").scroll_into_view_if_needed()
+        page.locator(".label").screenshot(path=os.path.join(SHOTS, "epc-gln.png"))
+    check("…with an alphanumeric extension: SGLN-195", "urn:epc:tag:sgln-195:0.7891234.50001.DOCK-3"
+          in page.inner_text("#epc-out"), page.inner_text("#epc-out"))
+    page.fill("#q-254", ""); page.select_option("#key-type", "00"); page.fill("#key-value", "378912340000000010")
+    page.wait_for_timeout(1200)
+    check("…an SSCC: SSCC-96", "urn:epc:tag:sscc-96:0.7891234." in page.inner_text("#epc-out"), page.inner_text("#epc-out"))
+    page.select_option("#key-type", "8003"); page.fill("#key-value", "07891234500014"); page.wait_for_timeout(700)
+    check("…a GRAI without its serial component: not offered yet", page.is_hidden("#epc"))
+    page.fill("#key-value", "0789123450001477"); page.wait_for_timeout(1200)
+    check("…with it: GRAI-96", page.is_visible("#epc") and "urn:epc:tag:grai-96:0.7891234.50001.77"
+          in page.inner_text("#epc-out"), page.inner_text("#epc-out"))
+    page.select_option("#key-type", "417"); page.wait_for_timeout(300)
+    check("…a key without an EPC scheme (a party's GLN): not offered", page.is_hidden("#epc"))
+    page.select_option("#key-type", "01"); page.wait_for_timeout(300)
 
     # A server administrator: when the server's task last ran
     admin_ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900})

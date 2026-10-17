@@ -434,14 +434,29 @@ Under the code the portal shows the version, size and correction actually used, 
 is replaced by an explanation and the ways out: a higher version, *Automatic*, a lower correction level or
 a shorter content.
 
-**RFID and NFC (EPC).** For a GTIN with a serial number the block offers *RFID and NFC (EPC)*: the item's EPC as the
-EPC Tag Data Standard encodes it — SGTIN-96 for a numeric serial number, SGTIN-198 otherwise — in hexadecimal (to write
-into an RFID tag) and as a tag URI, and the **link for NFC**, the compressed GS1 Digital Link (`…/eh…`, `…/ex…`) to
+**RFID and NFC (EPC).** For every key the EPC Tag Data Standard encodes, the block offers *RFID and NFC (EPC)* once the
+record holds what the EPC needs:
+
+| Key | EPC | Needs first |
+|---|---|---|
+| GTIN | SGTIN-96 (a numeric serial number without leading zeros), else SGTIN-198 | a serial number (21) |
+| SSCC | SSCC-96 | — |
+| GLN | SGLN-96 (a numeric extension without leading zeros), else SGLN-195 | — (without an extension (254), the EPC carries the extension 0) |
+| GRAI | GRAI-96 / GRAI-170 | its serial component after the 14 digits |
+| GIAI | GIAI-96 (digits only) / GIAI-202 | — |
+| GSRN, GSRNP | GSRN-96, GSRNP-96 | — |
+| GDTI, GCN | GDTI-96 / GDTI-174, SGCN-96 | the serial component after the 13 digits |
+| CPID | CPI-96 / CPI-var | its serial (8011) |
+| ITIP | ITIP-110 / ITIP-212 | a serial number (21) |
+
+The other keys (GINC, GSIN, party GLN…) have no EPC. The block shows the EPC in hexadecimal (to write into an RFID tag)
+and as a tag URI, and the **link for NFC**, the compressed GS1 Digital Link (`…/eh…`, `…/ex…`) to
 write into an NFC or hybrid tag; this resolver reads it like the QR code. The EPC needs the length of the GS1 Company
 Prefix: the portal takes it from GS1's GCP length table when the server administrator has loaded it (the block says
 so, with the list's date), otherwise from your organisation's prefixes; for other codes choose it — your choice always
-wins. A key the list marks as not a GS1 Company Prefix has no EPC unless you choose a length. The **filter** says what the item is (1, a
-point-of-sale item, by default). **Copy** puts a value on the clipboard.
+wins. A key the list marks as not a GS1 Company Prefix has no EPC unless you choose a length. The **filter** says what the item is (for a GTIN or an ITIP 1, a
+point-of-sale item, by default; for the other keys 0, *all others*). Searching the record list with an RFID reader finds
+the record of any of these EPCs (section 11). **Copy** puts a value on the clipboard.
 
 ## 10. Data attributes in the QR code
 

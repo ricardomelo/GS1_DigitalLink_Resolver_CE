@@ -424,25 +424,37 @@ function query(g, qual) {
 let qrTimer = null;
 let previewSeq = 0;
 
-/* RFID and NFC (the backlog's EPC/NFC label option): for a GTIN with a serial number, the SGTIN for the tag and the
-   compressed GS1 Digital Link an NFC tag emits (eh…, ex…), computed by the server (portal/epc.py). */
-let epcSeq = 0;
+/* RFID and NFC (the backlog's EPC/NFC label option; ADR 0010, section 8): for every key the EPC Tag Data Standard
+   encodes, once the record holds what its scheme needs (CONFIG.epc: a qualifier such as a GTIN's serial number, or a
+   serial component after the key's fixed digits), the EPC for the tag and the compressed GS1 Digital Link an NFC tag
+   emits (eh…, ex…), computed by the server (portal/epc.py). */
+let epcSeq = 0, epcFilterKind = null;
+const EPC_TRADE_ITEMS = ["01", "8006"];           // the filter values named for trade items (TDS Table 10-2)
 
-function fillEpcOptions() {
+/* The filter's values: named for a trade item; for the other keys 0 ("all others", the default) and the numbers the
+   Tag Data Standard keeps for each scheme. */
+function fillEpcOptions(ai) {
+  const kind = EPC_TRADE_ITEMS.includes(ai ?? "01") ? "trade" : "other";
   const prefix = $("#epc-prefix"), filter = $("#epc-filter");
-  const keepPrefix = prefix.value, keepFilter = filter.value || "1";
+  const keepPrefix = prefix.value;
+  const keepFilter = kind === epcFilterKind && filter.value ? filter.value : kind === "trade" ? "1" : "0";
   prefix.replaceChildren(i18nOption("epc.prefixAuto", ""), ...[6, 7, 8, 9, 10, 11, 12].map(n =>
     new Option(t("epc.prefixDigits", { n }), String(n))));
-  filter.replaceChildren(...[0, 1, 2, 3, 4, 5, 6, 7].map(n => new Option(`${n} — ${t("epc.filter." + n)}`, String(n))));
+  filter.replaceChildren(...[0, 1, 2, 3, 4, 5, 6, 7].map(n => new Option(
+    kind === "trade" || n === 0 ? `${n} — ${t("epc.filter." + n)}` : String(n), String(n))));
   prefix.value = keepPrefix;
   filter.value = keepFilter;
+  epcFilterKind = kind;
 }
 
 async function refreshEpc() {
   const g = readKey(), l = readQualifiers();
-  const serialised = g.ok && g.ai === "01" && l.ok && (l.pairs || []).some(([q]) => q === "21");
-  $("#epc").hidden = !serialised;
-  if (!serialised || !$("#epc").open) return;
+  const need = g.ok && l.ok ? CONFIG?.epc?.[g.ai] : undefined;
+  const ready = need !== undefined && (!need.qualifier || (l.pairs || []).some(([q]) => q === need.qualifier))
+    && (!need.serialAfter || g.value.length > need.serialAfter);
+  $("#epc").hidden = !ready;
+  if (ready && (EPC_TRADE_ITEMS.includes(g.ai) ? "trade" : "other") !== epcFilterKind) fillEpcOptions(g.ai);
+  if (!ready || !$("#epc").open) return;
   const seq = ++epcSeq;
   const params = new URLSearchParams(query(g, l));
   params.set("filter", $("#epc-filter").value || "1");
@@ -5089,7 +5101,7 @@ async function init() {
   $("#epc").addEventListener("toggle", refreshEpc);
   $("#epc-prefix").addEventListener("change", refreshEpc);
   $("#epc-filter").addEventListener("change", refreshEpc);
-  document.addEventListener("localechange", () => { fillEpcOptions(); refreshEpc(); });
+  document.addEventListener("localechange", () => { fillEpcOptions(readKey().ai); refreshEpc(); });
   $("#sso-add").addEventListener("submit", e => {
     e.preventDefault();
     ssoState.extra.push($("#sso-add-scope").value);

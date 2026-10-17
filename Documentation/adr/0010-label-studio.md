@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). Implemented in one delivery. **Amended** on 17 October 2026 (section 7, item 9.3) |
-| Backlog items | 5.2 — X-dimension choice and PDF export; 5.3 — QR code with EAN-13/UPC-A (and EAN-8/UPC-E); 5.4 — every label format in one zip; 9.3 — Data Matrix, HRI as text, sizes by scanning environment |
+| Status | **Accepted** (14 October 2026). Implemented in one delivery. **Amended** on 17 October 2026 (section 7, item 9.3; section 8, item 9.10) |
+| Backlog items | 5.2 — X-dimension choice and PDF export; 5.3 — QR code with EAN-13/UPC-A (and EAN-8/UPC-E); 5.4 — every label format in one zip; 9.3 — Data Matrix, HRI as text, sizes by scanning environment; 9.10 — an EPC for every key that has one |
 | Decided by | the owner of the branch, away during the session, who asked for the recommended option on every point of section 4 |
 
 ## 1. Context
@@ -134,3 +134,86 @@ specification tables set it, rather than a bare percentage.
 label options in `app.py`, `/config`, the tenant API's description, the label panel (`#opt-symbol`, `#opt-env`,
 `#opt-hritext`), tests `portal/test_datamatrix.py` (new) and `portal/test_datamatrix_e2e.py` (new, Chromium), 22
 mutations, all caught.
+
+## 8. Amendment of 17 October 2026 — an EPC for every key that has one (item 9.10)
+
+### 8.1 Context
+
+The label studio's *RFID and NFC (EPC)* block encoded one scheme, the SGTIN of a GTIN with a serial number. The owner
+asked for the EPC of every key the EPC Tag Data Standard (TDS) encodes, once the record holds what it needs — a GLN
+and its extension, an SSCC, a GRAI, a GIAI… The resolver already decodes every scheme, from the machine-readable EPC
+Tag Data Translation (TDT) artefacts it carries (`web_server/src/tdt`, item 1.6), and item 9.9 gave the portal the
+company prefix's length that every scheme's partition needs.
+
+### 8.2 Decision
+
+1. **Every key with a scheme defined before TDS 2.0**, in the order tried — the 96-bit scheme for numeric values
+   without leading zeros, then the longer one that takes characters:
+
+   | Key | Schemes | What the record needs first |
+   |---|---|---|
+   | GTIN (01) | SGTIN-96, SGTIN-198 | a serial number (21) |
+   | SSCC (00) | SSCC-96 | — |
+   | GLN (414) | SGLN-96, SGLN-195 | — (without an extension (254), the extension 0, as TDS 6.3.3 says) |
+   | GRAI (8003) | GRAI-96, GRAI-170 | its serial component (after the 14 digits) |
+   | GIAI (8004) | GIAI-96, GIAI-202 | — |
+   | GSRN (8018), GSRNP (8017) | GSRN-96, GSRNP-96 | — |
+   | GDTI (253) | GDTI-96, GDTI-174 | its serial component (after the 13 digits) |
+   | GCN (255) | SGCN-96 | its serial component (after the 13 digits) |
+   | CPID (8010) | CPI-96, CPI-var | its serial (8011) |
+   | ITIP (8006) | ITIP-110, ITIP-212 | a serial number (21) |
+
+   GDTI-113 (deprecated by TDS 2.0) and the keys without a scheme (GINC, GSIN, party GLN, GMN…) have no EPC; the block
+   is not offered for them, nor before the record holds what it needs.
+2. **Driven by the TDT artefacts**, not by tables written here: the record's GS1 Digital Link path is matched by the
+   scheme's GS1_DIGITAL_LINK level for the company prefix's length, its EXTRACT rules give the fields, and the BINARY,
+   TAG_ENCODING and PURE_IDENTITY levels write them out — the inverse of what the resolver's decoder does. The portal's
+   image is built from `portal/` alone, so it carries `portal/epc_schemes.json`, the four levels of the 19 schemes,
+   generated from the resolver's artefacts by `portal/tools/gen_epc_schemes.py` and checked against them by the tests.
+   Two rules the artefacts do not spell out are applied: a number without a fixed width (a 96-bit scheme's serial) is
+   written without leading zeros, so "012" goes to the longer scheme; and every URI written must match the artefact's
+   own pattern for it.
+3. **The TDS 2.0 "+" schemes** (SGTIN+, SGLN+…) are not offered in this delivery: they need no partition but have no
+   tag URI or pure identity URI, readers and middleware support them less, and their encoding (TDS 14.5's methods, the
+   +AIDC data) is a different engine. The resolver keeps decoding them. They can be added beside the classic schemes
+   later, as an option of the block.
+4. **The filter**: the named values of TDS Table 10-2 for trade items (GTIN, ITIP; 1, point of sale, by default); for
+   the other keys 0 (*all others*) by default and the other values as numbers.
+5. **The partition** as item 9.9 decided: the person's choice, then GS1's GCP length table, then the organisation's
+   prefixes. The record list's search by EPC already reads any scheme through the resolver.
+6. **A defect of the resolver's decoder** found by the round trip: with a 12-digit company prefix the location, asset
+   type, document type or coupon reference has no digit (TDT `length` 0, one or four bits 0); the decoder wrote it as
+   "0", giving a GLN, GRAI, GDTI or GCN one digit too long. It now writes nothing. The independent library the tests
+   compare with (`epc-tds`) has the same defect, which is why the comparison had passed; those cases are now checked
+   against the standard instead.
+
+### 8.3 Design
+
+- `portal/epc.py`: `KEY_SCHEMES`, `MINIMUM`, `missing()`, `path_of()`, `encode(ai, value, qualifiers, prefix_length,
+  filter)` → `Epc` (`scheme`, `filter`, `bits`, `hex`, `base64`, `tag_uri`, `pure_identity`); `sgtin()` kept for the
+  GTIN; `prefix_length_of()` for any key's company part. Errors: `epc.unsupported`, `epc.needsQualifier`
+  (`qualifier`), `epc.needsSerial` (`serialAfter`), `epc.notEncodable`, `epc.prefixLength`, `epc.filterInvalid`.
+- `GET /portal/api/epc` takes any key; `GET /config` gives `epc` (each key's minimum) for the page.
+- `web_server/src/epc_binary.py`: a field of `length` 0 decodes to the empty string.
+
+### 8.4 Options considered
+
+| Point | Chosen (recommended) | Not chosen |
+|---|---|---|
+| Encoder | from the TDT artefacts (one engine, the resolver's own definitions, checked by decoding) | a hand-written table per scheme (eleven tables to keep right by hand) |
+| The artefacts in the portal | a generated copy of the four levels used, checked | the portal reading the resolver's folder (another image; the build context is `portal/`) |
+| TDS 2.0 "+" schemes | not now, decided here | offered beside the classic ones (no tag URI; less support in readers; another engine) |
+| A GLN without extension | SGLN with the extension 0 (TDS) | no EPC until an extension is typed |
+
+### 8.5 Consequences
+
+- `portal/epc_schemes.json` (about 550 KB) must be generated again when the resolver's artefacts change; a test fails
+  until it is.
+- An SGCN's serial keeps its leading zeros, as the TDT artefact's rule says (`epc-tds` drops them).
+
+### 8.6 Delivery
+
+This amendment; `portal/epc.py`, `portal/epc_schemes.json`, `portal/tools/gen_epc_schemes.py`, the route and the block;
+the decoder's fix; `test_epc.py` (every key and partition decoded back, `epc-tds` for eight scheme families, the API and
+the record search by each new EPC), `test_epc_binary.py` (12-digit company prefixes) and `test_domains_e2e.py` (the
+block for a GLN, an SSCC and a GRAI in Chromium), mutation-checked; texts in the eleven languages; the documentation.

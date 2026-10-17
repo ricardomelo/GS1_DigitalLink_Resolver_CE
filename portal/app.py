@@ -990,6 +990,8 @@ def config():
         preferences=preferences_of(users.get(g.user) or {}),
         exportLimit=export_limit(),
         gcpTable=gcp_summary(),
+        # the keys with an EPC and what a record needs before it has one (portal/epc.py; ADR 0010, section 8)
+        epc={ai: epc.MINIMUM.get(ai, {}) for ai in epc.KEY_SCHEMES},
         # the label's scanning environments (Documentation/adr/0010-label-studio.md, section 7): their 2D symbols, the
         # X-dimension ranges and the sizes that keep within them, without and with an EAN/UPC beside
         labelEnvironments={name: {"symbols": list(env["symbols"]), "x": list(env["2d"]),
@@ -2776,18 +2778,23 @@ def on_epc_error(err):
 @app.get("/portal/api/epc")
 @require_login
 def epc_of_record():
-    """The SGTIN of a GTIN with a serial number for an RFID or NFC tag (portal/epc.py): the EPC in hexadecimal and as
-    URIs, and the compressed GS1 Digital Link an NFC tag emits (eh…, ex…) on the label's domain. The company prefix's
-    length comes from prefixLength, else from the organisation's (or the user's) prefixes."""
+    """The EPC of a record for an RFID or NFC tag (portal/epc.py; ADR 0010, section 8): for every key the EPC Tag Data
+    Standard encodes, once the record holds what its scheme needs (a GTIN's serial number, a GRAI's serial component…),
+    the EPC in hexadecimal and as URIs, and the compressed GS1 Digital Link an NFC tag emits (eh…, ex…) on the label's
+    domain. The company prefix's length: prefixLength, else GS1's GCP length table (ADR 0015), else the organisation's
+    (or the user's) prefixes."""
     anchor = request_key(request.args)
     check_access(anchor)
     ai, value = gs1.split_anchor(anchor)
     pairs, _ = request_record(request.args, anchor)
-    serial = dict(pairs).get("21")
-    if ai != "01" or not serial:
-        raise epc.EpcError("epc.notSerialised")
+    qualifiers = dict(pairs)
+    if ai not in epc.KEY_SCHEMES:
+        raise epc.EpcError("epc.unsupported", key=ai)
+    need = epc.missing(ai, value, qualifiers)
+    if need:
+        raise epc.EpcError("epc.needsQualifier" if "qualifier" in need else "epc.needsSerial", **need)
     try:
-        filter_value = int(request.args.get("filter", "1"))
+        filter_value = int(request.args.get("filter", "1" if ai in ("01", "8006") else "0"))   # trade items: 1, POS
         chosen = int(request.args["prefixLength"]) if request.args.get("prefixLength") else None
     except ValueError:
         raise epc.EpcError("epc.filterInvalid")
@@ -2796,11 +2803,12 @@ def epc_of_record():
     if listed and listed["length"] == 0:
         raise epc.EpcError("epc.notGcp", date=listed["date"])
     held = (tenants.get(g.tenant) or {}).get("prefixes", []) if g.tenant else []
-    length = chosen or (listed or {}).get("length") or epc.prefix_length_for(value, list(held) + list(g.prefixes or []))
+    part = re.match(r"[0-9]*", gs1.company_part(anchor)).group()
+    length = chosen or (listed or {}).get("length") or epc.prefix_length_of(part, list(held) + list(g.prefixes or []))
     if not length:
         raise epc.EpcError("epc.prefixLength")
     source = "chosen" if chosen else "table" if (listed or {}).get("length") else "prefixes"
-    found = epc.sgtin(value, serial, length, filter_value)
+    found = epc.encode(ai, value, qualifiers, length, filter_value)
     base = link_base(anchor, request.args.get("domain") or None)
     return jsonify(scheme=found.scheme, hex=found.hex, base64=found.base64, tagUri=found.tag_uri,
                    pureIdentity=found.pure_identity, prefixLength=length, prefixFrom=source,

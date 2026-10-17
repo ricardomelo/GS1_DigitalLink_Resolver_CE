@@ -296,15 +296,18 @@ for (let i = 0; i < 100; i++) {
   out.push(["SGTIN-198", e.toHexString(), `/01/${e.getGtin()}/21/${enc(e.getSerial())}`]);
   e = new tds.Sscc96().setFilter(rnd(8)).setPartition(p).setSscc(digits(17) + "0");
   out.push(["SSCC-96", e.toHexString(), `/00/${e.getSscc()}`]);
-  e = new tds.Sgln96().setFilter(rnd(8)).setPartition(p).setGln(digits(12) + "0").setExtension(rnd(2 ** 30));
+  // with a 12-digit company prefix (partition 0) epc-tds writes the empty location, asset type or document type as a
+  // digit ("0"), a GLN of 14 digits: those are checked below against the Tag Data Standard instead
+  const q = 1 + rnd(6);
+  e = new tds.Sgln96().setFilter(rnd(8)).setPartition(q).setGln(digits(12) + "0").setExtension(rnd(2 ** 30));
   out.push(["SGLN-96", e.toHexString(), `/414/${e.getGln()}` + (e.getExtension() == "0" ? "" : `/254/${e.getExtension()}`)]);
-  e = new tds.Grai96().setFilter(rnd(8)).setPartition(p).setGrai("0" + digits(12) + "0" + (1 + rnd(9)) + digits(5));
+  e = new tds.Grai96().setFilter(rnd(8)).setPartition(q).setGrai("0" + digits(12) + "0" + (1 + rnd(9)) + digits(5));
   out.push(["GRAI-96", e.toHexString(), `/8003/0${e.getGrai()}`]);     // epc-tds leaves out the filler zero of (8003)
   e = new tds.Giai96().setFilter(rnd(8)).setPartition(p).setGiai(digits(12) + String(1 + rnd(9)) + digits(4));
   out.push(["GIAI-96", e.toHexString(), `/8004/${e.getGiai()}`]);
   e = new tds.Gsrn96().setFilter(rnd(8)).setPartition(p).setGsrn(digits(17) + "0");
   out.push(["GSRN-96", e.toHexString(), `/8018/${e.getGsrn()}`]);
-  e = new tds.Gdti96().setFilter(rnd(8)).setPartition(p).setGdti(digits(12) + "0" + (1 + rnd(9)) + digits(5));
+  e = new tds.Gdti96().setFilter(rnd(8)).setPartition(q).setGdti(digits(12) + "0" + (1 + rnd(9)) + digits(5));
   out.push(["GDTI-96", e.toHexString(), `/253/${e.getGdti()}`]);
 }
 console.log(JSON.stringify(out));
@@ -321,8 +324,21 @@ if EPC_TDS:
         except EpcDecodeError as e:
             wrong.append((scheme, hexadecimal, expected, str(e)))
     check(f"{len(rows)} random EPCs of 8 classic schemes agree with epc-tds", not wrong, wrong[:3])
+
 else:
     print("SKIP comparison with epc-tds (set EPC_TDS to a directory where 'npm install epc-tds' was run)")
+
+# A 12-digit company prefix leaves no digit for an SGLN's location, a GRAI's asset type, a GDTI's document type or an
+# SGCN's coupon reference: bits 0 in the binary string (one; four for the GRAI), and no digit in the key
+CP12 = format(950600013435, "040b")
+for name, header, rest, expected in (
+        ("SGLN-96", "00110010", "0" + format(0, "041b"), "/414/9506000134352/254/0"),
+        ("GRAI-96", "00110011", "0000" + format(77, "038b"), "/8003/0950600013435277"),
+        ("GDTI-96", "00101100", "0" + format(77, "041b"), "/253/950600013435277"),
+        ("SGCN-96", "00111111", "0" + format(1042, "041b"), "/255/9506000134352042")):
+    bits = header + "001" + "000" + CP12 + rest
+    d = decompress("eh" + format(int(bits, 2), f"0{len(bits) // 4}x"))
+    check(f"{name} of a 12-digit company prefix: no digit for the reference ({expected})", d.path() == expected, d.path())
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

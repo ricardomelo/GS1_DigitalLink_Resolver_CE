@@ -647,7 +647,7 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 
 ## Open backlog
 
-Status on 17 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly; items 9.1 to 9.7 from the staging tests of 15 and 16 October, 9.1 to 9.7 done in session 15; items 9.8 to 9.11 added by the owner on 17 October, 9.8 and 9.9 done in session 16). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+Status on 17 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly; items 9.1 to 9.7 from the staging tests of 15 and 16 October, 9.1 to 9.7 done in session 15; items 9.8 to 9.11 added by the owner on 17 October, 9.8 to 9.10 done in session 16). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
 the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
@@ -682,7 +682,8 @@ location and retention set in the portal ([ADR 0006](Documentation/adr/0006-reso
 eleven interface languages ([ADR 0014](Documentation/adr/0014-interface-languages.md)), and item 9.8, export
 limits set in the portal within an installation maximum ([ADR 0012](Documentation/adr/0012-single-sign-on.md)), and
 item 9.9, the GS1 Company Prefix's length from GS1's GCP length table, uploaded by the server administrator
-([ADR 0015](Documentation/adr/0015-gcp-length-table.md)),
+([ADR 0015](Documentation/adr/0015-gcp-length-table.md)), and item 9.10, an EPC for every key the EPC Tag Data
+Standard encodes ([ADR 0010](Documentation/adr/0010-label-studio.md)),
 and item 7.1, single sign-on per organisation
 with OpenID Connect and per-role limits on exports ([ADR 0012](Documentation/adr/0012-single-sign-on.md)), are
 complete too. What was
@@ -696,8 +697,7 @@ know whose data they handle.
 | Production | 7.2 | **Production readiness**, on the servers: an installation on a clean machine, the off-server copy set up, a restore rehearsal, the staging secrets rotated and the [production checklist](Documentation/extensions/README.md#going-to-production) worked through (the scripts and the installer's final check of a scan through the proxy are done) | S | — |
 | | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages (default link titles in the link's language, conformance review F21: done) | S | — |
 | | 7.4 | **Load test and scale-out rehearsal** on staging with `dev-tests/load/load_test.py` (done): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded ([procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)) | S | 2.3 |
-| Owner's additions | 9.10 | **An EPC for every key that has one**: the label studio offers the EPC (binary in hexadecimal, tag URI, NFC link) of every key the EPC Tag Data Standard encodes as soon as its minimum data is filled, not only a GTIN with a serial number (for example a GLN with its extension, an SSCC, a GRAI or GIAI) | M | 9.9 |
-| | 9.11 | **The project's documentation**: every document and manual reviewed and completed (users, organisation administrators, operators, developers), with an inventory of every feature — every search and filter, the search by EPC included — drawn from the development tests' checks, so that each feature names the checks that prove it | L | 9.8–9.10 |
+| Owner's additions | 9.11 | **The project's documentation**: every document and manual reviewed and completed (users, organisation administrators, operators, developers), with an inventory of every feature — every search and filter, the search by EPC included — drawn from the development tests' checks, so that each feature names the checks that prove it | L | 9.8–9.10 |
 | Standards | 8.1 | **Errata and Work Requests to GS1** (drafted; to be reviewed and sent by the owner): E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
 
 The items of the "later" list are done: the record search reads scanners and RFID readers, exports follow the

@@ -129,6 +129,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Label block layout | Under the form at every width: code and buttons on the left, options on the right; one column on phones | `1746f19` |
 | Try now, Copy link address | Opens or copies the Digital Link | `126f507` |
 | RFID and NFC | For a serial number: its EPC (SGTIN-96 or SGTIN-198) in hexadecimal and as a tag URI, and the compressed link (`eh…`, `ex…`) for NFC tags; the company prefix's length from the organisation, the filter chosen | `e1b6917` |
+| An EPC for every key | The same for every key the EPC Tag Data Standard encodes — SSCC, SGLN (the extension 0 without one), GRAI, GIAI, GSRN, GSRNP, GDTI, SGCN, CPI, ITIP — once the record holds what it needs, from the TDT artefacts; the record search finds each by its EPC ([ADR 0010](adr/0010-label-studio.md) §8) | `6c7c755` |
 
 ## Portal: data attributes
 

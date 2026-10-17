@@ -752,6 +752,17 @@ list showed that the staging installation's prefix `7898357` is part of a 9-digi
 the new warning beside an organisation's prefixes now says. 22 mutations, all caught (three after the tests were
 strengthened). 3,068 checks in 44 programs without a browser, 756 in 15 Chromium programs.
 
+**Item 9.10, an EPC for every key** (`6c7c755`; ADR 0010 amended). Rather than a table per scheme typed from the
+standard, the encoder reads the same Tag Data Translation artefacts as the resolver's decoder and runs them the other
+way, so that one engine covers the eleven keys and a test can decode every result back. That round trip found a defect
+in the resolver: with a 12-digit company prefix, the empty reference of an SGLN, GRAI, GDTI or SGCN was decoded as "0",
+giving a key one digit too long — and the independent library the tests had compared with for months, `epc-tds`, had
+the same defect, so the comparison agreed on the wrong answer. Those cases are now checked against the standard. The
+comparison with `epc-tds` was widened to the other schemes through their tag URIs, which showed three of its limits
+(serials cut at `.` or `:`, escapes not undone, leading zeros of an SGCN serial dropped); the cases are left out with
+the reason, and the TDT artefact's rule is followed. The TDS 2.0 "+" schemes were left for later: no tag URI, less
+support in readers. 18 mutations, all caught. 3,112 checks in 44 programs without a browser, 763 in 15 Chromium programs.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

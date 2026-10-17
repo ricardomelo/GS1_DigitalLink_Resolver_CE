@@ -1231,6 +1231,8 @@
     </div>
   </dialog>
 
+  <!-- Every language a target may be in, named by the browser in the page's language (item 9.4) -->
+  <datalist id="languages-list"></datalist>
   <template id="link-row">
     <li class="link-row">
       <p class="row-badge"><span data-i18n="link.defaultBadge"></span> <span class="code">gs1:defaultLink</span></p>
@@ -1241,7 +1243,7 @@
         </div>
         <div class="f-language">
           <label data-i18n="link.language"></label>
-          <select class="language"></select>
+          <input class="language" list="languages-list" autocomplete="off" spellcheck="false" autocapitalize="off">
         </div>
         <div class="f-url">
           <label data-i18n="link.url"></label>

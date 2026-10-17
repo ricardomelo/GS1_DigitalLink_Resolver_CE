@@ -1125,6 +1125,7 @@ function onKeyTypeChange() {
   // room for the spaces and hyphens people type between digit groups
   input.maxLength = ai === "01" ? 20 : numeric ? 34 : 40;
   buildQualifierFields();
+  if (CONFIG) $$("#links .link-type").forEach(select => fillTypeSelect(select, select.value));   // the key type's order
   onIdentityChange();
 }
 
@@ -4079,39 +4080,62 @@ async function pollImport() {
 }
 
 /* ------------------------------------------------------------------ step 3: targets */
+/* The link types in groups, the groups in the order that suits the key type (item 9.4: every link type of the GS1
+   Web Vocabulary; CONFIG.linkTypeOrder[ai]). Called again with the select's value when the key type changes. */
 function fillTypeSelect(select, value) {
-  const groups = new Map();
+  const order = CONFIG.linkTypeOrder?.[currentKey()] || CONFIG.linkTypeOrder?.["*"] || [];
+  const groups = new Map(order.map(group => [group, []]));
   CONFIG.linkTypes.forEach(({ code, group }) => {
-    if (!groups.has(group)) {
-      const optgroup = document.createElement("optgroup");
-      optgroup.dataset.i18nGroup = group;
-      groups.set(group, optgroup);
-      select.append(optgroup);
-    }
-    const option = new Option("", code);
-    option.dataset.i18nType = code;
-    groups.get(group).append(option);
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(code);
   });
+  select.replaceChildren(...[...groups].filter(([, codes]) => codes.length).map(([group, codes]) => {
+    const optgroup = document.createElement("optgroup");
+    optgroup.dataset.i18nGroup = group;
+    optgroup.label = t("group." + group);
+    codes.forEach(code => {
+      const option = new Option("", code);
+      option.dataset.i18nType = code;
+      optgroup.append(option);
+    });
+    return optgroup;
+  }));
   if (value && !CONFIG.linkTypes.some(x => x.code === value)) {
     const option = new Option("", value);   // link type created outside the portal
     option.dataset.i18nType = value;
     select.append(option);
   }
   select.value = value || "gs1:pip";
+  I18N.apply(select);
 }
 
-function fillLanguageSelect(select, hreflang) {
-  CONFIG.languages.forEach(code => {
-    const option = new Option("", code);
-    option.dataset.i18nLang = code;
-    select.append(option);
+/* Every language a target may be in (CONFIG.languages: ISO 639-1 and the common regional tags), for the rows' search
+   field, each named by the browser in the page's language. */
+function fillLanguages() {
+  $("#languages-list").replaceChildren(...(CONFIG?.languages || []).map(code => {
+    const option = document.createElement("option");
+    option.value = code;
+    option.label = `${I18N.languageName(code)} (${code})`;
+    return option;
+  }));
+}
+
+/* A row's languages from its field: tags (pt, pt-BR) or names as the list shows them, separated by commas;
+   null when one is not a well-formed tag. */
+const LANGUAGE_TAG = /^[A-Za-z]{2,3}(-[A-Za-z]{4})?(-([A-Za-z]{2}|\d{3}))?(-([A-Za-z0-9]{5,8}|\d[A-Za-z0-9]{3}))*$/;
+
+function readLanguages(text) {
+  const names = new Map((CONFIG?.languages || []).map(code => [I18N.languageName(code).toLocaleLowerCase(), code]));
+  const tags = String(text || "").split(",").map(part => part.trim()).filter(Boolean).map(part => {
+    const named = /\(([^)]+)\)$/.exec(part);                    // "Português (pt)", as a list option reads
+    return named ? named[1] : names.get(part.toLocaleLowerCase()) || part;
   });
-  if (hreflang.length > 1 || !CONFIG.languages.includes(hreflang[0])) {
-    select.append(new Option(hreflang.join(", "), "__keep"));   // preserved as-is
-    select.value = "__keep";
-  } else {
-    select.value = hreflang[0];
-  }
+  return tags.length && tags.every(tag => tag === "und" || LANGUAGE_TAG.test(tag)) ? tags : null;
+}
+
+function fillLanguageSelect(input, hreflang) {
+  input.value = hreflang.join(", ");
+  input.title = hreflang.map(code => I18N.languageName(code)).join(", ");
 }
 
 function refreshRowHelp(li) {
@@ -4137,8 +4161,8 @@ function addRow(data = {}) {
   const typeSelect = $(".link-type", li);
   fillTypeSelect(typeSelect, data.linkType);
   const hreflang = data.hreflang && data.hreflang.length ? data.hreflang : [defaultLanguage()];
-  const languageSelect = $(".language", li);
-  fillLanguageSelect(languageSelect, hreflang);
+  const languageField = $(".language", li);
+  fillLanguageSelect(languageField, hreflang);
   li.dataset.hreflang = JSON.stringify(hreflang);
   li.dataset.context = JSON.stringify(data.context || []);
 
@@ -4146,8 +4170,14 @@ function addRow(data = {}) {
   $(".title", li).value = data.title || "";
 
   typeSelect.addEventListener("change", () => { refreshRowHelp(li); refreshDefault(); });
-  languageSelect.addEventListener("change", () => {
-    if (languageSelect.value !== "__keep") li.dataset.hreflang = JSON.stringify([languageSelect.value]);
+  languageField.addEventListener("change", () => {
+    const tags = readLanguages(languageField.value);
+    languageField.setAttribute("aria-invalid", String(!tags));
+    languageField.classList.toggle("is-invalid", !tags);
+    if (tags) {
+      li.dataset.hreflang = JSON.stringify(tags);
+      fillLanguageSelect(languageField, tags);
+    }
   });
   $(".url", li).addEventListener("blur", e => {
     const value = e.target.value.trim();
@@ -4238,6 +4268,11 @@ function collect() {
 async function save(event) {
   event.preventDefault();
   if (!state.openKey) return;
+  if ($("#links .language.is-invalid")) {             // a language typed that is no language tag (item 9.4)
+    showStatus("error", "link.languageInvalid");
+    $("#links .language.is-invalid").focus();
+    return;
+  }
   const body = collect();
   if (needsKeyRecord(body)) {
     const choice = await askKeyRecord(body);
@@ -4753,6 +4788,8 @@ async function init() {
   setupAttributes();
   fillDomainOption();
   fillSizeOptions();                             // the scanning environments come with the configuration
+  fillLanguages();
+  document.addEventListener("localechange", fillLanguages);
   fillKeyTypes();
   onKeyTypeChange();
   applyView();                                   // administrator views need the role

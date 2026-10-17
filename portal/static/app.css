@@ -812,3 +812,7 @@ body:not([data-operator-view="true"]) .needs-operator-view { display: none !impo
 
 /* ---------------------------------------------------------------- label: a field the scanning environment does not take */
 .opt-field.env-off { display: none !important; }
+
+/* ---------------------------------------------------------------- a target's languages, searched (item 9.4) */
+.link-row .language { width: 100%; font-family: var(--mono); }
+.link-row .language.is-invalid { border-color: var(--err); box-shadow: 0 0 0 1px var(--err); }

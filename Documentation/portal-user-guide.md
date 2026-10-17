@@ -257,12 +257,17 @@ Type what the item is called: *Disposable syringe 5 ml*, *Warehouse — dock 3*,
 
 Each target is one web page or document. For each target fill in:
 
-- **Type** — what the page is about, from the GS1 link types: Product information (`gs1:pip`),
-  Instructions, Support, Safety information, Electronic patient information leaflet, Recall status,
-  Nutritional information, Traceability, Master data (B2B) and others (29 in all). The text under the field explains the
-  type chosen.
-- **Language** — the language of the page (Portuguese, English, Spanish, French, German, Italian, Chinese,
-  Japanese). Two targets of the same type are allowed only in different languages: the resolver then
+- **Type** — what the page is about, from every link type of the GS1 Web Vocabulary (57 in version 1.16): Product
+  information (`gs1:pip`), Instructions, Support, Digital product passport, Electronic instructions for use, Recall
+  status, Nutritional information, Location and directions, Opening hours, Traceability, Master data (B2B) and the
+  others, in groups (most used, food, healthcare, consumer, use and after-sales, business to business, places,
+  organisation). The groups come in the order that suits the identifier: the most used first for a product, places
+  first for a GLN, business to business first for an SSCC or an asset. The text under the field explains the type
+  chosen.
+- **Language** — the language of the page: type its code or its name and pick it from the list, which holds every
+  language (ISO 639-1) and the usual regional variants (`pt-BR`, `en-GB`, `es-419`, `zh-Hans`…), named in the portal's
+  language. Several languages for one page are separated by commas. A language the list does not know is accepted
+  when it is a well-formed code; anything else is pointed out and the record is not saved until it is fixed. Two targets of the same type are allowed only in different languages: the resolver then
   sends each person to the version in their browser's language. Someone whose language has no version
   gets the default target (the first one).
 - **Address (URL)** — the full address, starting with `https://`. Copy it from the browser's address bar;

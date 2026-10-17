@@ -9,6 +9,8 @@ Validation failures raise ValidationError with a message *code* and parameters r
 a sentence. The browser turns the code into text in the user's language (see static/i18n.js),
 so this module stays language-neutral.
 """
+import json
+import os
 import re
 import unicodedata
 from urllib.parse import quote, urlparse
@@ -26,42 +28,65 @@ class ValidationError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Supported link types: (CURIE, catalogue group, default title).
-# The default title is the GS1 Web Vocabulary title and is stored in the resolver only when
-# the user leaves the title blank. Display labels and help text live in static/i18n.js.
-# To offer another link type, add a row here and its labels to every locale in i18n.js.
+# Link types (backlog item 9.4): every link type of the GS1 Web Vocabulary, from gs1_link_types.json, which
+# tools/gen_link_types.py writes from the vocabulary (the development tests check it is what the vocabulary gives).
+# Each is put in a group of the editor's menu here (a new link type of the vocabulary fails the tests until it has
+# one), and the menu shows the groups in the order that suits the key type (LINK_GROUP_ORDER). The default title is
+# stored only when the user leaves the title blank; display labels and help text live in static/i18n.js.
 # ---------------------------------------------------------------------------
-LINK_TYPES = [
-    ("gs1:pip", "common", "Product information page"),
-    ("gs1:instructions", "common", "Instructions"),
-    ("gs1:support", "common", "Support"),
-    ("gs1:certificationInfo", "common", "Certification information"),
-    ("gs1:safetyInfo", "common", "Safety information"),
-    ("gs1:epil", "health", "Electronic patient information leaflet"),
-    ("gs1:smpc", "health", "Summary of product characteristics"),
-    ("gs1:recallStatus", "health", "Recall status"),
-    ("gs1:quickStartGuide", "aftersales", "Quick start guide"),
-    ("gs1:tutorial", "aftersales", "Tutorial"),
-    ("gs1:relatedVideo", "aftersales", "Related video"),
-    ("gs1:serviceInfo", "aftersales", "Service information"),
-    ("gs1:whatsInTheBox", "aftersales", "What's in the box"),
-    ("gs1:faqs", "aftersales", "Frequently asked questions"),
-    ("gs1:registerProduct", "aftersales", "Register product"),
-    ("gs1:purchaseSuppliesOrAccessories", "aftersales", "Purchase supplies or accessories"),
-    ("gs1:promotion", "consumer", "Promotion"),
-    ("gs1:hasRetailers", "consumer", "Where to buy"),
-    ("gs1:review", "consumer", "Reviews"),
-    ("gs1:leaveReview", "consumer", "Leave a review"),
-    ("gs1:socialMedia", "consumer", "Social media"),
-    ("gs1:sustainabilityInfo", "consumer", "Sustainability and recycling"),
-    ("gs1:nutritionalInfo", "food", "Nutritional information"),
-    ("gs1:ingredientsInfo", "food", "Ingredients information"),
-    ("gs1:allergenInfo", "food", "Allergen information"),
-    ("gs1:recipeInfo", "food", "Recipes"),
-    ("gs1:masterData", "b2b", "Master data"),
-    ("gs1:traceability", "b2b", "Traceability information"),
-    ("gs1:epcis", "b2b", "EPCIS repository"),
-]
+LINK_TYPES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gs1_link_types.json")
+with open(LINK_TYPES_PATH, encoding="utf-8") as _fh:
+    VOCABULARY_LINK_TYPES = json.load(_fh)
+LINK_TYPE_GROUPS = {
+    "common": ["gs1:pip", "gs1:instructions", "gs1:support", "gs1:certificationInfo", "gs1:safetyInfo", "gs1:dpp"],
+    "health": ["gs1:epil", "gs1:smpc", "gs1:recallStatus", "gs1:eifu", "gs1:brandHomepagePatient",
+               "gs1:brandHomepageClinical"],
+    "aftersales": ["gs1:quickStartGuide", "gs1:tutorial", "gs1:relatedVideo", "gs1:serviceInfo", "gs1:whatsInTheBox",
+                   "gs1:faqs", "gs1:registerProduct", "gs1:purchaseSuppliesOrAccessories",
+                   "gs1:consumerHandlingStorageInfo", "gs1:appDownload", "gs1:userAgreement", "gs1:reportFound"],
+    "consumer": ["gs1:promotion", "gs1:hasRetailers", "gs1:review", "gs1:leaveReview", "gs1:socialMedia",
+                 "gs1:sustainabilityInfo", "gs1:loyaltyProgram", "gs1:subscribe", "gs1:smartLabel", "gs1:relatedImage",
+                 "gs1:activityIdeas", "gs1:backgroundInfo", "gs1:paymentLink"],
+    "food": ["gs1:nutritionalInfo", "gs1:ingredientsInfo", "gs1:allergenInfo", "gs1:recipeInfo"],
+    "b2b": ["gs1:masterData", "gs1:traceability", "gs1:epcis", "gs1:logisticsInfo", "gs1:registryEntry",
+            "gs1:verificationService", "gs1:jws", "gs1:handledBy", "gs1:statisticInfo"],
+    "places": ["gs1:locationInfo", "gs1:openingHoursInfo", "gs1:menuInfo", "gs1:eventsInfo", "gs1:scheduleTime"],
+    "organisation": ["gs1:homepage", "gs1:careersInfo"],
+}
+# The groups in the order that suits each key type (the others: LINK_GROUP_ORDER["*"]); every type stays available.
+_PRODUCTS = ["common", "food", "health", "consumer", "aftersales", "b2b", "places", "organisation"]
+_LOCATIONS = ["places", "organisation", "common", "consumer", "b2b", "aftersales", "health", "food"]
+_LOGISTICS = ["b2b", "common", "aftersales", "places", "organisation", "consumer", "health", "food"]
+_SERVICES = ["organisation", "places", "health", "common", "consumer", "aftersales", "b2b", "food"]
+LINK_GROUP_ORDER = {
+    "*": _PRODUCTS, "01": _PRODUCTS, "8006": _PRODUCTS, "8013": _PRODUCTS, "8010": _PRODUCTS,
+    "414": _LOCATIONS, "417": _LOCATIONS,
+    "00": _LOGISTICS, "8003": _LOGISTICS, "8004": _LOGISTICS, "401": _LOGISTICS, "402": _LOGISTICS, "253": _LOGISTICS,
+    "8017": _SERVICES, "8018": _SERVICES,
+    "255": ["consumer", "common", "organisation", "places", "aftersales", "food", "health", "b2b"],
+}
+# English default titles the portal gave before item 9.4 (kept, so that records saved with them still read as titles
+# the portal gave); the vocabulary's own title for the others.
+_TITLES_BEFORE = {
+    "gs1:pip": "Product information page", "gs1:certificationInfo": "Certification information",
+    "gs1:epil": "Electronic patient information leaflet", "gs1:smpc": "Summary of product characteristics",
+    "gs1:faqs": "Frequently asked questions", "gs1:registerProduct": "Register product",
+    "gs1:hasRetailers": "Where to buy", "gs1:nutritionalInfo": "Nutritional information", "gs1:recipeInfo": "Recipes",
+    "gs1:masterData": "Master data", "gs1:epcis": "EPCIS repository", "gs1:whatsInTheBox": "What's in the box",
+}
+_GROUP_OF = {code: group for group, codes in LINK_TYPE_GROUPS.items() for code in codes}
+LINK_TYPES = [(t["code"], _GROUP_OF.get(t["code"], "other"), _TITLES_BEFORE.get(t["code"], t["title"]))
+              for t in VOCABULARY_LINK_TYPES["linkTypes"]]
+LINK_TYPES.sort(key=lambda t: (list(LINK_TYPE_GROUPS).index(t[1]) if t[1] in LINK_TYPE_GROUPS else 99,
+                               LINK_TYPE_GROUPS.get(t[1], []).index(t[0]) if t[0] in LINK_TYPE_GROUPS.get(t[1], []) else 0))
+VOCABULARY_TITLES = {t["code"]: t["title"] for t in VOCABULARY_LINK_TYPES["linkTypes"]}
+
+
+def link_group_order(ai: str) -> list[str]:
+    """The groups of the link type menu in the order that suits a key type."""
+    return LINK_GROUP_ORDER.get(ai, LINK_GROUP_ORDER["*"])
+
+
 LINK_TYPE_CODES = {code for code, _, _ in LINK_TYPES}
 LINK_TYPE_DEFAULT_TITLES = {code: title for code, _, title in LINK_TYPES}
 # Titles in Portuguese, the portal's other language (the editor's names, portal/static/i18n.js): a link left without a
@@ -96,6 +121,34 @@ LINK_TYPE_TITLES_PT = {
     "gs1:masterData": "Dados cadastrais (B2B)",
     "gs1:traceability": "Rastreabilidade",
     "gs1:epcis": "Repositório EPCIS",
+    "gs1:dpp": "Passaporte digital do produto",
+    "gs1:eifu": "Instruções de uso eletrônicas (eIFU)",
+    "gs1:brandHomepagePatient": "Informações da marca para pacientes",
+    "gs1:brandHomepageClinical": "Informações da marca para profissionais",
+    "gs1:consumerHandlingStorageInfo": "Conservação e manuseio",
+    "gs1:appDownload": "Baixar o aplicativo",
+    "gs1:userAgreement": "Termo ou contrato para assinar",
+    "gs1:reportFound": "Comunicar item encontrado",
+    "gs1:loyaltyProgram": "Programa de fidelidade",
+    "gs1:subscribe": "Assinar",
+    "gs1:smartLabel": "SmartLabel",
+    "gs1:relatedImage": "Imagem relacionada",
+    "gs1:activityIdeas": "Ideias de atividades",
+    "gs1:backgroundInfo": "Bastidores e história",
+    "gs1:paymentLink": "Fazer um pagamento",
+    "gs1:logisticsInfo": "Informações logísticas",
+    "gs1:registryEntry": "Registro em cadastro oficial",
+    "gs1:verificationService": "Serviço de verificação",
+    "gs1:jws": "Assinatura JSON Web (JWS)",
+    "gs1:handledBy": "Atendido por outro resolver",
+    "gs1:statisticInfo": "Estatísticas",
+    "gs1:locationInfo": "Localização e como chegar",
+    "gs1:openingHoursInfo": "Horário de funcionamento",
+    "gs1:menuInfo": "Cardápio e serviços",
+    "gs1:eventsInfo": "Eventos",
+    "gs1:scheduleTime": "Agendamento e reservas",
+    "gs1:homepage": "Página da organização",
+    "gs1:careersInfo": "Trabalhe conosco",
 }
 
 
@@ -110,7 +163,8 @@ def default_title(link_type: str, hreflang=()) -> str:
 
 def is_default_title(link_type: str, title: str) -> bool:
     """Whether a stored title is one the portal gave (in any language it knows), not one somebody typed."""
-    return title in (LINK_TYPE_DEFAULT_TITLES.get(link_type), LINK_TYPE_TITLES_PT.get(link_type))
+    return title in (LINK_TYPE_DEFAULT_TITLES.get(link_type), LINK_TYPE_TITLES_PT.get(link_type),
+                     VOCABULARY_TITLES.get(link_type))
 # The item's page as a record's default target (Documentation/adr/0011-item-page.md): a gs1:defaultLink to the
 # resolver's own page of the record's links; set by the editor's option, never typed as a link of its own.
 LANDING_TYPE = "gs1:defaultLink"
@@ -164,9 +218,22 @@ def record_view(links: list[dict], key_default: str | None) -> tuple[list[dict],
     return sorted(targets, key=lambda l: not first(l)), landing, default
 
 
-# BCP 47 language tags offered in the editor's menu (names are rendered by the browser). Any other
-# well-formed tag (pt-BR, en-US, vi, …) is accepted too: records created with other tools use them.
+# The languages of a target offered in the editor (backlog item 9.4): every ISO 639-1 language, then the regional tags
+# most asked for; the browser writes their names (Intl.DisplayNames) and the list is searched as it is typed. Any other
+# well-formed BCP 47 tag (normalise_language) is accepted too: records created with other tools use them.
+ISO_639_1 = (
+    "aa ab ae af ak am an ar as av ay az ba be bg bi bm bn bo br bs ca ce ch co cr cs cu cv cy da de dv dz ee el en "
+    "eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho hr ht hu hy hz ia id ie ig ii ik io is it iu ja jv "
+    "ka kg ki kj kk kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu lv mg mh mi mk ml mn mr ms mt my na nb nd ne "
+    "ng nl nn no nr nv ny oc oj om or os pa pi pl ps pt qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st "
+    "su sv sw ta te tg th ti tk tl tn to tr ts tt tw ty ug uk ur uz ve vi vo wa wo xh yi yo za zh zu").split()
+REGIONAL_TAGS = ["pt-BR", "pt-PT", "en-GB", "en-US", "en-CA", "en-AU", "es-ES", "es-MX", "es-AR", "es-419", "fr-FR",
+                 "fr-CA", "fr-BE", "fr-CH", "de-DE", "de-AT", "de-CH", "it-IT", "it-CH", "nl-NL", "nl-BE", "zh-Hans",
+                 "zh-Hant", "zh-CN", "zh-TW", "zh-HK", "sr-Latn", "sr-Cyrl", "ar-SA", "ar-EG", "ar-AE", "hi-IN", "ja-JP",
+                 "ko-KR"]
+# The first ones: the portal's own languages, then those most used for product information
 LANGUAGES = ["pt", "en", "es", "fr", "de", "it", "zh", "ja"]
+LANGUAGES += [code for code in ISO_639_1 if code not in LANGUAGES] + REGIONAL_TAGS
 LANGUAGE_CODES = set(LANGUAGES)
 # language [-script] [-region] [-variants], or "und" (undetermined)
 _LANGUAGE_TAG = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z]{4})?(-(?:[A-Za-z]{2}|\d{3}))?(-(?:[A-Za-z0-9]{5,8}|\d[A-Za-z0-9]{3}))*$",

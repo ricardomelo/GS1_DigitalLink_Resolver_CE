@@ -964,6 +964,8 @@ def config():
         tenant=tenant_summary(g.account_tenant), support=tenant_summary(g.support),
         resolver=RESOLVER_PUBLIC_URL,
         linkTypes=[{"code": code, "group": group} for code, group, _ in gs1.LINK_TYPES],
+        # the menu's groups in the order that suits each key type (item 9.4)
+        linkTypeOrder={ai: gs1.link_group_order(ai) for ai in ["*", *gs1.PRIMARY_KEYS]},
         keys=[{"code": ai, "name": name, "qualifiers": gs1.key_qualifiers(ai),
                "shapes": [[{"ai": q, "required": req} for q, req in shape] for shape in gs1.KEY_SHAPES.get(ai, [[]])],
                # section 2.5.9: a serial number's variant and batch are informative; a key-level record is possible

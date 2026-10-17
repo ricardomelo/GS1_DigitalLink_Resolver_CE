@@ -1,0 +1,291 @@
+{
+ "source": "GS1 Web Vocabulary",
+ "version": "1.16",
+ "linkTypes": [
+  {
+   "code": "gs1:activityIdeas",
+   "title": "Activity Ideas",
+   "description": "A link to ideas for using a product or engaging in other forms of entertainment, particularly with children."
+  },
+  {
+   "code": "gs1:allergenInfo",
+   "title": "Allergen information",
+   "description": "A link to a description of the allergen information."
+  },
+  {
+   "code": "gs1:appDownload",
+   "title": "App download",
+   "description": "A link to a related mobile app"
+  },
+  {
+   "code": "gs1:backgroundInfo",
+   "title": "Background Information",
+   "description": "A link to information typically from the owner of the identified entity about the creative background, thought leadership or influence of the identified entity. This may include the inspiration, innovation for a development process, literary approach or, the science or technology used."
+  },
+  {
+   "code": "gs1:brandHomepageClinical",
+   "title": "Information for professionals about this brand",
+   "description": "A link to a brand presence aimed at clinical professionals."
+  },
+  {
+   "code": "gs1:brandHomepagePatient",
+   "title": "Information for patients about this brand",
+   "description": "A link to a brand presence aimed at patients."
+  },
+  {
+   "code": "gs1:careersInfo",
+   "title": "Careers information",
+   "description": "A link to information about jobs, careers, or other employment opportunities associated to an organisation or location."
+  },
+  {
+   "code": "gs1:certificationInfo",
+   "title": "Certification Information",
+   "description": "A link to certification information."
+  },
+  {
+   "code": "gs1:consumerHandlingStorageInfo",
+   "title": "Consumer handling and storage information",
+   "description": "A link to information about safe handling and storage for consumer use."
+  },
+  {
+   "code": "gs1:dpp",
+   "title": "Digital Product Passport",
+   "description": "A link to a digital product passport."
+  },
+  {
+   "code": "gs1:eifu",
+   "title": "Electronic Instructions For Use",
+   "description": "A link to electronic Instruction For Use instructions for Medical Devices."
+  },
+  {
+   "code": "gs1:epcis",
+   "title": "EPC Information Services (EPCIS) repository",
+   "description": "A link to an EPCIS repository of visibility event data."
+  },
+  {
+   "code": "gs1:epil",
+   "title": "Electronic Patient Information Leaflet",
+   "description": "A link to an electronic patient information leaflet."
+  },
+  {
+   "code": "gs1:eventsInfo",
+   "title": "Events information",
+   "description": "A link to event details. For a page specifically for scheduling a reservation or booking an appointment, see gs1:scheduleTime."
+  },
+  {
+   "code": "gs1:faqs",
+   "title": "Frequently Asked Questions",
+   "description": "A link to a set of frequently asked questions."
+  },
+  {
+   "code": "gs1:handledBy",
+   "title": "Handled by",
+   "description": "Used when one resolver redirects all request URIs that match a given pattern without further processing, such as from GS1 to a brand-operated service. See section 7.7.1 of the Digital Link standard, version 1.1."
+  },
+  {
+   "code": "gs1:hasRetailers",
+   "title": "Has Retailers",
+   "description": "A link to a list of retailers."
+  },
+  {
+   "code": "gs1:homepage",
+   "title": "Organisation Information Page",
+   "description": "A link to general information about an organisation or brand. Typically the homepage of an organisation's website. It may include links to further information such as certifications, careers, payments, reservations, etc."
+  },
+  {
+   "code": "gs1:ingredientsInfo",
+   "title": "Ingredients information",
+   "description": "A link to facts about ingredients."
+  },
+  {
+   "code": "gs1:instructions",
+   "title": "Instructions",
+   "description": "A link to instructions, such as assembly instructions, usage tips etc. It is not appropriate to use this link type for healthcare regulated content applications for which specific link types are available."
+  },
+  {
+   "code": "gs1:jws",
+   "title": "JSON Web Signature",
+   "description": "A link to a JSON Web Signature"
+  },
+  {
+   "code": "gs1:leaveReview",
+   "title": "Leave a review",
+   "description": "A link through which a review can be added."
+  },
+  {
+   "code": "gs1:locationInfo",
+   "title": "Location information",
+   "description": "A link to a map, directions, or other location-related information. For B2B location information, see gs1:logisticsInfo. For details specific to hours of operation, see gs1:openingHoursInfo"
+  },
+  {
+   "code": "gs1:logisticsInfo",
+   "title": "Logistics information",
+   "description": "A link to B2B logistics information related to a physical location."
+  },
+  {
+   "code": "gs1:loyaltyProgram",
+   "title": "Loyalty program",
+   "description": "A link to information about a loyalty program, including a member's current status and/or a registration option for new members"
+  },
+  {
+   "code": "gs1:masterData",
+   "title": "Master data",
+   "description": "A link to a source of structured master data for the entity. This is typically for B2B applications."
+  },
+  {
+   "code": "gs1:menuInfo",
+   "title": "Menu information",
+   "description": "A link to menu details. This may include food menus, services, or other offerings provided by an organisation or at a location. For details specific to allergens only, see gs1:allergenInfo . For details specific to nutrition information only, see gs1:nutritionalInfo . For details specific to ingredients only, see gs1:ingredientsInfo ."
+  },
+  {
+   "code": "gs1:nutritionalInfo",
+   "title": "Nutritional Information",
+   "description": "A link to nutritional facts."
+  },
+  {
+   "code": "gs1:openingHoursInfo",
+   "title": "Opening hours information",
+   "description": "A link to details on hours of operation."
+  },
+  {
+   "code": "gs1:paymentLink",
+   "title": "Make Payment",
+   "description": "A link to a place where payments details are provided and/or payments can be made by the user."
+  },
+  {
+   "code": "gs1:pip",
+   "title": "Product Information Page",
+   "description": "A link to information specifically about the identified item, typically operated by the brand owner or a retailer of the product and aimed at consumers. It may include links to further information, product description, specifications etc."
+  },
+  {
+   "code": "gs1:promotion",
+   "title": "Promotion",
+   "description": "A link to a promotion."
+  },
+  {
+   "code": "gs1:purchaseSuppliesOrAccessories",
+   "title": "Purchase supplies or accessories",
+   "description": "A link to information about where supplies or accessories for the item can be purchased or ordered."
+  },
+  {
+   "code": "gs1:quickStartGuide",
+   "title": "Quick start guide",
+   "description": "A link to a description of the key features needed to be understood to begin using the item or interacting with something new."
+  },
+  {
+   "code": "gs1:recallStatus",
+   "title": "Recall status",
+   "description": "A link to information about whether the product has been recalled or not, typically an API."
+  },
+  {
+   "code": "gs1:recipeInfo",
+   "title": "Recipe website",
+   "description": "A link to a recipe website."
+  },
+  {
+   "code": "gs1:registerProduct",
+   "title": "Register purchase",
+   "description": "A link to an entry point for registering ownership of a product including for warranty purposes."
+  },
+  {
+   "code": "gs1:registryEntry",
+   "title": "Entry in a register",
+   "description": "A link to an entry in a register, such as a business register or register of locations. Such registers may act as alternative identifiers, such as official company numbers, LEIs, other location identifiers etc."
+  },
+  {
+   "code": "gs1:relatedImage",
+   "title": "Related image",
+   "description": "A link to any image that depicts or relates to the identified entity (e.g., trade item, assets, business process, patient record, location, organisation, etc.)"
+  },
+  {
+   "code": "gs1:relatedVideo",
+   "title": "Related video",
+   "description": "A link to any video, or document that has an embedded video, that describes or relates to the identified item, organisation, or location in some way."
+  },
+  {
+   "code": "gs1:reportFound",
+   "title": "Report found",
+   "description": "A link to a platform or service where users (company or a person) can report a found item associated with the identified entity (instance of an item). This link type is designed to assist in connecting the found item with its rightful owner or relevant authorities."
+  },
+  {
+   "code": "gs1:review",
+   "title": "Reviews",
+   "description": "A link to reviews."
+  },
+  {
+   "code": "gs1:safetyInfo",
+   "title": "Safety information",
+   "description": "A link to safety information."
+  },
+  {
+   "code": "gs1:scheduleTime",
+   "title": "Scheduling/Reservation",
+   "description": "A link to a site that offers information on scheduling, appointments, or reservations. This may or may not allow the user to book the reservation."
+  },
+  {
+   "code": "gs1:serviceInfo",
+   "title": "Service information",
+   "description": "A link to service or maintenance instructions."
+  },
+  {
+   "code": "gs1:smartLabel",
+   "title": "SmartLabel",
+   "description": "A link to the product's SmartLabel page."
+  },
+  {
+   "code": "gs1:smpc",
+   "title": "Summary Product Characteristics (SmPC)",
+   "description": "A link to Summary Product Characteristics. To be used specifically when linking to information for healthcare professionals."
+  },
+  {
+   "code": "gs1:socialMedia",
+   "title": "Social media",
+   "description": "A link to a social media channel. The title will typically be replaced by the name of the channel."
+  },
+  {
+   "code": "gs1:statisticInfo",
+   "title": "Statistics",
+   "description": "A link to information about statistics regarding an organisation, location, or other entity."
+  },
+  {
+   "code": "gs1:subscribe",
+   "title": "Subscribe",
+   "description": "A link to a subscription form"
+  },
+  {
+   "code": "gs1:support",
+   "title": "Support",
+   "description": "A link to a source of support such as a helpdesk, chat support, email etc."
+  },
+  {
+   "code": "gs1:sustainabilityInfo",
+   "title": "Sustainability and recycling",
+   "description": "A link to information relating to sustainability and recycling requirements or processes."
+  },
+  {
+   "code": "gs1:traceability",
+   "title": "Traceability information",
+   "description": "A link to traceability information (includes track and trace). Traceability information may be provided for consumption by humans or computers. If the target is an EPCIS repository, use gs1:epcis instead."
+  },
+  {
+   "code": "gs1:tutorial",
+   "title": "Tutorial",
+   "description": "A link to a tutorial or set of tutorials, such as online classes, how-to videos etc."
+  },
+  {
+   "code": "gs1:userAgreement",
+   "title": "Sign waiver/agreement/document",
+   "description": "A link to an agreement or waiver."
+  },
+  {
+   "code": "gs1:verificationService",
+   "title": "Verification Service",
+   "description": "A link to a GS1 Lightweight Messaging Service for verifying the status of a product, organisation, or location and its identifier."
+  },
+  {
+   "code": "gs1:whatsInTheBox",
+   "title": "What's in the box?",
+   "description": "A link to a description of all the individual items in a packaged item."
+  }
+ ]
+}

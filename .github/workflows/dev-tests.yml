@@ -55,6 +55,7 @@ jobs:
         with:
           npm: "true"
           syntax-engine: "true"
+          web-vocabulary: "true"
       - run: python -m pytest dev-tests -m portal -ra
         env:
           DEV_TESTS_TITLE: Portal
@@ -87,6 +88,7 @@ jobs:
         with:
           npm: "true"
           syntax-engine: "true"
+          web-vocabulary: "true"
       - run: python -m pytest dev-tests -m "database or portal" -ra
         env:
           DEV_TESTS_TITLE: Portal on a real MongoDB

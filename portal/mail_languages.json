@@ -1,0 +1,731 @@
+{
+ "es": {
+  "signature": "—\n{operator}\nPortal de gestión de enlaces: {portal}\n\nEste mensaje lo ha enviado automáticamente el resolver GS1 Digital Link de {operator}. No responda a él.",
+  "texts": {
+   "invite": [
+    "Su cuenta en el portal de gestión de enlaces",
+    "Hola:\n\nSe ha creado una cuenta para usted en el portal de gestión de enlaces de {operator}, donde se gestionan los enlaces de los códigos QR GS1 Digital Link.\n\nNombre de usuario: {user}\n\nPara elegir su contraseña y empezar, abra este enlace en un plazo de {hours} horas:\n\n{link}\n\nEl enlace funciona una sola vez. Si ha caducado, pida a su administrador que le envíe una nueva invitación. Si no esperaba este mensaje, puede ignorarlo."
+   ],
+   "password-recovery": [
+    "Elija una nueva contraseña",
+    "Hola:\n\nAlguien ha solicitado elegir una nueva contraseña para el usuario {user} en el portal de gestión de enlaces. Si ha sido usted, abra este enlace en un plazo de {minutes} minutos:\n\n{link}\n\nEl enlace funciona una sola vez. Si no lo ha solicitado, ignore este mensaje: su contraseña no ha cambiado y nadie puede cambiarla sin este enlace."
+   ],
+   "password-reset-admin": [
+    "Se ha restablecido su contraseña",
+    "Hola:\n\nUn administrador ha restablecido la contraseña del usuario {user} en el portal de gestión de enlaces. Su contraseña anterior ya no funciona.\n\nPara elegir una nueva, abra este enlace en un plazo de {minutes} minutos:\n\n{link}\n\nEl enlace funciona una sola vez. Si ha caducado, use «¿Ha olvidado su contraseña?» en la página de inicio de sesión."
+   ],
+   "password-changed": [
+    "Se ha cambiado su contraseña",
+    "Hola:\n\nLa contraseña del usuario {user} en el portal de gestión de enlaces se cambió el {when} (UTC). Se han cerrado todas las demás sesiones abiertas de la cuenta.\n\nSi ha sido usted, no tiene que hacer nada. Si no, use de inmediato «¿Ha olvidado su contraseña?» en la página de inicio de sesión y avise a su administrador."
+   ],
+   "email-changed-old": [
+    "Se ha cambiado su dirección de correo electrónico",
+    "Hola:\n\nUn administrador cambió la dirección de correo electrónico del usuario {user} en el portal de gestión de enlaces el {when} (UTC). Los mensajes sobre la cuenta dejarán de llegar a esta dirección.\n\nSi no ha solicitado el cambio, avise a su administrador."
+   ],
+   "email-changed-new": [
+    "Su dirección de correo electrónico en el portal de gestión de enlaces",
+    "Hola:\n\nEsta dirección es ahora la dirección de correo electrónico del usuario {user} en el portal de gestión de enlaces. Los mensajes sobre la cuenta (cambios de contraseña, enlaces de recuperación) llegarán aquí.\n\nSi no conoce esta cuenta, avise a los administradores del portal."
+   ],
+   "account-locked": [
+    "Intentos de inicio de sesión en su cuenta",
+    "Hola:\n\nEl usuario {user} no pudo iniciar sesión en el portal de gestión de enlaces tras varias contraseñas incorrectas, la última el {when} (UTC). El inicio de sesión de este usuario está bloqueado durante {minutes} minutos.\n\nSi ha sido usted, espere y vuelva a intentarlo, o use «¿Ha olvidado su contraseña?» en la página de inicio de sesión. Si no, es posible que alguien esté intentando usar su cuenta: avise a su administrador."
+   ],
+   "api-key-created": [
+    "Se ha creado una nueva clave de API",
+    "Hola:\n\nEl usuario {user} creó la clave de API «{name}» ({id}) para {scope} el {when} (UTC), con los ámbitos {scopes}. Caduca el {expires} (UTC).\n\nQuien tenga la clave puede usar la API del portal dentro de esos ámbitos hasta que caduque o se revoque. Si no la ha creado usted, revóquela de inmediato en el portal (Claves de API) y avise a su administrador."
+   ],
+   "api-key-expiring": [
+    "Una clave de API caduca pronto",
+    "Hola:\n\nLa clave de API «{name}» ({id}) que creó para {scope} caduca el {expires} (UTC). A partir de entonces, los sistemas que la usan serán rechazados.\n\nPara que sigan funcionando, cree una nueva clave en el portal (Claves de API), configúrela en esos sistemas y revoque la antigua."
+   ],
+   "import-finished": [
+    "Su importación ha terminado",
+    "Hola:\n\nLa importación de hoja de cálculo que inició en el portal de gestión de enlaces ha terminado:\n\nRegistros creados: {created}\nRegistros actualizados: {updated}\nRegistros fallidos: {failed}\n\nLos detalles están en el portal mientras la página siga abierta, y en la pista de auditoría.\n\nRecibe este mensaje porque lo eligió en Opciones → Correo electrónico."
+   ],
+   "linkcheck-finished": [
+    "Su comprobación de enlaces ha terminado",
+    "Hola:\n\nLa comprobación de los enlaces de todos los registros que inició en el portal de gestión de enlaces ha terminado: {urls} direcciones comprobadas, {problems} con algún problema.\n\nLa lista de registros muestra qué registros tienen problemas.\n\nRecibe este mensaje porque lo eligió en Opciones → Correo electrónico."
+   ],
+   "alert-resolver-down": [
+    "Alerta: el resolver no responde",
+    "Hola:\n\nEl resolver de {operator} no responde a las comprobaciones del portal a través del proxy desde el {since}. Es posible que las lecturas de los códigos QR GS1 Digital Link estén fallando.\n\nDirección comprobada: {url}\nProblema: {problem}\n\nEn el servidor, «docker compose ps» muestra qué servicio está caído y «docker compose logs --tail=50 web-service frontend-proxy-service», por qué. Recibirá un mensaje cuando vuelva a responder y, mientras tanto, un recordatorio cada 24 horas.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
+   "alert-resolver-up": [
+    "Resuelto: el resolver vuelve a responder",
+    "Hola:\n\nEl resolver de {operator} vuelve a responder a las comprobaciones del portal ({url}). Había dejado de responder el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
+   "alert-backup-failed": [
+    "Alerta: la copia de seguridad diaria no se completó",
+    "Hola:\n\nLa copia de seguridad diaria del resolver de {operator} requiere atención.\n\nÚltima ejecución: {at}\nProblema: {error}\nÚltima copia correcta: {lastOk}\n\nEn el servidor, /var/log/resolver-backup.log contiene el mensaje de cada ejecución y «sudo scripts/resolver-backup.sh» ejecuta una ahora. Recibirá un mensaje cuando una copia de seguridad vuelva a completarse y, mientras tanto, un recordatorio cada 24 horas.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
+   "alert-backup-ok": [
+    "Resuelto: la copia de seguridad diaria se completó",
+    "Hola:\n\nLa copia de seguridad del resolver de {operator} se completó el {at}. El problema se había notificado el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
+   "alert-certificate": [
+    "Alerta: hay que renovar el certificado de {host}",
+    "Hola:\n\nEl certificado HTTPS de {host}, la dirección impresa en los códigos QR de {operator}, caduca el {expires} (quedan {days} días), o no se pudo verificar: {error}\n\nCuando caduque, los teléfonos se negarán a abrir los enlaces leídos. Con Certbot, «sudo certbot renew» lo renueva y «sudo systemctl list-timers | grep certbot» muestra si la renovación automática está programada.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
+   "alert-certificate-ok": [
+    "Resuelto: el certificado de {host} es válido",
+    "Hola:\n\nEl certificado HTTPS de {host} es válido hasta el {expires} ({days} días). El problema se había notificado el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
+   "alert-404-spike": [
+    "Alerta: muchas lecturas de códigos que nadie registró",
+    "Hola:\n\nEn la última hora, el resolver respondió «código no registrado» (404) {count} veces para los códigos a su alcance, frente a unas {usual} en una hora normal. Es posible que se haya impreso una etiqueta con un código que aún no tiene registro. Los códigos más leídos:\n\n{codes}\n\nEl Resumen del portal los muestra con un botón para registrar cada uno.\n\nRecibe este mensaje como administrador; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
+   "test": [
+    "Mensaje de prueba del portal de gestión de enlaces",
+    "Hola:\n\nEste es un mensaje de prueba enviado el {when} (UTC) para comprobar la configuración de correo electrónico del portal. Si puede leerlo, el servidor de envío aceptó el mensaje y lo entregó."
+   ]
+  }
+ },
+ "fr": {
+  "signature": "—\n{operator}\nPortail de gestion des liens : {portal}\n\nCe message a été envoyé automatiquement par le résolveur GS1 Digital Link de {operator}. Merci de ne pas y répondre.",
+  "texts": {
+   "invite": [
+    "Votre compte sur le portail de gestion des liens",
+    "Bonjour,\n\nUn compte a été créé pour vous sur le portail de gestion des liens de {operator}, où sont gérés les liens des QR codes GS1 Digital Link.\n\nNom d’utilisateur : {user}\n\nPour choisir votre mot de passe et commencer, ouvrez ce lien dans les {hours} heures :\n\n{link}\n\nLe lien ne fonctionne qu’une fois. S’il a expiré, demandez à votre administrateur d’envoyer une nouvelle invitation. Si vous n’attendiez pas ce message, vous pouvez l’ignorer."
+   ],
+   "password-recovery": [
+    "Choisissez un nouveau mot de passe",
+    "Bonjour,\n\nQuelqu’un a demandé à choisir un nouveau mot de passe pour l’utilisateur {user} sur le portail de gestion des liens. Si c’est vous, ouvrez ce lien dans les {minutes} minutes :\n\n{link}\n\nLe lien ne fonctionne qu’une fois. Si vous n’avez rien demandé, ignorez ce message : votre mot de passe n’a pas changé et personne ne peut le changer sans ce lien."
+   ],
+   "password-reset-admin": [
+    "Votre mot de passe a été réinitialisé",
+    "Bonjour,\n\nUn administrateur a réinitialisé le mot de passe de l’utilisateur {user} sur le portail de gestion des liens. Votre ancien mot de passe ne fonctionne plus.\n\nPour en choisir un nouveau, ouvrez ce lien dans les {minutes} minutes :\n\n{link}\n\nLe lien ne fonctionne qu’une fois. S’il a expiré, utilisez « Mot de passe oublié ? » sur la page de connexion."
+   ],
+   "password-changed": [
+    "Votre mot de passe a été changé",
+    "Bonjour,\n\nLe mot de passe de l’utilisateur {user} sur le portail de gestion des liens a été changé le {when} (UTC). Toutes les autres sessions ouvertes du compte ont été fermées.\n\nSi c’est vous, vous n’avez rien à faire. Sinon, utilisez immédiatement « Mot de passe oublié ? » sur la page de connexion et prévenez votre administrateur."
+   ],
+   "email-changed-old": [
+    "Votre adresse e-mail a été modifiée",
+    "Bonjour,\n\nUn administrateur a modifié l’adresse e-mail de l’utilisateur {user} sur le portail de gestion des liens le {when} (UTC). Les messages concernant le compte ne seront plus envoyés à cette adresse.\n\nSi vous n’avez pas demandé cette modification, prévenez votre administrateur."
+   ],
+   "email-changed-new": [
+    "Votre adresse e-mail sur le portail de gestion des liens",
+    "Bonjour,\n\nCette adresse est désormais l’adresse e-mail de l’utilisateur {user} sur le portail de gestion des liens. Les messages concernant le compte (changements de mot de passe, liens de récupération) seront envoyés ici.\n\nSi vous ne connaissez pas ce compte, prévenez les administrateurs du portail."
+   ],
+   "account-locked": [
+    "Tentatives de connexion à votre compte",
+    "Bonjour,\n\nL’utilisateur {user} n’a pas pu se connecter au portail de gestion des liens après plusieurs mots de passe erronés, le dernier le {when} (UTC). La connexion de cet utilisateur est bloquée pendant {minutes} minutes.\n\nSi c’est vous, patientez puis réessayez, ou utilisez « Mot de passe oublié ? » sur la page de connexion. Sinon, quelqu’un essaie peut-être d’utiliser votre compte : prévenez votre administrateur."
+   ],
+   "api-key-created": [
+    "Une nouvelle clé d’API a été créée",
+    "Bonjour,\n\nL’utilisateur {user} a créé la clé d’API « {name} » ({id}) pour {scope} le {when} (UTC), avec les portées {scopes}. Elle expire le {expires} (UTC).\n\nQuiconque détient la clé peut utiliser l’API du portail dans ces portées jusqu’à son expiration ou sa révocation. Si vous ne l’avez pas créée, révoquez-la immédiatement dans le portail (Clés d’API) et prévenez votre administrateur."
+   ],
+   "api-key-expiring": [
+    "Une clé d’API expire bientôt",
+    "Bonjour,\n\nLa clé d’API « {name} » ({id}) que vous avez créée pour {scope} expire le {expires} (UTC). Les systèmes qui l’utilisent seront alors refusés.\n\nPour qu’ils continuent de fonctionner, créez une nouvelle clé dans le portail (Clés d’API), installez-la dans ces systèmes et révoquez l’ancienne."
+   ],
+   "import-finished": [
+    "Votre import est terminé",
+    "Bonjour,\n\nL’import de feuille de calcul que vous avez lancé sur le portail de gestion des liens est terminé :\n\nEnregistrements créés : {created}\nEnregistrements mis à jour : {updated}\nEnregistrements en échec : {failed}\n\nLe détail est visible dans le portail tant que la page reste ouverte, ainsi que dans le journal d’audit.\n\nVous recevez ce message parce que vous l’avez choisi dans Options → E-mail."
+   ],
+   "linkcheck-finished": [
+    "Votre vérification des liens est terminée",
+    "Bonjour,\n\nLa vérification des liens de tous les enregistrements que vous avez lancée sur le portail de gestion des liens est terminée : {urls} adresses vérifiées, dont {problems} en erreur.\n\nLa liste des enregistrements indique ceux qui présentent des erreurs.\n\nVous recevez ce message parce que vous l’avez choisi dans Options → E-mail."
+   ],
+   "alert-resolver-down": [
+    "Alerte : le résolveur ne répond pas",
+    "Bonjour,\n\nLe résolveur de {operator} ne répond plus aux vérifications du portail via le proxy depuis {since}. Les scans des QR codes GS1 Digital Link échouent peut-être.\n\nAdresse vérifiée : {url}\nProblème : {problem}\n\nSur le serveur, « docker compose ps » indique quel service est arrêté et « docker compose logs --tail=50 web-service frontend-proxy-service » pourquoi. Vous recevrez un message lorsqu’il répondra de nouveau, et un rappel toutes les 24 heures d’ici là.\n\nVous recevez ce message en tant qu’administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-resolver-up": [
+    "Résolu : le résolveur répond de nouveau",
+    "Bonjour,\n\nLe résolveur de {operator} répond de nouveau aux vérifications du portail ({url}). Il avait cessé de répondre le {since}.\n\nVous recevez ce message en tant qu’administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-backup-failed": [
+    "Alerte : la sauvegarde quotidienne a échoué",
+    "Bonjour,\n\nLa sauvegarde quotidienne du résolveur de {operator} demande votre attention.\n\nDernière exécution : {at}\nProblème : {error}\nDernière sauvegarde réussie : {lastOk}\n\nSur le serveur, /var/log/resolver-backup.log contient le message de chaque exécution, et « sudo scripts/resolver-backup.sh » en lance une immédiatement. Vous recevrez un message lorsqu’une sauvegarde réussira de nouveau, et un rappel toutes les 24 heures d’ici là.\n\nVous recevez ce message en tant qu’administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-backup-ok": [
+    "Résolu : la sauvegarde quotidienne a réussi",
+    "Bonjour,\n\nLa sauvegarde du résolveur de {operator} a réussi le {at}. Le problème avait été signalé le {since}.\n\nVous recevez ce message en tant qu’administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-certificate": [
+    "Alerte : le certificat de {host} doit être renouvelé",
+    "Bonjour,\n\nLe certificat HTTPS de {host}, l’adresse imprimée dans les QR codes de {operator}, expire le {expires} (dans {days} jours), ou n’a pas pu être vérifié : {error}\n\nÀ son expiration, les téléphones refuseront d’ouvrir les liens scannés. Avec Certbot, « sudo certbot renew » le renouvelle et « sudo systemctl list-timers | grep certbot » indique si le renouvellement automatique est planifié.\n\nVous recevez ce message en tant qu’administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-certificate-ok": [
+    "Résolu : le certificat de {host} est valide",
+    "Bonjour,\n\nLe certificat HTTPS de {host} est valable jusqu’au {expires} ({days} jours). Le problème avait été signalé le {since}.\n\nVous recevez ce message en tant qu’administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-404-spike": [
+    "Alerte : nombreux scans de codes que personne n’a enregistrés",
+    "Bonjour,\n\nAu cours de la dernière heure, le résolveur a répondu « code non enregistré » (404) {count} fois pour les codes de votre périmètre, contre environ {usual} au cours d’une heure habituelle. Une étiquette a peut-être été imprimée avec un code qui n’a pas encore d’enregistrement. Les codes les plus scannés :\n\n{codes}\n\nLa vue d’ensemble du portail les liste avec un bouton pour enregistrer chacun d’eux.\n\nVous recevez ce message en tant qu’administrateur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "test": [
+    "Message de test du portail de gestion des liens",
+    "Bonjour,\n\nCeci est un message de test envoyé le {when} (UTC) pour vérifier les paramètres e-mail du portail. Si vous pouvez le lire, le relais a accepté et distribué le message."
+   ]
+  }
+ },
+ "de": {
+  "signature": "—\n{operator}\nLinkverwaltungsportal: {portal}\n\nDiese Nachricht wurde automatisch vom GS1-Digital-Link-Resolver von {operator} gesendet. Bitte antworten Sie nicht darauf.",
+  "texts": {
+   "invite": [
+    "Ihr Konto im Linkverwaltungsportal",
+    "Guten Tag,\n\nfür Sie wurde ein Konto im Linkverwaltungsportal von {operator} angelegt, in dem die Links von GS1-Digital-Link-QR-Codes verwaltet werden.\n\nBenutzername: {user}\n\nUm Ihr Passwort zu wählen und zu beginnen, öffnen Sie diesen Link innerhalb von {hours} Stunden:\n\n{link}\n\nDer Link funktioniert nur einmal. Wenn er abgelaufen ist, bitten Sie Ihren Administrator, eine neue Einladung zu senden. Wenn Sie diese Nachricht nicht erwartet haben, können Sie sie ignorieren."
+   ],
+   "password-recovery": [
+    "Neues Passwort wählen",
+    "Guten Tag,\n\njemand hat angefordert, für den Benutzer {user} im Linkverwaltungsportal ein neues Passwort zu wählen. Wenn Sie das waren, öffnen Sie diesen Link innerhalb von {minutes} Minuten:\n\n{link}\n\nDer Link funktioniert nur einmal. Wenn Sie dies nicht angefordert haben, ignorieren Sie diese Nachricht: Ihr Passwort wurde nicht geändert, und ohne diesen Link kann niemand es ändern."
+   ],
+   "password-reset-admin": [
+    "Ihr Passwort wurde zurückgesetzt",
+    "Guten Tag,\n\nein Administrator hat das Passwort des Benutzers {user} im Linkverwaltungsportal zurückgesetzt. Ihr bisheriges Passwort funktioniert nicht mehr.\n\nUm ein neues zu wählen, öffnen Sie diesen Link innerhalb von {minutes} Minuten:\n\n{link}\n\nDer Link funktioniert nur einmal. Wenn er abgelaufen ist, verwenden Sie „Passwort vergessen?“ auf der Anmeldeseite."
+   ],
+   "password-changed": [
+    "Ihr Passwort wurde geändert",
+    "Guten Tag,\n\ndas Passwort des Benutzers {user} im Linkverwaltungsportal wurde am {when} (UTC) geändert. Alle anderen offenen Sitzungen des Kontos wurden beendet.\n\nWenn Sie das waren, ist nichts zu tun. Wenn nicht, verwenden Sie sofort „Passwort vergessen?“ auf der Anmeldeseite und informieren Sie Ihren Administrator."
+   ],
+   "email-changed-old": [
+    "Ihre E-Mail-Adresse wurde geändert",
+    "Guten Tag,\n\nein Administrator hat am {when} (UTC) die E-Mail-Adresse des Benutzers {user} im Linkverwaltungsportal geändert. Nachrichten zum Konto werden nicht mehr an diese Adresse gesendet.\n\nWenn Sie die Änderung nicht veranlasst haben, informieren Sie Ihren Administrator."
+   ],
+   "email-changed-new": [
+    "Ihre E-Mail-Adresse im Linkverwaltungsportal",
+    "Guten Tag,\n\ndiese Adresse ist jetzt die E-Mail-Adresse des Benutzers {user} im Linkverwaltungsportal. Nachrichten zum Konto (Passwortänderungen, Wiederherstellungslinks) werden hierher gesendet.\n\nWenn Sie dieses Konto nicht kennen, informieren Sie die Administratoren des Portals."
+   ],
+   "account-locked": [
+    "Anmeldeversuche bei Ihrem Konto",
+    "Guten Tag,\n\nder Benutzer {user} konnte sich nach mehreren falschen Passwörtern nicht am Linkverwaltungsportal anmelden, zuletzt am {when} (UTC). Die Anmeldung für diesen Benutzer ist für {minutes} Minuten gesperrt.\n\nWenn Sie das waren, warten Sie und versuchen Sie es erneut oder verwenden Sie „Passwort vergessen?“ auf der Anmeldeseite. Wenn nicht, versucht möglicherweise jemand, Ihr Konto zu verwenden: Informieren Sie Ihren Administrator."
+   ],
+   "api-key-created": [
+    "Ein neuer API-Schlüssel wurde erstellt",
+    "Guten Tag,\n\nder Benutzer {user} hat am {when} (UTC) den API-Schlüssel „{name}“ ({id}) für {scope} mit den Berechtigungen {scopes} erstellt. Er läuft am {expires} (UTC) ab.\n\nWer den Schlüssel besitzt, kann die API des Portals im Rahmen dieser Berechtigungen nutzen, bis er abläuft oder widerrufen wird. Wenn Sie ihn nicht erstellt haben, widerrufen Sie ihn sofort im Portal (API-Schlüssel) und informieren Sie Ihren Administrator."
+   ],
+   "api-key-expiring": [
+    "Ein API-Schlüssel läuft bald ab",
+    "Guten Tag,\n\nder API-Schlüssel „{name}“ ({id}), den Sie für {scope} erstellt haben, läuft am {expires} (UTC) ab. Die Systeme, die ihn verwenden, werden dann abgewiesen.\n\nDamit sie weiter funktionieren, erstellen Sie im Portal (API-Schlüssel) einen neuen Schlüssel, hinterlegen Sie ihn in diesen Systemen und widerrufen Sie den alten."
+   ],
+   "import-finished": [
+    "Ihr Import ist abgeschlossen",
+    "Guten Tag,\n\nder Tabellenimport, den Sie im Linkverwaltungsportal gestartet haben, ist abgeschlossen:\n\nAngelegte Einträge: {created}\nAktualisierte Einträge: {updated}\nFehlgeschlagene Einträge: {failed}\n\nDie Details finden Sie im Portal, solange die Seite geöffnet bleibt, und im Aktivitätsprotokoll.\n\nSie erhalten diese Nachricht, weil Sie sie unter Optionen → E-Mail ausgewählt haben."
+   ],
+   "linkcheck-finished": [
+    "Ihre Linkprüfung ist abgeschlossen",
+    "Guten Tag,\n\ndie Prüfung der Links aller Einträge, die Sie im Linkverwaltungsportal gestartet haben, ist abgeschlossen: {urls} Adressen geprüft, {problems} mit einem Problem.\n\nDie Eintragsliste zeigt, welche Einträge Probleme haben.\n\nSie erhalten diese Nachricht, weil Sie sie unter Optionen → E-Mail ausgewählt haben."
+   ],
+   "alert-resolver-down": [
+    "Warnung: Der Resolver antwortet nicht",
+    "Guten Tag,\n\nder Resolver von {operator} beantwortet seit {since} die Prüfungen des Portals über den Proxy nicht. Scans von GS1-Digital-Link-QR-Codes schlagen möglicherweise fehl.\n\nGeprüfte Adresse: {url}\nProblem: {problem}\n\nAuf dem Server zeigt „docker compose ps“, welcher Dienst ausgefallen ist, und „docker compose logs --tail=50 web-service frontend-proxy-service“, warum. Sie erhalten eine Nachricht, sobald er wieder antwortet, und bis dahin alle 24 Stunden eine Erinnerung.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
+   "alert-resolver-up": [
+    "Behoben: Der Resolver antwortet wieder",
+    "Guten Tag,\n\nder Resolver von {operator} beantwortet die Prüfungen des Portals wieder ({url}). Er hatte am {since} aufgehört zu antworten.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
+   "alert-backup-failed": [
+    "Warnung: Das tägliche Backup war nicht erfolgreich",
+    "Guten Tag,\n\ndas tägliche Backup des Resolvers von {operator} erfordert Aufmerksamkeit.\n\nLetzter Lauf: {at}\nProblem: {error}\nLetztes erfolgreiches Backup: {lastOk}\n\nAuf dem Server enthält /var/log/resolver-backup.log die Meldung jedes Laufs, und „sudo scripts/resolver-backup.sh“ startet sofort einen. Sie erhalten eine Nachricht, sobald ein Backup wieder erfolgreich ist, und bis dahin alle 24 Stunden eine Erinnerung.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
+   "alert-backup-ok": [
+    "Behoben: Das tägliche Backup war erfolgreich",
+    "Guten Tag,\n\ndas Backup des Resolvers von {operator} war am {at} erfolgreich. Das Problem war am {since} gemeldet worden.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
+   "alert-certificate": [
+    "Warnung: Das Zertifikat von {host} muss erneuert werden",
+    "Guten Tag,\n\ndas HTTPS-Zertifikat von {host}, der in den QR-Codes von {operator} gedruckten Adresse, läuft am {expires} ab (noch {days} Tage) oder konnte nicht verifiziert werden: {error}\n\nNach Ablauf weigern sich Smartphones, die gescannten Links zu öffnen. Mit Certbot erneuert „sudo certbot renew“ das Zertifikat, und „sudo systemctl list-timers | grep certbot“ zeigt, ob die automatische Erneuerung eingeplant ist.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
+   "alert-certificate-ok": [
+    "Behoben: Das Zertifikat von {host} ist gültig",
+    "Guten Tag,\n\ndas HTTPS-Zertifikat von {host} ist bis {expires} gültig ({days} Tage). Das Problem war am {since} gemeldet worden.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
+   "alert-404-spike": [
+    "Warnung: viele Scans von Codes, die niemand erfasst hat",
+    "Guten Tag,\n\nin der letzten Stunde hat der Resolver für die Codes in Ihrem Bereich {count}-mal „Code nicht erfasst“ (404) geantwortet, gegenüber etwa {usual} in einer üblichen Stunde. Möglicherweise wurde ein Etikett mit einem Code gedruckt, der noch keinen Eintrag hat. Die am häufigsten gescannten Codes:\n\n{codes}\n\nDie Übersicht des Portals listet sie mit einer Schaltfläche auf, um jeden einzelnen zu erfassen.\n\nSie erhalten diese Nachricht als Administrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
+   "test": [
+    "Testnachricht des Linkverwaltungsportals",
+    "Guten Tag,\n\ndies ist eine Testnachricht, die am {when} (UTC) gesendet wurde, um die E-Mail-Einstellungen des Portals zu prüfen. Wenn Sie sie lesen können, hat der Mailserver die Nachricht angenommen und zugestellt."
+   ]
+  }
+ },
+ "it": {
+  "signature": "—\n{operator}\nPortale di gestione dei link: {portal}\n\nQuesto messaggio è stato inviato automaticamente dal resolver GS1 Digital Link di {operator}. La preghiamo di non rispondere.",
+  "texts": {
+   "invite": [
+    "Il Suo account nel portale di gestione dei link",
+    "Buongiorno,\n\nÈ stato creato un account a Suo nome nel portale di gestione dei link di {operator}, dove si gestiscono i link dei QR code GS1 Digital Link.\n\nNome utente: {user}\n\nPer scegliere la password e iniziare, apra questo link entro {hours} ore:\n\n{link}\n\nIl link funziona una sola volta. Se è scaduto, chieda al Suo amministratore di inviare un nuovo invito. Se non si aspettava questo messaggio, può ignorarlo."
+   ],
+   "password-recovery": [
+    "Scelga una nuova password",
+    "Buongiorno,\n\nqualcuno ha chiesto di scegliere una nuova password per l'utente {user} nel portale di gestione dei link. Se è stato Lei, apra questo link entro {minutes} minuti:\n\n{link}\n\nIl link funziona una sola volta. Se non l'ha richiesto, ignori questo messaggio: la Sua password non è cambiata e nessuno può cambiarla senza questo link."
+   ],
+   "password-reset-admin": [
+    "La Sua password è stata reimpostata",
+    "Buongiorno,\n\nun amministratore ha reimpostato la password dell'utente {user} nel portale di gestione dei link. La Sua password precedente non funziona più.\n\nPer sceglierne una nuova, apra questo link entro {minutes} minuti:\n\n{link}\n\nIl link funziona una sola volta. Se è scaduto, usi \"Ha dimenticato la password?\" nella pagina di accesso."
+   ],
+   "password-changed": [
+    "La Sua password è stata modificata",
+    "Buongiorno,\n\nla password dell'utente {user} nel portale di gestione dei link è stata modificata il {when} (UTC). Tutte le altre sessioni aperte dell'account sono state chiuse.\n\nSe è stato Lei, non deve fare nulla. In caso contrario, usi subito \"Ha dimenticato la password?\" nella pagina di accesso e informi il Suo amministratore."
+   ],
+   "email-changed-old": [
+    "Il Suo indirizzo e-mail è stato modificato",
+    "Buongiorno,\n\nun amministratore ha modificato l'indirizzo e-mail dell'utente {user} nel portale di gestione dei link il {when} (UTC). I messaggi relativi all'account non arriveranno più a questo indirizzo.\n\nSe non ha richiesto la modifica, informi il Suo amministratore."
+   ],
+   "email-changed-new": [
+    "Il Suo indirizzo e-mail nel portale di gestione dei link",
+    "Buongiorno,\n\nquesto indirizzo è ora l'indirizzo e-mail dell'utente {user} nel portale di gestione dei link. I messaggi relativi all'account (modifiche della password, link di recupero) arriveranno qui.\n\nSe non conosce questo account, informi gli amministratori del portale."
+   ],
+   "account-locked": [
+    "Tentativi di accesso al Suo account",
+    "Buongiorno,\n\nl'utente {user} non è riuscito ad accedere al portale di gestione dei link dopo diverse password errate, l'ultima il {when} (UTC). L'accesso per questo utente è bloccato per {minutes} minuti.\n\nSe è stato Lei, attenda e riprovi, oppure usi \"Ha dimenticato la password?\" nella pagina di accesso. In caso contrario, qualcuno potrebbe tentare di usare il Suo account: informi il Suo amministratore."
+   ],
+   "api-key-created": [
+    "È stata creata una nuova chiave API",
+    "Buongiorno,\n\nl'utente {user} ha creato la chiave API \"{name}\" ({id}) per {scope} il {when} (UTC), con gli ambiti {scopes}. Scade il {expires} (UTC).\n\nChiunque possieda la chiave può usare l'API del portale entro quegli ambiti fino alla scadenza o alla revoca. Se non l'ha creata Lei, la revochi subito nel portale (Chiavi API) e informi il Suo amministratore."
+   ],
+   "api-key-expiring": [
+    "Una chiave API sta per scadere",
+    "Buongiorno,\n\nla chiave API \"{name}\" ({id}) che ha creato per {scope} scade il {expires} (UTC). Da quel momento i sistemi che la usano verranno rifiutati.\n\nPer mantenerli in funzione, crei una nuova chiave nel portale (Chiavi API), la inserisca in quei sistemi e revochi quella vecchia."
+   ],
+   "import-finished": [
+    "La Sua importazione è terminata",
+    "Buongiorno,\n\nl'importazione del foglio di calcolo che ha avviato nel portale di gestione dei link è terminata:\n\nRecord creati: {created}\nRecord aggiornati: {updated}\nRecord non riusciti: {failed}\n\nI dettagli sono disponibili nel portale finché la pagina resta aperta, e nel registro di audit.\n\nRiceve questo messaggio perché lo ha scelto in Opzioni → E-mail."
+   ],
+   "linkcheck-finished": [
+    "La Sua verifica dei link è terminata",
+    "Buongiorno,\n\nla verifica dei link di tutti i record che ha avviato nel portale di gestione dei link è terminata: {urls} indirizzi verificati, {problems} con un problema.\n\nL'elenco dei record mostra quali record presentano problemi.\n\nRiceve questo messaggio perché lo ha scelto in Opzioni → E-mail."
+   ],
+   "alert-resolver-down": [
+    "Avviso: il resolver non risponde",
+    "Buongiorno,\n\nil resolver di {operator} non risponde alle verifiche del portale tramite il proxy dal {since}. Le scansioni dei QR code GS1 Digital Link potrebbero non riuscire.\n\nIndirizzo verificato: {url}\nProblema: {problem}\n\nSul server, \"docker compose ps\" mostra quale servizio non è attivo e \"docker compose logs --tail=50 web-service frontend-proxy-service\" il motivo. Riceverà un messaggio quando risponderà di nuovo e, nel frattempo, un promemoria ogni 24 ore.\n\nRiceve questo messaggio in qualità di amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-resolver-up": [
+    "Risolto: il resolver risponde di nuovo",
+    "Buongiorno,\n\nil resolver di {operator} risponde di nuovo alle verifiche del portale ({url}). Aveva smesso di rispondere il {since}.\n\nRiceve questo messaggio in qualità di amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-backup-failed": [
+    "Avviso: il backup giornaliero non è riuscito",
+    "Buongiorno,\n\nil backup giornaliero del resolver di {operator} richiede attenzione.\n\nUltima esecuzione: {at}\nProblema: {error}\nUltimo backup riuscito: {lastOk}\n\nSul server, /var/log/resolver-backup.log contiene il messaggio di ogni esecuzione e \"sudo scripts/resolver-backup.sh\" ne avvia una subito. Riceverà un messaggio quando un backup riuscirà di nuovo e, nel frattempo, un promemoria ogni 24 ore.\n\nRiceve questo messaggio in qualità di amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-backup-ok": [
+    "Risolto: il backup giornaliero è riuscito",
+    "Buongiorno,\n\nil backup del resolver di {operator} è riuscito il {at}. Il problema era stato segnalato il {since}.\n\nRiceve questo messaggio in qualità di amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-certificate": [
+    "Avviso: il certificato di {host} deve essere rinnovato",
+    "Buongiorno,\n\nil certificato HTTPS di {host}, l'indirizzo stampato nei QR code di {operator}, scade il {expires} (mancano {days} giorni), oppure non è stato possibile verificarlo: {error}\n\nQuando scade, i telefoni si rifiutano di aprire i link scansionati. Con Certbot, \"sudo certbot renew\" lo rinnova e \"sudo systemctl list-timers | grep certbot\" mostra se il rinnovo automatico è pianificato.\n\nRiceve questo messaggio in qualità di amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-certificate-ok": [
+    "Risolto: il certificato di {host} è valido",
+    "Buongiorno,\n\nil certificato HTTPS di {host} è valido fino al {expires} ({days} giorni). Il problema era stato segnalato il {since}.\n\nRiceve questo messaggio in qualità di amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-404-spike": [
+    "Avviso: molte scansioni di codici che nessuno ha registrato",
+    "Buongiorno,\n\nnell'ultima ora il resolver ha risposto \"codice non registrato\" (404) {count} volte per i codici di Sua competenza, contro circa {usual} in un'ora normale. Potrebbe essere stata stampata un'etichetta con un codice che non ha ancora un record. I codici più scansionati:\n\n{codes}\n\nLa Panoramica del portale li elenca con un pulsante per registrare ciascuno di essi.\n\nRiceve questo messaggio in qualità di amministratore; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "test": [
+    "Messaggio di prova dal portale di gestione dei link",
+    "Buongiorno,\n\nquesto è un messaggio di prova inviato il {when} (UTC) per verificare le impostazioni e-mail del portale. Se riesce a leggerlo, il server di inoltro ha accettato il messaggio e lo ha consegnato."
+   ]
+  }
+ },
+ "zh-Hans": {
+  "signature": "—\n{operator}\n链接管理门户：{portal}\n\n此邮件由{operator}的GS1 Digital Link解析器自动发送。请勿回复。",
+  "texts": {
+   "invite": [
+    "您在链接管理门户中的账户",
+    "您好：\n\n{operator}的链接管理门户已为您创建了一个账户，该门户用于管理GS1 Digital Link二维码的链接。\n\n用户名：{user}\n\n如需设置密码并开始使用，请在{hours}小时内打开以下链接：\n\n{link}\n\n该链接只能使用一次。如果链接已过期，请联系您的管理员重新发送邀请。如果您并未预期收到此邮件，可以忽略。"
+   ],
+   "password-recovery": [
+    "设置新密码",
+    "您好：\n\n有人申请为链接管理门户中的用户{user}设置新密码。如果是您本人申请，请在{minutes}分钟内打开以下链接：\n\n{link}\n\n该链接只能使用一次。如果您并未申请，请忽略此邮件：您的密码未被更改，没有此链接任何人都无法更改。"
+   ],
+   "password-reset-admin": [
+    "您的密码已被重置",
+    "您好：\n\n管理员已重置链接管理门户中用户{user}的密码。您之前的密码已失效。\n\n如需设置新密码，请在{minutes}分钟内打开以下链接：\n\n{link}\n\n该链接只能使用一次。如果链接已过期，请在登录页面使用“忘记密码？”。"
+   ],
+   "password-changed": [
+    "您的密码已更改",
+    "您好：\n\n链接管理门户中用户{user}的密码已于{when}（UTC）更改。该账户的所有其他已打开会话均已结束。\n\n如果是您本人操作，则无需采取任何行动。如果不是，请立即在登录页面使用“忘记密码？”，并告知您的管理员。"
+   ],
+   "email-changed-old": [
+    "您的电子邮件地址已更改",
+    "您好：\n\n管理员已于{when}（UTC）更改了链接管理门户中用户{user}的电子邮件地址。有关该账户的邮件将不再发送到此地址。\n\n如果您并未申请此更改，请告知您的管理员。"
+   ],
+   "email-changed-new": [
+    "您在链接管理门户中的电子邮件地址",
+    "您好：\n\n此地址现为链接管理门户中用户{user}的电子邮件地址。有关该账户的邮件（密码更改、找回链接）将发送到这里。\n\n如果您不了解此账户，请告知门户的管理员。"
+   ],
+   "account-locked": [
+    "您账户的登录尝试",
+    "您好：\n\n用户{user}多次输入错误密码，无法登录链接管理门户，最后一次尝试在{when}（UTC）。该用户的登录已被锁定{minutes}分钟。\n\n如果是您本人，请稍候再试，或在登录页面使用“忘记密码？”。如果不是，可能有人试图使用您的账户：请告知您的管理员。"
+   ],
+   "api-key-created": [
+    "已创建新的API密钥",
+    "您好：\n\n用户{user}于{when}（UTC）为{scope}创建了API密钥“{name}”（{id}），权限范围为{scopes}。该密钥将于{expires}（UTC）到期。\n\n持有该密钥的任何人都可以在这些权限范围内使用门户的API，直至密钥到期或被撤销。如果密钥不是您创建的，请立即在门户中（API密钥）将其撤销，并告知您的管理员。"
+   ],
+   "api-key-expiring": [
+    "API密钥即将到期",
+    "您好：\n\n您为{scope}创建的API密钥“{name}”（{id}）将于{expires}（UTC）到期。届时使用该密钥的系统将被拒绝访问。\n\n为保证这些系统正常运行，请在门户中（API密钥）创建新密钥，将其配置到这些系统中，然后撤销旧密钥。"
+   ],
+   "import-finished": [
+    "您的导入已完成",
+    "您好：\n\n您在链接管理门户中发起的电子表格导入已完成：\n\n已创建记录：{created}\n已更新记录：{updated}\n失败记录：{failed}\n\n在页面保持打开期间，可在门户中查看详情；详情也记录在审计日志中。\n\n您收到此邮件，是因为您在“选项 → 电子邮件”中选择了接收。"
+   ],
+   "linkcheck-finished": [
+    "您的链接检查已完成",
+    "您好：\n\n您在链接管理门户中发起的所有记录链接检查已完成：共检查{urls}个地址，其中{problems}个有问题。\n\n记录列表会显示哪些记录有问题。\n\n您收到此邮件，是因为您在“选项 → 电子邮件”中选择了接收。"
+   ],
+   "alert-resolver-down": [
+    "告警：解析器无响应",
+    "您好：\n\n自{since}起，{operator}的解析器未响应门户经由代理进行的检查。GS1 Digital Link二维码的扫描可能失败。\n\n检查的地址：{url}\n问题：{problem}\n\n在服务器上，“docker compose ps”可显示哪个服务已停止，“docker compose logs --tail=50 web-service frontend-proxy-service”可显示原因。解析器恢复响应时您将收到通知，在此期间每24小时会收到一次提醒。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-resolver-up": [
+    "已恢复：解析器重新响应",
+    "您好：\n\n{operator}的解析器已重新响应门户的检查（{url}）。它曾于{since}停止响应。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-backup-failed": [
+    "告警：每日备份未成功",
+    "您好：\n\n{operator}解析器的每日备份需要关注。\n\n最近一次运行：{at}\n问题：{error}\n最近一次成功的备份：{lastOk}\n\n在服务器上，/var/log/resolver-backup.log 记录了每次运行的信息，运行“sudo scripts/resolver-backup.sh”可立即执行一次备份。备份再次成功时您将收到通知，在此期间每24小时会收到一次提醒。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-backup-ok": [
+    "已恢复：每日备份成功",
+    "您好：\n\n{operator}解析器的备份已于{at}成功完成。该问题曾于{since}报告。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-certificate": [
+    "告警：{host}的证书需要续期",
+    "您好：\n\n{host}（印在{operator}二维码中的地址）的HTTPS证书将于{expires}到期（剩余{days}天），或无法验证：{error}\n\n证书到期后，手机将拒绝打开扫描的链接。如使用Certbot，“sudo certbot renew”可续期证书，“sudo systemctl list-timers | grep certbot”可查看是否已安排自动续期。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-certificate-ok": [
+    "已恢复：{host}的证书有效",
+    "您好：\n\n{host}的HTTPS证书有效期至{expires}（{days}天）。该问题曾于{since}报告。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-404-spike": [
+    "告警：大量扫描无人注册的代码",
+    "您好：\n\n在过去一小时内，对于您可访问的代码，解析器已{count}次返回“代码未注册”（404），而通常每小时约为{usual}次。可能有标签印制了尚无记录的代码。扫描最多的代码：\n\n{codes}\n\n门户的“概览”页面列出了这些代码，并为每个代码提供了注册按钮。\n\n您以管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "test": [
+    "来自链接管理门户的测试邮件",
+    "您好：\n\n这是一封于{when}（UTC）发送的测试邮件，用于检查门户的电子邮件设置。如果您能阅读此邮件，说明邮件中继已接收并投递了该邮件。"
+   ]
+  }
+ },
+ "ja": {
+  "signature": "—\n{operator}\nリンク管理ポータル：{portal}\n\nこのメッセージは {operator} の GS1 Digital Link リゾルバーから自動送信されています。返信はしないでください。",
+  "texts": {
+   "invite": [
+    "リンク管理ポータルのアカウント",
+    "こんにちは。\n\n{operator} のリンク管理ポータルに、あなたのアカウントが作成されました。このポータルでは GS1 Digital Link QRコードのリンクを管理します。\n\nユーザー名：{user}\n\nパスワードを設定して利用を開始するには、{hours} 時間以内に次のリンクを開いてください：\n\n{link}\n\nこのリンクは1回のみ使用できます。期限が切れた場合は、管理者に招待の再送信を依頼してください。このメッセージに心当たりがない場合は、無視してかまいません。"
+   ],
+   "password-recovery": [
+    "新しいパスワードの設定",
+    "こんにちは。\n\nリンク管理ポータルのユーザー {user} について、新しいパスワードの設定が依頼されました。ご本人による依頼の場合は、{minutes} 分以内に次のリンクを開いてください：\n\n{link}\n\nこのリンクは1回のみ使用できます。依頼した覚えがない場合は、このメッセージを無視してください。パスワードは変更されておらず、このリンクなしで変更することは誰にもできません。"
+   ],
+   "password-reset-admin": [
+    "パスワードがリセットされました",
+    "こんにちは。\n\n管理者が、リンク管理ポータルのユーザー {user} のパスワードをリセットしました。以前のパスワードは使えなくなりました。\n\n新しいパスワードを設定するには、{minutes} 分以内に次のリンクを開いてください：\n\n{link}\n\nこのリンクは1回のみ使用できます。期限が切れた場合は、サインインページの「パスワードをお忘れですか？」を使用してください。"
+   ],
+   "password-changed": [
+    "パスワードが変更されました",
+    "こんにちは。\n\nリンク管理ポータルのユーザー {user} のパスワードが {when}（UTC）に変更されました。このアカウントで開いていた他のセッションはすべて終了しました。\n\nご本人による変更であれば、対応は不要です。心当たりがない場合は、ただちにサインインページの「パスワードをお忘れですか？」を使用し、管理者にお知らせください。"
+   ],
+   "email-changed-old": [
+    "メールアドレスが変更されました",
+    "こんにちは。\n\n管理者が {when}（UTC）に、リンク管理ポータルのユーザー {user} のメールアドレスを変更しました。今後、このアカウントに関するメッセージはこのアドレスには届きません。\n\n変更を依頼した覚えがない場合は、管理者にお知らせください。"
+   ],
+   "email-changed-new": [
+    "リンク管理ポータルのメールアドレス",
+    "こんにちは。\n\nこのアドレスが、リンク管理ポータルのユーザー {user} のメールアドレスになりました。アカウントに関するメッセージ（パスワードの変更、再設定用リンク）はこちらに届きます。\n\nこのアカウントに心当たりがない場合は、ポータルの管理者にお知らせください。"
+   ],
+   "account-locked": [
+    "アカウントへのサインイン試行",
+    "こんにちは。\n\nユーザー {user} は、誤ったパスワードが複数回入力されたため、リンク管理ポータルにサインインできませんでした。最後の試行は {when}（UTC）です。このユーザーのサインインは {minutes} 分間ブロックされます。\n\nご本人による試行の場合は、しばらく待ってから再度お試しいただくか、サインインページの「パスワードをお忘れですか？」を使用してください。心当たりがない場合は、誰かがあなたのアカウントを使用しようとしている可能性があります。管理者にお知らせください。"
+   ],
+   "api-key-created": [
+    "新しいAPIキーが作成されました",
+    "こんにちは。\n\nユーザー {user} が {when}（UTC）に、{scope} 用のAPIキー「{name}」（{id}）をスコープ {scopes} で作成しました。有効期限は {expires}（UTC）です。\n\nキーを持つ人は誰でも、期限切れになるか失効するまで、これらのスコープの範囲でポータルのAPIを使用できます。作成した覚えがない場合は、ただちにポータル（APIキー）で失効させ、管理者にお知らせください。"
+   ],
+   "api-key-expiring": [
+    "APIキーの有効期限が近づいています",
+    "こんにちは。\n\nあなたが {scope} 用に作成したAPIキー「{name}」（{id}）は、{expires}（UTC）に有効期限が切れます。その後、このキーを使用しているシステムは拒否されます。\n\nシステムを引き続き動作させるには、ポータル（APIキー）で新しいキーを作成してそれらのシステムに設定し、古いキーを失効させてください。"
+   ],
+   "import-finished": [
+    "インポートが完了しました",
+    "こんにちは。\n\nリンク管理ポータルで開始したスプレッドシートのインポートが完了しました：\n\n作成されたレコード：{created}\n更新されたレコード：{updated}\n失敗したレコード：{failed}\n\n詳細は、ページを開いている間はポータルで、また監査証跡で確認できます。\n\nこのメッセージは、「オプション → メール」で受信を選択されたためお送りしています。"
+   ],
+   "linkcheck-finished": [
+    "リンクチェックが完了しました",
+    "こんにちは。\n\nリンク管理ポータルで開始した全レコードのリンクチェックが完了しました：{urls} 件のアドレスをチェックし、{problems} 件に問題がありました。\n\n問題のあるレコードはレコード一覧で確認できます。\n\nこのメッセージは、「オプション → メール」で受信を選択されたためお送りしています。"
+   ],
+   "alert-resolver-down": [
+    "アラート：リゾルバーが応答していません",
+    "こんにちは。\n\n{operator} のリゾルバーが、{since} 以降、プロキシ経由のポータルのチェックに応答していません。GS1 Digital Link QRコードのスキャンが失敗している可能性があります。\n\nチェックしたアドレス：{url}\n問題：{problem}\n\nサーバー上で「docker compose ps」を実行すると停止しているサービスが、「docker compose logs --tail=50 web-service frontend-proxy-service」を実行するとその原因がわかります。再び応答するようになるとメッセージが届きます。それまでの間は24時間ごとにリマインダーが届きます。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
+   "alert-resolver-up": [
+    "解決：リゾルバーが再び応答しています",
+    "こんにちは。\n\n{operator} のリゾルバーが、再びポータルのチェックに応答しています（{url}）。{since} に応答が停止していました。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
+   "alert-backup-failed": [
+    "アラート：日次バックアップが成功しませんでした",
+    "こんにちは。\n\n{operator} のリゾルバーの日次バックアップに確認が必要です。\n\n最終実行：{at}\n問題：{error}\n最後に成功したバックアップ：{lastOk}\n\nサーバー上の /var/log/resolver-backup.log に各実行のメッセージがあり、「sudo scripts/resolver-backup.sh」で今すぐ実行できます。再びバックアップが成功するとメッセージが届きます。それまでの間は24時間ごとにリマインダーが届きます。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
+   "alert-backup-ok": [
+    "解決：日次バックアップが成功しました",
+    "こんにちは。\n\n{operator} のリゾルバーのバックアップが {at} に成功しました。問題は {since} に報告されていました。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
+   "alert-certificate": [
+    "アラート：{host} の証明書の更新が必要です",
+    "こんにちは。\n\n{operator} のQRコードに印字されているアドレス {host} のHTTPS証明書は、{expires} に有効期限が切れます（残り{days}日）。または検証できませんでした：{error}\n\n期限が切れると、スマートフォンはスキャンしたリンクを開かなくなります。Certbot を使用している場合、「sudo certbot renew」で更新でき、「sudo systemctl list-timers | grep certbot」で自動更新がスケジュールされているか確認できます。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
+   "alert-certificate-ok": [
+    "解決：{host} の証明書は有効です",
+    "こんにちは。\n\n{host} のHTTPS証明書は {expires} まで有効です（{days}日）。問題は {since} に報告されていました。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
+   "alert-404-spike": [
+    "アラート：未登録コードのスキャンが多発しています",
+    "こんにちは。\n\n過去1時間に、リゾルバーはアクセス範囲内のコードに対して「未登録のコード」（404）を {count} 回返しました。通常の1時間あたりは約 {usual} 回です。まだレコードのないコードでラベルが印刷された可能性があります。スキャン数の多いコード：\n\n{codes}\n\nポータルの「概要」に、それぞれを登録するボタンと共に一覧表示されています。\n\nこのメッセージは管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
+   "test": [
+    "リンク管理ポータルからのテストメッセージ",
+    "こんにちは。\n\nこれは、ポータルのメール設定を確認するために {when}（UTC）に送信されたテストメッセージです。このメッセージが読めれば、リレーがメッセージを受け付けて配信しています。"
+   ]
+  }
+ },
+ "ko": {
+  "signature": "—\n{operator}\n링크 관리 포털: {portal}\n\n이 메시지는 {operator}의 GS1 Digital Link 리졸버가 자동으로 보냈습니다. 회신하지 마십시오.",
+  "texts": {
+   "invite": [
+    "링크 관리 포털 계정 안내",
+    "안녕하십니까?\n\nGS1 Digital Link QR 코드의 링크를 관리하는 {operator}의 링크 관리 포털에 계정이 생성되었습니다.\n\n사용자 이름: {user}\n\n비밀번호를 설정하고 시작하려면 {hours}시간 이내에 다음 링크를 여십시오.\n\n{link}\n\n이 링크는 한 번만 사용할 수 있습니다. 만료된 경우 관리자에게 새 초대장을 요청하십시오. 이 메시지를 예상하지 못하셨다면 무시하셔도 됩니다."
+   ],
+   "password-recovery": [
+    "새 비밀번호 설정",
+    "안녕하십니까?\n\n링크 관리 포털의 사용자 {user}에 대해 새 비밀번호 설정이 요청되었습니다. 본인이 요청하셨다면 {minutes}분 이내에 다음 링크를 여십시오.\n\n{link}\n\n이 링크는 한 번만 사용할 수 있습니다. 요청하지 않으셨다면 이 메시지를 무시하십시오. 비밀번호는 변경되지 않았으며, 이 링크 없이는 누구도 변경할 수 없습니다."
+   ],
+   "password-reset-admin": [
+    "비밀번호가 재설정되었습니다",
+    "안녕하십니까?\n\n관리자가 링크 관리 포털의 사용자 {user}의 비밀번호를 재설정했습니다. 이전 비밀번호는 더 이상 사용할 수 없습니다.\n\n새 비밀번호를 설정하려면 {minutes}분 이내에 다음 링크를 여십시오.\n\n{link}\n\n이 링크는 한 번만 사용할 수 있습니다. 만료된 경우 로그인 페이지에서 \"비밀번호를 잊으셨습니까?\"를 사용하십시오."
+   ],
+   "password-changed": [
+    "비밀번호가 변경되었습니다",
+    "안녕하십니까?\n\n링크 관리 포털의 사용자 {user}의 비밀번호가 {when}(UTC)에 변경되었습니다. 이 계정의 다른 열린 세션은 모두 종료되었습니다.\n\n본인이 변경하셨다면 따로 하실 일은 없습니다. 본인이 아니라면 즉시 로그인 페이지에서 \"비밀번호를 잊으셨습니까?\"를 사용하고 관리자에게 알리십시오."
+   ],
+   "email-changed-old": [
+    "이메일 주소가 변경되었습니다",
+    "안녕하십니까?\n\n관리자가 {when}(UTC)에 링크 관리 포털의 사용자 {user}의 이메일 주소를 변경했습니다. 앞으로 계정 관련 메시지는 이 주소로 발송되지 않습니다.\n\n변경을 요청하지 않으셨다면 관리자에게 알리십시오."
+   ],
+   "email-changed-new": [
+    "링크 관리 포털의 이메일 주소",
+    "안녕하십니까?\n\n이제 이 주소가 링크 관리 포털의 사용자 {user}의 이메일 주소입니다. 계정 관련 메시지(비밀번호 변경, 복구 링크)는 이 주소로 발송됩니다.\n\n이 계정을 모르신다면 포털 관리자에게 알리십시오."
+   ],
+   "account-locked": [
+    "계정 로그인 시도 알림",
+    "안녕하십니까?\n\n사용자 {user}이(가) 잘못된 비밀번호를 여러 번 입력하여 링크 관리 포털에 로그인하지 못했습니다. 마지막 시도는 {when}(UTC)이었습니다. 이 사용자의 로그인은 {minutes}분 동안 차단됩니다.\n\n본인이 시도하셨다면 기다린 후 다시 시도하거나 로그인 페이지에서 \"비밀번호를 잊으셨습니까?\"를 사용하십시오. 본인이 아니라면 누군가 계정을 사용하려는 것일 수 있으므로 관리자에게 알리십시오."
+   ],
+   "api-key-created": [
+    "새 API 키가 생성되었습니다",
+    "안녕하십니까?\n\n사용자 {user}이(가) {when}(UTC)에 {scope}용 API 키 \"{name}\"({id})을(를) {scopes} 범위로 생성했습니다. 이 키는 {expires}(UTC)에 만료됩니다.\n\n키를 가진 사람은 만료되거나 폐기될 때까지 해당 범위 내에서 포털의 API를 사용할 수 있습니다. 직접 생성하지 않으셨다면 즉시 포털(API 키)에서 폐기하고 관리자에게 알리십시오."
+   ],
+   "api-key-expiring": [
+    "API 키가 곧 만료됩니다",
+    "안녕하십니까?\n\n{scope}용으로 생성하신 API 키 \"{name}\"({id})이(가) {expires}(UTC)에 만료됩니다. 만료되면 이 키를 사용하는 시스템은 거부됩니다.\n\n계속 작동하게 하려면 포털(API 키)에서 새 키를 생성하여 해당 시스템에 적용한 후 이전 키를 폐기하십시오."
+   ],
+   "import-finished": [
+    "가져오기가 완료되었습니다",
+    "안녕하십니까?\n\n링크 관리 포털에서 시작하신 스프레드시트 가져오기가 완료되었습니다.\n\n생성된 레코드: {created}\n업데이트된 레코드: {updated}\n실패한 레코드: {failed}\n\n세부 내용은 페이지가 열려 있는 동안 포털에서, 그리고 감사 기록에서 확인할 수 있습니다.\n\n옵션 → 이메일에서 이 메시지를 선택하셨기 때문에 발송되었습니다."
+   ],
+   "linkcheck-finished": [
+    "링크 점검이 완료되었습니다",
+    "안녕하십니까?\n\n링크 관리 포털에서 시작하신 전체 레코드 링크 점검이 완료되었습니다. 점검한 주소 {urls}개 중 {problems}개에 문제가 있습니다.\n\n레코드 목록에서 문제가 있는 레코드를 확인할 수 있습니다.\n\n옵션 → 이메일에서 이 메시지를 선택하셨기 때문에 발송되었습니다."
+   ],
+   "alert-resolver-down": [
+    "알림: 리졸버가 응답하지 않습니다",
+    "안녕하십니까?\n\n{operator}의 리졸버가 {since}부터 프록시를 통한 포털의 점검에 응답하지 않고 있습니다. GS1 Digital Link QR 코드 스캔이 실패하고 있을 수 있습니다.\n\n점검한 주소: {url}\n문제: {problem}\n\n서버에서 \"docker compose ps\"로 중단된 서비스를, \"docker compose logs --tail=50 web-service frontend-proxy-service\"로 그 원인을 확인할 수 있습니다. 다시 응답하면 메시지를 보내 드리며, 그동안 24시간마다 알림을 보내 드립니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-resolver-up": [
+    "해결됨: 리졸버가 다시 응답합니다",
+    "안녕하십니까?\n\n{operator}의 리졸버가 포털의 점검에 다시 응답합니다({url}). 리졸버는 {since}에 응답을 멈추었습니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-backup-failed": [
+    "알림: 일일 백업이 성공하지 못했습니다",
+    "안녕하십니까?\n\n{operator} 리졸버의 일일 백업을 확인해야 합니다.\n\n마지막 실행: {at}\n문제: {error}\n마지막 정상 백업: {lastOk}\n\n서버의 /var/log/resolver-backup.log에 각 실행의 메시지가 있으며, \"sudo scripts/resolver-backup.sh\"로 지금 바로 백업을 실행할 수 있습니다. 백업이 다시 성공하면 메시지를 보내 드리며, 그동안 24시간마다 알림을 보내 드립니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-backup-ok": [
+    "해결됨: 일일 백업이 성공했습니다",
+    "안녕하십니까?\n\n{operator} 리졸버의 백업이 {at}에 성공했습니다. 문제는 {since}에 보고되었습니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-certificate": [
+    "알림: {host}의 인증서를 갱신해야 합니다",
+    "안녕하십니까?\n\n{operator}의 QR 코드에 인쇄된 주소인 {host}의 HTTPS 인증서가 {expires}에 만료되거나({days}일 남음) 검증할 수 없었습니다: {error}\n\n인증서가 만료되면 휴대폰에서 스캔한 링크를 열지 않습니다. Certbot을 사용하는 경우 \"sudo certbot renew\"로 갱신할 수 있으며, \"sudo systemctl list-timers | grep certbot\"으로 자동 갱신이 예약되어 있는지 확인할 수 있습니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-certificate-ok": [
+    "해결됨: {host}의 인증서가 유효합니다",
+    "안녕하십니까?\n\n{host}의 HTTPS 인증서는 {expires}까지 유효합니다({days}일). 문제는 {since}에 보고되었습니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-404-spike": [
+    "알림: 아무도 등록하지 않은 코드의 스캔이 많습니다",
+    "안녕하십니까?\n\n최근 1시간 동안 리졸버가 접근 범위 내 코드에 대해 \"미등록 코드\"(404)로 {count}회 응답했습니다. 평소에는 1시간에 약 {usual}회입니다. 아직 레코드가 없는 코드로 라벨이 인쇄되었을 수 있습니다. 가장 많이 스캔된 코드:\n\n{codes}\n\n포털의 개요에서 이 코드들을 확인하고 각 코드를 등록하는 버튼을 사용할 수 있습니다.\n\n관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "test": [
+    "링크 관리 포털 테스트 메시지",
+    "안녕하십니까?\n\n포털의 이메일 설정을 확인하기 위해 {when}(UTC)에 보낸 테스트 메시지입니다. 이 메시지를 읽으실 수 있다면 릴레이가 메시지를 수락하고 전달한 것입니다."
+   ]
+  }
+ },
+ "hi": {
+  "signature": "—\n{operator}\nलिंक प्रबंधन पोर्टल: {portal}\n\nयह संदेश {operator} के GS1 Digital Link रिज़ॉल्वर द्वारा स्वचालित रूप से भेजा गया है। कृपया इसका उत्तर न दें।",
+  "texts": {
+   "invite": [
+    "लिंक प्रबंधन पोर्टल में आपका खाता",
+    "नमस्ते,\n\n{operator} के लिंक प्रबंधन पोर्टल में आपके लिए एक खाता बनाया गया है, जहाँ GS1 Digital Link QR कोड के लिंक प्रबंधित किए जाते हैं।\n\nउपयोगकर्ता नाम: {user}\n\nअपना पासवर्ड चुनने और शुरू करने के लिए, यह लिंक {hours} घंटे के भीतर खोलें:\n\n{link}\n\nलिंक केवल एक बार काम करता है। यदि इसकी अवधि समाप्त हो गई है, तो अपने व्यवस्थापक से नया आमंत्रण भेजने को कहें। यदि आपको इस संदेश की अपेक्षा नहीं थी, तो आप इसे अनदेखा कर सकते हैं।"
+   ],
+   "password-recovery": [
+    "नया पासवर्ड चुनें",
+    "नमस्ते,\n\nकिसी ने लिंक प्रबंधन पोर्टल में उपयोगकर्ता {user} के लिए नया पासवर्ड चुनने का अनुरोध किया है। यदि यह आप थे, तो यह लिंक {minutes} मिनट के भीतर खोलें:\n\n{link}\n\nलिंक केवल एक बार काम करता है। यदि आपने इसका अनुरोध नहीं किया, तो इस संदेश को अनदेखा करें: आपका पासवर्ड नहीं बदला है और इस लिंक के बिना कोई उसे बदल नहीं सकता।"
+   ],
+   "password-reset-admin": [
+    "आपका पासवर्ड रीसेट किया गया",
+    "नमस्ते,\n\nएक व्यवस्थापक ने लिंक प्रबंधन पोर्टल में उपयोगकर्ता {user} का पासवर्ड रीसेट कर दिया है। आपका पिछला पासवर्ड अब काम नहीं करता।\n\nनया पासवर्ड चुनने के लिए, यह लिंक {minutes} मिनट के भीतर खोलें:\n\n{link}\n\nलिंक केवल एक बार काम करता है। यदि इसकी अवधि समाप्त हो गई है, तो साइन-इन पेज पर “पासवर्ड भूल गए?” का उपयोग करें।"
+   ],
+   "password-changed": [
+    "आपका पासवर्ड बदला गया",
+    "नमस्ते,\n\nलिंक प्रबंधन पोर्टल में उपयोगकर्ता {user} का पासवर्ड {when} (UTC) को बदला गया। खाते के अन्य सभी खुले सत्र समाप्त कर दिए गए।\n\nयदि यह आप थे, तो कुछ करने की ज़रूरत नहीं है। यदि नहीं, तो तुरंत साइन-इन पेज पर “पासवर्ड भूल गए?” का उपयोग करें और अपने व्यवस्थापक को बताएँ।"
+   ],
+   "email-changed-old": [
+    "आपका ईमेल पता बदला गया",
+    "नमस्ते,\n\nएक व्यवस्थापक ने {when} (UTC) को लिंक प्रबंधन पोर्टल में उपयोगकर्ता {user} का ईमेल पता बदल दिया। खाते से संबंधित संदेश अब इस पते पर नहीं आएँगे।\n\nयदि आपने यह बदलाव नहीं माँगा था, तो अपने व्यवस्थापक को बताएँ।"
+   ],
+   "email-changed-new": [
+    "लिंक प्रबंधन पोर्टल में आपका ईमेल पता",
+    "नमस्ते,\n\nयह पता अब लिंक प्रबंधन पोर्टल में उपयोगकर्ता {user} का ईमेल पता है। खाते से संबंधित संदेश (पासवर्ड बदलाव, पुनर्प्राप्ति लिंक) यहाँ आएँगे।\n\nयदि आप इस खाते को नहीं जानते, तो पोर्टल के व्यवस्थापकों को बताएँ।"
+   ],
+   "account-locked": [
+    "आपके खाते में साइन-इन के प्रयास",
+    "नमस्ते,\n\nउपयोगकर्ता {user} कई गलत पासवर्ड के बाद लिंक प्रबंधन पोर्टल में साइन इन नहीं कर सका, अंतिम प्रयास {when} (UTC) को हुआ। इस उपयोगकर्ता के लिए साइन-इन {minutes} मिनट के लिए अवरुद्ध है।\n\nयदि यह आप थे, तो प्रतीक्षा करें और फिर से प्रयास करें, या साइन-इन पेज पर “पासवर्ड भूल गए?” का उपयोग करें। यदि नहीं, तो हो सकता है कोई आपके खाते का उपयोग करने की कोशिश कर रहा हो: अपने व्यवस्थापक को बताएँ।"
+   ],
+   "api-key-created": [
+    "एक नई API कुंजी बनाई गई",
+    "नमस्ते,\n\nउपयोगकर्ता {user} ने {when} (UTC) को {scope} के लिए API कुंजी “{name}” ({id}) बनाई, स्कोप {scopes} के साथ। इसकी समाप्ति {expires} (UTC) को है।\n\nजिसके पास भी यह कुंजी है, वह समाप्त या निरस्त होने तक इन स्कोप के भीतर पोर्टल के API का उपयोग कर सकता है। यदि आपने इसे नहीं बनाया, तो इसे तुरंत पोर्टल (API कुंजियाँ) में निरस्त करें और अपने व्यवस्थापक को बताएँ।"
+   ],
+   "api-key-expiring": [
+    "एक API कुंजी जल्द समाप्त होगी",
+    "नमस्ते,\n\nआपके द्वारा {scope} के लिए बनाई गई API कुंजी “{name}” ({id}) {expires} (UTC) को समाप्त हो रही है। उसके बाद इसका उपयोग करने वाले सिस्टम अस्वीकार कर दिए जाएँगे।\n\nउन्हें चालू रखने के लिए, पोर्टल (API कुंजियाँ) में नई कुंजी बनाएँ, उसे उन सिस्टम में डालें और पुरानी कुंजी निरस्त करें।"
+   ],
+   "import-finished": [
+    "आपका आयात पूरा हो गया है",
+    "नमस्ते,\n\nलिंक प्रबंधन पोर्टल में आपके द्वारा शुरू किया गया स्प्रेडशीट आयात पूरा हो गया है:\n\nबनाए गए रिकॉर्ड: {created}\nअपडेट किए गए रिकॉर्ड: {updated}\nविफल रिकॉर्ड: {failed}\n\nविवरण पोर्टल में तब तक उपलब्ध है जब तक पेज खुला रहता है, और ऑडिट ट्रेल में भी।\n\nआपको यह संदेश इसलिए मिल रहा है क्योंकि आपने इसे विकल्प → ईमेल में चुना है।"
+   ],
+   "linkcheck-finished": [
+    "आपकी लिंक जाँच पूरी हो गई है",
+    "नमस्ते,\n\nलिंक प्रबंधन पोर्टल में आपके द्वारा शुरू की गई हर रिकॉर्ड के लिंक की जाँच पूरी हो गई है: {urls} पते जाँचे गए, {problems} में समस्या है।\n\nरिकॉर्ड सूची दिखाती है कि किन रिकॉर्ड में समस्याएँ हैं।\n\nआपको यह संदेश इसलिए मिल रहा है क्योंकि आपने इसे विकल्प → ईमेल में चुना है।"
+   ],
+   "alert-resolver-down": [
+    "अलर्ट: रिज़ॉल्वर उत्तर नहीं दे रहा",
+    "नमस्ते,\n\n{operator} के रिज़ॉल्वर ने {since} से प्रॉक्सी के ज़रिए पोर्टल की जाँचों का उत्तर नहीं दिया है। GS1 Digital Link QR कोड के स्कैन विफल हो सकते हैं।\n\nजाँचा गया पता: {url}\nसमस्या: {problem}\n\nसर्वर पर, \"docker compose ps\" दिखाता है कि कौन-सी सेवा बंद है और \"docker compose logs --tail=50 web-service frontend-proxy-service\" बताता है कि क्यों। जब यह फिर से उत्तर देगा तो आपको संदेश मिलेगा, और तब तक हर 24 घंटे में एक रिमाइंडर।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
+   "alert-resolver-up": [
+    "समाधान: रिज़ॉल्वर फिर से उत्तर दे रहा है",
+    "नमस्ते,\n\n{operator} का रिज़ॉल्वर फिर से पोर्टल की जाँचों का उत्तर दे रहा है ({url})। इसने {since} को उत्तर देना बंद कर दिया था।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
+   "alert-backup-failed": [
+    "अलर्ट: दैनिक बैकअप सफल नहीं हुआ",
+    "नमस्ते,\n\n{operator} के रिज़ॉल्वर के दैनिक बैकअप पर ध्यान देना ज़रूरी है।\n\nपिछला रन: {at}\nसमस्या: {error}\nपिछला सफल बैकअप: {lastOk}\n\nसर्वर पर, /var/log/resolver-backup.log में हर रन का संदेश होता है, और \"sudo scripts/resolver-backup.sh\" अभी एक बैकअप चलाता है। जब बैकअप फिर से सफल होगा तो आपको संदेश मिलेगा, और तब तक हर 24 घंटे में एक रिमाइंडर।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
+   "alert-backup-ok": [
+    "समाधान: दैनिक बैकअप सफल हुआ",
+    "नमस्ते,\n\n{operator} के रिज़ॉल्वर का बैकअप {at} को सफल हुआ। समस्या की सूचना {since} को दी गई थी।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
+   "alert-certificate": [
+    "अलर्ट: {host} के प्रमाणपत्र को नवीनीकरण की ज़रूरत है",
+    "नमस्ते,\n\n{host} का HTTPS प्रमाणपत्र, जो {operator} के QR कोड में छपा पता है, {expires} को समाप्त हो रहा है ({days} दिन शेष), या सत्यापित नहीं किया जा सका: {error}\n\nसमाप्त होने पर, फ़ोन स्कैन किए गए लिंक खोलने से इनकार कर देते हैं। Certbot के साथ, \"sudo certbot renew\" इसे नवीनीकृत करता है और \"sudo systemctl list-timers | grep certbot\" दिखाता है कि स्वचालित नवीनीकरण शेड्यूल है या नहीं।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
+   "alert-certificate-ok": [
+    "समाधान: {host} का प्रमाणपत्र मान्य है",
+    "नमस्ते,\n\n{host} का HTTPS प्रमाणपत्र {expires} तक मान्य है ({days} दिन)। समस्या की सूचना {since} को दी गई थी।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
+   "alert-404-spike": [
+    "अलर्ट: उन कोड के कई स्कैन जिन्हें किसी ने पंजीकृत नहीं किया",
+    "नमस्ते,\n\nपिछले घंटे में रिज़ॉल्वर ने आपकी पहुँच वाले कोड के लिए {count} बार “कोड पंजीकृत नहीं” (404) उत्तर दिया, जबकि एक सामान्य घंटे में लगभग {usual} बार होता है। हो सकता है कोई लेबल ऐसे कोड के साथ छपा हो जिसका अभी तक कोई रिकॉर्ड नहीं है। सबसे अधिक स्कैन किए गए कोड:\n\n{codes}\n\nपोर्टल का अवलोकन इन्हें हर एक को पंजीकृत करने के बटन के साथ सूचीबद्ध करता है।\n\nआपको यह संदेश व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
+   "test": [
+    "लिंक प्रबंधन पोर्टल से परीक्षण संदेश",
+    "नमस्ते,\n\nयह पोर्टल की ईमेल सेटिंग जाँचने के लिए {when} (UTC) को भेजा गया एक परीक्षण संदेश है। यदि आप इसे पढ़ पा रहे हैं, तो रिले ने संदेश स्वीकार किया और उसे पहुँचा दिया।"
+   ]
+  }
+ },
+ "ar": {
+  "signature": "—\n{operator}\nبوابة إدارة الروابط: {portal}\n\nأُرسلت هذه الرسالة تلقائيًا من محلِّل GS1 Digital Link لدى {operator}. يُرجى عدم الرد عليها.",
+  "texts": {
+   "invite": [
+    "حسابك في بوابة إدارة الروابط",
+    "مرحبًا،\n\nأُنشئ لك حساب في بوابة إدارة الروابط لدى {operator}، حيث تُدار روابط رموز QR بتقنية GS1 Digital Link.\n\nاسم المستخدم: {user}\n\nلاختيار كلمة المرور والبدء، افتح هذا الرابط خلال {hours} ساعة:\n\n{link}\n\nيعمل الرابط مرة واحدة. إذا انتهت صلاحيته، فاطلب من المسؤول إرسال دعوة جديدة. إذا لم تكن تتوقع هذه الرسالة، فيمكنك تجاهلها."
+   ],
+   "password-recovery": [
+    "اختر كلمة مرور جديدة",
+    "مرحبًا،\n\nطلب أحدهم اختيار كلمة مرور جديدة للمستخدم {user} في بوابة إدارة الروابط. إذا كنت أنت، فافتح هذا الرابط خلال {minutes} دقيقة:\n\n{link}\n\nيعمل الرابط مرة واحدة. إذا لم تطلبه، فتجاهل هذه الرسالة: لم تتغيّر كلمة مرورك ولا يمكن لأحد تغييرها دون هذا الرابط."
+   ],
+   "password-reset-admin": [
+    "تمت إعادة تعيين كلمة مرورك",
+    "مرحبًا،\n\nأعاد أحد المسؤولين تعيين كلمة مرور المستخدم {user} في بوابة إدارة الروابط. لم تعد كلمة مرورك السابقة تعمل.\n\nلاختيار كلمة مرور جديدة، افتح هذا الرابط خلال {minutes} دقيقة:\n\n{link}\n\nيعمل الرابط مرة واحدة. إذا انتهت صلاحيته، فاستخدم «هل نسيت كلمة المرور؟» في صفحة تسجيل الدخول."
+   ],
+   "password-changed": [
+    "تم تغيير كلمة مرورك",
+    "مرحبًا،\n\nتم تغيير كلمة مرور المستخدم {user} في بوابة إدارة الروابط في {when} ‏(UTC). وأُنهيت جميع الجلسات الأخرى المفتوحة للحساب.\n\nإذا كنت أنت، فلا داعي لأي إجراء. وإذا لم تكن أنت، فاستخدم فورًا «هل نسيت كلمة المرور؟» في صفحة تسجيل الدخول وأبلِغ المسؤول."
+   ],
+   "email-changed-old": [
+    "تم تغيير عنوان بريدك الإلكتروني",
+    "مرحبًا،\n\nغيّر أحد المسؤولين عنوان البريد الإلكتروني للمستخدم {user} في بوابة إدارة الروابط في {when} ‏(UTC). لن تصل الرسائل المتعلقة بالحساب إلى هذا العنوان بعد الآن.\n\nإذا لم تطلب هذا التغيير، فأبلِغ المسؤول."
+   ],
+   "email-changed-new": [
+    "عنوان بريدك الإلكتروني في بوابة إدارة الروابط",
+    "مرحبًا،\n\nأصبح هذا العنوان الآن عنوان البريد الإلكتروني للمستخدم {user} في بوابة إدارة الروابط. ستصل إلى هنا الرسائل المتعلقة بالحساب (تغييرات كلمة المرور، روابط الاستعادة).\n\nإذا كنت لا تعرف هذا الحساب، فأبلِغ مسؤولي البوابة."
+   ],
+   "account-locked": [
+    "محاولات تسجيل دخول إلى حسابك",
+    "مرحبًا،\n\nتعذّر على المستخدم {user} تسجيل الدخول إلى بوابة إدارة الروابط بعد عدة كلمات مرور خاطئة، آخرها في {when} ‏(UTC). تسجيل الدخول لهذا المستخدم محظور لمدة {minutes} دقيقة.\n\nإذا كنت أنت، فانتظر وحاول مرة أخرى، أو استخدم «هل نسيت كلمة المرور؟» في صفحة تسجيل الدخول. وإذا لم تكن أنت، فقد يحاول أحدهم استخدام حسابك: أبلِغ المسؤول."
+   ],
+   "api-key-created": [
+    "تم إنشاء مفتاح API جديد",
+    "مرحبًا،\n\nأنشأ المستخدم {user} مفتاح API «{name}» ‏({id}) لـ {scope} في {when} ‏(UTC)، بالنطاقات {scopes}. وتنتهي صلاحيته في {expires} ‏(UTC).\n\nيمكن لمن يحمل المفتاح استخدام API البوابة ضمن تلك النطاقات حتى تنتهي صلاحيته أو يُلغى. إذا لم تكن أنت من أنشأه، فألغِه فورًا في البوابة (مفاتيح API) وأبلِغ المسؤول."
+   ],
+   "api-key-expiring": [
+    "تنتهي صلاحية مفتاح API قريبًا",
+    "مرحبًا،\n\nتنتهي صلاحية مفتاح API «{name}» ‏({id}) الذي أنشأته لـ {scope} في {expires} ‏(UTC). وعندئذٍ ستُرفض الأنظمة التي تستخدمه.\n\nلكي تستمر في العمل، أنشئ مفتاحًا جديدًا في البوابة (مفاتيح API)، وضَعه في تلك الأنظمة، ثم ألغِ المفتاح القديم."
+   ],
+   "import-finished": [
+    "انتهى الاستيراد الذي بدأته",
+    "مرحبًا،\n\nانتهى استيراد جدول البيانات الذي بدأته في بوابة إدارة الروابط:\n\nالسجلات التي أُنشئت: {created}\nالسجلات التي حُدِّثت: {updated}\nالسجلات التي فشلت: {failed}\n\nالتفاصيل متاحة في البوابة ما دامت الصفحة مفتوحة، وفي سجل التدقيق.\n\nتتلقى هذه الرسالة لأنك اخترتها في الخيارات ← البريد الإلكتروني."
+   ],
+   "linkcheck-finished": [
+    "انتهى فحص الروابط الذي بدأته",
+    "مرحبًا،\n\nانتهى فحص روابط جميع السجلات الذي بدأته في بوابة إدارة الروابط: تم فحص {urls} عنوان، منها {problems} بها مشكلة.\n\nتُظهر قائمة السجلات السجلات التي بها مشكلات.\n\nتتلقى هذه الرسالة لأنك اخترتها في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-resolver-down": [
+    "تنبيه: المحلِّل لا يستجيب",
+    "مرحبًا،\n\nلم يستجب محلِّل {operator} لفحوصات البوابة عبر الوكيل منذ {since}. قد تكون عمليات مسح رموز QR بتقنية GS1 Digital Link تفشل.\n\nالعنوان الذي تم فحصه: {url}\nالمشكلة: {problem}\n\nعلى الخادم، يُظهر الأمر «docker compose ps» الخدمة المتوقفة، ويُظهر «docker compose logs --tail=50 web-service frontend-proxy-service» السبب. ستتلقى رسالة عندما يستجيب مجددًا، وتذكيرًا كل 24 ساعة في الأثناء.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-resolver-up": [
+    "تم الحل: المحلِّل يستجيب مجددًا",
+    "مرحبًا،\n\nعاد محلِّل {operator} يستجيب لفحوصات البوابة ({url}). وكان قد توقف عن الاستجابة في {since}.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-backup-failed": [
+    "تنبيه: لم ينجح النسخ الاحتياطي اليومي",
+    "مرحبًا،\n\nيحتاج النسخ الاحتياطي اليومي لمحلِّل {operator} إلى اهتمام.\n\nآخر تشغيل: {at}\nالمشكلة: {error}\nآخر نسخة احتياطية سليمة: {lastOk}\n\nعلى الخادم، يحتوي الملف /var/log/resolver-backup.log على رسالة كل تشغيل، ويشغّل الأمر «sudo scripts/resolver-backup.sh» نسخة احتياطية الآن. ستتلقى رسالة عندما ينجح النسخ الاحتياطي مجددًا، وتذكيرًا كل 24 ساعة في الأثناء.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-backup-ok": [
+    "تم الحل: نجح النسخ الاحتياطي اليومي",
+    "مرحبًا،\n\nنجح النسخ الاحتياطي لمحلِّل {operator} في {at}. وكان قد أُبلغ عن المشكلة في {since}.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-certificate": [
+    "تنبيه: شهادة {host} تحتاج إلى تجديد",
+    "مرحبًا،\n\nتنتهي شهادة HTTPS الخاصة بـ {host}، وهو العنوان المطبوع في رموز QR لدى {operator}، في {expires} (يتبقى {days} يومًا)، أو تعذّر التحقق منها: {error}\n\nعند انتهاء صلاحيتها، ترفض الهواتف فتح الروابط الممسوحة. مع Certbot، يجدّدها الأمر «sudo certbot renew»، ويُظهر الأمر «sudo systemctl list-timers | grep certbot» ما إذا كان التجديد التلقائي مجدولًا.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-certificate-ok": [
+    "تم الحل: شهادة {host} صالحة",
+    "مرحبًا،\n\nشهادة HTTPS الخاصة بـ {host} صالحة حتى {expires} ({days} يومًا). وكان قد أُبلغ عن المشكلة في {since}.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-404-spike": [
+    "تنبيه: عمليات مسح كثيرة لرموز لم يسجّلها أحد",
+    "مرحبًا،\n\nفي الساعة الأخيرة، أجاب المحلِّل بـ «رمز غير مسجَّل» (404) {count} مرة للرموز الواقعة في نطاقك، مقابل نحو {usual} في الساعة المعتادة. ربما طُبع ملصق برمز ليس له سجل بعد. الرموز الأكثر مسحًا:\n\n{codes}\n\nتُدرجها شاشة «نظرة عامة» في البوابة مع زر لتسجيل كل منها.\n\nتتلقى هذه الرسالة بصفتك مسؤولًا؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "test": [
+    "رسالة اختبار من بوابة إدارة الروابط",
+    "مرحبًا،\n\nهذه رسالة اختبار أُرسلت في {when} ‏(UTC) للتحقق من إعدادات البريد الإلكتروني للبوابة. إذا كنت تستطيع قراءتها، فقد قبل خادم الترحيل الرسالة وسلّمها."
+   ]
+  }
+ }
+}

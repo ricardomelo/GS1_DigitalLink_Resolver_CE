@@ -261,8 +261,8 @@ check("every notification has its texts and every text (but the test) a category
       set(notify.TEMPLATES) ^ (names - {"test"}))
 check("every category is known", set(notify.TEMPLATES.values()) <= set(notify.CATEGORIES))
 check("languages: exact, by base language, else English", (mailtexts.language("pt-BR"), mailtexts.language("pt"),
-      mailtexts.language("pt-PT"), mailtexts.language("en-US"), mailtexts.language("de"), mailtexts.language(None))
-      == ("pt-BR", "pt-BR", "pt-BR", "en-GB", "en-GB", "en-GB"))
+      mailtexts.language("pt-PT"), mailtexts.language("en-US"), mailtexts.language("de"), mailtexts.language("nl"),
+      mailtexts.language(None)) == ("pt-BR", "pt-BR", "pt-BR", "en-GB", "de", "en-GB", "en-GB"))
 subject, text, html = mailtexts.compose("invite", "pt-BR", user="maria<x>", operator="Op & Co", hours="72",
                                         link="https://id.example.org/portal/login#invite=abc", portal="https://p/portal/")
 check("compose: placeholders and signature filled", "maria<x>" in text and "72 horas" in text and "Op & Co" in text

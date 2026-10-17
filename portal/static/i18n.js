@@ -11,16 +11,28 @@
  *   data-i18n-lang="pt"          → <option> text with the language name in the UI language
  * Calling I18N.apply() re-renders all of them, which is how the language menu switches live.
  *
- * To add a locale: copy one block below, translate it, add it to SUPPORTED and to LOCALE_MATCHERS.
+ * Eleven languages (Documentation/adr/0014-interface-languages.md): Portuguese and English are written below (English
+ * is the fallback of every message); each other language is portal/static/locales/<tag>.json with the same keys,
+ * fetched when it is detected or chosen. I18N.ready resolves once the detected language is loaded; setLocale()
+ * returns a promise. Arabic is written right to left (dir="rtl" on the page). A new message needs every language:
+ * dev-tests/portal/test_i18n.py checks them (portal/tools/i18n_catalogue.py check).
  */
 const I18N = (() => {
-  const SUPPORTED = ["pt-BR", "en-GB"];
+  const SUPPORTED = ["pt-BR", "en-GB", "es", "fr", "de", "it", "zh-Hans", "ja", "ko", "hi", "ar"];
+  // Each language named in itself, for the menus before its catalogue is loaded
+  const ENDONYMS = {"pt-BR": "Português (Brasil)", "en-GB": "English (UK)", "es": "Español", "fr": "Français",
+                    "de": "Deutsch", "it": "Italiano", "zh-Hans": "中文（简体）", "ja": "日本語", "ko": "한국어",
+                    "hi": "हिन्दी", "ar": "العربية"};
+  const RIGHT_TO_LEFT = new Set(["ar"]);
   const DEFAULT_LOCALE = "en-GB";
   const STORAGE_KEY = "gs1resolver.portal.locale";
   // Also written as a cookie on the whole domain, so the resolver's own pages follow the same choice.
   const COOKIE_NAME = "gs1resolver_lang";
-  // First matching prefix of navigator.languages wins (e.g. "pt-PT" → pt-BR, "en-US" → en-GB).
-  const LOCALE_MATCHERS = [["pt", "pt-BR"], ["en", "en-GB"]];
+  // First matching prefix of navigator.languages wins (e.g. "pt-PT" → pt-BR, "en-US" → en-GB, "zh-TW" → zh-Hans).
+  const LOCALE_MATCHERS = [["pt", "pt-BR"], ["en", "en-GB"], ["es", "es"], ["fr", "fr"], ["de", "de"], ["it", "it"],
+                           ["zh", "zh-Hans"], ["ja", "ja"], ["ko", "ko"], ["hi", "hi"], ["ar", "ar"]];
+  // The catalogues of the other languages, next to this script
+  const LOCALES_URL = new URL("locales/", (document.currentScript && document.currentScript.src) || location.href);
 
   const CATALOGUE = {
     "pt-BR": {
@@ -3656,7 +3668,20 @@ const I18N = (() => {
   }
 
   function lookup(key, loc = locale) {
-    return CATALOGUE[loc][key] ?? CATALOGUE[DEFAULT_LOCALE][key];
+    return (CATALOGUE[loc] || {})[key] ?? CATALOGUE[DEFAULT_LOCALE][key];
+  }
+
+  /* A language's catalogue, fetched once (Portuguese and English are already here). */
+  const loading = {};
+  function load(tag) {
+    if (CATALOGUE[tag]) return Promise.resolve(true);
+    if (!loading[tag]) {
+      loading[tag] = fetch(new URL(`${tag}.json`, LOCALES_URL), { credentials: "same-origin" })
+        .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+        .then(data => { CATALOGUE[tag] = data; return true; })
+        .catch(() => { delete loading[tag]; return false; });
+    }
+    return loading[tag];
   }
 
   function t(key, params = {}) {
@@ -3666,7 +3691,7 @@ const I18N = (() => {
   }
 
   function linkType(code) {
-    return lookup("linkTypes")[code] || CATALOGUE[DEFAULT_LOCALE].linkTypes[code] || [code, ""];
+    return (lookup("linkTypes") || {})[code] || CATALOGUE[DEFAULT_LOCALE].linkTypes[code] || [code, ""];
   }
 
   function linkTypeOption(code) {
@@ -3700,6 +3725,7 @@ const I18N = (() => {
 
   function apply(root = document) {
     document.documentElement.lang = locale;
+    document.documentElement.dir = RIGHT_TO_LEFT.has(locale) ? "rtl" : "ltr";
     document.title = t(document.body.dataset.titleKey || "app.title");
     root.querySelectorAll("[data-i18n]").forEach(el => {
       const params = el.dataset.i18nParams ? JSON.parse(el.dataset.i18nParams) : {};
@@ -3750,8 +3776,9 @@ const I18N = (() => {
     return out;
   }
 
-  function setLocale(next) {
+  async function setLocale(next) {
     if (!SUPPORTED.includes(next)) return;
+    if (!(await load(next))) return;              // not reachable: the page stays in its language
     locale = next;
     try { localStorage.setItem(STORAGE_KEY, next); } catch { /* not persisted */ }
     document.cookie = `${COOKIE_NAME}=${encodeURIComponent(next)}; path=/; max-age=31536000; SameSite=Lax` +
@@ -3761,17 +3788,20 @@ const I18N = (() => {
   }
 
   locale = detect();
+  // The detected language loaded before the first render; English when its catalogue cannot be fetched
+  const ready = load(locale).then(ok => { if (!ok) locale = DEFAULT_LOCALE; });
 
   return {
-    SUPPORTED,
+    SUPPORTED, ready,
     get locale() { return locale; },
     t: (key, params) => t(key, resolveParams(params || {})),
     set: (el, key, params) => set(el, key, params),
     apply, setLocale, linkType, linkTypeOption, languageName,
-    nameOf: loc => CATALOGUE[loc]["locale.name"],
-    // The same message in every locale (e.g. spreadsheet headers accepted in any language).
-    every: key => SUPPORTED.map(loc => CATALOGUE[loc][key]).filter(v => typeof v === "string"),
-    has: key => typeof CATALOGUE[locale][key] === "string",
+    nameOf: loc => (CATALOGUE[loc] || {})["locale.name"] || ENDONYMS[loc] || loc,
+    rightToLeft: loc => RIGHT_TO_LEFT.has(loc || locale),
+    // The same message in every language loaded (e.g. spreadsheet headers: Portuguese, English and the user's own).
+    every: key => Object.values(CATALOGUE).map(c => c[key]).filter(v => typeof v === "string"),
+    has: key => typeof (CATALOGUE[locale] || {})[key] === "string",
     // Every message key (of the default locale, which holds them all).
     keys: () => Object.keys(CATALOGUE[DEFAULT_LOCALE]),
   };

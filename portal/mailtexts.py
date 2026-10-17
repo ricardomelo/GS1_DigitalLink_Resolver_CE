@@ -1,15 +1,18 @@
 """
-Texts of the portal's e-mail messages, in British English and Brazilian Portuguese
-(Documentation/adr/0004-e-mail.md, decision 8).
+Texts of the portal's e-mail messages (Documentation/adr/0004-e-mail.md, decision 8): British English and Brazilian
+Portuguese here, the other languages of the interface (Documentation/adr/0014-interface-languages.md) in
+mail_languages.json, in the same form ({language: {"signature": …, "texts": {message: [subject, body]}}}).
 
 Each message has a subject and a plain text per language, with {placeholders} filled in by compose(). Every
 message ends with the same signature: the operator's name (RESOLVER_ORG_NAME) and the portal's address. The HTML
 alternative is made from the plain text (escaped, paragraphs, links made clickable), so the two never differ.
 
-The development tests check that both languages have the same messages with the same placeholders
-(dev-tests/portal/test_mail.py). A new message needs both languages and a category in notify.TEMPLATES.
+The development tests check that every language has the same messages with the same placeholders
+(dev-tests/portal/test_mail.py, test_i18n.py). A new message needs every language and a category in notify.TEMPLATES.
 """
 import html
+import json
+import os
 import re
 import string
 
@@ -322,6 +325,15 @@ TEXTS = {
                   "portal. Se você consegue lê-la, o relay aceitou a mensagem e a entregou."),
     },
 }
+
+
+# The other languages, kept apart so this file stays readable
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mail_languages.json"), encoding="utf-8") as _fh:
+    for _lang, _texts in json.load(_fh).items():
+        SIGNATURE[_lang] = _texts["signature"]
+        for _name, (_subject, _body) in _texts["texts"].items():
+            TEXTS[_name][_lang] = (_subject, _body)
+        LANGUAGES += (_lang,)
 
 
 class _Defaults(dict):

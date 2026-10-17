@@ -9,8 +9,13 @@ document arrive in the maintainer's handover at the start of each session; read 
 
 - Code, comments, identifiers, commit messages and every document: **British English only**. There are no
   Portuguese documents (since 14 October 2026); do not write any unless asked.
-- User-facing texts of the software (portal, resolver pages, home page, e-mail messages) stay in **pt-BR and
-  en-GB**: a new text needs both languages (`portal/static/i18n.js`, `portal/mailtexts.py`).
+- User-facing texts of the software (portal, resolver pages, item's page, home page, e-mail messages) are in **eleven
+  languages**: pt-BR, en-GB, es, fr, de, it, zh-Hans, ja, ko, hi and ar (right to left; ADR 0014). **Every delivery
+  ends with its texts in every language**: `portal/static/i18n.js` (pt-BR, en-GB) and `portal/static/locales/<tag>.json`,
+  `portal/mailtexts.py` and `portal/mail_languages.json`, `web_server/src/page_texts.json`,
+  `frontend_proxy_server/home/home.js`. `dev-tests/portal/test_i18n.py` fails on a text missing, empty or with other
+  `{placeholders}` in any language. Translations other than pt-BR and en-GB are drafts until a native speaker reviews
+  them; write new ones with `Documentation/translation-glossary.md`.
 - The UI says *organisation / organização* and *Requests / Acessos*; code and technical documents say *tenant*
   and *request log*.
 - Keep the official project's names and behaviour unless a change is deliberate and recorded in the CHANGELOG.
@@ -43,9 +48,9 @@ document arrive in the maintainer's handover at the start of each session; read 
 - An ADR (`Documentation/adr/`) records deviations in the same delivery; a large item starts with its ADR.
 - The README's *Open backlog* loses an item when it is done or dropped; `Documentation/history.md` records each
   session.
-- A new e-mail message needs both languages in `mailtexts.py` and a category in `notify.TEMPLATES`. A new route
-  under `/portal/api/v1` needs its description in `portal/openapi.json`, and every new message code both
-  languages in `i18n.js`.
+- A new e-mail message needs every language (`mailtexts.py`, `mail_languages.json`) and a category in
+  `notify.TEMPLATES`. A new route under `/portal/api/v1` needs its description in `portal/openapi.json`, and every new
+  message code every language (`i18n.js` and `locales/`).
 - A new field in the request log's event: `request_log.event()`, ADR 0006 §3.1, `requestlog.row()`, the CSV
   columns, the developer guide and `test_request_log.py`'s list of documented fields.
 

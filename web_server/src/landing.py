@@ -34,14 +34,8 @@ CACHE_SECONDS = 60
 VERIFIED_KEYS = {'01': 'gtin', '414': 'gln'}
 DEFAULT_COLOUR, DEFAULT_ACCENT = '#002C6C', '#F26334'
 
-TEXT = {
-    'pt-BR': {'links': 'Informações sobre este item', 'other': 'Outros idiomas', 'none': 'Nenhum link disponível.',
-              'verified': 'Conferir este código no Verified by GS1', 'verifiedNote': 'Quem licenciou este código, na base da GS1.',
-              'code': 'Código'},
-    'en-GB': {'links': 'About this item', 'other': 'Other languages', 'none': 'No link available.',
-              'verified': 'Check this code in Verified by GS1', 'verifiedNote': 'Who licensed this code, in GS1\'s registry.',
-              'code': 'Code'},
-}
+# The page's texts in every language (web_pages.PAGE_TEXTS, Documentation/adr/0014-interface-languages.md)
+TEXT = {tag: texts['landing'] for tag, texts in web_pages.PAGE_TEXTS.items()}
 
 # Icons (24 × 24 outlines) per group of link types; any other type gets LINK
 _I = {
@@ -229,6 +223,7 @@ _PAGE = """
 .item-brand img{max-height:3.5rem;max-width:10rem;width:auto;height:auto;display:block}
 .item-brand strong{font-size:1.05rem;color:{{ colour }}}
 .item-code{font-family:ui-monospace,Consolas,monospace;font-size:.8125rem;color:var(--muted);margin:.25rem 0 1rem;word-break:break-all}
+[dir=rtl] .item-code{direction:ltr;text-align:right;unicode-bidi:isolate}
 .item-links{display:grid;gap:.6rem;margin:.5rem 0 1rem}
 .item-links a,.item-links span.off{display:flex;align-items:center;gap:.9rem;min-height:3.5rem;padding:.75rem 1rem;border-radius:.6rem;
 text-decoration:none;background:{{ colour }};color:{{ ink }};font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.12)}

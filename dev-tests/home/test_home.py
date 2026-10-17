@@ -463,6 +463,21 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
         check(page.locator("html").get_attribute("lang") == "pt-BR", "gs1resolver_lang cookie honoured")
         context.close()
 
+        # The interface languages (Documentation/adr/0014-interface-languages.md): Arabic right to left, Japanese
+        for locale, expected, direction in (("ar-EG", "ar", "rtl"), ("ja-JP", "ja", "ltr")):
+            context = browser.new_context(locale=locale)
+            page = context.new_page()
+            page.route(re.compile(r"https://fonts\.(googleapis|gstatic)\.com/.*"),
+                       lambda route: route.fulfill(status=200, body="", content_type="text/css"))
+            page.goto(base + "/")
+            names = page.eval_on_selector_all("#locale option", "os => os.map(o => o.textContent)")
+            check(page.locator("html").get_attribute("lang") == expected
+                  and page.locator("html").get_attribute("dir") == direction
+                  and page.locator("h1").inner_text() not in ("GS1 Digital Link resolver", "Resolver GS1 Digital Link")
+                  and len(names) == 11 and "العربية" in names and "日本語" in names,
+                  f"a {locale} browser → the home page in {expected}, {direction}, the menu naming every language in itself")
+            context.close()
+
         # Phone
         context = browser.new_context(locale="pt-BR", viewport={"width": 390, "height": 844},
                                       device_scale_factor=2, is_mobile=True, has_touch=True)

@@ -9,7 +9,8 @@ HTML pages served by the resolver to people using a browser (Accept: text/html).
 
 The look follows gs1.org. The page language is taken from the "gs1resolver_lang" cookie (set by the
 language menu on these pages and by the link management portal) or, failing that, from the
-Accept-Language header: Brazilian Portuguese or British English.
+Accept-Language header: one of the eleven languages of page_texts.json (Documentation/adr/0014-interface-languages.md),
+English otherwise; Arabic is written right to left.
 Clients asking for JSON keep receiving JSON; nothing here alters machine responses.
 """
 import base64
@@ -24,8 +25,13 @@ PRODUCT_NAME = os.getenv('RESOLVER_PRODUCT_NAME', 'GS1 Resolver Community Editio
 ORG_NAME = os.getenv('RESOLVER_ORG_NAME', '').strip()
 ORG_URL = os.getenv('RESOLVER_ORG_URL', '').strip()
 LOCALE_COOKIE = 'gs1resolver_lang'
-SUPPORTED_LOCALES = {'pt-BR': 'Português (Brasil)', 'en-GB': 'English (UK)'}
+# The texts of the pages, the item's page (landing.py) and the link types' names in every language, each language
+# with its own name (Documentation/adr/0014-interface-languages.md)
+with open(os.path.join(os.path.dirname(__file__), 'page_texts.json'), encoding='utf-8') as _fh:
+    PAGE_TEXTS = json.load(_fh)
+SUPPORTED_LOCALES = {tag: texts['name'] for tag, texts in PAGE_TEXTS.items()}
 DEFAULT_LOCALE = 'en-GB'
+RIGHT_TO_LEFT = {'ar'}
 
 _LOGO_PATH = os.path.join(os.path.dirname(__file__), 'gs1-logo.png')
 try:
@@ -34,84 +40,15 @@ try:
 except OSError:
     LOGO_DATA_URI = ''
 # First matching language prefix in Accept-Language wins.
-LOCALE_MATCHERS = [('pt', 'pt-BR'), ('en', 'en-GB')]
+LOCALE_MATCHERS = [('pt', 'pt-BR'), ('en', 'en-GB'), ('es', 'es'), ('fr', 'fr'), ('de', 'de'), ('it', 'it'),
+                   ('zh', 'zh-Hans'), ('ja', 'ja'), ('ko', 'ko'), ('hi', 'hi'), ('ar', 'ar')]
+LOCALE_MATCHERS = [(prefix, tag) for prefix, tag in LOCALE_MATCHERS if tag in SUPPORTED_LOCALES]
 
-TEXT = {
-    'pt-BR': {
-        'linkset.title': 'Informações disponíveis',
-        'choice.title': 'Escolha uma opção',
-        'choice.text': 'Há mais de uma versão desta informação. Escolha a que preferir.',
-        'level.serial': 'Unidade (série {value})', 'level.lot': 'Lote {value}',
-        'level.variant': 'Variante {value}', 'level.product': 'Produto (todas as unidades)',
-        'error.400.title': 'Código inválido',
-        'error.400.text': 'Este endereço não corresponde a um GS1 Digital Link válido. Confira os números e tente escanear de novo.',
-        'error.404type.title': 'Informação não disponível',
-        'error.404type.text': 'Este produto não tem “{label}” cadastrado. Veja abaixo o que o fabricante disponibilizou.',
-        'error.404.title': 'Produto sem informações cadastradas',
-        'error.404.text': 'O responsável por este código ainda não cadastrou páginas para ele no Resolver. Se você é o dono da marca, fale com o operador deste Resolver para publicar os links do seu produto.',
-        'error.other.title': 'Não foi possível concluir a consulta',
-        'error.other.text': 'Tente novamente em alguns instantes.',
-        'status': 'Código da resposta: {status}',
-        'footer': 'Serviço GS1 Digital Link operado por',
-        'language': 'Idioma',
-        'home': 'Página inicial do Resolver',
-    },
-    'en-GB': {
-        'linkset.title': 'Available information',
-        'choice.title': 'Choose an option',
-        'choice.text': 'There is more than one version of this information. Choose the one you prefer.',
-        'level.serial': 'Item (serial {value})', 'level.lot': 'Batch/lot {value}',
-        'level.variant': 'Variant {value}', 'level.product': 'Product (every unit)',
-        'error.400.title': 'Invalid code',
-        'error.400.text': 'This address is not a valid GS1 Digital Link. Check the numbers and try scanning again.',
-        'error.404type.title': 'Information not available',
-        'error.404type.text': 'This product has no “{label}” registered. See below what the manufacturer has made available.',
-        'error.404.title': 'No information registered for this product',
-        'error.404.text': 'The owner of this code has not yet registered any pages for it on the resolver. If you own the brand, contact the operator of this resolver to publish your product links.',
-        'error.other.title': 'The request could not be completed',
-        'error.other.text': 'Please try again in a moment.',
-        'status': 'Response code: {status}',
-        'footer': 'GS1 Digital Link service operated by',
-        'language': 'Language',
-        'home': 'Resolver home page',
-    },
-}
-
-LINK_TYPE_LABELS = {
-    'pt-BR': {
-        'defaultLink': 'Destino principal', 'defaultLinkMulti': 'Destino principal (por idioma)',
-        'pip': 'Página do produto', 'instructions': 'Instruções de uso', 'support': 'Atendimento (SAC)',
-        'certificationInfo': 'Certificados e conformidade', 'safetyInfo': 'Informações de segurança',
-        'epil': 'Bula eletrônica (paciente)', 'smpc': 'Informações ao profissional de saúde',
-        'recallStatus': 'Situação de recolhimento (recall)', 'quickStartGuide': 'Guia rápido',
-        'tutorial': 'Tutoriais', 'relatedVideo': 'Vídeo do produto', 'serviceInfo': 'Manutenção e assistência',
-        'whatsInTheBox': 'Conteúdo da embalagem', 'faqs': 'Perguntas frequentes',
-        'registerProduct': 'Registrar produto ou garantia', 'purchaseSuppliesOrAccessories': 'Acessórios e refis',
-        'promotion': 'Promoção', 'hasRetailers': 'Onde comprar', 'review': 'Avaliações',
-        'leaveReview': 'Deixar uma avaliação', 'socialMedia': 'Redes sociais',
-        'sustainabilityInfo': 'Sustentabilidade e reciclagem', 'nutritionalInfo': 'Informação nutricional',
-        'ingredientsInfo': 'Ingredientes', 'allergenInfo': 'Alergênicos', 'recipeInfo': 'Receitas',
-        'masterData': 'Dados cadastrais (B2B)', 'traceability': 'Rastreabilidade', 'epcis': 'Repositório EPCIS',
-    },
-    'en-GB': {
-        'defaultLink': 'Default link', 'defaultLinkMulti': 'Default link (per language)',
-        'pip': 'Product information page', 'instructions': 'Instructions', 'support': 'Customer support',
-        'certificationInfo': 'Certification and compliance', 'safetyInfo': 'Safety information',
-        'epil': 'Electronic patient information leaflet', 'smpc': 'Information for healthcare professionals',
-        'recallStatus': 'Recall status', 'quickStartGuide': 'Quick start guide',
-        'tutorial': 'Tutorials', 'relatedVideo': 'Product video', 'serviceInfo': 'Servicing and maintenance',
-        'whatsInTheBox': "What's in the box", 'faqs': 'Frequently asked questions',
-        'registerProduct': 'Register product or warranty', 'purchaseSuppliesOrAccessories': 'Accessories and refills',
-        'promotion': 'Promotion', 'hasRetailers': 'Where to buy', 'review': 'Reviews',
-        'leaveReview': 'Leave a review', 'socialMedia': 'Social media',
-        'sustainabilityInfo': 'Sustainability and recycling', 'nutritionalInfo': 'Nutritional information',
-        'ingredientsInfo': 'Ingredients', 'allergenInfo': 'Allergens', 'recipeInfo': 'Recipes',
-        'masterData': 'Master data (B2B)', 'traceability': 'Traceability', 'epcis': 'EPCIS repository',
-    },
-}
+TEXT = {tag: texts['pages'] for tag, texts in PAGE_TEXTS.items()}
+LINK_TYPE_LABELS = {tag: texts['linkLabels'] for tag, texts in PAGE_TEXTS.items()}
 
 _BASE = """<!doctype html>
-<html lang="{{ locale }}"><head><meta charset="utf-8">
+<html lang="{{ locale }}" dir="{{ direction }}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>{{ title }} | {{ product }}</title>
@@ -127,8 +64,8 @@ header{background:#fff;box-shadow:0 2px 3px rgba(0,44,108,.2);position:relative}
 .bar{max-width:60rem;margin:0 auto;padding:.6rem clamp(1rem,4vw,2rem);min-height:4.5rem;display:flex;align-items:center;gap:1rem}
 .brand{display:flex;align-items:center;gap:1rem;color:var(--blue);text-decoration:none;min-width:0}
 .brand img{height:2.75rem;width:auto;display:block}
-.brand span{font-weight:500;padding-left:1rem;border-left:1px solid var(--line);line-height:1.25}
-.lang{margin-left:auto;display:flex;align-items:center;gap:.35rem;color:var(--blue)}
+.brand span{font-weight:500;padding-inline-start:1rem;border-inline-start:1px solid var(--line);line-height:1.25}
+.lang{margin-inline-start:auto;display:flex;align-items:center;gap:.35rem;color:var(--blue)}
 .lang select{font:500 .875rem var(--sans);color:var(--blue);border:1px solid transparent;background:transparent;padding:.35rem .4rem;cursor:pointer}
 .lang select:hover{border-color:var(--line)}
 .hero{background:var(--blue);color:#fff;padding:2.25rem 0 5rem}
@@ -141,14 +78,15 @@ p{margin:.5rem 0}.muted{color:var(--muted);font-size:.875rem}
 .code{font-family:ui-monospace,Consolas,monospace;background:var(--page);border-radius:4px;padding:.2rem .45rem;word-break:break-all;display:inline-block}
 h2{font-size:.8125rem;font-weight:600;margin:1.75rem 0 .5rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 ul{list-style:none;padding:0;margin:0}
-li a,li .unlinked{display:block;padding:.85rem 1rem;margin:.5rem 0;border:1px solid var(--line);border-left:4px solid var(--blue);
+li a,li .unlinked{display:block;padding:.85rem 1rem;margin:.5rem 0;border:1px solid var(--line);border-inline-start:4px solid var(--blue);
 border-radius:4px;text-decoration:none;color:var(--ink);background:#FAFCFE}
-li .unlinked{border-left-color:var(--line)}
-li a:hover{background:var(--page);border-left-color:var(--action)}li strong{display:block;color:var(--blue);font-weight:600}
+li .unlinked{border-inline-start-color:var(--line)}
+li a:hover{background:var(--page);border-inline-start-color:var(--action)}li strong{display:block;color:var(--blue);font-weight:600}
 li small{color:var(--muted)}
 footer{max-width:60rem;margin:0 auto;padding:0 clamp(1rem,4vw,2rem) 2rem;font-size:.8125rem;color:var(--muted)}
+[dir=rtl] .code{direction:ltr;unicode-bidi:isolate}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-@media (max-width:560px){.brand span{font-size:.8125rem;padding-left:.75rem}.brand img{height:2.25rem}.lang svg{display:none}}
+@media (max-width:560px){.brand span{font-size:.8125rem;padding-inline-start:.75rem}.brand img{height:2.25rem}.lang svg{display:none}}
 </style></head><body>
 <header><div class="bar">
   <a class="brand" href="/" title="{{ home_label }}">{% if logo %}<img src="{{ logo }}" alt="GS1" width="54" height="44">{% endif %}<span>{{ product }}</span></a>
@@ -292,7 +230,7 @@ def _page(locale: str, title: str, body: str, fonts: bool = True, icon: str | No
     return render_template_string(_BASE, locale=locale, title=title, product=PRODUCT_NAME, logo=LOGO_DATA_URI, fonts=fonts, icon=icon,
                                   org=ORG_NAME, org_url=ORG_URL, footer=_t(locale, 'footer'),
                                   language_label=_t(locale, 'language'), home_label=_t(locale, 'home'),
-                                  locales=SUPPORTED_LOCALES,
+                                  locales=SUPPORTED_LOCALES, direction='rtl' if locale in RIGHT_TO_LEFT else 'ltr',
                                   cookie=LOCALE_COOKIE, body=body)
 
 

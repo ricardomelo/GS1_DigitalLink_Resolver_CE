@@ -4802,6 +4802,7 @@ async function init() {
     location.replace("login" + location.hash);
     return;
   }
+  await I18N.ready;                       // the language's catalogue (ADR 0014)
   buildLocaleMenu();
   I18N.apply();
   setupUserMenu();

@@ -193,7 +193,8 @@ async function setPassword(event) {
   }
 }
 
-/* ------------------------------------------------------------------ start */
+/* ------------------------------------------------------------------ start (once the language's catalogue is loaded: ADR 0014) */
+I18N.ready.then(() => {
 buildLocaleMenu();
 I18N.apply();
 const reason = new URLSearchParams(location.search).get("reason");
@@ -229,4 +230,5 @@ loginOptions().then(options => {
   $("#forgot-open").hidden = !offered;
   $("#sso-open").hidden = !options.sso;
   I18N.set($("#login-help"), offered ? "login.helpRecovery" : "login.help");
+});
 });

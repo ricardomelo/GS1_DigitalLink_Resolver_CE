@@ -955,9 +955,17 @@ change). The markup has two groups, `.label-visual` and `.label-controls`.
 
 ## Languages
 
-**Portal.** On first visit the language follows the browser/operating system (`navigator.languages`):
-any `pt-*` tag selects Brazilian Portuguese, any `en-*` tag British English, and anything else falls back
-to British English. The globe menu in the header (also on the sign-in page) switches language instantly,
+Eleven languages ([ADR 0014](../adr/0014-interface-languages.md)): Português (Brasil), English (UK), Español,
+Français, Deutsch, Italiano, 中文（简体）, 日本語, 한국어, हिन्दी and العربية (right to left), in the portal, its e-mails, the
+resolver's pages, the item's page and the home page. **The translations other than Portuguese and English were drafted
+by Claude** with the [translation guide](../translation-glossary.md) and should be reviewed by a native speaker of
+each language before production; until then, say so to the users of those languages. The names of the GS1 Application
+Identifiers stay GS1's English data titles in them (Portuguese keeps its own).
+
+**Portal.** On first visit the language follows the browser/operating system (`navigator.languages`): the first tag
+that matches one of the eleven by its language (`pt-PT` → Português (Brasil), `es-MX` → Español, `zh-TW` → 中文（简体）),
+otherwise British English. Portuguese and English are in `i18n.js`; each other language's catalogue
+(`portal/static/locales/<tag>.json`, about 110 KB) is fetched when it is detected or chosen. The globe menu in the header (also on the sign-in page) switches language instantly,
 without reloading or losing what has been typed. The choice is remembered in the browser and in the
 `gs1resolver_lang` cookie, which the resolver's own pages also read.
 
@@ -965,14 +973,17 @@ The back end is language-neutral: validation errors and results travel as messag
 (e.g. `{"code": "gtin.checkDigit", "params": {"expected": 5}}`) and the browser renders them from the
 catalogue, so a message already on screen is re-translated when the language changes.
 
-To add a language: copy one locale block in `portal/static/i18n.js`, translate it, and add it to
-`SUPPORTED` and `LOCALE_MATCHERS` at the top of the file. Link target languages (`hreflang`) are named
+To add a language: a `portal/static/locales/<tag>.json` with English's keys
+(`python portal/tools/i18n_catalogue.py export` gives them; `check` compares), its tag in `SUPPORTED`, `ENDONYMS` and
+`LOCALE_MATCHERS` of `i18n.js` and `home.js`, `users.LANGUAGES`, and its texts in `mail_languages.json` and
+`web_server/src/page_texts.json`; `dev-tests/portal/test_i18n.py` lists what is missing. Link target languages (`hreflang`) are named
 by the browser (`Intl.DisplayNames`), so they need no translation.
 
 **Resolver pages.** The HTML pages served by the resolver (link list, "not found", "information not
 available", "invalid code") have their own language menu. The language comes from the `gs1resolver_lang`
 cookie when set (by that menu or by the portal); otherwise from the phone's `Accept-Language` header, with
-q-values honoured: Portuguese → pt-BR, English → en-GB, anything else → en-GB. A cookie is used rather
+q-values honoured: the first language among the eleven (by its language, whatever its region), anything else →
+en-GB; Arabic pages are written right to left. A cookie is used rather
 than a query parameter so the GS1 Digital Link URI is left untouched (query parameters are passed on to
 redirect targets).
 

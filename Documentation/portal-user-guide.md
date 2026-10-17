@@ -106,9 +106,13 @@ below); otherwise ask the administrator for a new temporary password.
   Two minutes before the end a window counts down: choose **Stay signed in** to carry on, or **Sign out**.
   Near the 12-hour limit the window cannot extend the session: save your work and sign in again. When the
   session ends the portal asks you to sign in again; other tabs of the portal share the same session.
-- **Language.** The language menu at the top right switches between Português (Brasil) and English (UK)
-  at once, without losing what you typed. The portal starts in the language of your browser and
-  remembers your choice; the resolver's own pages and the home page follow the same choice.
+- **Language.** The language menu at the top right switches at once, without losing what you typed, among
+  eleven languages, each named in itself: Português (Brasil), English (UK), Español, Français, Deutsch, Italiano,
+  中文（简体）, 日本語, 한국어, हिन्दी and العربية (written right to left). The portal starts in the language of your
+  browser and remembers your choice; the resolver's own pages, the item's page and the home page follow the same
+  choice, and your e-mails come in the language chosen in **Options**. The translations other than Portuguese and
+  English are drafts until reviewed by native speakers; the names of the GS1 Application Identifiers stay GS1's English
+  names in them.
 
 ### Forgotten password and invitations (installations with e-mail)
 

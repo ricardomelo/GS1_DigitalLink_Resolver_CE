@@ -722,6 +722,15 @@ def assets(name):
     return Response(status=404)
 
 
+@app.get("/portal/locales/<tag>.json")
+def locale_catalogue(tag):
+    """The catalogue of a language other than Portuguese and English (Documentation/adr/0014-interface-languages.md),
+    for anyone: the sign-in page needs it too."""
+    if tag not in users.LANGUAGES or tag in ("pt-BR", "en-GB"):
+        return Response(status=404)
+    return send_from_directory(os.path.join(STATIC_DIR, "locales"), f"{tag}.json", mimetype="application/json")
+
+
 def shown_username(typed: str) -> str:
     """A user name typed at a failed sign-in, as written to the log and the audit trail: anyone can type
     it, so line breaks and other unprintable characters (which could forge log lines) become "?" and it

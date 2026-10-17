@@ -179,7 +179,7 @@ check("public link type key: GS1 addresses folded, other namespaces kept",
 
 # ---------------------------------------------------------------- HTML pages and language
 cases = [("pt-BR,pt;q=0.9", None, "pt-BR"), ("pt-BR,pt;q=0.9", "en-GB", "en-GB"), ("en-GB", None, "en-GB"),
-         ("en-GB", "pt-BR", "pt-BR"), ("de-DE", "bogus", "en-GB"), ("en;q=0.5,pt;q=0.9", None, "pt-BR")]
+         ("en-GB", "pt-BR", "pt-BR"), ("nl-NL", "bogus", "en-GB"), ("de-DE", "bogus", "de"), ("en;q=0.5,pt;q=0.9", None, "pt-BR")]
 for language, cookie, expected in cases:
     r = get(G + "?linkType=gs1:recallStatus", "text/html", language, cookie)
     html = r.get_data(as_text=True)

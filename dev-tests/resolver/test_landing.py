@@ -246,17 +246,19 @@ check("…the visitor's own language not marked on its links, the folded ones ma
 
 r, _ = ask(ACME4 + PAGE, language="es-ES, fr;q=0.5")
 html4 = r.get_data(as_text=True)
-shown4 = html4.split("Other languages")[0] if "Other languages" in html4 else html4
+other = landing.TEXT["es"]["other"]                # the page itself in Spanish (ADR 0014)
+shown4 = html4.split(other)[0] if other in html4 else html4
 check("each link type once: the product page in the visitor's language (Spanish), the German one folded",
       "Página de producto" in shown4 and "Produktseite" not in shown4 and "Produktseite" in html4, shown4[-600:])
 check("…recipes only in French, the visitor's second language: shown, its language marked",
       "Recettes" in shown4 and "· fr</small>" in shown4, shown4[-600:])
 r, _ = ask(ACME4 + PAGE, language="ja")
 html4 = r.get_data(as_text=True)
-shown4 = html4.split("Other languages")[0] if "Other languages" in html4 else html4
+other = landing.TEXT["ja"]["other"]
+shown4 = html4.split(other)[0] if other in html4 else html4
 check("…no language the visitor reads: each type in its first language, marked; the rest folded",
       "Produktseite" in shown4 and "· de</small>" in shown4 and "Recettes" in shown4
-      and "Página de producto" not in shown4 and "Other languages (1)" in html4, shown4[-600:])
+      and "Página de producto" not in shown4 and f"{other} (1)" in html4 and 'lang="ja"' in html4, shown4[-600:])
 
 r, _ = ask(ACME3, accept="*/*")
 check("each record chooses: the product's scan reaches its page", r.status_code == 307

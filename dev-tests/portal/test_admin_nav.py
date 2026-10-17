@@ -235,7 +235,8 @@ missing = sorted(c for c in codes if i18n.count(f'"{c}"') != 2)
 check(f"every new text in both languages ({len(codes)})", len(codes) > 60 and not missing, missing)
 code_only = re.sub(r"//.*", "", re.sub(r"/\*.*?\*/", "", script, flags=re.S))
 check("no confirmation through the browser's dialog left", "confirm(" not in code_only
-      and script.count("await ask(") == 15, script.count("await ask("))   # the fourteen, and the organisation's prefixes
+      and script.count("await ask(") == 16, script.count("await ask("))   # the fourteen, the organisation's prefixes
+                                                                            # and an older GCP length table (item 9.9)
 check("the sidebar is built from the user menu's screens (one list)", script.count('".menu-panel a.nav-item"') == 1
       and index.count("nav-item") == 14, index.count("nav-item"))
 

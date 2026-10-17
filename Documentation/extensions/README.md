@@ -659,6 +659,21 @@ A refused export says the numbers and goes into the journal (`export-refused`), 
 setting in `.env`, is read once at the first start of this version as the starting limits of the operator and of every
 organisation, then no longer: remove it afterwards (`sed -i '/^PORTAL_EXPORT_LIMITS=/d' .env`).
 
+### GS1's GCP length table
+
+The length of a key's GS1 Company Prefix comes from GS1's GCP length table (`GCPPrefixFormatList.xml`,
+[ADR 0015](../adr/0015-gcp-length-table.md)) once a server administrator has uploaded it: *Organisations → GS1 Company
+Prefix length table → Upload list*. The table is GS1's and access-restricted since December 2025, so it is not in this
+repository and the installation never downloads it; upload each new version GS1 publishes. The page compresses the file
+(GS1's list of September 2026: 9.2 MB, about 0.7 MB compressed, within the 1 MB the proxies accept); the portal checks
+it, keeps it in its database (collection `gcp_table`, in the daily backup) and every portal process uses the new list
+within a minute. Without the browser — or for a list too large for the 1 MB limit — load it in the portal's container:
+```bash
+docker compose exec -T portal-service python gcp.py load - < GCPPrefixFormatList.xml   # add --force for an older list
+docker compose exec portal-service python gcp.py info
+```
+Expected: `Loaded GS1's list of 2026-09-17T11:04:36Z: 212486 prefixes (1.4 s).` (the date and count of your file).
+
 ## Tenant API
 
 An organisation's own systems reach its records through `/portal/api/v1` with an API key

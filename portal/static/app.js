@@ -463,11 +463,12 @@ async function refreshEpc() {
       }
       return [el("dt", "", t(key)), dd];
     }));
-    I18N.set($("#epc-msg"), e.prefixFrom === "prefixes" ? "epc.prefixFound" : null, { n: e.prefixLength });
+    I18N.set($("#epc-msg"), e.prefixFrom === "prefixes" ? "epc.prefixFound" : e.prefixFrom === "table" ? "epc.prefixTable"
+      : null, { n: e.prefixLength, date: formatDay(e.tableDate) });
   } catch (err) {
     if (seq !== epcSeq) return;
     $("#epc-out").replaceChildren();
-    I18N.set($("#epc-msg"), err.code, err.params);
+    I18N.set($("#epc-msg"), err.code, { ...err.params, date: formatDay(err.params?.date) });
   }
 }
 
@@ -1141,6 +1142,35 @@ function fillKeyTypes() {
   select.value = current;
 }
 
+/* The key's GS1 Company Prefix under the key, by GS1's GCP length table when one is loaded (ADR 0015). */
+let gcpSeq = 0, gcpTimer = null;
+
+function formatDay(iso) {
+  return iso ? new Intl.DateTimeFormat(I18N.locale, { dateStyle: "short", timeZone: "UTC" }).format(new Date(iso)) : "—";
+}
+
+function refreshGcpHint(g) {
+  const box = $("#gcp-hint");
+  clearTimeout(gcpTimer);
+  if (!CONFIG?.gcpTable || !g.ok) { box.hidden = true; return; }
+  const seq = ++gcpSeq;
+  gcpTimer = setTimeout(async () => {
+    try {
+      const found = await api("GET", "gcp/lookup?" + new URLSearchParams({ key: g.ai, value: g.value }));
+      if (seq !== gcpSeq) return;
+      if (!found.date) { box.hidden = true; return; }
+      const date = formatDay(found.date);
+      if (found.length === 0) I18N.set(box, "gcp.editorNotGcp", { date });
+      else if (found.length === null) I18N.set(box, "gcp.editorUnknown", { date });
+      else I18N.set(box, "gcp.editorLine", { prefix: found.prefix, n: found.length, date });
+      box.className = "field-msg gcp-hint" + (found.length === 0 ? " is-warn" : "");
+      box.hidden = false;
+    } catch {
+      if (seq === gcpSeq) box.hidden = true;
+    }
+  }, 250);
+}
+
 function onIdentityChange() {
   const g = readKey();
   const l = readQualifiers();
@@ -1152,6 +1182,7 @@ function onIdentityChange() {
   qualMsg.className = "field-msg" + (l.error ? " is-error" : "");
 
   $("#open").disabled = !(CONFIG && g.ok && l.ok);
+  refreshGcpHint(g);
   markInformative(g, l);
   renderScope(g, l);
   // The batch or variant of a serial number is informative: changing it keeps the record open
@@ -1711,6 +1742,8 @@ function orgPanel(d, tab) {
     const box = el("div", "prefix-rows");
     orgState.rows = prefixRows(box, d.prefixes, { editable: d.canEditPrefixes });
     const out = [el("p", "field-msg", t(d.canEditPrefixes ? "org.prefixesHint" : "org.prefixesReadOnly")), box];
+    const warnings = prefixWarnings(d.prefixChecks);
+    if (warnings) { warnings.id = "org-gcp-warnings"; out.push(warnings); }
     if (d.canEditPrefixes) {
       const save = el("button", "btn btn-primary", t("org.savePrefixes"));
       save.type = "button";
@@ -2294,6 +2327,85 @@ function tenantsStatus(kind, key, params) {
 
 let newTenantRows = null;
 
+/* GS1's GCP length table (ADR 0015): the list in use, and a new one uploaded — compressed in the browser, so that
+   GS1's 9 MB file passes the 1 MB limit of the proxies; the portal checks it before it replaces the one in use. */
+async function showGcpTable() {
+  try {
+    const { table } = await api("GET", "gcp");
+    if (table) I18N.set($("#gcp-current"), "gcp.current", { date: formatDay(table.date), count: nf(table.count),
+                                                           user: table.uploadedBy, when: formatWhen(table.uploadedAt) });
+    else I18N.set($("#gcp-current"), "gcp.none");
+  } catch (e) {
+    I18N.set($("#gcp-current"), e.code, e.params);
+  }
+}
+
+async function postGcp(body, kind, confirm) {
+  let res;
+  try {
+    res = await fetch(BASE + "api/gcp" + (confirm ? "?confirm=1" : ""), { method: "POST", credentials: "same-origin",
+      headers: { Accept: "application/json", "Content-Type": kind }, body });
+  } catch {
+    throw new ApiError("error.network");
+  }
+  SessionClock.contact();
+  let data = null;
+  try { data = await res.json(); } catch { /* not JSON */ }
+  if (!res.ok) throw new ApiError(data?.code || "error.unexpected", data?.params || { status: res.status });
+  return data;
+}
+
+function gcpStatus(kind, key, params) {
+  const box = $("#gcp-status");
+  box.hidden = !key;
+  box.className = "status" + (kind ? " is-" + kind : "");
+  if (key) I18N.set(box, key, params);
+}
+
+async function uploadGcp(event) {
+  event.preventDefault();
+  const file = $("#gcp-file").files[0];
+  if (!file) { gcpStatus("error", "gcp.noFile"); return; }
+  const button = $("#gcp-upload");
+  button.disabled = true;
+  gcpStatus("", "gcp.uploading");
+  const dates = p => ({ ...p, date: formatDay(p.date), current: formatDay(p.current),
+                        count: p.count === undefined ? undefined : nf(p.count) });
+  try {
+    let body = file, kind = "application/xml";
+    if (typeof CompressionStream === "function") {
+      body = await new Response(file.stream().pipeThrough(new CompressionStream("gzip"))).blob();
+      kind = "application/gzip";
+    }
+    let result;
+    try {
+      result = await postGcp(body, kind, false);
+    } catch (e) {
+      if (e.code !== "gcp.older" || !await ask(t("gcp.confirmOlder", dates(e.params)))) throw e;
+      result = await postGcp(body, kind, true);
+    }
+    gcpStatus("ok", result.code, dates(result.params));
+    $("#gcp-form").reset();
+    CONFIG.gcpTable = { date: result.table.date, count: result.table.count };
+    loadTenants();
+  } catch (e) {
+    gcpStatus("error", e.code, dates(e.params || {}));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/* An organisation's prefixes that GS1's list sees otherwise (longer, shorter, not a company prefix, not listed):
+   one warning line each; nothing when they agree or without a list. */
+function prefixWarnings(checks) {
+  const odd = (checks || []).filter(c => c.status !== "ok");
+  if (!odd.length) return null;
+  const box = el("div", "gcp-warnings");
+  if (CONFIG?.gcpTable) box.append(el("p", "field-msg", t("gcp.checksTitle", { date: formatDay(CONFIG.gcpTable.date) })));
+  for (const c of odd) box.append(el("p", "field-msg is-warn", t("gcp.check." + c.status, { prefix: c.prefix, n: c.length })));
+  return box;
+}
+
 /* The most rows one export may hold in any organisation (backlog item 9.8); empty lifts it. */
 async function saveExportMaximum(event) {
   event.preventDefault();
@@ -2312,6 +2424,7 @@ async function loadTenants() {
   try {
     const data = await api("GET", "tenants");
     $("#export-maximum").value = data.exportMaximum ?? "";
+    showGcpTable();
     $("#tenants-body").replaceChildren(...data.tenants.map(tenantRow));
     $("#tenants-empty").hidden = data.tenants.length > 0;
     if (data.operatorRecords === null) I18N.set($("#tenants-operator"), "tenants.recordsUnavailable");
@@ -2340,7 +2453,10 @@ function tenantRow(tn) {
   const name = input("name", tn.name, "tenants.name");
   name.maxLength = 80;
   cell("tenants.name", name);
-  cell("tenants.prefixes", tn.prefixes.join(", ")).classList.add("code");     // changed on the organisation's page
+  const prefixCell = cell("tenants.prefixes", tn.prefixes.join(", "));         // changed on the organisation's page
+  prefixCell.classList.add("code");
+  const warnings = prefixWarnings(tn.prefixChecks);
+  if (warnings) prefixCell.append(warnings);
   cell("tenants.users", String(tn.users)).classList.add("count");
   cell("tenants.records", tn.records === null ? "—" : String(tn.records)).classList.add("count");
   cell("users.state", t(tn.disabled ? "users.disabled" : "users.active"));
@@ -4949,6 +5065,7 @@ async function init() {
   $("#users-tenant-filter").addEventListener("change", renderUsers);
   $("#tenants-create").addEventListener("submit", createTenant);
   $("#export-maximum-form").addEventListener("submit", saveExportMaximum);
+  $("#gcp-form").addEventListener("submit", uploadGcp);
   $("#support-form").addEventListener("submit", startSupport);
   $("#support-cancel").addEventListener("click", () => $("#support-dialog").close());
   $("#support-leave").addEventListener("click", endSupport);

@@ -204,7 +204,9 @@ the record.
 2. Type the identifier. For a GTIN, type the digits printed beneath the barcode: 8, 12, 13 or 14 digits;
    spaces, full stops and hyphens are ignored and the portal completes the GTIN to 14 digits. The message
    under the field checks it as you type — the length, the check digit (and which one it should be), the
-   allowed characters, the GS1 Company Prefix at the start.
+   allowed characters, the GS1 Company Prefix at the start. When the server administrator has loaded GS1's GCP
+   length table, a second line names the key's GS1 Company Prefix and its number of digits by that list (with its
+   date), or says that the range is not a GS1 Company Prefix (restricted circulation numbers, coupons, ISBN…).
 3. **Qualifiers** (only for the types that have them). Leave them blank for a record that applies to
    every unit of the item. Fill them in to narrow the record, for example to one batch or one serial
    number. Each field explains its format under it. The portal accepts only the combinations the
@@ -436,7 +438,9 @@ a shorter content.
 EPC Tag Data Standard encodes it — SGTIN-96 for a numeric serial number, SGTIN-198 otherwise — in hexadecimal (to write
 into an RFID tag) and as a tag URI, and the **link for NFC**, the compressed GS1 Digital Link (`…/eh…`, `…/ex…`) to
 write into an NFC or hybrid tag; this resolver reads it like the QR code. The EPC needs the length of the GS1 Company
-Prefix: the portal takes your organisation's; for other codes choose it. The **filter** says what the item is (1, a
+Prefix: the portal takes it from GS1's GCP length table when the server administrator has loaded it (the block says
+so, with the list's date), otherwise from your organisation's prefixes; for other codes choose it — your choice always
+wins. A key the list marks as not a GS1 Company Prefix has no EPC unless you choose a length. The **filter** says what the item is (1, a
 point-of-sale item, by default). **Copy** puts a value on the clipboard.
 
 ## 10. Data attributes in the QR code
@@ -720,6 +724,14 @@ belong to no organisation (the operator's).
   still resolve.
 - **Remove**: only an organisation without users; its prefixes and records go back to the operator, and its audit
   trail is kept.
+- **GS1 Company Prefix length table**: GS1's list of how many digits each GS1 Company Prefix has
+  (`GCPPrefixFormatList.xml`; GS1 gives access on request since December 2025). Choose the file and **Upload list**: the
+  page compresses it, the portal checks it (a refused file names the problem, and the list in use stays) and replaces
+  the list in use at once. The panel shows the list's date, its number of prefixes and who uploaded it when; a list older
+  than the one in use is asked about first. Upload each new version GS1 publishes; nothing is downloaded automatically.
+  With a list, an organisation's prefix that disagrees with it is pointed out under its prefixes — longer than GS1's
+  company prefix there, shorter than the prefixes it covers, or not a GS1 Company Prefix range —, here and on the
+  organisation's page; it is still accepted.
 - **Exports in every organisation**: the **most rows per export** any organisation's users and API keys may download —
   the record spreadsheet, the requests' CSV, the tenant API's record listing —, its administrators included. Empty (the
   default) is no limit. Each organisation sets limits per role below it on its page (**Exports**). Server

@@ -37,6 +37,7 @@ import branding
 import domains
 import epc
 import exportlimits
+import gcp
 import linkcheck
 import mail
 import meta
@@ -429,6 +430,11 @@ def log_event(action: str, tenant=_SCOPE, actor_tenant=_SCOPE, **fields) -> None
         log.warning("Journal not written (%s): %s", action, exc)
 
 
+# Routes that take a file as the request's body (ADR 0015: GS1's GCP length table), with types a page of another site
+# cannot send without the browser asking first (not form or plain text): still safe from cross-site requests.
+RAW_UPLOADS = {"/portal/api/gcp": ("application/gzip", "application/xml", "text/xml")}
+
+
 @app.before_request
 def same_origin_only():
     """Rejects writes coming from another site (CSRF defence while using Basic auth)."""
@@ -436,7 +442,8 @@ def same_origin_only():
         origin = request.headers.get("Origin")
         if origin and origin.rstrip("/") != PORTAL_ORIGIN:
             return message("request.forbiddenOrigin", 403)
-        if request.method != "DELETE" and not request.is_json:
+        if request.method != "DELETE" and not request.is_json and not (
+                request.path in RAW_UPLOADS and request.mimetype in RAW_UPLOADS[request.path]):
             return message("request.jsonRequired", 415)
 
 
@@ -982,6 +989,7 @@ def config():
                               for d in domains.verified(g.tenant)]},
         preferences=preferences_of(users.get(g.user) or {}),
         exportLimit=export_limit(),
+        gcpTable=gcp_summary(),
         # the label's scanning environments (Documentation/adr/0010-label-studio.md, section 7): their 2D symbols, the
         # X-dimension ranges and the sizes that keep within them, without and with an EAN/UPC beside
         labelEnvironments={name: {"symbols": list(env["symbols"]), "x": list(env["2d"]),
@@ -990,6 +998,19 @@ def config():
                                   if env["linear"] else []}
                            for name, env in label.ENVIRONMENTS.items()},
     )
+
+
+def gcp_summary() -> dict | None:
+    """The GCP length table in use, for the page: {date, count}, or None (ADR 0015)."""
+    found = gcp.info()
+    return {"date": found["date"], "count": found["count"]} if found else None
+
+
+def prefix_checks(prefixes) -> list[dict]:
+    """An organisation's prefixes against GS1's GCP length table (ADR 0015): one {prefix, status, length} each, or
+    none without a table."""
+    found = [gcp.check_prefix(p) for p in prefixes or []]
+    return [c for c in found if c]
 
 
 def preferences_of(account: dict) -> dict:
@@ -2095,10 +2116,10 @@ def list_tenants():
         if account.get("tenant"):
             members[account["tenant"]] = members.get(account["tenant"], 0) + 1
     owners = record_owners()
-    return jsonify({"tenants": [{**t, "users": members.get(t["id"], 0),
+    return jsonify({"tenants": [{**t, "users": members.get(t["id"], 0), "prefixChecks": prefix_checks(t["prefixes"]),
                                  "records": None if owners is None else owners.get(t["id"], 0)} for t in g.tenants],
                     "operatorRecords": None if owners is None else owners.get(None, 0),
-                    "exportMaximum": exportlimits.maximum(), "support": g.support})
+                    "exportMaximum": exportlimits.maximum(), "gcpTable": gcp_summary(), "support": g.support})
 
 
 @app.post("/portal/api/tenants")
@@ -2176,6 +2197,8 @@ def organisation_page():
         "apikeys": [apikeys.public(d) for d in apikeys.load(chosen)],
         "alerts": monitor.history(chosen, False, limit=20) if chosen else monitor.history(None, True, "-", limit=20),
         "exports": {**exportlimits.describe(tenant), "editable": not g.support},
+        "prefixChecks": prefix_checks(tenant["prefixes"] if tenant else []),
+        "gcpTable": gcp_summary(),
         "canEditPrefixes": bool(g.server_admin and not g.support and tenant),
         "readOnly": bool(g.support),
     })
@@ -2225,6 +2248,46 @@ def set_export_maximum():
     log_event("export-maximum", tenant=None, detail=f"maximum={'-' if n is None else n}")
     return message("exports.maximumSaved" if n is not None else "exports.maximumCleared", 200,
                    params={"max": n} if n is not None else {}, maximum=n)
+
+
+@app.errorhandler(gcp.GcpError)
+def on_gcp_error(err):
+    """A GCP length table refused: 409 for an older list (the page asks to confirm it), else 422."""
+    return message(err.code, 409 if err.code == "gcp.older" else 422, params=err.params)
+
+
+@app.get("/portal/api/gcp")
+@require_login
+@server_admin_required
+def gcp_table():
+    """GS1's GCP length table in use (Documentation/adr/0015-gcp-length-table.md): its date, number of prefixes, who
+    uploaded it and when; null without one."""
+    return jsonify({"table": gcp.info()})
+
+
+@app.post("/portal/api/gcp")
+@require_login
+@server_admin_required
+def upload_gcp_table():
+    """A new GCP length table: the request's body is GS1's XML, gzip-compressed by the page (or plain). Checked, then
+    stored in place of the one in use in one step. An older list than the one in use needs ?confirm=1."""
+    if g.support:
+        return message("gcp.readOnly", 403)
+    table = gcp.parse(request.get_data(cache=False))
+    stored = gcp.save(table, g.user, force=request.args.get("confirm") == "1")
+    audit.info("user=%s action=gcp-upload date=%s count=%d", g.user, stored["date"], stored["count"])
+    log_event("gcp-upload", tenant=None, detail=f'date={stored["date"]} count={stored["count"]}')
+    return message("gcp.loaded", 200, params={"date": stored["date"], "count": stored["count"]}, table=stored)
+
+
+@app.get("/portal/api/gcp/lookup")
+@require_login
+def gcp_lookup():
+    """The GS1 Company Prefix of a key by GS1's table (the editor's line under the key): {prefix, length, date};
+    {table: null} without a table."""
+    anchor = request_key(request.args)
+    found = gcp.lookup(anchor)
+    return jsonify(found if found else {"table": None})
 
 
 @app.get("/portal/api/alerts")
@@ -2728,14 +2791,20 @@ def epc_of_record():
         chosen = int(request.args["prefixLength"]) if request.args.get("prefixLength") else None
     except ValueError:
         raise epc.EpcError("epc.filterInvalid")
+    # the person's choice first, then GS1's GCP length table (ADR 0015), then the organisation's (or the user's) prefixes
+    listed = None if chosen else gcp.lookup(anchor)
+    if listed and listed["length"] == 0:
+        raise epc.EpcError("epc.notGcp", date=listed["date"])
     held = (tenants.get(g.tenant) or {}).get("prefixes", []) if g.tenant else []
-    length = chosen or epc.prefix_length_for(value, list(held) + list(g.prefixes or []))
+    length = chosen or (listed or {}).get("length") or epc.prefix_length_for(value, list(held) + list(g.prefixes or []))
     if not length:
         raise epc.EpcError("epc.prefixLength")
+    source = "chosen" if chosen else "table" if (listed or {}).get("length") else "prefixes"
     found = epc.sgtin(value, serial, length, filter_value)
     base = link_base(anchor, request.args.get("domain") or None)
     return jsonify(scheme=found.scheme, hex=found.hex, base64=found.base64, tagUri=found.tag_uri,
-                   pureIdentity=found.pure_identity, prefixLength=length, prefixFrom="chosen" if chosen else "prefixes",
+                   pureIdentity=found.pure_identity, prefixLength=length, prefixFrom=source,
+                   tableDate=listed["date"] if source == "table" else None,
                    compressedHex=f"{base}/eh{found.hex}", compressedBase64=f"{base}/ex{found.base64}")
 
 

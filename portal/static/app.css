@@ -807,6 +807,9 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .org-manage { margin-top: 1rem; }
 .org-export-limit { width: 9rem; }
 .org-exports-maximum { display: block; }
+.gcp-warnings { font-family: inherit; margin-top: .35rem; }
+.gcp-warnings .field-msg { margin: .1rem 0; }
+.gcp-form { margin-top: .5rem; }
 .alerts-table tr.is-alert td { color: var(--err); font-weight: 500; }
 body:not([data-operator-view="true"]) .needs-operator-view { display: none !important; }
 

@@ -17,3 +17,5 @@ portal/config/
 .pytest_cache/
 # The GeoIP database of the request log, downloaded by scripts/geoip-update.sh (never committed)
 geoip/
+# GS1's GCP length table (GCPPrefixFormatList, restricted): uploaded in the portal, never committed (ADR 0015)
+*[Gg][Cc][Pp][Pp]refix[Ff]ormat[Ll]ist*.xml

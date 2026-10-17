@@ -2,6 +2,15 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Staging feedback of 16 October: labels (backlog item 9.3)
+- **GS1 DataMatrix** (the record's element string with FNC1) and **Data Matrix with the GS1 Digital Link URI** on the
+  label, besides the QR code, in every format and the zip; made with libzint (`zint-bindings`, a new dependency of the
+  portal's image) ([ADR 0010, section 7](../adr/0010-label-studio.md#7-amendment-of-17-october-2026--data-matrix-hri-as-text-sizes-by-scanning-environment-item-93)). Commit `7f9892e`.
+- **Scanning environment** on the label (retail point of sale, healthcare, direct part marking): the module size range
+  of the GS1 General Specifications, the symbols each takes, the sizes within the range. Commit `7f9892e`.
+- **The SVG's human readable text as text**, an option (outlines remain the default). Commit `7f9892e`.
+- The tenant API's label takes `symbol`, `env` and `hritext`. Commit `7f9892e`.
+
 ### Staging feedback of 16 October: administration and navigation (backlog item 9.2)
 - **Architecture decision record** [ADR 0013](../adr/0013-administration-and-navigation.md).
 - **A left sidebar** on wide screens with every screen of the user menu, foldable to its icons; the current screen

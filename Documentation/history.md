@@ -675,6 +675,14 @@ click the portal's, and the guide's screenshots, which clicked near the left edg
 new sidebar instead: they now click in the hero band. 2,663 checks without a browser, 648 in Chromium; 24 mutations, all
 caught.
 
+**Item 9.3, labels** (`7f9892e`; ADR 0010 amended). libzint was chosen over a Data Matrix encoder written here, and every
+symbol is read back in the tests by an independent decoder (zxing-cpp). The GS1 General Specifications could not be
+fetched: the environment's network policy refuses gs1.org and the GS1 Member Organisations' sites, so the healthcare
+and direct part marking ranges come from excerpts found by searching, and are left for the owner to check against the
+current release; general distribution was left out for want of a source. Regenerating the guide's images showed that
+since item 9.2 the element pictures were cut: a full-page capture lays the page out again without the sidebar, so an
+element in view is now captured as it stands. 22 mutations, all caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

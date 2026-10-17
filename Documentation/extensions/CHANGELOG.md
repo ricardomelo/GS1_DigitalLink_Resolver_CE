@@ -2,6 +2,22 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Staging feedback of 16 October: the request log's browser, location and retention (backlog item 9.5)
+- **The browser and the approximate location of each scan** — country, region and city — are worked out when the
+  request arrives and kept; the visitor's address is used for the lookup and forgotten, never stored
+  ([ADR 0006, section 8](../adr/0006-resolver-request-log.md#8-amendment-of-17-october-2026--browser-approximate-location-retention-set-in-the-portal-item-95)).
+  The *Requests* screen shows them, filters by browser and country, and opens a city in Google Maps; the overview and its
+  exports count browsers, countries and cities. The location comes from DB-IP's free *IP to City Lite* database
+  (Creative Commons Attribution 4.0, credited on the screen), downloaded monthly by the new `scripts/geoip-update.sh`,
+  which the installer schedules and runs once; `GEOIP_URL` takes another source of the same format. New settings
+  `RESOLVER_LOG_ADDRESS_HEADER`, `RESOLVER_GEOIP_DB`, `GEOIP_URL`; the resolver mounts the repository's `geoip/` folder
+  read only; a new dependency of the resolver's image, `maxminddb`. Commit `b768463`.
+- **How long requests are kept is set in the portal** (*Requests → Retention*): the installation's days by server
+  administrators, each organisation's the same or fewer by its administrators; the space the log uses is shown.
+  `RESOLVER_LOG_DAYS` becomes the default until then (and still switches the log off). A shortened period is applied
+  within the hour by the worker, for which the portal's database user may now delete events of the log (a new role,
+  `requestLogPrune`, made by `portal-db-init`). Commit `b768463`.
+
 ### Staging feedback of 16 October: every link type and language (backlog item 9.4)
 - **Every link type of the GS1 Web Vocabulary** in the editor (57 in version 1.16, against 29 before), each named and
   explained in both languages, in groups ordered by the key type (places first for a GLN, business to business for an

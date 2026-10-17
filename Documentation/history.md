@@ -691,6 +691,15 @@ than replaced by the vocabulary's, so that records saved with them still read as
 became a search over a list rather than a longer menu, the names given by the browser so that they follow the
 interface's language. 15 mutations, all caught.
 
+**Item 9.5, browser, location and retention** (`b768463`; ADR 0006 amended). The address is looked up where it arrives,
+in the resolver, and never leaves the function: looking it up later in the worker would have meant storing it until
+then. City names, not coordinates, are kept, and the map is searched by name, so the screen suggests no more precision
+than the address gives. DB-IP's free database was chosen over MaxMind's, which needs an account; its download site is
+refused by the session's network policy, so the tests write their own MMDB file and the first real download is part of
+the staging checks. Retention needed the portal to delete events, which its database user could not: rather than a
+second writer, a role with the single right to delete events of the log. 27 mutations, all caught, two of them after the tests were strengthened (the database role
+is checked on CI only).
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

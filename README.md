@@ -647,7 +647,7 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 
 ## Open backlog
 
-Status on 17 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly; items 9.1 to 9.7 from the staging tests of 15 and 16 October, 9.1 to 9.7 done in session 15). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+Status on 17 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly; items 9.1 to 9.7 from the staging tests of 15 and 16 October, 9.1 to 9.7 done in session 15; items 9.8 to 9.11 added by the owner on 17 October). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
 the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
@@ -693,6 +693,10 @@ know whose data they handle.
 | Production | 7.2 | **Production readiness**, on the servers: an installation on a clean machine, the off-server copy set up, a restore rehearsal, the staging secrets rotated and the [production checklist](Documentation/extensions/README.md#going-to-production) worked through (the scripts and the installer's final check of a scan through the proxy are done) | S | — |
 | | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages (default link titles in the link's language, conformance review F21: done) | S | — |
 | | 7.4 | **Load test and scale-out rehearsal** on staging with `dev-tests/load/load_test.py` (done): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded ([procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)) | S | 2.3 |
+| Owner's additions | 9.8 | **Export limits in the portal**: the per-role limits of `PORTAL_EXPORT_LIMITS` set on the organisation's page instead of in `.env`, within a maximum the server administrator sets for every organisation; no limit by default | S | 7.1, 9.2 |
+| | 9.9 | **The GS1 Company Prefix's length from GS1's table**: GS1's GCP length table (`GCPPrefixFormatList`, XML) uploaded by the server administrator in the portal, and each later version of it, and used wherever the length of a key's company prefix is needed (the EPC's partition first); the table is GS1's and restricted, so it is not in the repository | M | 2.5 |
+| | 9.10 | **An EPC for every key that has one**: the label studio offers the EPC (binary in hexadecimal, tag URI, NFC link) of every key the EPC Tag Data Standard encodes as soon as its minimum data is filled, not only a GTIN with a serial number (for example a GLN with its extension, an SSCC, a GRAI or GIAI) | M | 9.9 |
+| | 9.11 | **The project's documentation**: every document and manual reviewed and completed (users, organisation administrators, operators, developers), with an inventory of every feature — every search and filter, the search by EPC included — drawn from the development tests' checks, so that each feature names the checks that prove it | L | 9.8–9.10 |
 | Standards | 8.1 | **Errata and Work Requests to GS1** (drafted; to be reviewed and sent by the owner): E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
 
 The items of the "later" list are done: the record search reads scanners and RFID readers, exports follow the

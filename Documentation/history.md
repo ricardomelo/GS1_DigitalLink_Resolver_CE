@@ -716,6 +716,14 @@ test now checks that the content stays beside the sidebar, which a first version
 Application Identifiers were left in GS1's English for the new languages: official names come from each Member
 Organisation. 13 mutations: 12 caught, one equivalent.
 
+**Four items added by the owner** on 17 October became 9.8 to 9.11 of the backlog, numbered in the order recommended
+rather than the order given: export limits set in the portal (small, and on screens that exist); the GS1 Company
+Prefix's length from GS1's table, which the EPC of keys other than the GTIN needs for its partition; an EPC for every
+key the Tag Data Standard encodes; and the project's documentation last, since it describes everything before it. The
+table the owner attached (`GCPPrefixFormatList` of 17 September 2026, 212,486 prefixes) says it has been restricted since
+December 2025; the repository is public, so the table stays out of it and the server administrator uploads it, the
+tests using a small table of their own in the same format.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

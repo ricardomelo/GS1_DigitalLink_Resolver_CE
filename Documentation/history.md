@@ -740,6 +740,18 @@ mock-up showed, by chance, that the *New organisation* form's prefixes label had
 since item 9.2: fixed in passing. 18 mutations: 17 caught, one equivalent (a redundant check on fractions, removed).
 2,989 checks in 43 programs without a browser, 736 in 14 Chromium programs.
 
+**Item 9.9, the GCP length table** (`5dd6bfe`; ADR 0015). GS1's list is restricted since December 2025 and the fork is
+public, so the server administrator uploads it and the tests use a small table in its format; the owner's copy of the
+list of 17 September 2026 was used once, outside the repository, to check the parser and the timings (212,486 entries,
+0.9 s to parse, 0.25 s to store, a lookup in about 10 µs). Its 9.2 MB do not pass the 1 MB the proxies and the portal
+accept, and raising that on the host's nginx would mean editing every server's site: the page compresses the file
+instead (0.7 MB), and a command in the container loads larger ones. The upload is the portal's only route that takes a
+body other than JSON; its types (`application/gzip`, `application/xml`) are ones a form of another site cannot send, so
+the rule that guards against cross-site requests still holds, and a test proves the form types are refused. The real
+list showed that the staging installation's prefix `7898357` is part of a 9-digit company prefix in GS1's list, which
+the new warning beside an organisation's prefixes now says. 22 mutations, all caught (three after the tests were
+strengthened). 3,068 checks in 44 programs without a browser, 756 in 15 Chromium programs.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

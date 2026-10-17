@@ -2,6 +2,18 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Owner's additions of 17 October: the GS1 Company Prefix's length from GS1's table (backlog item 9.9)
+- **GS1's GCP length table uploaded in the portal** ([ADR 0015](../adr/0015-gcp-length-table.md)): server
+  administrators upload `GCPPrefixFormatList.xml` on *Organisations* (and each later version); the page compresses it,
+  the portal checks it (root, date, every entry; a refusal names the problem) and swaps it in at once; an older list is
+  asked about first. The table is GS1's and restricted, so it is not in the repository and is never downloaded
+  automatically; `python gcp.py load` in the portal's container loads it too. New collection `gcp_table`.
+  Commit `5dd6bfe`.
+- **Uses**: the EPC's partition (the person's choice, then the table, then the organisation's prefixes), the GS1 Company
+  Prefix shown under the key in the editor, and a warning beside an organisation's prefix that disagrees with GS1's
+  list (on its page and on the organisations' list). A range the list marks as not a GS1 Company Prefix is said so, and
+  has no EPC unless a length is chosen. Commit `5dd6bfe`.
+
 ### Owner's additions of 17 October: export limits in the portal (backlog item 9.8)
 - **Export limits are set in the portal** instead of `.env`
   ([ADR 0012, section 8](../adr/0012-single-sign-on.md#8-amendment-of-17-october-2026--export-limits-set-in-the-portal-item-98)):

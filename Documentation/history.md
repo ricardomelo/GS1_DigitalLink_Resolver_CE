@@ -724,6 +724,22 @@ table the owner attached (`GCPPrefixFormatList` of 17 September 2026, 212,486 pr
 December 2025; the repository is public, so the table stays out of it and the server administrator uploads it, the
 tests using a small table of their own in the same format.
 
+## Session 16 — the owner's additions, items 9.8 to 9.11
+
+The owner, away from the server until 20 October, asked for items 9.8 to 9.11 in that order, each a complete delivery,
+every question on the recommended option of the handover (section 8a), mock-ups delivered without waiting, and a section
+of the staging test plan for each.
+
+**Item 9.8, export limits in the portal** (`f0c1d4f`; ADR 0012 amended). The limits moved from `.env` to the portal:
+an installation maximum on *Organisations* and each organisation's limits per role on a new *Exports* tab of its page.
+The maximum caps an organisation's administrators too — otherwise it would not hold "for every company", as asked —
+while server administrators keep no limit. The tenant API had no notion of an export; its record listing is the
+closest, so it is truncated at the limit set for API keys rather than refused (an organisation's systems page through
+everything), and refused at 0. `PORTAL_EXPORT_LIMITS` is read once, so an upgrade keeps the limits in force. The
+mock-up showed, by chance, that the *New organisation* form's prefixes label had used the label studio's card class
+since item 9.2: fixed in passing. 18 mutations: 17 caught, one equivalent (a redundant check on fractions, removed).
+2,989 checks in 43 programs without a browser, 736 in 14 Chromium programs.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

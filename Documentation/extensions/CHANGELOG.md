@@ -2,6 +2,22 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Owner's additions of 17 October: export limits in the portal (backlog item 9.8)
+- **Export limits are set in the portal** instead of `.env`
+  ([ADR 0012, section 8](../adr/0012-single-sign-on.md#8-amendment-of-17-october-2026--export-limits-set-in-the-portal-item-98)):
+  server administrators set the most rows one export may hold in every organisation (*Organisations*, empty by
+  default: no limit), and each organisation's administrators set limits for readers, editors and API keys on the
+  organisation's page (new *Exports* tab), never above that maximum. An organisation's administrators are now capped
+  by the maximum; server administrators have no limit. Changes are journalled (`export-limits`, `export-maximum`).
+  Commit `f0c1d4f`.
+- **The tenant API's record listing** reaches at most the organisation's limit for API keys (the first that many
+  records, `exportLimit` in the answer; `total` still counts all) and is refused when that limit is 0. Commit `f0c1d4f`.
+- **`PORTAL_EXPORT_LIMITS` is obsolete**: read once at the first start of this version as the starting limits of the
+  operator and of every existing organisation, then ignored with a warning; remove it from `.env` afterwards.
+  Commit `f0c1d4f`.
+- The *New organisation* form's prefixes label used the label studio's card style by mistake (item 9.2): it is a plain
+  label again. Commit `f0c1d4f`.
+
 ### Staging feedback of 16 October: interface languages (backlog item 9.7)
 - **Nine more languages**: Español, Français, Deutsch, Italiano, 中文（简体）, 日本語, 한국어, हिन्दी and العربية (right to
   left), besides Português (Brasil) and English (UK), in the portal, its e-mails, the resolver's pages, the item's page

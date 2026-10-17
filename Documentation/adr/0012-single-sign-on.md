@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). Implemented in one delivery |
-| Backlog item | 7.1 — single sign-on for the portal, per tenant; per-role limits on exports |
+| Status | **Accepted** (14 October 2026). Implemented in one delivery; amended on 17 October 2026 (section 8: export limits set in the portal, item 9.8) |
+| Backlog item | 7.1 — single sign-on for the portal, per tenant; per-role limits on exports; 9.8 — export limits in the portal |
 | Decided by | the owner of the branch, away during the session, who asked for the recommended option on every point of section 4 |
 
 ## 1. Context
@@ -46,7 +46,8 @@ be what an organisation wants.
 7. **Exports per role** (`PORTAL_EXPORT_LIMITS`, e.g. `reader:0,editor:20000`): the most rows one export of a role may
    hold — records (spreadsheet), requests (CSV) — and 0 for no export at all (the overview's export, figures rather
    than rows, is refused only then). Roles not named and administrators have no limit. A refusal says the numbers and
-   is in the journal (`export-refused`); the page hides the export buttons of a role that may not export.
+   is in the journal (`export-refused`); the page hides the export buttons of a role that may not export. *Since
+   item 9.8 the limits are set in the portal, per organisation, within an installation maximum: section 8.*
 
 ## 3. Design
 
@@ -90,3 +91,71 @@ be what an organisation wants.
 
 This record; `portal/sso.py`, the routes, the sign-in form and the *Single sign-on* screen; export limits; tests with
 a stand-in OpenID provider (`test_sso.py`, `test_sso_e2e.py`), `test_exports.py`; the documentation.
+
+## 8. Amendment of 17 October 2026 — export limits set in the portal (item 9.8)
+
+### 8.1 Context
+
+Decision 7 put the limits on exports in `.env` (`PORTAL_EXPORT_LIMITS`), the same for every organisation and changed
+only by the server's operator with a restart. The owner asked to set them on the organisation's settings page instead,
+within a maximum the server administrator sets for every company, with no limit by default.
+
+### 8.2 Decision
+
+1. **The installation's maximum**: the most rows one export may hold in **any organisation**, set by the server
+   administrators on the *Organisations* screen (empty: no limit, the default; 0 to 10,000,000). It caps every export
+   of every organisation's users — **its administrators included** — and API keys. The operator's users are not capped
+   by it, and **server administrators have no limit**, also during support access.
+2. **An organisation's limits per role**, on its page's new **Exports** tab: one for readers, one for editors and one
+   for its **API keys** (the tenant API), each empty (up to the maximum) or a whole number from 0 to the maximum. The
+   organisation's administrators set them, and server administrators outside support access; support access shows
+   them read only. An organisation's administrators have the maximum. The operator's page has the same tab for the
+   operator's users and API keys, set by server administrators, with no maximum above it.
+3. **What applies** to a request is the lower of its role's limit and the maximum (decision 1 and 2); 0 still means no
+   export at all, and the overview's export (figures, not rows) is refused only then. A maximum lowered below a limit
+   already set leaves the limit stored; the maximum applies, and the tab says so beside it.
+4. **The tenant API's record listing** is the API's export: it reaches at most the API keys' limit — the first that
+   many records in its order, over every page — and says so (`exportLimit` in the answer; `total` still counts every
+   record); a limit of 0 refuses the listing (403 `export.notAllowed`, role `api`). Reading, writing or labelling one
+   record is not an export and is not limited.
+5. **`PORTAL_EXPORT_LIMITS` is read once**, at the first start of this version: its reader and editor limits become
+   the operator's and those of every organisation that exists then (an administrators' entry was never applied and is
+   ignored); the start is recorded (`exports.seeded`) and the variable is no longer read — a warning in the portal's
+   log says so while it is still set. `.env.example` marks it obsolete.
+6. **The journal**: `export-limits` (an organisation's or the operator's limits, with the new values) and
+   `export-maximum`; refusals stay `export-refused`, now with the role `api` for API keys.
+
+### 8.3 Design
+
+- `portal/exportlimits.py`: `maximum()`/`set_maximum()` (setting `exports.maximum`), `limits_of()`/`set_limits()`
+  (`exportLimits` on the tenant's document; the operator's in the setting `exports.operator`), `effective(tenant,
+  role)`, `describe()` for the page, `parse_env()` and `seed_from_env()` (setting `exports.seeded`), called at start-up.
+- `app.export_limit()` reads `effective()` for the request's scope and role (`api` for an API key); `export_refused()`
+  is unchanged for the record spreadsheet, the requests' CSV and the overview's export.
+- `PUT /portal/api/exports/maximum` `{maximum}` (server administrators); `PUT /portal/api/exports/limits` `{tenant,
+  limits}` (administrators: an organisation's their own, a server administrator any and `operator`); `GET
+  /portal/api/organisation` gains `exports` `{maximum, limits, effective, editable}`, `GET /portal/api/tenants` gains
+  `exportMaximum`.
+- `api_v1.v1_list_records()` truncates the sorted list to the limit before paging and answers `exportLimit`.
+
+### 8.4 Options considered
+
+| Point | Chosen (recommended) | Not chosen |
+|---|---|---|
+| Where the limits are set | the organisation's page, within an installation maximum | `.env` (a restart and the operator for every change); a per-organisation maximum set by the server administrator (one more number per organisation, no request for it) |
+| The organisation's administrators | capped by the maximum | unlimited (the maximum would not hold for every company, as asked) |
+| The tenant API | the listing truncated at the limit | refused above the limit (an organisation's systems could never list everything page by page); not limited (the API would bypass every limit) |
+| `PORTAL_EXPORT_LIMITS` | the starting value once, then obsolete | read on every start (two places for one setting); ignored at once (an upgrade would lift limits already in force) |
+
+### 8.5 Consequences
+
+- An organisation's administrators are now limited when a maximum is set; nothing changes while it is empty.
+- Installations that used `PORTAL_EXPORT_LIMITS` keep their limits after the upgrade; organisations created later
+  start without limits of their own (up to the maximum).
+- The record listing of the tenant API can now return fewer records than `total`.
+
+### 8.6 Delivery
+
+This amendment; `portal/exportlimits.py`, the two routes, the *Exports* tab and the maximum on the *Organisations*
+screen; `test_exports.py` rewritten and `test_admin_nav_e2e.py` extended, mutation-checked; texts in the eleven
+languages; the documentation.

@@ -648,7 +648,7 @@
           <input id="new-tenant-name" autocomplete="off" maxlength="80">
         </div>
         <div class="users-prefixes">
-          <span class="label" id="new-tenant-prefixes-label" data-i18n="tenants.prefixes"></span>
+          <span class="field-label" id="new-tenant-prefixes-label" data-i18n="tenants.prefixes"></span>
           <div class="prefix-rows" id="new-tenant-prefixes" aria-labelledby="new-tenant-prefixes-label"></div>
         </div>
         <button type="submit" class="btn btn-primary" data-i18n="tenants.create"></button>
@@ -656,6 +656,16 @@
       <p class="field-msg" data-i18n="tenants.hint"></p>
       <p class="field-msg is-warn" data-i18n="tenants.warning"></p>
       <div class="status" id="tenants-status" role="status" aria-live="polite" hidden></div>
+
+      <h2 data-i18n="tenants.exportsTitle"></h2>
+      <form class="audit-filters export-maximum" id="export-maximum-form" novalidate>
+        <div>
+          <label for="export-maximum" data-i18n="tenants.exportsMaximum"></label>
+          <input type="number" id="export-maximum" min="0" max="10000000" inputmode="numeric" aria-describedby="export-maximum-hint">
+        </div>
+        <button type="submit" class="btn btn-primary" id="export-maximum-save" data-i18n="users.save"></button>
+      </form>
+      <p class="field-msg" id="export-maximum-hint" data-i18n="tenants.exportsHint"></p>
 
       <h2 data-i18n="tenants.listTitle"></h2>
       <div class="table-wrap">
@@ -769,6 +779,7 @@
         <button type="button" role="tab" data-tab="brands" id="org-tab-brands" data-i18n="org.tab.brands"></button>
         <button type="button" role="tab" data-tab="sso" id="org-tab-sso" data-i18n="org.tab.sso"></button>
         <button type="button" role="tab" data-tab="apikeys" id="org-tab-apikeys" data-i18n="org.tab.apikeys"></button>
+        <button type="button" role="tab" data-tab="exports" id="org-tab-exports" data-i18n="org.tab.exports"></button>
         <button type="button" role="tab" data-tab="alerts" id="org-tab-alerts" data-i18n="org.tab.alerts"></button>
       </div>
       <div class="org-panel" role="tabpanel" id="org-panel" aria-live="polite"></div>

@@ -642,16 +642,22 @@ The provider's addresses must be `https` on public addresses; `PORTAL_SSO_ALLOW_
 addresses (tests, or a provider on the operator's own network). The journal records each sign-in through a provider
 and each refusal with its reason; the screen shows the last sign-in and the last failure.
 
-### Limits on exports per role
+### Limits on exports
 
-`PORTAL_EXPORT_LIMITS` in `.env` sets the most rows one export of a role may hold — the record spreadsheet and the
-requests' CSV — and `0` for no export at all (the overview's export is then refused too). Administrators, and roles not
-named, have no limit. A refused export says the numbers and goes into the journal (`export-refused`); the page hides
-the export buttons of a role that may not export.
-```bash
-grep -q '^PORTAL_EXPORT_LIMITS=' .env || printf "PORTAL_EXPORT_LIMITS='%s'\n" 'reader:0,editor:20000' >> .env
-docker compose up -d portal-service portal-worker
-```
+Set in the portal ([ADR 0012](../adr/0012-single-sign-on.md), section 8): the most rows one export may hold — the
+record spreadsheet, the requests' CSV and the tenant API's record listing — and `0` for no export at all (the
+overview's export is then refused too).
+
+- **The installation's maximum** (*Organisations*, server administrators): caps every export of every organisation,
+  its administrators included; empty (the default) is no limit. Server administrators have no limit.
+- **An organisation's limits per role** (its page, *Exports* tab: readers, editors, API keys), set by its
+  administrators within the maximum; empty follows the maximum. The operator's page holds the operator's users' limits,
+  which the maximum does not cap.
+
+A refused export says the numbers and goes into the journal (`export-refused`), as do changes (`export-limits`,
+`export-maximum`); the page hides the export buttons of a role that may not export. `PORTAL_EXPORT_LIMITS`, the earlier
+setting in `.env`, is read once at the first start of this version as the starting limits of the operator and of every
+organisation, then no longer: remove it afterwards (`sed -i '/^PORTAL_EXPORT_LIMITS=/d' .env`).
 
 ## Tenant API
 
@@ -1366,7 +1372,8 @@ runs imports with the same rules).
   `MONGO_URI`.
 - For many users, switch on single sign-on per organisation (*Organisation sign-in*, below) and, once it works,
   password sign-in off for that organisation.
-- `PORTAL_EXPORT_LIMITS` limits what each role may export (below).
+- Set an export maximum for the organisations (*Organisations*) and limits per role on each organisation's page
+  (*Exports*), below.
 
 ## Daily backup
 

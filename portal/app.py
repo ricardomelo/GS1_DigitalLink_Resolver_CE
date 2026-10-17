@@ -36,6 +36,7 @@ import apikeys
 import branding
 import domains
 import epc
+import exportlimits
 import linkcheck
 import mail
 import meta
@@ -175,6 +176,7 @@ def _bootstrap_admin() -> None:
 # environment, and the first user is created while there is none.
 migrate.run(CONFIG_DIR)
 journal.apply_retention()
+exportlimits.seed_from_env(os.environ.get("PORTAL_EXPORT_LIMITS", ""))
 _bootstrap_admin()
 
 
@@ -351,30 +353,15 @@ def admin_required(view):
     return wrapper
 
 
-# Per-role limits on exports (backlog item 7.1): PORTAL_EXPORT_LIMITS = "reader:0,editor:20000" — the most rows (records,
-# requests) one export of a role may hold, 0 for none; a role not named, and administrators, have no limit.
-def _export_limits(text: str) -> dict[str, int]:
-    limits = {}
-    for part in text.split(","):
-        role, _, number = part.strip().partition(":")
-        if not part.strip():
-            continue
-        if role.strip() not in users.ROLES or not number.strip().isdigit():
-            log.warning("PORTAL_EXPORT_LIMITS: %r ignored (role:number, the role one of %s)", part, ", ".join(users.ROLES))
-            continue
-        limits[role.strip()] = int(number)
-    return limits
-
-
-EXPORT_LIMITS = _export_limits(os.environ.get("PORTAL_EXPORT_LIMITS", ""))
-
-
+# Limits on exports (backlog items 7.1 and 9.8, exportlimits.py): set in the portal, per organisation and role, within
+# the installation's maximum.
 def export_limit() -> int | None:
-    """The most rows an export of this request may hold (None: no limit). The limit is the role's in the request's
-    scope; administrators of the account (and server administrators, also during support access) have none."""
-    if g.account_role == "admin":
+    """The most rows an export of this request may hold (None: no limit): the limit of the request's role (an API key's
+    "api") in its scope. Server administrators have none, also during support access."""
+    if g.server_admin:
         return None
-    return EXPORT_LIMITS.get(g.role)
+    tenant = next((t for t in g.tenants if t["id"] == g.tenant), None) if g.tenant else None
+    return exportlimits.effective(tenant, "api" if g.get("api_key") else g.role)
 
 
 def export_refused(rows: int | None = None):
@@ -382,9 +369,10 @@ def export_refused(rows: int | None = None):
     limit = export_limit()
     if limit is None or (limit and (rows is None or rows <= limit)):
         return None
-    log_event("export-refused", detail=f"role={g.role} rows={'-' if rows is None else rows} limit={limit}")
+    role = "api" if g.get("api_key") else g.role
+    log_event("export-refused", detail=f"role={role} rows={'-' if rows is None else rows} limit={limit}")
     if limit == 0:
-        return message("export.notAllowed", 403, params={"role": g.role})
+        return message("export.notAllowed", 403, params={"role": role})
     return message("export.tooMany", 422, params={"max": limit, "rows": rows})
 
 
@@ -2110,7 +2098,7 @@ def list_tenants():
     return jsonify({"tenants": [{**t, "users": members.get(t["id"], 0),
                                  "records": None if owners is None else owners.get(t["id"], 0)} for t in g.tenants],
                     "operatorRecords": None if owners is None else owners.get(None, 0),
-                    "support": g.support})
+                    "exportMaximum": exportlimits.maximum(), "support": g.support})
 
 
 @app.post("/portal/api/tenants")
@@ -2187,9 +2175,56 @@ def organisation_page():
         "sso": [sso.public(d) for d in sso.load(sso.scope_id(chosen))],
         "apikeys": [apikeys.public(d) for d in apikeys.load(chosen)],
         "alerts": monitor.history(chosen, False, limit=20) if chosen else monitor.history(None, True, "-", limit=20),
+        "exports": {**exportlimits.describe(tenant), "editable": not g.support},
         "canEditPrefixes": bool(g.server_admin and not g.support and tenant),
         "readOnly": bool(g.support),
     })
+
+
+@app.errorhandler(exportlimits.LimitError)
+def on_limit_error(err):
+    """An export limit refused: 422 with the message code."""
+    return message(err.code, 422, params=err.params)
+
+
+@app.put("/portal/api/exports/limits")
+@require_login
+@admin_required
+def set_export_limits():
+    """{"tenant": id or "operator", "limits": {"reader"|"editor"|"api": n or null}}: the most rows one export of each
+    role may hold (backlog item 9.8), never above the installation's maximum. An organisation's administrators set their
+    own; a server administrator any, and the operator's, outside support access."""
+    data = request.get_json(silent=True) or {}
+    if g.support:
+        return message("exports.readOnly", 403)
+    chosen = str(data.get("tenant") or "").strip()
+    if not g.server_admin:
+        if chosen != g.account_tenant:                 # another organisation's: as if it did not exist
+            return message("tenants.unknown", 404)
+    elif chosen != "operator" and not any(t["id"] == chosen for t in g.tenants):
+        return message("tenants.unknown", 404)
+    tenant = next((t for t in g.tenants if t["id"] == chosen), None)
+    kept = exportlimits.set_limits(tenant["id"] if tenant else None, data.get("limits"))
+    detail = " ".join(f"{role}={kept.get(role, '-')}" for role in exportlimits.ROLES)
+    audit.info("user=%s action=export-limits tenant=%s %s", g.user, tenant["id"] if tenant else "-", detail)
+    log_event("export-limits", tenant=tenant["id"] if tenant else None, detail=detail)
+    return message("exports.saved", 200, exports=exportlimits.describe(tenants.get(tenant["id"]) if tenant else None))
+
+
+@app.put("/portal/api/exports/maximum")
+@require_login
+@server_admin_required
+def set_export_maximum():
+    """{"maximum": n or null}: the most rows one export may hold in any organisation (server administrators, outside
+    support access); null lifts it."""
+    if g.support:
+        return message("exports.readOnly", 403)
+    data = request.get_json(silent=True) or {}
+    n = exportlimits.set_maximum(data.get("maximum"))
+    audit.info("user=%s action=export-maximum maximum=%s", g.user, "-" if n is None else n)
+    log_event("export-maximum", tenant=None, detail=f"maximum={'-' if n is None else n}")
+    return message("exports.maximumSaved" if n is not None else "exports.maximumCleared", 200,
+                   params={"max": n} if n is not None else {}, maximum=n)
 
 
 @app.get("/portal/api/alerts")

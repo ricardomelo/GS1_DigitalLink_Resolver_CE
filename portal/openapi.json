@@ -49,7 +49,7 @@
    "get": {
     "operationId": "listRecords",
     "summary": "The records within the key's reach, a page at a time",
-    "description": "Scope `records:read`. Sorted by `id`; pass the `next` of an answer as `after` to get the next page.",
+    "description": "Scope `records:read`. Sorted by `id`; pass the `next` of an answer as `after` to get the next page. The listing reaches at most the export limit the organisation set for its API keys (`exportLimit`): the first that many records; 403 `export.notAllowed` when that limit is 0.",
     "parameters": [
      {"name": "key", "in": "query", "description": "Only the records of this primary key (an Application Identifier, e.g. 01)", "schema": {"type": "string", "pattern": "^[0-9]{2,4}$"}},
      {"name": "limit", "in": "query", "description": "Records per page", "schema": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100}},
@@ -217,7 +217,8 @@
     "properties": {
      "records": {"type": "array", "items": {"$ref": "#/components/schemas/RecordSummary"}},
      "next": {"type": ["string", "null"], "description": "The `after` of the next page; null on the last page"},
-     "total": {"type": "integer", "description": "Records within the key's reach (and the key filter)"}
+     "total": {"type": "integer", "description": "Records within the key's reach (and the key filter), also those beyond the export limit"},
+     "exportLimit": {"type": ["integer", "null"], "description": "The most records the listing reaches (the organisation's export limit for API keys); null: no limit"}
     }
    },
    "Saved": {

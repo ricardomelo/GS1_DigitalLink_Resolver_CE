@@ -561,6 +561,11 @@ the records the list shows —, one row per target, with the column titles in yo
 The Excel file also has reference sheets: **Link types** (code, name, description), **Keys** and
 **Languages**. Cells that could be read as formulas are protected, so the file is safe to open.
 
+An export may be limited: your organisation's administrators set the most rows one export of each role may hold (its
+page, **Exports** tab, section 14), within a maximum the server administrator sets for every organisation. Above it the
+export is refused with the numbers (filter to export fewer); a role that may not export at all does not see the export
+buttons.
+
 ### Import
 
 ![Import preview](images/portal-import.png)
@@ -715,6 +720,10 @@ belong to no organisation (the operator's).
   still resolve.
 - **Remove**: only an organisation without users; its prefixes and records go back to the operator, and its audit
   trail is kept.
+- **Exports in every organisation**: the **most rows per export** any organisation's users and API keys may download —
+  the record spreadsheet, the requests' CSV, the tenant API's record listing —, its administrators included. Empty (the
+  default) is no limit. Each organisation sets limits per role below it on its page (**Exports**). Server
+  administrators have no limit.
 
 **Creating an organisation takes its records away from the operator's users, you included.** You see them again,
 without changing them, only through support access.
@@ -725,10 +734,18 @@ without changing them, only through support access.
 
 **Organisation** (user menu) gathers an organisation's settings in one place, each in a tab: its **Prefixes**, its
 **Users** with their prefixes, its **Domains**, its **Item page** brands, its **Organisation sign-in**, its **API
-keys** and its **Alerts**. Each tab links to the screen that changes it. An organisation's administrators see their
-own; the server administrator opens any organisation from **Organisations** (**Open**), changes its prefixes on the
-**Prefixes** tab, and reaches another organisation's brands and API keys through support access; without choosing
-an organisation, the page shows the operator's own settings.
+keys**, its **Exports** and its **Alerts**. Each tab links to the screen that changes it. An organisation's
+administrators see their own; the server administrator opens any organisation from **Organisations** (**Open**),
+changes its prefixes on the **Prefixes** tab, and reaches another organisation's brands and API keys through support
+access; without choosing an organisation, the page shows the operator's own settings.
+
+**Exports** is changed on the tab itself: the most rows one export may hold for **Readers**, **Editors** and the
+organisation's **API keys** (the tenant API's record listing reaches only that many records). Leave a field empty to
+follow the installation's maximum (shown above the table), or type 0 to forbid exports for that role; the
+organisation's **Administrators** have the maximum. *Applies now* shows what each role may export, and a limit above
+a maximum lowered later says that the maximum applies. **Save limits** records the change in the audit trail; refused
+exports are there too (*Export refused*). On the operator's page the same tab limits the operator's users, without a
+maximum above them; server administrators have no limit. In support access the tab is read only.
 
 ### Alerts (administrators)
 

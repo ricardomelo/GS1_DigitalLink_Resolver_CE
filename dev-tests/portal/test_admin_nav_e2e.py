@@ -6,7 +6,8 @@ remembered, absent on a phone), every screen at phone width without the page gro
 portal's own dialog), the organisation list's prefix rows, users' prefixes picked from the organisation's own (a
 longer one added from the search box), the portal's own confirmation (cancel keeps, confirm acts, Escape cancels),
 the alert history and its filters, the overview filtered by organisation with Operation for server administrators
-only, Portuguese.
+only, the export limits (backlog item 9.8: the installation's maximum on the organisations' list, an organisation's
+limits per role on its page's Exports tab), Portuguese.
 
   pip install -r portal/requirements.txt playwright mongomock && playwright install chromium
   python dev-tests/portal/test_admin_nav_e2e.py             # SCREENSHOTS=<folder> keeps a picture of each step
@@ -39,6 +40,7 @@ import users  # noqa: E402
 import tenants  # noqa: E402
 import monitor  # noqa: E402
 import app as portal  # noqa: E402
+import exportlimits  # noqa: E402
 
 users.create("root", "root-password-long", "admin", must_change=False)
 acme = tenants.create("Acme Foods", ["7891234", "7891299"], "root")
@@ -142,7 +144,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(900)
     check("an organisation opened from the list: its page", page.is_visible("#organisation-view")
           and page.inner_text("#org-name") == "Beta Drinks" and page.url.endswith("#organisation?id=" + beta["id"]))
-    check("…its tabs, prefixes first", page.locator("#org-tabs [role=tab]").count() == 7
+    check("…its tabs, prefixes first", page.locator("#org-tabs [role=tab]").count() == 8
           and page.get_attribute("#org-tab-prefixes", "aria-selected") == "true")
     org_rows = page.locator("#org-panel .prefix-row")
     page.click("#org-panel .prefix-add"); org_rows.nth(1).locator("input").fill("78912345")
@@ -211,6 +213,40 @@ with sync_playwright() as p:
     ana.click(".sidebar-item[href='#organisation']"); ana.wait_for_timeout(900)
     check("…their organisation's page from the menu, in Portuguese", ana.inner_text("#org-name") == "Acme Foods"
           and "Prefixos" in ana.inner_text("#org-tabs") and ana.locator("#org-save-prefixes").count() == 0)
+
+    # ------------------------------------------------------------ export limits (item 9.8)
+    page.goto(BASE + "#tenants"); page.wait_for_timeout(700)
+    check("the organisations' list: the installation's export maximum, empty (no limit)",
+          page.is_visible("#export-maximum") and page.input_value("#export-maximum") == "")
+    page.fill("#export-maximum", "20000"); page.click("#export-maximum-save"); page.wait_for_timeout(500)
+    check("…saved", exportlimits.maximum() == 20000 and "20,000" in page.inner_text("#tenants-status"),
+          page.inner_text("#tenants-status"))
+    page.reload(); page.wait_for_timeout(900)
+    check("…and shown when the list is opened again", page.input_value("#export-maximum") == "20000")
+    page.fill("#export-maximum", "-3"); page.click("#export-maximum-save"); page.wait_for_timeout(300)
+    check("…a negative maximum refused in the page", exportlimits.maximum() == 20000
+          and "whole number" in page.inner_text("#tenants-status"), page.inner_text("#tenants-status"))
+    page.goto(BASE + "#organisation?id=" + acme["id"]); page.wait_for_timeout(800)
+    page.click("#org-tab-exports"); page.wait_for_timeout(300)
+    check("the server administrator on an organisation's Exports tab: the maximum and a field per role",
+          "20,000" in page.inner_text("#org-exports-maximum") and page.locator("#org-panel .org-export-limit").count() == 3
+          and "up to 20,000 rows (the maximum)" in page.inner_text("#org-export-applies-admin"))
+    shot(page, "organisation-exports")
+    ana.reload(); ana.wait_for_timeout(1200)
+    ana.click("#org-tab-exports"); ana.wait_for_timeout(400)
+    check("an organisation's administrator: the Exports tab in Portuguese, the maximum told",
+          "Exportações" in ana.inner_text("#org-tabs") and "20.000" in ana.inner_text("#org-exports-maximum"),
+          ana.inner_text("#org-panel"))
+    ana.fill("#org-export-reader", "0"); ana.fill("#org-export-editor", "5000"); ana.fill("#org-export-api", "")
+    ana.click("#org-save-exports"); ana.wait_for_timeout(600)
+    check("…limits saved and what applies shown", tenants.get(acme["id"])["exportLimits"] == {"reader": 0, "editor": 5000}
+          and "nenhuma exportação" in ana.inner_text("#org-export-applies-reader")
+          and "até 5.000 linhas" in ana.inner_text("#org-export-applies-editor")
+          and "salvos" in ana.inner_text("#org-status"), (tenants.get(acme["id"]), ana.inner_text("#org-panel")))
+    ana.fill("#org-export-editor", "20001"); ana.click("#org-save-exports"); ana.wait_for_timeout(400)
+    check("…a limit above the maximum refused in the page", tenants.get(acme["id"])["exportLimits"]["editor"] == 5000
+          and "20.000" in ana.inner_text("#org-status"), ana.inner_text("#org-status"))
+    shot(ana, "organisation-exports-pt")
 
     # ------------------------------------------------------------ phone width
     phone = browser.new_context(locale="en-GB", viewport={"width": 390, "height": 800}, is_mobile=True,

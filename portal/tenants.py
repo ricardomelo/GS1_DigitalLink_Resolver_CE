@@ -40,10 +40,11 @@ def _tenants():
 
 def _tenant(doc: dict) -> dict:
     """A tenant as the rest of the portal sees it: {"id", "name", "prefixes", "disabled", "created", "createdBy",
-    "logDays"} (logDays: how long its requests are kept, None for the installation's; requestlog.py)."""
+    "logDays", "exportLimits"} (logDays: how long its requests are kept, None for the installation's; requestlog.py;
+    exportLimits: its own limits on exports per role, exportlimits.py)."""
     return {"id": doc["_id"], "name": doc.get("name", ""), "prefixes": list(doc.get("prefixes") or []),
             "disabled": bool(doc.get("disabled")), "created": doc.get("created"), "createdBy": doc.get("createdBy"),
-            "logDays": doc.get("logDays")}
+            "logDays": doc.get("logDays"), "exportLimits": dict(doc.get("exportLimits") or {})}
 
 
 def load() -> list[dict]:

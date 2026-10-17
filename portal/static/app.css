@@ -526,6 +526,8 @@ body:not([data-operator-view="true"]) .audit-tenant-col { display: none !importa
 .users-create, .audit-filters { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: end; margin-bottom: .5rem; }
 .users-create > div, .audit-filters > div { display: flex; flex-direction: column; gap: .25rem; }
 .users-create label, .audit-filters label { margin: 0; font-size: .875rem; }
+/* a group's name where no single input takes a <label> (the prefix rows of a new organisation) */
+.field-label { display: block; font-weight: 500; margin: 0 0 .3rem; color: var(--ink); font-size: .875rem; }
 .users-prefixes, .audit-text { flex: 1 1 14rem; }
 .users-prefixes input, .audit-text input { width: 100%; }
 .sheet h2 { margin-top: 1.5rem; }
@@ -803,6 +805,8 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .org-tabs [role="tab"][aria-selected="true"] { color: var(--gs1-blue); border-bottom-color: var(--gs1-orange); }
 .org-tabs [role="tab"][hidden] { display: none; }
 .org-manage { margin-top: 1rem; }
+.org-export-limit { width: 9rem; }
+.org-exports-maximum { display: block; }
 .alerts-table tr.is-alert td { color: var(--err); font-weight: 500; }
 body:not([data-operator-view="true"]) .needs-operator-view { display: none !important; }
 

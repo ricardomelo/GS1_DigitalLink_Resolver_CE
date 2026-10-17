@@ -132,7 +132,11 @@ def v1_openapi():
 @require_key("records:read")
 def v1_list_records():
     """The records within the key's reach, sorted by key and qualifiers, a page at a time (limit, after); filter by
-    primary key with key=01."""
+    primary key with key=01. The listing reaches at most the export limit of the organisation's API keys
+    (exportlimits.py, backlog item 9.8): the first that many records, "exportLimit" saying so; 0 refuses it."""
+    refused = portal.export_refused()
+    if refused:
+        return refused
     try:
         limit = int(request.args.get("limit") or DEFAULT_PAGE)
     except ValueError:
@@ -156,9 +160,12 @@ def v1_list_records():
                         "defaultLinkType": line.get("defaultLinktype"), "links": line.get("linkCount", 0),
                         "id": f"{anchor}|{qpath}"})
     records.sort(key=lambda r: r["id"])
+    total, reach = len(records), portal.export_limit()
+    if reach is not None:
+        records = records[:reach]
     page = [r for r in records if r["id"] > after][:limit]
     more = len([r for r in records if r["id"] > after]) > limit
-    return jsonify({"records": page, "next": page[-1]["id"] if more else None, "total": len(records)})
+    return jsonify({"records": page, "next": page[-1]["id"] if more else None, "total": total, "exportLimit": reach})
 
 
 def _link_out(link: dict) -> dict:

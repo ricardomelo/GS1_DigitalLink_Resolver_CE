@@ -35,9 +35,10 @@ import fake_oidc  # noqa: E402
 import mock_data_entry  # noqa: E402
 import users  # noqa: E402
 import tenants  # noqa: E402
+# created before the portal starts: PORTAL_EXPORT_LIMITS becomes the limits of the organisations that exist (item 9.8)
+acme = tenants.create("Acme Foods", ["7891234"], "root")
 import app as portal  # noqa: E402
 
-acme = tenants.create("Acme Foods", ["7891234"], "root")
 users.create("ana", "ana-password-long", "admin", tenant=acme["id"], must_change=False, email="ana@acme.example")
 users.create("edu", "edu-password-long", "editor", tenant=acme["id"], must_change=False, email="edu@acme.example")
 users.create("rui", "rui-password-long", "reader", tenant=acme["id"], must_change=False, email="rui@acme.example")

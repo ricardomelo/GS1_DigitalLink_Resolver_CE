@@ -1692,7 +1692,12 @@ function orgTable(headers, rows) {
   const tbody = el("tbody");
   rows.forEach(cells => {
     const tr = el("tr");
-    cells.forEach((c, i) => { const td = el("td", "", c); td.dataset.label = t(headers[i]); tr.append(td); });
+    cells.forEach((c, i) => {
+      const td = el("td");
+      if (c instanceof Node) td.append(c); else td.textContent = c;
+      td.dataset.label = t(headers[i]);
+      tr.append(td);
+    });
     tbody.append(tr);
   });
   table.append(thead, tbody);
@@ -1742,11 +1747,89 @@ function orgPanel(d, tab) {
       d.apikeys.map(k => [k.name, k.scopes.join(", "), formatWhen(k.expiresAt), t("apikeys.state." + k.state)]))
       : empty("org.noKeys"), orgManage("#apikeys", false)];
   }
+  if (tab === "exports") return orgExports(d);
   const link = el("p", "org-manage");
   const a = el("a", "", t("org.allAlerts"));
   a.href = "#alerts" + (CONFIG.serverAdmin && !CONFIG.support ? "?tenant=" + encodeURIComponent(d.operator ? "-" : d.id) : "");
   link.append(a);
   return [d.alerts.length ? alertsTable(d.alerts, false) : empty("alerts.none"), link];
+}
+
+/* The most rows one export of each role may hold (backlog item 9.8): set by the organisation's administrators (and by
+   server administrators outside support access) within the installation's maximum; empty follows the maximum, 0 is
+   no export. The operator's roles have no maximum; server administrators no limit. */
+const EXPORT_ROLES = ["reader", "editor", "admin", "api"];
+
+function exportRoleName(role) {
+  return t(role === "api" ? "exports.role.api" : "role." + role);
+}
+
+function exportApplies(n, max, operator) {
+  if (n === null || n === undefined) return t("exports.unlimited");
+  if (n === 0) return t("exports.none");
+  return t(!operator && max !== null && n === max ? "exports.upToMaximum" : "exports.upTo", { max: nf(n) });
+}
+
+function orgExports(d) {
+  const x = d.exports, max = x.maximum;
+  const out = [el("p", "field-msg", t(d.operator ? "exports.introOperator" : "exports.intro"))];
+  if (!d.operator) {
+    const note = el("p", "status is-warn org-exports-maximum",
+                    max === null ? t("exports.noMaximum") : t("exports.maximumNote", { max: nf(max) }));
+    note.id = "org-exports-maximum";
+    out.push(note);
+  }
+  const rows = EXPORT_ROLES.map(role => {
+    let field;
+    if (role === "admin") {
+      field = el("span", "muted", d.operator ? t("exports.serverAdmins") : "—");
+    } else {
+      field = el("input", "org-export-limit");
+      Object.assign(field, { type: "number", min: "0", inputMode: "numeric", id: "org-export-" + role,
+                             value: x.limits[role] ?? "", placeholder: t("exports.placeholder"), disabled: !x.editable });
+      if (!d.operator && max !== null) field.max = String(max);
+      field.dataset.role = role;
+      field.setAttribute("aria-label", exportRoleName(role));
+    }
+    const own = x.limits[role];
+    const above = !d.operator && max !== null && own !== undefined && own !== null && own > max;
+    const applies = el("span", "", exportApplies(x.effective[role], max, d.operator)
+                    + (above ? " · " + t("exports.aboveMaximum", { max: nf(max) }) : ""));
+    applies.id = "org-export-applies-" + role;
+    return [exportRoleName(role), field, applies];
+  });
+  out.push(orgTable(["exports.role", "exports.limit", "exports.applies"], rows));
+  if (x.editable) {
+    const save = el("button", "btn btn-primary", t("exports.save"));
+    save.type = "button";
+    save.id = "org-save-exports";
+    save.addEventListener("click", saveOrgExports);
+    out.push(save);
+  } else {
+    out.push(el("p", "field-msg", t("exports.readOnly")));
+  }
+  out.push(el("p", "field-msg", t("exports.journalNote")));
+  return out;
+}
+
+async function saveOrgExports() {
+  const d = orgState.data, limits = {};
+  for (const input of $$("#org-panel .org-export-limit")) {
+    if (!input.checkValidity()) {
+      input.focus();
+      orgStatus("error", "exports.invalid", { max: nf(d.operator || d.exports.maximum === null ? 10000000 : d.exports.maximum) });
+      return;
+    }
+    limits[input.dataset.role] = input.value.trim() === "" ? null : Number(input.value);
+  }
+  try {
+    const result = await api("PUT", "exports/limits", { tenant: d.id, limits });
+    d.exports = { ...d.exports, ...result.exports };
+    renderOrganisation();
+    orgStatus("ok", result.code, result.params);
+  } catch (e) {
+    orgStatus("error", e.code, e.params && e.params.max !== undefined ? { ...e.params, max: nf(e.params.max) } : e.params);
+  }
 }
 
 async function saveOrgPrefixes() {
@@ -2211,10 +2294,24 @@ function tenantsStatus(kind, key, params) {
 
 let newTenantRows = null;
 
+/* The most rows one export may hold in any organisation (backlog item 9.8); empty lifts it. */
+async function saveExportMaximum(event) {
+  event.preventDefault();
+  const input = $("#export-maximum");
+  if (!input.checkValidity()) { tenantsStatus("error", "exports.maximumInvalid", { max: nf(10000000) }); return; }
+  try {
+    const result = await api("PUT", "exports/maximum", { maximum: input.value.trim() === "" ? null : Number(input.value) });
+    tenantsStatus("ok", result.code, result.params && result.params.max !== undefined ? { max: nf(result.params.max) } : {});
+  } catch (e) {
+    tenantsStatus("error", e.code, e.params && e.params.max !== undefined ? { max: nf(e.params.max) } : e.params);
+  }
+}
+
 async function loadTenants() {
   if (!newTenantRows) newTenantRows = prefixRows($("#new-tenant-prefixes"));
   try {
     const data = await api("GET", "tenants");
+    $("#export-maximum").value = data.exportMaximum ?? "";
     $("#tenants-body").replaceChildren(...data.tenants.map(tenantRow));
     $("#tenants-empty").hidden = data.tenants.length > 0;
     if (data.operatorRecords === null) I18N.set($("#tenants-operator"), "tenants.recordsUnavailable");
@@ -4851,6 +4948,7 @@ async function init() {
   $("#audit-filters").addEventListener("submit", loadAudit);
   $("#users-tenant-filter").addEventListener("change", renderUsers);
   $("#tenants-create").addEventListener("submit", createTenant);
+  $("#export-maximum-form").addEventListener("submit", saveExportMaximum);
   $("#support-form").addEventListener("submit", startSupport);
   $("#support-cancel").addEventListener("click", () => $("#support-dialog").close());
   $("#support-leave").addEventListener("click", endSupport);
@@ -4946,7 +5044,7 @@ async function init() {
   document.body.dataset.role = CONFIG.role;
   document.body.dataset.accountRole = CONFIG.accountRole;
   document.body.dataset.serverAdmin = String(Boolean(CONFIG.serverAdmin));
-  document.body.dataset.export = CONFIG.exportLimit === 0 ? "off" : "on";   // PORTAL_EXPORT_LIMITS (item 7.1)
+  document.body.dataset.export = CONFIG.exportLimit === 0 ? "off" : "on";   // export limits (items 7.1, 9.8)
   document.body.dataset.operatorView = String(Boolean(CONFIG.serverAdmin && !CONFIG.support));
   document.body.dataset.mail = CONFIG.mail?.enabled ? "on" : "off";
   showTenant();

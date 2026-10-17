@@ -167,6 +167,9 @@ check("old spreadsheets with a GTIN column still import", not errors and records
 rows = sheet.read_table("x.csv", "Chave (AI);Identificador;Descrição;Tipo de link;URL\r\n8004;9506000A;A;gs1:pip;https://x.org\r\n8004;9506000a;B;gs1:pip;https://y.org\r\n".encode())
 records, _ = sheet.parse_rows(rows, PT)
 check("alphanumeric keys are not merged by case or zeros", len(records) == 2)
+big = ("gtin;description;linkType;url\n07898357410015;" + "x" * (140 * 1024) + ";gs1:pip;https://x.org\n").encode()
+check("a CSV cell above 128 KB is reported (import.unreadable), not a server error",
+      error_code(lambda: sheet.read_table("big.csv", big)) == "import.unreadable")
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

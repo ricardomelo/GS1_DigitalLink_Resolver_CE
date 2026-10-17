@@ -573,6 +573,11 @@ with sync_playwright() as p:
         page.fill(f"{second} .attr-ai", "3103"); page.press(f"{second} .attr-ai", "Tab")
         page.fill(f"{second} .attr-value", "000500"); page.wait_for_timeout(900)
         check("second attribute accepted", page.inner_text("#dl").endswith("?17=261231&3103=000500"), page.inner_text("#dl"))
+        page.click(f"{second} .attr-up"); page.wait_for_timeout(900)
+        check("an attribute moved up: the link's order follows", page.inner_text("#dl").endswith("?3103=000500&17=261231"),
+              page.inner_text("#dl"))
+        page.click(f"{first} .attr-down"); page.wait_for_timeout(900)
+        check("…and down again", page.inner_text("#dl").endswith("?17=261231&3103=000500"), page.inner_text("#dl"))
         page.select_option("#locale", "pt-BR"); page.wait_for_timeout(200)
         check("format hints follow the language", "data AAMMDD" in page.inner_text(f"{first} .attr-hint"),
               page.inner_text(f"{first} .attr-hint"))

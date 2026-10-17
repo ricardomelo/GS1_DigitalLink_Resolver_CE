@@ -14,6 +14,10 @@ Programs are grouped with markers, so that a part can be run on its own::
     pytest dev-tests -m "portal or home"
     pytest dev-tests -k gs1_suite
 
+**The inventory of features.** With ``DEV_TESTS_INVENTORY=<folder>`` each program's ``PASS`` lines are
+kept in ``<folder>/<program>.txt``; ``dev-tests/docs/inventory.py build <folder>`` makes the inventory of
+the documentation from them (Documentation/adr/0016-documentation-and-feature-inventory.md).
+
 **Strict mode.** With ``DEV_TESTS_STRICT=1`` (set by the continuous integration workflow) a
 program whose external pieces are missing fails instead of skipping them: every environment
 variable it needs must name an existing path, every command it needs must be on the PATH, and
@@ -36,6 +40,8 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 STRICT = os.environ.get("DEV_TESTS_STRICT", "") not in ("", "0", "false", "no")
 TIMEOUT = int(os.environ.get("DEV_TESTS_TIMEOUT", "1200"))
+# A folder where each program's PASS lines are kept, for the inventory of features (dev-tests/docs/inventory.py)
+INVENTORY = os.environ.get("DEV_TESTS_INVENTORY", "")
 
 
 @dataclass
@@ -90,6 +96,7 @@ PROGRAMS = [
     Program("titles", "portal", "portal/test_titles.py"),
     Program("exports", "portal", "portal/test_exports.py"),
     Program("gcp", "portal", "portal/test_gcp.py"),
+    Program("docs", "portal", "docs/test_docs.py"),
     Program("sso", "portal", "portal/test_sso.py"),
     Program("scan_search", "portal", "portal/test_scan_search.py", ("GS1_SYNTAX_ENGINE_DIR",)),
     Program("fix_serials", "portal", "portal/test_fix_serials.py"),
@@ -172,6 +179,9 @@ def test_program(program: Program, check_counts, failure_notes):
     output = run.stdout.decode("utf-8", errors="replace")
     passed, failed, skipped = _lines(output, "PASS"), _lines(output, "FAIL"), _lines(output, "SKIP")
     check_counts[program.name] = (len(passed), len(failed), len(skipped))
+    if INVENTORY:                                 # the inventory of features (dev-tests/docs/inventory.py, ADR 0016)
+        Path(INVENTORY).mkdir(parents=True, exist_ok=True)
+        (Path(INVENTORY) / f"{program.name}.txt").write_text("\n".join(passed) + "\n", encoding="utf-8")
 
     if run.returncode != 0 or failed:
         tail = "\n".join(output.splitlines()[-30:])

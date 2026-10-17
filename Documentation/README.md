@@ -3,35 +3,73 @@
 The software is maintained by its community, not by GS1 or any GS1 Member Organisation; whoever operates
 an installation is responsible for its use (see the notice at the top of the [README](../README.md)).
 
-| Document | For whom | What it holds |
-|---|---|---|
-| [README](../README.md) | everyone | what the project is, architecture, API reference, installation, configuration, operation |
-| [Portal user guide](portal-user-guide.md) | people who register records; administrators | every task in the portal, step by step, with screenshots |
-| [Features](features.md) | everyone | every feature, what it does and the commit that introduced it |
-| [History](history.md) | maintainers, reviewers | how the project evolved session by session, decisions, lessons, open items |
-| [Developer guide](developer-guide.md) | developers | services, source files, request flows, portal API, data files, tests, how to extend |
-| [Conformance review](conformance-review.md) | maintainers, reviewers, operators | clause-by-clause review against GS1 Digital Link URI Syntax 1.7 and GS1-Conformant Resolver 1.2.1: findings, evidence, candidate errata |
-| [Extensions documentation](extensions/README.md) | developers, operators | detailed rules and design decisions of each part, backup and restore, hardening |
-| [Changelog](extensions/CHANGELOG.md) | maintainers | every change on the branch |
-| [Architecture decisions](adr/0001-portal-state-in-mongodb.md) | maintainers, developers, operators | ADR 0001: the portal's state in MongoDB, background jobs in a worker, more than one replica |
-| [Tenants](adr/0002-tenants.md) | maintainers, developers, operators | ADR 0002: organisations that own GS1 Company Prefixes, the server administrator, support access, an audit trail per tenant |
-| [GS1 rules from the dictionary](adr/0003-gs1-rules-from-the-dictionary.md) | maintainers, developers | ADR 0003: one source for the GS1 rules (the GS1 Barcode Syntax Dictionary), one engine release, engine messages translated, a weekly update check |
-| [E-mail](adr/0004-e-mail.md) | maintainers, developers, operators | ADR 0004: outgoing mail through an authenticated relay, invitations, password recovery by single-use link, notifications with per-user preferences |
-| [Tenant API](adr/0005-tenant-api.md) | maintainers, developers, operators | ADR 0005: the portal's versioned API for organisations' systems, API keys created by administrators (scopes, prefixes, expiry, hash only), a request limit per key, OpenAPI description |
-| [Request log](adr/0006-resolver-request-log.md) | maintainers, developers, operators | ADR 0006: the resolver records each resolution request asynchronously and without personal data (no address, no User-Agent, no serial number), raw events with an expiry, daily aggregates per key by the worker, attribution to organisations at query time, the tenant API's calls |
-| [Single sign-on](adr/0012-single-sign-on.md) | maintainers, developers, operators | ADR 0012: OpenID Connect per organisation (code flow with PKCE, the provider chosen by the e-mail's domain, accounts matched by e-mail and never created, password sign-in off per organisation but never for server administrators), per-role limits on exports |
-| [Interface languages](adr/0014-interface-languages.md) | maintainers, developers | ADR 0014: eleven languages (pt-BR, en-GB, es, fr, de, it, zh-Hans, ja, ko, hi, ar) in the portal, its e-mails, the resolver's pages, the item's page and the home page; one catalogue per language loaded on demand, Arabic right to left, every text in every language checked by a test |
-| [Translation guide](translation-glossary.md) | maintainers, translators | the rules and glossary for the texts of the eleven languages |
-| [Administration and navigation](adr/0013-administration-and-navigation.md) | maintainers, developers, operators | ADR 0013: a sidebar built from the user menu, every screen at phone width, an organisation's page, prefixes as rows and picked, the portal's own dialogs, the overview by organisation for server administrators, the alert history |
-| [The item's page](adr/0011-item-page.md) | maintainers, developers, operators | ADR 0011: the resolver's linkset page rewritten as the item's page and made a record's default target through a `gs1:defaultLink`, brands per prefix with uploaded logos, views and clicks counted apart from scans, `/_click` finding the link again (no open redirect), Verified by GS1 from an installation's URL template |
-| [Label studio](adr/0010-label-studio.md) | maintainers, developers | ADR 0010: sizes as magnifications (QR 0.396 to 0.990 mm, EAN/UPC 0.264 to 0.660 mm), a vector PDF written by the portal, EAN-13/UPC-A/EAN-8/UPC-E beside the QR code with the General Specifications' quiet zones, heights and digits, every format in a zip |
-| [The organisation's own domain](adr/0009-tenant-domains.md) | maintainers, developers, operators | ADR 0009: domains per organisation proved by a DNS TXT record, a default per prefix or a choice on the label, the resolver recognising a domain from `X-Forwarded-Host` (stem removed, other organisations' keys refused), the redirect mode, certificates by a host script |
-| [Monitoring and alerts](adr/0008-monitoring-and-alerts.md) | maintainers, operators | ADR 0008: the worker checks every 5 minutes the resolver through the proxy, the daily backup's record, the certificate and spikes of 404 per scope, keeps a state per check and e-mails the administrators on a change (category *alerts*, on by default) |
-| [Overview](adr/0007-overview-indicators.md) | maintainers, developers | ADR 0007: the page opened after sign-in, indicators of usage, resolution quality, record quality, operation and governance per scope for 7, 30 or 90 days, computed on request from the daily aggregates and today's events, exports, the tenant API's `/stats` |
-| [Official README](upstream-README.md) | — | the README of the official GS1 Resolver CE, kept for reference |
-| [Development tests](../dev-tests/README.md) | developers | how to set up and run the tests |
+The documents are grouped by who reads them. Every feature is listed in [features.md](features.md), each with the
+development tests' checks that prove it; the whole list of checks is the [inventory of features](test-inventory.md)
+([ADR 0016](adr/0016-documentation-and-feature-inventory.md)).
+
+## People who register records
+
+| Document | What it holds |
+|---|---|
+| [Portal user guide](portal-user-guide.md) | every task in the portal, step by step, with screenshots: signing in and languages, the editor, keys and qualifiers, targets and the item's page, labels (QR code, Data Matrix, EAN/UPC, PDF, ZIP) and EPCs for RFID and NFC, data attributes, the record list with every search and filter (by text, key type, qualifier, author, link problems, a scanner's or an RFID reader's code), spreadsheets, link checks, requests to the resolver, the overview, messages and what to do |
+| [Features](features.md) | every feature, what it does, the commit that brought it and the checks that prove it |
+
+## Organisations' administrators
+
+| Document | What it holds |
+|---|---|
+| [Portal user guide](portal-user-guide.md), section 14 | users and their prefixes, the organisation's page (prefixes, users, domains, item page brands, single sign-on, API keys, exports, alerts), the audit trail, request log retention, domains, single sign-on, API keys |
+
+## Server administrators and operators
+
+| Document | What it holds |
+|---|---|
+| [Operator's guide](extensions/README.md) | installation, configuration, every setting, organisations and server administrators, e-mail, the request log and GeoIP, domains and certificates, monitoring, export limits, GS1's GCP length table, backup and restore, replicas and the load test, hardening, going to production |
+| [Portal user guide](portal-user-guide.md), section 14 | the screens only server administrators see (organisations, the export maximum, the GCP length table, support access, alerts of the installation) |
+| [Changelog](extensions/CHANGELOG.md) | every change on the branch, with the commit |
+| [Conformance review](conformance-review.md) | clause-by-clause review against GS1 Digital Link URI Syntax 1.7 and GS1-Conformant Resolver 1.2.1: findings, evidence, candidate errata |
+
+## Integrators
+
+| Document | What it holds |
+|---|---|
+| [Tenant API reference](api-reference.md) | every operation, parameter, answer and schema of `/portal/api/v1`, generated from the OpenAPI description the API serves |
+| [README](../README.md), *Tenant API* and *API reference* | how to call the API and the official data entry API |
+
+## Developers and maintainers
+
+| Document | What it holds |
+|---|---|
+| [Developer guide](developer-guide.md) | services, source files, request flows, the portal's API, its data, the tests with their counts, how to extend |
+| [Development tests](../dev-tests/README.md) | every test program, how to set up and run them |
+| [Inventory of features](test-inventory.md) | every check of every test program, grouped by area |
+| [History](history.md) | how the project evolved session by session, decisions, lessons, open items |
+| [Translation guide](translation-glossary.md) | the rules and glossary for the texts of the eleven interface languages |
+| [Official README](upstream-README.md) | the README of the official GS1 Resolver CE, kept for reference |
+
+## Architecture decision records
+
+| Record | Decision |
+|---|---|
+| [ADR 0001](adr/0001-portal-state-in-mongodb.md) | the portal's state in MongoDB, background jobs in a worker, more than one replica |
+| [ADR 0002](adr/0002-tenants.md) | organisations that own GS1 Company Prefixes, the server administrator, support access, an audit trail per organisation |
+| [ADR 0003](adr/0003-gs1-rules-from-the-dictionary.md) | one source for the GS1 rules (the GS1 Barcode Syntax Dictionary), one engine release, engine messages translated, a weekly update check |
+| [ADR 0004](adr/0004-e-mail.md) | outgoing mail through an authenticated relay, invitations, password recovery by single-use link, notifications with per-user preferences |
+| [ADR 0005](adr/0005-tenant-api.md) | the portal's versioned API for organisations' systems, API keys (scopes, prefixes, expiry, hash only), a request limit per key, an OpenAPI description |
+| [ADR 0006](adr/0006-resolver-request-log.md) | the resolver's log of requests without personal data, daily aggregates, attribution at query time; browser, approximate location and retention set in the portal |
+| [ADR 0007](adr/0007-overview-indicators.md) | the overview after sign-in: usage, resolution quality, records, operation and governance per scope; exports; `/stats` |
+| [ADR 0008](adr/0008-monitoring-and-alerts.md) | monitoring the resolver, the backup, the certificate and spikes of 404, alerts by e-mail |
+| [ADR 0009](adr/0009-tenant-domains.md) | an organisation's own domain in the QR code, proved by DNS, served with its certificate without the terminal |
+| [ADR 0010](adr/0010-label-studio.md) | the label studio: sizes, PDF, EAN/UPC beside the QR code, every format in a zip; Data Matrix and scanning environments; an EPC for every key |
+| [ADR 0011](adr/0011-item-page.md) | the item's page as a record's default target, brands per prefix, Verified by GS1 |
+| [ADR 0012](adr/0012-single-sign-on.md) | single sign-on per organisation with OpenID Connect; limits on exports, set in the portal within an installation maximum |
+| [ADR 0013](adr/0013-administration-and-navigation.md) | a sidebar, an organisation's page, prefixes as rows, the portal's own dialogs, the overview by organisation, the alert history |
+| [ADR 0014](adr/0014-interface-languages.md) | eleven interface languages, Arabic right to left, every text in every language checked |
+| [ADR 0015](adr/0015-gcp-length-table.md) | the GS1 Company Prefix's length from GS1's GCP length table, uploaded by the server administrator |
+| [ADR 0016](adr/0016-documentation-and-feature-inventory.md) | the documents by reader, the feature inventory drawn from the tests' checks, the API reference generated |
 
 The documentation is written in British English only; readers of other languages can use the translation built into
-their browser. The portal and the resolver's pages themselves stay in Brazilian Portuguese and British English.
+their browser. The software itself — the portal, its e-mails, the resolver's pages, the item's page and the home page —
+speaks eleven languages ([ADR 0014](adr/0014-interface-languages.md)).
 
 Images: `images/` (README) and `images/guide/` (user guide), regenerated by `dev-tests/docs/screenshots.py`.

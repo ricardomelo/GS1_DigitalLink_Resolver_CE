@@ -10,7 +10,48 @@ This document describes what this branch adds to GS1 Resolver Community Edition 
 - a **resolver description file** built from the configuration;
 - a **layered configuration** (`.env.example` defaults, `.env` per installation) and a **daily backup**.
 
-Interfaces are available in Brazilian Portuguese and British English.
+The interfaces speak eleven languages ([ADR 0014](../adr/0014-interface-languages.md)); this document is written in
+British English, for operators and developers. People who register records read the
+[portal user guide](../portal-user-guide.md); integrators the [tenant API reference](../api-reference.md).
+
+## Contents
+
+- [Architecture](#architecture)
+- [Configuration](#configuration)
+- [Quick start (development machine)](#quick-start-development-machine)
+- [Installation on a server (Ubuntu)](#installation-on-a-server-ubuntu)
+- [Portal users](#portal-users)
+- [Primary identification keys](#primary-identification-keys)
+- [Governance](#governance)
+- [Record list](#record-list)
+- [Other records of the same key](#other-records-of-the-same-key)
+- [Spreadsheet import and export](#spreadsheet-import-and-export)
+- [Special characters](#special-characters)
+- [Link checker](#link-checker)
+- [Sign-in, sessions and passwords](#sign-in-sessions-and-passwords)
+- [E-mail](#e-mail)
+- [Single sign-on](#single-sign-on)
+- [Limits on exports](#limits-on-exports)
+- [GS1's GCP length table](#gs1s-gcp-length-table)
+- [Tenant API](#tenant-api)
+- [Request log](#request-log)
+- [Overview](#overview)
+- [Organisations' own domains](#organisations-own-domains)
+- [The item's page](#the-items-page)
+- [Monitoring and alerts](#monitoring-and-alerts)
+- [Home page](#home-page)
+- [Look and feel](#look-and-feel)
+- [Languages](#languages)
+- [What each action does on the API](#what-each-action-does-on-the-api)
+- [QR code label](#qr-code-label)
+- [GS1 Digital Link data attributes](#gs1-digital-link-data-attributes)
+- [Resolver CE changes](#resolver-ce-changes)
+- [Operations](#operations)
+- [Hardening](#hardening)
+- [Daily backup](#daily-backup)
+- [Secret rotation](#secret-rotation)
+- [Going to production](#going-to-production)
+- [Development tests](#development-tests)
 
 ## Architecture
 
@@ -642,7 +683,7 @@ The provider's addresses must be `https` on public addresses; `PORTAL_SSO_ALLOW_
 addresses (tests, or a provider on the operator's own network). The journal records each sign-in through a provider
 and each refusal with its reason; the screen shows the last sign-in and the last failure.
 
-### Limits on exports
+## Limits on exports
 
 Set in the portal ([ADR 0012](../adr/0012-single-sign-on.md), section 8): the most rows one export may hold — the
 record spreadsheet, the requests' CSV and the tenant API's record listing — and `0` for no export at all (the
@@ -659,7 +700,7 @@ A refused export says the numbers and goes into the journal (`export-refused`), 
 setting in `.env`, is read once at the first start of this version as the starting limits of the operator and of every
 organisation, then no longer: remove it afterwards (`sed -i '/^PORTAL_EXPORT_LIMITS=/d' .env`).
 
-### GS1's GCP length table
+## GS1's GCP length table
 
 The length of a key's GS1 Company Prefix comes from GS1's GCP length table (`GCPPrefixFormatList.xml`,
 [ADR 0015](../adr/0015-gcp-length-table.md)) once a server administrator has uploaded it: *Organisations → GS1 Company
@@ -1094,6 +1135,25 @@ It follows the symbol and text dimensions of the *QR Codes powered by GS1 design
   `needed`, `fittingLevel`) or `qr.tooLong`.
 - The choices are remembered in the browser (the on/off HRI choice of earlier versions becomes full or
   none). Files are named after the key and qualifiers, e.g. `qrcode_01_09506000134352_10_L1.svg`.
+
+### Data Matrix and scanning environments
+
+The label studio also draws a **Data Matrix with the GS1 Digital Link URI** or a **GS1 DataMatrix** with the element
+string (FNC1 first), with libzint ([ADR 0010](../adr/0010-label-studio.md), section 7). The **scanning environment**
+(retail point of sale, healthcare, direct part marking) limits the X-dimensions offered to its range of the GS1 General
+Specifications; the SVG can carry its human readable text as text (a font needed) instead of outlines. Each symbol is
+read back by an independent decoder in the tests.
+
+### EPCs for RFID and NFC tags
+
+For every key the EPC Tag Data Standard encodes — GTIN with a serial number, SSCC, GLN (the extension 0 without one),
+GRAI and GDTI with their serial component, GIAI, GSRN, GSRNP, GCN, CPID with its serial, ITIP with a serial number — the
+block *RFID and NFC (EPC)* gives the EPC in hexadecimal and as a tag URI, and the compressed GS1 Digital Link for an NFC
+tag (`/eh…`, `/ex…`), which this resolver reads ([ADR 0010](../adr/0010-label-studio.md), section 8). The encoder
+follows the EPC Tag Data Translation artefacts the resolver decodes with: `portal/epc_schemes.json` is generated from
+`web_server/src/tdt` by `python portal/tools/gen_epc_schemes.py`, and must be regenerated when those artefacts are
+replaced (a test says so). The company prefix's length comes from the person's choice, GS1's GCP length table (below)
+or the organisation's prefixes. The TDS 2.0 `+` schemes are decoded by the resolver but not offered on labels.
 
 ## GS1 Digital Link data attributes
 

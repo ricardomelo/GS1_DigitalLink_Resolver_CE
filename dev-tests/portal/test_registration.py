@@ -124,6 +124,9 @@ check("importing the export again changes nothing", again["counts"]["update"] ==
 changed = preview("key;value;qualifiers;description;linkType;url;language\n"
                   f"01;{G};(10)B99(21)S1;Unit S1;gs1:pip;https://example.org/x;en\n")
 item = changed["records"][0]
+check("an import never deletes: a file of one record plans only that record, and none of the others goes",
+      [r["action"] for r in changed["records"]] == ["update"] and set(changed["counts"]) <= {"create", "update", "unchanged",
+                                                                                              "error", "skip"}, changed["counts"])
 check("an import that changes a serial number's batch is an update showing the batch it had",
       item["action"] == "update" and item["qualifiers"] == [["21", "S1"]] and item["informative"] == [["10", "B99"]]
       and item["informativeBefore"] == [["22", "V1"], ["10", "B42"]], changed)

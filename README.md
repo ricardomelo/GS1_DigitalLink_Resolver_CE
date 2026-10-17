@@ -36,26 +36,13 @@ adds what an organisation needs to run one for its members:
 
 ## Documentation
 
-| | |
+| Reader | Document |
 |---|---|
-| [Portal user guide](Documentation/portal-user-guide.md) | every task in the portal, step by step, with screenshots |
-| [Features](Documentation/features.md) | every feature, what it does and when it was added |
-| [History](Documentation/history.md) | how the project evolved, decisions and lessons |
-| [Developer guide](Documentation/developer-guide.md) | services, source files, portal API, data files, tests, how to extend |
-| [Conformance review](Documentation/conformance-review.md) | the branch against GS1 Digital Link URI Syntax 1.7 and GS1-Conformant Resolver 1.2.1, clause by clause |
-| [Extensions documentation](Documentation/extensions/README.md) · [Changelog](Documentation/extensions/CHANGELOG.md) | detailed rules and decisions · every change |
-| [Architecture decisions](Documentation/adr/0001-portal-state-in-mongodb.md) | ADR 0001: the portal's state in MongoDB, background jobs in a worker, replicas |
-| [Tenants](Documentation/adr/0002-tenants.md) | ADR 0002: organisations that own GS1 Company Prefixes, support access, an audit trail per tenant |
-| [GS1 rules from the dictionary](Documentation/adr/0003-gs1-rules-from-the-dictionary.md) | ADR 0003: one source for the GS1 rules, one engine release, engine messages translated |
-| [E-mail](Documentation/adr/0004-e-mail.md) | ADR 0004: an authenticated relay, invitations, password recovery, notifications |
-| [Tenant API](Documentation/adr/0005-tenant-api.md) | ADR 0005: a versioned API of the portal for organisations, API keys with scopes, expiry and a request limit |
-| [Request log](Documentation/adr/0006-resolver-request-log.md) | ADR 0006: the resolver records each request without personal data, daily aggregates per key, each organisation seeing its own |
-| [Overview](Documentation/adr/0007-overview-indicators.md) | ADR 0007: the page after sign-in with indicators of usage, resolution quality, records, operation and governance |
-| [Label studio](Documentation/adr/0010-label-studio.md) | ADR 0010: label sizes, PDF, an EAN/UPC beside the QR code, every format in one zip |
-| [The organisation's own domain](Documentation/adr/0009-tenant-domains.md) | ADR 0009: domains proved by DNS, default per prefix, the resolver answering on them for their organisation only, certificates on the host |
-| [Monitoring and alerts](Documentation/adr/0008-monitoring-and-alerts.md) | ADR 0008: the worker checks the resolver, the backup, the certificate and spikes of 404, and e-mails the administrators |
-| [Single sign-on](Documentation/adr/0012-single-sign-on.md) | ADR 0012: each organisation's OpenID Connect provider for its users' sign-in, password sign-in off per organisation, per-role limits on exports |
-| [The item's page](Documentation/adr/0011-item-page.md) | ADR 0011: the resolver's page of an item's links as the default target, branded per prefix, clicks logged, Verified by GS1 |
+| People who register records, organisations' administrators | [Portal user guide](Documentation/portal-user-guide.md): every task in the portal, step by step, with screenshots |
+| Everyone | [Features](Documentation/features.md): every feature, what it does, when it was added and the checks that prove it |
+| Server administrators and operators | [Operator's guide](Documentation/extensions/README.md) (installation, configuration, operation, production) · [Changelog](Documentation/extensions/CHANGELOG.md) |
+| Integrators | [Tenant API reference](Documentation/api-reference.md), generated from the API's OpenAPI description |
+| Developers and maintainers | [Developer guide](Documentation/developer-guide.md) · [Inventory of features](Documentation/test-inventory.md) (every check of every test) · [History](Documentation/history.md) · [Conformance review](Documentation/conformance-review.md) · [Architecture decisions](Documentation/README.md#architecture-decision-records) (ADR 0001 to 0016) |
 
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).
@@ -409,7 +396,7 @@ checks the user's role and GS1 Company Prefixes.
 For an organisation's own systems (an ERP, a PIM, a shop): the same rules as the portal, limited to the
 organisation's records ([ADR 0005](Documentation/adr/0005-tenant-api.md)). An administrator creates a key in the
 portal (user menu → **API keys**: scopes, optional prefixes, validity) and sees it once; every call sends it as
-`Authorization: Bearer rk_<id>.<secret>`. The description is public: `GET /portal/api/v1/openapi.json`
+`Authorization: Bearer rk_<id>.<secret>`. Every operation is in the [tenant API reference](Documentation/api-reference.md). The description is public: `GET /portal/api/v1/openapi.json`
 (OpenAPI 3.1). Requests are limited per key (120 a minute by default; then 429 with `Retry-After`).
 
 | Operation | Scope | Purpose |
@@ -647,7 +634,7 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 
 ## Open backlog
 
-Status on 17 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly; items 9.1 to 9.7 from the staging tests of 15 and 16 October, 9.1 to 9.7 done in session 15; items 9.8 to 9.11 added by the owner on 17 October, 9.8 to 9.10 done in session 16). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+Status on 17 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly; items 9.1 to 9.7 from the staging tests of 15 and 16 October, 9.1 to 9.7 done in session 15; items 9.8 to 9.11 added by the owner on 17 October and done in session 16). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
 the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
@@ -683,7 +670,8 @@ eleven interface languages ([ADR 0014](Documentation/adr/0014-interface-language
 limits set in the portal within an installation maximum ([ADR 0012](Documentation/adr/0012-single-sign-on.md)), and
 item 9.9, the GS1 Company Prefix's length from GS1's GCP length table, uploaded by the server administrator
 ([ADR 0015](Documentation/adr/0015-gcp-length-table.md)), and item 9.10, an EPC for every key the EPC Tag Data
-Standard encodes ([ADR 0010](Documentation/adr/0010-label-studio.md)),
+Standard encodes ([ADR 0010](Documentation/adr/0010-label-studio.md)), and item 9.11, the documents by reader with
+an inventory of every feature drawn from the tests' checks ([ADR 0016](Documentation/adr/0016-documentation-and-feature-inventory.md)),
 and item 7.1, single sign-on per organisation
 with OpenID Connect and per-role limits on exports ([ADR 0012](Documentation/adr/0012-single-sign-on.md)), are
 complete too. What was
@@ -697,7 +685,6 @@ know whose data they handle.
 | Production | 7.2 | **Production readiness**, on the servers: an installation on a clean machine, the off-server copy set up, a restore rehearsal, the staging secrets rotated and the [production checklist](Documentation/extensions/README.md#going-to-production) worked through (the scripts and the installer's final check of a scan through the proxy are done) | S | — |
 | | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages (default link titles in the link's language, conformance review F21: done) | S | — |
 | | 7.4 | **Load test and scale-out rehearsal** on staging with `dev-tests/load/load_test.py` (done): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded ([procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)) | S | 2.3 |
-| Owner's additions | 9.11 | **The project's documentation**: every document and manual reviewed and completed (users, organisation administrators, operators, developers), with an inventory of every feature — every search and filter, the search by EPC included — drawn from the development tests' checks, so that each feature names the checks that prove it | L | 9.8–9.10 |
 | Standards | 8.1 | **Errata and Work Requests to GS1** (drafted; to be reviewed and sent by the owner): E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
 
 The items of the "later" list are done: the record search reads scanners and RFID readers, exports follow the

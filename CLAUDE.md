@@ -45,6 +45,10 @@ document arrive in the maintainer's handover at the start of each session; read 
 - `Documentation/developer-guide.md` changes with an endpoint, file, collection, service or function, and holds
   the check counts (section 13); `dev-tests/README.md` lists every test program.
 - A new test program needs a `Program(...)` line in `dev-tests/test_programs.py`.
+- Each feature row of `Documentation/features.md` cites the checks that prove it (*Checks* column); after adding or
+  renaming checks, regenerate `Documentation/test-inventory.*` and the counts of the developer guide (section 14 there,
+  *A feature, or a check*); `dev-tests/docs/test_docs.py` fails when they are out of step. A change to
+  `portal/openapi.json` regenerates `Documentation/api-reference.md` (`portal/tools/gen_api_reference.py`).
 - An ADR (`Documentation/adr/`) records deviations in the same delivery; a large item starts with its ADR.
 - The README's *Open backlog* loses an item when it is done or dropped; `Documentation/history.md` records each
   session.

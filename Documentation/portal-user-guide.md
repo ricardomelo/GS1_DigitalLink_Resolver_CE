@@ -24,7 +24,7 @@ For installation and operation see the [README](../README.md); for how the porta
 11. [Registered records: searching and filtering](#11-registered-records-searching-and-filtering)
 12. [Spreadsheets: export and import](#12-spreadsheets-export-and-import)
 13. [Checking that the targets answer](#13-checking-that-the-targets-answer)
-14. [Administration: users](#14-administration-users)
+14. [Administration: users, organisations and settings](#14-administration-users-organisations-and-settings)
 15. [Administration: audit trail](#15-administration-audit-trail)
 16. [Requests to the resolver](#16-requests-to-the-resolver)
 17. [The overview](#17-the-overview)
@@ -497,6 +497,18 @@ most recently changed first: product (description), identifier, what it applies 
 portal (date and user; *no history* for records made elsewhere). Select a description to open the record
 in the editor; the browser's back button returns to the list.
 
+Every search and filter of the portal, here and on the other screens:
+
+| Screen | Searches and filters |
+|---|---|
+| Registered records (this section) | text (identifier, key name, description, batch, serial); identifier type; qualifier; changed by; status (no record of the key, serial registered with batch or variant); only with link problems; a GS1 Digital Link or element string (exact, more general and more specific records); a scanner's raw data; an RFID reader's EPC of any key (SGTIN, SSCC, SGLN, GRAI, GIAI, GSRN, GDTI, SGCN, CPI, ITIP) or a compressed link `eh…`/`ex…`; kept in the page's address |
+| Requests (section 16) | dates, a code, outcome, device, browser, country, automated requests; the organisation for a server administrator; the tenant API's calls by key |
+| Audit trail (section 15) | user, dates, text |
+| Alerts (section 14) | organisation (server administrators), kind, dates |
+| Users (section 14) | organisation (server administrators) |
+| Overview (section 17) | 7, 30 or 90 days; an organisation or the operator (server administrators) |
+| Organisations (section 14) | — (every organisation, by name) |
+
 ### Searching by text
 
 Type in the search field: an identifier (a GTIN with or without leading zeros), a key name (GTIN, SSCC,
@@ -555,7 +567,8 @@ symbology identifier such as `]d2` (DataMatrix), `]Q3` (QR) or `]C1` (GS1-128), 
 AIs without brackets — is read by the portal (the GS1 Barcode Syntax Engine) and searched as above; the line under the
 filters says *read from the scanner as …*, or why the code could not be read (a wrong check digit, for example). An
 RFID reader's EPC (hexadecimal) or a compressed link (`eh…`, `ex…`) is read by the resolver and finds the records of
-its code; an EPC whose code has no record is said so.
+its code — an EPC of any key the label studio writes one for (section 9), and the TDS 2.0 `+` schemes too; an EPC whose
+code has no record is said so, and a string that is not an EPC as well.
 
 ## 12. Spreadsheets: export and import
 
@@ -640,7 +653,29 @@ in a browser to confirm), a site that does not answer, a redirect to a page with
 redirects, an internal network address (never contacted) or an invalid address. Some sites answer
 “page not found” with a normal page; the checker cannot detect those.
 
-## 14. Administration: users
+## 14. Administration: users, organisations and settings
+
+Administrators find every setting of their organisation here; server administrators, the installation's too. Where each
+task is:
+
+| Task | Organisation's administrators | Server administrators | Where |
+|---|---|---|---|
+| Create, change, disable, remove users; their roles and prefixes; invitations | their organisation's users | every user | *Users*, below |
+| See everything about one organisation in one place | their own | any organisation, and the operator's | [An organisation's page](#an-organisations-page-administrators) |
+| Limit exports per role (readers, editors, API keys) | their own | any organisation, and the operator's users | the organisation's page, *Exports* |
+| The most rows per export in every organisation | — | yes | [Organisations](#organisations-server-administrators) |
+| Create, rename, disable, remove organisations; their GS1 Company Prefixes | — | yes | [Organisations](#organisations-server-administrators) and the organisation's page |
+| Upload GS1's GCP length table | — | yes | [Organisations](#organisations-server-administrators) |
+| Single sign-on (OpenID Connect) | their own | any, and the operator's | [Organisation sign-in](#organisation-sign-in-administrators) |
+| API keys for the organisation's systems | their own | the operator's | [API keys](#api-keys-administrators) |
+| Own domains in the QR codes | their own | every one | [Domains](#domains-administrators) |
+| Brands of the item's page | their prefixes | any prefix, and the installation's | [Item page](#item-page-administrators) |
+| How long requests are kept | their organisation (no longer than the installation's) | the installation's and any organisation's | section 16, *Retention* |
+| Alerts raised by the monitoring | their organisation's | every one | [Alerts](#alerts-administrators) |
+| Look at an organisation's data, read only | — | yes, with a recorded reason | [Support access](#support-access) |
+| Who did what | their organisation's | the operator's and what it did to organisations | section 15, audit trail |
+
+### Users
 
 ![Users](images/portal-users.png)
 

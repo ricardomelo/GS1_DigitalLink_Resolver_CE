@@ -27,6 +27,9 @@ inputs:
   gs1-suite:
     description: Fetch GS1's resolver test suite at the pinned commit (sets GS1_RESOLVER_TESTSUITE)
     default: "false"
+  web-vocabulary:
+    description: Fetch the GS1 Web Vocabulary at the pinned commit (sets GS1_WEB_VOCABULARY, the link types' source)
+    default: "false"
   nginx:
     description: Install Ubuntu's nginx (the service itself is stopped; the tests start their own)
     default: "false"
@@ -52,6 +55,7 @@ runs:
           echo "EPC_TDS_VERSION=1.4.1"
           echo "AJV_DIST_VERSION=8.17.1"
           echo "GS1_TESTSUITE_COMMIT=32597c108ac1ecb9e90ce0081bb3a16e5a61e616"
+          echo "GS1_WEBVOC_COMMIT=f8f407bf717233c871dca2f62f4e45b0940e8cad"   # GS1 Web Vocabulary 1.16
           echo "COMPOSE_VERSION=v2.29.7"
           echo "NGINX_VERSION=1.30.5"
         } >> "$GITHUB_ENV"
@@ -69,7 +73,8 @@ runs:
       shell: bash
       run: |
         python -m pip install -q -r web_server/src/requirements.txt -r portal/requirements.txt \
-          -r data_entry_server/src/requirements.txt pytest jsonschema playwright opencv-python-headless pillow mongomock
+          -r data_entry_server/src/requirements.txt pytest jsonschema playwright opencv-python-headless pillow mongomock \
+          "zxing-cpp>=2.2,<4"   # reads the Data Matrix symbols of the labels back (test_datamatrix.py)
         echo "PLAYWRIGHT_VERSION=$(python -m pip show playwright | sed -n 's/^Version: //p')" >> "$GITHUB_ENV"
 
     - if: inputs.npm == 'true' || inputs.gs1-suite == 'true'
@@ -141,6 +146,14 @@ runs:
         git clone -q https://github.com/gs1/GS1DL-resolver-testsuite "$DEV_TOOLS/gs1-testsuite"
         git -C "$DEV_TOOLS/gs1-testsuite" checkout -q "$GS1_TESTSUITE_COMMIT"
         echo "GS1_RESOLVER_TESTSUITE=$DEV_TOOLS/gs1-testsuite" >> "$GITHUB_ENV"
+
+    - if: inputs.web-vocabulary == 'true'
+      name: GS1 Web Vocabulary
+      shell: bash
+      run: |
+        git clone -q https://github.com/gs1/WebVoc "$DEV_TOOLS/gs1-webvoc"
+        git -C "$DEV_TOOLS/gs1-webvoc" checkout -q "$GS1_WEBVOC_COMMIT"
+        echo "GS1_WEB_VOCABULARY=$DEV_TOOLS/gs1-webvoc/v1.16/gs1Voc.jsonld" >> "$GITHUB_ENV"
 
     - if: inputs.nginx == 'true'
       name: nginx

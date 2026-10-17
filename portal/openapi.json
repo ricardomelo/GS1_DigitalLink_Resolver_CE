@@ -121,11 +121,14 @@
    ],
    "get": {
     "operationId": "getLabel",
-    "summary": "The record's QR code label",
-    "description": "Scope `labels:read`. The headers X-QR-Version, X-QR-Level and X-QR-Modules tell the symbol made.",
+    "summary": "The record's label: a QR code, a Data Matrix or a GS1 DataMatrix",
+    "description": "Scope `labels:read`. X-Symbol names the 2D symbol and X-Dimension its X-dimension in mm; for a QR code X-QR-Version, X-QR-Level and X-QR-Modules, for a Data Matrix X-DM-Modules (rows x columns).",
     "parameters": [
      {"name": "format", "in": "query", "description": "svg (default), png or pdf, as a download; zip: the three and a README.txt", "schema": {"type": "string", "enum": ["svg", "png", "pdf", "zip"]}},
-     {"name": "size", "in": "query", "description": "Percentage of the target X-dimensions: the QR code's 0.495 mm, an EAN/UPC's 0.330 mm", "schema": {"type": "integer", "enum": [80, 90, 100, 120, 150, 200], "default": 100}},
+     {"name": "symbol", "in": "query", "description": "The 2D symbol: qr (GS1 Digital Link QR code), dm (Data Matrix with the GS1 Digital Link URI) or gs1dm (GS1 DataMatrix with the element string: the key, its qualifiers and the data attributes)", "schema": {"type": "string", "enum": ["qr", "dm", "gs1dm"], "default": "qr"}},
+     {"name": "env", "in": "query", "description": "The scanning environment, which sets the X-dimension ranges (GS1 General Specifications, symbol specification tables) and the symbols it takes: retail (point of sale: every symbol, 2D 0.396-0.990 mm, EAN/UPC 0.264-0.660 mm), healthcare (Data Matrix only, 0.254-0.495 mm) or dpm (direct part marking: Data Matrix only, 0.254-0.615 mm, no EAN/UPC)", "schema": {"type": "string", "enum": ["retail", "healthcare", "dpm"], "default": "retail"}},
+     {"name": "hritext", "in": "query", "description": "The SVG's human readable text: outline (glyph outlines, no font needed) or text (editable text, needing the fonts where it is printed: OCR-B for EAN/UPC digits)", "schema": {"type": "string", "enum": ["outline", "text"], "default": "outline"}},
+     {"name": "size", "in": "query", "description": "Percentage of the scanning environment's target X-dimensions (retail: the 2D symbol's 0.495 mm, an EAN/UPC's 0.330 mm); refused (label.sizeOutOfRange) outside its ranges", "schema": {"type": "integer", "enum": [80, 90, 100, 120, 150, 200], "default": 100}},
      {"name": "linear", "in": "query", "description": "An EAN/UPC symbol beside the QR code, for GTINs of consumer units: auto (EAN-13, UPC-A or EAN-8 as the GTIN takes) or upce", "schema": {"type": "string", "enum": ["none", "auto", "upce"], "default": "none"}},
      {"name": "domain", "in": "query", "description": "The domain in the QR code: default (that of the record's prefix, else the installation's), installation, or a verified domain of the organisation", "schema": {"type": "string", "default": "default"}},
      {"name": "hri", "in": "query", "description": "Human readable text under the symbol", "schema": {"type": "string", "enum": ["full", "key", "none"], "default": "full"}},

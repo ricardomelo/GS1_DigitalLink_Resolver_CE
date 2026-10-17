@@ -17,6 +17,7 @@ GS1ENCODER_VERSION=$(sed -n 's/^x-gs1-syntax-engine: *&gs1-syntax-engine *"\([^"
 EPC_TDS_VERSION=1.4.1
 AJV_DIST_VERSION=8.17.1
 GS1_TESTSUITE_COMMIT=32597c108ac1ecb9e90ce0081bb3a16e5a61e616
+GS1_WEBVOC_COMMIT=f8f407bf717233c871dca2f62f4e45b0940e8cad   # GS1 Web Vocabulary 1.16, the link types' source
 COMPOSE_VERSION=v2.29.7
 NGINX_VERSION=1.30.5
 # Playwright stays on the release whose Chromium (1194) is pre-installed in /opt/pw-browsers.
@@ -26,7 +27,7 @@ mkdir -p "$DEV_TOOLS/bin"
 # Python packages (pip skips what is already installed)
 python3 -m pip install -q --break-system-packages --ignore-installed blinker \
   -r web_server/src/requirements.txt -r portal/requirements.txt -r data_entry_server/src/requirements.txt \
-  pytest jsonschema "playwright==$PLAYWRIGHT_VERSION" opencv-python-headless pillow pypdf mongomock
+  pytest jsonschema "playwright==$PLAYWRIGHT_VERSION" opencv-python-headless pillow pypdf mongomock "zxing-cpp>=2.2,<4"
 
 # npm packages: the resolver's engine, the EPC library and the JSON schema validator of GS1's suite
 npm_package() {  # <folder> <package@version> [module]
@@ -65,6 +66,13 @@ if [[ "$(git -C "$DEV_TOOLS/gs1-testsuite" rev-parse HEAD 2>/dev/null)" != "$GS1
   git -c advice.detachedHead=false -C "$DEV_TOOLS/gs1-testsuite" checkout -q "$GS1_TESTSUITE_COMMIT"
 fi
 
+# The GS1 Web Vocabulary, the source of the portal's link types (portal/tools/gen_link_types.py)
+if [[ "$(git -C "$DEV_TOOLS/gs1-webvoc" rev-parse HEAD 2>/dev/null)" != "$GS1_WEBVOC_COMMIT" ]]; then
+  rm -rf "$DEV_TOOLS/gs1-webvoc"
+  git clone -q https://github.com/gs1/WebVoc "$DEV_TOOLS/gs1-webvoc"
+  git -c advice.detachedHead=false -C "$DEV_TOOLS/gs1-webvoc" checkout -q "$GS1_WEBVOC_COMMIT"
+fi
+
 # Docker Compose v2, for the installer test's "docker compose config"
 if [[ ! -x "$DEV_TOOLS/bin/docker-compose" ]]; then
   curl -fsSL -o "$DEV_TOOLS/bin/docker-compose" \
@@ -95,6 +103,7 @@ export GS1_SYNTAX_ENGINE_DIR="$DEV_TOOLS/gs1se"
 export EPC_TDS="$DEV_TOOLS/et"
 export AJV_DIST="$DEV_TOOLS/ajv/node_modules/ajv-dist"
 export GS1_RESOLVER_TESTSUITE="$DEV_TOOLS/gs1-testsuite"
+export GS1_WEB_VOCABULARY="$DEV_TOOLS/gs1-webvoc/v1.16/gs1Voc.jsonld"
 export COMPOSE_BIN="$DEV_TOOLS/bin/docker-compose"
 export NGINX_BIN="$DEV_TOOLS/nginx/sbin/nginx"
 export PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers

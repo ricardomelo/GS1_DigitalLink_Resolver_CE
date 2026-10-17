@@ -59,7 +59,9 @@ home_app.add_url_rule("/.well-known/gs1resolver", "description", lambda: Respons
 threading.Thread(target=make_server("127.0.0.1", HOME_PORT, home_app, threaded=True).serve_forever, daemon=True).start()
 
 # Hides the GS1 logo (header of the portal and of the home page) in every screenshot
-NO_LOGO = ".brand img { display: none !important; } .brand .product { border-left: 0 !important; padding-left: 0 !important; }"
+NO_LOGO = (".brand img { display: none !important; } .brand .product { border-left: 0 !important; padding-left: 0 !important; }"
+           # the sidebar scrolls with the page in the pictures: a fixed one is drawn once, over a full-page capture
+           " .sidebar { position: absolute !important; min-height: 100% !important; }")
 
 
 def pip(href, lang="en", title="Product information"):
@@ -127,6 +129,13 @@ def save_element(page, name, selector, pad=12, extra_height=0):
     page.locator(selector).first.scroll_into_view_if_needed()
     page.wait_for_timeout(150)
     box = page.locator(selector).first.bounding_box()
+    height = page.evaluate("window.innerHeight")
+    if box["y"] - pad >= 0 and box["y"] + box["height"] + pad + extra_height <= height:
+        # in view: captured as laid out (a full-page capture lays the page out again, without the sidebar of wide
+        # screens, and the element moves)
+        save(page, name, clip={"x": max(box["x"] - pad, 0), "y": box["y"] - pad,
+                               "width": box["width"] + 2 * pad, "height": box["height"] + 2 * pad + extra_height})
+        return
     scroll_x, scroll_y = page.evaluate("[window.scrollX, window.scrollY]")
     save(page, name, clip={"x": max(box["x"] + scroll_x - pad, 0), "y": max(box["y"] + scroll_y - pad, 0),
                            "width": box["width"] + 2 * pad, "height": box["height"] + 2 * pad + extra_height}, full=True)

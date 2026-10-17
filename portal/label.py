@@ -13,7 +13,12 @@ Renders the QR code label exported by the portal, following the symbol and text 
 - A linear barcode beside the QR code (EAN-13, UPC-A, EAN-8, UPC-E; linear.py) for the transition to 2D, at 0.330 mm
   times the same size, with its quiet zones, guard bars and human readable digits.
 
-Every format is built from the same geometry, expressed in units of the QR module: SVG is fully vector (modules,
+Item 9.3 (ADR 0010, section 7): the 2D symbol may also be a Data Matrix carrying the GS1 Digital Link URI or a GS1 DataMatrix
+carrying the element string (FNC1 first, libzint through zint-bindings); the X-dimensions come from the scanning
+environment chosen (ENVIRONMENTS: the ranges of the GS1 General Specifications' symbol specification tables), the size
+a percentage of its target, refused outside its range; the HRI of the SVG may be real text instead of outlines.
+
+Every format is built from the same geometry, expressed in units of the 2D symbol's module: SVG is fully vector (modules,
 bars and HRI glyph outlines, so no fonts are needed to open it); PDF the same, written here without a library; PNG is
 rasterised at a whole number of pixels per module and carries a DPI value that reproduces the size when printed.
 """
@@ -26,6 +31,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 import segno
+import zint
 from fontTools.pens.basePen import BasePen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
@@ -51,6 +57,25 @@ PNG_PIXELS_PER_MODULE = 12   # ≈ 616 dpi at the target X-dimension; 8 pixels p
 
 ERROR_LEVELS = ("l", "m", "q", "h")          # QR error correction: about 7 %, 15 %, 25 %, 30 % recoverable
 
+# The 2D symbols (ADR 0010, section 7 of item 9.3): QR code and Data Matrix with the GS1 Digital Link URI, GS1 DataMatrix
+# with the element string (FNC1 in first position, the GS1 system's own Data Matrix).
+SYMBOLS = ("qr", "dm", "gs1dm")
+SYMBOL_NAMES = {"qr": "GS1 Digital Link QR code", "dm": "Data Matrix with a GS1 Digital Link URI",
+                "gs1dm": "GS1 DataMatrix"}
+# Scanning environments: the X-dimension (min, target, max) in mm of the 2D symbol and of EAN/UPC, from the GS1 General
+# Specifications' symbol specification tables (section 5.12.3), and the 2D symbols each takes. Sources and the values
+# still to be checked against the current release: ADR 0010, section 7.
+ENVIRONMENTS = {
+    # Table 1 and its addendum for 2D symbols: trade items scanned at general retail point of sale
+    "retail": {"2d": (0.396, 0.495, 0.990), "linear": (0.264, 0.330, 0.660), "symbols": SYMBOLS},
+    # Regulated healthcare trade items: GS1 DataMatrix (and the Digital Link URI in a Data Matrix); EAN/UPC as retail
+    "healthcare": {"2d": (0.254, 0.380, 0.495), "linear": (0.264, 0.330, 0.660), "symbols": ("gs1dm", "dm")},
+    # Direct part marking: Data Matrix only, no linear symbol
+    "dpm": {"2d": (0.254, 0.300, 0.615), "linear": None, "symbols": ("gs1dm", "dm")},
+}
+OCR_B = "OCR-B, 'OCR B', 'OCR-B 10 BT', monospace"         # the font of EAN/UPC digits, when the HRI is text
+HRI_FONT_FAMILY = "'Liberation Sans', Arial, Helvetica, sans-serif"
+
 
 @dataclass(frozen=True)
 class LabelOptions:
@@ -65,11 +90,51 @@ class LabelOptions:
     error: str = "m"                            # error correction level, exactly as chosen
     size: int = 100                             # percentage of the target X-dimensions, one of SIZES
     linear: tuple[str, str] | None = None       # ("ean13" | "upca" | "upce" | "ean8", digits)
+    symbol: str = "qr"                          # one of SYMBOLS
+    element_string: str = ""                    # the element string with brackets, for "gs1dm"
+    environment: str = "retail"                 # one of ENVIRONMENTS
+    hri_text: bool = False                      # the SVG's HRI as text (needs the fonts) instead of outlines
 
     @property
     def x_mm(self) -> float:
-        """The QR code's X-dimension in millimetres."""
-        return TARGET_X_MM * self.size / 100
+        """The 2D symbol's X-dimension in millimetres: the environment's target times the size."""
+        return ENVIRONMENTS[self.environment]["2d"][1] * self.size / 100
+
+    @property
+    def linear_x_mm(self) -> float:
+        """The EAN/UPC X-dimension in millimetres."""
+        ranges = ENVIRONMENTS[self.environment]["linear"]
+        return (ranges[1] if ranges else LINEAR_X_MM) * self.size / 100
+
+
+class OutOfRange(ValueError):
+    """A size, symbol or linear symbol the scanning environment does not allow: code and parameters for the message."""
+
+    def __init__(self, code: str, **params):
+        super().__init__(code)
+        self.code, self.params = code, params
+
+
+def sizes_for(environment: str, with_linear: bool = False) -> list[int]:
+    """The sizes (percentages of the environment's targets) whose X-dimensions stay within its ranges."""
+    env = ENVIRONMENTS[environment]
+    ranges = [env["2d"]] + ([env["linear"]] if with_linear and env["linear"] else [])
+    return [s for s in SIZES if all(low - 1e-9 <= target * s / 100 <= high + 1e-9 for low, target, high in ranges)]
+
+
+def check_environment(options: "LabelOptions") -> None:
+    """Refuses what the scanning environment does not allow (OutOfRange)."""
+    env = ENVIRONMENTS.get(options.environment)
+    if env is None:
+        raise OutOfRange("label.environmentInvalid")
+    if options.symbol not in env["symbols"]:
+        raise OutOfRange("label.symbolNotForEnvironment")
+    if options.linear and not env["linear"]:
+        raise OutOfRange("label.linearNotForEnvironment")
+    if options.size not in sizes_for(options.environment, bool(options.linear)):
+        low, _, high = env["2d"]
+        raise OutOfRange("label.sizeOutOfRange", min=f"{low:.3f}", max=f"{high:.3f}",
+                         sizes=", ".join(map(str, sizes_for(options.environment, bool(options.linear)))))
 
 
 class DoesNotFit(ValueError):
@@ -83,9 +148,45 @@ class DoesNotFit(ValueError):
                        "fittingLevel": fitting_level.upper() if fitting_level else None}
 
 
+@dataclass(frozen=True)
+class DataMatrix:
+    """A Data Matrix made by libzint: its modules (rows of booleans) and size."""
+    matrix: tuple[tuple[bool, ...], ...]
+    rows: int
+    columns: int
+    gs1: bool
+
+
+class DataMatrixError(ValueError):
+    """libzint refused the data (too long for the largest symbol, or an element string it does not accept)."""
+
+
+def data_matrix(data: str, gs1_mode: bool) -> DataMatrix:
+    """A square ECC 200 Data Matrix: GS1 mode for an element string with brackets ("(01)…(10)…": FNC1 first and
+    between variable-length fields), plain data for a URI."""
+    sym = zint.Symbol()
+    sym.symbology = zint.Symbology.DATAMATRIX
+    sym.input_mode = (zint.InputMode.GS1 | zint.InputMode.GS1PARENS) if gs1_mode else zint.InputMode.DATA
+    sym.option_3 = zint.DataMatrixOptions.SQUARE
+    try:
+        sym.encode(data)
+    except Exception as exc:                       # zint raises RuntimeError with its message
+        raise DataMatrixError(str(exc)[:200]) from None
+    if sym.errtxt and sym.errtxt.startswith("Error"):
+        raise DataMatrixError(sym.errtxt[:200])
+    rows, columns = sym.rows, sym.width
+    raw, stride = bytes(sym.encoded_data), sym.encoded_data.shape[1]   # rows of bytes, the first module in bit 0
+    matrix = tuple(tuple(bool(raw[r * stride + c // 8] >> (c % 8) & 1) for c in range(columns)) for r in range(rows))
+    return DataMatrix(matrix, rows, columns, gs1_mode)
+
+
 def symbol(options: LabelOptions):
-    """The QR symbol for the label. The level is never raised automatically (segno's boost_error), so
-    the code is exactly what the user chose; Micro QR is never used."""
+    """The 2D symbol for the label. QR: the level is never raised automatically (segno's boost_error), so
+    the code is exactly what the user chose; Micro QR is never used. Data Matrix: square, ECC 200."""
+    if options.symbol == "gs1dm":
+        return data_matrix(options.element_string, True)
+    if options.symbol == "dm":
+        return data_matrix(options.uri, False)
     try:
         return segno.make(options.uri, error=options.error, version=options.version, micro=False, boost_error=False)
     except segno.DataOverflowError:
@@ -142,7 +243,7 @@ class _Layout:
     width: float
     height: float
     rects: list[tuple[float, float, float, float]]       # x, y, width, height
-    texts: list[tuple[str, float, float, float]]         # text, x (left), baseline, em
+    texts: list[tuple]                                   # text, x (left), baseline, em[, "linear" for EAN/UPC digits]
     x_mm: float                                          # millimetres per unit
 
 
@@ -167,9 +268,10 @@ def _layout(options: LabelOptions) -> _Layout:
     to the right with its own quiet zones, tops aligned."""
     if options.size not in SIZES:
         raise ValueError(f"size {options.size} is not one of {SIZES}")
+    check_environment(options)
     qr = symbol(options)
     matrix = [list(row) for row in qr.matrix]
-    modules = len(matrix)
+    modules = len(matrix[0]) if matrix else 0
     box = modules + 2 * QUIET_ZONE
 
     units_per_em, cap_height, descent = _font_metrics()
@@ -183,7 +285,7 @@ def _layout(options: LabelOptions) -> _Layout:
     box_y = MARGIN
     rects = _qr_rects(matrix, box_x + QUIET_ZONE, box_y + QUIET_ZONE)
     texts = []
-    y = box_y + box
+    y = box_y + len(matrix) + 2 * QUIET_ZONE
     for index, (line, line_width) in enumerate(zip(lines, widths)):
         baseline = y + TEXT_GAP + text_height + index * text_height * LINE_SPACING
         texts.append((line, MARGIN + (content_width - line_width) / 2, baseline, em))
@@ -199,7 +301,7 @@ def _layout(options: LabelOptions) -> _Layout:
 def _place_linear(options: LabelOptions, rects, texts, left: float, top: float, bottom: float) -> tuple[float, float]:
     """Adds the EAN/UPC symbol to the right of `left`; returns the new right edge and bottom."""
     code = linear.encode(*options.linear)
-    unit = LINEAR_X_MM / TARGET_X_MM                    # one linear module in QR modules (the same size applies)
+    unit = options.linear_x_mm / options.x_mm           # one linear module in 2D modules (the same size applies)
     quiet_left, quiet_right = code.quiet
     x0 = left + LINEAR_GAP + quiet_left * unit
     bar_bottom = top + code.bar_height * unit
@@ -221,7 +323,7 @@ def _place_linear(options: LabelOptions, rects, texts, left: float, top: float, 
         height = linear.DIGIT_HEIGHT * unit * relative
         em = height * units_per_em / cap_height
         baseline = bar_bottom + 0.6 * unit + height
-        texts.append((text, x0 + centre * unit - _text_width(text, em) / 2, baseline, em))
+        texts.append((text, x0 + centre * unit - _text_width(text, em) / 2, baseline, em, "linear"))
         lowest = max(lowest, baseline + descent * em / units_per_em)
     right = x0 + (len(code.modules) + quiet_right) * unit
     return right, max(bottom, lowest)
@@ -257,19 +359,24 @@ def render_svg(options: LabelOptions) -> bytes:
     layout = _layout(options)
     w_mm, h_mm = layout.width * layout.x_mm, layout.height * layout.x_mm
     linear_note = (f", {linear.NAMES[options.linear[0]]} {options.linear[1]} at X = "
-                   f"{LINEAR_X_MM * options.size / 100:.3f} mm" if options.linear else "")
+                   f"{options.linear_x_mm:.3f} mm" if options.linear else "")
     parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{w_mm:.3f}mm" height="{h_mm:.3f}mm" '
         f'viewBox="0 0 {layout.width:.4f} {layout.height:.4f}">',
-        f"<title>{_xml(options.uri)}</title>",
-        f'<desc>GS1 Digital Link QR code at {options.size} % of the target size (X = {layout.x_mm:.3f} mm), '
-        f'quiet zone {QUIET_ZONE}X{linear_note}.</desc>',
+        f"<title>{_xml(options.element_string if options.symbol == 'gs1dm' else options.uri)}</title>",
+        f'<desc>{SYMBOL_NAMES[options.symbol]} at {options.size} % of the target size of the scanning environment '
+        f'{options.environment} (X = {layout.x_mm:.3f} mm), quiet zone {QUIET_ZONE}X{linear_note}.</desc>',
         f'<rect width="{layout.width:.4f}" height="{layout.height:.4f}" fill="#fff"/>',
         f'<path fill="#000" shape-rendering="crispEdges" d="{_rects_path(layout)}"/>',
     ]
-    for text, x, baseline, em in layout.texts:
-        parts.append(f'<path fill="#000" aria-label="{_xml(text)}" d="{_hri_path(text, x, baseline, em)}"/>')
+    for text, x, baseline, em, *kind in layout.texts:
+        if options.hri_text:                 # real text: editable, needs the fonts where it is printed (OCR-B for EAN/UPC)
+            family = OCR_B if kind else HRI_FONT_FAMILY
+            parts.append(f'<text x="{x:.4f}" y="{baseline:.4f}" font-family="{family}" font-size="{em:.4f}" '
+                         f'fill="#000">{_xml(text)}</text>')
+        else:
+            parts.append(f'<path fill="#000" aria-label="{_xml(text)}" d="{_hri_path(text, x, baseline, em)}"/>')
     parts.append("</svg>")
     return "\n".join(parts).encode("utf-8")
 
@@ -292,7 +399,7 @@ def render_png(options: LabelOptions) -> bytes:
     draw = ImageDraw.Draw(image)
     for x, y, w, h in layout.rects:
         draw.rectangle([p(x), p(y), p(x + w) - 1, p(y + h) - 1], fill="black")
-    for text, x, baseline, em in layout.texts:
+    for text, x, baseline, em, *_ in layout.texts:
         font = ImageFont.truetype(HRI_FONT, size=max(1, round(em * px)))
         draw.text((p(x), p(baseline)), text, fill="black", font=font, anchor="ls")
 
@@ -346,7 +453,7 @@ def render_pdf(options: LabelOptions) -> bytes:
         px, py = to_pdf(x, y + h)
         ops.append(f"{px:.3f} {py:.3f} {w * scale:.3f} {h * scale:.3f} re")
     ops.append("f")
-    for text, x, baseline, em in layout.texts:
+    for text, x, baseline, em, *_ in layout.texts:
         pen = _PdfPen(_font().getGlyphSet(), to_pdf)
         _draw_text(pen, text, x, baseline, em)
         ops.extend(pen.ops)
@@ -358,7 +465,8 @@ def render_pdf(options: LabelOptions) -> bytes:
         f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w:.3f} {page_h:.3f}] /Contents 4 0 R "
         f"/Resources << >> >>".encode("ascii"),
         f"<< /Length {len(content)} /Filter /FlateDecode >>\nstream\n".encode("ascii") + content + b"\nendstream",
-        f"<< /Title {_pdf_text(options.uri)} /Producer (GS1 Resolver CE portal) >>".encode("latin-1", "replace"),
+        f"<< /Title {_pdf_text(options.element_string if options.symbol == 'gs1dm' else options.uri)} "
+        f"/Producer (GS1 Resolver CE portal) >>".encode("latin-1", "replace"),
     ]
     out = io.BytesIO()
     out.write(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
@@ -380,16 +488,22 @@ def render_zip(options: LabelOptions, name: str) -> bytes:
     """The label as SVG, PNG and PDF, and a README.txt with the URI, the options and the sizes (backlog item 5.4)."""
     layout = _layout(options)
     w_mm, h_mm = layout.width * layout.x_mm, layout.height * layout.x_mm
-    qr = symbol(options)
-    lines = [
-        f"GS1 Digital Link: {options.uri}",
-        f"QR code: version {qr.version}, error correction {qr.error.upper()}, {len(qr.matrix)} x {len(qr.matrix)} modules,"
-        f" X = {layout.x_mm:.3f} mm ({options.size} % of the target 0.495 mm), quiet zone {QUIET_ZONE}X",
-    ]
+    code = symbol(options)
+    target = ENVIRONMENTS[options.environment]["2d"][1]
+    if options.symbol == "qr":
+        lines = [f"GS1 Digital Link: {options.uri}",
+                 f"QR code: version {code.version}, error correction {code.error.upper()}, {len(code.matrix)} x "
+                 f"{len(code.matrix)} modules,"]
+    else:
+        lines = [f"GS1 element string: {options.element_string}" if options.symbol == "gs1dm"
+                 else f"GS1 Digital Link: {options.uri}",
+                 f"{SYMBOL_NAMES[options.symbol]}: ECC 200, {code.rows} x {code.columns} modules,"]
+    lines[-1] += (f" X = {layout.x_mm:.3f} mm ({options.size} % of the target {target:.3f} mm of the scanning environment "
+                  f"{options.environment}), quiet zone {QUIET_ZONE}X")
     if options.linear:
         kind, digits = options.linear
-        lines.append(f"{linear.NAMES[kind]}: {digits}, X = {LINEAR_X_MM * options.size / 100:.3f} mm "
-                     f"({options.size} % magnification), bar height {linear.BAR_HEIGHT[kind] * LINEAR_X_MM * options.size / 100:.2f} mm")
+        lines.append(f"{linear.NAMES[kind]}: {digits}, X = {options.linear_x_mm:.3f} mm "
+                     f"({options.size} % magnification), bar height {linear.BAR_HEIGHT[kind] * options.linear_x_mm:.2f} mm")
     lines += [f"Human readable text: {' '.join(options.hri_lines) if options.show_hri else 'none'}",
               f"Label size: {w_mm:.1f} x {h_mm:.1f} mm; print at 100 % (no scaling) to keep these dimensions.",
               "Files: SVG and PDF are vector (for artwork); PNG is for screens and documents (its DPI gives the size)."]

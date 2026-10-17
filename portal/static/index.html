@@ -267,6 +267,21 @@
           <fieldset class="label-options">
             <legend data-i18n="label.options"></legend>
             <div class="opt-grid">
+              <!-- The 2D symbol and the scanning environment (Documentation/adr/0010-label-studio.md, section 7) -->
+              <label class="opt-field"><span data-i18n="label.symbol"></span>
+                <select id="opt-symbol">
+                  <option value="qr" data-i18n="label.symbol.qr"></option>
+                  <option value="dm" data-i18n="label.symbol.dm"></option>
+                  <option value="gs1dm" data-i18n="label.symbol.gs1dm"></option>
+                </select>
+              </label>
+              <label class="opt-field"><span data-i18n="label.env"></span>
+                <select id="opt-env">
+                  <option value="retail" data-i18n="label.env.retail"></option>
+                  <option value="healthcare" data-i18n="label.env.healthcare"></option>
+                  <option value="dpm" data-i18n="label.env.dpm"></option>
+                </select>
+              </label>
               <label class="opt-field"><span data-i18n="label.hri"></span>
                 <select id="opt-hri">
                   <option value="full" data-i18n="label.hri.full"></option>
@@ -274,7 +289,7 @@
                   <option value="none" data-i18n="label.hri.none"></option>
                 </select>
               </label>
-              <label class="opt-field"><span data-i18n="label.version"></span>
+              <label class="opt-field" id="opt-version-field"><span data-i18n="label.version"></span>
                 <select id="opt-version">
                   <option value="auto" data-i18n="label.version.auto"></option>
               <option value="1">1 (21 × 21)</option>
@@ -319,7 +334,7 @@
               <option value="40">40 (177 × 177)</option>
                 </select>
               </label>
-              <label class="opt-field"><span data-i18n="label.ecl"></span>
+              <label class="opt-field" id="opt-ecl-field"><span data-i18n="label.ecl"></span>
                 <select id="opt-ecl">
                   <option value="l" data-i18n="label.ecl.l"></option>
                   <option value="m" data-i18n="label.ecl.m"></option>
@@ -339,6 +354,12 @@
                   <option value="none" data-i18n="label.linear.none"></option>
                   <option value="auto" data-i18n="label.linear.auto"></option>
                   <option value="upce" data-i18n="label.linear.upce"></option>
+                </select>
+              </label>
+              <label class="opt-field"><span data-i18n="label.hriText"></span>
+                <select id="opt-hritext">
+                  <option value="outline" data-i18n="label.hriText.outline"></option>
+                  <option value="text" data-i18n="label.hriText.text"></option>
                 </select>
               </label>
               <!-- The domain in the QR code (Documentation/adr/0009-tenant-domains.md): shown when the scope has one -->

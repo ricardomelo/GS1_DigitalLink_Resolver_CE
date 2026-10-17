@@ -809,3 +809,6 @@ body:not([data-operator-view="true"]) .needs-operator-view { display: none !impo
   .org-tabs { flex-wrap: nowrap; overflow-x: auto; }
   pre, code { overflow-wrap: anywhere; }
 }
+
+/* ---------------------------------------------------------------- label: a field the scanning environment does not take */
+.opt-field.env-off { display: none !important; }

@@ -983,6 +983,13 @@ def config():
                               for d in domains.verified(g.tenant)]},
         preferences=preferences_of(users.get(g.user) or {}),
         exportLimit=export_limit(),
+        # the label's scanning environments (Documentation/adr/0010-label-studio.md, section 7): their 2D symbols, the
+        # X-dimension ranges and the sizes that keep within them, without and with an EAN/UPC beside
+        labelEnvironments={name: {"symbols": list(env["symbols"]), "x": list(env["2d"]),
+                                  "linearX": list(env["linear"]) if env["linear"] else None,
+                                  "sizes": label.sizes_for(name), "sizesWithLinear": label.sizes_for(name, True)
+                                  if env["linear"] else []}
+                           for name, env in label.ENVIRONMENTS.items()},
     )
 
 
@@ -2935,6 +2942,14 @@ def label_size(raw) -> int:
     return size
 
 
+def label_choice(raw, allowed, default: str, code: str) -> str:
+    """One of the label's named options (symbol, scanning environment, HRI as text), or ValidationError."""
+    value = str(raw or default).strip().lower()
+    if value not in allowed:
+        raise ValidationError(code)
+    return value
+
+
 def label_linear(anchor: str, pairs, raw) -> tuple[str, str] | None:
     """The EAN/UPC symbol beside the QR code: none (default), auto (the one the GTIN takes) or upce."""
     choice = str(raw or "none").strip().lower()
@@ -2958,7 +2973,8 @@ def zip_name(filename: str) -> str:
 
 def label_response(anchor: str, args) -> Response:
     """The label of a key (whose access was checked) from the request's options: the portal's and the tenant
-    API's (qualifiers, attr, hri, version, ecl, size, linear, domain, format=svg|png|pdf|zip)."""
+    API's (qualifiers, attr, hri, version, ecl, size, linear, domain, symbol=qr|dm|gs1dm, env=retail|healthcare|dpm,
+    hritext=outline|text, format=svg|png|pdf|zip; Documentation/adr/0010-label-studio.md)."""
     pairs = request_qualifiers(args, anchor)
     uri, attribute_lines = digital_link_for(anchor, pairs, request_attributes(args), args.get("domain"))
     lines = gs1.hri_lines(anchor, pairs) + attribute_lines
@@ -2973,18 +2989,34 @@ def label_response(anchor: str, args) -> Response:
         error=qr_error_level(args.get("ecl")),
         size=label_size(args.get("size")),
         linear=label_linear(anchor, pairs, args.get("linear")),
+        symbol=label_choice(args.get("symbol"), label.SYMBOLS, "qr", "label.symbolInvalid"),
+        # the GS1 DataMatrix's element string: every element of the record and the data attributes, whatever the HRI
+        element_string="".join(lines),
+        environment=label_choice(args.get("env"), label.ENVIRONMENTS, "retail", "label.environmentInvalid"),
+        hri_text=label_choice(args.get("hritext"), ("outline", "text"), "outline", "label.hriTextInvalid") == "text",
     )
     try:
-        qr = label.symbol(options)
+        label.check_environment(options)
+        code = label.symbol(options)
     except label.DoesNotFit as exc:
         raise ValidationError("qr.tooLong" if exc.params["needed"] is None else "qr.tooSmall", **exc.params) from None
+    except label.OutOfRange as exc:
+        raise ValidationError(exc.code, **exc.params) from None
+    except label.DataMatrixError as exc:
+        raise ValidationError("label.dataMatrixRefused", detail=str(exc)) from None
     # The version and level actually used, shown under the preview
-    qr_headers = {"X-QR-Version": str(qr.version), "X-QR-Level": qr.error.upper(), "X-QR-Modules": str(len(qr.matrix))}
+    if options.symbol == "qr":
+        qr_headers = {"X-QR-Version": str(code.version), "X-QR-Level": code.error.upper(),
+                      "X-QR-Modules": str(len(code.matrix)), "X-Symbol": "qr"}
+    else:
+        qr_headers = {"X-Symbol": options.symbol, "X-DM-Modules": f"{code.rows}x{code.columns}"}
+    qr_headers["X-Dimension"] = f"{options.x_mm:.3f}"
     if options.linear:
         qr_headers["X-Linear-Symbol"] = f"{linear.NAMES[options.linear[0]]} {options.linear[1]}"
     ai, value = gs1.split_anchor(anchor)
     suffix = "".join(f"_{q}_{v}" for q, v in pairs)
-    filename = f"qrcode_{ai}_{value}{suffix}"
+    stem = {"qr": "qrcode", "dm": "datamatrix", "gs1dm": "gs1datamatrix"}[options.symbol]
+    filename = f"{stem}_{ai}_{value}{suffix}"
     download_format = args.get("format")
     if download_format == "png":
         return Response(label.render_png(options), mimetype="image/png",

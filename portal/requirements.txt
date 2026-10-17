@@ -2,6 +2,7 @@ flask>=3.1,<4
 requests>=2.32,<3
 gunicorn>=26.2,<27
 segno>=1.6,<2
+zint-bindings>=1.2,<2   # Data Matrix and GS1 DataMatrix on labels (libzint, label.py; ADR 0010, section 7)
 fonttools>=4.50,<5
 pillow>=10.4,<13
 openpyxl>=3.1,<4

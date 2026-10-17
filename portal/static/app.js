@@ -602,11 +602,18 @@ function applyPreview(ready, g, l, uri, attributes, placeholder = "preview.qrPla
         qrObjectUrl = img.src;
       };
       img.src = URL.createObjectURL(blob);
-      I18N.set($("#qr-info"), "preview.qrInfo", {
-        version: Number(response.headers.get("X-QR-Version")),
-        modules: Number(response.headers.get("X-QR-Modules")),
-        level: response.headers.get("X-QR-Level") || "",
-      });
+      const kind = response.headers.get("X-Symbol") || "qr";
+      if (kind === "qr") {
+        I18N.set($("#qr-info"), "preview.qrInfo", {
+          version: Number(response.headers.get("X-QR-Version")),
+          modules: Number(response.headers.get("X-QR-Modules")),
+          level: response.headers.get("X-QR-Level") || "",
+        });
+      } else {
+        const [rows, columns] = (response.headers.get("X-DM-Modules") || "x").split("x");
+        I18N.set($("#qr-info"), "preview.dmInfo", { name: t("label.symbol." + kind), rows, columns,
+                                                    x: response.headers.get("X-Dimension") || "" });
+      }
       setDownloads(labelQuery);
     } catch {
       if (seq === previewSeq) showQrError("error.network", {});
@@ -1004,10 +1011,16 @@ function setupAttributes() {
    (automatic by default) and error correction level (M by default). Remembered in the browser.
    The preview image is the exported label itself, so what is shown is what is downloaded. */
 const LABEL_OPTIONS_KEY = "gs1resolver.portal.labelOptions";
-const LABEL_DEFAULTS = { hri: "full", version: "auto", ecl: "m", size: "100", linear: "none" };
+const LABEL_DEFAULTS = { hri: "full", version: "auto", ecl: "m", size: "100", linear: "none", symbol: "qr", env: "retail",
+                         hritext: "outline" };
 
 function labelOptionsQuery() {
-  const params = new URLSearchParams({ hri: $("#opt-hri").value, version: $("#opt-version").value, ecl: $("#opt-ecl").value });
+  const symbol = $("#opt-symbol").value;
+  const params = new URLSearchParams({ hri: $("#opt-hri").value });
+  if (symbol === "qr") { params.set("version", $("#opt-version").value); params.set("ecl", $("#opt-ecl").value); }
+  else params.set("symbol", symbol);
+  if ($("#opt-env").value !== "retail") params.set("env", $("#opt-env").value);
+  if ($("#opt-hritext").value === "text") params.set("hritext", "text");
   if ($("#opt-size").value !== "100") params.set("size", $("#opt-size").value);
   if (!$("#opt-linear-field").hidden && $("#opt-linear").value !== "none") params.set("linear", $("#opt-linear").value);
   if ($("#opt-domain").value) params.set("domain", $("#opt-domain").value);
@@ -1044,13 +1057,28 @@ function domainBase(g) {
   return best ? best.url : CONFIG.resolver;
 }
 
-/* "80 % (X 0.396 mm)": each size with the QR code's X-dimension, in the user's number format. */
+/* "80 % (X 0.396 mm)": each size with the 2D symbol's X-dimension in the scanning environment, in the user's number
+   format; only the sizes within the environment's ranges (with an EAN/UPC beside, its range too). The environment
+   offers its own 2D symbols and the linear symbol when it takes one (ADR 0010, section 7). */
 function fillSizeOptions() {
+  const envs = CONFIG?.labelEnvironments;
+  const env = envs?.[$("#opt-env").value] || { x: [0.396, 0.495, 0.990], sizes: [80, 90, 100, 120, 150, 200],
+                                                symbols: ["qr", "dm", "gs1dm"], linearX: [0.264, 0.330, 0.660] };
+  for (const o of $("#opt-symbol").options) o.hidden = o.disabled = !env.symbols.includes(o.value);
+  if (!env.symbols.includes($("#opt-symbol").value)) $("#opt-symbol").value = env.symbols[0];
+  const qr = $("#opt-symbol").value === "qr";
+  $("#opt-version-field").hidden = $("#opt-ecl-field").hidden = !qr;
+  $("#opt-linear-field").classList.toggle("env-off", !env.linearX);
+  if (!env.linearX) $("#opt-linear").value = "none";
+  const withLinear = env.linearX && !$("#opt-linear-field").hidden && $("#opt-linear").value !== "none";
+  const sizes = withLinear ? env.sizesWithLinear : env.sizes;
   const format = new Intl.NumberFormat(I18N.locale, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
   [...$("#opt-size").options].forEach(o => {
     const size = Number(o.value);
-    o.textContent = t(size === 100 ? "label.size.target" : "label.size.option", { size, x: format.format(0.495 * size / 100) });
+    o.textContent = t(size === 100 ? "label.size.target" : "label.size.option", { size, x: format.format(env.x[1] * size / 100) });
+    o.hidden = o.disabled = !sizes.includes(size);
   });
+  if (!sizes.includes(Number($("#opt-size").value))) $("#opt-size").value = sizes.includes(100) ? "100" : String(sizes[0]);
 }
 
 function setupLabelOptions() {
@@ -1061,12 +1089,14 @@ function setupLabelOptions() {
     saved = JSON.parse(localStorage.getItem(LABEL_OPTIONS_KEY) || "{}");
   } catch { /* defaults */ }
   if (typeof saved.hri === "boolean") saved.hri = saved.hri ? "full" : "none";   // earlier versions: on/off
-  const fields = { hri: "#opt-hri", version: "#opt-version", ecl: "#opt-ecl", size: "#opt-size", linear: "#opt-linear" };
+  const fields = { hri: "#opt-hri", version: "#opt-version", ecl: "#opt-ecl", size: "#opt-size", linear: "#opt-linear",
+                   symbol: "#opt-symbol", env: "#opt-env", hritext: "#opt-hritext" };
   for (const [name, selector] of Object.entries(fields)) {
     const select = $(selector);
     const value = saved[name] ?? LABEL_DEFAULTS[name];
     select.value = [...select.options].some(o => o.value === value) ? value : LABEL_DEFAULTS[name];
     select.addEventListener("change", () => {
+      if (["env", "symbol", "linear"].includes(name)) fillSizeOptions();
       try {
         localStorage.setItem(LABEL_OPTIONS_KEY, JSON.stringify(
           Object.fromEntries(Object.entries(fields).map(([n, sel]) => [n, $(sel).value]))));
@@ -1074,6 +1104,7 @@ function setupLabelOptions() {
       renderPreview();
     });
   }
+  fillSizeOptions();                             // a saved size the saved environment does not allow
 }
 
 function toggleLink(a, href) {
@@ -4721,6 +4752,7 @@ async function init() {
   SessionClock.start(CONFIG.session);
   setupAttributes();
   fillDomainOption();
+  fillSizeOptions();                             // the scanning environments come with the configuration
   fillKeyTypes();
   onKeyTypeChange();
   applyView();                                   // administrator views need the role

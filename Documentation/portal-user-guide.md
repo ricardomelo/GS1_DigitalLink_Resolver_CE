@@ -388,13 +388,26 @@ part: resolver address, identifier, qualifiers, data attributes) and a legend.
 
 **Label options**
 
+- **2D symbol** — *QR code (GS1 Digital Link)*, the default; *Data Matrix (GS1 Digital Link)*: the same address in a
+  Data Matrix; or *GS1 DataMatrix (element string)*: the record's element string — the key, its qualifiers and any data
+  attributes, as `(01)…(10)…` — in the GS1 DataMatrix that healthcare and industry scan (not an address: a scan gives
+  the data, not the links). One 2D symbol per label; the EAN/UPC can stand beside any of them. The downloads carry the
+  symbol chosen and are named after it (`qrcode_…`, `datamatrix_…`, `gs1datamatrix_…`).
+- **Scanning environment** — where the code will be scanned, which sets the module size range of the GS1 General
+  Specifications: *Retail point of sale* (every symbol, X 0.396–0.990 mm, EAN/UPC 0.264–0.660 mm), *Healthcare
+  (regulated items)* (Data Matrix only, X 0.254–0.495 mm) or *Direct part marking* (Data Matrix only, X 0.254–0.615
+  mm, no linear barcode). The **Size** list then offers only the sizes within the range.
+- **Text in the SVG** — *Outlines, no font needed* (the default: it looks the same everywhere) or *Text, editable
+  (needs the fonts)*: real text an artwork program can change, in Liberation Sans and OCR-B for the EAN/UPC digits;
+  the printer must have those fonts. PNG and PDF always draw outlines.
 - **Human readable text (HRI)** — *Full (every element)*: the identifier and each qualifier on its own
   line, as in the picture; *Identification key only*; *None*.
-- **QR code version** — *Automatic (smallest that fits)*, or a fixed version from 1 (21 × 21 modules) to
+- **QR code version** (QR code only) — *Automatic (smallest that fits)*, or a fixed version from 1 (21 × 21 modules) to
   40 (177 × 177), when the artwork needs a constant size.
-- **Error correction** — L (7 %), M (15 %, the default), Q (25 %) or H (30 %): how much of the code can
+- **Error correction** (QR code only) — L (7 %), M (15 %, the default), Q (25 %) or H (30 %): how much of the code can
   be damaged and still be read. The level is applied exactly as chosen.
-- **Size** — 80 % to 200 % of the recommended size; each choice shows the module size (X 0.396 mm to 0.990 mm).
+- **Size** — a percentage of the scanning environment's recommended size (at retail 80 % to 200 %); each choice shows
+  the module size (at retail X 0.396 mm to 0.990 mm).
   The text under the code stays 2.2 mm high at every size. Use 100 % unless the artwork needs another.
 - **Linear barcode beside it** (GTINs of products, indicator 0) — *None*; *EAN-13 / UPC-A / EAN-8, as the GTIN
   takes*; or *UPC-E* for a GTIN-12 that allows it: the familiar barcode drawn next to the QR code at the same size,
@@ -405,7 +418,8 @@ part: resolver address, identifier, qualifiers, data attributes) and a legend.
   choice. A longer address needs a larger QR version.
 
 Under the code the portal shows the version, size and correction actually used, for example
-*Version 4 · 33 × 33 modules · correction M*. When the content does not fit the chosen version, the code
+*Version 4 · 33 × 33 modules · correction M*, or for a Data Matrix its modules and module size, for example
+*GS1 DataMatrix (element string) · 18 × 18 modules · X 0.380 mm*. When the content does not fit the chosen version, the code
 is replaced by an explanation and the ways out: a higher version, *Automatic*, a lower correction level or
 a shorter content.
 

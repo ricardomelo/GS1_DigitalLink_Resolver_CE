@@ -336,8 +336,8 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Weekly engine update check | A scheduled GitHub Actions job opens an issue when a newer GS1 Barcode Syntax Engine is released: what changes in the dictionary, the messages that need a translation, the portal's test results with it | `6f6ce19`, `e7c5a6d` | `deploy`: engine |
 | Screenshots | `dev-tests/docs/screenshots.py` regenerates the README and user guide images | `f14d8c4`, session 4 | `docs`: every relative link |
 | Documentation | README, user guide, features, history, developer guide, extensions documentation, changelog | `539bab0` and later | `docs` |
-| Feature inventory and documents in step | Every check of every test program listed by area ([test-inventory.md](test-inventory.md)); each feature here cites its checks; the developer guide's counts, the documentation index, the API reference and every relative link checked by a test ([ADR 0016](adr/0016-documentation-and-feature-inventory.md)) | `HASH911` | `docs`: every feature cites at least one check · `docs`: with the inventory's count · `docs`: every relative link |
-| Tenant API reference | [api-reference.md](api-reference.md), every operation, parameter, answer and schema of `/portal/api/v1`, generated from `portal/openapi.json` | `HASH911` | `docs`: the API reference is what portal/openapi.json gives |
+| Feature inventory and documents in step | Every check of every test program listed by area ([test-inventory.md](test-inventory.md)); each feature here cites its checks; the developer guide's counts, the documentation index, the API reference and every relative link checked by a test ([ADR 0016](adr/0016-documentation-and-feature-inventory.md)) | `6b8737e` | `docs`: every feature cites at least one check · `docs`: with the inventory's count · `docs`: every relative link |
+| Tenant API reference | [api-reference.md](api-reference.md), every operation, parameter, answer and schema of `/portal/api/v1`, generated from `portal/openapi.json` | `6b8737e` | `docs`: the API reference is what portal/openapi.json gives |
 
 ## Kept from the official project
 

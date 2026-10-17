@@ -763,6 +763,20 @@ comparison with `epc-tds` was widened to the other schemes through their tag URI
 the reason, and the TDT artefact's rule is followed. The TDS 2.0 "+" schemes were left for later: no tag URI, less
 support in readers. 18 mutations, all caught. 3,112 checks in 44 programs without a browser, 763 in 15 Chromium programs.
 
+**Item 9.11, the documentation** (`6b8737e`; ADR 0016). The tests' check names were already the most complete and
+current description of the software, so the inventory is drawn from them rather than written: the pytest layer keeps
+each program's `PASS` lines and a script groups them by area, with a section that gathers every search and filter from
+every screen, the search by EPC included. Each of the 197 features now cites the checks that prove it, and a new test
+fails when one cites none or cites words no check holds. Mapping them showed three features with no check at all — the
+order of data attributes, an import that never deletes, a CSV cell above 128 KB — which gained one each, and two counts
+of the developer guide that had drifted before this session. The checks of the documents themselves read the inventory,
+so their own count is left out of the comparison (it would depend on itself). The operator's guide gained a table of
+contents and the label studio's Data Matrix and EPC sections it lacked; the user guide a table of every search and filter
+and one of every administration task; `features.md` lost a section that had collected the item's page, labels, domains
+and monitoring under "Request log"; the tenant API got a reference page generated from its OpenAPI description. 12
+mutations, all caught. 3,129 checks in 45 programs without a browser, 765 in 15 Chromium programs; the inventory holds
+4,061 with the CI-only program's.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -835,6 +849,13 @@ support in readers. 18 mutations, all caught. 3,112 checks in 44 programs withou
     ([ADR 0010](adr/0010-label-studio.md)).
 
 ## Lessons learnt
+
+- Comparing with an independent library proves agreement, not correctness: the EPC decoder and `epc-tds` agreed for
+  months on a key one digit too long. Check the cases a library is likely to get wrong against the standard itself.
+- An encoder written as the inverse of a decoder, from the same machine-readable definitions, can be tested by the
+  round trip on every case; that round trip is what found the decoder's defect.
+- A list of features is only as good as the proof behind it: tying each feature to named checks found three features
+  nobody had tested.
 
 - Test with data created by other tools; official example records exposed assumptions.
 - nginx resolves upstream names at start-up: the proxy must restart when a service is recreated. Since

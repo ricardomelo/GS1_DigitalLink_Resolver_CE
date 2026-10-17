@@ -2,6 +2,20 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Owner's additions of 17 October: the project's documentation (backlog item 9.11)
+- **An inventory of every feature drawn from the development tests** ([ADR 0016](../adr/0016-documentation-and-feature-inventory.md)):
+  `Documentation/test-inventory.md` lists every check of every test program by area (4,061 checks in 61 programs),
+  with a section gathering every search and filter; `features.md` cites, for each feature, the checks that prove it;
+  `dev-tests/docs/test_docs.py` keeps both, the developer guide's counts, the index and the links in step. The pytest
+  layer keeps each program's `PASS` lines with `DEV_TESTS_INVENTORY`. Commit `6b8737e`.
+- **The documents by reader**: `Documentation/README.md` as the index (people who register records, organisations'
+  administrators, operators, integrators, developers), the tenant API reference (`api-reference.md`, generated from
+  `portal/openapi.json` by `portal/tools/gen_api_reference.py`), the user guide's tables of every search and filter and
+  of every administration task, the operator's guide with a table of contents and its missing Data Matrix and EPC
+  sections. Commit `6b8737e`.
+- Checks added where a feature had none: the order of data attributes, an import that never deletes, a CSV cell above
+  128 KB. Commit `6b8737e`.
+
 ### Owner's additions of 17 October: an EPC for every key that has one (backlog item 9.10)
 - **The label studio's RFID and NFC block for every key the EPC Tag Data Standard encodes** — SSCC, GLN (with or
   without its extension), GRAI, GIAI, GSRN, GSRNP, GDTI, GCN, CPID and ITIP besides the GTIN — as soon as the record

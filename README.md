@@ -647,7 +647,7 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 
 ## Open backlog
 
-Status on 17 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly; items 9.1 to 9.7 from the staging tests of 15 and 16 October, 9.1 to 9.6 done in session 15). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+Status on 17 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly; items 9.1 to 9.7 from the staging tests of 15 and 16 October, 9.1 to 9.7 done in session 15). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
 the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
@@ -678,7 +678,8 @@ navigation (a sidebar, an organisation's page, prefixes as rows, the portal's ow
 Matrix, sizes by scanning environment, the SVG's text as text; [ADR 0010](Documentation/adr/0010-label-studio.md)), and item 9.4, every link type
 of the GS1 Web Vocabulary and every language for the targets, and item 9.5, the request log's browser, approximate
 location and retention set in the portal ([ADR 0006](Documentation/adr/0006-resolver-request-log.md)), and item
-9.6, domains served without the terminal ([ADR 0009](Documentation/adr/0009-tenant-domains.md)),
+9.6, domains served without the terminal ([ADR 0009](Documentation/adr/0009-tenant-domains.md)), and item 9.7,
+eleven interface languages ([ADR 0014](Documentation/adr/0014-interface-languages.md)),
 and item 7.1, single sign-on per organisation
 with OpenID Connect and per-role limits on exports ([ADR 0012](Documentation/adr/0012-single-sign-on.md)), are
 complete too. What was
@@ -693,7 +694,6 @@ know whose data they handle.
 | | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages (default link titles in the link's language, conformance review F21: done) | S | — |
 | | 7.4 | **Load test and scale-out rehearsal** on staging with `dev-tests/load/load_test.py` (done): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded ([procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)) | S | 2.3 |
 | Standards | 8.1 | **Errata and Work Requests to GS1** (drafted; to be reviewed and sent by the owner): E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
-| Staging feedback | 9.7 | **Interface languages**: Spanish, French, German, Korean, Mandarin (Simplified Chinese), Italian, Hindi, Arabic (right to left) and Japanese in the portal, the item's page, the resolver's pages, the home page and the e-mails, each named in its own language; every later delivery ends with its texts in every language | L | 9.1–9.6 |
 
 The items of the "later" list are done: the record search reads scanners and RFID readers, exports follow the
 filters (which stay in the address), serial numbers registered with their batch can be fixed, the data entry API

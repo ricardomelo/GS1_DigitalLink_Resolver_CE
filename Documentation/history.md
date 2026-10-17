@@ -707,6 +707,15 @@ minutes made Let's Encrypt's limits matter — a domain whose DNS is not ready w
 growing waits. The script's JavaScript for mongosh now travels as an environment variable of the container rather than
 inside a quoted command line. 16 mutations, all caught.
 
+**Item 9.7, interface languages** (`3d66bdd`; ADR 0014). About 1,900 texts were translated into nine languages by nine
+Claude agents working in parallel from the English, with the Portuguese as a reference and one glossary of GS1 terms;
+a script checked each file (same keys, same placeholders, nothing empty) before it was merged. The session's usage
+limit stopped the agents twice; each resumed from the files it had written. The portal loads a language only when it
+is used, so pages do not carry eleven catalogues. Arabic needed the styles rewritten with logical properties; a browser
+test now checks that the content stays beside the sidebar, which a first version missed. The names of the GS1
+Application Identifiers were left in GS1's English for the new languages: official names come from each Member
+Organisation. 13 mutations: 12 caught, one equivalent.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

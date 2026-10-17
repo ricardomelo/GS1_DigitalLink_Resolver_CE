@@ -2,6 +2,17 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Staging feedback of 16 October: interface languages (backlog item 9.7)
+- **Nine more languages**: Español, Français, Deutsch, Italiano, 中文（简体）, 日本語, 한국어, हिन्दी and العربية (right to
+  left), besides Português (Brasil) and English (UK), in the portal, its e-mails, the resolver's pages, the item's page
+  and the home page; each named in itself in the menus; the browser's language picks one, the choice is shared as
+  before ([ADR 0014](../adr/0014-interface-languages.md)). The translations were drafted by Claude and are to be
+  reviewed by native speakers before production ([translation guide](../translation-glossary.md)). Commit `3d66bdd`.
+- The portal loads a language's catalogue only when it is used (`portal/static/locales/<tag>.json`); Arabic pages are
+  laid out right to left (the styles now use logical properties); every text in every language is checked by
+  `dev-tests/portal/test_i18n.py`, and `CLAUDE.md` asks every delivery to end with its texts in every language.
+  Commit `3d66bdd`.
+
 ### Staging feedback of 16 October: domains without the terminal (backlog item 9.6)
 - **A domain verified in the portal is served within about 5 minutes, certificate included**: the installer schedules
   `scripts/custom-domains.sh apply --quiet` every 5 minutes as root when it set up Let's Encrypt

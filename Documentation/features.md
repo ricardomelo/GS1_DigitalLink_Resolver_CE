@@ -262,6 +262,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Feature | What it does | Since |
 |---|---|---|
 | pt-BR and en-GB | Every text in both languages, switched live; browser language detected; choice shared with the resolver's pages and the home page | `126f507` |
+| Eleven interface languages | Portuguese, English, Spanish, French, German, Italian, Simplified Chinese, Japanese, Korean, Hindi and Arabic (right to left) in the portal, e-mails, resolver pages, item's page and home page; catalogues loaded on demand; every text checked in every language ([ADR 0014](adr/0014-interface-languages.md)) | `3d66bdd` |
 | Message codes | The server answers with codes; the browser translates | `126f507` |
 | gs1.org-like style | Montserrat, GS1 blue and orange; responsive down to phones | `126f507` |
 | No organisation names | Operator details only from `.env` | `7e7a62a`, `764e360` |

@@ -2,6 +2,20 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### The staging tests of 20 October and the owner's notes (session 17)
+- **A limit on the space the request log may use** (finding F1; [ADR 0006, section 9](../adr/0006-resolver-request-log.md)):
+  server administrators set the most space on disk on *Requests → Retention* (megabytes; empty: no limit). Beyond it,
+  the hourly housekeeping deletes the oldest requests down to 95 % of the limit (journal event `requestlog-trimmed`);
+  the monitoring's new check *Request log space* is an alert from 80 % of the limit, with a message at each further
+  5 % (85, 90, 95, 100) and one when it falls below 80 % again; the overview's *Operation* shows the share. What
+  counts is the collection's used pages and its indexes. Commit `2425487`.
+- **Testing a failed certificate without a second domain** (finding F2): the operator's guide gives the procedure used
+  on staging. Commit `5421bd3`.
+- **Upgrading an installation of the official GS1 Resolver CE v3** in place: `scripts/upgrade-from-official.sh` checks
+  it, backs up the database, stops the official containers (the volume kept), checks out this branch beside the
+  official one, keeps the database's credentials and the data entry token, runs the installer and compares the
+  records before and after; `--check` only checks. Commit `0c76bf0`.
+
 ### Owner's additions of 17 October: the project's documentation (backlog item 9.11)
 - **An inventory of every feature drawn from the development tests** ([ADR 0016](../adr/0016-documentation-and-feature-inventory.md)):
   `Documentation/test-inventory.md` lists every check of every test program by area (4,061 checks in 61 programs),

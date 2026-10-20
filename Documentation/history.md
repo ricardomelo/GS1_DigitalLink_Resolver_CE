@@ -777,6 +777,30 @@ and monitoring under "Request log"; the tenant API got a reference page generate
 mutations, all caught. 3,129 checks in 45 programs without a browser, 765 in 15 Chromium programs; the inventory holds
 4,061 with the CI-only program's.
 
+## Session 17 — the staging tests of 20 October and the owner's notes
+
+The staging tests of 20 October passed (every box of P1–P7 and 9.8–9.11) and left two findings; the owner decided both,
+answered the checks of the handover and added notes from the tests. Each became a delivery, the recommended option
+taken where the owner was away.
+
+**Finding F1, a limit by size for the request log** (`2425487`; ADR 0006 §9). The owner chose the third option put to
+them: a most space on disk beside the days, with alerts from 80 % of it and at every further 5 %. The obvious measure,
+the collection's size on disk, never falls: MongoDB reuses the pages of deleted documents but does not shrink its
+files, so a limit on it would keep deleting once reached. What counts is the used pages (`storageSize −
+freeStorageSize`) plus the indexes. The housekeeping trims down to 95 % rather than to the limit itself, and the alerts
+remember the step last told instead of reminding every day, so a log held at its limit by the housekeeping stays quiet.
+16 mutations, all caught (two after the tests were strengthened: a threshold of 75 % and the limit shown to an
+organisation's administrator went unnoticed at first). **Finding F2** (`5421bd3`): considered validated by the owner;
+the procedure used on staging went into the operator's guide.
+
+**Upgrading the official resolver** (`0c76bf0`). The official project and the fork share the database image, the
+database and the document format, so an installation needs no conversion, only the right folder: Docker Compose names
+the volume after it, and a fresh clone elsewhere would start with an empty database. The script therefore upgrades in
+place, after a backup, keeping the official branch for the way back. The installer already kept an existing database's
+default password with a warning; the script writes the credentials into `.env` before it runs. Because `git switch`
+may replace the running script, its body is one block that bash reads before running it. 11 mutations, all caught.
+3,181 checks in 45 programs without a browser, 769 in 15 Chromium programs; the inventory holds 4,117.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

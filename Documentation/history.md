@@ -801,6 +801,16 @@ default password with a warning; the script writes the credentials into `.env` b
 may replace the running script, its body is one block that bash reads before running it. 11 mutations, all caught.
 3,181 checks in 45 programs without a browser, 769 in 15 Chromium programs; the inventory holds 4,117.
 
+**Turkish, the menus' order, every target language** (`984f2ce`; ADR 0014 §7). The 1,703 messages of the portal, the
+22 e-mails, the resolver's pages and the home page were written in Turkish with a short glossary added to the
+translation guide; the owner decided that no native review will be arranged and that corrections come from the
+community. The menus now list the Latin alphabet's languages first: the rule is written three times (portal, home page,
+resolver), so each place has its own check. The target languages' field used the browser's `datalist`, which shows only
+the entries that match the field's current value — with `pt` in it, Portuguese alone — so the list looked short; it
+was replaced by the portal's own list, scrolled, counted, filtered by the part after the last comma. Building it showed
+that a list placed with fixed coordinates under a field near the bottom of the window ends up off-screen or behind the
+page; it now lives inside the field's box and opens upwards when there is no room below. 12 mutations, all caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

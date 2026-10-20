@@ -15,6 +15,14 @@
   it, backs up the database, stops the official containers (the volume kept), checks out this branch beside the
   official one, keeps the database's credentials and the data entry token, runs the installer and compares the
   records before and after; `--check` only checks. Commit `0c76bf0`.
+- **Turkish** as a twelfth language of the portal, its e-mails, the resolver's pages, the item's page and the home page
+  (a draft, as the other languages but Portuguese and English; [ADR 0014, section 7](../adr/0014-interface-languages.md)).
+  Commit `984f2ce`.
+- **Language menus with the Latin alphabet first**: Deutsch, English, Español, Français, Italiano, Português, Türkçe,
+  then العربية, हिन्दी, 中文, 日本語, 한국어 — in the portal, on the home page and on the resolver's pages. Commit `984f2ce`.
+- **Every language of a target listed**: the *Language* field of a target opens a list of the 200-odd languages the
+  browser names, scrolled, with a count and *type to filter*, in the same order, filtered by what is typed. Commit
+  `984f2ce`.
 
 ### Owner's additions of 17 October: the project's documentation (backlog item 9.11)
 - **An inventory of every feature drawn from the development tests** ([ADR 0016](../adr/0016-documentation-and-feature-inventory.md)):

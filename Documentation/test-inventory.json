@@ -645,9 +645,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (197 features)",
+    "features.md: every table has a Checks column (200 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (268 references)",
+    "…each reference names a program of the inventory (277 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (61)",
     "…and the inventory holds no program that no longer exists",
@@ -1644,8 +1644,8 @@
     "no Content Security Policy violations",
     "another host name → same page, footer notice in English",
     "gs1resolver_lang cookie honoured",
-    "a ar-EG browser → the home page in ar, rtl, the menu naming every language in itself",
-    "a ja-JP browser → the home page in ja, ltr, the menu naming every language in itself",
+    "a ar-EG browser → the home page in ar, rtl, the menu naming every language in itself, the Latin alphabet's first",
+    "a ja-JP browser → the home page in ja, ltr, the menu naming every language in itself, the Latin alphabet's first",
     "phone: menu collapsed behind the button",
     "phone: button opens the menu",
     "phone: Escape closes the menu",
@@ -1658,7 +1658,7 @@
   "i18n": {
    "area": "Interface and languages",
    "checks": [
-    "the portal offers the eleven languages",
+    "the portal offers the twelve languages",
     "…the home page the same",
     "…the e-mails and the users' preference the same",
     "…the resolver's pages the same, in the same order",
@@ -1668,6 +1668,7 @@
     "portal, fr: every message, none empty, the same placeholders, every link type named and explained",
     "portal, de: every message, none empty, the same placeholders, every link type named and explained",
     "portal, it: every message, none empty, the same placeholders, every link type named and explained",
+    "portal, tr: every message, none empty, the same placeholders, every link type named and explained",
     "portal, zh-Hans: every message, none empty, the same placeholders, every link type named and explained",
     "portal, ja: every message, none empty, the same placeholders, every link type named and explained",
     "portal, ko: every message, none empty, the same placeholders, every link type named and explained",
@@ -1687,6 +1688,7 @@
     "e-mails, fr: every message with its subject, the same placeholders, the signature",
     "e-mails, de: every message with its subject, the same placeholders, the signature",
     "e-mails, it: every message with its subject, the same placeholders, the signature",
+    "e-mails, tr: every message with its subject, the same placeholders, the signature",
     "e-mails, zh-Hans: every message with its subject, the same placeholders, the signature",
     "e-mails, ja: every message with its subject, the same placeholders, the signature",
     "e-mails, ko: every message with its subject, the same placeholders, the signature",
@@ -1700,6 +1702,7 @@
     "resolver's pages, fr: every text, the same placeholders, every link type named",
     "resolver's pages, de: every text, the same placeholders, every link type named",
     "resolver's pages, it: every text, the same placeholders, every link type named",
+    "resolver's pages, tr: every text, the same placeholders, every link type named",
     "resolver's pages, zh-Hans: every text, the same placeholders, every link type named",
     "resolver's pages, ja: every text, the same placeholders, every link type named",
     "resolver's pages, ko: every text, the same placeholders, every link type named",
@@ -1715,6 +1718,8 @@
     "the resolver's page for Accept-Language 'it-CH': it",
     "the resolver's page for Accept-Language 'nl': en-GB",
     "…the language cookie wins",
+    "the resolver's pages' language menu: the Latin alphabet's names first, alphabetically, then the others",
+    "…Turkish read from a Turkish browser",
     "a page in Japanese",
     "…in Arabic, right to left, with the menu of every language",
     "home page, pt-BR: every text",
@@ -1723,13 +1728,14 @@
     "home page, fr: every text",
     "home page, de: every text",
     "home page, it: every text",
+    "home page, tr: every text",
     "home page, zh-Hans: every text",
     "home page, ja: every text",
     "home page, ko: every text",
     "home page, hi: every text",
     "home page, ar: every text"
    ],
-   "count": 70,
+   "count": 76,
    "ciOnly": false
   },
   "install": {
@@ -2372,7 +2378,7 @@
     "…its catalogue fetched on demand, once",
     "…and the portal after signing in",
     "a Japanese browser: the portal in Japanese",
-    "the language menu: every language, each named in itself",
+    "the language menu: every language, each named in itself, the Latin alphabet's first, alphabetically",
     "German chosen: the page changes at once",
     "…and is kept after a reload",
     "an Arabic browser: the sign-in page right to left",
@@ -2393,6 +2399,8 @@
     "de: …none wider than the screen (longer words)",
     "it: every screen without a message key showing",
     "it: …none wider than the screen (longer words)",
+    "tr: every screen without a message key showing",
+    "tr: …none wider than the screen (longer words)",
     "zh-Hans: every screen without a message key showing",
     "zh-Hans: …none wider than the screen (longer words)",
     "ja: every screen without a message key showing",
@@ -2405,7 +2413,7 @@
     "ar: …none wider than the screen (longer words)",
     "no script errors"
    ],
-   "count": 36,
+   "count": 38,
    "ciOnly": false
   },
   "link_types": {
@@ -2445,7 +2453,13 @@
     "…every link type of the vocabulary",
     "…a new one chosen, its help shown",
     "a GLN: places first, the row's type kept",
-    "the languages: a list of every language the browser names",
+    "the languages: the row's button opens a list of every language the browser names, scrolled",
+    "…in alphabetical order, accents aside (every name here is in the Latin alphabet)",
+    "…filtered by what is typed, with the count",
+    "…a click writes its code",
+    "…the keyboard chooses the language after the last comma",
+    "…Escape closes it",
+    "…nothing found: a code can still be typed",
     "…a name typed read as its code",
     "…several languages",
     "…a malformed one pointed out",
@@ -2454,7 +2468,7 @@
     "in Portuguese: the groups and the languages' names",
     "no script errors"
    ],
-   "count": 12,
+   "count": 18,
    "ciOnly": false
   },
   "linkcheck": {

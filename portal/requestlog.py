@@ -13,7 +13,9 @@ The resolver writes one event per resolution request into the collection "reques
   - records the tenant API's calls (record_api_call(), collection "api_requests") and lists them;
   - keeps the retention set in the portal (ADR 0006, section 8): the installation's days (server administrators) and
     each organisation's, never longer; the resolver reads both to date each event's expiry, and the worker's
-    housekeeping deletes what a shortened retention no longer keeps (apply_retention()); the space the log uses.
+    housekeeping deletes what a shortened retention no longer keeps (apply_retention()); the space the log uses, and
+    the most it may use (ADR 0006, section 9): beyond it, the housekeeping deletes the oldest events (apply_size_limit())
+    and the monitoring warns from 80 % of it (monitor.py).
 
 Settings:
   RESOLVER_LOG_DAYS    the default days raw events and API calls are kept until the portal sets them (the resolver
@@ -54,6 +56,10 @@ TOP = 20                                   # languages and link types kept per k
 SETTING_FINAL = "requestStats.finalUntil"
 SETTING_DAYS = "requestLog.days"            # the installation's retention (the resolver reads it: request_log.py)
 MAX_DAYS = 3650
+SETTING_MAX = "requestLog.maxBytes"         # the most space the log may use on disk (ADR 0006, section 9)
+MEGABYTE = 1 << 20                          # as the screens count it (1,024 × 1,024 bytes)
+MAX_MEGABYTES = 10_000_000                  # about 10 TB
+TRIM_TO = 0.95                              # a log beyond its limit is cut down to this share of it
 
 
 # ----------------------------------------------------------------------------------------------- settings
@@ -165,24 +171,110 @@ def _apply_retention(now: datetime | None, tenant_list: list[dict] | None) -> in
     return deleted
 
 
-def space(scope: dict | None = None) -> dict:
-    """The space the log uses: the whole collection (size on disk, indexes, events) when scope is None; otherwise the
-    scope's events and an estimate of their size (events × the average event). Sizes are None when the database does
-    not say (mongomock)."""
-    stats = {}
+def _collstats() -> dict:
+    """The database's statistics of the events' collection, or {} when it does not give them."""
     try:
-        stats = store.db().client[LOG_DB].command("collstats", EVENTS)
+        return store.db().client[LOG_DB].command("collstats", EVENTS)
     except Exception:          # noqa: BLE001 — no such command (mongomock), no collection yet, no right
-        stats = {}
+        return {}
+
+
+def space(scope: dict | None = None) -> dict:
+    """The space the log uses: the whole collection (size on disk, indexes, events, and "used": what counts against the
+    limit) when scope is None; otherwise the scope's events and an estimate of their size (events × the average event).
+    Sizes are None when the database does not say (mongomock)."""
+    stats = _collstats()
     average = stats.get("avgObjSize")
     if scope is None:
         count = stats.get("count")
         if count is None:
             count = events().estimated_document_count()
         return {"events": count, "bytes": stats.get("storageSize"), "indexBytes": stats.get("totalIndexSize"),
-                "dataBytes": stats.get("size")}
+                "dataBytes": stats.get("size"), "used": used_bytes(stats)}
     count = events().count_documents(scope)
     return {"events": count, "bytes": round(count * average) if average else None}
+
+
+def used_bytes(stats: dict | None = None) -> int | None:
+    """What counts against the limit: the collection's file without the space freed inside it (which MongoDB reuses
+    for new events; the file itself does not shrink), plus its indexes. None when the database does not say."""
+    stats = _collstats() if stats is None else stats
+    storage, indexes = stats.get("storageSize"), stats.get("totalIndexSize")
+    if storage is None:
+        return None
+    return max(0, int(storage) - int(stats.get("freeStorageSize") or 0)) + int(indexes or 0)
+
+
+def max_bytes() -> int | None:
+    """The most space the log may use (bytes), or None: no limit."""
+    value = store.get_setting(SETTING_MAX)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def set_max_megabytes(value) -> int | None:
+    """Sets the most space the log may use, in megabytes (1 to MAX_MEGABYTES), or None (empty) for no limit; returns
+    it in bytes."""
+    if value is None or str(value).strip() == "":
+        store.col("settings").delete_one({"_id": SETTING_MAX})
+        return None
+    if isinstance(value, bool):
+        raise RetentionError("requests.spaceInvalid", max=MAX_MEGABYTES)
+    try:
+        n = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise RetentionError("requests.spaceInvalid", max=MAX_MEGABYTES)
+    if not 1 <= n <= MAX_MEGABYTES:
+        raise RetentionError("requests.spaceInvalid", max=MAX_MEGABYTES)
+    store.set_setting(SETTING_MAX, n * MEGABYTE)
+    return n * MEGABYTE
+
+
+def space_share(stats: dict | None = None) -> dict | None:
+    """{"used", "max", "share"} (share: used ÷ max) when a limit is set and the database gives the sizes; else None."""
+    limit = max_bytes()
+    if not limit:
+        return None
+    used = used_bytes(stats)
+    return None if used is None else {"used": used, "max": limit, "share": used / limit}
+
+
+def apply_size_limit(stats: dict | None = None) -> int:
+    """The worker's hourly housekeeping: a log beyond its limit loses its oldest events, down to TRIM_TO of the limit
+    (the number estimated from the average event's share of the space). One replica at a time; returns the number of
+    events deleted."""
+    if not log_days():
+        return 0
+    try:
+        with store.lock("request-size", hold_seconds=1800, wait_seconds=0):
+            return _apply_size_limit(stats)
+    except store.LockTimeout:
+        return 0
+
+
+def _apply_size_limit(stats: dict | None) -> int:
+    stats = _collstats() if stats is None else stats
+    measured = space_share(stats)
+    if not measured or measured["used"] <= measured["max"]:
+        return 0
+    count = stats.get("count") or events().estimated_document_count()
+    if not count:
+        return 0
+    per_event = measured["used"] / count
+    excess = math.ceil((measured["used"] - measured["max"] * TRIM_TO) / per_event)
+    excess = min(count, max(1, excess))
+    last = list(events().find({}, {"t": 1}).sort("t", 1).skip(excess - 1).limit(1))
+    if not last:
+        return 0
+    deleted = events().delete_many({"t": {"$lte": last[0]["t"]}}).deleted_count
+    if deleted:
+        log.warning("Request log beyond its limit (%d of %d bytes): the %d oldest event(s) deleted.",
+                    measured["used"], measured["max"], deleted)
+        try:
+            import journal
+            journal.append("requestlog-trimmed", "-", detail=f"events={deleted}")
+        except Exception as exc:   # noqa: BLE001 — the journal never stops the housekeeping
+            log.warning("Journal event not written: %s", exc)
+    return deleted
 
 
 def stats_days() -> int:

@@ -59,10 +59,13 @@ Constraints:
 ### 3.1 State (`alerts`, `portal/monitor.py`)
 
 ```
-{_id: "resolver" | "backup" | "certificate" | "404:*" | "404:<tenant id>",
+{_id: "resolver" | "backup" | "certificate" | "logspace" | "404:*" | "404:<tenant id>",
  state: "ok" | "alert" | "unknown", since, checkedAt, failures (resolver), detail: {…},
- notifiedAt (the last message), tenant (404 of an organisation)}
+ notifiedAt (the last message), notifiedLevel (logspace: the step last told), tenant (404 of an organisation)}
 ```
+
+`logspace`, the request log's space against its limit, was added on 20 October 2026
+(ADR 0006, section 9): an alert from 80 % of the limit with a message at each further step of 5 points, no reminder.
 
 `run()` (in `app.MONITORING`) takes the lock, runs each check, updates its document and decides the messages:
 `ok → alert` sends *alert*, `alert` for 24 hours more sends *reminder*, `alert → ok` sends *resolved* (not for spikes).
@@ -79,7 +82,8 @@ docker compose exec -T -e BACKUP_OK=… -e BACKUP_FILE=… -e BACKUP_SIZE=… -e
 ### 3.3 Messages (`mailtexts.py`, category `alerts`)
 
 `alert-resolver-down`, `alert-resolver-up`, `alert-backup-failed`, `alert-backup-ok`, `alert-certificate`,
-`alert-certificate-ok`, `alert-404-spike`; in both languages.
+`alert-certificate-ok`, `alert-404-spike`; `alert-log-space`, `alert-log-space-ok` (ADR 0006, section 9); in every
+language of ADR 0014.
 
 ### 3.4 Configuration
 

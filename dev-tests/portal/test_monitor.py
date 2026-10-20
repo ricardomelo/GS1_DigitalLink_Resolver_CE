@@ -2,7 +2,7 @@
 Monitoring and alerts by e-mail (Documentation/adr/0008-monitoring-and-alerts.md): the settings; the resolver checked
 through a stand-in proxy (two failed rounds before an alert, a reminder a day, a message when it answers again, the
 probe of a registered code); the backup's record (unknown, late, failed, good again); the certificate (expiring,
-invalid, unreachable, once an hour); spikes of 404 per scope against the usual hourly number; who receives what (server
+invalid, unreachable, once an hour); the request log's space against its limit (80 %, then every 5); spikes of 404 per scope against the usual hourly number; who receives what (server
 administrators, an organisation's administrators, the category switched off, disabled accounts); the lock and the
 switch; the worker's schedule; the overview's alerts per scope; the messages in both languages.
 
@@ -287,6 +287,55 @@ os.environ["PORTAL_ALERT_404_MIN"] = "30"
 check("PORTAL_ALERT_404_MIN=30: 25 is too few", not monitor.spikes(S, tenants.load())["*"]["spike"])
 del os.environ["PORTAL_ALERT_404_FACTOR"], os.environ["PORTAL_ALERT_404_MIN"]
 
+# ================================================================== the request log's space (ADR 0006, section 9)
+clear()
+monitor._run(S)
+check("the log's space without a limit: not checked, no message", state("logspace") == "unknown"
+      and ALERTS.find_one({"_id": "logspace"})["detail"] == {"reason": "noLimit"} and not sent("alert-log-space"),
+      ALERTS.find_one({"_id": "logspace"}))
+store.set_setting(requestlog.SETTING_MAX, 1000 * requestlog.MEGABYTE)
+monitor._run(S)
+check("…a limit, but the database does not give the sizes (mongomock): not checked",
+      state("logspace") == "unknown" and ALERTS.find_one({"_id": "logspace"})["detail"]["reason"] == "notMeasured")
+STATS = {}
+ROUND = [0]
+saved_stats = requestlog._collstats
+requestlog._collstats = lambda: dict(STATS)
+
+
+def at_share(percent):
+    """The log's statistics for that share of its 1000 MB, then one round of the checks."""
+    STATS.update(storageSize=int(percent * 10 * requestlog.MEGABYTE), freeStorageSize=0, totalIndexSize=0, count=1000)
+    ROUND[0] += 1
+    return monitor._run(S + timedelta(seconds=ROUND[0]))["logspace"]
+
+
+steps = [(50, None), (79, None), (81, "alert"), (83, None), (86, "step"), (99, "step"), (101, "step"), (120, None), (96, None)]
+got = [(p, at_share(p)) for p, _ in steps]
+check("the space: an alert at 80 %, a message at each step of 5 (85, 95, 100), none within a step or after the trim",
+      got == steps, got)
+check("…to the server administrators who want alerts", sent("alert-log-space") == [("root", "alert-log-space")] * 4,
+      sent("alert-log-space"))
+job = MAIL.find_one({"template": "alert-log-space"}, sort=[("created", 1)])
+check("…the message names the share, the space used and the limit", job and "81 %" in job["subject"]
+      and "810 MB" in job["text"] and "1,000 MB" in job["text"], job and (job["subject"], job["text"][:300]))
+doc = ALERTS.find_one({"_id": "logspace"})
+check("…the check keeps the step reached and the detail", doc["state"] == "alert" and doc["notifiedLevel"] == 100
+      and doc["detail"]["level"] == 95 and doc["detail"]["percent"] == 96.0, doc)
+check("…free space inside the file does not count", requestlog.used_bytes({"storageSize": 900, "freeStorageSize": 300,
+                                                                            "totalIndexSize": 50}) == 650)
+check("below 80 %: resolved, a message", at_share(70) == "resolved" and state("logspace") == "ok"
+      and sent()[-1] == ("root", "alert-log-space-ok"), sent()[-2:])
+hist = list(store.col(monitor.HISTORY).find({"check": "logspace"}))
+check("…one alert in the history, raised and ended", len(hist) == 1 and hist[0]["endedAt"] and hist[0]["kind"] == "logspace",
+      hist)
+check("…a new rise starts from 80 % again, a second alert in the history", at_share(84) == "alert"
+      and store.col(monitor.HISTORY).count_documents({"check": "logspace"}) == 2)
+at_share(10)
+requestlog._collstats = saved_stats
+store.col("settings").delete_one({"_id": requestlog.SETTING_MAX})
+clear()
+
 # ================================================================== the overview shows the alerts
 ANSWER["/.well-known/gs1resolver"] = 503
 monitor._run(S + timedelta(minutes=10)); monitor._run(S + timedelta(minutes=15))
@@ -297,7 +346,7 @@ root = client("root", "root-password-long")
 op = root.get("/portal/api/overview").get_json()["operation"]
 check("overview of a server administrator: every active alert and the state of each check",
       sorted(a["kind"] for a in op["alerts"]) == ["404", "404", "backup", "resolver"] and set(op["checks"]) == {"resolver", "backup",
-                                                                                                    "certificate"},
+                                                                                                    "certificate", "logspace"},
       op.get("alerts"))
 # Operation is the server administrators' only (ADR 0013); everyone else's alerts come with record quality
 ana = client("ana", "ana-password-long")
@@ -345,7 +394,7 @@ monitor._run(S + timedelta(minutes=30))
 job = MAIL.find_one({"template": "alert-404-spike", "user": "ana"})
 check("…messages in the recipient's language", job and "códigos sem cadastro" in job["subject"], job and job["subject"])
 templates = [t for t in mailtexts.TEXTS if t.startswith("alert-")]
-check("seven alert messages", len(templates) == 7, templates)
+check("nine alert messages", len(templates) == 9, templates)
 for template in templates:
     en, pt = mailtexts.TEXTS[template]["en-GB"], mailtexts.TEXTS[template]["pt-BR"]
     same = mailtexts.placeholders(en[0] + en[1]) == mailtexts.placeholders(pt[0] + pt[1])
@@ -354,7 +403,8 @@ i18n = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read()
 keys = ["prefs.alerts", "overview.op.alerts", "overview.op.noAlerts", "overview.alertSince", "overview.check.resolver",
         "overview.check.backup", "overview.check.certificate", "overview.check.backupAt", "overview.check.certExpires",
         "overview.state.ok", "overview.state.alert", "overview.state.unknown"] + \
-       [f"overview.alert.{k}" for k in ("resolver", "backup", "certificate", "404")]
+       [f"overview.alert.{k}" for k in ("resolver", "backup", "certificate", "404", "logspace")] + \
+       ["overview.check.logspace", "overview.check.spaceUse", "overview.check.noLimit", "alerts.kind.logspace"]
 missing = [k for k in keys if i18n.count(f'"{k}"') != 2]
 check("the screen's texts in both languages", not missing, missing)
 

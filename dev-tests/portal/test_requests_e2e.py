@@ -210,6 +210,20 @@ with sync_playwright() as p:
     check("…an organisation's fewer days saved", tenants.get(acme["id"])["logDays"] == 30
           and page.input_value(f"#retention-orgs-body tr[data-tenant='{acme['id']}'] input") == "30",
           page.inner_text("#retention-status"))
+    check("…the most space on disk: empty (no limit), with what it does", page.is_visible("#retention-max-mb")
+          and page.input_value("#retention-max-mb") == "" and "80 %" in page.inner_text("#retention-max-hint")
+          and not page.is_visible("#retention-max-share"), page.inner_text("#requests-retention")[:400])
+    page.fill("#retention-max-mb", "0"); page.click("#retention-max-save"); page.wait_for_timeout(600)
+    check("…0 MB refused", "megabytes" in page.inner_text("#retention-status") and requestlog.max_bytes() is None,
+          page.inner_text("#retention-status"))
+    page.fill("#retention-max-mb", "2048"); page.click("#retention-max-save"); page.wait_for_timeout(800)
+    check("…2048 MB saved and shown as 2 GB", "2 GB" in page.inner_text("#retention-status")
+          and requestlog.max_bytes() == 2048 * 1048576 and page.input_value("#retention-max-mb") == "2048",
+          page.inner_text("#retention-status"))
+    page.fill("#retention-max-mb", ""); page.click("#retention-max-save"); page.wait_for_timeout(800)
+    check("…emptied: no limit", requestlog.max_bytes() is None and page.input_value("#retention-max-mb") == "",
+          page.inner_text("#retention-status"))
+    page.fill("#retention-max-mb", "2048"); page.click("#retention-max-save"); page.wait_for_timeout(800)
     shot(page, "requests-retention")
     page.click("#requests-tab-resolver")
 
@@ -262,7 +276,8 @@ with sync_playwright() as p:
     check("…its Retention tab: the installation's days read only, its organisation's editable",
           page.is_disabled("#retention-global-days") and not page.is_visible("#retention-global-save")
           and page.input_value(f"#retention-orgs-body tr[data-tenant='{acme['id']}'] input") == "30"
-          and not page.is_visible("#retention-space"), page.inner_text("#requests-retention")[:300])
+          and not page.is_visible("#retention-space") and not page.is_visible("#retention-max"),
+          page.inner_text("#requests-retention")[:300])
     page.fill(f"#retention-orgs-body tr[data-tenant='{acme['id']}'] input", "200")
     page.click(f"#retention-orgs-body tr[data-tenant='{acme['id']}'] button"); page.wait_for_timeout(600)
     check("…never longer than the installation's", "120" in page.inner_text("#retention-status")

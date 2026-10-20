@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (the log on the server: capture in the resolver, daily aggregates and reading in the portal, the tenant API's calls), 3 (the *Requests* screen). **Amended** on 17 October 2026 (section 8, item 9.5) |
-| Backlog items | 4.1 — log of resolver requests; 9.5 — browser, approximate location and retention set in the portal |
+| Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (the log on the server: capture in the resolver, daily aggregates and reading in the portal, the tenant API's calls), 3 (the *Requests* screen). **Amended** on 17 October 2026 (section 8, item 9.5) and on 20 October 2026 (section 9, finding F1 of the staging tests) |
+| Backlog items | 4.1 — log of resolver requests; 9.5 — browser, approximate location and retention set in the portal; F1 (staging tests of 20 October) — a limit by size |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 |
 
 ## 1. Context
@@ -321,3 +321,66 @@ An event gains:
 | `RESOLVER_LOG_ADDRESS_HEADER` | `X-Real-IP` | the header with the client's address, set by the proxy in front; empty: the connection's address |
 | `RESOLVER_GEOIP_DB` | `/geoip/dbip-city-lite.mmdb` | the GeoIP database file in the resolver's container; empty: no location |
 | `GEOIP_URL` | DB-IP City Lite of the month | for `scripts/geoip-update.sh`: another source of an MMDB file, gzip-compressed or not |
+
+## 9. Amendment of 20 October 2026 — a limit by size, and alerts from 80 % of it (finding F1)
+
+### 9.1 Context
+
+In the staging tests of 20 October the owner looked for a field to set the space the request log may take; there was
+only the number of days, the space being shown below it (section 8, decision 6). Three options were put: (1) days
+only, the line reworded as information; (2) as 1, plus an alert when the server's disk passes a share; (3) a limit by
+size that deletes the oldest requests beyond it. **The owner chose option 3, with alerts from 80 % of the limit and
+then at every further 5 %.** This section replaces the last sentence of section 8, decision 6.
+
+### 9.2 Decision
+
+1. **The most space the log may use**: one installation-wide value in megabytes (1 MB = 1,048,576 bytes, as the
+   screens count), set by server administrators on *Requests → Retention* (`requestLog.maxBytes` in `settings`, in
+   bytes); empty: no limit (the default). It stands beside the days: whichever deletes first wins. Organisations have
+   no limit of their own: the space is the installation's.
+2. **What counts**: the events' collection on disk without the space freed inside it, plus its indexes:
+   `storageSize − freeStorageSize + totalIndexSize` from MongoDB's `collStats`. WiredTiger does not shrink a file when
+   documents are deleted; it reuses the freed pages for new events, so the freed space is not counted.
+3. **Beyond the limit**, the worker's hourly housekeeping (`requestlog.apply_size_limit()`, after the retention by
+   days, under the lock `request-size`) deletes the **oldest events** until the log is at **95 %** of the limit: the
+   number is estimated from the average event's share of the space, and every event up to the time of the last one to
+   go is deleted. A journal event `requestlog-trimmed` (user `-`, `events=N`) records it, and one warning line goes to
+   the portal's output. Daily aggregates (`request_daily`) are not touched: the counts of past days stay.
+4. **Alerts** (ADR 0008): a check `logspace` of the monitoring, every round. **From 80 %** of the limit it is in alert
+   and the server administrators who want alerts receive a message (`alert-log-space`); then **one message at each
+   further step of 5 points** reached (85, 90, 95, 100) — no daily reminder; going back down within an alert sends
+   nothing; **below 80 %** it is resolved, with a message (`alert-log-space-ok`). The step last told is kept
+   (`notifiedLevel`), so a log kept at 95–100 % by the housekeeping does not send a message each hour. Without a limit,
+   or when the database does not give the sizes, the check is *unknown*. The overview's *Operation* shows the check
+   (*no limit set*, or the share of the limit) and the alert; *Alerts* lists it under its own kind.
+5. **Changing the limit** is a journal event `requestlog-space` (`max=N MB` or `max=-`).
+
+### 9.3 Design
+
+- `portal/requestlog.py`: `SETTING_MAX`, `MEGABYTE`, `MAX_MEGABYTES` (10,000,000), `TRIM_TO` (0.95); `used_bytes()`,
+  `max_bytes()`, `set_max_megabytes()`, `space_share()`, `apply_size_limit()`; `space()` gives `used` too.
+- `portal/monitor.py`: `SPACE_ALERT` (80), `SPACE_STEP` (5), `check_space()`, `_update_space()`; `logspace` in
+  `CHECKS`. `portal/notify.py`: the two messages in the category `alerts`.
+- Routes: `GET /portal/api/requests/retention` adds `maxBytes` and `maxMegabytes` (the largest value; server
+  administrators only, otherwise null); `PUT /portal/api/requests/retention` with `{"maxMegabytes": n | null}`
+  (server administrators outside support access; `requests.spaceInvalid` with `{max}` when out of range).
+
+### 9.4 Options considered
+
+| Point | Chosen | Not chosen |
+|---|---|---|
+| Limit | by size, beside the days (the owner's option 3) | days only (option 1); days and an alert on the server's disk (option 2) |
+| What is measured | the collection's used pages and its indexes | the file's size (would never fall after a deletion); the data's uncompressed size (not what the disk holds) |
+| Down to | 95 % of the limit | exactly the limit (a deletion every hour for a few events) |
+| Alerts | 80 %, then each 5 points, no daily reminder | a reminder every day (noise at a steady 95–100 %) |
+| Per organisation | no | a share of the space each (the space is the installation's) |
+
+### 9.5 Consequences
+
+- The age of the oldest request kept is no longer fixed when the limit is reached first: the *Requests* screen still
+  says the days, and the alerts say when the limit is near.
+- MongoDB's files do not shrink after a deletion; to give the space back to the server's disk, the operator compacts
+  the collection by hand (`db.runCommand({compact: "requests"})` in `resolver_log`, during a quiet hour).
+- With mongomock (the development tests) the sizes are unknown: the limit is never applied and the check is *unknown*;
+  the tests give the statistics themselves.
+

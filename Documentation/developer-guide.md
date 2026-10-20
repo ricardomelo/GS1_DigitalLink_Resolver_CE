@@ -213,7 +213,8 @@ browser family, referrer host and the approximate location (`geoip.LOCATOR.locat
 `RESOLVER_LOG_ADDRESS_HEADER`, which goes no further), dates the event's expiry by its company part's owner
 (`request_log.RETENTION`), and puts the event in the process's queue; the writer thread inserts batches into
 `resolver_log.requests`. The worker's hourly housekeeping counts each day into `request_daily`
-(`requestlog.aggregate()`) and deletes what a shortened retention no longer keeps (`requestlog.apply_retention()`).
+(`requestlog.aggregate()`), deletes what a shortened retention no longer keeps (`requestlog.apply_retention()`) and
+the oldest events of a log beyond its most space (`requestlog.apply_size_limit()`).
 
 **An NFC tag with an EPC.** `GET /eh30164596f40c0e5cbe991a83` (or `/exMBZFlvQMDly-mRqD`) → proxy →
 web-service. The single segment matches RE3 of URI Syntax 1.7, so `epc_binary.decompress()` turns it into
@@ -522,6 +523,11 @@ off), `tenant_days(tenant)` (the tenant's `logDays`, never more than the global)
 `requests.retentionOff`), `apply_retention()` (in `app.HOUSEKEEPING`, the `request-retention` lock without waiting:
 deletes events and API calls older than the global, then each tenant's older than its fewer days, by its prefixes) and
 `space(scope)` (`collstats` of the collection for the whole log; an estimate for a scope; `None` sizes on mongomock).
+Section 9 (finding F1): `_collstats()`, `used_bytes(stats)` (`storageSize − freeStorageSize + totalIndexSize`),
+`max_bytes()` and `set_max_megabytes()` (the setting `requestLog.maxBytes`; `MEGABYTE` = 1,048,576;
+`requests.spaceInvalid` with `max` = `MAX_MEGABYTES`), `space_share()` and `apply_size_limit()` (in `app.HOUSEKEEPING`
+after `apply_retention()`, the `request-size` lock without waiting: beyond the limit, the oldest events down to
+`TRIM_TO` of it, estimated from the average event, and a journal event `requestlog-trimmed`).
 The portal's database user may delete events (`db_init.PRUNE_ROLE`) but neither insert nor change them.
 
 ### `overview.py` — the overview
@@ -549,6 +555,8 @@ round is skipped) and calls `_run(now)`: `check_resolver()` (`requests.get` of `
 redirects not followed; the `failures` counter makes an alert only after `FAILURES_BEFORE_ALERT` rounds),
 `check_backup(now)` (the setting `backup.last` the backup script writes), `check_certificate(now)` (once an hour;
 `tls_expiry(host)` opens a verified TLS connection: `SSLCertVerificationError` is an alert, any other error unknown)
+`_update_space(now)` (`check_space()`: the request log's `space_share()` — alert from `SPACE_ALERT` %, a message at
+each new step of `SPACE_STEP` kept in `notifiedLevel`, no reminder, resolved below `SPACE_ALERT`; ADR 0006 §9)
 and `spikes(now, tenants)` (the last hour's `o: "unknown"` grouped by key, bucketed by `requestlog.owner_of()` into
 the installation and each organisation, against the usual hour from `request_daily` of the 7 days before). `_update()`
 stores each state in `alerts` and decides the message: into alert → the alert template; still in alert after
@@ -827,7 +835,7 @@ operator.
 | `GET /requests?from=&to=&code=&outcome=&device=&browser=&country=&automated=&before=&limit=` | any | Resolver requests in the scope of the request ([ADR 0006](adr/0006-resolver-request-log.md)), newest first, at most `limit` (1–500, 200): `events` (`at`, `method`, `form`, `epc`, `key`, `value`, `anchor`, `qualifiers`, `attributes`, `linkType`, `status`, `outcome`, `level`, `target`, `ms`, `language`, `device`, `referrer`, `country`, `browser`, `region`, `city`, `path`, and `organisation` for the whole installation), `next`, `days` (the scope's retention), `whole`; 422 `requests.badDate` / `requests.badFilter`, 503 `requests.unavailable` |
 | `GET /requests.csv` (same filters) | any | Up to 50,000 of them as CSV (UTF-8 with BOM, `;`, cells protected); journal `requests-export` |
 | `GET /requests/daily?days=30` | any | `days`: `[{day, total, automated, outcome}]`, oldest first, in the scope (past days from `request_daily`, today from the events); `timeZone` |
-| `GET /requests/retention` · `PUT /requests/retention` `{days}` or `{tenant, days}` | any · admin | How long requests are kept (ADR 0006, section 8): `enabled`, `default` (`RESOLVER_LOG_DAYS`), `days` (the installation's), `max`, `scopeDays`, `canSetGlobal`, `organisations` (`id`, `name`, `logDays`, `days`, `editable`, `space`: every one for a server administrator, the own for an organisation's administrators, none for others), `space` (the whole log: `events`, `bytes`, `indexBytes`, `dataBytes`; server administrators). PUT `{days}`: server administrators outside support access; `{tenant, days}` (`null`: the installation's): the organisation's administrators or a server administrator; 422 `requests.retentionInvalid` (`max`), `requests.retentionOff`; journal `requestlog-retention` |
+| `GET /requests/retention` · `PUT /requests/retention` `{days}`, `{tenant, days}` or `{maxMegabytes}` | any · admin | How long requests are kept (ADR 0006, section 8): `enabled`, `default` (`RESOLVER_LOG_DAYS`), `days` (the installation's), `max`, `scopeDays`, `canSetGlobal`, `organisations` (`id`, `name`, `logDays`, `days`, `editable`, `space`: every one for a server administrator, the own for an organisation's administrators, none for others), `space` (the whole log: `events`, `bytes`, `indexBytes`, `dataBytes`, `used`; server administrators), `maxBytes` and `maxMegabytes` (the most space and its largest value; server administrators, otherwise `null`). PUT `{days}` or `{maxMegabytes}` (`null`: no limit; 422 `requests.spaceInvalid` with `max`; journal `requestlog-space`): server administrators outside support access; `{tenant, days}` (`null`: the installation's): the organisation's administrators or a server administrator; 422 `requests.retentionInvalid` (`max`), `requests.retentionOff`; journal `requestlog-retention` |
 | `GET /requests/api?from=&to=&key=&before=&limit=` | admin | The tenant API's calls of the scope (every organisation's for a server administrator): `calls` (`at`, `key`, `keyName`, `organisation`, `method`, `operation`, `status`, `ms`), `next`, `whole` |
 | `GET /domains` · `POST /domains` `{domain, mode, stem}` · `PUT /domains/{domain}` `{mode, stem, defaultFor}` · `POST /domains/{domain}/verify` · `POST /domains/{domain}/check` · `DELETE /domains/{domain}` | admin | The organisations' own domains ([ADR 0009](adr/0009-tenant-domains.md)) of the account's scope (a server administrator lists every domain with `organisation`; support access: read only, 403 `domains.readOnly`); each domain's `certificate` (ADR 0009 §7); `hostRun` (`at`, `ok`, `late`) for server administrators outside support access, else `null`; `domains.*` codes |
 | `GET /organisation[?id=<tenant id>\|operator]` | admin | An organisation's page ([ADR 0013](adr/0013-administration-and-navigation.md)): `id`, `name`, `operator`, `prefixes`, `disabled`, `records`, `users` (public), `domains`, `brands`, `sso` (no secret), `apikeys`, `alerts` (the last 20 of the history), `exports` (`maximum`, `limits`, `effective` per role — `reader`, `editor`, `admin`, `api` —, `editable`), `prefixChecks` and `gcpTable` (ADR 0015), `canEditPrefixes`, `readOnly`; an organisation's administrator always gets their own, a server administrator any (the operator's without `id`), in support access the organisation in support; `tenants.unknown` 404 |

@@ -798,7 +798,12 @@ events are lost and the resolver writes `Request log: N event(s) lost (…)` in 
 carries its expiry date, worked out by the resolver from its owner's days; a shortened period is applied by the
 worker's hourly housekeeping, which deletes older events (the portal's user may delete events, nothing else). `0` in
 `RESOLVER_LOG_DAYS` switches the log off (nothing is captured; the tenant API's calls are not recorded either). The
-space the log uses is shown on the same tab. The portal's worker counts each day's events per key
+space the log uses is shown on the same tab, where a server administrator can also set the **most space** it may use
+(megabytes; empty: no limit; ADR 0006, section 9): beyond it, the hourly housekeeping deletes the oldest events down to
+95 % of the limit (journal event `requestlog-trimmed`), and the monitoring warns the server administrators from 80 %
+of it, then at every further 5 %. What counts is the collection's used pages plus its indexes; MongoDB reuses the
+space of deleted events but does not shrink its files — to give it back to the disk, run
+`db.runCommand({compact: "requests"})` in the `resolver_log` database during a quiet hour. The portal's worker counts each day's events per key
 once an hour into the portal's collection `request_daily`, in the days of `PORTAL_TIME_ZONE` (the installer writes
 the server's), kept `PORTAL_STATS_DAYS` (800) days. The daily backup keeps `resolver_log` too (`mongodump` cannot leave
 a whole database out).
@@ -936,9 +941,11 @@ The job worker checks the installation every `PORTAL_MONITOR_MINUTES` (5; 0 swit
 | Backup | the record `scripts/resolver-backup.sh` writes after each run (setting `backup.last`: when, OK or the error, the file, its size, the last good run) | the last run failed, or the last good one is older than `PORTAL_MONITOR_BACKUP_HOURS` (26); unknown until the first record |
 | Certificate | a TLS connection to `PORTAL_MONITOR_TLS_HOST` (`FQDN`) on port 443, once an hour | expires within `PORTAL_MONITOR_CERT_DAYS` (21) or does not verify; unknown when the host cannot be reached or is `localhost` |
 | 404 spikes | requests answered "code not registered" in the last hour, for the installation and for each organisation | at least `PORTAL_ALERT_404_MIN` (20) and `PORTAL_ALERT_404_FACTOR` (3) times the usual hour of the 7 days before |
+| Request log space | the log's used pages and indexes (`collStats`) against the most space set on *Requests → Retention* (ADR 0006 §9) | from 80 % of the limit; unknown without a limit |
 
 **Messages** (with e-mail on): one when a check goes into alert, a reminder every 24 hours while it lasts, one when it
-is resolved (spikes simply end). Server administrators receive the resolver, backup, certificate and installation's
+is resolved (spikes simply end). The request log's space has no daily reminder: one message at 80 % and one at each
+further 5 % reached (85, 90, 95, 100), and one when it falls below 80 % again. Server administrators receive the resolver, backup, certificate and installation's
 spikes; an organisation's administrators its own spikes. The category *alerts* is on by default; each user may switch
 it off in Options → E-mail. Without e-mail the states are still shown in the overview's *Operation* group (every check
 for server administrators; the organisation's spikes for its users).

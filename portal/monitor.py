@@ -4,8 +4,8 @@ Monitoring and alerts by e-mail (Documentation/adr/0008-monitoring-and-alerts.md
 The job worker calls run() every PORTAL_MONITOR_MINUTES (app.MONITORING, worker.py); one replica at a time does the
 checks (the "monitor" lock, not waited for). Each check keeps a document in the portal's collection "alerts":
 
-    {_id: "resolver" | "backup" | "certificate" | "404:*" | "404:<tenant id>", state: "ok" | "alert" | "unknown",
-     since, checkedAt, failures, detail, notifiedAt, tenant}
+    {_id: "resolver" | "backup" | "certificate" | "logspace" | "404:*" | "404:<tenant id>",
+     state: "ok" | "alert" | "unknown", since, checkedAt, failures, detail, notifiedAt, notifiedLevel, tenant}
 
 Each alert raised is also recorded in "alert_history" (Documentation/adr/0013-administration-and-navigation.md):
 
@@ -13,7 +13,9 @@ Each alert raised is also recorded in "alert_history" (Documentation/adr/0013-ad
      ("ok" | "unknown"), detail, expiresAt}
 
 kept HISTORY_DAYS after it was raised. A change of state decides the messages (category "alerts" of notify.py): one when a check goes into alert, a
-reminder every REMIND_HOURS while it lasts, one when it is resolved (not for spikes of 404, which simply end).
+reminder every REMIND_HOURS while it lasts, one when it is resolved (not for spikes of 404, which simply end). The
+request log's space (Documentation/adr/0006-resolver-request-log.md, section 9) is an alert from SPACE_ALERT % of its
+limit, with a message at each step of SPACE_STEP points it reaches (80, 85, 90, 95, 100) instead of daily reminders.
 Server administrators receive the installation's alerts; an organisation's administrators its spikes of 404.
 
 Settings (section 3.4 of the ADR):
@@ -53,7 +55,9 @@ SPIKE_WINDOW = timedelta(hours=1)
 BASELINE_DAYS = 7
 TOP_CODES = 5
 DEFAULT_URL = "http://frontend-proxy-service/.well-known/gs1resolver"
-CHECKS = ("resolver", "backup", "certificate")
+SPACE_ALERT = 80
+SPACE_STEP = 5
+CHECKS = ("resolver", "backup", "certificate", "logspace")
 HISTORY = "alert_history"
 HISTORY_DAYS = 400
 KINDS = CHECKS + ("404",)
@@ -176,6 +180,56 @@ def check_certificate(now: datetime) -> tuple[str, dict]:
     days = (expires - now).total_seconds() / 86400
     detail = {"host": host, "expires": store.iso(expires), "days": max(0, int(days))}
     return ("alert" if days < cert_days() else "ok"), detail
+
+
+def check_space() -> tuple[str, dict]:
+    """The request log's space against its limit: ("alert", …) from SPACE_ALERT %, "ok" below, "unknown" without a
+    limit or when the database does not give the sizes. detail: used, max (bytes), percent, level (the step reached:
+    80, 85 … 100)."""
+    limit = requestlog.max_bytes()
+    if not limit:
+        return "unknown", {"reason": "noLimit"}
+    measured = requestlog.space_share()
+    if measured is None:
+        return "unknown", {"reason": "notMeasured", "max": limit}
+    percent = measured["share"] * 100
+    level = min(100, int(percent // SPACE_STEP) * SPACE_STEP)
+    detail = {"used": measured["used"], "max": limit, "percent": round(percent, 1), "level": level}
+    return ("alert" if percent >= SPACE_ALERT else "ok"), detail
+
+
+def _megabytes(n) -> str:
+    return f"{n / requestlog.MEGABYTE:,.0f} MB" if isinstance(n, (int, float)) else ""
+
+
+def _update_space(now: datetime) -> str | None:
+    """Stores the space check's state: a message when it goes into alert and at each higher step, one when it falls
+    back below SPACE_ALERT. Returns "alert", "step", "resolved" or None."""
+    state, detail = check_space()
+    previous = _col().find_one({"_id": "logspace"}) or {}
+    was = previous.get("state")
+    doc = {"state": state, "checkedAt": now, "detail": detail}
+    params = {"percent": int(detail["percent"]) if "percent" in detail else "", "used": _megabytes(detail.get("used")),
+              "max": _megabytes(detail.get("max"))}
+    sent = None
+    if state == "alert":
+        doc["since"] = previous.get("since") if was == "alert" else now
+        notified = (previous.get("notifiedLevel") or 0) if was == "alert" else 0
+        if detail["level"] > notified:
+            _tell("alert-log-space", since=_text(doc["since"]), **params)
+            sent = "step" if notified else "alert"
+            notified = detail["level"]
+        doc["notifiedLevel"] = notified
+    else:
+        doc["since"] = previous.get("since") if was == state else now
+        if was == "alert" and state == "ok":
+            doc["resolvedAt"] = now
+            _tell("alert-log-space-ok", since=_text(previous.get("since")), **params)
+            sent = "resolved"
+        doc["notifiedLevel"] = None
+    _col().update_one({"_id": "logspace"}, {"$set": doc}, upsert=True)
+    _remember("logspace", was, state, now, detail, None)
+    return sent
 
 
 def spikes(now: datetime, tenant_list: list[dict]) -> dict[str, dict]:
@@ -336,6 +390,8 @@ def _run(now: datetime) -> dict:
                                        params={"host": detail.get("host") or "", "expires": detail.get("expires") or "",
                                                "days": detail.get("days", 0),
                                                "error": detail.get("error") or ""})
+    # the request log's space against its limit
+    found["logspace"] = _update_space(now)
     # spikes of 404 per scope
     tenant_list = tenants.load()
     for scope, entry in spikes(now, tenant_list).items():

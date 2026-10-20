@@ -1234,6 +1234,15 @@
         </form>
         <p class="field-msg" id="retention-default"></p>
         <p class="field-msg" id="retention-space" hidden></p>
+        <form class="audit-filters retention-global" id="retention-max" novalidate hidden>
+          <div>
+            <label for="retention-max-mb" data-i18n="requests.spaceMax"></label>
+            <input type="number" id="retention-max-mb" min="1" inputmode="numeric" aria-describedby="retention-max-hint">
+          </div>
+          <button type="submit" class="btn btn-primary" id="retention-max-save" data-i18n="users.save"></button>
+        </form>
+        <p class="field-msg" id="retention-max-share" hidden></p>
+        <p class="field-msg" id="retention-max-hint" data-i18n="requests.spaceHint" hidden></p>
         <div id="retention-orgs" hidden>
           <h3 data-i18n="requests.retentionOrgs"></h3>
           <div class="table-wrap">

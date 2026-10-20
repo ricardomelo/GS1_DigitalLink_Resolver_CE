@@ -2549,9 +2549,11 @@ def request_retention():
         total = requestlog.space() if server else None
     except PyMongoError as exc:
         return _log_unavailable(exc)
+    limit = requestlog.max_bytes() if server else None
     return jsonify(enabled=bool(requestlog.log_days()), default=requestlog.log_days(), days=whole,
                    max=requestlog.MAX_DAYS, scopeDays=requestlog.days_for(g.tenant, g.tenants),
-                   canSetGlobal=server and g.account_role == "admin", organisations=organisations, space=total)
+                   canSetGlobal=server and g.account_role == "admin", organisations=organisations, space=total,
+                   maxBytes=limit, maxMegabytes=requestlog.MAX_MEGABYTES if server else None)
 
 
 @app.put("/portal/api/requests/retention")
@@ -2559,7 +2561,8 @@ def request_retention():
 @admin_required
 def set_request_retention():
     """{"days": n}: the installation's retention (server administrators); {"tenant": id, "days": n or null}: an
-    organisation's, at most the installation's (its administrators or a server administrator). A journal event."""
+    organisation's, at most the installation's (its administrators or a server administrator); {"maxMegabytes": n or
+    null}: the most space the log may use (server administrators; section 9). A journal event."""
     data = request.get_json(silent=True) or {}
     if "tenant" in data:
         tenant = next((t for t in g.tenants if t["id"] == str(data.get("tenant") or "")), None)
@@ -2574,6 +2577,14 @@ def set_request_retention():
                        days=requestlog.tenant_days({**tenant, "logDays": days}))
     if not (g.server_admin and not g.support and not g.prefixes):
         return message("access.serverAdmin", 403)
+    if "maxMegabytes" in data:
+        if not requestlog.log_days():
+            raise requestlog.RetentionError("requests.retentionOff")
+        limit = requestlog.set_max_megabytes(data.get("maxMegabytes"))
+        detail = f"max={limit // requestlog.MEGABYTE} MB" if limit else "max=-"
+        audit.info("user=%s action=requestlog-space %s", g.user, detail)
+        log_event("requestlog-space", tenant=None, detail=detail)
+        return message("requests.spaceSaved", 200, maxBytes=limit)
     days = requestlog.set_global_days(data.get("days"))
     audit.info("user=%s action=requestlog-retention global days=%s", g.user, days)
     log_event("requestlog-retention", tenant=None, detail=f"global days={days}")
@@ -3232,7 +3243,8 @@ def label_response(anchor: str, args) -> Response:
 # them inside this process; otherwise the portal-worker service does.
 JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job, "mail": notify.run_mail_job}
 # What the worker runs about once an hour, outside any job (worker.HOUSEKEEPING_SECONDS)
-HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate, requestlog.apply_retention, domains.recheck_all]
+HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate, requestlog.apply_retention, requestlog.apply_size_limit,
+                domains.recheck_all]
 # What the worker runs every PORTAL_MONITOR_MINUTES (Documentation/adr/0008-monitoring-and-alerts.md)
 MONITORING = [monitor.run]
 MONITOR_SECONDS = monitor.minutes() * 60

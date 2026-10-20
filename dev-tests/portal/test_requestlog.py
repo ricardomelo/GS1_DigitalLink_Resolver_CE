@@ -454,6 +454,52 @@ r = root.put("/portal/api/requests/retention", json={"tenant": acme["id"], "days
 check("support access is read only", r.status_code == 403, r.status_code)
 root.delete("/portal/api/support", headers=ORIGIN)
 
+# ------------------------------------------------------------------ the most space the log may use (section 9)
+ret = root.get("/portal/api/requests/retention").get_json()
+check("space limit: none by default; a server administrator is told the largest", ret.get("maxBytes") is None
+      and ret.get("maxMegabytes") == 10_000_000 and "used" in ret.get("space", {}), ret)
+ret = ana.get("/portal/api/requests/retention").get_json()
+check("…an organisation's administrator is not", ret.get("maxBytes") is None and ret.get("maxMegabytes") is None, ret)
+r = ana.put("/portal/api/requests/retention", json={"maxMegabytes": 500}, headers=ORIGIN)
+check("…nor sets it", r.status_code == 403 and store.get_setting(requestlog.SETTING_MAX) is None, r.status_code)
+for bad in (0, -1, "abc", 10_000_001, True, 2.5):
+    r = root.put("/portal/api/requests/retention", json={"maxMegabytes": bad}, headers=ORIGIN)
+    check(f"space limit {bad!r} refused", r.status_code == 422 and code(r) == "requests.spaceInvalid"
+          and r.get_json()["params"]["max"] == 10_000_000, r.get_json())
+days_before = store.get_setting(requestlog.SETTING_DAYS)
+r = root.put("/portal/api/requests/retention", json={"maxMegabytes": "500"}, headers=ORIGIN)
+check("a server administrator sets 500 MB", r.status_code == 200 and code(r) == "requests.spaceSaved"
+      and r.get_json()["maxBytes"] == 500 * 1048576 and store.get_setting(requestlog.SETTING_MAX) == 500 * 1048576
+      and root.get("/portal/api/requests/retention").get_json()["maxBytes"] == 500 * 1048576, r.get_json())
+ret = ana.get("/portal/api/requests/retention").get_json()
+check("…an organisation's administrator still does not see it", ret.get("maxBytes") is None, ret.get("maxBytes"))
+check("…the days are left as they were", store.get_setting(requestlog.SETTING_DAYS) == days_before == 20, days_before)
+r = root.put("/portal/api/requests/retention", json={"maxMegabytes": None}, headers=ORIGIN)
+check("…removed: no limit", r.status_code == 200 and r.get_json()["maxBytes"] is None
+      and store.get_setting(requestlog.SETTING_MAX) is None, r.get_json())
+spaced = [e["detail"] for e in journal.search(limit=50) if e["action"] == "requestlog-space"]
+check("…each change is a journal event", spaced[:2] == ["max=-", "max=500 MB"], spaced)
+
+EVENTS.delete_many({})
+trim = {n: event(OPER, t=NOW - timedelta(days=n)) for n in range(10, 0, -1)}
+fake = {"count": 10, "storageSize": 10_000, "freeStorageSize": 0, "totalIndexSize": 0}
+check("housekeeping without a limit: nothing deleted", requestlog.apply_size_limit(fake) == 0 and EVENTS.count_documents({}) == 10)
+store.set_setting(requestlog.SETTING_MAX, 10_000)
+check("…within the limit: nothing deleted", requestlog.apply_size_limit(fake) == 0 and EVENTS.count_documents({}) == 10)
+store.set_setting(requestlog.SETTING_MAX, 8_000)
+deleted = requestlog.apply_size_limit(fake)
+left = sorted(n for n, i in trim.items() if EVENTS.find_one({"_id": i}))
+check("…beyond it: the oldest deleted, down to 95 % of the limit (3 of 10 events of 1,000 bytes for 8,000)",
+      deleted == 3 and left == list(range(1, 8)), (deleted, left))
+check("…a journal event", any(e["action"] == "requestlog-trimmed" and e["detail"] == "events=3" for e in journal.search(limit=20)))
+check("…the database without sizes (mongomock): nothing deleted", requestlog.apply_size_limit() == 0
+      and EVENTS.count_documents({}) == 7)
+with store.lock("request-size"):
+    check("…another replica holding the lock: skipped", requestlog.apply_size_limit(fake) == 0)
+check("…run by the worker's housekeeping, after the retention by days",
+      portal.HOUSEKEEPING.index(requestlog.apply_size_limit) == portal.HOUSEKEEPING.index(requestlog.apply_retention) + 1)
+store.col("settings").delete_one({"_id": requestlog.SETTING_MAX})
+
 # ------------------------------------------------------------------ the housekeeping that applies it
 EVENTS.delete_many({})
 store.col("api_requests").delete_many({})
@@ -513,7 +559,9 @@ requestlog.events = saved
 
 i18n = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read()
 for message_code in ("requests.badDate", "requests.badFilter", "requests.unavailable", "requests.retentionInvalid",
-                     "requests.retentionOff", "requests.retentionSaved", "audit.action.requestlog-retention"):
+                     "requests.retentionOff", "requests.retentionSaved", "audit.action.requestlog-retention",
+                     "requests.spaceInvalid", "requests.spaceSaved", "audit.action.requestlog-space",
+                     "audit.action.requestlog-trimmed"):
     check(f"{message_code} in both languages", i18n.count(f'"{message_code}"') == 2, i18n.count(f'"{message_code}"'))
 
 print(f"\n{len(failures)} failure(s)")

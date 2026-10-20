@@ -314,6 +314,40 @@ TEXTS = {
                   "A Visão geral do portal os lista com um botão para cadastrar cada um.\n\n"
                   "Você recebe esta mensagem como administrador; pode desligar os alertas em Opções → E-mail."),
     },
+    "alert-log-space": {
+        "en-GB": ("Alert: the request log uses {percent} % of its space",
+                  "Hello,\n\n"
+                  "The log of resolver requests of {operator} uses {used} on disk, {percent} % of the {max} it may "
+                  "use (since {since}). When it reaches its limit, the worker deletes the oldest requests, every "
+                  "hour, to keep within it.\n\n"
+                  "To keep more, raise the limit or free space on the server; to keep less, lower the days in "
+                  "Requests → Retention. You will receive another message at each further 5 %.\n\n"
+                  "You receive this message as a server administrator; you can switch alerts off in Options → "
+                  "E-mail."),
+        "pt-BR": ("Alerta: o registro de acessos usa {percent} % do seu espaço",
+                  "Olá,\n\n"
+                  "O registro de acessos ao Resolver de {operator} ocupa {used} em disco, {percent} % dos {max} "
+                  "que pode usar (desde {since}). Ao atingir o limite, o worker apaga os acessos mais antigos, a "
+                  "cada hora, para mantê-lo dentro dele.\n\n"
+                  "Para guardar mais, aumente o limite ou libere espaço no servidor; para guardar menos, diminua os "
+                  "dias em Acessos → Retenção. Você receberá outra mensagem a cada 5 % a mais.\n\n"
+                  "Você recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → "
+                  "E-mail."),
+    },
+    "alert-log-space-ok": {
+        "en-GB": ("Resolved: the request log uses {percent} % of its space",
+                  "Hello,\n\n"
+                  "The log of resolver requests of {operator} uses {used} on disk, {percent} % of the {max} it may "
+                  "use: below the 80 % that had been reported on {since}.\n\n"
+                  "You receive this message as a server administrator; you can switch alerts off in Options → "
+                  "E-mail."),
+        "pt-BR": ("Resolvido: o registro de acessos usa {percent} % do seu espaço",
+                  "Olá,\n\n"
+                  "O registro de acessos ao Resolver de {operator} ocupa {used} em disco, {percent} % dos {max} "
+                  "que pode usar: abaixo dos 80 % avisados em {since}.\n\n"
+                  "Você recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → "
+                  "E-mail."),
+    },
     "test": {
         "en-GB": ("Test message from the link management portal",
                   "Hello,\n\n"

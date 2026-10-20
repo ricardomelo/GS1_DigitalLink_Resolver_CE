@@ -1893,9 +1893,15 @@ async function saveOrgPrefixes() {
 }
 
 /* ------------------------------------------------------------------ alert history (ADR 0013) */
+// An active alert in the overview's facts: a spike's count, the log's share of its space
+function overviewAlert(a) {
+  return t("overview.alert." + a.kind, { count: a.detail?.count ?? "", percent: nf(a.detail?.percent ?? 0) });
+}
+
 function alertText(a) {
   const d = a.detail || {};
   const what = a.kind === "404" ? t("overview.alert.404", { count: d.count ?? "" })
+    : a.kind === "logspace" && d.percent !== undefined ? t("overview.alert.logspace", { percent: nf(d.percent) })
     : t("overview.check." + a.kind);
   const extra = d.error || d.reason || (d.host ? d.host : "") || "";
   return extra ? `${what} · ${extra}` : what;
@@ -1913,7 +1919,7 @@ async function loadAlerts(event) {
   const kinds = $("#alerts-kind");
   if (!kinds.options.length) {
     kinds.replaceChildren(i18nOption("alerts.anyKind", ""),
-                          ...["resolver", "backup", "certificate", "404"].map(k => i18nOption("alerts.kind." + k, k)));
+                          ...["resolver", "backup", "certificate", "logspace", "404"].map(k => i18nOption("alerts.kind." + k, k)));
   }
   const fromHash = new URLSearchParams(location.hash.split("?")[1] || "").get("tenant");
   if (fromHash !== null && !event) $("#alerts-tenant").value = fromHash;
@@ -2906,6 +2912,25 @@ function renderRetention() {
                                                   events: nf(r.space.events) });
     }
   }
+  // The most space the log may use (ADR 0006, section 9): server administrators only
+  const limited = r.enabled && r.maxMegabytes !== null && r.maxMegabytes !== undefined;
+  $("#retention-max").hidden = !limited;
+  $("#retention-max-hint").hidden = !limited;
+  if (limited) {
+    const box = $("#retention-max-mb");
+    box.value = r.maxBytes ? String(Math.round(r.maxBytes / 1048576)) : "";
+    box.max = String(r.maxMegabytes);
+    box.disabled = !r.canSetGlobal;
+    $("#retention-max-save").hidden = !r.canSetGlobal;
+  }
+  const share = $("#retention-max-share");
+  const used = r.space?.used;
+  share.hidden = !limited || !r.maxBytes || used === null || used === undefined;
+  if (!share.hidden) {
+    const percent = Math.round(used / r.maxBytes * 1000) / 10;
+    share.classList.toggle("is-warn", percent >= 80);
+    I18N.set(share, "requests.spaceShare", { used: formatBytes(used), max: formatBytes(r.maxBytes), percent: nf(percent) });
+  }
   $("#retention-orgs").hidden = !r.enabled || !r.organisations.length;
   $("#retention-orgs-body").replaceChildren(...r.organisations.map(o => {
     const tr = el("tr");
@@ -2944,7 +2969,12 @@ async function saveRetention(body) {
     const answer = await api("PUT", "requests/retention", body);
     box.hidden = false;
     box.className = "status is-ok";
-    I18N.set(box, "requests.retentionSavedDays", { days: answer.days });
+    if ("maxMegabytes" in body) {
+      I18N.set(box, answer.maxBytes ? "requests.spaceSavedMax" : "requests.spaceSavedNone",
+               { max: formatBytes(answer.maxBytes) });
+    } else {
+      I18N.set(box, "requests.retentionSavedDays", { days: answer.days });
+    }
     await loadRetention();
     box.hidden = false;
     CONFIG.requestLog.days = requestsState.retention.scopeDays;
@@ -3564,7 +3594,7 @@ function renderOverview() {
   const recordFacts = [
     ["overview.lastCheck", r.lastCheckAt ? formatWhen(r.lastCheckAt) : t("overview.neverChecked")],
     ["overview.op.logDays", d.logDays ? t("overview.op.logDaysValue", { days: d.logDays }) : t("overview.off")],
-    ["overview.op.alerts", alerts.length ? alerts.map(a => t("overview.alert." + a.kind, { count: a.detail?.count ?? "" })
+    ["overview.op.alerts", alerts.length ? alerts.map(a => overviewAlert(a)
       + " · " + t("overview.alertSince", { when: formatWhen(a.since) })).join("\n") : t("overview.op.noAlerts")]];
   $("#overview-records-facts").replaceChildren(...recordFacts.flatMap(([k, v]) =>
     [el("dt", "", t(k)), el("dd", k === "overview.op.alerts" && alerts.length ? "is-alert" : "", v)]));
@@ -3585,14 +3615,17 @@ function renderOverview() {
   const checkText = c => {
     if (!c) return t("overview.state.unknown");
     const d = c.detail || {};
+    if (c.kind === "logspace" && d.reason === "noLimit") return t("overview.check.noLimit");
     const extra = c.kind === "backup" && d.at ? t("overview.check.backupAt", { when: formatWhen(d.at) })
       : c.kind === "certificate" && d.expires ? t("overview.check.certExpires", { when: formatWhen(d.expires), days: d.days })
+      : c.kind === "logspace" && d.percent !== undefined
+        ? t("overview.check.spaceUse", { percent: nf(d.percent), max: formatBytes(d.max) })
       : "";
     return t("overview.state." + (c.state || "unknown")) + (extra ? " · " + extra : "");
   };
-  if (op.checks) ["resolver", "backup", "certificate"].forEach(name => facts.push(["overview.check." + name, checkText(op.checks[name])]));
+  if (op.checks) ["resolver", "backup", "certificate", "logspace"].forEach(name => facts.push(["overview.check." + name, checkText(op.checks[name])]));
   if (d.operation) facts.push(["overview.op.alerts", (op.alerts || []).length
-    ? op.alerts.map(a => t("overview.alert." + a.kind, { count: a.detail?.count ?? "" }) + " · " +
+    ? op.alerts.map(a => overviewAlert(a) + " · " +
                          t("overview.alertSince", { when: formatWhen(a.since) })).join("\n")
     : t("overview.op.noAlerts")]);
   $("#overview-operation").replaceChildren(...facts.flatMap(([k, v]) => {
@@ -5091,6 +5124,11 @@ async function init() {
   $("#retention-global").addEventListener("submit", e => {
     e.preventDefault();
     saveRetention({ days: $("#retention-global-days").value.trim() });
+  $("#retention-max").addEventListener("submit", e => {
+    e.preventDefault();
+    const value = $("#retention-max-mb").value.trim();
+    saveRetention({ maxMegabytes: value === "" ? null : value });
+  });
   });
   $("#requests-api-filters").addEventListener("submit", e => loadApiCalls(e));
   $("#requests-api-more").addEventListener("click", () => loadApiCalls(null, true));

@@ -74,6 +74,14 @@
     "Alerta: muchas lecturas de códigos que nadie registró",
     "Hola:\n\nEn la última hora, el resolver respondió «código no registrado» (404) {count} veces para los códigos a su alcance, frente a unas {usual} en una hora normal. Es posible que se haya impreso una etiqueta con un código que aún no tiene registro. Los códigos más leídos:\n\n{codes}\n\nEl Resumen del portal los muestra con un botón para registrar cada uno.\n\nRecibe este mensaje como administrador; puede desactivar las alertas en Opciones → Correo electrónico."
    ],
+   "alert-log-space": [
+    "Alerta: el registro de solicitudes usa el {percent} % de su espacio",
+    "Hola:\n\nEl registro de solicitudes al resolver de {operator} ocupa {used} en disco, el {percent} % de los {max} que puede usar (desde {since}). Cuando alcanza su límite, el worker elimina las solicitudes más antiguas, cada hora, para mantenerse dentro de él.\n\nPara conservar más, aumente el límite o libere espacio en el servidor; para conservar menos, reduzca los días en Solicitudes → Retención. Recibirá otro mensaje con cada 5 % más.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
+   "alert-log-space-ok": [
+    "Resuelto: el registro de solicitudes usa el {percent} % de su espacio",
+    "Hola:\n\nEl registro de solicitudes al resolver de {operator} ocupa {used} en disco, el {percent} % de los {max} que puede usar: por debajo del 80 % notificado el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
    "test": [
     "Mensaje de prueba del portal de gestión de enlaces",
     "Hola:\n\nEste es un mensaje de prueba enviado el {when} (UTC) para comprobar la configuración de correo electrónico del portal. Si puede leerlo, el servidor de envío aceptó el mensaje y lo entregó."
@@ -154,6 +162,14 @@
    "alert-404-spike": [
     "Alerte : nombreux scans de codes que personne n’a enregistrés",
     "Bonjour,\n\nAu cours de la dernière heure, le résolveur a répondu « code non enregistré » (404) {count} fois pour les codes de votre périmètre, contre environ {usual} au cours d’une heure habituelle. Une étiquette a peut-être été imprimée avec un code qui n’a pas encore d’enregistrement. Les codes les plus scannés :\n\n{codes}\n\nLa vue d’ensemble du portail les liste avec un bouton pour enregistrer chacun d’eux.\n\nVous recevez ce message en tant qu’administrateur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-log-space": [
+    "Alerte : le journal des requêtes utilise {percent} % de son espace",
+    "Bonjour,\n\nLe journal des requêtes au résolveur de {operator} occupe {used} sur le disque, soit {percent} % des {max} qu'il peut utiliser (depuis le {since}). Lorsqu'il atteint sa limite, le worker supprime les requêtes les plus anciennes, toutes les heures, pour y rester.\n\nPour en garder davantage, augmentez la limite ou libérez de l'espace sur le serveur ; pour en garder moins, réduisez les jours dans Requêtes → Conservation. Vous recevrez un autre message à chaque palier de 5 % supplémentaire.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-log-space-ok": [
+    "Résolu : le journal des requêtes utilise {percent} % de son espace",
+    "Bonjour,\n\nLe journal des requêtes au résolveur de {operator} occupe {used} sur le disque, soit {percent} % des {max} qu'il peut utiliser : en dessous des 80 % signalés le {since}.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
    ],
    "test": [
     "Message de test du portail de gestion des liens",
@@ -236,6 +252,14 @@
     "Warnung: viele Scans von Codes, die niemand erfasst hat",
     "Guten Tag,\n\nin der letzten Stunde hat der Resolver für die Codes in Ihrem Bereich {count}-mal „Code nicht erfasst“ (404) geantwortet, gegenüber etwa {usual} in einer üblichen Stunde. Möglicherweise wurde ein Etikett mit einem Code gedruckt, der noch keinen Eintrag hat. Die am häufigsten gescannten Codes:\n\n{codes}\n\nDie Übersicht des Portals listet sie mit einer Schaltfläche auf, um jeden einzelnen zu erfassen.\n\nSie erhalten diese Nachricht als Administrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
    ],
+   "alert-log-space": [
+    "Warnung: Das Anfrageprotokoll belegt {percent} % seines Speicherplatzes",
+    "Hallo,\n\ndas Protokoll der Resolver-Anfragen von {operator} belegt {used} auf der Festplatte, {percent} % der {max}, die es nutzen darf (seit {since}). Erreicht es seine Grenze, löscht der Worker stündlich die ältesten Anfragen, um darunter zu bleiben.\n\nUm mehr aufzubewahren, erhöhen Sie die Grenze oder schaffen Sie Platz auf dem Server; um weniger aufzubewahren, verringern Sie die Tage unter Anfragen → Aufbewahrung. Bei jeden weiteren 5 % erhalten Sie eine weitere Nachricht.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
+   "alert-log-space-ok": [
+    "Behoben: Das Anfrageprotokoll belegt {percent} % seines Speicherplatzes",
+    "Hallo,\n\ndas Protokoll der Resolver-Anfragen von {operator} belegt {used} auf der Festplatte, {percent} % der {max}, die es nutzen darf: unter den 80 %, die am {since} gemeldet wurden.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
    "test": [
     "Testnachricht des Linkverwaltungsportals",
     "Guten Tag,\n\ndies ist eine Testnachricht, die am {when} (UTC) gesendet wurde, um die E-Mail-Einstellungen des Portals zu prüfen. Wenn Sie sie lesen können, hat der Mailserver die Nachricht angenommen und zugestellt."
@@ -316,6 +340,14 @@
    "alert-404-spike": [
     "Avviso: molte scansioni di codici che nessuno ha registrato",
     "Buongiorno,\n\nnell'ultima ora il resolver ha risposto \"codice non registrato\" (404) {count} volte per i codici di Sua competenza, contro circa {usual} in un'ora normale. Potrebbe essere stata stampata un'etichetta con un codice che non ha ancora un record. I codici più scansionati:\n\n{codes}\n\nLa Panoramica del portale li elenca con un pulsante per registrare ciascuno di essi.\n\nRiceve questo messaggio in qualità di amministratore; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-log-space": [
+    "Avviso: il registro delle richieste usa il {percent} % del suo spazio",
+    "Buongiorno,\n\nil registro delle richieste al resolver di {operator} occupa {used} su disco, il {percent} % dei {max} che può usare (dal {since}). Quando raggiunge il limite, il worker elimina ogni ora le richieste più vecchie per restarvi entro.\n\nPer conservarne di più, aumenti il limite o liberi spazio sul server; per conservarne di meno, riduca i giorni in Richieste → Conservazione. Riceverà un altro messaggio a ogni ulteriore 5 %.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-log-space-ok": [
+    "Risolto: il registro delle richieste usa il {percent} % del suo spazio",
+    "Buongiorno,\n\nil registro delle richieste al resolver di {operator} occupa {used} su disco, il {percent} % dei {max} che può usare: sotto l'80 % segnalato il {since}.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
    ],
    "test": [
     "Messaggio di prova dal portale di gestione dei link",
@@ -398,6 +430,14 @@
     "告警：大量扫描无人注册的代码",
     "您好：\n\n在过去一小时内，对于您可访问的代码，解析器已{count}次返回“代码未注册”（404），而通常每小时约为{usual}次。可能有标签印制了尚无记录的代码。扫描最多的代码：\n\n{codes}\n\n门户的“概览”页面列出了这些代码，并为每个代码提供了注册按钮。\n\n您以管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
    ],
+   "alert-log-space": [
+    "警报：请求日志已使用其空间的 {percent} %",
+    "您好：\n\n{operator} 的解析器请求日志在磁盘上占用 {used}，为其可用 {max} 的 {percent} %（自 {since} 起）。达到上限时，worker 每小时删除最早的请求，使其保持在上限之内。\n\n如需保留更多，请提高上限或释放服务器空间；如需保留更少，请在“请求 → 保留期限”中减少天数。每再增加 5 %，您将收到另一条消息。\n\n您以服务器管理员身份收到此消息；可在“选项 → 电子邮件”中关闭警报。"
+   ],
+   "alert-log-space-ok": [
+    "已解决：请求日志已使用其空间的 {percent} %",
+    "您好：\n\n{operator} 的解析器请求日志在磁盘上占用 {used}，为其可用 {max} 的 {percent} %：已低于 {since} 报告的 80 %。\n\n您以服务器管理员身份收到此消息；可在“选项 → 电子邮件”中关闭警报。"
+   ],
    "test": [
     "来自链接管理门户的测试邮件",
     "您好：\n\n这是一封于{when}（UTC）发送的测试邮件，用于检查门户的电子邮件设置。如果您能阅读此邮件，说明邮件中继已接收并投递了该邮件。"
@@ -478,6 +518,14 @@
    "alert-404-spike": [
     "アラート：未登録コードのスキャンが多発しています",
     "こんにちは。\n\n過去1時間に、リゾルバーはアクセス範囲内のコードに対して「未登録のコード」（404）を {count} 回返しました。通常の1時間あたりは約 {usual} 回です。まだレコードのないコードでラベルが印刷された可能性があります。スキャン数の多いコード：\n\n{codes}\n\nポータルの「概要」に、それぞれを登録するボタンと共に一覧表示されています。\n\nこのメッセージは管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
+   "alert-log-space": [
+    "警告: リクエストログが容量の {percent} % を使用しています",
+    "こんにちは。\n\n{operator} のリゾルバーのリクエストログはディスク上で {used} を使用しており、使用できる {max} の {percent} % です（{since} から）。上限に達すると、worker が 1 時間ごとに最も古いリクエストを削除して上限内に保ちます。\n\nより多く保持するには上限を上げるかサーバーの空き容量を増やし、より少なく保持するには「リクエスト → 保持期間」で日数を減らしてください。さらに 5 % 増えるごとに別のメッセージが届きます。\n\nサーバー管理者としてこのメッセージを受け取っています。アラートは「オプション → メール」でオフにできます。"
+   ],
+   "alert-log-space-ok": [
+    "解決: リクエストログが容量の {percent} % を使用しています",
+    "こんにちは。\n\n{operator} のリゾルバーのリクエストログはディスク上で {used} を使用しており、使用できる {max} の {percent} % です。{since} に通知した 80 % を下回りました。\n\nサーバー管理者としてこのメッセージを受け取っています。アラートは「オプション → メール」でオフにできます。"
    ],
    "test": [
     "リンク管理ポータルからのテストメッセージ",
@@ -560,6 +608,14 @@
     "알림: 아무도 등록하지 않은 코드의 스캔이 많습니다",
     "안녕하십니까?\n\n최근 1시간 동안 리졸버가 접근 범위 내 코드에 대해 \"미등록 코드\"(404)로 {count}회 응답했습니다. 평소에는 1시간에 약 {usual}회입니다. 아직 레코드가 없는 코드로 라벨이 인쇄되었을 수 있습니다. 가장 많이 스캔된 코드:\n\n{codes}\n\n포털의 개요에서 이 코드들을 확인하고 각 코드를 등록하는 버튼을 사용할 수 있습니다.\n\n관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
    ],
+   "alert-log-space": [
+    "경고: 요청 로그가 공간의 {percent} %를 사용 중입니다",
+    "안녕하세요.\n\n{operator}의 리졸버 요청 로그가 디스크에서 {used}를 사용하고 있으며, 이는 사용할 수 있는 {max}의 {percent} %입니다({since}부터). 한도에 도달하면 worker가 매시간 가장 오래된 요청을 삭제하여 한도 안으로 유지합니다.\n\n더 많이 보관하려면 한도를 높이거나 서버 공간을 확보하고, 더 적게 보관하려면 요청 → 보존 기간에서 일수를 줄이십시오. 5 %가 더 늘어날 때마다 메시지를 다시 받게 됩니다.\n\n서버 관리자로서 이 메시지를 받습니다. 알림은 옵션 → 이메일에서 끌 수 있습니다."
+   ],
+   "alert-log-space-ok": [
+    "해결됨: 요청 로그가 공간의 {percent} %를 사용 중입니다",
+    "안녕하세요.\n\n{operator}의 리졸버 요청 로그가 디스크에서 {used}를 사용하고 있으며, 이는 사용할 수 있는 {max}의 {percent} %입니다. {since}에 알린 80 % 아래로 내려왔습니다.\n\n서버 관리자로서 이 메시지를 받습니다. 알림은 옵션 → 이메일에서 끌 수 있습니다."
+   ],
    "test": [
     "링크 관리 포털 테스트 메시지",
     "안녕하십니까?\n\n포털의 이메일 설정을 확인하기 위해 {when}(UTC)에 보낸 테스트 메시지입니다. 이 메시지를 읽으실 수 있다면 릴레이가 메시지를 수락하고 전달한 것입니다."
@@ -641,6 +697,14 @@
     "अलर्ट: उन कोड के कई स्कैन जिन्हें किसी ने पंजीकृत नहीं किया",
     "नमस्ते,\n\nपिछले घंटे में रिज़ॉल्वर ने आपकी पहुँच वाले कोड के लिए {count} बार “कोड पंजीकृत नहीं” (404) उत्तर दिया, जबकि एक सामान्य घंटे में लगभग {usual} बार होता है। हो सकता है कोई लेबल ऐसे कोड के साथ छपा हो जिसका अभी तक कोई रिकॉर्ड नहीं है। सबसे अधिक स्कैन किए गए कोड:\n\n{codes}\n\nपोर्टल का अवलोकन इन्हें हर एक को पंजीकृत करने के बटन के साथ सूचीबद्ध करता है।\n\nआपको यह संदेश व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
    ],
+   "alert-log-space": [
+    "चेतावनी: अनुरोध लॉग अपनी जगह का {percent} % उपयोग कर रहा है",
+    "नमस्ते,\n\n{operator} के रिज़ॉल्वर अनुरोधों का लॉग डिस्क पर {used} घेर रहा है, जो उसे मिली {max} जगह का {percent} % है ({since} से)। सीमा पर पहुँचने पर worker हर घंटे सबसे पुराने अनुरोध हटाता है ताकि लॉग सीमा के भीतर रहे।\n\nअधिक रखने के लिए सीमा बढ़ाएँ या सर्वर पर जगह खाली करें; कम रखने के लिए अनुरोध → प्रतिधारण में दिन घटाएँ। हर अगले 5 % पर आपको एक और संदेश मिलेगा।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ई-मेल में अलर्ट बंद कर सकते हैं।"
+   ],
+   "alert-log-space-ok": [
+    "हल हुआ: अनुरोध लॉग अपनी जगह का {percent} % उपयोग कर रहा है",
+    "नमस्ते,\n\n{operator} के रिज़ॉल्वर अनुरोधों का लॉग डिस्क पर {used} घेर रहा है, जो उसे मिली {max} जगह का {percent} % है: {since} को सूचित 80 % से कम।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ई-मेल में अलर्ट बंद कर सकते हैं।"
+   ],
    "test": [
     "लिंक प्रबंधन पोर्टल से परीक्षण संदेश",
     "नमस्ते,\n\nयह पोर्टल की ईमेल सेटिंग जाँचने के लिए {when} (UTC) को भेजा गया एक परीक्षण संदेश है। यदि आप इसे पढ़ पा रहे हैं, तो रिले ने संदेश स्वीकार किया और उसे पहुँचा दिया।"
@@ -721,6 +785,14 @@
    "alert-404-spike": [
     "تنبيه: عمليات مسح كثيرة لرموز لم يسجّلها أحد",
     "مرحبًا،\n\nفي الساعة الأخيرة، أجاب المحلِّل بـ «رمز غير مسجَّل» (404) {count} مرة للرموز الواقعة في نطاقك، مقابل نحو {usual} في الساعة المعتادة. ربما طُبع ملصق برمز ليس له سجل بعد. الرموز الأكثر مسحًا:\n\n{codes}\n\nتُدرجها شاشة «نظرة عامة» في البوابة مع زر لتسجيل كل منها.\n\nتتلقى هذه الرسالة بصفتك مسؤولًا؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-log-space": [
+    "تنبيه: سجل الطلبات يستخدم {percent} % من مساحته",
+    "مرحبًا،\n\nيشغل سجل طلبات المحلِّل لدى {operator} مساحة {used} على القرص، أي {percent} % من {max} المسموح بها (منذ {since}). عند بلوغ الحد، يحذف الـ worker أقدم الطلبات كل ساعة ليبقى ضمنه.\n\nللاحتفاظ بالمزيد، ارفع الحد أو حرّر مساحة على الخادم؛ وللاحتفاظ بأقل، قلّل الأيام في الطلبات ← مدة الاحتفاظ. ستتلقى رسالة أخرى عند كل زيادة بنسبة 5 %.\n\nتتلقى هذه الرسالة بصفتك مسؤول الخادم؛ يمكنك إيقاف التنبيهات من الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-log-space-ok": [
+    "تم الحل: سجل الطلبات يستخدم {percent} % من مساحته",
+    "مرحبًا،\n\nيشغل سجل طلبات المحلِّل لدى {operator} مساحة {used} على القرص، أي {percent} % من {max} المسموح بها: أقل من 80 % التي أُبلغ عنها في {since}.\n\nتتلقى هذه الرسالة بصفتك مسؤول الخادم؛ يمكنك إيقاف التنبيهات من الخيارات ← البريد الإلكتروني."
    ],
    "test": [
     "رسالة اختبار من بوابة إدارة الروابط",

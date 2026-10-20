@@ -671,6 +671,7 @@ task is:
 | Own domains in the QR codes | their own | every one | [Domains](#domains-administrators) |
 | Brands of the item's page | their prefixes | any prefix, and the installation's | [Item page](#item-page-administrators) |
 | How long requests are kept | their organisation (no longer than the installation's) | the installation's and any organisation's | section 16, *Retention* |
+| The most space the request log may use | — | the installation's, in megabytes (alerts from 80 %) | section 16, *Retention* |
 | Alerts raised by the monitoring | their organisation's | every one | [Alerts](#alerts-administrators) |
 | Look at an organisation's data, read only | — | yes, with a recorded reason | [Support access](#support-access) |
 | Who did what | their organisation's | the operator's and what it did to organisations | section 15, audit trail |
@@ -938,6 +939,12 @@ sees how much space the log takes on disk; each organisation can keep its reques
 administrators (or the server administrator) in the table, empty meaning the installation's. When a period is
 shortened, older requests are deleted within the hour; when it is lengthened, the new period applies to new requests.
 The daily counts of the bars and of the overview are not affected. Each change is in the audit trail.
+
+The server administrator can also set the **most space on disk** the log may use, in megabytes (empty: no limit).
+Below the field, the space in use now and its share of the limit. From 80 % of the limit the server administrators
+receive an alert (by e-mail when e-mail is set up, and in *Alerts* and the overview in any case), and another at each
+further 5 % (85, 90, 95, 100). Beyond the limit, the oldest requests are deleted every hour until the log is at 95 % of
+it; the daily counts stay. Whichever comes first — the days or the space — decides what is deleted.
 
 ![Retention](images/guide/requests-retention.png)
 

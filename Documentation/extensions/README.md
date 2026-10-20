@@ -50,6 +50,7 @@ British English, for operators and developers. People who register records read 
 - [Hardening](#hardening)
 - [Daily backup](#daily-backup)
 - [Secret rotation](#secret-rotation)
+- [Upgrading from the official resolver](#upgrading-from-the-official-resolver)
 - [Going to production](#going-to-production)
 - [Development tests](#development-tests)
 
@@ -1546,6 +1547,32 @@ back; delete it once the installation works with the new values.
 sudo scripts/resolver-backup.sh && sudo scripts/rotate-secrets.sh
 curl -s http://127.0.0.1:8080/portal/healthz       # {"portal":"ok","resolver":"ok","worker":"ok"…}
 ```
+
+## Upgrading from the official resolver
+
+An installation of the official GS1 Resolver CE v3 (the four services of its `docker-compose.yml`, the records in the
+database `resolver_ce` of the volume `resolver-database-volume`) is upgraded in its own folder by
+`scripts/upgrade-from-official.sh`; the Expansion Pack keeps the same database image (MongoDB 7), the same database and
+the same document format, so the records need no conversion. The folder matters: Docker Compose names the volume after
+it, and a clone elsewhere would start with an empty database.
+
+| Step | What happens | When it fails |
+|---|---|---|
+| 1. Checks | `docker-compose.yml` is the official one (no `portal-service`); no uncommitted change to the official files; the database answers with the credentials of `.env`, else `.env.example`'s (`gs1resolver`); the records counted per collection | it stops; nothing changed. `--check` stops here in any case |
+| 2. Backup | `mongodump --archive --gzip` of the whole database into `BACKUP_DIR` (`/var/backups/resolver`), `pre-upgrade-<date>.archive.gz`, mode 600 | it stops; nothing changed |
+| 3. Stop | `docker compose down --remove-orphans` with the official file (the volume is kept) | it stops |
+| 4. Code | the remote `expansion` (`UPGRADE_REPOSITORY`) fetched, its `gs1br/develop` checked out as a local branch; the official branch stays | the way back is printed |
+| 5. `.env` | the database's user, password and connection string, and the data entry API's token, written when `.env` does not set them (a copy `.env.bak-<time>` first) so the installer keeps them | — |
+| 6. Installer | `scripts/install.sh` (its questions; `INSTALL_ARGS` passes options such as `--non-interactive`) | the way back is printed |
+| 7. Compare | the records counted again: a collection with fewer records ends with status 1 and the way back | — |
+
+The log is `/var/log/gs1-resolver-upgrade.log`. The way back, printed at the end: `git switch <official branch>`,
+`docker compose down --remove-orphans && docker compose up -d --build`, and — only if the records are not as they
+were — `mongorestore --archive --gzip --drop` of the backup. After an upgrade with the official default password,
+rotate it (`sudo scripts/rotate-secrets.sh mongo`); a data entry token that was the default `secret` is replaced by the
+installer, so systems that call `/api` need the new one (`SESSION_TOKEN` in `.env`). The official installation published
+the database's port 27017 and the proxy's 8080 on every interface; the Expansion Pack binds both to `127.0.0.1` and puts
+nginx with HTTPS in front (or your own proxy: the installer's HTTPS mode `external`).
 
 ## Going to production
 

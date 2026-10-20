@@ -58,6 +58,7 @@ This README covers the overview, the API, installation and operation. The index 
 7. [System requirements](#system-requirements)
 8. [Installation with the Ubuntu script](#installation-with-the-ubuntu-script)
 9. [Manual installation](#manual-installation)
+   - [Upgrading an installation of the official GS1 Resolver CE v3](#upgrading-an-installation-of-the-official-gs1-resolver-ce-v3)
 10. [Configuration](#configuration)
 11. [Operation](#operation)
 12. [Development and tests](#development-and-tests)
@@ -505,6 +506,28 @@ For a **development machine** no `.env` is needed: `docker compose up -d --build
 `.env.example` (token `secret`, as in the official project). Add `RESOLVER_PUBLIC_URL=http://localhost:8080`
 to `.env` to use the portal over plain HTTP, then open http://localhost:8080/.
 
+### Upgrading an installation of the official GS1 Resolver CE v3
+
+An installation of the official project (`github.com/gs1/GS1_DigitalLink_Resolver_CE`, v3, run with
+`docker compose up`) becomes the Expansion Pack **in place**, in its own folder, so that its database volume and its
+records stay: `scripts/upgrade-from-official.sh` checks the installation, backs up the database, stops the official
+containers (the volume is kept), checks out this branch beside the official one, keeps the database's credentials and
+the data entry API's token in `.env`, runs the installer and compares the number of records before and after.
+
+```bash
+cd ~/GS1_DigitalLink_Resolver_CE        # the folder of the official installation
+curl -fsSLo upgrade-from-official.sh \
+  https://raw.githubusercontent.com/ricardomelo/GS1_DigitalLink_Resolver_CE/gs1br/develop/scripts/upgrade-from-official.sh
+sudo bash upgrade-from-official.sh --check   # only the checks: changes nothing
+sudo bash upgrade-from-official.sh           # asks before changing anything, then the installer's questions
+```
+
+Expected at the end: each collection of `resolver_ce` with as many records as before, `Upgrade done`, the backup's
+path (`/var/backups/resolver/pre-upgrade-<date>.archive.gz`) and the way back to the official branch. With the official
+default database password (`gs1resolver`), rotate it afterwards with `sudo scripts/rotate-secrets.sh`. Systems that
+call the data entry API keep their token, unless it was the official default `secret`, which the installer replaces.
+Details: [operator's guide](Documentation/extensions/README.md#upgrading-from-the-official-resolver).
+
 ## Configuration
 
 Every service reads `.env.example` (committed development defaults) and then `.env` (installation values,
@@ -707,7 +730,7 @@ portal/                         link management portal: app.py, gs1.py (keys, qu
                                 tools/build-syntax-engine.sh (GS1 Barcode Syntax Engine)
 scripts/                        install.sh, templates/ (nginx), resolver-backup.sh and its cron entry,
                                 custom-domains.sh (sites and certificates of organisations' own domains),
-                                restore-rehearsal.sh, rotate-secrets.sh
+                                restore-rehearsal.sh, rotate-secrets.sh, upgrade-from-official.sh
 dev-tests/                      development tests (see above)
 .github/                        workflows/dev-tests.yml (continuous integration), actions/dev-tests-setup/
 CLAUDE.md, .claude/             conventions and the session start hook for Claude Code cloud sessions

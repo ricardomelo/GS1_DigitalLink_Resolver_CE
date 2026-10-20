@@ -24,6 +24,9 @@ Checks, without Docker:
     previous month's, or GEOIP_URL from .env (never printed with its query string), gzip-compressed or not, checked
     and put in place in one step; a download that is not an MMDB keeps the old file, says ERROR and exits 1; and the
     resolver's container mounts the folder read only;
+  * the upgrade of an official installation (scripts/upgrade-from-official.sh) with a stand-in "docker" and local
+    repositories: a backup before anything changes, the branch switched in place, the credentials kept, the records
+    compared, and refusals that change nothing;
   * the portal image's files: the portal server is started from a folder assembled by the COPY instructions
     of portal/Dockerfile (not from the source folder), and every module and data file of portal/ is in it,
     so a file left out of the image fails here rather than on a server.
@@ -316,6 +319,128 @@ esac
             check(run.returncode == 1 and "ERROR: no archive" in run.stdout and "run -d" not in log,
                   "rehearsal: no archive, no container", (run.returncode, run.stdout[-300:]))
         shutil.rmtree(work, ignore_errors=True)
+
+
+def upgrade_checks() -> None:
+    """scripts/upgrade-from-official.sh with a stand-in docker, an official clone and the Expansion Pack's branch in a
+    local repository: checks first, the backup before anything changes, the containers stopped, the branch switched in
+    the same folder (the official one kept), the credentials and token kept in .env for the installer, the records
+    counted before and after; refusals that change nothing."""
+    script = REPO / "scripts" / "upgrade-from-official.sh"
+    found = re.search(r"COUNT_JS='(.*?)'\n", script.read_text(), re.S)
+    node = shutil.which("node")
+    if node and found:
+        js = Path(tempfile.mkdtemp()) / "count.js"
+        js.write_text("const db = {getSiblingDB() { return {getCollectionNames() { return []; }}; }};\n"
+                      "const print = console.log;\n" + found.group(1).replace("'\"$RECORDS_DB\"'", "resolver_ce"))
+        syntax = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+        check(syntax.returncode == 0, "upgrade: the counting script is valid JavaScript", syntax.stderr[-300:])
+    official_compose = ("services:\n  database-service:\n    volumes:\n      - resolver-database-volume:/data/db\n"
+                        "  web-service: {}\nvolumes:\n  resolver-database-volume: {}\n")
+    git_env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.org", "GIT_COMMITTER_NAME": "t",
+               "GIT_COMMITTER_EMAIL": "t@example.org"}
+
+    def git(cwd, *args):
+        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, env=git_env)
+
+    def upgrade(case, args=("--yes",)):
+        work = Path(tempfile.mkdtemp(prefix="upgrade-test-"))
+        official, expansion, bin_dir = work / "official", work / "expansion", work / "bin"
+        calls, backups = work / "calls", work / "backups"
+        for folder in (official, expansion, bin_dir):
+            folder.mkdir()
+        # the Expansion Pack's branch, with a stand-in installer that records its call
+        (expansion / "docker-compose.yml").write_text(official_compose + "  portal-service: {}\n")
+        (expansion / "scripts").mkdir()
+        (expansion / "scripts" / "install.sh").write_text(f"echo \"install $*\" >> {calls}; touch {work / 'installed'}\n")
+        git(expansion, "init", "-q", "-b", "gs1br/develop")
+        git(expansion, "add", "-A")
+        git(expansion, "commit", "-q", "-m", "expansion")
+        # the official installation
+        (official / "docker-compose.yml").write_text(official_compose + ("  portal-service: {}\n" if case == "already" else ""))
+        (official / ".env.example").write_text("MONGO_INITDB_ROOT_USERNAME=gs1resolver\nMONGO_INITDB_ROOT_PASSWORD=gs1resolver\n"
+                                               "MONGO_URI=mongodb://gs1resolver:gs1resolver@database-service:27017\n"
+                                               "SESSION_TOKEN=secret\n")
+        if case == "own env":
+            (official / ".env").write_text("MONGO_INITDB_ROOT_USERNAME=admin\nMONGO_INITDB_ROOT_PASSWORD='S3cret-pass'\n"
+                                           "MONGO_URI='mongodb://admin:S3cret-pass@database-service:27017'\n"
+                                           "SESSION_TOKEN='tok-123'\n")
+        git(official, "init", "-q", "-b", "main")
+        git(official, "add", "docker-compose.yml", ".env.example")
+        git(official, "commit", "-q", "-m", "official")
+        if case == "changed":
+            (official / "docker-compose.yml").write_text(official_compose + "# a local change\n")
+        password = "S3cret-pass" if case == "own env" else "gs1resolver"
+        after = "gs1resolver 120\nlinktypes 3" if case == "fewer" else "gs1resolver 125\nlinktypes 3"
+        (bin_dir / "docker").write_text(f"""#!/bin/bash
+echo "$*" >> {calls}
+case "$*" in
+  "compose ps --status running --services") {"exit 0" if case == "stopped" else "echo database-service"} ;;
+  *mongodump*) {"exit 1" if case == "dump fails" else "echo DUMP-ARCHIVE"} ;;
+  *"compose exec -T -e U="*) input=$(cat)
+     [[ "$*" == *"P={password}"* && "{case}" != "refused" ]] || exit 1
+     if [[ $input == *ping* ]]; then echo 1
+     elif [[ -e {work / 'installed'} ]]; then printf '{after}\\n'
+     else printf 'gs1resolver 125\\nlinktypes 3\\n'; fi ;;
+  *) exit 0 ;;
+esac
+""")
+        (bin_dir / "docker").chmod(0o755)
+        run = subprocess.run(["bash", str(script), *args], cwd=official, capture_output=True, text=True, timeout=120,
+                             env={**git_env, "PATH": f"{bin_dir}:{os.environ['PATH']}", "BACKUP_DIR": str(backups),
+                                  "UPGRADE_REPOSITORY": str(expansion), "UPGRADE_LOG": str(work / "upgrade.log")})
+        branch = git(official, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        return run, work, official, branch, (calls.read_text() if calls.exists() else ""), backups
+
+    run, work, official, branch, calls, backups = upgrade("good")
+    archives = list(backups.glob("pre-upgrade-*.archive.gz")) if backups.exists() else []
+    check(run.returncode == 0 and "Upgrade done" in run.stdout, "upgrade: an official installation is upgraded",
+          (run.returncode, run.stdout[-600:]))
+    check(len(archives) == 1 and archives[0].read_text() == "DUMP-ARCHIVE\n" and archives[0].stat().st_mode & 0o777 == 0o600,
+          "upgrade: a full backup first (mongodump, gzip), readable by its owner only", archives)
+    lines = calls.splitlines()
+    order = [next((i for i, l in enumerate(lines) if key in l), -1) for key in ("mongodump", "compose down", "install")]
+    check(order[0] >= 0 and order == sorted(order) and "compose down --remove-orphans" in calls and " -v" not in calls,
+          "upgrade: backup, then the official containers stopped (volume kept), then the installer", lines)
+    check(branch == "gs1br/develop" and "main" in git(official, "branch").stdout,
+          "upgrade: the Expansion Pack's branch in the same folder, the official branch kept", branch)
+    env = (official / ".env").read_text()
+    check("MONGO_INITDB_ROOT_PASSWORD='gs1resolver'" in env and "SESSION_TOKEN='secret'" in env
+          and "MONGO_URI='mongodb://gs1resolver:gs1resolver@database-service:27017'" in env
+          and (official / ".env").stat().st_mode & 0o777 == 0o600,
+          "upgrade: the database's credentials and the API token written to .env for the installer to keep", env)
+    check(re.search(r"gs1resolver: 125 before, 125 now", run.stdout) and "rotate-secrets.sh" in run.stdout
+          and "git switch main" in run.stdout and str(archives[0]) in run.stdout if archives else False,
+          "upgrade: the records compared; the default password's rotation and the way back told", run.stdout[-800:])
+    shutil.rmtree(work, ignore_errors=True)
+
+    run, work, official, branch, calls, backups = upgrade("good", ("--check",))
+    check(run.returncode == 0 and "Nothing was changed" in run.stdout and branch == "main" and not backups.exists()
+          and "compose down" not in calls and not (official / ".env").exists() and "gs1resolver 125" in run.stdout,
+          "upgrade: --check only checks and counts", (run.returncode, run.stdout[-300:], calls))
+    shutil.rmtree(work, ignore_errors=True)
+
+    run, work, official, branch, calls, backups = upgrade("own env")
+    env = (official / ".env").read_text()
+    check(run.returncode == 0 and env.count("MONGO_INITDB_ROOT_PASSWORD=") == 1 and "S3cret-pass" in env
+          and "rotate-secrets.sh" not in run.stdout and list(official.glob(".env.bak-*")),
+          "upgrade: an .env of its own kept as it is (a copy aside), no rotation advised", (env, run.stdout[-300:]))
+    shutil.rmtree(work, ignore_errors=True)
+
+    for case, message in (("already", "already runs the Expansion Pack"), ("changed", "commit or put them aside"),
+                          ("stopped", "database service is not running"), ("refused", "did not accept the credentials"),
+                          ("dump fails", "mongodump failed")):
+        run, work, official, branch, calls, backups = upgrade(case)
+        check(run.returncode == 1 and message in run.stdout and branch == "main" and "compose down" not in calls
+              and not list(backups.glob("*.gz") if backups.exists() else []),
+              f"upgrade: {case}: refused, nothing changed", (run.returncode, run.stdout[-300:], calls))
+        shutil.rmtree(work, ignore_errors=True)
+
+    run, work, official, branch, calls, backups = upgrade("fewer")
+    check(run.returncode == 1 and "fewer records" in run.stdout and "gs1resolver: 125 before, 120 now" in run.stdout
+          and "mongorestore" in run.stdout, "upgrade: fewer records afterwards: status 1 and the way back",
+          (run.returncode, run.stdout[-500:]))
+    shutil.rmtree(work, ignore_errors=True)
 
 
 def rotation_checks() -> None:
@@ -832,6 +957,7 @@ def main() -> int:
     backup_copy_checks()
     geoip_checks()
     rehearsal_checks()
+    upgrade_checks()
     rotation_checks()
     domains_script_checks()
     release_checks()

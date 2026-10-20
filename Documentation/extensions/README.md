@@ -885,6 +885,21 @@ proxy the installer does not schedule it: with Certbot and `CERTBOT_EMAIL`, inst
 `/etc/cron.d/resolver-domains` after replacing `REPOSITORY`. Sites of domains removed in the portal are listed and
 deleted by hand.
 
+**Testing a failure** (no second domain needed). A domain never verified stays *Waiting for DNS* and the scheduled
+run does not try it, so a failure is tested with a name under the installation's own domain that does not exist in
+DNS, marked verified by hand: add `teste-falha.<your domain>` in *Domains* (*Points at this server*), then, in the
+resolver's folder on the server (the JavaScript goes on standard input, so nothing needs escaping):
+
+```bash
+docker compose exec -T database-service sh -c 'mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --quiet resolver_portal' <<'EOF'
+db.domains.updateOne({_id: "teste-falha.example.com"}, {$set: {verified: true, verifiedAt: new Date()}})
+EOF
+```
+
+(with your name in place of `teste-falha.example.com`; expected: `matchedCount: 1, modifiedCount: 1`). Within five
+minutes the card shows *Certificate failed*, the reason (the name is not in DNS) and the next attempt, and
+`tail -5 /var/log/resolver-domains.log` the Certbot failure. Remove the domain in the portal afterwards.
+
 **My server redirects** (`redirect`): the organisation's own server answers `https://<domain><stem>/<path>?<query>`
 with a redirect (301, 302, 307 or 308) to `https://<FQDN>/<path>?<query>`; for nginx
 `location ~ ^/gs1(/.*)$ { return 307 https://<FQDN>$1$is_args$args; }`, for Apache

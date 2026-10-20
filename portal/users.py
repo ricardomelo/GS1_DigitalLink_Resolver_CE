@@ -47,7 +47,7 @@ FIELDS = ("hash", "role", "prefixes", "tenant", "email", "disabled", "mustChange
           "invited", "language", "languageChosen", "notify")
 OPTIONAL_FIELDS = ("tenant", "email", "invited", "language", "languageChosen", "notify")   # absent when empty
 # The languages of the interface and the e-mails (Documentation/adr/0014-interface-languages.md)
-LANGUAGES = ("en-GB", "pt-BR", "es", "fr", "de", "it", "zh-Hans", "ja", "ko", "hi", "ar")
+LANGUAGES = ("en-GB", "pt-BR", "es", "fr", "de", "it", "tr", "zh-Hans", "ja", "ko", "hi", "ar")
 # Hash of a random password, checked when the username does not exist so that response
 # times do not reveal which usernames are valid.
 _DUMMY_HASH = generate_password_hash(os.urandom(16).hex())

@@ -1,7 +1,7 @@
 # Translation guide for the interface languages
 
 How the texts of the portal, its e-mails, the resolver's pages, the item's page and the home page are translated into
-the eleven languages of the interface ([ADR 0014](adr/0014-interface-languages.md)). The translations other than
+the twelve languages of the interface ([ADR 0014](adr/0014-interface-languages.md); Turkish since 20 October 2026). The translations other than
 Brazilian Portuguese and British English were drafted by Claude from the English with these rules, and are to be
 reviewed by a native speaker of each language before production. A new text is written in English, then in every
 language with the same rules; `dev-tests/portal/test_i18n.py` checks that none is missing.
@@ -10,6 +10,13 @@ Where the texts live: `portal/static/i18n.js` (pt-BR, en-GB) and `portal/static/
 `portal/mailtexts.py` and `portal/mail_languages.json`, `web_server/src/page_texts.json`,
 `frontend_proxy_server/home/home.js`. `python portal/tools/i18n_catalogue.py check` compares every portal catalogue with
 the English one.
+
+## Corrections and new languages
+
+No native speaker reviewed the drafts before release (the owner's decision of 20 October 2026). The texts are plain files
+in the repository, listed above: a correction, or a whole review of a language, is welcome as a pull request that
+changes only the values, keeps the keys and placeholders, and passes `python portal/tools/i18n_catalogue.py check` and
+`dev-tests/portal/test_i18n.py`. A new language follows ADR 0014, section 7 (the files and lists Turkish was added to).
 
 ## Rules
 
@@ -31,7 +38,8 @@ the English one.
    (neutral Latin American/European Spanish, no regionalisms), Italian *Lei* (or impersonal forms), Japanese です・ます
    (buttons short: 保存, 削除), Korean 합니다/하십시오체 in messages and short nouns on buttons, Simplified Chinese
    for mainland users, Hindi with *आप* (keep common English IT words when Hindi users use them: पोर्टल, लिंक, ईमेल),
-   Modern Standard Arabic.
+   Modern Standard Arabic, Turkish with the polite *siz* (imperatives in -in/-ın: *Kaydedin*, buttons short: *Kaydet*,
+   *Sil*).
 6. **Short UI labels stay short** (buttons, menu items, column headers, badges): they sit in narrow places. Do not
    add explanations that are not in the English.
 7. **Punctuation and quotes** of your language (« » in French with non-breaking spaces is fine; „ " in German;
@@ -73,3 +81,30 @@ the English one.
 | API key | es clave de API, fr clé d'API, de API-Schlüssel… |
 | single sign-on | es inicio de sesión único, fr authentification unique, de Single Sign-on… |
 | overview | the dashboard after sign-in |
+
+### Turkish (added on 20 October 2026)
+
+| English | Turkish |
+|---|---|
+| resolver | çözümleyici |
+| link management portal | bağlantı yönetim portalı |
+| record / target / link | kayıt / hedef / bağlantı |
+| default target | varsayılan hedef |
+| link type | bağlantı türü |
+| item's page | ürün sayfası |
+| key / qualifier | GS1 anahtarı / niteleyici |
+| GS1 Company Prefix | GS1 Firma Öneki |
+| batch/lot / serial number | parti/lot / seri numarası |
+| data attribute | veri özniteliği |
+| organisation / operator | kuruluş / operatör |
+| server administrator | sunucu yöneticisi |
+| support access | destek erişimi |
+| scan | okutma |
+| request log / Requests | istek kaydı / İstekler |
+| label | etiket |
+| import / export / spreadsheet | içe aktar / dışa aktar / elektronik tablo |
+| sign in / sign out | oturum aç / oturumu kapat |
+| audit trail | denetim kaydı |
+| API key | API anahtarı |
+| single sign-on | kuruluş oturum açması |
+| overview | genel bakış |

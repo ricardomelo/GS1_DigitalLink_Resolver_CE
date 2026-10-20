@@ -23,7 +23,7 @@ function showForm(id) {
 
 function buildLocaleMenu() {
   const select = $("#locale");
-  select.replaceChildren(...I18N.SUPPORTED.map(loc => new Option(I18N.nameOf(loc), loc)));
+  select.replaceChildren(...I18N.MENU.map(loc => new Option(I18N.nameOf(loc), loc)));
   select.value = I18N.locale;
   select.addEventListener("change", () => I18N.setLocale(select.value));
 }

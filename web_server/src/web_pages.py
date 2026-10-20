@@ -9,13 +9,14 @@ HTML pages served by the resolver to people using a browser (Accept: text/html).
 
 The look follows gs1.org. The page language is taken from the "gs1resolver_lang" cookie (set by the
 language menu on these pages and by the link management portal) or, failing that, from the
-Accept-Language header: one of the eleven languages of page_texts.json (Documentation/adr/0014-interface-languages.md),
+Accept-Language header: one of the twelve languages of page_texts.json (Documentation/adr/0014-interface-languages.md),
 English otherwise; Arabic is written right to left.
 Clients asking for JSON keep receiving JSON; nothing here alters machine responses.
 """
 import base64
 import os
 import json
+import unicodedata
 from urllib.parse import unquote, urlparse
 
 from flask import render_template_string, request
@@ -30,6 +31,18 @@ LOCALE_COOKIE = 'gs1resolver_lang'
 with open(os.path.join(os.path.dirname(__file__), 'page_texts.json'), encoding='utf-8') as _fh:
     PAGE_TEXTS = json.load(_fh)
 SUPPORTED_LOCALES = {tag: texts['name'] for tag, texts in PAGE_TEXTS.items()}
+
+
+def _menu_key(item):
+    """The language menu's order, as the portal's: names in the Latin alphabet first, alphabetically (accents
+    ignored), then the others by their script."""
+    name = item[1]
+    latin = 'LATIN' in unicodedata.name(name[0], '')
+    folded = ''.join(c for c in unicodedata.normalize('NFD', name) if not unicodedata.combining(c)).lower()
+    return (0, folded) if latin else (1, ord(name[0]), name)
+
+
+SUPPORTED_LOCALES = dict(sorted(SUPPORTED_LOCALES.items(), key=_menu_key))
 DEFAULT_LOCALE = 'en-GB'
 RIGHT_TO_LEFT = {'ar'}
 
@@ -41,7 +54,7 @@ except OSError:
     LOGO_DATA_URI = ''
 # First matching language prefix in Accept-Language wins.
 LOCALE_MATCHERS = [('pt', 'pt-BR'), ('en', 'en-GB'), ('es', 'es'), ('fr', 'fr'), ('de', 'de'), ('it', 'it'),
-                   ('zh', 'zh-Hans'), ('ja', 'ja'), ('ko', 'ko'), ('hi', 'hi'), ('ar', 'ar')]
+                   ('tr', 'tr'), ('zh', 'zh-Hans'), ('ja', 'ja'), ('ko', 'ko'), ('hi', 'hi'), ('ar', 'ar')]
 LOCALE_MATCHERS = [(prefix, tag) for prefix, tag in LOCALE_MATCHERS if tag in SUPPORTED_LOCALES]
 
 TEXT = {tag: texts['pages'] for tag, texts in PAGE_TEXTS.items()}

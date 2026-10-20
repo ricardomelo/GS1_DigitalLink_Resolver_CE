@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (17 October 2026). Implemented in one delivery |
+| Status | **Accepted** (17 October 2026). Implemented in one delivery. **Amended** on 20 October 2026 (section 7: Turkish, the order of the language menus, the target languages' list) |
 | Backlog item | 9.7 — interface languages (staging feedback of 16 October) |
 | Decided by | the owner of the branch, away during the session, who asked for the recommended option on every point of section 4 |
 
@@ -85,3 +85,38 @@ explanations of 57 link types, about 110 KB in English), 18 e-mail messages and 
 This record; `i18n.js`, the catalogues of the nine languages, the right-to-left rules of `app.css`; `mailtexts.py`;
 `web_pages.py`, `landing.py` and `page_texts.json`; the home page; `test_i18n.py` and `test_languages_e2e.py`; the
 `CLAUDE.md` rule; the translation guide (`Documentation/translation-glossary.md`); the documentation.
+
+## 7. Amendment of 20 October 2026 — Turkish, the menus' order, the target languages' list
+
+### 7.1 Context
+
+After the staging tests of 20 October the owner asked for Turkish as a twelfth language; for the language menus to list
+the languages written in the Latin alphabet first, alphabetically, then the others; and for the list of languages of a
+target (each link's *Language*) to show that it holds every language — the browser's own suggestion list showed only
+the few entries matching what the field held, which read as if few languages were supported.
+
+### 7.2 Decision
+
+1. **Turkish (`tr`)** in every catalogue — the portal (`portal/static/locales/tr.json`), the e-mails
+   (`mail_languages.json`), the resolver's pages (`page_texts.json`) and the home page (`home.js`) — and in every list of
+   languages (`i18n.js` `SUPPORTED` and `LOCALE_MATCHERS`, `home.js`, `web_pages.LOCALE_MATCHERS`, `users.LANGUAGES`).
+   Left to right. Like the other languages but pt-BR and en-GB, a draft written with the translation guide, for a native
+   speaker to review (owner's decision of 20 October: the files are in the repository and contributions are welcome).
+2. **The order of the language menus** (the portal's header, sign-in page and e-mail preferences, the home page, the
+   resolver's pages): the languages whose names (each in itself) are written in the Latin alphabet first, in
+   alphabetical order with accents ignored, then the others by their script (the code point of the first letter: Arabic,
+   Devanagari, Han, Hangul). One rule, written three times: `I18N.byScript()` and `I18N.MENU` in `i18n.js`,
+   `menuOrder()` in `home.js`, `web_pages._menu_key()`.
+3. **The target languages' list**: the row's *Language* field opens one list of every language the browser can name
+   (`CONFIG.languages`, over 200), in the page's language and in the same order, with a count and the words *type to
+   filter*, scrolled within a fixed height; what is typed after the last comma filters it (names and codes that start
+   with it first, then names that hold it); a click, or the arrow keys and Enter, writes the code there; Escape closes
+   it; a code the list does not have (`pt-BR`, `es-419`) can still be typed. It replaces the browser's `datalist`, whose
+   suggestions depend on the browser and showed only the entries matching the field's value.
+
+### 7.3 Consequences
+
+- Twelve languages everywhere; `test_i18n.py` checks Turkish with the others.
+- The interface languages are no longer listed in the order they were added; Portuguese, the installation's main
+  language on staging, is sixth in the menus.
+

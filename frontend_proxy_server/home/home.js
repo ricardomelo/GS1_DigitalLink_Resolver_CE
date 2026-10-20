@@ -12,17 +12,17 @@
  * Elements opt in declaratively:
  *   data-i18n="key"                    → textContent
  *   data-i18n-attr="aria-label:key"    → attribute values
- * Eleven languages, as in the portal (Documentation/adr/0014-interface-languages.md); Arabic right to left. A new
+ * Twelve languages, as in the portal (Documentation/adr/0014-interface-languages.md); Arabic right to left. A new
  * text needs every language (dev-tests/portal/test_i18n.py checks them).
  */
 (() => {
-  const SUPPORTED = ["pt-BR", "en-GB", "es", "fr", "de", "it", "zh-Hans", "ja", "ko", "hi", "ar"];
+  const SUPPORTED = ["pt-BR", "en-GB", "es", "fr", "de", "it", "tr", "zh-Hans", "ja", "ko", "hi", "ar"];
   const RIGHT_TO_LEFT = ["ar"];
   const DEFAULT_LOCALE = "en-GB";
   const STORAGE_KEY = "gs1resolver.portal.locale";   // shared with the portal (same origin)
   const COOKIE_NAME = "gs1resolver_lang";            // shared with the resolver's HTML pages
   const LOCALE_MATCHERS = [["pt", "pt-BR"], ["en", "en-GB"], ["es", "es"], ["fr", "fr"], ["de", "de"], ["it", "it"],
-                           ["zh", "zh-Hans"], ["ja", "ja"], ["ko", "ko"], ["hi", "hi"], ["ar", "ar"]];
+                           ["tr", "tr"], ["zh", "zh-Hans"], ["ja", "ja"], ["ko", "ko"], ["hi", "hi"], ["ar", "ar"]];
   const DESCRIPTION_FILE = "/.well-known/gs1resolver";
 
   const CATALOGUE = {
@@ -199,6 +199,35 @@
       "card.github.text": "Codice open source (Apache 2.0) del resolver alla base di questo servizio.",
       "footer.operatedBy": "Gestito da",
       "footer.notice": "Software mantenuto dalla sua comunità, non da GS1 né da alcuna Organizzazione Membro GS1. Chi gestisce questa installazione è responsabile del suo utilizzo.",
+    },
+    "tr": {
+      "locale.name": "Türkçe",
+      "page.title": "GS1 Resolver Community Edition",
+      "page.skip": "İçeriğe geç",
+      "header.language": "Dil",
+      "nav.label": "Ana menü",
+      "nav.toggle": "Menü",
+      "nav.portal": "Bağlantıları yönet",
+      "nav.api": "Çözümleyici API'si",
+      "nav.standard": "GS1 Digital Link standardı",
+      "nav.github": "Kaynak kodu (GitHub)",
+      "link.external": "(harici site)",
+      "hero.title": "GS1 Digital Link çözümleyicisi",
+      "hero.lede": "Bu adres GS1 Digital Link'leri çözümler: bir ürünün QR kodunu okuttuğunuzda marka sahibinin yayımladığı bilgilere ulaşırsınız.",
+      "here.title": "Bu çözümleyicide",
+      "card.portal.title": "Bağlantı yönetim portalı",
+      "card.portal.text": "GS1 anahtarlarıyla tanımlanan ürünleri, partileri, seri numaralarını, konumları, lojistik birimleri, belgeleri ve varlıkları kaydedin ve her GS1 Digital Link QR kodunun nereye götüreceğini seçin. Kullanıcı adı ve parola gerektirir.",
+      "card.portal.action": "Portalı aç",
+      "card.api.title": "Çözümleyici API'si (Swagger UI)",
+      "card.api.text": "Daha önce bu adresin kökünde gösterilen Resolver CE veri giriş API'sinin etkileşimli belgeleri. Sistem entegrasyonları için; yazmak bir erişim belirteci gerektirir.",
+      "refs.title": "GS1 kaynakları",
+      "card.standard.title": "GS1 Digital Link standardı",
+      "card.standard.text": "GS1 Reference'ta URI sözdizimi, uyumlu çözümleyiciler ve ilgili belgeler.",
+      "card.gs1.text": "GS1 tanımlama, barkod ve veri paylaşımı standartlarını geliştiren ve sürdüren kuruluş.",
+      "card.github.title": "GitHub'da GS1 Resolver CE",
+      "card.github.text": "Bu hizmetin arkasındaki çözümleyicinin açık kaynak kodu (Apache 2.0).",
+      "footer.operatedBy": "İşleten",
+      "footer.notice": "Yazılım, GS1 veya herhangi bir GS1 Üye Kuruluşu tarafından değil, topluluğu tarafından sürdürülmektedir. Bu kurulumu işleten kişi veya kuruluş, kullanımından sorumludur.",
     },
     "zh-Hans": {
       "locale.name": "中文（简体）",
@@ -399,9 +428,23 @@
     apply();
   }
 
+  /* Names written in the Latin alphabet first, alphabetically (accents ignored), then the others by their script, as
+     the portal's menus (portal/static/i18n.js, byScript). */
+  function menuOrder(codes) {
+    const name = loc => CATALOGUE[loc]["locale.name"];
+    const latin = /^\p{Script=Latin}/u;
+    const folded = text => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    return [...codes].sort((a, b) => {
+      const na = name(a), nb = name(b), la = latin.test(na), lb = latin.test(nb);
+      if (la !== lb) return la ? -1 : 1;
+      if (!la) return na.codePointAt(0) - nb.codePointAt(0) || (na < nb ? -1 : na > nb ? 1 : 0);
+      return folded(na) < folded(nb) ? -1 : folded(na) > folded(nb) ? 1 : 0;
+    });
+  }
+
   function initLocalePicker() {
     const select = $("#locale");
-    for (const loc of SUPPORTED.filter(l => CATALOGUE[l])) select.add(new Option(CATALOGUE[loc]["locale.name"], loc));
+    for (const loc of menuOrder(SUPPORTED.filter(l => CATALOGUE[l]))) select.add(new Option(CATALOGUE[loc]["locale.name"], loc));
     select.value = locale;
     select.hidden = false;
     select.addEventListener("change", () => setLocale(select.value));

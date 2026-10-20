@@ -107,12 +107,13 @@ below); otherwise ask the administrator for a new temporary password.
   Near the 12-hour limit the window cannot extend the session: save your work and sign in again. When the
   session ends the portal asks you to sign in again; other tabs of the portal share the same session.
 - **Language.** The language menu at the top right switches at once, without losing what you typed, among
-  eleven languages, each named in itself: Português (Brasil), English (UK), Español, Français, Deutsch, Italiano,
-  中文（简体）, 日本語, 한국어, हिन्दी and العربية (written right to left). The portal starts in the language of your
+  twelve languages, each named in itself — first those written in the Latin alphabet, alphabetically: Deutsch,
+  English (UK), Español, Français, Italiano, Português (Brasil), Türkçe; then العربية (written right to left), हिन्दी,
+  中文（简体）, 日本語 and 한국어. The portal starts in the language of your
   browser and remembers your choice; the resolver's own pages, the item's page and the home page follow the same
   choice, and your e-mails come in the language chosen in **Options**. The translations other than Portuguese and
-  English are drafts until reviewed by native speakers; the names of the GS1 Application Identifiers stay GS1's English
-  names in them.
+  English are drafts not reviewed by native speakers — corrections are welcome in the repository; the names of the GS1
+  Application Identifiers stay GS1's English names in them.
 
 ### Forgotten password and invitations (installations with e-mail)
 
@@ -270,9 +271,10 @@ Each target is one web page or document. For each target fill in:
   organisation). The groups come in the order that suits the identifier: the most used first for a product, places
   first for a GLN, business to business first for an SSCC or an asset. The text under the field explains the type
   chosen.
-- **Language** — the language of the page: type its code or its name and pick it from the list, which holds every
-  language (ISO 639-1) and the usual regional variants (`pt-BR`, `en-GB`, `es-419`, `zh-Hans`…), named in the portal's
-  language. Several languages for one page are separated by commas. A language the list does not know is accepted
+- **Language** — the language of the page: click the field (or its ▾ button) and a list of every language opens —
+  over 200: each ISO 639-1 language and the usual regional variants (`pt-BR`, `en-GB`, `es-419`, `zh-Hans`…), named in
+  the portal's language, those written in the Latin alphabet first, alphabetically. Scroll it, or type part of a name
+  or code to filter it (*German*, `de`), then click one or use the arrow keys and Enter. Several languages for one page are separated by commas. A language the list does not know is accepted
   when it is a well-formed code; anything else is pointed out and the record is not saved until it is fixed. Two targets of the same type are allowed only in different languages: the resolver then
   sends each person to the version in their browser's language. Someone whose language has no version
   gets the default target (the first one).

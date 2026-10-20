@@ -1313,8 +1313,12 @@
     </div>
   </dialog>
 
-  <!-- Every language a target may be in, named by the browser in the page's language (item 9.4) -->
-  <datalist id="languages-list"></datalist>
+  <!-- Every language a target may be in, named by the browser in the page's language (item 9.4): one list, opened
+       under the row's language field, scrolled and filtered by what is typed (session 17) -->
+  <div class="combo-list" id="language-picker" hidden>
+    <p class="combo-head" id="language-picker-head"></p>
+    <ul role="listbox" id="language-picker-list" data-i18n-attr="aria-label:link.language"></ul>
+  </div>
   <template id="link-row">
     <li class="link-row">
       <p class="row-badge"><span data-i18n="link.defaultBadge"></span> <span class="code">gs1:defaultLink</span></p>
@@ -1325,7 +1329,14 @@
         </div>
         <div class="f-language">
           <label data-i18n="link.language"></label>
-          <input class="language" list="languages-list" autocomplete="off" spellcheck="false" autocapitalize="off">
+          <div class="combo">
+            <input class="language" role="combobox" aria-autocomplete="list" aria-expanded="false"
+                   aria-controls="language-picker-list" autocomplete="off" spellcheck="false" autocapitalize="off"
+                   data-i18n-attr="placeholder:link.languagePlaceholder">
+            <button type="button" class="combo-toggle" tabindex="-1" data-i18n-attr="aria-label:link.languageAll;title:link.languageAll">
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M7 10l5 5 5-5H7Z"/></svg>
+            </button>
+          </div>
         </div>
         <div class="f-url">
           <label data-i18n="link.url"></label>

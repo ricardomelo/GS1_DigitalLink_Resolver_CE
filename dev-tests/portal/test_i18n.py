@@ -1,5 +1,5 @@
 """
-Every text in every language (Documentation/adr/0014-interface-languages.md): the same eleven languages everywhere
+Every text in every language (Documentation/adr/0014-interface-languages.md): the same twelve languages everywhere
 (the portal, its e-mails, the resolver's pages, the item's page, the home page), each named in its own language, Arabic
 right to left; every message of the portal, of the e-mails, of the pages and of the home page present in every
 language, not empty, with the same {placeholders} as the English; every link type named in every language on the
@@ -33,9 +33,9 @@ import mailtexts  # noqa: E402
 import users  # noqa: E402
 
 failures = []
-LANGUAGES = ["pt-BR", "en-GB", "es", "fr", "de", "it", "zh-Hans", "ja", "ko", "hi", "ar"]
+LANGUAGES = ["pt-BR", "en-GB", "es", "fr", "de", "it", "tr", "zh-Hans", "ja", "ko", "hi", "ar"]
 ENDONYMS = {"pt-BR": "Português (Brasil)", "en-GB": "English (UK)", "es": "Español", "fr": "Français", "de": "Deutsch",
-            "it": "Italiano", "zh-Hans": "中文（简体）", "ja": "日本語", "ko": "한국어", "hi": "हिन्दी", "ar": "العربية"}
+            "it": "Italiano", "tr": "Türkçe", "zh-Hans": "中文（简体）", "ja": "日本語", "ko": "한국어", "hi": "हिन्दी", "ar": "العربية"}
 OTHERS = [tag for tag in LANGUAGES if tag not in ("pt-BR", "en-GB")]
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
@@ -69,7 +69,7 @@ home_js_path = os.path.join(REPO, "frontend_proxy_server", "home", "home.js")
 home_js = open(home_js_path, encoding="utf-8").read()
 with open(os.path.join(WEB, "page_texts.json"), encoding="utf-8") as fh:
     page_texts = json.load(fh)
-check("the portal offers the eleven languages", js_list(i18n_js, "SUPPORTED") == LANGUAGES, js_list(i18n_js, "SUPPORTED"))
+check("the portal offers the twelve languages", js_list(i18n_js, "SUPPORTED") == LANGUAGES, js_list(i18n_js, "SUPPORTED"))
 check("…the home page the same", js_list(home_js, "SUPPORTED") == LANGUAGES, js_list(home_js, "SUPPORTED"))
 check("…the e-mails and the users' preference the same", sorted(mailtexts.LANGUAGES) == sorted(LANGUAGES)
       and sorted(users.LANGUAGES) == sorted(LANGUAGES), (mailtexts.LANGUAGES, users.LANGUAGES))
@@ -173,6 +173,10 @@ for header, expected in [("es-MX,es;q=0.9", "es"), ("zh-TW", "zh-Hans"), ("ar-EG
     check(f"the resolver's page for Accept-Language {header!r}: {expected}",
           web_pages.negotiate_locale(header) == expected, web_pages.negotiate_locale(header))
 check("…the language cookie wins", web_pages.negotiate_locale("ja", "ar") == "ar")
+check("the resolver's pages' language menu: the Latin alphabet's names first, alphabetically, then the others",
+      list(web_pages.SUPPORTED_LOCALES) == ["de", "en-GB", "es", "fr", "it", "pt-BR", "tr", "ar", "hi", "zh-Hans", "ja", "ko"],
+      list(web_pages.SUPPORTED_LOCALES))
+check("…Turkish read from a Turkish browser", web_pages.negotiate_locale("tr-TR,tr;q=0.9") == "tr")
 from flask import Flask  # noqa: E402
 flask_app = Flask(__name__)
 with flask_app.test_request_context("/01/09506000134352", headers={"Accept-Language": "ja"}):

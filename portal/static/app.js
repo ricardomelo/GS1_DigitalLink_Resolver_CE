@@ -4529,15 +4529,99 @@ function fillTypeSelect(select, value) {
   I18N.apply(select);
 }
 
-/* Every language a target may be in (CONFIG.languages: ISO 639-1 and the common regional tags), for the rows' search
-   field, each named by the browser in the page's language. */
+/* Every language a target may be in (CONFIG.languages: ISO 639-1 and the common regional tags), each named by the
+   browser in the page's language, names in the Latin alphabet first (I18N.byScript). The rows' language field opens
+   one shared list under it — on focus, with its button or the arrow keys — scrolled, and filtered by the language
+   being typed (the text after the last comma); choosing one writes its code there. */
+const languagePicker = { options: [], input: null, shown: [], active: -1 };
+
 function fillLanguages() {
-  $("#languages-list").replaceChildren(...(CONFIG?.languages || []).map(code => {
-    const option = document.createElement("option");
-    option.value = code;
-    option.label = `${I18N.languageName(code)} (${code})`;
-    return option;
+  const codes = CONFIG?.languages || [];
+  languagePicker.options = I18N.byScript(codes, code => I18N.languageName(code))
+    .map(code => ({ code, name: I18N.languageName(code) }));
+}
+
+const foldText = text => String(text).normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase();
+
+function openLanguagePicker(input) {
+  const picker = languagePicker;
+  picker.input = input;
+  const typed = foldText(input.value.split(",").pop().trim());
+  const exact = picker.options.some(o => o.code.toLowerCase() === typed);
+  // Names or codes that start with what is typed first, then names that hold it
+  const starts = o => foldText(o.name).startsWith(typed) || o.code.toLowerCase().startsWith(typed);
+  picker.shown = !typed || exact ? picker.options
+    : [...picker.options.filter(starts), ...picker.options.filter(o => !starts(o) && foldText(o.name).includes(typed))];
+  picker.active = -1;
+  const total = picker.options.length;
+  I18N.set($("#language-picker-head"), picker.shown.length === total ? "link.languageCount"
+    : picker.shown.length ? "link.languageFiltered" : "link.languageNone", { shown: nf(picker.shown.length), total: nf(total) });
+  $("#language-picker-list").replaceChildren(...picker.shown.map((o, i) => {
+    const li = el("li", "", o.name);
+    li.id = `language-option-${i}`;
+    li.setAttribute("role", "option");
+    li.dataset.code = o.code;
+    li.append(el("span", "code", o.code));
+    li.addEventListener("mousedown", e => { e.preventDefault(); chooseLanguage(o.code); });
+    return li;
   }));
+  // The one list moves under the field (or above it, when the window has more room there) and scrolls with the page
+  const box = $("#language-picker"), rect = input.getBoundingClientRect();
+  input.parentElement.append(box);
+  box.classList.toggle("up", window.innerHeight - rect.bottom < 300 && rect.top > window.innerHeight - rect.bottom);
+  box.hidden = false;
+  input.setAttribute("aria-expanded", "true");
+}
+
+function closeLanguagePicker() {
+  $("#language-picker").hidden = true;
+  languagePicker.input?.setAttribute("aria-expanded", "false");
+  languagePicker.input?.removeAttribute("aria-activedescendant");
+}
+
+function moveLanguage(step) {
+  const picker = languagePicker, items = $("#language-picker-list").children;
+  if (!items.length) return;
+  picker.active = (picker.active + step + items.length) % items.length;
+  [...items].forEach((li, i) => li.setAttribute("aria-selected", String(i === picker.active)));
+  items[picker.active].scrollIntoView({ block: "nearest" });
+  picker.input.setAttribute("aria-activedescendant", items[picker.active].id);
+}
+
+function chooseLanguage(code) {
+  const input = languagePicker.input;
+  if (!input) return;
+  const parts = input.value.split(",").map(p => p.trim());
+  parts[parts.length - 1] = code;
+  input.value = parts.filter(Boolean).join(", ");
+  closeLanguagePicker();
+  input.dispatchEvent(new Event("change"));
+}
+
+function setupLanguageField(input) {
+  const toggle = input.parentElement.querySelector(".combo-toggle");
+  input.addEventListener("focus", () => openLanguagePicker(input));
+  input.addEventListener("input", () => openLanguagePicker(input));
+  input.addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== input) closeLanguagePicker(); }, 120));
+  input.addEventListener("keydown", e => {
+    const open = !$("#language-picker").hidden && languagePicker.input === input;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!open) openLanguagePicker(input);
+      moveLanguage(e.key === "ArrowDown" ? 1 : -1);
+    } else if (e.key === "Enter" && open && languagePicker.active >= 0) {
+      e.preventDefault();
+      chooseLanguage(languagePicker.shown[languagePicker.active].code);
+    } else if (e.key === "Escape" && open) {
+      e.preventDefault();
+      closeLanguagePicker();
+    }
+  });
+  toggle.addEventListener("mousedown", e => {
+    e.preventDefault();
+    if (!$("#language-picker").hidden && languagePicker.input === input) closeLanguagePicker();
+    else { input.focus(); openLanguagePicker(input); }
+  });
 }
 
 /* A row's languages from its field: tags (pt, pt-BR) or names as the list shows them, separated by commas;
@@ -4583,6 +4667,7 @@ function addRow(data = {}) {
   const hreflang = data.hreflang && data.hreflang.length ? data.hreflang : [defaultLanguage()];
   const languageField = $(".language", li);
   fillLanguageSelect(languageField, hreflang);
+  setupLanguageField(languageField);
   li.dataset.hreflang = JSON.stringify(hreflang);
   li.dataset.context = JSON.stringify(data.context || []);
 
@@ -5004,7 +5089,7 @@ function fillPreferences() {
   if (prefs.email) I18N.set($("#prefs-address"), "prefs.address", { email: prefs.email });
   else I18N.set($("#prefs-address"), "prefs.noAddress");
   const select = $("#prefs-language");
-  if (!select.options.length) select.replaceChildren(...I18N.SUPPORTED.map(loc => new Option(I18N.nameOf(loc), loc)));
+  if (!select.options.length) select.replaceChildren(...I18N.MENU.map(loc => new Option(I18N.nameOf(loc), loc)));
   select.value = prefs.language || I18N.locale;
   $("#prefs-jobs").checked = Boolean(prefs.notify?.jobs);
   $("#prefs-alerts").checked = prefs.notify?.alerts !== false;
@@ -5040,7 +5125,7 @@ function setupOptions() {
 /* ------------------------------------------------------------------ language menu */
 function buildLocaleMenu() {
   const select = $("#locale");
-  select.replaceChildren(...I18N.SUPPORTED.map(loc => new Option(I18N.nameOf(loc), loc)));
+  select.replaceChildren(...I18N.MENU.map(loc => new Option(I18N.nameOf(loc), loc)));
   select.value = I18N.locale;
   select.addEventListener("change", () => I18N.setLocale(select.value));
 }
@@ -5223,6 +5308,7 @@ async function init() {
   fillSizeOptions();                             // the scanning environments come with the configuration
   fillLanguages();
   document.addEventListener("localechange", fillLanguages);
+  window.addEventListener("resize", closeLanguagePicker);
   fillKeyTypes();
   onKeyTypeChange();
   applyView();                                   // administrator views need the role

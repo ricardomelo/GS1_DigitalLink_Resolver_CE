@@ -11,17 +11,17 @@
  *   data-i18n-lang="pt"          → <option> text with the language name in the UI language
  * Calling I18N.apply() re-renders all of them, which is how the language menu switches live.
  *
- * Eleven languages (Documentation/adr/0014-interface-languages.md): Portuguese and English are written below (English
+ * Twelve languages (Documentation/adr/0014-interface-languages.md; Turkish added in session 17): Portuguese and English are written below (English
  * is the fallback of every message); each other language is portal/static/locales/<tag>.json with the same keys,
  * fetched when it is detected or chosen. I18N.ready resolves once the detected language is loaded; setLocale()
  * returns a promise. Arabic is written right to left (dir="rtl" on the page). A new message needs every language:
  * dev-tests/portal/test_i18n.py checks them (portal/tools/i18n_catalogue.py check).
  */
 const I18N = (() => {
-  const SUPPORTED = ["pt-BR", "en-GB", "es", "fr", "de", "it", "zh-Hans", "ja", "ko", "hi", "ar"];
+  const SUPPORTED = ["pt-BR", "en-GB", "es", "fr", "de", "it", "tr", "zh-Hans", "ja", "ko", "hi", "ar"];
   // Each language named in itself, for the menus before its catalogue is loaded
   const ENDONYMS = {"pt-BR": "Português (Brasil)", "en-GB": "English (UK)", "es": "Español", "fr": "Français",
-                    "de": "Deutsch", "it": "Italiano", "zh-Hans": "中文（简体）", "ja": "日本語", "ko": "한국어",
+                    "de": "Deutsch", "it": "Italiano", "tr": "Türkçe", "zh-Hans": "中文（简体）", "ja": "日本語", "ko": "한국어",
                     "hi": "हिन्दी", "ar": "العربية"};
   const RIGHT_TO_LEFT = new Set(["ar"]);
   const DEFAULT_LOCALE = "en-GB";
@@ -30,7 +30,7 @@ const I18N = (() => {
   const COOKIE_NAME = "gs1resolver_lang";
   // First matching prefix of navigator.languages wins (e.g. "pt-PT" → pt-BR, "en-US" → en-GB, "zh-TW" → zh-Hans).
   const LOCALE_MATCHERS = [["pt", "pt-BR"], ["en", "en-GB"], ["es", "es"], ["fr", "fr"], ["de", "de"], ["it", "it"],
-                           ["zh", "zh-Hans"], ["ja", "ja"], ["ko", "ko"], ["hi", "hi"], ["ar", "ar"]];
+                           ["tr", "tr"], ["zh", "zh-Hans"], ["ja", "ja"], ["ko", "ko"], ["hi", "hi"], ["ar", "ar"]];
   // The catalogues of the other languages, next to this script
   const LOCALES_URL = new URL("locales/", (document.currentScript && document.currentScript.src) || location.href);
 
@@ -593,6 +593,11 @@ const I18N = (() => {
       "landing.othersOwn": "Vão para o próprio destino principal: {list}.",
       "landing.more": "e mais {count}",
       "link.languageInvalid": "Um idioma digitado não é um código de idioma: escolha na lista (por exemplo pt ou pt-BR).",
+      "link.languagePlaceholder": "Digite ou escolha um idioma",
+      "link.languageAll": "Ver todos os idiomas",
+      "link.languageCount": "{total} idiomas — role a lista ou digite para filtrar",
+      "link.languageFiltered": "{shown} de {total} idiomas",
+      "link.languageNone": "Nenhum idioma com esse nome; também é possível digitar um código, como pt-BR.",
       "landing.keyRecord": "o próprio {key} (todas as unidades)",
       "dialog.confirmTitle": "Confirmar",
       "dialog.ok": "Confirmar",
@@ -2590,6 +2595,11 @@ const I18N = (() => {
       "landing.othersOwn": "Going to their own default target: {list}.",
       "landing.more": "and {count} more",
       "link.languageInvalid": "A language typed is not a language code: choose from the list (for example pt or pt-BR).",
+      "link.languagePlaceholder": "Type or choose a language",
+      "link.languageAll": "Show every language",
+      "link.languageCount": "{total} languages — scroll the list or type to filter",
+      "link.languageFiltered": "{shown} of {total} languages",
+      "link.languageNone": "No language of that name; you can also type a code such as pt-BR.",
       "landing.keyRecord": "the {key} itself (every unit)",
       "dialog.confirmTitle": "Please confirm",
       "dialog.ok": "Confirm",
@@ -3857,6 +3867,20 @@ const I18N = (() => {
     return label === code ? code : `${code} — ${label}`;
   }
 
+  /* Menus of languages list the names written in the Latin alphabet first, alphabetically (accents ignored), then the
+     others by their script (the owner's request of 20 October 2026). nameOf gives each code's name as shown. */
+  const LATIN = /^\p{Script=Latin}/u;
+  const folded = name => name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  function byScript(codes, nameOf) {
+    return [...codes].sort((a, b) => {
+      const na = nameOf(a), nb = nameOf(b), la = LATIN.test(na), lb = LATIN.test(nb);
+      if (la !== lb) return la ? -1 : 1;
+      if (!la) return na.codePointAt(0) - nb.codePointAt(0) || (na < nb ? -1 : na > nb ? 1 : 0);
+      const fa = folded(na), fb = folded(nb);
+      return fa < fb ? -1 : fa > fb ? 1 : 0;
+    });
+  }
+
   function languageName(tag) {
     try {
       const name = new Intl.DisplayNames([locale], { type: "language" }).of(tag);
@@ -3954,8 +3978,10 @@ const I18N = (() => {
     get locale() { return locale; },
     t: (key, params) => t(key, resolveParams(params || {})),
     set: (el, key, params) => set(el, key, params),
-    apply, setLocale, linkType, linkTypeOption, languageName,
+    apply, setLocale, linkType, linkTypeOption, languageName, byScript,
     nameOf: loc => (CATALOGUE[loc] || {})["locale.name"] || ENDONYMS[loc] || loc,
+    // The interface languages in the order of the menus, each named in itself
+    get MENU() { return byScript(SUPPORTED, loc => ENDONYMS[loc] || loc); },
     rightToLeft: loc => RIGHT_TO_LEFT.has(loc || locale),
     // The same message in every language loaded (e.g. spreadsheet headers: Portuguese, English and the user's own).
     every: key => Object.values(CATALOGUE).map(c => c[key]).filter(v => typeof v === "string"),

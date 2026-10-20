@@ -9,6 +9,7 @@ read as its code, several languages, a malformed one pointed out and the save re
 """
 import os
 import sys
+import unicodedata
 import tempfile
 import threading
 
@@ -77,9 +78,33 @@ with sync_playwright() as p:
     if page.is_visible("#ask-dialog"):                  # the type chosen above is an unsaved change
         page.click("#ask-ok")
     page.wait_for_timeout(700)
-    check("the languages: a list of every language the browser names", page.locator("#languages-list option").count() >= 200
-          and page.get_attribute("#languages-list option[value='de']", "label") == "German (de)")
     field = page.locator("#links .link-row .language").first
+    field.fill(""); field.press("Escape"); page.click("#links .link-row .combo-toggle"); page.wait_for_timeout(300)
+    names = page.eval_on_selector_all("#language-picker-list li", "lis => lis.map(li => li.firstChild.textContent)")
+    check("the languages: the row's button opens a list of every language the browser names, scrolled",
+          page.is_visible("#language-picker") and len(names) >= 200 and "German" in names
+          and page.eval_on_selector("#language-picker-list", "ul => ul.scrollHeight > ul.clientHeight")
+          and "type to filter" in page.inner_text("#language-picker-head"), (len(names), page.inner_text("#language-picker-head")))
+    folded = [unicodedata.normalize("NFD", n).encode("ascii", "ignore").decode().lower() for n in names]
+    check("…in alphabetical order, accents aside (every name here is in the Latin alphabet)",
+          folded == sorted(folded), [(a, b) for a, b in zip(names, names[1:])
+                                     if unicodedata.normalize("NFD", a).encode("ascii", "ignore").decode().lower()
+                                     > unicodedata.normalize("NFD", b).encode("ascii", "ignore").decode().lower()][:5])
+    field.type("germ"); page.wait_for_timeout(200)
+    shown = page.eval_on_selector_all("#language-picker-list li", "lis => lis.map(li => li.dataset.code)")
+    check("…filtered by what is typed, with the count", "de" in shown and len(shown) < 10
+          and f"{len(shown)} of " in page.inner_text("#language-picker-head"), (shown, page.inner_text("#language-picker-head")))
+    page.click("#language-picker-list li[data-code='de']"); page.wait_for_timeout(200)
+    check("…a click writes its code", field.input_value() == "de" and not page.is_visible("#language-picker")
+          and page.eval_on_selector("#links .link-row", "li => li.dataset.hreflang") == '["de"]', field.input_value())
+    field.fill("de, fren"); page.wait_for_timeout(150); field.press("ArrowDown"); field.press("Enter"); page.wait_for_timeout(200)
+    check("…the keyboard chooses the language after the last comma", field.input_value() == "de, fr"
+          and page.eval_on_selector("#links .link-row", "li => li.dataset.hreflang") == '["de","fr"]', field.input_value())
+    field.press("ArrowDown"); page.wait_for_timeout(100); field.press("Escape"); page.wait_for_timeout(100)
+    check("…Escape closes it", not page.is_visible("#language-picker"))
+    field.fill("xyzzy"); page.wait_for_timeout(150)
+    check("…nothing found: a code can still be typed", "pt-BR" in page.inner_text("#language-picker-head"),
+          page.inner_text("#language-picker-head"))
     field.fill("German"); field.dispatch_event("change"); page.wait_for_timeout(200)
     check("…a name typed read as its code", field.input_value() == "de"
           and page.eval_on_selector("#links .link-row", "li => li.dataset.hreflang") == '["de"]', field.input_value())
@@ -97,8 +122,10 @@ with sync_playwright() as p:
     check("…fixed: saved with the new link type and the regional language",
           [(l["linktype"], l["hreflang"]) for l in saved] == [("gs1:dpp", ["fr-CA"])], saved)
     page.select_option("#locale", "pt-BR"); page.wait_for_timeout(500)
+    field.fill(""); field.press("Escape"); page.click("#links .link-row .combo-toggle"); page.wait_for_timeout(300)
     check("in Portuguese: the groups and the languages' names", "Mais usados" in groups(page)
-          and page.get_attribute("#languages-list option[value='de']", "label") == "Alemão (de)", groups(page))
+          and page.inner_text("#language-picker-list li[data-code='de']").startswith("Alemão")
+          and "digite para filtrar" in page.inner_text("#language-picker-head"), groups(page))
     check("no script errors", not errors, errors)
     browser.close()
 

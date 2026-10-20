@@ -40,7 +40,7 @@ users.create("root", "root-password-long", "admin", must_change=False)
 for application, port in [(mock_data_entry.app, DATA_ENTRY_PORT), (portal.app, PORT)]:
     threading.Thread(target=make_server("127.0.0.1", port, application, threaded=True).serve_forever, daemon=True).start()
 BASE = f"http://127.0.0.1:{PORT}/portal/"
-LANGUAGES = ["pt-BR", "en-GB", "es", "fr", "de", "it", "zh-Hans", "ja", "ko", "hi", "ar"]
+LANGUAGES = ["pt-BR", "en-GB", "es", "fr", "de", "it", "tr", "zh-Hans", "ja", "ko", "hi", "ar"]
 SCREENS = ["#overview", "#editor", "#records", "#requests", "#users", "#tenants", "#apikeys", "#audit", "#domains",
            "#branding", "#sso", "#organisation", "#alerts"]
 KEYS = [k for k in i18n_catalogue.english() if k != "linkTypes" and "." in k]
@@ -99,11 +99,11 @@ with sync_playwright() as p:
     check("a Japanese browser: the portal in Japanese", page.get_attribute("html", "lang") == "ja"
           and japanese["overview.title"] in page.inner_text("#hero-title"), page.inner_text("#hero-title"))
     menu = page.eval_on_selector_all("#locale option", "os => os.map(o => [o.value, o.textContent])")
-    check("the language menu: every language, each named in itself",
-          menu == [[t, n] for t, n in [("pt-BR", "Português (Brasil)"), ("en-GB", "English (UK)"), ("es", "Español"),
-                                       ("fr", "Français"), ("de", "Deutsch"), ("it", "Italiano"),
-                                       ("zh-Hans", "中文（简体）"), ("ja", "日本語"), ("ko", "한국어"),
-                                       ("hi", "हिन्दी"), ("ar", "العربية")]], menu)
+    check("the language menu: every language, each named in itself, the Latin alphabet's first, alphabetically",
+          menu == [[t, n] for t, n in [("de", "Deutsch"), ("en-GB", "English (UK)"), ("es", "Español"),
+                                       ("fr", "Français"), ("it", "Italiano"), ("pt-BR", "Português (Brasil)"),
+                                       ("tr", "Türkçe"), ("ar", "العربية"), ("hi", "हिन्दी"),
+                                       ("zh-Hans", "中文（简体）"), ("ja", "日本語"), ("ko", "한국어")]], menu)
     page.select_option("#locale", "de"); page.wait_for_timeout(1200)
     german = i18n_catalogue.load("de")
     check("German chosen: the page changes at once", page.get_attribute("html", "lang") == "de"

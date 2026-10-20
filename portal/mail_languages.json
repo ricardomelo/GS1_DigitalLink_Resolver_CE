@@ -355,6 +355,95 @@
    ]
   }
  },
+ "tr": {
+  "signature": "—\n{operator}\nBağlantı yönetim portalı: {portal}\n\nBu ileti {operator} kuruluşunun GS1 Digital Link çözümleyicisi tarafından otomatik olarak gönderildi. Lütfen yanıtlamayın.",
+  "texts": {
+   "invite": [
+    "Bağlantı yönetim portalındaki hesabınız",
+    "Merhaba,\n\n{operator} kuruluşunun, GS1 Digital Link QR kodlarının bağlantılarının yönetildiği bağlantı yönetim portalında sizin için bir hesap oluşturuldu.\n\nKullanıcı adı: {user}\n\nParolanızı seçip başlamak için bu bağlantıyı {hours} saat içinde açın:\n\n{link}\n\nBağlantı bir kez çalışır. Süresi dolmuşsa yöneticinizden yeni bir davet göndermesini isteyin. Bu iletiyi beklemiyorsanız yok sayabilirsiniz."
+   ],
+   "password-recovery": [
+    "Yeni bir parola seçin",
+    "Merhaba,\n\nBiri bağlantı yönetim portalındaki {user} kullanıcısı için yeni bir parola seçmek istedi. Siz istediyseniz bu bağlantıyı {minutes} dakika içinde açın:\n\n{link}\n\nBağlantı bir kez çalışır. Siz istemediyseniz bu iletiyi yok sayın: parolanız değişmedi ve bu bağlantı olmadan kimse onu değiştiremez."
+   ],
+   "password-reset-admin": [
+    "Parolanız sıfırlandı",
+    "Merhaba,\n\nBir yönetici bağlantı yönetim portalındaki {user} kullanıcısının parolasını sıfırladı. Önceki parolanız artık çalışmıyor.\n\nYeni bir parola seçmek için bu bağlantıyı {minutes} dakika içinde açın:\n\n{link}\n\nBağlantı bir kez çalışır. Süresi dolmuşsa oturum açma sayfasındaki \"Parolanızı mı unuttunuz?\" seçeneğini kullanın."
+   ],
+   "password-changed": [
+    "Parolanız değiştirildi",
+    "Merhaba,\n\nBağlantı yönetim portalındaki {user} kullanıcısının parolası {when} (UTC) tarihinde değiştirildi. Hesabın diğer tüm açık oturumları sonlandırıldı.\n\nBunu siz yaptıysanız yapılacak bir şey yok. Siz yapmadıysanız hemen oturum açma sayfasındaki \"Parolanızı mı unuttunuz?\" seçeneğini kullanın ve yöneticinize bildirin."
+   ],
+   "email-changed-old": [
+    "E-posta adresiniz değiştirildi",
+    "Merhaba,\n\nBir yönetici, bağlantı yönetim portalındaki {user} kullanıcısının e-posta adresini {when} (UTC) tarihinde değiştirdi. Hesapla ilgili iletiler artık bu adrese gelmeyecek.\n\nDeğişikliği siz istemediyseniz yöneticinize bildirin."
+   ],
+   "email-changed-new": [
+    "Bağlantı yönetim portalındaki e-posta adresiniz",
+    "Merhaba,\n\nBu adres artık bağlantı yönetim portalındaki {user} kullanıcısının e-posta adresidir. Hesapla ilgili iletiler (parola değişiklikleri, kurtarma bağlantıları) buraya gelecek.\n\nBu hesabı tanımıyorsanız portalın yöneticilerine bildirin."
+   ],
+   "account-locked": [
+    "Hesabınıza oturum açma denemeleri",
+    "Merhaba,\n\n{user} kullanıcısı, sonuncusu {when} (UTC) tarihinde olmak üzere birkaç yanlış paroladan sonra bağlantı yönetim portalında oturum açamadı. Bu kullanıcının oturum açması {minutes} dakika boyunca engellendi.\n\nBunu siz yaptıysanız bekleyip yeniden deneyin veya oturum açma sayfasındaki \"Parolanızı mı unuttunuz?\" seçeneğini kullanın. Siz yapmadıysanız biri hesabınızı kullanmaya çalışıyor olabilir: yöneticinize bildirin."
+   ],
+   "api-key-created": [
+    "Yeni bir API anahtarı oluşturuldu",
+    "Merhaba,\n\n{user} kullanıcısı {when} (UTC) tarihinde {scope} için {scopes} kapsamlarıyla \"{name}\" ({id}) API anahtarını oluşturdu. Anahtarın süresi {expires} (UTC) tarihinde doluyor.\n\nAnahtara sahip olan herkes, süresi dolana veya iptal edilene kadar portalın API'sini bu kapsamlar içinde kullanabilir. Siz oluşturmadıysanız hemen portalda (API anahtarları) iptal edin ve yöneticinize bildirin."
+   ],
+   "api-key-expiring": [
+    "Bir API anahtarının süresi yakında doluyor",
+    "Merhaba,\n\n{scope} için oluşturduğunuz \"{name}\" ({id}) API anahtarının süresi {expires} (UTC) tarihinde doluyor. Onu kullanan sistemler o zaman reddedilecek.\n\nÇalışmaya devam etmeleri için portalda (API anahtarları) yeni bir anahtar oluşturun, bu sistemlere girin ve eskisini iptal edin."
+   ],
+   "import-finished": [
+    "İçe aktarmanız tamamlandı",
+    "Merhaba,\n\nBağlantı yönetim portalında başlattığınız elektronik tablo içe aktarması tamamlandı:\n\nOluşturulan kayıtlar: {created}\nGüncellenen kayıtlar: {updated}\nBaşarısız olan kayıtlar: {failed}\n\nAyrıntılar, sayfa açık kaldığı sürece portalda ve denetim kaydındadır.\n\nBu iletiyi Seçenekler → E-posta'da seçtiğiniz için alıyorsunuz."
+   ],
+   "linkcheck-finished": [
+    "Bağlantı kontrolünüz tamamlandı",
+    "Merhaba,\n\nBağlantı yönetim portalında başlattığınız tüm kayıtların bağlantı kontrolü tamamlandı: {urls} adres kontrol edildi, {problems} tanesinde sorun var.\n\nKayıt listesi hangi kayıtlarda sorun olduğunu gösterir.\n\nBu iletiyi Seçenekler → E-posta'da seçtiğiniz için alıyorsunuz."
+   ],
+   "alert-resolver-down": [
+    "Uyarı: çözümleyici yanıt vermiyor",
+    "Merhaba,\n\n{operator} kuruluşunun çözümleyicisi {since} tarihinden beri portalın vekil sunucu üzerinden yaptığı kontrollere yanıt vermiyor. GS1 Digital Link QR kodlarının okutmaları başarısız oluyor olabilir.\n\nKontrol edilen adres: {url}\nSorun: {problem}\n\nSunucuda \"docker compose ps\" hangi hizmetin çalışmadığını, \"docker compose logs --tail=50 web-service frontend-proxy-service\" ise nedenini gösterir. Yeniden yanıt verdiğinde bir ileti, bu arada her 24 saatte bir hatırlatma alacaksınız.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "alert-resolver-up": [
+    "Çözüldü: çözümleyici yeniden yanıt veriyor",
+    "Merhaba,\n\n{operator} kuruluşunun çözümleyicisi portalın kontrollerine yeniden yanıt veriyor ({url}). {since} tarihinde yanıt vermeyi bırakmıştı.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "alert-backup-failed": [
+    "Uyarı: günlük yedekleme başarılı olmadı",
+    "Merhaba,\n\n{operator} kuruluşunun çözümleyicisinin günlük yedeklemesi ilgi gerektiriyor.\n\nSon çalışma: {at}\nSorun: {error}\nSon başarılı yedekleme: {lastOk}\n\nSunucuda /var/log/resolver-backup.log her çalışmanın iletisini içerir ve \"sudo scripts/resolver-backup.sh\" şimdi bir yedekleme çalıştırır. Bir yedekleme yeniden başarılı olduğunda bir ileti, bu arada her 24 saatte bir hatırlatma alacaksınız.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "alert-backup-ok": [
+    "Çözüldü: günlük yedekleme başarılı oldu",
+    "Merhaba,\n\n{operator} kuruluşunun çözümleyicisinin yedeklemesi {at} tarihinde başarılı oldu. Sorun {since} tarihinde bildirilmişti.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "alert-certificate": [
+    "Uyarı: {host} sertifikasının yenilenmesi gerekiyor",
+    "Merhaba,\n\n{operator} kuruluşunun QR kodlarına basılı adres olan {host} için HTTPS sertifikasının süresi {expires} tarihinde doluyor ({days} gün kaldı) veya doğrulanamadı: {error}\n\nSüresi dolduğunda telefonlar okutulan bağlantıları açmayı reddeder. Certbot ile \"sudo certbot renew\" sertifikayı yeniler ve \"sudo systemctl list-timers | grep certbot\" otomatik yenilemenin zamanlanıp zamanlanmadığını gösterir.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "alert-certificate-ok": [
+    "Çözüldü: {host} sertifikası geçerli",
+    "Merhaba,\n\n{host} için HTTPS sertifikası {expires} tarihine kadar ({days} gün) geçerli. Sorun {since} tarihinde bildirilmişti.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "alert-404-spike": [
+    "Uyarı: kimsenin kaydetmediği kodlarda çok sayıda okutma",
+    "Merhaba,\n\nSon bir saatte çözümleyici, erişiminizdeki kodlar için {count} kez \"kod kayıtlı değil\" (404) yanıtı verdi; olağan bir saatte bu sayı yaklaşık {usual}. Henüz kaydı olmayan bir kodla etiket basılmış olabilir. En çok okutulan kodlar:\n\n{codes}\n\nPortalın Genel bakış ekranı, her birini kaydetmek için bir düğmeyle onları listeler.\n\nBu iletiyi yönetici olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "alert-log-space": [
+    "Uyarı: istek kaydı alanının %{percent}'ini kullanıyor",
+    "Merhaba,\n\n{operator} kuruluşunun çözümleyici istekleri kaydı diskte {used} kullanıyor; bu, kullanabileceği {max} alanın %{percent}'i ({since} tarihinden beri). Sınırına ulaştığında worker, içinde kalmak için her saat en eski istekleri siler.\n\nDaha fazlasını saklamak için sınırı yükseltin veya sunucuda yer açın; daha azını saklamak için İstekler → Saklama'da gün sayısını azaltın. Her %5'lik artışta bir ileti daha alacaksınız.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "alert-log-space-ok": [
+    "Çözüldü: istek kaydı alanının %{percent}'ini kullanıyor",
+    "Merhaba,\n\n{operator} kuruluşunun çözümleyici istekleri kaydı diskte {used} kullanıyor; bu, kullanabileceği {max} alanın %{percent}'i: {since} tarihinde bildirilen %80'in altında.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "test": [
+    "Bağlantı yönetim portalından deneme iletisi",
+    "Merhaba,\n\nBu, portalın e-posta ayarlarını kontrol etmek için {when} (UTC) tarihinde gönderilmiş bir deneme iletisidir. Okuyabiliyorsanız aktarıcı iletiyi kabul etti ve teslim etti."
+   ]
+  }
+ },
  "zh-Hans": {
   "signature": "—\n{operator}\n链接管理门户：{portal}\n\n此邮件由{operator}的GS1 Digital Link解析器自动发送。请勿回复。",
   "texts": {

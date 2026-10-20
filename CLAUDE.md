@@ -9,8 +9,8 @@ document arrive in the maintainer's handover at the start of each session; read 
 
 - Code, comments, identifiers, commit messages and every document: **British English only**. There are no
   Portuguese documents (since 14 October 2026); do not write any unless asked.
-- User-facing texts of the software (portal, resolver pages, item's page, home page, e-mail messages) are in **eleven
-  languages**: pt-BR, en-GB, es, fr, de, it, zh-Hans, ja, ko, hi and ar (right to left; ADR 0014). **Every delivery
+- User-facing texts of the software (portal, resolver pages, item's page, home page, e-mail messages) are in **twelve
+  languages**: pt-BR, en-GB, es, fr, de, it, tr, zh-Hans, ja, ko, hi and ar (right to left; ADR 0014). **Every delivery
   ends with its texts in every language**: `portal/static/i18n.js` (pt-BR, en-GB) and `portal/static/locales/<tag>.json`,
   `portal/mailtexts.py` and `portal/mail_languages.json`, `web_server/src/page_texts.json`,
   `frontend_proxy_server/home/home.js`. `dev-tests/portal/test_i18n.py` fails on a text missing, empty or with other

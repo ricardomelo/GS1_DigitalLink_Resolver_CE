@@ -10,7 +10,7 @@ This document describes what this branch adds to GS1 Resolver Community Edition 
 - a **resolver description file** built from the configuration;
 - a **layered configuration** (`.env.example` defaults, `.env` per installation) and a **daily backup**.
 
-The interfaces speak eleven languages ([ADR 0014](../adr/0014-interface-languages.md)); this document is written in
+The interfaces speak twelve languages ([ADR 0014](../adr/0014-interface-languages.md)); this document is written in
 British English, for operators and developers. People who register records read the
 [portal user guide](../portal-user-guide.md); integrators the [tenant API reference](../api-reference.md).
 
@@ -1040,15 +1040,16 @@ change). The markup has two groups, `.label-visual` and `.label-controls`.
 
 ## Languages
 
-Eleven languages ([ADR 0014](../adr/0014-interface-languages.md)): Português (Brasil), English (UK), Español,
-Français, Deutsch, Italiano, 中文（简体）, 日本語, 한국어, हिन्दी and العربية (right to left), in the portal, its e-mails, the
+Twelve languages ([ADR 0014](../adr/0014-interface-languages.md)), listed in the menus with those written in the
+Latin alphabet first, alphabetically: Deutsch, English (UK), Español, Français, Italiano, Português (Brasil), Türkçe
+(since 20 October 2026), then العربية (right to left), हिन्दी, 中文（简体）, 日本語 and 한국어 — in the portal, its e-mails, the
 resolver's pages, the item's page and the home page. **The translations other than Portuguese and English were drafted
-by Claude** with the [translation guide](../translation-glossary.md) and should be reviewed by a native speaker of
-each language before production; until then, say so to the users of those languages. The names of the GS1 Application
+by Claude** with the [translation guide](../translation-glossary.md) and were not reviewed by native speakers (the
+owner's decision): say so to the users of those languages; corrections are welcome as pull requests. The names of the GS1 Application
 Identifiers stay GS1's English data titles in them (Portuguese keeps its own).
 
 **Portal.** On first visit the language follows the browser/operating system (`navigator.languages`): the first tag
-that matches one of the eleven by its language (`pt-PT` → Português (Brasil), `es-MX` → Español, `zh-TW` → 中文（简体）),
+that matches one of the twelve by its language (`pt-PT` → Português (Brasil), `es-MX` → Español, `zh-TW` → 中文（简体）),
 otherwise British English. Portuguese and English are in `i18n.js`; each other language's catalogue
 (`portal/static/locales/<tag>.json`, about 110 KB) is fetched when it is detected or chosen. The globe menu in the header (also on the sign-in page) switches language instantly,
 without reloading or losing what has been typed. The choice is remembered in the browser and in the
@@ -1061,13 +1062,15 @@ catalogue, so a message already on screen is re-translated when the language cha
 To add a language: a `portal/static/locales/<tag>.json` with English's keys
 (`python portal/tools/i18n_catalogue.py export` gives them; `check` compares), its tag in `SUPPORTED`, `ENDONYMS` and
 `LOCALE_MATCHERS` of `i18n.js` and `home.js`, `users.LANGUAGES`, and its texts in `mail_languages.json` and
-`web_server/src/page_texts.json`; `dev-tests/portal/test_i18n.py` lists what is missing. Link target languages (`hreflang`) are named
-by the browser (`Intl.DisplayNames`), so they need no translation.
+`web_server/src/page_texts.json`; `dev-tests/portal/test_i18n.py` lists what is missing (ADR 0014, section 7, lists
+every file Turkish went into). Link target languages (`hreflang`) are named by the browser (`Intl.DisplayNames`), so
+they need no translation; the editor lists them all under each target's *Language* field, in the menus' order, filtered
+by what is typed.
 
 **Resolver pages.** The HTML pages served by the resolver (link list, "not found", "information not
 available", "invalid code") have their own language menu. The language comes from the `gs1resolver_lang`
 cookie when set (by that menu or by the portal); otherwise from the phone's `Accept-Language` header, with
-q-values honoured: the first language among the eleven (by its language, whatever its region), anything else →
+q-values honoured: the first language among the twelve (by its language, whatever its region), anything else →
 en-GB; Arabic pages are written right to left. A cookie is used rather
 than a query parameter so the GS1 Digital Link URI is left untouched (query parameters are passed on to
 redirect targets).

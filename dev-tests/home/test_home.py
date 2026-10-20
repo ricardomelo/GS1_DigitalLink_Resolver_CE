@@ -474,8 +474,10 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
             check(page.locator("html").get_attribute("lang") == expected
                   and page.locator("html").get_attribute("dir") == direction
                   and page.locator("h1").inner_text() not in ("GS1 Digital Link resolver", "Resolver GS1 Digital Link")
-                  and len(names) == 11 and "العربية" in names and "日本語" in names,
-                  f"a {locale} browser → the home page in {expected}, {direction}, the menu naming every language in itself")
+                  and names == ["Deutsch", "English (UK)", "Español", "Français", "Italiano", "Português (Brasil)",
+                                "Türkçe", "العربية", "हिन्दी", "中文（简体）", "日本語", "한국어"],
+                  f"a {locale} browser → the home page in {expected}, {direction}, the menu naming every language in itself, "
+                  "the Latin alphabet's first")
             context.close()
 
         # Phone

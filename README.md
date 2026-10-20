@@ -689,7 +689,7 @@ Matrix, sizes by scanning environment, the SVG's text as text; [ADR 0010](Docume
 of the GS1 Web Vocabulary and every language for the targets, and item 9.5, the request log's browser, approximate
 location and retention set in the portal ([ADR 0006](Documentation/adr/0006-resolver-request-log.md)), and item
 9.6, domains served without the terminal ([ADR 0009](Documentation/adr/0009-tenant-domains.md)), and item 9.7,
-eleven interface languages ([ADR 0014](Documentation/adr/0014-interface-languages.md)), and item 9.8, export
+eleven interface languages ([ADR 0014](Documentation/adr/0014-interface-languages.md); twelve with Turkish since 20 October), and item 9.8, export
 limits set in the portal within an installation maximum ([ADR 0012](Documentation/adr/0012-single-sign-on.md)), and
 item 9.9, the GS1 Company Prefix's length from GS1's GCP length table, uploaded by the server administrator
 ([ADR 0015](Documentation/adr/0015-gcp-length-table.md)), and item 9.10, an EPC for every key the EPC Tag Data

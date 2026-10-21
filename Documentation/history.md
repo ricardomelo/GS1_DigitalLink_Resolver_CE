@@ -841,6 +841,16 @@ previous handover). 13 mutations: 11 caught (one after the resolver's check deco
 trusting its type), one equivalent at the tested width (the *New organisation* grid replaced by the former flex row),
 and one showed a rule to be unnecessary (narrower cells), which was removed.
 
+**The privacy notice** (`37b14e8`; ADR 0017). The owner asked for a footer link on every page to a notice the operator
+writes in the portal, open without signing in, with its changes kept as versions, and for a first text placing the use
+of the software on whoever operates the instance, not on GS1 nor on its contributors, "as is". The handover had proposed
+only a setting with an external address; the owner's version keeps the notice in the installation itself. Each
+publication is a new document whose number is its `_id`, so two administrators publishing at once cannot overwrite
+each other: the second is refused. The text is plain, with three marks, rendered with `textContent` only — a notice
+cannot carry a script to every visitor; the end-to-end test proved it only after a paragraph of markup with no address
+in it was added (one of 21 mutations escaped until then). The default notice was written in the twelve languages; the
+operator adapts it before production.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

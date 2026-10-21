@@ -46,6 +46,14 @@
   to the right); the screens use up to 1,536 pixels of a wide monitor instead of 1,216; the list of requests fits a
   1,280-pixel screen with the side menu, without scrolling sideways; *New organisation* puts the name level with the
   first prefix and *Add GCP* beside the prefixes; the side menu says *Organisation management*. Commit `3a17b40`.
+- **The installation's privacy notice** ([ADR 0017](../adr/0017-privacy-notice.md)): a *Privacy notice* link in the
+  footer of every page (portal, sign-in page, home page, resolver's pages, item's page) opens `/portal/privacy`, for
+  anyone, signed in or not. Server administrators write the notice in the portal (*Privacy notice*: plain text with
+  headings, lists and links, a preview); each publication is a new numbered version, never changed, the earlier ones
+  readable from the page. Until one is published the page shows a default notice in the reader's language: what is
+  recorded, the days requests are kept, and that the installation is the sole responsibility of whoever operates it,
+  neither GS1 nor the software's contributors answering for it, the software provided "as is". New collection
+  `privacy_notice`; routes `GET /portal/privacy`, `GET` and `PUT /portal/api/privacy`. Commit `37b14e8`.
 
 ### Owner's additions of 17 October: the project's documentation (backlog item 9.11)
 - **An inventory of every feature drawn from the development tests** ([ADR 0016](../adr/0016-documentation-and-feature-inventory.md)):

@@ -25,8 +25,13 @@ logger = logging.getLogger(__name__)
 class Favicon(Resource):
     def get(self) -> Response:
         """
-        Serve the favicon.ico file.
+        Serve the favicon.ico file, or the icon the operator set in the portal (Documentation/adr/0019-appearance.md).
         """
+        found = web_pages.icon()
+        if found:
+            response = Response(bytes(found['data']), mimetype=found.get('type', 'image/png'))
+            response.headers['Cache-Control'] = 'public, max-age=300'
+            return response
         return send_from_directory(static_folder_path, 'favicon.ico')
 
     def options(self) -> tuple[dict[str, str], int]:

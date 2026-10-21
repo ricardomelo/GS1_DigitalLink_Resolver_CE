@@ -1,8 +1,8 @@
 """
 The installation's appearance in a real browser (Playwright/Chromium; Documentation/adr/0019-appearance.md): the
 Appearance screen of a server administrator (the original at first, the preview following the form, a light colour
-refused with its contrast, the title, a logo and the colours saved), the portal's own header, colours and tab title
-changed at once, the sign-in page and the privacy notice showing them too, "Restore the original" after the portal's
+refused with its contrast, the title, a logo, the tab icon and the colours saved), the portal's own header, colours, tab
+title and favicon changed at once, the page served with them on reload, the sign-in page and the privacy notice showing them too, "Restore the original" after the portal's
 confirmation, no screen for an organisation's administrator, Portuguese and a phone's width.
 
   pip install -r portal/requirements.txt playwright mongomock && playwright install chromium
@@ -46,6 +46,8 @@ for application, port in [(mock_data_entry.app, DATA_ENTRY_PORT), (portal.app, P
 BASE = f"http://127.0.0.1:{PORT}/portal/"
 LOGO = os.path.join(CONFIG, "acme-logo.png")
 Image.new("RGB", (132, 44), (26, 61, 43)).save(LOGO, "PNG")
+ICON = os.path.join(CONFIG, "acme-icon.png")
+Image.new("RGB", (64, 64), (232, 177, 0)).save(ICON, "PNG")
 failures = []
 
 
@@ -106,6 +108,10 @@ with sync_playwright() as p:
     page.fill("#appearance-action", "#8a1538")
     page.fill("#appearance-accent", "#e8b100")
     page.set_input_files("#appearance-logo", LOGO); page.wait_for_timeout(400)
+    page.set_input_files("#appearance-icon", ICON); page.wait_for_timeout(400)
+    check("the preview's browser tab: the icon chosen and the title",
+          page.get_attribute("#appearance-preview-icon", "src").startswith("data:image/png;base64,")
+          and page.inner_text("#appearance-preview-tab-title") == "Acme Resolver")
     check("the preview follows the form: title, logo, band, button and tab mark",
           page.inner_text("#appearance-preview-title") == "Acme Resolver"
           and page.get_attribute("#appearance-preview-logo", "src").startswith("data:image/png;base64,")
@@ -135,6 +141,20 @@ with sync_playwright() as p:
           and background(page, ".hero") == "rgb(26, 61, 43)", (token(page, "--gs1-blue"), background(page, ".hero")))
     check("…the tab's title carries the new title", page.title().endswith("Acme Resolver")
           and "GS1 Resolver Community Edition" not in page.title(), page.title())
+    check("…and the tab's icon (favicon)", page.locator("link[rel='icon']").count() == 1
+          and "appearance/icon?v=" in page.get_attribute("link[rel='icon']", "href"),
+          page.get_attribute("link[rel='icon']", "href"))
+    raw = page.evaluate("(async () => (await fetch(location.pathname)).text())()")
+    check("…the page itself now comes with them (no original before the script runs)",
+          "<title>Acme Resolver</title>" in raw and '<span class="product">Acme Resolver</span>' in raw
+          and 'href="appearance/icon?v=' in raw and 'src="appearance/logo?v=' in raw, raw[:400])
+    page.route("**/api/appearance", lambda route: route.abort())     # the page alone, without appearance.js's answer
+    page.reload(); page.wait_for_timeout(1000)
+    check("…reloaded: the header, the tab title and the icon stay the operator's, from the page itself",
+          page.inner_text(".site-header .product") == "Acme Resolver" and page.title().endswith("Acme Resolver")
+          and "appearance/icon?v=" in page.get_attribute("link[rel='icon']", "href"), page.title())
+    page.unroute("**/api/appearance")
+    page.reload(); page.wait_for_timeout(1000)
     check("…the screen says who changed it, and offers the original back",
           page.inner_text("#appearance-state").startswith("Changed on") and "root" in page.inner_text("#appearance-state")
           and page.is_visible("#appearance-reset") and page.is_visible("#appearance-logo-original"),
@@ -145,7 +165,8 @@ with sync_playwright() as p:
 
     other = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900}).new_page()
     other.goto(BASE + "login"); other.wait_for_timeout(900)
-    check("the sign-in page shows it too: title, logo, colours", other.inner_text(".site-header .product") == "Acme Resolver"
+    check("the sign-in page shows it too: title, logo, colours, icon", other.inner_text(".site-header .product") == "Acme Resolver"
+          and "appearance/icon?v=" in other.get_attribute("link[rel='icon']", "href") and "Acme Resolver" in other.title()
           and "appearance/logo?v=" in other.get_attribute(".site-header .brand img", "src")
           and token(other, "--action") == "#8A1538", other.inner_text(".site-header .product"))
     logo = other.evaluate("(async () => { const r = await fetch(document.querySelector('.site-header .brand img').src);"
@@ -168,6 +189,7 @@ with sync_playwright() as p:
           and store.get_setting("appearance") is None
           and page.inner_text(".site-header .product") == "GS1 Resolver Community Edition"
           and page.get_attribute(".site-header .brand img", "src") == "logo.svg"
+          and page.get_attribute("link[rel='icon']", "href") == "favicon.png"
           and token(page, "--gs1-blue").upper() == "#002C6C" and "GS1 Resolver Community Edition" in page.title()
           and page.inner_text("#appearance-state") == "Original appearance." and page.is_hidden("#appearance-reset"),
           (page.inner_text("#appearance-status"), page.inner_text(".site-header .product"), token(page, "--gs1-blue")))

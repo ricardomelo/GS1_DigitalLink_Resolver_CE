@@ -1504,7 +1504,7 @@ function applyView() {
 /* ------------------------------------------------------------------ the appearance (ADR 0019)
    Server administrators set the installation's title, logo and colours; the preview follows the form, the server
    checks every value (the contrast of white text too) and "Restore the original" removes them all. */
-const appearanceState = { data: null, logo: null };
+const appearanceState = { data: null, logo: null, icon: null };
 
 function appearanceStatus(kind, key, params) {
   const box = $("#appearance-status");
@@ -1518,11 +1518,14 @@ function previewAppearance() {
   box.style.setProperty("--preview-colour", $("#appearance-colour").value);
   box.style.setProperty("--preview-action", $("#appearance-action").value);
   box.style.setProperty("--preview-accent", $("#appearance-accent").value);
-  $("#appearance-preview-title").textContent = $("#appearance-name").value.trim()
-    || appearanceState.data?.defaults.title || "";
+  const title = $("#appearance-name").value.trim() || appearanceState.data?.defaults.title || "";
+  $("#appearance-preview-title").textContent = title;
+  $("#appearance-preview-tab-title").textContent = title;          // the browser's tab: the icon and the title
   const data = appearanceState.data;
   $("#appearance-preview-logo").src = appearanceState.logo
     || ($("#appearance-logo-original").checked || !data ? "logo.svg" : data.logo);
+  $("#appearance-preview-icon").src = appearanceState.icon
+    || ($("#appearance-icon-original").checked || !data ? "favicon.png" : data.icon);
 }
 
 function renderAppearance() {
@@ -1532,10 +1535,13 @@ function renderAppearance() {
   $("#appearance-name").value = data.original ? "" : data.title;
   $("#appearance-name").placeholder = data.defaults.title;
   for (const field of ["colour", "action", "accent"]) $("#appearance-" + field).value = data[field].toLowerCase();
-  $("#appearance-logo").value = "";
-  appearanceState.logo = null;
-  $("#appearance-logo-original").checked = false;
+  for (const field of ["logo", "icon"]) {
+    $(`#appearance-${field}`).value = "";
+    appearanceState[field] = null;
+    $(`#appearance-${field}-original`).checked = false;
+  }
   $("#appearance-logo-original").closest("label").hidden = !data.customLogo;
+  $("#appearance-icon-original").closest("label").hidden = !data.customIcon;
   if (data.original) I18N.set($("#appearance-state"), "appearance.stateOriginal");
   else I18N.set($("#appearance-state"), "appearance.stateChanged",
                 { when: formatWhen(data.updated), user: data.updatedBy || "" });
@@ -1563,16 +1569,17 @@ function showAppearance(found) {
   renderAppearance();
 }
 
-async function pickAppearanceLogo() {
-  const file = $("#appearance-logo").files[0];
-  appearanceState.logo = null;
+/* The logo or the icon chosen: read for the preview and the request (field: "logo" or "icon") */
+async function pickAppearanceImage(field) {
+  const file = $(`#appearance-${field}`).files[0];
+  appearanceState[field] = null;
   if (file) {
     if (file.size > 200 * 1024) {
-      $("#appearance-logo").value = "";
+      $(`#appearance-${field}`).value = "";
       appearanceStatus("error", "branding.logoTooLarge", { max: 200 });
     } else {
-      appearanceState.logo = await readFile(file);
-      $("#appearance-logo-original").checked = false;
+      appearanceState[field] = await readFile(file);
+      $(`#appearance-${field}-original`).checked = false;
     }
   }
   previewAppearance();
@@ -1582,8 +1589,10 @@ async function saveAppearance(event) {
   event.preventDefault();
   const body = { title: $("#appearance-name").value.trim(), colour: $("#appearance-colour").value,
                  action: $("#appearance-action").value, accent: $("#appearance-accent").value };
-  if (appearanceState.logo) body.logo = appearanceState.logo;
-  else if ($("#appearance-logo-original").checked) body.logo = "";
+  for (const field of ["logo", "icon"]) {
+    if (appearanceState[field]) body[field] = appearanceState[field];
+    else if ($(`#appearance-${field}-original`).checked) body[field] = "";
+  }
   try {
     const answer = await api("PUT", "appearance", body);
     showAppearance(answer.appearance);
@@ -5651,7 +5660,8 @@ async function init() {
   $("#rule-cancel").addEventListener("click", resetRuleForm);
   $("#appearance-form").addEventListener("submit", saveAppearance);
   $("#appearance-form").addEventListener("input", previewAppearance);
-  $("#appearance-logo").addEventListener("change", pickAppearanceLogo);
+  $("#appearance-logo").addEventListener("change", () => pickAppearanceImage("logo"));
+  $("#appearance-icon").addEventListener("change", () => pickAppearanceImage("icon"));
   $("#appearance-reset").addEventListener("click", resetAppearance);
   document.addEventListener("localechange", renderForwarding);
   $("#privacy-preview-button").addEventListener("click", previewPrivacy);

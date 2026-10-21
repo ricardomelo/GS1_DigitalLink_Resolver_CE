@@ -53,7 +53,8 @@ DESCRIPTION = {"name": "Test resolver", "resolverRoot": "https://id.example.org"
 
 # The portal's answers about the installation's appearance (Documentation/adr/0019-appearance.md): the original until a
 # check sets the operator's
-ORIGINAL_APPEARANCE = {"original": True, "title": "GS1 Resolver Community Edition", "customLogo": False, "logo": "logo.svg"}
+ORIGINAL_APPEARANCE = {"original": True, "title": "GS1 Resolver Community Edition", "customLogo": False, "logo": "logo.svg",
+                       "customIcon": False, "icon": "favicon.png"}
 APPEARANCE = dict(ORIGINAL_APPEARANCE)
 APPEARANCE_CSS = ":root { --gs1-blue: #1A3D2B; --gs1-blue-dark: #11291D; --gs1-orange: #E8B100; --action: #8A1538; }\n"
 # A PNG of 1×1 pixel
@@ -142,7 +143,7 @@ class Replica:
                     body = json.dumps(APPEARANCE).encode()
                 elif name == "portal" and self.path == "/portal/appearance.css":
                     body, kind = APPEARANCE_CSS.encode(), "text/css"
-                elif name == "portal" and self.path.startswith("/portal/appearance/logo"):
+                elif name == "portal" and self.path.startswith(("/portal/appearance/logo", "/portal/appearance/icon")):
                     body, kind = LOGO_PNG, "image/png"
                 else:
                     body = json.dumps({"upstream": name, "replica": address, "path": self.path,
@@ -514,9 +515,11 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
         page.locator("#operator").wait_for(state="visible")
         check(page.locator(".site-header .product").inner_text() == "GS1 Resolver Community Edition"
               and page.locator(".site-header .brand img").get_attribute("src") == "/home/logo.svg"
-              and page.locator("link[href='/portal/appearance.css']").count() == 0,
-              "the original appearance: the project's title and logo, no style sheet of the portal's")
-        APPEARANCE.update(original=False, title="Acme Resolver", customLogo=True, logo="appearance/logo?v=abc")
+              and page.locator("link[href='/portal/appearance.css']").count() == 0
+              and page.locator("link[rel='icon']").get_attribute("href") == "/home/favicon.png",
+              "the original appearance: the project's title, logo and icon, no style sheet of the portal's")
+        APPEARANCE.update(original=False, title="Acme Resolver", customLogo=True, logo="appearance/logo?v=abc",
+                          customIcon=True, icon="appearance/icon?v=ic")
         page.goto(base + "/")
         page.locator("link[href='/portal/appearance.css']").wait_for(state="attached")
         page.wait_for_timeout(300)
@@ -527,6 +530,8 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
               and page.locator(".site-header .brand img").get_attribute("src") == "/portal/appearance/logo?v=abc"
               and page.evaluate("document.querySelector('.site-header .brand img').naturalWidth") == 1,
               f"the operator's appearance from the portal: title (header, footer, tab), logo and colours ({blue})")
+        check(page.locator("link[rel='icon']").get_attribute("href") == "/portal/appearance/icon?v=ic"
+              and page.locator("link[rel='icon']").count() == 1, "…and the operator's icon in the tab (favicon)")
         page.select_option("#locale", "pt-BR")
         check(page.locator(".site-header .product").inner_text() == "Acme Resolver" and page.title() == "Acme Resolver",
               "…kept when the language changes")

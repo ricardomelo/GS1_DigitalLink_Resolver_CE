@@ -111,6 +111,19 @@ def appearance() -> tuple[str, str, str]:
     return title, address, style
 
 
+def icon() -> dict | None:
+    """The icon of the browsers' tabs the operator set ({"type", "data", …}), or None for the original."""
+    found = APPEARANCE.current().get('icon') or {}
+    return found if found.get('data') else None
+
+
+def icon_address() -> str | None:
+    """The operator's icon as a data: URI for a page's <link rel="icon">, or None (the browser asks /favicon.ico)."""
+    found = icon()
+    return f"data:{found.get('type', 'image/png')};base64," + base64.b64encode(bytes(found['data'])).decode('ascii') \
+        if found else None
+
+
 # First matching language prefix in Accept-Language wins.
 LOCALE_MATCHERS = [('pt', 'pt-BR'), ('en', 'en-GB'), ('es', 'es'), ('fr', 'fr'), ('de', 'de'), ('it', 'it'),
                    ('tr', 'tr'), ('zh', 'zh-Hans'), ('ja', 'ja'), ('ko', 'ko'), ('hi', 'hi'), ('ar', 'ar')]
@@ -299,8 +312,9 @@ def _hri(identifiers: str, qualifier_path: str | None) -> str:
 def _page(locale: str, title: str, body: str, fonts: bool = True, icon: str | None = None) -> str:
     """A whole HTML page: header, language menu, body and the operator footer from the configuration. Without fonts,
     nothing is loaded from other sites (the item's page, which every scan of some codes reaches: ADR 0011); icon: the
-    page's own favicon (the brand's logo on the item's page)."""
+    page's own favicon (the brand's logo on the item's page), else the installation's icon."""
     product, logo, style = appearance()           # the installation's title, logo and colours (ADR 0019)
+    icon = icon or icon_address()
     return render_template_string(_BASE, locale=locale, title=title, product=product, logo=logo, fonts=fonts, icon=icon,
                                   appearance_style=style,
                                   org=ORG_NAME, org_url=ORG_URL, footer=_t(locale, 'footer'),

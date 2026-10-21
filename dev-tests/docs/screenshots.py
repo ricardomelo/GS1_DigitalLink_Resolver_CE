@@ -334,9 +334,11 @@ def forwarding_images(browser, folder: str, locale: str) -> None:
 
 
 def appearance_images(browser, folder: str, locale: str) -> None:
-    """The Appearance screen of a server administrator, an operator's title and colours in the form and its preview,
-    not saved, so every other picture keeps the original (Documentation/adr/0019-appearance.md)."""
-    page = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1250}).new_page()
+    """The Appearance screen of a server administrator, an operator's title, tab icon and colours in the form and its
+    preview, not saved, so every other picture keeps the original (Documentation/adr/0019-appearance.md)."""
+    icon = os.path.join(tempfile.mkdtemp(), "icon.png")
+    Image.new("RGB", (64, 64), (232, 177, 0)).save(icon, "PNG")
+    page = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1350}).new_page()
     page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(1000)
@@ -344,8 +346,9 @@ def appearance_images(browser, folder: str, locale: str) -> None:
     page.fill("#appearance-name", "Acme Resolver")
     for field, colour in (("colour", "#1a3d2b"), ("action", "#8a1538"), ("accent", "#e8b100")):
         page.fill(f"#appearance-{field}", colour)
-    page.wait_for_timeout(300)
-    save(page, f"{folder}/appearance.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1250})
+    page.set_input_files("#appearance-icon", icon)
+    page.wait_for_timeout(500)
+    save(page, f"{folder}/appearance.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1350})
     page.context.close()
 
 

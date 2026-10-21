@@ -141,7 +141,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_fa53e743a76…)",
+    "a wrong key is refused (rk_1a43879320b…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -240,6 +240,9 @@
    "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "nothing set: the original, for anyone (no sign-in)",
+    "…the icon address gives the project's icon",
+    "…the sign-in page served as it is in the files",
+    "…the resolver's pages: no icon of the operator's (the browser asks /favicon.ico)",
     "…the style sheet changes nothing",
     "…the logo address gives the project's logo",
     "…the resolver's pages: the original title, logo and colours",
@@ -259,6 +262,18 @@
     "\"\": back to the project's logo, the rest kept",
     "…journal: logo=no",
     "an empty title: the original title (the colours kept)",
+    "an icon saved, the title and colours kept",
+    "…served to anyone (cached a day)",
+    "…in the journal",
+    "…the resolver's pages carry it, and /favicon.ico gives it",
+    "/portal/login: served with the title (escaped), the icon and the logo already in it",
+    "/portal/privacy: served with the title (escaped), the icon and the logo already in it",
+    "/portal/: the same (the editor's page, signed in)",
+    "…and not without signing in",
+    "…with the operator's logo in the header",
+    "\"\": back to the project's icon",
+    "…the page links the project's icon",
+    "an icon that is not PNG, JPEG or WebP refused",
     "refused: a title of 61 characters → appearance.titleInvalid",
     "refused: a title with a control character → appearance.titleInvalid",
     "refused: a colour by name → appearance.colourInvalid",
@@ -281,6 +296,7 @@
     "…the setting removed",
     "…anyone sees the original again",
     "…the resolver's pages too",
+    "…the pages served as they are in the files again",
     "…in the journal",
     "restoring the original twice is harmless",
     "the resolver's reader ignores what is not a colour",
@@ -291,7 +307,7 @@
     "privacy.html: appearance.css after app.css, appearance.js after i18n.js",
     "appearance.js is served before sign-in"
    ],
-   "count": 51,
+   "count": 67,
    "ciOnly": false
   },
   "appearance_e2e": {
@@ -302,6 +318,7 @@
     "…the hint names the original title",
     "…the form holds the original colours, the title empty with the original as placeholder",
     "…the preview: the original title and logo",
+    "the preview's browser tab: the icon chosen and the title",
     "the preview follows the form: title, logo, band, button and tab mark",
     "…nothing saved yet",
     "a light action colour refused, with its contrast",
@@ -309,9 +326,12 @@
     "…the header at once: the title and the logo",
     "…the colours at once (the pages' own tokens)",
     "…the tab's title carries the new title",
+    "…and the tab's icon (favicon)",
+    "…the page itself now comes with them (no original before the script runs)",
+    "…reloaded: the header, the tab title and the icon stay the operator's, from the page itself",
     "…the screen says who changed it, and offers the original back",
     "…the hint still names the original title (not replaced by the new one)",
-    "the sign-in page shows it too: title, logo, colours",
+    "the sign-in page shows it too: title, logo, colours, icon",
     "…its logo is the operator's",
     "…and the privacy notice",
     "restore: the portal's confirmation first",
@@ -322,7 +342,7 @@
     "…nor by its address",
     "a phone's width: no sideways scrolling"
    ],
-   "count": 24,
+   "count": 28,
    "ciOnly": false
   },
   "data_attributes": {
@@ -1892,8 +1912,9 @@
     "gs1resolver_lang cookie honoured",
     "a ar-EG browser → the home page in ar, rtl, the menu naming every language in itself, the Latin alphabet's first",
     "a ja-JP browser → the home page in ja, ltr, the menu naming every language in itself, the Latin alphabet's first",
-    "the original appearance: the project's title and logo, no style sheet of the portal's",
+    "the original appearance: the project's title, logo and icon, no style sheet of the portal's",
     "the operator's appearance from the portal: title (header, footer, tab), logo and colours (#1A3D2B)",
+    "…and the operator's icon in the tab (favicon)",
     "…kept when the language changes",
     "…within the page's Content Security Policy",
     "phone: menu collapsed behind the button",
@@ -1902,7 +1923,7 @@
     "phone: no horizontal scrolling",
     "without JavaScript: English text, menu visible"
    ],
-   "count": 78,
+   "count": 79,
    "ciOnly": false
   },
   "i18n": {
@@ -2621,12 +2642,16 @@
     "the operator's appearance on the item's page: title (header and tab), logo, colours after GS1's",
     "…and on an error page (404 kept)",
     "…and on the readable linkset",
+    "…the operator's icon as the favicon of an error page",
+    "…the item's page keeps its brand's logo as favicon",
+    "…/favicon.ico gives the operator's icon",
     "…never in what machines read",
     "…the description file keeps the software's name",
     "…a title is text (escaped), a value that is not a colour is ignored",
-    "…removed (Restore the original): the original again"
+    "…removed (Restore the original): the original again",
+    "…and the project's favicon.ico"
    ],
-   "count": 76,
+   "count": 80,
    "ciOnly": false
   },
   "languages_e2e": {
@@ -2744,7 +2769,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:41495/ok",
+    "internal address refused: http://127.0.0.1:38919/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -4282,7 +4307,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.004 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.003 ms; Node.js: tens of ms)"
    ],
    "count": 207,
    "ciOnly": false

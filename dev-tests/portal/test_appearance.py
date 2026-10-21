@@ -2,7 +2,8 @@
 The installation's appearance in the portal (Documentation/adr/0019-appearance.md): the original until set; the title,
 the three colours and the logo saved and read back; every refusal (the title's length, a colour that is not #RRGGBB,
 white text hard to read on the main or the action colour, a logo that is not PNG, JPEG or WebP); the logo kept, replaced
-and back to the project's; "Restore the original"; who may change it (server administrators outside support access);
+and back to the project's; the icon of the browsers' tabs (favicon) likewise; the portal's pages served with the title,
+logo and icon already in them; "Restore the original"; who may change it (server administrators outside support access);
 the journal; what anyone may read (the appearance, its style sheet, the logo); and the setting as the resolver's own
 reader (web_server/src/web_pages.py) sees it.
 
@@ -100,7 +101,14 @@ ORIGINAL = {"title": "GS1 Resolver Community Edition", "colour": "#002C6C", "act
 data = anyone.get("/portal/api/appearance").get_json()
 check("nothing set: the original, for anyone (no sign-in)", data["original"] is True and data["customLogo"] is False
       and {k: data[k] for k in ORIGINAL} == ORIGINAL and data["defaults"] == ORIGINAL and data["logo"] == "logo.svg"
-      and data["updated"] is None, data)
+      and data["icon"] == "favicon.png" and data["customIcon"] is False and data["updated"] is None, data)
+r = anyone.get("/portal/appearance/icon")
+check("…the icon address gives the project's icon", r.status_code == 200 and r.mimetype == "image/png"
+      and r.data == open(os.path.join(PORTAL, "static", "favicon.png"), "rb").read(), (r.status_code, r.mimetype))
+LOGIN_FILE = open(os.path.join(PORTAL, "static", "login.html"), encoding="utf-8").read()
+check("…the sign-in page served as it is in the files", anyone.get("/portal/login").get_data(as_text=True) == LOGIN_FILE)
+check("…the resolver's pages: no icon of the operator's (the browser asks /favicon.ico)",
+      (web_pages.APPEARANCE.forget() or web_pages.icon_address()) is None)
 r = anyone.get("/portal/appearance.css")
 check("…the style sheet changes nothing", r.status_code == 200 and r.mimetype == "text/css"
       and ":root" not in r.get_data(as_text=True) and "max-age=60" in r.headers.get("Cache-Control", ""),
@@ -153,7 +161,7 @@ check("…the resolver's pages: the title, the logo embedded, the colours",
       and style == ":root{--blue:#1A3D2B;--orange:#E8B100;--action:#8A1538;}", (title, logo[:40], style))
 entry = store.col("journal").find_one({"action": "appearance-save"}) or {}
 check("…in the journal", entry.get("user") == "root" and entry.get("tenant") is None and entry.get("detail")
-      == "title=Acme Resolver colour=#1A3D2B action=#8A1538 accent=#E8B100 logo=yes", entry)
+      == "title=Acme Resolver colour=#1A3D2B action=#8A1538 accent=#E8B100 logo=yes icon=no", entry)
 
 r = root.put("/portal/api/appearance", json={"title": "Acme Links"}, headers=ORIGIN)
 found = r.get_json()["appearance"]
@@ -171,10 +179,52 @@ check("\"\": back to the project's logo, the rest kept", found["customLogo"] is 
       and found["title"] == "Acme Links" and anyone.get("/portal/appearance/logo").mimetype == "image/svg+xml"
       and resolver()[1] == web_pages.LOGO_DATA_URI, found)
 check("…journal: logo=no", (list(store.col("journal").find({"action": "appearance-save"}).sort("at", -1))[:1] or [{}])[0]
-      .get("detail", "").endswith("logo=no"))
+      .get("detail", "").endswith("logo=no icon=no"))
 r = root.put("/portal/api/appearance", json={"title": ""}, headers=ORIGIN)
 check("an empty title: the original title (the colours kept)", r.get_json()["appearance"]["title"] == ORIGINAL["title"]
       and r.get_json()["appearance"]["colour"] == "#1A3D2B", r.get_json())
+
+# ================================================================== the icon of the browsers' tabs (favicon)
+ICON = image("PNG", (64, 64), (232, 177, 0))
+r = root.put("/portal/api/appearance", json={"title": "Acme <Links> & Co", "icon": data_uri(ICON)}, headers=ORIGIN)
+found = r.get_json()["appearance"]
+stored = store.get_setting("appearance")
+check("an icon saved, the title and colours kept", r.status_code == 200 and found["customIcon"] is True
+      and found["icon"] == f"appearance/icon?v={stored['icon']['etag']}" and bytes(stored["icon"]["data"]) == ICON
+      and found["colour"] == "#1A3D2B" and found["customLogo"] is False, found)
+r = anyone.get("/portal/appearance/icon?v=1")
+check("…served to anyone (cached a day)", r.status_code == 200 and r.data == ICON and r.mimetype == "image/png"
+      and "max-age=86400" in r.headers.get("Cache-Control", ""), (r.status_code, r.mimetype))
+check("…in the journal", (list(store.col("journal").find({"action": "appearance-save"}).sort("at", -1))[:1] or [{}])[0]
+      .get("detail", "").endswith("logo=no icon=yes"))
+web_pages.APPEARANCE.forget()
+check("…the resolver's pages carry it, and /favicon.ico gives it", web_pages.icon_address() == data_uri(ICON)
+      and bytes(web_pages.icon()["data"]) == ICON)
+for path in ("/portal/login", "/portal/privacy"):
+    text = anyone.get(path).get_data(as_text=True)
+    check(f"{path}: served with the title (escaped), the icon and the logo already in it",
+          "<title>Acme &lt;Links&gt; &amp; Co</title>" in text and 'data-product="Acme &lt;Links&gt; &amp; Co"' in text
+          and f'<link rel="icon" href="appearance/icon?v={stored["icon"]["etag"]}">' in text
+          and '<span class="product">Acme &lt;Links&gt; &amp; Co</span>' in text
+          and '<img src="logo.svg" alt="" width="44" height="44">' in text and "<Links>" not in text, text[:600])
+text = root.get("/portal/").get_data(as_text=True)
+check("/portal/: the same (the editor's page, signed in)", "<title>Acme &lt;Links&gt; &amp; Co</title>" in text
+      and "appearance/icon?v=" in text and 'id="appearance-preview-logo" src="logo.svg"' in text, text[:300])
+check("…and not without signing in", anyone.get("/portal/").status_code in (302, 401))
+r = root.put("/portal/api/appearance", json={"logo": data_uri(LOGO)}, headers=ORIGIN)
+text = anyone.get("/portal/login").get_data(as_text=True)
+check("…with the operator's logo in the header", f'<img src="appearance/logo?v={store.get_setting("appearance")["logo"]["etag"]}"'
+      in text, text[:800])
+r = root.put("/portal/api/appearance", json={"icon": "", "logo": "", "title": ""}, headers=ORIGIN)
+found = r.get_json()["appearance"]
+check("\"\": back to the project's icon", found["customIcon"] is False and found["icon"] == "favicon.png"
+      and anyone.get("/portal/appearance/icon").data == open(os.path.join(PORTAL, "static", "favicon.png"), "rb").read()
+      and (web_pages.APPEARANCE.forget() or web_pages.icon_address()) is None, found)
+check("…the page links the project's icon", '<link rel="icon" href="favicon.png">'
+      in anyone.get("/portal/login").get_data(as_text=True))
+r = root.put("/portal/api/appearance", json={"icon": base64.b64encode(b"<svg/>").decode()}, headers=ORIGIN)
+check("an icon that is not PNG, JPEG or WebP refused", r.status_code == 422 and code(r) == "branding.logoInvalid",
+      r.get_json())
 
 # ================================================================== refusals
 before = store.get_setting("appearance")
@@ -228,6 +278,8 @@ check("…anyone sees the original again", anyone.get("/portal/api/appearance").
       and ":root" not in anyone.get("/portal/appearance.css").get_data(as_text=True)
       and anyone.get("/portal/appearance/logo").mimetype == "image/svg+xml")
 check("…the resolver's pages too", resolver() == (ORIGINAL["title"], web_pages.LOGO_DATA_URI, ""))
+check("…the pages served as they are in the files again", anyone.get("/portal/login").get_data(as_text=True)
+      == LOGIN_FILE)
 entry = store.col("journal").find_one({"action": "appearance-reset"}) or {}
 check("…in the journal", entry.get("user") == "root" and entry.get("tenant") is None, entry)
 check("restoring the original twice is harmless", root.delete("/portal/api/appearance", headers=ORIGIN).status_code == 200)

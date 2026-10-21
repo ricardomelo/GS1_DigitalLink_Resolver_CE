@@ -415,7 +415,7 @@
   let locale = detect();
 
   /* The installation's appearance (Documentation/adr/0019-appearance.md), from the portal: its title in place of the
-     product's name, its logo, its colours (/portal/appearance.css) */
+     product's name, its logo, its icon, its colours (/portal/appearance.css) */
   const PRODUCT = "GS1 Resolver Community Edition";
   let product = null;
 
@@ -540,6 +540,9 @@
       sheet.href = "/portal/appearance.css";
       document.head.append(sheet);
       if (found.customLogo) document.querySelectorAll(".site-header .brand img").forEach(img => { img.src = "/portal/" + found.logo; });
+      if (found.customIcon) {
+        document.querySelectorAll('link[rel="icon"]').forEach(link => { link.removeAttribute("type"); link.href = "/portal/" + found.icon; });
+      }
       product = found.title;
       apply();
     } catch { /* the original stays */ }

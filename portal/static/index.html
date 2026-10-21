@@ -1125,6 +1125,13 @@
             <label class="choice"><input type="checkbox" id="appearance-logo-original">
               <span data-i18n="appearance.logoOriginal"></span></label>
           </div>
+          <div>
+            <label for="appearance-icon" data-i18n="appearance.icon"></label>
+            <input type="file" id="appearance-icon" accept="image/png,image/jpeg,image/webp">
+            <p class="hint" data-i18n="appearance.iconHint"></p>
+            <label class="choice"><input type="checkbox" id="appearance-icon-original">
+              <span data-i18n="appearance.iconOriginal"></span></label>
+          </div>
           <div class="appearance-colours">
             <label><span data-i18n="appearance.colour"></span> <input type="color" id="appearance-colour" value="#002c6c">
               <small class="hint" data-i18n="appearance.colourHint"></small></label>
@@ -1136,6 +1143,12 @@
         </div>
         <h2 data-i18n="appearance.preview"></h2>
         <div class="appearance-preview" id="appearance-preview" aria-hidden="true">
+          <div class="appearance-preview-browser">
+            <span class="appearance-preview-browser-tab">
+              <img id="appearance-preview-icon" src="favicon.png" alt="">
+              <span id="appearance-preview-tab-title"></span>
+            </span>
+          </div>
           <div class="appearance-preview-header">
             <img id="appearance-preview-logo" src="logo.svg" alt="">
             <span id="appearance-preview-title"></span>

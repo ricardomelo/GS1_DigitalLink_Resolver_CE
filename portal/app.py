@@ -703,7 +703,7 @@ def portal_root():
 @require_login
 def index():
     """The portal page (sign-in required)."""
-    return send_from_directory(STATIC_DIR, "index.html")
+    return static_page("index.html")
 
 
 @app.get("/portal/login")
@@ -711,7 +711,7 @@ def login_page():
     """The sign-in page; a user already signed in goes straight to the portal."""
     if current_user():
         return redirect("/portal/")
-    return send_from_directory(STATIC_DIR, "login.html")
+    return static_page("login.html")
 
 
 @app.get("/portal/<name>")
@@ -747,18 +747,40 @@ def appearance_css():
     return response
 
 
-@app.get("/portal/appearance/logo")
-def appearance_logo():
-    """The operator's logo (an address with its version, cached a day), or the project's."""
+def static_page(name: str) -> Response:
+    """A page of static/ with the installation's title, logo and icon in it (ADR 0019)."""
+    with open(os.path.join(STATIC_DIR, name), encoding="utf-8") as fh:
+        text = fh.read()
     try:
-        logo = (appearance.current().get("logo")) or None
+        text = appearance.page(text)
+    except PyMongoError as exc:
+        log.warning("Appearance not read: %s", exc)
+    return Response(text, mimetype="text/html")
+
+
+def appearance_image(field: str, original: str) -> Response:
+    """The operator's logo or icon (an address with its version, cached a day), or the project's."""
+    try:
+        image = (appearance.current().get(field)) or None
     except PyMongoError:
-        logo = None
-    if not logo:
-        return send_from_directory(STATIC_DIR, "logo.svg")
-    response = Response(bytes(logo["data"]), mimetype=logo.get("type", "image/png"))
+        image = None
+    if not image:
+        return send_from_directory(STATIC_DIR, original)
+    response = Response(bytes(image["data"]), mimetype=image.get("type", "image/png"))
     response.headers["Cache-Control"] = "public, max-age=86400"
     return response
+
+
+@app.get("/portal/appearance/logo")
+def appearance_logo():
+    """The header's logo."""
+    return appearance_image("logo", "logo.svg")
+
+
+@app.get("/portal/appearance/icon")
+def appearance_icon():
+    """The icon of the browsers' tabs (favicon)."""
+    return appearance_image("icon", "favicon.png")
 
 
 @app.put("/portal/api/appearance")
@@ -772,7 +794,8 @@ def put_appearance():
     audit.info("user=%s action=appearance-save title=%s", g.user, found["title"])
     log_event("appearance-save", tenant=None, detail=f'title={found["title"]} colour={found["colour"]} '
                                                       f'action={found["action"]} accent={found["accent"]} '
-                                                      f'logo={"yes" if found.get("logo") else "no"}')
+                                                      f'logo={"yes" if found.get("logo") else "no"} '
+                                                      f'icon={"yes" if found.get("icon") else "no"}')
     return message("appearance.saved", 200, appearance=appearance.public())
 
 
@@ -792,7 +815,7 @@ def delete_appearance():
 @app.get("/portal/privacy")
 def privacy_page():
     """The installation's privacy notice, for anyone (Documentation/adr/0017-privacy-notice.md)."""
-    return send_from_directory(STATIC_DIR, "privacy.html")
+    return static_page("privacy.html")
 
 
 @app.get("/portal/api/privacy")

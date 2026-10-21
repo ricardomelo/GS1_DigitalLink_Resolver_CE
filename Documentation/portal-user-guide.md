@@ -933,14 +933,15 @@ minute. During support access the list is read only.
 **Appearance** (user menu, server administrators) gives the whole installation its operator's look
 ([ADR 0019](adr/0019-appearance.md)): a **title** in place of *GS1 Resolver Community Edition* (up to 60 characters; it
 also replaces the product's name in the browsers' tab titles), a **logo** (PNG, JPEG or WebP, up to 200 KB; SVG is not
-accepted) and three colours: the **main colour** of the header's title, the coloured band under it, the headings and
+accepted), an **icon for the browsers' tabs** (the favicon, also in bookmarks: a square image, preferably 32 × 32 or
+64 × 64 pixels, in the same formats) and three colours: the **main colour** of the header's title, the coloured band under it, the headings and
 the side menu; the **action colour** of the buttons that act; the **highlight colour** of the marks of the current menu
 item and tab. White text must stay readable on the main and the action colours: a lighter colour is refused with the
-contrast it has (at least 4.5:1). The **preview** follows the form; **Save** applies it at once to the portal (its
+contrast it has (at least 4.5:1). The **preview** follows the form, the browser's tab with the icon and the title included; **Save** applies it at once to the portal (its
 sign-in page and privacy notice too) and the home page, and within 30 seconds to the resolver's pages and the item's
-page (each brand keeps its own colours in the item's page content). *Use the original logo* goes back to the project's
-logo and keeps the rest. **Restore the original** asks for confirmation and brings back the original title, logo and
-colours everywhere. Every change is in the audit trail; during support access the screen is read only.
+page (each brand keeps its own colours in the item's page content, and its logo as the item's page icon). *Use the
+original logo* and *Use the original icon* go back to the project's and keep the rest. **Restore the original** asks for
+confirmation and brings back the original title, logo, icon and colours everywhere. Every change is in the audit trail; during support access the screen is read only.
 
 ### Support access
 

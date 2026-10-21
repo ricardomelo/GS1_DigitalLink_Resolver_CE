@@ -787,6 +787,11 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .appearance-colours input[type=color] { width: 4rem; height: 2.4rem; padding: .1rem; }
 .appearance-colours .hint { margin: 0; }
 .appearance-preview { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin: 0 0 1.25rem; max-width: 40rem; }
+.appearance-preview-browser { background: #DEE3EA; padding: .45rem .75rem 0; }
+.appearance-preview-browser-tab { display: inline-flex; align-items: center; gap: .5rem; max-width: 16rem; padding: .4rem .8rem;
+  background: #fff; border-radius: 8px 8px 0 0; font-size: .8125rem; color: var(--text, #262626); }
+.appearance-preview-browser-tab img { width: 16px; height: 16px; object-fit: contain; flex: none; }
+.appearance-preview-browser-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .appearance-preview-header { display: flex; align-items: center; gap: 1rem; padding: .75rem 1rem; background: #fff;
   color: var(--preview-colour, var(--gs1-blue)); font-weight: 600; font-size: 1.125rem; }
 .appearance-preview-header img { height: 2.75rem; width: auto; }

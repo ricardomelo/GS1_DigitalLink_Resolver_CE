@@ -798,13 +798,16 @@ operator's own notice before going to production.
 ## The installation's appearance
 
 [ADR 0019](../adr/0019-appearance.md). Server administrators set, on *Appearance* in the portal, the title shown in place
-of *GS1 Resolver Community Edition*, a logo (PNG, JPEG or WebP, at most 200 KB) and three colours (main, action,
+of *GS1 Resolver Community Edition*, a logo and an icon for the browsers' tabs (PNG, JPEG or WebP, at most 200 KB
+each) and three colours (main, action,
 highlight; white text must keep a contrast of 4.5:1 on the first two). Nothing is set in `.env`: the setting
 `appearance` in the portal's database (`settings`, part of the backup) holds them, and **Restore the original** removes
-it. The portal serves them to anyone at `GET /portal/api/appearance`, `GET /portal/appearance.css` (cached 60 seconds)
-and `GET /portal/appearance/logo`; the home page reads the same three. The resolver reads the setting every 30 seconds
-with its own connection, keeps the last one when the database does not answer, and embeds the logo in its pages and
-the item's page; the operator's title replaces `RESOLVER_PRODUCT_NAME` there. The description file
+it. The portal serves them to anyone at `GET /portal/api/appearance`, `GET /portal/appearance.css` (cached 60 seconds),
+`GET /portal/appearance/logo` and `GET /portal/appearance/icon`, and its own pages with the title, the logo and the icon
+already in their HTML; the home page reads the same answers. The resolver reads the setting every 30 seconds with its
+own connection, keeps the last one when the database does not answer, embeds the logo and the icon in its pages and the
+item's page (whose brand's logo, when there is one, stays its icon) and answers `/favicon.ico` with the operator's
+icon; the operator's title replaces `RESOLVER_PRODUCT_NAME` there. The description file
 (`/.well-known/gs1resolver`) keeps the software's name.
 
 To see what anyone receives:

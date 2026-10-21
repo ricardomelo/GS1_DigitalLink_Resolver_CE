@@ -385,9 +385,12 @@ html = r.get_data(as_text=True)
 check("the original appearance: the project's title and logo, GS1's colours", "<span>GS1 Resolver Community Edition</span>"
       in html and web_pages.LOGO_DATA_URI in html and "--blue:#002C6C" in html and ":root{--blue:#1A3D2B" not in html)
 LOGO = png((26, 61, 43), (120, 44))
+ICON = png((232, 177, 0), (32, 32))
+FAVICON = client.get("/api/favicon.ico").data
 PORTAL["settings"].insert_one({"_id": "appearance", "value": {
     "title": "Acme Resolver", "colour": "#1A3D2B", "action": "#8A1538", "accent": "#E8B100",
-    "logo": {"type": "image/png", "data": LOGO, "etag": "e1", "width": 120, "height": 44}}})
+    "logo": {"type": "image/png", "data": LOGO, "etag": "e1", "width": 120, "height": 44},
+    "icon": {"type": "image/png", "data": ICON, "etag": "i1", "width": 32, "height": 32}}})
 web_pages.APPEARANCE.forget()
 r, _ = ask(ACME2 + PAGE)
 html = r.get_data(as_text=True)
@@ -403,6 +406,14 @@ check("…and on an error page (404 kept)", r.status_code == 404 and "<span>Acme
       and logo_uri in html and ":root{--blue:#1A3D2B" in html, r.status_code)
 r, _ = ask(ACME2 + "?linkType=linkset", accept="text/html")
 check("…and on the readable linkset", "<span>Acme Resolver</span>" in r.get_data(as_text=True))
+icon_uri = "data:image/png;base64," + base64.b64encode(ICON).decode()
+check("…the operator's icon as the favicon of an error page", f'<link rel="icon" href="{icon_uri}">' in html)
+html2 = ask(ACME2 + PAGE)[0].get_data(as_text=True)
+check("…the item's page keeps its brand's logo as favicon", '<link rel="icon" href="/_brand/7891234?v=abc123">' in html2
+      and icon_uri not in html2)
+r = client.get("/api/favicon.ico")
+check("…/favicon.ico gives the operator's icon", r.status_code == 200 and r.data == ICON and r.mimetype == "image/png",
+      (r.status_code, r.mimetype))
 r, _ = ask(ACME2 + "?linkType=linkset", accept="application/json")
 check("…never in what machines read", "Acme Resolver" not in r.get_data(as_text=True) and r.is_json)
 r = client.get("/api/.well-known/gs1resolver", headers={"Accept": "application/json"})
@@ -419,6 +430,9 @@ web_pages.APPEARANCE.forget()
 html = ask(ACME2 + PAGE)[0].get_data(as_text=True)
 check("…removed (Restore the original): the original again", "<span>GS1 Resolver Community Edition</span>" in html
       and web_pages.LOGO_DATA_URI in html and "Acme Resolver" not in html)
+r = client.get("/api/favicon.ico")
+check("…and the project's favicon.ico", len(FAVICON) > 0 and r.data == FAVICON
+      and 'rel="icon"' not in ask("/01/07891234999992")[0].get_data(as_text=True))
 
 print(f"\n{'FAILED' if failures else 'ALL PASSED'}: {len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

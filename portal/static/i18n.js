@@ -765,6 +765,9 @@ const I18N = (() => {
       "appearance.logo": "Logo",
       "appearance.logoHint": "PNG, JPEG ou WebP, até 200 KB; mostrado com 44 pixels de altura.",
       "appearance.logoOriginal": "Usar o logo original",
+      "appearance.icon": "Ícone das abas (favicon)",
+      "appearance.iconHint": "Imagem quadrada, de preferência 32 × 32 ou 64 × 64 pixels; PNG, JPEG ou WebP, até 200 KB. Aparece nas abas do navegador e nos favoritos.",
+      "appearance.iconOriginal": "Usar o ícone original",
       "appearance.colour": "Cor principal",
       "appearance.colourHint": "Título do cabeçalho, faixa abaixo dele, títulos e menu lateral.",
       "appearance.action": "Cor de ação",
@@ -2931,6 +2934,9 @@ const I18N = (() => {
       "appearance.logo": "Logo",
       "appearance.logoHint": "PNG, JPEG or WebP, up to 200 KB; shown 44 pixels high.",
       "appearance.logoOriginal": "Use the original logo",
+      "appearance.icon": "Tab icon (favicon)",
+      "appearance.iconHint": "A square image, preferably 32 × 32 or 64 × 64 pixels; PNG, JPEG or WebP, up to 200 KB. Shown in the browser's tabs and bookmarks.",
+      "appearance.iconOriginal": "Use the original icon",
       "appearance.colour": "Main colour",
       "appearance.colourHint": "The header's title, the band under it, headings and the side menu.",
       "appearance.action": "Action colour",
@@ -4182,7 +4188,7 @@ const I18N = (() => {
 
   /* The installation's title in place of the product's name, in every text (ADR 0019; appearance.js sets it) */
   const PRODUCT = "GS1 Resolver Community Edition";
-  let product = null;
+  let product = document.documentElement.dataset.product || null;      // already in the page the portal served
 
   function t(key, params = {}) {
     const template = lookup(key);

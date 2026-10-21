@@ -11,6 +11,7 @@ tenants and domains are in mongomock.
   pip install -r web_server/src/requirements.txt mongomock pillow
   python dev-tests/resolver/test_landing.py
 """
+import base64
 import copy
 import importlib
 import io
@@ -63,6 +64,7 @@ import web_logic  # noqa: E402
 import request_log  # noqa: E402
 import domains  # noqa: E402
 import landing  # noqa: E402
+import web_pages  # noqa: E402
 
 web_logic._call_gs1_toolkit = lambda s: True
 EVENTS = mongomock.MongoClient()["resolver_log"]["requests"]
@@ -70,6 +72,7 @@ request_log.WRITER.collection = lambda: EVENTS
 PORTAL = mongomock.MongoClient()["resolver_portal"]
 domains.MAP.database = lambda: PORTAL
 landing.BRANDS.database = lambda: PORTAL
+web_pages.APPEARANCE.database = lambda: PORTAL
 from __init__ import create_app  # noqa: E402
 
 client = create_app().test_client()
@@ -375,6 +378,47 @@ r, _ = ask(ACME2 + PAGE)
 check("a branding read that fails: the page still answers, with the last branding", r.status_code == 200
       and "Renamed" in r.get_data(as_text=True))
 landing.BRANDS.database = lambda: PORTAL
+
+# ---------------------------------------------------------------- the installation's appearance (ADR 0019)
+r, _ = ask(ACME2 + PAGE)
+html = r.get_data(as_text=True)
+check("the original appearance: the project's title and logo, GS1's colours", "<span>GS1 Resolver Community Edition</span>"
+      in html and web_pages.LOGO_DATA_URI in html and "--blue:#002C6C" in html and ":root{--blue:#1A3D2B" not in html)
+LOGO = png((26, 61, 43), (120, 44))
+PORTAL["settings"].insert_one({"_id": "appearance", "value": {
+    "title": "Acme Resolver", "colour": "#1A3D2B", "action": "#8A1538", "accent": "#E8B100",
+    "logo": {"type": "image/png", "data": LOGO, "etag": "e1", "width": 120, "height": 44}}})
+web_pages.APPEARANCE.forget()
+r, _ = ask(ACME2 + PAGE)
+html = r.get_data(as_text=True)
+logo_uri = "data:image/png;base64," + base64.b64encode(LOGO).decode()
+check("the operator's appearance on the item's page: title (header and tab), logo, colours after GS1's",
+      r.status_code == 200 and "<span>Acme Resolver</span>" in html and "Acme Resolver</title>" in html
+      and "GS1 Resolver Community Edition" not in html and logo_uri in html
+      and html.index(":root{--blue:#1A3D2B;--orange:#E8B100;--action:#8A1538;}") > html.index("--blue:#002C6C"),
+      re.findall(r"<title>.*?</title>", html))
+r, _ = ask("/01/07891234999992")
+html = r.get_data(as_text=True)
+check("…and on an error page (404 kept)", r.status_code == 404 and "<span>Acme Resolver</span>" in html
+      and logo_uri in html and ":root{--blue:#1A3D2B" in html, r.status_code)
+r, _ = ask(ACME2 + "?linkType=linkset", accept="text/html")
+check("…and on the readable linkset", "<span>Acme Resolver</span>" in r.get_data(as_text=True))
+r, _ = ask(ACME2 + "?linkType=linkset", accept="application/json")
+check("…never in what machines read", "Acme Resolver" not in r.get_data(as_text=True) and r.is_json)
+r = client.get("/api/.well-known/gs1resolver", headers={"Accept": "application/json"})
+check("…the description file keeps the software's name", "Acme Resolver" not in r.get_data(as_text=True))
+PORTAL["settings"].update_one({"_id": "appearance"}, {"$set": {"value.title": "<script>x</script>",
+                                                               "value.colour": "#1A3D2B;}body{display:none"}})
+web_pages.APPEARANCE.forget()
+html = ask(ACME2 + PAGE)[0].get_data(as_text=True)
+check("…a title is text (escaped), a value that is not a colour is ignored",
+      "<script>x</script>" not in html and "&lt;script&gt;x&lt;/script&gt;" in html and "body{display:none" not in html
+      and ":root{--orange:#E8B100;--action:#8A1538;}" in html)
+PORTAL["settings"].delete_one({"_id": "appearance"})
+web_pages.APPEARANCE.forget()
+html = ask(ACME2 + PAGE)[0].get_data(as_text=True)
+check("…removed (Restore the original): the original again", "<span>GS1 Resolver Community Edition</span>" in html
+      and web_pages.LOGO_DATA_URI in html and "Acme Resolver" not in html)
 
 print(f"\n{'FAILED' if failures else 'ALL PASSED'}: {len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

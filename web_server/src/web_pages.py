@@ -14,8 +14,11 @@ English otherwise; Arabic is written right to left.
 Clients asking for JSON keep receiving JSON; nothing here alters machine responses.
 """
 import base64
+import logging
 import os
 import json
+import threading
+import time
 import unicodedata
 from urllib.parse import unquote, urlparse
 
@@ -53,6 +56,61 @@ try:
         LOGO_DATA_URI = 'data:image/svg+xml;base64,' + base64.b64encode(_fh.read()).decode('ascii')
 except OSError:
     LOGO_DATA_URI = ''
+
+
+class Appearance:
+    """The installation's appearance set in the portal (Documentation/adr/0019-appearance.md): the setting "appearance"
+    of the portal's database, read again after CACHE_SECONDS (the last kept on failure); {} for the original."""
+    CACHE_SECONDS = 30
+
+    def __init__(self, database=None):
+        self.database = database        # a function giving the portal's database (pymongo), set by create_app
+        self._doc: dict = {}
+        self._loaded = 0.0
+        self._lock = threading.Lock()
+
+    def current(self) -> dict:
+        if self.database is None:
+            return {}
+        now = time.monotonic()
+        if now - self._loaded >= self.CACHE_SECONDS:
+            with self._lock:
+                if now - self._loaded >= self.CACHE_SECONDS:
+                    try:
+                        self._doc = (self.database()['settings'].find_one({'_id': 'appearance'}) or {}).get('value') or {}
+                    except Exception as exc:          # noqa: BLE001 — the pages keep the last appearance
+                        logging.getLogger(__name__).warning('Appearance not read (%s); the last one is kept.', exc)
+                    self._loaded = now
+        return self._doc
+
+    def forget(self) -> None:
+        self._loaded = 0.0
+
+
+APPEARANCE = Appearance()
+
+
+def _hex(value) -> str | None:
+    text = str(value or '')
+    return text if len(text) == 7 and text.startswith('#') and all(c in '0123456789abcdefABCDEF' for c in text[1:]) \
+        else None
+
+
+def appearance() -> tuple[str, str, str]:
+    """(title, logo address, extra style) of the installation's pages: the operator's, else the original."""
+    doc = APPEARANCE.current()
+    title = str(doc.get('title') or '').strip() or PRODUCT_NAME
+    logo = doc.get('logo') or {}
+    address = (f"data:{logo.get('type', 'image/png')};base64," + base64.b64encode(bytes(logo['data'])).decode('ascii')
+               if logo.get('data') else LOGO_DATA_URI)
+    colour, action, accent = (_hex(doc.get(k)) for k in ('colour', 'action', 'accent'))
+    style = ''
+    if colour or action or accent:
+        style = ':root{' + (f'--blue:{colour};' if colour else '') + (f'--orange:{accent};' if accent else '') \
+            + (f'--action:{action};' if action else '') + '}'
+    return title, address, style
+
+
 # First matching language prefix in Accept-Language wins.
 LOCALE_MATCHERS = [('pt', 'pt-BR'), ('en', 'en-GB'), ('es', 'es'), ('fr', 'fr'), ('de', 'de'), ('it', 'it'),
                    ('tr', 'tr'), ('zh', 'zh-Hans'), ('ja', 'ja'), ('ko', 'ko'), ('hi', 'hi'), ('ar', 'ar')]
@@ -72,6 +130,7 @@ _BASE = """<!doctype html>
 <style>
 :root{--blue:#002C6C;--orange:#F26334;--action:#CE3D0D;--link:#00799E;--ink:#121212;--text:#262626;--muted:#555F6D;
 --line:#CDD5DF;--page:#F0F5FA;--sans:"Montserrat","Gotham SSm A","Gotham SSm B",Verdana,sans-serif}
+{{ appearance_style }}
 *{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--text);font:400 1rem/1.5 var(--sans)}
 a{color:var(--link)}
 header{background:#fff;box-shadow:0 2px 3px rgba(0,44,108,.2);position:relative}
@@ -241,7 +300,9 @@ def _page(locale: str, title: str, body: str, fonts: bool = True, icon: str | No
     """A whole HTML page: header, language menu, body and the operator footer from the configuration. Without fonts,
     nothing is loaded from other sites (the item's page, which every scan of some codes reaches: ADR 0011); icon: the
     page's own favicon (the brand's logo on the item's page)."""
-    return render_template_string(_BASE, locale=locale, title=title, product=PRODUCT_NAME, logo=LOGO_DATA_URI, fonts=fonts, icon=icon,
+    product, logo, style = appearance()           # the installation's title, logo and colours (ADR 0019)
+    return render_template_string(_BASE, locale=locale, title=title, product=product, logo=logo, fonts=fonts, icon=icon,
+                                  appearance_style=style,
                                   org=ORG_NAME, org_url=ORG_URL, footer=_t(locale, 'footer'),
                                   privacy_label=_t(locale, 'privacy'),
                                   language_label=_t(locale, 'language'), home_label=_t(locale, 'home'),

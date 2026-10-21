@@ -779,6 +779,28 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .brand-preview img { max-height: 2.5rem; max-width: 9rem; background: #fff; border-radius: 3px; padding: 2px; }
 .brand-preview .brand-button { margin-inline-start: auto; border-radius: 4px; padding: .3rem .7rem; font-size: .85rem; font-weight: 600; }
 
+/* ---------------------------------------------------------------- the installation's appearance (ADR 0019) */
+.appearance-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem 1.5rem; }
+.appearance-fields .hint { margin: .3rem 0 .5rem; }
+.appearance-colours { display: flex; flex-direction: column; gap: .6rem; grid-column: 1 / -1; }
+.appearance-colours label { display: grid; grid-template-columns: 11rem 4rem 1fr; align-items: center; gap: .75rem; margin: 0; }
+.appearance-colours input[type=color] { width: 4rem; height: 2.4rem; padding: .1rem; }
+.appearance-colours .hint { margin: 0; }
+.appearance-preview { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin: 0 0 1.25rem; max-width: 40rem; }
+.appearance-preview-header { display: flex; align-items: center; gap: 1rem; padding: .75rem 1rem; background: #fff;
+  color: var(--preview-colour, var(--gs1-blue)); font-weight: 600; font-size: 1.125rem; }
+.appearance-preview-header img { height: 2.75rem; width: auto; }
+.appearance-preview-band { display: flex; align-items: center; gap: 1rem; padding: .9rem 1rem;
+  background: var(--preview-colour, var(--gs1-blue)); color: #fff; }
+.appearance-preview-tab { padding-bottom: .2rem; border-bottom: 3px solid var(--preview-accent, var(--gs1-orange)); }
+.appearance-preview-button { margin-inline-start: auto; border-radius: 4px; padding: .45rem 1rem; font-weight: 600;
+  background: var(--preview-action, var(--action)); color: #fff; }
+.appearance-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+@media (max-width: 40rem) {
+  .appearance-colours label { grid-template-columns: 1fr 4rem; }
+  .appearance-colours .hint { grid-column: 1 / -1; }
+}
+
 /* ---------------------------------------------------------------- navigation (ADR 0013) */
 /* Wide screens: the screens of the user menu as a left sidebar, foldable to icons. Narrower: the user menu alone. */
 .sidebar { display: none; }

@@ -306,6 +306,8 @@ const I18N = (() => {
       "audit.action.forwarding-rule-create": "Regra de encaminhamento criada",
       "audit.action.forwarding-rule-update": "Regra de encaminhamento alterada",
       "audit.action.forwarding-rule-remove": "Regra de encaminhamento removida",
+      "audit.action.appearance-save": "Aparência alterada",
+      "audit.action.appearance-reset": "Aparência original restabelecida",
       "menu.requests": "Acessos",
       "requests.title": "Acessos ao Resolver",
       "requests.lede": "As leituras dos códigos ao seu alcance: o que o Resolver respondeu, quando e em quanto tempo — sem nada que identifique quem leu.",
@@ -612,6 +614,7 @@ const I18N = (() => {
       "menu.organisation": "Gestão da organização",
       "menu.alerts": "Alertas",
       "menu.forwarding": "Encaminhamento",
+      "menu.appearance": "Aparência",
       "menu.privacy": "Aviso de privacidade",
       "prefixes.add": "Adicionar GCP",
       "prefixes.one": "Prefixo GS1 da empresa (GCP)",
@@ -755,6 +758,34 @@ const I18N = (() => {
       "forwarding.enabledInvalid": "Diga se está ligado ou desligado.",
       "forwarding.noteTooLong": "A nota pode ter até {max} caracteres.",
       "forwarding.readOnly": "Acesso de suporte: somente leitura.",
+      "appearance.title": "Aparência da instalação",
+      "appearance.lede": "O título, o logo e as cores que todas as páginas mostram: o portal, a página inicial e as páginas do resolver.",
+      "appearance.name": "Título",
+      "appearance.nameHint": "No lugar de “{original}”, no cabeçalho e nas abas do navegador, em todas as páginas.",
+      "appearance.logo": "Logo",
+      "appearance.logoHint": "PNG, JPEG ou WebP, até 200 KB; mostrado com 44 pixels de altura.",
+      "appearance.logoOriginal": "Usar o logo original",
+      "appearance.colour": "Cor principal",
+      "appearance.colourHint": "Título do cabeçalho, faixa abaixo dele, títulos e menu lateral.",
+      "appearance.action": "Cor de ação",
+      "appearance.actionHint": "Os botões que executam uma ação.",
+      "appearance.accent": "Cor de destaque",
+      "appearance.accentHint": "As marcas do item de menu e da aba atuais.",
+      "appearance.preview": "Prévia",
+      "appearance.previewButton": "Um botão",
+      "appearance.previewTab": "Aba atual",
+      "appearance.save": "Salvar",
+      "appearance.reset": "Voltar ao original",
+      "appearance.confirmReset": "Voltar ao título, logo e cores originais em todas as páginas?",
+      "appearance.stateOriginal": "Aparência original.",
+      "appearance.stateChanged": "Alterada em {when} por {user}.",
+      "appearance.saved": "Aparência salva: o portal e a página inicial já a mostram; as páginas do resolver, em até 30 segundos.",
+      "appearance.restored": "Aparência original restabelecida.",
+      "appearance.titleInvalid": "O título tem de 1 a {max} caracteres imprimíveis.",
+      "appearance.colourInvalid": "Escolha uma cor no formato #RRGGBB.",
+      "appearance.colourContrast": "Texto branco fica difícil de ler na cor principal ({ratio}:1; o mínimo é {min}:1): escolha uma cor mais escura.",
+      "appearance.actionContrast": "Texto branco fica difícil de ler na cor de ação ({ratio}:1; o mínimo é {min}:1): escolha uma cor mais escura.",
+      "appearance.readOnly": "Acesso de suporte: somente leitura.",
       "privacy.default": "# Aviso de privacidade\n\nEste resolver GS1 Digital Link é operado por {operator}. Ele responde às leituras de QR Codes GS1 Digital Link e de outros códigos levando cada pessoa às informações que o dono da marca do produto cadastrou.\n\n# O que é registrado quando um código é lido\n\nPara cada requisição, o resolver registra o código e o que respondeu, quando, quanto tempo levou, o tipo de aparelho (celular, tablet, computador), a família do navegador, o idioma pedido pelo aparelho e uma localização aproximada (país, região e cidade) deduzida do endereço da conexão naquele momento. O endereço em si não é guardado, nem a identificação completa do navegador, nem qualquer dado que identifique a pessoa. Cada requisição é guardada por {days} dias; as contagens diárias por código são guardadas por mais tempo.\n\n# O portal de gestão de links\n\nAs pessoas que gerenciam os links entram no portal com uma conta. O portal guarda o nome de usuário, o e-mail e o papel de cada uma, e uma trilha de auditoria do que alteram, conforme a política do operador.\n\n# Responsabilidade\n\nEsta instalação usa software livre e de código aberto (GS1 Digital Link Resolver CE e seu Expansion Pack, sob a Licença Apache 2.0). O seu uso é de estrita responsabilidade de quem opera esta instância do resolver. Nem a GS1, nem qualquer Organização-Membro GS1, nem ninguém que tenha contribuído para o desenvolvimento do software se responsabiliza por esta instalação, pela sua operação ou pelo seu conteúdo. O software é disponibilizado \"no estado em que se encontra\" (\"as is\"), sem garantia de qualquer tipo.\n\n# Contato\n\nDúvidas sobre este aviso ou sobre os dados desta instalação devem ser enviadas ao seu operador, {operator}.",
       "landing.switches": "Ao salvar, os outros cadastros deste identificador continuam indo para o próprio destino principal (cada um ganha um link padrão explícito, gs1:defaultLink).",
       "domains.checkOk": "{domain} chega ao Resolver.",
@@ -2441,6 +2472,8 @@ const I18N = (() => {
       "audit.action.forwarding-rule-create": "Forwarding rule added",
       "audit.action.forwarding-rule-update": "Forwarding rule changed",
       "audit.action.forwarding-rule-remove": "Forwarding rule removed",
+      "audit.action.appearance-save": "Appearance changed",
+      "audit.action.appearance-reset": "Original appearance restored",
       "menu.requests": "Requests",
       "requests.title": "Resolver requests",
       "requests.lede": "The scans of the codes in your reach: what the resolver answered, when and how fast — with nothing that identifies who scanned.",
@@ -2747,6 +2780,7 @@ const I18N = (() => {
       "menu.organisation": "Organisation management",
       "menu.alerts": "Alerts",
       "menu.forwarding": "Forwarding",
+      "menu.appearance": "Appearance",
       "menu.privacy": "Privacy notice",
       "prefixes.add": "Add GCP",
       "prefixes.one": "GS1 Company Prefix (GCP)",
@@ -2890,6 +2924,34 @@ const I18N = (() => {
       "forwarding.enabledInvalid": "Say whether it is on or off.",
       "forwarding.noteTooLong": "The note can have up to {max} characters.",
       "forwarding.readOnly": "Support access: read only.",
+      "appearance.title": "The installation's appearance",
+      "appearance.lede": "The title, logo and colours every page shows: the portal, the home page and the resolver's pages.",
+      "appearance.name": "Title",
+      "appearance.nameHint": "In place of “{original}”, in the header and the browser's tabs, on every page.",
+      "appearance.logo": "Logo",
+      "appearance.logoHint": "PNG, JPEG or WebP, up to 200 KB; shown 44 pixels high.",
+      "appearance.logoOriginal": "Use the original logo",
+      "appearance.colour": "Main colour",
+      "appearance.colourHint": "The header's title, the band under it, headings and the side menu.",
+      "appearance.action": "Action colour",
+      "appearance.actionHint": "The buttons that act.",
+      "appearance.accent": "Highlight colour",
+      "appearance.accentHint": "The marks of the current menu item and tab.",
+      "appearance.preview": "Preview",
+      "appearance.previewButton": "A button",
+      "appearance.previewTab": "Current tab",
+      "appearance.save": "Save",
+      "appearance.reset": "Restore the original",
+      "appearance.confirmReset": "Restore the original title, logo and colours on every page?",
+      "appearance.stateOriginal": "Original appearance.",
+      "appearance.stateChanged": "Changed on {when} by {user}.",
+      "appearance.saved": "Appearance saved: the portal and the home page show it now; the resolver's pages within 30 seconds.",
+      "appearance.restored": "Original appearance restored.",
+      "appearance.titleInvalid": "The title has 1 to {max} printable characters.",
+      "appearance.colourInvalid": "Choose a colour as #RRGGBB.",
+      "appearance.colourContrast": "White text is hard to read on the main colour ({ratio}:1; at least {min}:1): choose a darker colour.",
+      "appearance.actionContrast": "White text is hard to read on the action colour ({ratio}:1; at least {min}:1): choose a darker colour.",
+      "appearance.readOnly": "Support access: read only.",
       "privacy.default": "# Privacy notice\n\nThis GS1 Digital Link resolver is operated by {operator}. It answers the scans of GS1 Digital Link QR codes and other codes by sending each person to the information that the owner of the product's brand has registered.\n\n# What is recorded when a code is scanned\n\nFor each request the resolver records the code and what it answered, when, how long it took, the kind of device (phone, tablet, computer), the browser family, the language the device asks for and an approximate location (country, region and city) worked out from the connection's address at that moment. The address itself is not kept, nor the browser's full identification, nor any data that identifies the person. Each request is kept {days} days; daily counts per code are kept longer.\n\n# The link management portal\n\nThe people who manage the links sign in to the portal with an account. The portal keeps their user name, e-mail address and role, and an audit trail of what they change, as the operator's policy requires.\n\n# Responsibility\n\nThis installation runs free and open-source software (GS1 Digital Link Resolver CE and its Expansion Pack, under the Apache License 2.0). Its use is the sole responsibility of whoever operates this instance of the resolver. Neither GS1, nor any GS1 Member Organisation, nor anyone who contributed to the development of the software is responsible for this installation, its operation or its content. The software is provided \"as is\", without warranty of any kind.\n\n# Contact\n\nQuestions about this notice or about the data of this installation go to its operator, {operator}.",
       "landing.switches": "On saving, the other records of this identifier keep going to their own default target (each gets an explicit default link, gs1:defaultLink).",
       "domains.checkOk": "{domain} reaches the resolver.",
@@ -4118,10 +4180,15 @@ const I18N = (() => {
     return loading[tag];
   }
 
+  /* The installation's title in place of the product's name, in every text (ADR 0019; appearance.js sets it) */
+  const PRODUCT = "GS1 Resolver Community Edition";
+  let product = null;
+
   function t(key, params = {}) {
     const template = lookup(key);
     if (typeof template !== "string") return key;
-    return template.replace(/\{(\w+)\}/g, (_, name) => (name in params ? String(params[name]) : `{${name}}`));
+    const own = product && template.includes(PRODUCT) ? template.split(PRODUCT).join(product) : template;
+    return own.replace(/\{(\w+)\}/g, (_, name) => (name in params ? String(params[name]) : `{${name}}`));
   }
 
   function linkType(code) {
@@ -4188,6 +4255,7 @@ const I18N = (() => {
     root.querySelectorAll("[data-i18n-type]").forEach(el => { el.textContent = linkTypeOption(el.dataset.i18nType); });
     root.querySelectorAll("[data-i18n-group]").forEach(el => { el.label = t("group." + el.dataset.i18nGroup); });
     root.querySelectorAll("[data-i18n-lang]").forEach(el => { el.textContent = languageName(el.dataset.i18nLang); });
+    root.querySelectorAll(".product").forEach(el => { el.textContent = product || PRODUCT; });
   }
 
   /* Parameters that are themselves translatable (link types, record descriptions) are re-resolved
@@ -4243,6 +4311,8 @@ const I18N = (() => {
     SUPPORTED, ready,
     get locale() { return locale; },
     t: (key, params) => t(key, resolveParams(params || {})),
+    get product() { return product; },
+    setProduct: name => { product = name || null; apply(); document.dispatchEvent(new Event("localechange")); },
     set: (el, key, params) => set(el, key, params),
     apply, setLocale, linkType, linkTypeOption, languageName, byScript,
     nameOf: loc => (CATALOGUE[loc] || {})["locale.name"] || ENDONYMS[loc] || loc,

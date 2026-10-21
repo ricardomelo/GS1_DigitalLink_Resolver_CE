@@ -414,8 +414,14 @@
 
   let locale = detect();
 
+  /* The installation's appearance (Documentation/adr/0019-appearance.md), from the portal: its title in place of the
+     product's name, its logo, its colours (/portal/appearance.css) */
+  const PRODUCT = "GS1 Resolver Community Edition";
+  let product = null;
+
   function t(key) {
-    return (CATALOGUE[locale] || {})[key] ?? CATALOGUE[DEFAULT_LOCALE][key] ?? key;
+    const text = (CATALOGUE[locale] || {})[key] ?? CATALOGUE[DEFAULT_LOCALE][key] ?? key;
+    return product && text.includes(PRODUCT) ? text.split(PRODUCT).join(product) : text;
   }
 
   function apply() {
@@ -423,6 +429,7 @@
     document.documentElement.dir = RIGHT_TO_LEFT.includes(locale) ? "rtl" : "ltr";
     document.title = t(document.body.dataset.titleKey || "page.title");
     document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+    document.querySelectorAll(".product").forEach(el => { el.textContent = product || PRODUCT; });
     document.querySelectorAll("[data-i18n-attr]").forEach(el => {
       el.dataset.i18nAttr.split(";").forEach(pair => {
         const [attr, key] = pair.split(":");
@@ -522,6 +529,22 @@
     });
   }
 
+  async function showAppearance() {
+    try {
+      const response = await fetch("/portal/api/appearance", { headers: { Accept: "application/json" } });
+      if (!response.ok) return;
+      const found = await response.json();
+      if (found.original !== false || !found.title) return;
+      const sheet = document.createElement("link");
+      sheet.rel = "stylesheet";
+      sheet.href = "/portal/appearance.css";
+      document.head.append(sheet);
+      if (found.customLogo) document.querySelectorAll(".site-header .brand img").forEach(img => { img.src = "/portal/" + found.logo; });
+      product = found.title;
+      apply();
+    } catch { /* the original stays */ }
+  }
+
   // Loaded synchronously in <head> so the "js" class is set before first paint (no menu flash);
   // everything that touches the page waits for the document.
   document.addEventListener("DOMContentLoaded", () => {
@@ -529,5 +552,6 @@
     initLocalePicker();
     initNavToggle();
     showOperator();
+    showAppearance();
   });
 })();

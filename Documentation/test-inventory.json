@@ -2,7 +2,7 @@
  "generated": "2026-10-21",
  "programs": {
   "admin_nav": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "an organisation's administrator opens their organisation's page",
     "…its users with their prefixes",
@@ -51,7 +51,7 @@
    "ciOnly": false
   },
   "admin_nav_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "the sign-in page: no room kept for a sidebar it does not have, the form under the title",
     "…the project's logo in the header, not GS1's",
@@ -110,7 +110,7 @@
    "ciOnly": false
   },
   "api": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "an editor cannot list or create keys",
     "a tenant administrator creates a key: 201, the full key once",
@@ -141,7 +141,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_7e4f16a0fca…)",
+    "a wrong key is refused (rk_fa53e743a76…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -209,7 +209,7 @@
    "ciOnly": false
   },
   "api_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "an organisation's administrator has API keys in the menu",
     "choosing a menu item closes the menu, though the pointer is still over it",
@@ -234,6 +234,95 @@
     "no error in the pages"
    ],
    "count": 21,
+   "ciOnly": false
+  },
+  "appearance": {
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "checks": [
+    "nothing set: the original, for anyone (no sign-in)",
+    "…the style sheet changes nothing",
+    "…the logo address gives the project's logo",
+    "…the resolver's pages: the original title, logo and colours",
+    "the original colours keep white text readable (they pass their own rule)",
+    "the contrast is WCAG's: black 21:1, white 1:1, GS1 orange about 3:1",
+    "saved: title (spaces folded), colours (upper case), logo",
+    "…in the setting \"appearance\" of the portal's database",
+    "…the logo's address carries its version",
+    "…anyone reads it",
+    "…the style sheet sets the pages' tokens, with the darker shades",
+    "…darker: mixed with black",
+    "…the logo address gives the operator's logo (cached a day, never sniffed)",
+    "…the resolver's pages: the title, the logo embedded, the colours",
+    "…in the journal",
+    "only the title sent: the colours and the logo kept",
+    "another logo (WebP, bare base64)",
+    "\"\": back to the project's logo, the rest kept",
+    "…journal: logo=no",
+    "an empty title: the original title (the colours kept)",
+    "refused: a title of 61 characters → appearance.titleInvalid",
+    "refused: a title with a control character → appearance.titleInvalid",
+    "refused: a colour by name → appearance.colourInvalid",
+    "refused: a short colour → appearance.colourInvalid",
+    "refused: a highlight colour with alpha → appearance.colourInvalid",
+    "refused: a light main colour → appearance.colourContrast",
+    "refused: a light action colour → appearance.actionContrast",
+    "refused: a logo that is not an image → branding.logoInvalid",
+    "refused: a logo that is not base64 → branding.logoInvalid",
+    "refused: a GIF logo → branding.logoInvalid",
+    "refused: a logo over 200 KB → branding.logoTooLarge",
+    "…nothing changed by the refusals",
+    "the contrast refusal says how much and the minimum",
+    "a colour of the action just readable (4.5:1) is accepted",
+    "not without signing in",
+    "not an organisation's administrator (server administrators only)",
+    "support access: read only (403 appearance.readOnly)",
+    "…nothing changed",
+    "restored: the original everywhere",
+    "…the setting removed",
+    "…anyone sees the original again",
+    "…the resolver's pages too",
+    "…in the journal",
+    "restoring the original twice is harmless",
+    "the resolver's reader ignores what is not a colour",
+    "…and reads the setting again only after 30 seconds",
+    "…a database that fails: the original",
+    "index.html: appearance.css after app.css, appearance.js after i18n.js",
+    "login.html: appearance.css after app.css, appearance.js after i18n.js",
+    "privacy.html: appearance.css after app.css, appearance.js after i18n.js",
+    "appearance.js is served before sign-in"
+   ],
+   "count": 51,
+   "ciOnly": false
+  },
+  "appearance_e2e": {
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "checks": [
+    "a server administrator has the screen in the menu, after the item's page",
+    "the screen: its title and the original",
+    "…the hint names the original title",
+    "…the form holds the original colours, the title empty with the original as placeholder",
+    "…the preview: the original title and logo",
+    "the preview follows the form: title, logo, band, button and tab mark",
+    "…nothing saved yet",
+    "a light action colour refused, with its contrast",
+    "saved",
+    "…the header at once: the title and the logo",
+    "…the colours at once (the pages' own tokens)",
+    "…the tab's title carries the new title",
+    "…the screen says who changed it, and offers the original back",
+    "…the hint still names the original title (not replaced by the new one)",
+    "the sign-in page shows it too: title, logo, colours",
+    "…its logo is the operator's",
+    "…and the privacy notice",
+    "restore: the portal's confirmation first",
+    "…cancelled: nothing changes",
+    "…confirmed: the original back everywhere on the page",
+    "Portuguese",
+    "an organisation's administrator: no screen in the menu",
+    "…nor by its address",
+    "a phone's width: no sideways scrolling"
+   ],
+   "count": 24,
    "ciOnly": false
   },
   "data_attributes": {
@@ -612,7 +701,7 @@
     "data-entry-service: stops cleanly on SIGTERM within Docker's 10-second stop period",
     "data-entry-service: requests are logged (docker compose logs)",
     "data-entry-service: no gunicorn control socket",
-    "portal image: every module and data file of portal/ is copied (40)",
+    "portal image: every module and data file of portal/ is copied (43)",
     "portal image: static files and assets are copied",
     "portal-service: the image runs gunicorn, with the process count left to WEB_CONCURRENCY",
     "portal-service: the image's default is two processes",
@@ -671,11 +760,11 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (200 features)",
+    "features.md: every table has a Checks column (205 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (277 references)",
+    "…each reference names a program of the inventory (295 references)",
     "…and words found in one of its checks",
-    "every test program is in the inventory (61)",
+    "every test program is in the inventory (68)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
     "…and gathers every search and filter, the search by EPC included",
@@ -684,14 +773,14 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (16)",
-    "every relative link of the documents leads to a file (30 documents)"
+    "…and every decision record (19)",
+    "every relative link of the documents leads to a file (34 documents)"
    ],
    "count": 15,
    "ciOnly": false
   },
   "domains": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "an organisation's administrator adds a domain (name tidied, stem with its slash)",
     "…with the TXT record to add",
@@ -769,7 +858,7 @@
    "ciOnly": false
   },
   "domains_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "administrators have Domains in the menu",
     "the screen opens with its title, no domain yet",
@@ -1129,7 +1218,7 @@
    "ciOnly": false
   },
   "exports": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "PORTAL_EXPORT_LIMITS read once: reader and editor kept, malformed entries and the administrators' ignored",
     "…they became the operator's limits and those of the organisation that existed",
@@ -1198,7 +1287,7 @@
     "each refusal is in the journal with the role, the rows and the limit",
     "each change of an organisation's limits is in its journal",
     "each change of the maximum is in the operator's journal",
-    "every journal action has its label in both languages (37)",
+    "every journal action has its label in both languages (44)",
     "the export texts in both languages"
    ],
    "count": 69,
@@ -1228,7 +1317,7 @@
    "ciOnly": false
   },
   "forwarding": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "nothing set: the resolver of last resort off, GS1's address offered, no rule",
     "…the resolver sees it off",
@@ -1289,7 +1378,7 @@
    "ciOnly": false
   },
   "forwarding_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "a server administrator: Forwarding in the menu",
     "…the screen: the resolver of last resort off, GS1's address offered",
@@ -1737,7 +1826,7 @@
     "nginx starts while a service name has no address yet",
     "…and answers that service's paths with an error meanwhile (502)",
     "…while the other services answer",
-    "the service is found once its name has an address, without restarting nginx (2.0 s)",
+    "the service is found once its name has an address, without restarting nginx (1.9 s)",
     "GET / → 200 text/html",
     "GET / serves the home page, not the resolver",
     "GET / carries the Content Security Policy",
@@ -1803,13 +1892,17 @@
     "gs1resolver_lang cookie honoured",
     "a ar-EG browser → the home page in ar, rtl, the menu naming every language in itself, the Latin alphabet's first",
     "a ja-JP browser → the home page in ja, ltr, the menu naming every language in itself, the Latin alphabet's first",
+    "the original appearance: the project's title and logo, no style sheet of the portal's",
+    "the operator's appearance from the portal: title (header, footer, tab), logo and colours (#1A3D2B)",
+    "…kept when the language changes",
+    "…within the page's Content Security Policy",
     "phone: menu collapsed behind the button",
     "phone: button opens the menu",
     "phone: Escape closes the menu",
     "phone: no horizontal scrolling",
     "without JavaScript: English text, menu visible"
    ],
-   "count": 74,
+   "count": 78,
    "ciOnly": false
   },
   "i18n": {
@@ -2523,9 +2616,17 @@
     "verified_url() quotes the value",
     "branding is cached (a change shows after the cache time)",
     "…and read again after it",
-    "a branding read that fails: the page still answers, with the last branding"
+    "a branding read that fails: the page still answers, with the last branding",
+    "the original appearance: the project's title and logo, GS1's colours",
+    "the operator's appearance on the item's page: title (header and tab), logo, colours after GS1's",
+    "…and on an error page (404 kept)",
+    "…and on the readable linkset",
+    "…never in what machines read",
+    "…the description file keeps the software's name",
+    "…a title is text (escaped), a value that is not a colour is ignored",
+    "…removed (Restore the original): the original again"
    ],
-   "count": 68,
+   "count": 76,
    "ciOnly": false
   },
   "languages_e2e": {
@@ -2643,7 +2744,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:39051/ok",
+    "internal address refused: http://127.0.0.1:41495/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -2675,7 +2776,7 @@
    "ciOnly": false
   },
   "mail": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "mail off without PORTAL_MAIL_HOST",
     "a relay without a sender is refused",
@@ -2820,7 +2921,7 @@
    "ciOnly": false
   },
   "mail_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "sign-in page: recovery offered",
     "users: the invitation box, ticked, and its hint",
@@ -2899,7 +3000,7 @@
    "ciOnly": false
   },
   "monitor": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "defaults: every 5 minutes, the description file through the proxy, 26 hours, 21 days, 20 and 3 times",
     "a setting that is not a number: the default",
@@ -3517,7 +3618,7 @@
    "ciOnly": false
   },
   "privacy": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "anyone, signed in or not: no version yet, the operator's name and the days requests are kept",
     "…the page itself, with the footer's notice and its own script",
@@ -3554,7 +3655,7 @@
    "ciOnly": false
   },
   "privacy_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "the sign-in page: a footer link to the privacy notice",
     "…which opens without signing in: the default notice in the reader's language",
@@ -4210,7 +4311,7 @@
    "ciOnly": false
   },
   "session": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "configuration carries the session limits",
     "keep-alive answers the same limits",
@@ -4362,7 +4463,7 @@
    "ciOnly": false
   },
   "sso": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "an organisation's administrator: its configuration (none yet), the address to register",
     "an editor may not",
@@ -4431,7 +4532,7 @@
    "ciOnly": false
   },
   "sso_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "no organisation sign-in offered before one is on",
     "administrators have Organisation sign-in in the menu",
@@ -4520,7 +4621,7 @@
    "ciOnly": false
   },
   "tenants": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
     "server administrator signs in",
     "before any tenant: an operator editor writes every record (behaviour unchanged)",

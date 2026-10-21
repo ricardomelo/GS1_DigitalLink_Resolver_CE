@@ -34,6 +34,9 @@ British English, for operators and developers. People who register records read 
 - [Limits on exports](#limits-on-exports)
 - [GS1's GCP length table](#gs1s-gcp-length-table)
 - [Tenant API](#tenant-api)
+- [Forwarding to other resolvers](#forwarding-to-other-resolvers)
+- [Privacy notice](#privacy-notice)
+- [The installation's appearance](#the-installations-appearance)
 - [Request log](#request-log)
 - [Overview](#overview)
 - [Organisations' own domains](#organisations-own-domains)
@@ -792,6 +795,26 @@ requests are kept; it says that the installation is the operator's sole responsi
 is". Each publication is a version kept in the portal's database (`privacy_notice`, part of the backup). Write the
 operator's own notice before going to production.
 
+## The installation's appearance
+
+[ADR 0019](../adr/0019-appearance.md). Server administrators set, on *Appearance* in the portal, the title shown in place
+of *GS1 Resolver Community Edition*, a logo (PNG, JPEG or WebP, at most 200 KB) and three colours (main, action,
+highlight; white text must keep a contrast of 4.5:1 on the first two). Nothing is set in `.env`: the setting
+`appearance` in the portal's database (`settings`, part of the backup) holds them, and **Restore the original** removes
+it. The portal serves them to anyone at `GET /portal/api/appearance`, `GET /portal/appearance.css` (cached 60 seconds)
+and `GET /portal/appearance/logo`; the home page reads the same three. The resolver reads the setting every 30 seconds
+with its own connection, keeps the last one when the database does not answer, and embeds the logo in its pages and
+the item's page; the operator's title replaces `RESOLVER_PRODUCT_NAME` there. The description file
+(`/.well-known/gs1resolver`) keeps the software's name.
+
+To see what anyone receives:
+
+```bash
+curl -s https://<your resolver>/portal/api/appearance
+```
+
+`"original": true` until an appearance is saved; then the title, the colours and `"logo": "appearance/logo?v=…"`.
+
 ## Request log
 
 The resolver records each resolution request — a GS1 Digital Link URI, a compressed one, an EPC binary string,
@@ -1063,11 +1086,12 @@ in `index.html` is shown when JavaScript is off.
 
 ## Look and feel
 
-Both the portal and the resolver's own pages follow gs1.org: white header with the GS1 logo and the
+Both the portal and the resolver's own pages follow gs1.org: white header with the project's logo and the
 product name "GS1 Resolver Community Edition", a GS1 blue band with the page title, white panels on a pale
 blue-grey page, GS1 orange for the main action and teal links. gs1.org uses the licensed Gotham SSm
 typeface; these pages use Montserrat, the closest free match, with Verdana as the same fallback. The logo
-is the supplied GS1 artwork converted to transparent PNG.
+is the project's own (`logo.svg`), not GS1's. The operator can replace the title, the logo and the three main colours
+from the portal (section *The installation's appearance*).
 
 The editor's label block (QR code, its options, data attributes, link and legend) sits under the form, across
 the page: QR code, version information, state and buttons on the left — kept in view while the options are

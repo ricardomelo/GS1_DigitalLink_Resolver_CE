@@ -1445,7 +1445,7 @@ function isRecordsView() { return location.hash.split("?")[0] === "#records"; }
 const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants", "#apikeys": "apikeys",
                 "#requests": "requests", "#overview": "overview", "#domains": "domains",
                 "#branding": "branding", "#sso": "sso", "#organisation": "organisation", "#alerts": "alerts",
-                "#privacy": "privacy", "#forwarding": "forwarding" };
+                "#privacy": "privacy", "#forwarding": "forwarding", "#appearance": "appearance" };
 
 /* Shows the editor, the record list, the user administration, the organisations or the audit trail, following
    the address (#records, #users, #tenants, #audit), so the browser's back button and bookmarks work. Users and the
@@ -1456,7 +1456,7 @@ function applyView() {
   if ((view === "users" || view === "audit" || view === "apikeys" || view === "domains"
        || view === "branding" || view === "sso" || view === "organisation" || view === "alerts") && CONFIG
       && CONFIG.accountRole !== "admin") view = "editor";
-  if (["tenants", "privacy", "forwarding"].includes(view) && CONFIG && !CONFIG.serverAdmin) view = "editor";
+  if (["tenants", "privacy", "forwarding", "appearance"].includes(view) && CONFIG && !CONFIG.serverAdmin) view = "editor";
   $("#editor-view").hidden = view !== "editor";
   $("#records-view").hidden = view !== "records";
   $("#users-view").hidden = view !== "users";
@@ -1472,12 +1472,13 @@ function applyView() {
   $("#alerts-view").hidden = view !== "alerts";
   $("#privacy-view").hidden = view !== "privacy";
   $("#forwarding-view").hidden = view !== "forwarding";
+  $("#appearance-view").hidden = view !== "appearance";
   markCurrent(view);
   if (view !== "apikeys") forgetNewKey();
   const titles = { editor: "intro", records: "records", users: "users", audit: "audit", tenants: "tenants",
                    apikeys: "apikeys", requests: "requests", overview: "overview", domains: "domains",
                    branding: "branding", sso: "sso", organisation: "org", alerts: "alerts", privacy: "privacy",
-                   forwarding: "forwarding" };
+                   forwarding: "forwarding", appearance: "appearance" };
   I18N.set($("#hero-title"), `${titles[view]}.title`);
   I18N.set($("#hero-lede"), `${titles[view]}.lede`);
   const link = $("#hero-link");
@@ -1497,6 +1498,110 @@ function applyView() {
   if (view === "alerts" && CONFIG) loadOrganisations().then(() => loadAlerts());
   if (view === "privacy" && CONFIG) loadPrivacy();
   if (view === "forwarding" && CONFIG) loadForwarding();
+  if (view === "appearance" && CONFIG) loadAppearance();
+}
+
+/* ------------------------------------------------------------------ the appearance (ADR 0019)
+   Server administrators set the installation's title, logo and colours; the preview follows the form, the server
+   checks every value (the contrast of white text too) and "Restore the original" removes them all. */
+const appearanceState = { data: null, logo: null };
+
+function appearanceStatus(kind, key, params) {
+  const box = $("#appearance-status");
+  box.hidden = !key;
+  box.className = "status" + (kind ? " is-" + kind : "");
+  if (key) I18N.set(box, key, params);
+}
+
+function previewAppearance() {
+  const box = $("#appearance-preview");
+  box.style.setProperty("--preview-colour", $("#appearance-colour").value);
+  box.style.setProperty("--preview-action", $("#appearance-action").value);
+  box.style.setProperty("--preview-accent", $("#appearance-accent").value);
+  $("#appearance-preview-title").textContent = $("#appearance-name").value.trim()
+    || appearanceState.data?.defaults.title || "";
+  const data = appearanceState.data;
+  $("#appearance-preview-logo").src = appearanceState.logo
+    || ($("#appearance-logo-original").checked || !data ? "logo.svg" : data.logo);
+}
+
+function renderAppearance() {
+  const data = appearanceState.data;
+  if (!data) return;
+  const readOnly = Boolean(CONFIG?.support);
+  $("#appearance-name").value = data.original ? "" : data.title;
+  $("#appearance-name").placeholder = data.defaults.title;
+  for (const field of ["colour", "action", "accent"]) $("#appearance-" + field).value = data[field].toLowerCase();
+  $("#appearance-logo").value = "";
+  appearanceState.logo = null;
+  $("#appearance-logo-original").checked = false;
+  $("#appearance-logo-original").closest("label").hidden = !data.customLogo;
+  if (data.original) I18N.set($("#appearance-state"), "appearance.stateOriginal");
+  else I18N.set($("#appearance-state"), "appearance.stateChanged",
+                { when: formatWhen(data.updated), user: data.updatedBy || "" });
+  $("#appearance-reset").hidden = data.original;
+  for (const field of $$("#appearance-form input, #appearance-form button")) field.disabled = readOnly;
+  if (readOnly) appearanceStatus("warn", "appearance.readOnly");
+  previewAppearance();
+}
+
+async function loadAppearance() {
+  try {
+    appearanceState.data = await api("GET", "appearance");
+    renderAppearance();
+  } catch (e) {
+    appearanceStatus("error", e.code, e.params);
+  }
+}
+
+/* The pages' own look follows at once: the header's title and logo, and the colours (appearance.css again) */
+function showAppearance(found) {
+  appearanceState.data = found;
+  Appearance.show(found);
+  const sheet = $('link[href^="appearance.css"]');
+  if (sheet) sheet.href = "appearance.css?v=" + Date.now();
+  renderAppearance();
+}
+
+async function pickAppearanceLogo() {
+  const file = $("#appearance-logo").files[0];
+  appearanceState.logo = null;
+  if (file) {
+    if (file.size > 200 * 1024) {
+      $("#appearance-logo").value = "";
+      appearanceStatus("error", "branding.logoTooLarge", { max: 200 });
+    } else {
+      appearanceState.logo = await readFile(file);
+      $("#appearance-logo-original").checked = false;
+    }
+  }
+  previewAppearance();
+}
+
+async function saveAppearance(event) {
+  event.preventDefault();
+  const body = { title: $("#appearance-name").value.trim(), colour: $("#appearance-colour").value,
+                 action: $("#appearance-action").value, accent: $("#appearance-accent").value };
+  if (appearanceState.logo) body.logo = appearanceState.logo;
+  else if ($("#appearance-logo-original").checked) body.logo = "";
+  try {
+    const answer = await api("PUT", "appearance", body);
+    showAppearance(answer.appearance);
+    appearanceStatus("ok", answer.code, answer.params);
+  } catch (e) {
+    appearanceStatus("error", e.code, e.params);
+  }
+}
+
+async function resetAppearance() {
+  if (!(await ask(t("appearance.confirmReset")))) return;
+  try {
+    const answer = await api("DELETE", "appearance");
+    showAppearance(answer.appearance);
+    appearanceStatus("ok", answer.code, answer.params);
+  } catch (e) {
+    appearanceStatus("error", e.code, e.params);
+  }
 }
 
 /* ------------------------------------------------------------------ forwarding (ADR 0018)
@@ -5544,6 +5649,10 @@ async function init() {
   $("#forwarding-fallback-form").addEventListener("submit", saveFallback);
   $("#forwarding-rule-form").addEventListener("submit", e => saveRule(e));
   $("#rule-cancel").addEventListener("click", resetRuleForm);
+  $("#appearance-form").addEventListener("submit", saveAppearance);
+  $("#appearance-form").addEventListener("input", previewAppearance);
+  $("#appearance-logo").addEventListener("change", pickAppearanceLogo);
+  $("#appearance-reset").addEventListener("click", resetAppearance);
   document.addEventListener("localechange", renderForwarding);
   $("#privacy-preview-button").addEventListener("click", previewPrivacy);
   $("#privacy-text").addEventListener("input", e => { e.target.dataset.edited = "1"; });

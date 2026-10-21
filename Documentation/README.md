@@ -69,6 +69,7 @@ development tests' checks that prove it; the whole list of checks is the [invent
 | [ADR 0015](adr/0015-gcp-length-table.md) | the GS1 Company Prefix's length from GS1's GCP length table, uploaded by the server administrator |
 | [ADR 0016](adr/0016-documentation-and-feature-inventory.md) | the documents by reader, the feature inventory drawn from the tests' checks, the API reference generated |
 | [ADR 0018](adr/0018-forwarding.md) | forwarding: every code of a prefix sent to another resolver, and the codes this resolver does not know sent to a resolver of last resort (`https://id.gs1.org` by default), both switched on in the portal, with the overview's figures |
+| [ADR 0019](adr/0019-appearance.md) | the installation's appearance: the title in place of *GS1 Resolver Community Edition*, the logo and three colours, set by server administrators in the portal for every page (portal, home page, resolver's pages), with a button that restores the original |
 | [ADR 0017](adr/0017-privacy-notice.md) | the installation's privacy notice: written in the portal by server administrators, kept as versions, linked from every footer, a default text on the operator's responsibility |
 
 The documentation is written in British English only; readers of other languages can use the translation built into

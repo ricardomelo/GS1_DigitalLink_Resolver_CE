@@ -10,6 +10,7 @@ import forwarding
 import gs1_syntax
 import landing
 import request_log
+import web_pages
 from web_namespace import web_namespace
 from mongo_db_init import mongo, init_mongo
 
@@ -95,6 +96,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     # Forwarding by prefix and the resolver of last resort (Documentation/adr/0018-forwarding.md), from the same database
     if forwarding.FORWARDING.database is None:
         forwarding.FORWARDING.database = lambda: mongo.cx[domains.portal_db_name()]
+    # The installation's appearance (Documentation/adr/0019-appearance.md): title, logo and colours of its pages
+    if web_pages.APPEARANCE.database is None:
+        web_pages.APPEARANCE.database = lambda: mongo.cx[domains.portal_db_name()]
 
     @app.after_request
     def add_headers(response: Response) -> Response:

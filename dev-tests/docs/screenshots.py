@@ -310,6 +310,7 @@ def guide_images(locale: str, folder: str, description: str) -> None:
         requests_images(browser, folder, locale)
         privacy_images(browser, folder, locale)
         forwarding_images(browser, folder, locale)
+        appearance_images(browser, folder, locale)
         browser.close()
 
 
@@ -329,6 +330,22 @@ def forwarding_images(browser, folder: str, locale: str) -> None:
     page.click("#login-submit"); page.wait_for_timeout(1000)
     page.goto(BASE + "#forwarding"); page.wait_for_timeout(1200)
     save(page, f"{folder}/forwarding.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1100})
+    page.context.close()
+
+
+def appearance_images(browser, folder: str, locale: str) -> None:
+    """The Appearance screen of a server administrator, an operator's title and colours in the form and its preview,
+    not saved, so every other picture keeps the original (Documentation/adr/0019-appearance.md)."""
+    page = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1250}).new_page()
+    page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
+    page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
+    page.click("#login-submit"); page.wait_for_timeout(1000)
+    page.goto(BASE + "#appearance"); page.wait_for_timeout(1000)
+    page.fill("#appearance-name", "Acme Resolver")
+    for field, colour in (("colour", "#1a3d2b"), ("action", "#8a1538"), ("accent", "#e8b100")):
+        page.fill(f"#appearance-{field}", colour)
+    page.wait_for_timeout(300)
+    save(page, f"{folder}/appearance.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1250})
     page.context.close()
 
 

@@ -51,6 +51,15 @@ UPSTREAM_NAMES = {"web-service": "resolver", "data-entry-service": "data-entry",
 DESCRIPTION = {"name": "Test resolver", "resolverRoot": "https://id.example.org",
                "contact": {"fn": "Example Org", "hasURL": "https://www.example.org/"}}
 
+# The portal's answers about the installation's appearance (Documentation/adr/0019-appearance.md): the original until a
+# check sets the operator's
+ORIGINAL_APPEARANCE = {"original": True, "title": "GS1 Resolver Community Edition", "customLogo": False, "logo": "logo.svg"}
+APPEARANCE = dict(ORIGINAL_APPEARANCE)
+APPEARANCE_CSS = ":root { --gs1-blue: #1A3D2B; --gs1-blue-dark: #11291D; --gs1-orange: #E8B100; --action: #8A1538; }\n"
+# A PNG of 1×1 pixel
+LOGO_PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cf"
+                         "c0f01f0005000201a1c5ab8a0000000049454e44ae426082")
+
 results: list[tuple[bool, str]] = []
 
 
@@ -126,13 +135,20 @@ class Replica:
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
+                kind = "application/json"
                 if name == "resolver" and self.path.startswith("/api/.well-known/gs1resolver"):
                     body = json.dumps(DESCRIPTION).encode()
+                elif name == "portal" and self.path == "/portal/api/appearance":
+                    body = json.dumps(APPEARANCE).encode()
+                elif name == "portal" and self.path == "/portal/appearance.css":
+                    body, kind = APPEARANCE_CSS.encode(), "text/css"
+                elif name == "portal" and self.path.startswith("/portal/appearance/logo"):
+                    body, kind = LOGO_PNG, "image/png"
                 else:
                     body = json.dumps({"upstream": name, "replica": address, "path": self.path,
                                        "host": self.headers.get("Host")}).encode()
                 self.send_response(200)
-                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Type", kind)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -486,6 +502,38 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
                   f"a {locale} browser → the home page in {expected}, {direction}, the menu naming every language in itself, "
                   "the Latin alphabet's first")
             context.close()
+
+        # The installation's appearance set in the portal (ADR 0019): its title, logo and colours
+        context = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900})
+        page = context.new_page()
+        csp_errors = []
+        page.on("console", lambda m: csp_errors.append(m.text) if "Content Security Policy" in m.text else None)
+        page.route(re.compile(r"https://fonts\.(googleapis|gstatic)\.com/.*"),
+                   lambda route: route.fulfill(status=200, body="", content_type="text/css"))
+        page.goto(base + "/")
+        page.locator("#operator").wait_for(state="visible")
+        check(page.locator(".site-header .product").inner_text() == "GS1 Resolver Community Edition"
+              and page.locator(".site-header .brand img").get_attribute("src") == "/home/logo.svg"
+              and page.locator("link[href='/portal/appearance.css']").count() == 0,
+              "the original appearance: the project's title and logo, no style sheet of the portal's")
+        APPEARANCE.update(original=False, title="Acme Resolver", customLogo=True, logo="appearance/logo?v=abc")
+        page.goto(base + "/")
+        page.locator("link[href='/portal/appearance.css']").wait_for(state="attached")
+        page.wait_for_timeout(300)
+        blue = page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--gs1-blue').trim()")
+        check(page.locator(".site-header .product").inner_text() == "Acme Resolver"
+              and page.locator(".site-footer .product").inner_text() == "Acme Resolver"
+              and page.title() == "Acme Resolver" and blue == "#1A3D2B"
+              and page.locator(".site-header .brand img").get_attribute("src") == "/portal/appearance/logo?v=abc"
+              and page.evaluate("document.querySelector('.site-header .brand img').naturalWidth") == 1,
+              f"the operator's appearance from the portal: title (header, footer, tab), logo and colours ({blue})")
+        page.select_option("#locale", "pt-BR")
+        check(page.locator(".site-header .product").inner_text() == "Acme Resolver" and page.title() == "Acme Resolver",
+              "…kept when the language changes")
+        check(not csp_errors, "…within the page's Content Security Policy" + (f": {csp_errors}" if csp_errors else ""))
+        page.screenshot(path=str(shots / "home-appearance.png"), full_page=True)
+        APPEARANCE.clear(); APPEARANCE.update(ORIGINAL_APPEARANCE)
+        context.close()
 
         # Phone
         context = browser.new_context(locale="pt-BR", viewport={"width": 390, "height": 844},

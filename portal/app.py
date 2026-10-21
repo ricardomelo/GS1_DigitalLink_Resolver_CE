@@ -44,6 +44,7 @@ import meta
 import migrate
 import monitor
 import notify
+import appearance
 import forwarding
 import overview
 import privacy
@@ -103,7 +104,7 @@ if os.environ.get("PORTAL_SESSION_HOURS", "").strip():
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 # Needed by the sign-in page and the privacy notice (ADR 0017), which anyone opens
 PUBLIC_ASSETS = {"app.css", "i18n.js", "login.js", "password.js", "gs1-logo.png", "logo.svg", "favicon.png",
-                 "privacy.js"}
+                 "privacy.js", "appearance.js"}
 # The map of requests (ADR 0006, section 10): its script, d3, topojson-client and the countries, after sign-in
 PRIVATE_ASSETS = {"app.js", "requests-map.js", "d3.min.js", "topojson-client.min.js", "world-countries.json",
                   "iso3166.json"}
@@ -721,6 +722,71 @@ def assets(name):
     if name in PRIVATE_ASSETS and current_user():
         return send_from_directory(STATIC_DIR, name)
     return Response(status=404)
+
+
+# --------------------------------------------------------------------------- the appearance (ADR 0019)
+@app.get("/portal/api/appearance")
+def get_appearance():
+    """The installation's title, colours and logo address, for every page (the home page too), signed in or not."""
+    try:
+        return jsonify(appearance.public())
+    except PyMongoError as exc:
+        log.warning("Appearance not read: %s", exc)
+        return jsonify(appearance.public({}))
+
+
+@app.get("/portal/appearance.css")
+def appearance_css():
+    """The colours as the pages' design tokens, linked after their own style sheet."""
+    try:
+        text = appearance.css()
+    except PyMongoError:
+        text = appearance.css({})
+    response = Response(text, mimetype="text/css")
+    response.headers["Cache-Control"] = "public, max-age=60"
+    return response
+
+
+@app.get("/portal/appearance/logo")
+def appearance_logo():
+    """The operator's logo (an address with its version, cached a day), or the project's."""
+    try:
+        logo = (appearance.current().get("logo")) or None
+    except PyMongoError:
+        logo = None
+    if not logo:
+        return send_from_directory(STATIC_DIR, "logo.svg")
+    response = Response(bytes(logo["data"]), mimetype=logo.get("type", "image/png"))
+    response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
+
+
+@app.put("/portal/api/appearance")
+@require_login
+@server_admin_required
+def put_appearance():
+    """{title, colour, action, accent, logo}: the installation's appearance (server administrators)."""
+    if g.support:
+        return message("appearance.readOnly", 403)
+    found = appearance.save(request.get_json(silent=True) or {}, g.user)
+    audit.info("user=%s action=appearance-save title=%s", g.user, found["title"])
+    log_event("appearance-save", tenant=None, detail=f'title={found["title"]} colour={found["colour"]} '
+                                                      f'action={found["action"]} accent={found["accent"]} '
+                                                      f'logo={"yes" if found.get("logo") else "no"}')
+    return message("appearance.saved", 200, appearance=appearance.public())
+
+
+@app.delete("/portal/api/appearance")
+@require_login
+@server_admin_required
+def delete_appearance():
+    """Back to the original title, logo and colours."""
+    if g.support:
+        return message("appearance.readOnly", 403)
+    appearance.reset()
+    audit.info("user=%s action=appearance-reset", g.user)
+    log_event("appearance-reset", tenant=None)
+    return message("appearance.restored", 200, appearance=appearance.public({}))
 
 
 @app.get("/portal/privacy")

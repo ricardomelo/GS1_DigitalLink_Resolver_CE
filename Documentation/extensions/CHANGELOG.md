@@ -15,6 +15,15 @@
   of its target and its magnification. Commit `83b06a3`.
 - **New organisation's button next to *Add GCP***: on a wide screen *Create organisation* no longer stands at the far
   right of the form. Commit `890c383`.
+- **Automated requests and requests without a key counted, not listed** ([ADR 0006, section 11](../adr/0006-resolver-request-log.md)):
+  on staging 96 % of the request log came from automated clients (command-line tools, scripts, crawlers) and probes
+  without a GS1 code, hiding people's scans and filling the space limit. The resolver now counts such requests per
+  quarter of an hour (`resolver_log.request_counts`) instead of storing each one; the daily aggregates, the overview,
+  the requests per day and the monitoring's 404 spikes count them, so their figures keep their meaning. *Requests*
+  lists people's requests with a GS1 code, an invalid one included; the *Include automated requests* box and the
+  *Automated* device filter go, and a line says what is counted but not listed. The hourly housekeeping deletes the
+  automated events and probes recorded before, once their day is counted (journal `requestlog-folded`). Commit
+  `e05420a`.
 - **The backlog's item 7.3 dropped** (the review of the Portuguese AI names), by the owner's decision of 21 October.
 
 ### The staging tests of 20 October and the owner's notes (session 17)

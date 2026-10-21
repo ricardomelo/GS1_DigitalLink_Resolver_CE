@@ -919,6 +919,19 @@ resolver rightly refused it before forwarding. The plan was corrected and its ot
 
 **Item 7.3 dropped** by the owner: the review of the Portuguese AI names will not be arranged.
 
+**Automated requests and requests without a key counted, not listed** (`e05420a`; ADR 0006 §11). The owner found the
+log flooded and proposed not recording invalid and automated requests at all. Two things in the code argued for less:
+the daily counts are built from the events, so recording nothing would have changed the overview's figures; and an
+invalid GS1 code read by a phone is a misprinted label, worth keeping. A count on staging decided it: of 89,500 events
+in seven days, 92.6 % came from automated clients — most of them with a valid key — and 3.1 % had no key; about 125
+were people. The owner chose to count those without storing them. The resolver writes one count per quarter of an hour
+and per group of the aggregates (a quarter of an hour, because every time zone is a whole number of them from UTC),
+and the portal reads counts wherever it reads events to count them. The events of before go once their day is counted,
+rather than being converted into counts: a crash between the two halves of a conversion would count some twice. The
+first test run showed that the writer's own tests feed it bare dictionaries with no key — now counted — and that the
+counts' indexes must not be made with the events' (a stand-in collection has no database); a check of today's figures
+was written so that it does not depend on the hour. 20 mutations, all caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

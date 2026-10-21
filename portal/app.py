@@ -44,6 +44,7 @@ import meta
 import migrate
 import monitor
 import notify
+import forwarding
 import overview
 import privacy
 import requestlog
@@ -758,6 +759,102 @@ def publish_privacy_notice():
     audit.info("user=%s action=privacy-publish version=%s", g.user, found["version"])
     log_event("privacy-publish", tenant=None, detail=f'version={found["version"]}')
     return message("privacy.published", 200, params={"version": found["version"]}, notice=found)
+
+
+# --------------------------------------------------------------------------- forwarding (ADR 0018)
+def forwarding_own_hosts() -> set[str]:
+    """This installation's own host and its organisations' verified domains: a destination there would loop."""
+    return {_installation_host()} | {d["_id"] for d in domains.load(None, every=True) if d.get("verified")}
+
+
+def forwarding_view() -> dict:
+    """The resolver of last resort and every rule, each with the organisations whose prefixes it overlaps."""
+    tenant_list = tenants.load()
+    return {"fallback": forwarding.fallback(),
+            "rules": [{**r, "organisations": forwarding.overlaps(r["prefix"], tenant_list)}
+                      for r in forwarding.rules()],
+            "readOnly": bool(g.support)}
+
+
+def forwarding_writable():
+    """None, or the refusal during support access."""
+    return message("forwarding.readOnly", 403) if g.support else None
+
+
+@app.get("/portal/api/forwarding")
+@require_login
+@server_admin_required
+def get_forwarding():
+    """Forwarding by prefix and the resolver of last resort (Documentation/adr/0018-forwarding.md)."""
+    return jsonify(forwarding_view())
+
+
+@app.put("/portal/api/forwarding/fallback")
+@require_login
+@server_admin_required
+def put_forwarding_fallback():
+    """{enabled, url}: the resolver of last resort switched on or off, its address (empty: https://id.gs1.org)."""
+    refused = forwarding_writable()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    found = forwarding.set_fallback(data.get("enabled"), data.get("url"), g.user, forwarding_own_hosts())
+    audit.info("user=%s action=forwarding-fallback enabled=%s url=%s", g.user, found["enabled"], found["url"])
+    log_event("forwarding-fallback", tenant=None, detail=f'enabled={str(found["enabled"]).lower()} url={found["url"]}')
+    return message("forwarding.fallbackSaved" if found["enabled"] else "forwarding.fallbackOff", 200,
+                   params={"url": found["url"]}, **forwarding_view())
+
+
+@app.post("/portal/api/forwarding/rules")
+@require_login
+@server_admin_required
+def post_forwarding_rule():
+    """{prefix, target, mode, enabled, note}: a new rule."""
+    refused = forwarding_writable()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    found, _ = forwarding.save_rule(data.get("prefix"), data, g.user, forwarding_own_hosts(), new=True)
+    audit.info("user=%s action=forwarding-rule-create prefix=%s", g.user, found["prefix"])
+    log_event("forwarding-rule-create", tenant=None,
+              detail=f'prefix={found["prefix"]} target={found["target"]} enabled={str(found["enabled"]).lower()}')
+    return message("forwarding.ruleSaved", 200, params={"prefix": found["prefix"]}, **forwarding_view())
+
+
+@app.put("/portal/api/forwarding/rules/<prefix>")
+@require_login
+@server_admin_required
+def put_forwarding_rule(prefix):
+    """{target, mode, enabled, note}: a rule changed (its prefix stays)."""
+    refused = forwarding_writable()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    found, _ = forwarding.save_rule(prefix, data, g.user, forwarding_own_hosts(), new=False)
+    audit.info("user=%s action=forwarding-rule-update prefix=%s", g.user, found["prefix"])
+    log_event("forwarding-rule-update", tenant=None,
+              detail=f'prefix={found["prefix"]} target={found["target"]} enabled={str(found["enabled"]).lower()}')
+    return message("forwarding.ruleSaved", 200, params={"prefix": found["prefix"]}, **forwarding_view())
+
+
+@app.delete("/portal/api/forwarding/rules/<prefix>")
+@require_login
+@server_admin_required
+def delete_forwarding_rule(prefix):
+    """A rule removed."""
+    refused = forwarding_writable()
+    if refused:
+        return refused
+    found = forwarding.remove_rule(prefix)
+    audit.info("user=%s action=forwarding-rule-remove prefix=%s", g.user, found["prefix"])
+    log_event("forwarding-rule-remove", tenant=None, detail=f'prefix={found["prefix"]} target={found["target"]}')
+    return message("forwarding.ruleRemoved", 200, params={"prefix": found["prefix"]}, **forwarding_view())
+
+
+@app.errorhandler(forwarding.ForwardingError)
+def on_forwarding_error(err):
+    """A forwarding setting or rule refused: 422 (404 for an unknown rule) with the message code."""
+    return message(err.code, 404 if err.code == "forwarding.unknownRule" else 422, params=err.params)
 
 
 @app.errorhandler(privacy.PrivacyError)
@@ -3111,8 +3208,10 @@ def overview_data(days, top: int = overview.TOP_SCREEN, organisation=None) -> di
         def governance_of(p, n):
             return overview.governance(audit_scope, lambda anchor: gs1.within_prefixes(anchor, g.prefixes), p,
                                        g.tenant, whole, n)
+    # the installation's forwarding (ADR 0018): server administrators, on the whole installation
+    forwarding_of = forwarding.group if operation is not None and whole else None
     data = overview.build(per, scope, whole, overview_records(), last_check, operation, governance_of, top,
-                          requestlog.days_for(g.tenant, g.tenants))
+                          requestlog.days_for(g.tenant, g.tenants), forwarding_of)
     # what matters to an organisation from operation: the last check of every link, how long requests are kept and
     # the scope's active alerts (its spikes of 404), with record quality
     data["records"]["lastCheckAt"] = last_check.get("checkedAt")

@@ -9,6 +9,7 @@ from flask_restx import Namespace, Resource
 
 import domains
 import epc_binary
+import forwarding
 import landing
 import request_log
 import web_logic
@@ -430,6 +431,14 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
         response_data = web_logic.get_compressed_link(uncompressed_link)
         return response_data, 200
 
+    # A prefix forwarded to another resolver (ADR 0018): before this resolver's records, once the syntax is valid
+    path = identifiers + (qualifier_path or '')
+    rule = forwarding.FORWARDING.rule_for(*identifiers.strip('/').split('/', 1))
+    if rule and domains.allows(request.environ, *identifiers.strip('/').split('/', 1)) \
+            and web_logic._test_gs1_digital_link_syntax(path):
+        _prefix, target, mode = rule
+        return _forward(target if mode == 'fixed' else forwarding.join(target, path, query_strings), 'forwarded')
+
     if domains.allows(request.environ, *identifiers.strip('/').split('/', 1)):
         response_data, link_header = web_logic.read_document(identifiers, doc_id, qualifier_path, linktype,
                                                              accept_language_list, context, media_types_list,
@@ -440,7 +449,13 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
                                       '_outcome': 'unknown'}, None
     status = response_data['response_status']
     # private keys for the request log, never part of an answer (ADR 0006)
-    request_log.note(level=response_data.pop('_level', None), outcome=response_data.pop('_outcome', None))
+    outcome = response_data.pop('_outcome', None)
+    request_log.note(level=response_data.pop('_level', None), outcome=outcome)
+    # A key this resolver does not know: to the resolver of last resort when the operator switched it on (ADR 0018)
+    if status == 404 and outcome == 'unknown':
+        fallback = forwarding.FORWARDING.fallback()
+        if fallback:
+            return _forward(forwarding.join(fallback, path, query_strings), 'fallback')
 
     # ---------------------------------------------------------------- erros (400/404/500)
     if status >= 400:
@@ -516,6 +531,14 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
         return response
 
     return response_data, status
+
+
+def _forward(location: str, outcome: str) -> Response:
+    """307 to another resolver (ADR 0018): the request log records the outcome and the destination's host."""
+    request_log.note(outcome=outcome)
+    response = Response(status=307)
+    response.headers['Location'] = location
+    return response
 
 
 def _latin1(value: str) -> str:

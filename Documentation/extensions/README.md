@@ -754,6 +754,35 @@ curl -s -o label.svg -H "Authorization: Bearer $KEY" 'https://id.example.org/por
 Errors come as `{"code": "...", "params": {...}}` with the portal's message codes (`api.keyMissing`,
 `api.keyInvalid`, `api.scope`, `api.rateLimit`, `access.prefix`, `record.notFound`, the GS1 and validation codes).
 
+## Forwarding to other resolvers
+
+[ADR 0018](../adr/0018-forwarding.md). Server administrators set two things on *Forwarding* in the portal, both off
+after installation:
+
+- **The resolver of last resort**: a request for a key this resolver does not know (no record; on an organisation's
+  own domain, a key outside its prefixes) is answered **307** to `https://id.gs1.org` — or the address set — followed
+  by the request's GS1 Digital Link path and query string, instead of 404. Keys with records but without the link type
+  asked, and invalid requests, are answered as before.
+- **Prefix rules**: every request for a key whose GS1 Company Prefix (after the indicator, extension or filler digit
+  of GTIN, ITIP, SSCC and GRAI) starts with a rule's prefix is answered 307 to the rule's destination, **before** this
+  resolver's records; with *keep the path* the destination is followed by the path and query string. The longest
+  prefix wins.
+
+The settings live in the portal's database (`settings` → `forwarding.fallback`, collection `forwarding_rules`); the
+resolver reads them every 30 seconds with its own connection and keeps the last ones when the database does not
+answer. Nothing is set in `.env`. The request log records the outcomes `forwarded` and `fallback` with the
+destination's host; the overview counts both. GS1's resolver test suite expects 404 for unknown keys: run it with the
+resolver of last resort off. With it on, fewer 404s reach the spike alerts (section *Monitoring and alerts*).
+
+To see what a request does without the portal:
+
+```bash
+curl -sI https://<your resolver>/01/09506000134376 | grep -iE '^(HTTP|location)'
+```
+
+A key nobody registered answers `HTTP/2 404` with forwarding off, `HTTP/2 307` and `location: https://id.gs1.org/01/…`
+with the resolver of last resort on.
+
 ## Privacy notice
 
 The footer of every page links to `/portal/privacy`, the installation's privacy notice

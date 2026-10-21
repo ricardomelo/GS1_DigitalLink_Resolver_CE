@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Any
 import domains
+import forwarding
 import gs1_syntax
 import landing
 import request_log
@@ -91,6 +92,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     # The brands of the item's page (Documentation/adr/0011-item-page.md), from the same database
     if landing.BRANDS.database is None:
         landing.BRANDS.database = lambda: mongo.cx[domains.portal_db_name()]
+    # Forwarding by prefix and the resolver of last resort (Documentation/adr/0018-forwarding.md), from the same database
+    if forwarding.FORWARDING.database is None:
+        forwarding.FORWARDING.database = lambda: mongo.cx[domains.portal_db_name()]
 
     @app.after_request
     def add_headers(response: Response) -> Response:

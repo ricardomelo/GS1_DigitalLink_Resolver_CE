@@ -689,6 +689,7 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .requests-outcome.is-unknown, .requests-outcome.is-noLink { background: #FFF4E0; color: #9A5B00; }
 .requests-outcome.is-invalid, .requests-outcome.is-error { background: #FDECEA; color: var(--err); }
 .requests-outcome.is-page, .requests-outcome.is-click { background: #E8F0FB; color: var(--link); }
+.requests-outcome.is-forwarded, .requests-outcome.is-fallback { background: #EDEAFB; color: #4B3A9A; }
 #requests-more, #requests-api-more { margin-top: 1rem; }
 
 
@@ -797,7 +798,7 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
   .sidebar ul { list-style: none; margin: 0; padding: 0 0 1rem; }
   .sidebar-item {
     display: flex; align-items: center; gap: .75rem; padding: .65rem 1.2rem; color: #DCE6F2; text-decoration: none;
-    font: 500 .9375rem var(--sans); white-space: nowrap; border-inline-start: 3px solid transparent;
+    font: 500 .9375rem/1.3 var(--sans); border-inline-start: 3px solid transparent;   /* long names wrap (de, tr…) */
   }
   .sidebar-item svg { flex: none; }
   .sidebar-item:hover, .sidebar-item:focus-visible { background: rgba(255, 255, 255, .1); color: #fff; }
@@ -806,6 +807,26 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
   body.sidebar-folded .sidebar-item span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 }
 .menu-item[aria-current="page"] { background: var(--page); box-shadow: inset 3px 0 0 var(--gs1-orange); }
+
+/* ---------------------------------------------------------------- forwarding (ADR 0018) */
+.forwarding-fallback, .forwarding-rule { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: end;
+  margin: .5rem 0 .75rem; }
+.forwarding-fallback > div, .forwarding-rule > div { display: flex; flex-direction: column; gap: .25rem; }
+.forwarding-fallback label, .forwarding-rule label { margin: 0; font-size: .875rem; }
+.forwarding-fallback .choice { flex-basis: 100%; font-size: .9375rem; }
+.forwarding-rule .choice { margin: 0 0 .75rem; font-size: .9375rem; }
+.forwarding-table input[type=checkbox] { width: 1.15rem; height: 1.15rem; min-height: 0; margin: 0;
+  accent-color: var(--gs1-blue); }
+.forwarding-url { flex: 1 1 22rem; }
+.forwarding-note { flex: 1 1 14rem; }
+#rule-prefix { width: 10rem; font-family: var(--mono); }
+.forwarding-actions { flex-direction: row !important; gap: .5rem !important; }
+.forwarding-table td.code { white-space: normal; overflow-wrap: anywhere; font-size: .8125rem; }
+.forwarding-table td.forwarding-prefix { white-space: nowrap; overflow-wrap: normal; }
+.forwarding-table td.is-warn { color: #9A5B00; font-weight: 600; }
+.forwarding-table tr.is-off td, .overview-table tr.is-off td { color: var(--muted); }
+.forwarding-row-actions { white-space: nowrap; }
+#forwarding-view h2 + .hint, #fallback-state { margin-top: 0; }
 
 /* ---------------------------------------------------------------- the privacy notice (ADR 0017) */
 .footer-links { margin: 0 0 .5rem; }

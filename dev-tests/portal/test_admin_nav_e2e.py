@@ -106,6 +106,10 @@ with sync_playwright() as p:
           == "240px")
     check("…the menu says Organisation management", page.inner_text(".sidebar-item[href='#organisation']").strip()
           == "Organisation management", page.inner_text(".sidebar-item[href='#organisation']"))
+    cut = page.evaluate("() => [...document.querySelectorAll('.sidebar-item span')]"
+                        ".filter(s => s.getBoundingClientRect().right > document.getElementById('sidebar')"
+                        ".getBoundingClientRect().right + 1).map(s => s.textContent)")
+    check("…every name of the side menu within it, a long one on two lines", not cut, cut)
     wide = browser.new_context(locale="en-GB", viewport={"width": 1920, "height": 900}).new_page()
     sign_in(wide, "root", "root-password-long")
     wide.goto(BASE + "#records"); wide.wait_for_timeout(600)
@@ -115,7 +119,7 @@ with sync_playwright() as p:
 
     # ------------------------------------------------------------ the sidebar
     check("wide screen: the sidebar, with the user menu's screens", page.is_visible("#sidebar")
-          and page.locator(".sidebar-item").count() == page.locator(".menu-panel a.nav-item").count() == 15)
+          and page.locator(".sidebar-item").count() == page.locator(".menu-panel a.nav-item").count() == 16)
     check("…the current screen marked", page.get_attribute(".sidebar-item[href='#overview']", "aria-current") == "page"
           and page.get_attribute(".sidebar-item[href='#records']", "aria-current") is None)
     page.click(".sidebar-item[href='#records']"); page.wait_for_timeout(500)

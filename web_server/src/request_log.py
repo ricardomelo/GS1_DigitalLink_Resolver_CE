@@ -277,8 +277,11 @@ def event(noted: dict[str, Any], response: Response) -> dict[str, Any]:
 
 def outcome(status: int, noted: dict[str, Any]) -> str:
     """redirect, choice, linkset, compressed, unknown, noLink, invalid or error; page and click for the item's page
-    (Documentation/adr/0011-item-page.md)."""
+    (Documentation/adr/0011-item-page.md); forwarded (a prefix rule) and fallback (the resolver of last resort) for a
+    request sent to another resolver (Documentation/adr/0018-forwarding.md)."""
     if noted.get("outcome") in ("page", "click") and status < 400:
+        return noted["outcome"]
+    if noted.get("outcome") in ("forwarded", "fallback") and status == 307:
         return noted["outcome"]
     if noted.get("compress"):
         return "compressed" if status < 400 else "invalid"

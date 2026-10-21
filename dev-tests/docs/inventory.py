@@ -24,8 +24,8 @@ JSON = os.path.join(REPO, "Documentation", "test-inventory.json")
 # The areas in the order of the user guide, and the programs of each (one area per program)
 AREAS = [
     ("Resolution: the resolver, its pages and its log", ["resolver", "gs1_suite", "epc_binary", "data_entry_api",
-                                                         "mock_parity", "request_log", "domains_resolver", "landing",
-                                                         "load"]),
+                                                         "mock_parity", "request_log", "domains_resolver",
+                                                         "forwarding_resolver", "landing", "load"]),
     ("Records: keys, qualifiers, links and the editor", ["keys", "registration", "data_attributes", "special_chars",
                                                          "dictionary", "engine_messages", "link_types", "governance",
                                                          "fix_serials", "portal_e2e", "portal_e2e_without_engine",
@@ -35,9 +35,9 @@ AREAS = [
     ("Spreadsheets, link checks and background work", ["sheet", "linkcheck", "jobs"]),
     ("The item's page", ["item_page", "item_page_e2e", "titles"]),
     ("Requests and the overview", ["requestlog", "requests_e2e", "overview", "overview_e2e"]),
-    ("Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+    ("Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
      ["tenants", "admin_nav", "admin_nav_e2e", "exports", "sso", "sso_e2e", "session", "api", "api_e2e", "domains",
-      "domains_e2e", "monitor", "mail", "mail_e2e", "privacy", "privacy_e2e"]),
+      "domains_e2e", "monitor", "mail", "mail_e2e", "privacy", "privacy_e2e", "forwarding", "forwarding_e2e"]),
     ("Interface and languages", ["portal_config", "i18n", "languages_e2e"]),
     ("The documents", ["docs"]),
     ("Data store, installation and operation", ["store", "store_mongodb", "home", "install", "deploy"]),

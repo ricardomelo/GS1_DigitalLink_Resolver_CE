@@ -44,7 +44,8 @@ EVENTS = "requests"
 DAILY = "request_daily"
 API_CALLS = "api_requests"
 # page and click: the item's page and its buttons, people following a scan (Documentation/adr/0011-item-page.md)
-OUTCOMES = ("redirect", "choice", "linkset", "unknown", "noLink", "invalid", "error", "compressed", "page", "click")
+OUTCOMES = ("redirect", "choice", "linkset", "unknown", "noLink", "invalid", "error", "compressed", "page", "click",
+            "forwarded", "fallback")           # sent to another resolver (ADR 0018)
 DEVICES = ("mobile", "tablet", "desktop", "automated", "unknown")
 BROWSERS = ("chrome", "safari", "firefox", "edge", "samsung", "opera", "app", "other")
 FORMS = ("uri", "compressed", "epc", "landing")

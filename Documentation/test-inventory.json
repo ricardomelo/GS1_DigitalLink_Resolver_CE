@@ -2,7 +2,7 @@
  "generated": "2026-10-21",
  "programs": {
   "admin_nav": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "an organisation's administrator opens their organisation's page",
     "…its users with their prefixes",
@@ -51,12 +51,13 @@
    "ciOnly": false
   },
   "admin_nav_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "the sign-in page: no room kept for a sidebar it does not have, the form under the title",
     "…the project's logo in the header, not GS1's",
     "the portal: the sidebar's room kept",
     "…the menu says Organisation management",
+    "…every name of the side menu within it, a long one on two lines",
     "a wide screen: the content up to 96rem (1,536 px), wider than before (76rem)",
     "wide screen: the sidebar, with the user menu's screens",
     "…the current screen marked",
@@ -105,11 +106,11 @@
     "no script errors",
     "the browser's own dialogs never used"
    ],
-   "count": 51,
+   "count": 52,
    "ciOnly": false
   },
   "api": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "an editor cannot list or create keys",
     "a tenant administrator creates a key: 201, the full key once",
@@ -208,7 +209,7 @@
    "ciOnly": false
   },
   "api_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "an organisation's administrator has API keys in the menu",
     "choosing a menu item closes the menu, though the pointer is still over it",
@@ -690,7 +691,7 @@
    "ciOnly": false
   },
   "domains": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "an organisation's administrator adds a domain (name tidied, stem with its slash)",
     "…with the TXT record to add",
@@ -768,7 +769,7 @@
    "ciOnly": false
   },
   "domains_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "administrators have Domains in the menu",
     "the screen opens with its title, no domain yet",
@@ -1128,7 +1129,7 @@
    "ciOnly": false
   },
   "exports": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "PORTAL_EXPORT_LIMITS read once: reader and editor kept, malformed entries and the administrators' ignored",
     "…they became the operator's limits and those of the organisation that existed",
@@ -1224,6 +1225,133 @@
     "the texts in both languages"
    ],
    "count": 16,
+   "ciOnly": false
+  },
+  "forwarding": {
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "checks": [
+    "nothing set: the resolver of last resort off, GS1's address offered, no rule",
+    "…the resolver sees it off",
+    "switched on without an address: GS1's global resolver",
+    "…the resolver sends unknown keys there",
+    "…in the journal",
+    "…another address, trimmed",
+    "…refused: http → forwarding.urlInvalid",
+    "…refused: no host → forwarding.urlInvalid",
+    "…refused: a password in it → forwarding.urlInvalid",
+    "…refused: spaces → forwarding.urlInvalid",
+    "…refused: too long → forwarding.urlTooLong",
+    "…refused: this installation → forwarding.urlSelf",
+    "…refused: an organisation's verified domain → forwarding.urlSelf",
+    "…refused: on as text → forwarding.enabledInvalid",
+    "…a refusal changes nothing",
+    "…the loop named",
+    "switched off: the address kept for next time",
+    "not without signing in",
+    "not an organisation's administrator (server administrators only)",
+    "…nor change it",
+    "support access: read only (403 forwarding.readOnly)",
+    "…no rule either",
+    "a rule: the path kept and on by default, the note tidied",
+    "…the resolver forwards that prefix",
+    "…in the journal",
+    "…refused: the same prefix again → forwarding.prefixExists",
+    "…refused: two digits → forwarding.prefixInvalid",
+    "…refused: thirteen digits → forwarding.prefixInvalid",
+    "…refused: letters → forwarding.prefixInvalid",
+    "…refused: no destination → forwarding.urlRequired",
+    "…refused: an http destination → forwarding.urlInvalid",
+    "…refused: this installation → forwarding.urlSelf",
+    "…refused: another mode → forwarding.modeInvalid",
+    "…refused: on as text → forwarding.enabledInvalid",
+    "…refused: a note too long → forwarding.noteTooLong",
+    "…nothing stored by a refusal",
+    "a rule over organisations' prefixes: saved, the organisations named",
+    "…the list by prefix",
+    "switched off: kept, the resolver ignores it",
+    "…in the journal",
+    "changing a rule that does not exist: 404 forwarding.unknownRule",
+    "the longest prefix first for the resolver",
+    "removed",
+    "…in the journal",
+    "…removing it again: 404",
+    "the overview's quality: requests forwarded by rules and sent to the last resort, apart",
+    "the Forwarding group for server administrators: the last resort on, its address, its requests",
+    "…the codes most sent there",
+    "…the rules on and their requests, by rule",
+    "an organisation's administrator: its codes sent to the last resort counted, no Forwarding group",
+    "…a server administrator viewing one organisation: no Forwarding group either",
+    "the export: the group's figures in the summary",
+    "…and the sheets of the codes sent to the last resort and of the rules",
+    "the Requests list filters by the new outcomes"
+   ],
+   "count": 54,
+   "ciOnly": false
+  },
+  "forwarding_e2e": {
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
+   "checks": [
+    "a server administrator: Forwarding in the menu",
+    "…the screen: the resolver of last resort off, GS1's address offered",
+    "…switched on: GS1's global resolver",
+    "…an http address refused, with the reason",
+    "a rule added: listed with its destination, the path kept, on",
+    "…the form emptied",
+    "a rule over an organisation's prefix: saved with a warning naming it",
+    "…edit: the form filled, the prefix fixed",
+    "…saved",
+    "…switched off from the list",
+    "…removing asks first, in the portal's own dialog",
+    "…cancelled: kept",
+    "…confirmed: removed",
+    "the overview: the Forwarding group with the last resort, its requests, the rules and theirs",
+    "…the codes most sent to the last resort",
+    "…the requests by rule",
+    "…quality: forwarded and sent to the last resort apart",
+    "…a link to the screen",
+    "Requests: the two outcomes in the filter",
+    "…filtered, the outcome named in each row",
+    "an organisation's administrator: no Forwarding screen, no group in the overview",
+    "…its overview without the group",
+    "…nor by its address",
+    "in Portuguese",
+    "a phone: the screen within the width",
+    "no script errors"
+   ],
+   "count": 26,
+   "ciOnly": false
+  },
+  "forwarding_resolver": {
+   "area": "Resolution: the resolver, its pages and its log",
+   "checks": [
+    "nothing set: a key nobody registered is a 404, as before",
+    "…the resolver of last resort switched off: 404",
+    "switched on without an address: to https://id.gs1.org, the path and the query string kept",
+    "…the request log: outcome fallback, the destination's host",
+    "the operator's address, its trailing slash not doubled; a GTIN-13 as GTIN-14, a '/' in a value kept encoded",
+    "a known key is answered here",
+    "…and a link type it lacks stays a 404 (not a key nobody knows)",
+    "an invalid request stays a 400",
+    "a compressed link of an unknown key: sent uncompressed",
+    "a linkset asked for an unknown key: sent too",
+    "HEAD: sent too",
+    "a prefix rule: every key of the prefix sent, even one registered here, its path and query kept",
+    "…a GTIN-13 of the prefix",
+    "…other prefixes answered here",
+    "…an invalid request of the prefix stays a 400",
+    "the longest prefix wins; a fixed address: always that address",
+    "…the shorter one for the other keys",
+    "…a disabled rule ignored: the shorter prefix applies",
+    "an SSCC: its prefix after the extension digit",
+    "a GLN: its prefix from the first digit",
+    "both on: a rule's prefix by the rule, a known key here, an unknown one to the last resort",
+    "on an organisation's own domain, another organisation's prefix is not forwarded by its rule",
+    "a change is seen after the cache (within CACHE_SECONDS)",
+    "…and then applied",
+    "a database that does not answer: the last settings kept",
+    "the default address is GS1's global resolver"
+   ],
+   "count": 26,
    "ciOnly": false
   },
   "gcp": {
@@ -2547,7 +2675,7 @@
    "ciOnly": false
   },
   "mail": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "mail off without PORTAL_MAIL_HOST",
     "a relay without a sender is refused",
@@ -2692,7 +2820,7 @@
    "ciOnly": false
   },
   "mail_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "sign-in page: recovery offered",
     "users: the invitation box, ticked, and its hint",
@@ -2771,7 +2899,7 @@
    "ciOnly": false
   },
   "monitor": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "defaults: every 5 minutes, the description file through the proxy, 26 hours, 21 days, 20 and 3 times",
     "a setting that is not a number: the default",
@@ -2917,7 +3045,7 @@
     "the resolver cannot be read: the overview still answers, without records",
     "the log cannot be read: 503 requests.unavailable",
     "signed out: 401",
-    "every overview text in both languages (146 keys)",
+    "every overview text in both languages (166 keys)",
     "the API's description has /stats and the scope stats:read",
     "sign-in opens the overview"
    ],
@@ -3389,7 +3517,7 @@
    "ciOnly": false
   },
   "privacy": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "anyone, signed in or not: no version yet, the operator's name and the days requests are kept",
     "…the page itself, with the footer's notice and its own script",
@@ -3426,7 +3554,7 @@
    "ciOnly": false
   },
   "privacy_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "the sign-in page: a footer link to the privacy notice",
     "…which opens without signing in: the default notice in the reader's language",
@@ -4053,7 +4181,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.003 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.004 ms; Node.js: tens of ms)"
    ],
    "count": 207,
    "ciOnly": false
@@ -4082,7 +4210,7 @@
    "ciOnly": false
   },
   "session": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "configuration carries the session limits",
     "keep-alive answers the same limits",
@@ -4234,7 +4362,7 @@
    "ciOnly": false
   },
   "sso": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "an organisation's administrator: its configuration (none yet), the address to register",
     "an editor may not",
@@ -4303,7 +4431,7 @@
    "ciOnly": false
   },
   "sso_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "no organisation sign-in offered before one is on",
     "administrators have Organisation sign-in in the menu",
@@ -4392,7 +4520,7 @@
    "ciOnly": false
   },
   "tenants": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding",
    "checks": [
     "server administrator signs in",
     "before any tenant: an operator editor writes every record (behaviour unchanged)",

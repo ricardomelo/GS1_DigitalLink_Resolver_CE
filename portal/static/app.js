@@ -1445,7 +1445,7 @@ function isRecordsView() { return location.hash.split("?")[0] === "#records"; }
 const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants", "#apikeys": "apikeys",
                 "#requests": "requests", "#overview": "overview", "#domains": "domains",
                 "#branding": "branding", "#sso": "sso", "#organisation": "organisation", "#alerts": "alerts",
-                "#privacy": "privacy" };
+                "#privacy": "privacy", "#forwarding": "forwarding" };
 
 /* Shows the editor, the record list, the user administration, the organisations or the audit trail, following
    the address (#records, #users, #tenants, #audit), so the browser's back button and bookmarks work. Users and the
@@ -1456,7 +1456,7 @@ function applyView() {
   if ((view === "users" || view === "audit" || view === "apikeys" || view === "domains"
        || view === "branding" || view === "sso" || view === "organisation" || view === "alerts") && CONFIG
       && CONFIG.accountRole !== "admin") view = "editor";
-  if ((view === "tenants" || view === "privacy") && CONFIG && !CONFIG.serverAdmin) view = "editor";
+  if (["tenants", "privacy", "forwarding"].includes(view) && CONFIG && !CONFIG.serverAdmin) view = "editor";
   $("#editor-view").hidden = view !== "editor";
   $("#records-view").hidden = view !== "records";
   $("#users-view").hidden = view !== "users";
@@ -1471,11 +1471,13 @@ function applyView() {
   $("#organisation-view").hidden = view !== "organisation";
   $("#alerts-view").hidden = view !== "alerts";
   $("#privacy-view").hidden = view !== "privacy";
+  $("#forwarding-view").hidden = view !== "forwarding";
   markCurrent(view);
   if (view !== "apikeys") forgetNewKey();
   const titles = { editor: "intro", records: "records", users: "users", audit: "audit", tenants: "tenants",
                    apikeys: "apikeys", requests: "requests", overview: "overview", domains: "domains",
-                   branding: "branding", sso: "sso", organisation: "org", alerts: "alerts", privacy: "privacy" };
+                   branding: "branding", sso: "sso", organisation: "org", alerts: "alerts", privacy: "privacy",
+                   forwarding: "forwarding" };
   I18N.set($("#hero-title"), `${titles[view]}.title`);
   I18N.set($("#hero-lede"), `${titles[view]}.lede`);
   const link = $("#hero-link");
@@ -1494,6 +1496,146 @@ function applyView() {
   if (view === "organisation" && CONFIG) loadOrganisation();
   if (view === "alerts" && CONFIG) loadOrganisations().then(() => loadAlerts());
   if (view === "privacy" && CONFIG) loadPrivacy();
+  if (view === "forwarding" && CONFIG) loadForwarding();
+}
+
+/* ------------------------------------------------------------------ forwarding (ADR 0018)
+   Server administrators set the resolver of last resort (a key this resolver does not know goes there) and the prefix
+   rules (every key of a prefix goes to its destination). The server checks every value; the screen shows its answer. */
+const forwardingState = { data: null, editing: null };
+
+function forwardingStatus(kind, key, params) {
+  const box = $("#forwarding-status");
+  box.hidden = !key;
+  box.className = "status" + (kind ? " is-" + kind : "");
+  if (key) I18N.set(box, key, params);
+}
+
+function renderForwarding() {
+  const data = forwardingState.data;
+  if (!data) return;
+  const fb = data.fallback;
+  $("#fallback-enabled").checked = fb.enabled;
+  $("#fallback-url").value = fb.url === fb.default ? "" : fb.url;
+  $("#fallback-url").placeholder = fb.default;
+  I18N.set($("#fallback-state"), fb.enabled ? "forwarding.fallbackOnState" : "forwarding.fallbackOffState",
+           { url: fb.url });
+  $("#forwarding-rules").replaceChildren(...data.rules.map(rule => {
+    const tr = el("tr", rule.enabled ? "" : "is-off");
+    const toggle = el("input");
+    toggle.type = "checkbox";
+    toggle.checked = rule.enabled;
+    toggle.setAttribute("aria-label", t("forwarding.enabled") + " " + rule.prefix);
+    toggle.disabled = data.readOnly;
+    toggle.addEventListener("change", () => saveRule(null, { ...rule, enabled: toggle.checked }));
+    const enabledCell = el("td");
+    enabledCell.append(toggle);
+    const actions = el("td", "forwarding-row-actions");
+    if (!data.readOnly) {
+      const edit = el("button", "btn btn-ghost btn-small", t("forwarding.edit"));
+      edit.type = "button";
+      edit.addEventListener("click", () => editRule(rule));
+      const remove = el("button", "btn btn-ghost btn-small", t("forwarding.remove"));
+      remove.type = "button";
+      remove.addEventListener("click", () => removeRule(rule));
+      actions.append(edit, remove);
+    }
+    const organisations = el("td", rule.organisations.length ? "is-warn" : "", rule.organisations.join(", ") || "—");
+    tr.append(el("td", "code forwarding-prefix", rule.prefix), el("td", "code", rule.target),
+              el("td", "", t(rule.mode === "fixed" ? "forwarding.mode.fixedShort" : "forwarding.mode.pathShort")),
+              enabledCell, organisations, el("td", "", rule.note || ""),
+              el("td", "", rule.updated ? `${formatWhen(rule.updated)} · ${rule.updatedBy || ""}` : ""), actions);
+    return tr;
+  }));
+  $("#forwarding-empty").hidden = data.rules.length > 0;
+  for (const field of $$("#forwarding-fallback-form input, #forwarding-fallback-form button, " +
+                         "#forwarding-rule-form input, #forwarding-rule-form select, #forwarding-rule-form button")) {
+    field.disabled = data.readOnly;
+  }
+  if (data.readOnly) forwardingStatus("warn", "forwarding.readOnly");
+}
+
+async function loadForwarding() {
+  try {
+    forwardingState.data = await api("GET", "forwarding");
+    renderForwarding();
+  } catch (e) {
+    forwardingStatus("error", e.code, e.params);
+  }
+}
+
+function resetRuleForm() {
+  forwardingState.editing = null;
+  $("#forwarding-rule-form").reset();
+  $("#rule-prefix").readOnly = false;
+  $("#rule-enabled").checked = true;
+  I18N.set($("#rule-save"), "forwarding.add");
+  $("#rule-cancel").hidden = true;
+}
+
+function editRule(rule) {
+  forwardingState.editing = rule.prefix;
+  $("#rule-prefix").value = rule.prefix;
+  $("#rule-prefix").readOnly = true;
+  $("#rule-target").value = rule.target;
+  $("#rule-mode").value = rule.mode;
+  $("#rule-note").value = rule.note || "";
+  $("#rule-enabled").checked = rule.enabled;
+  I18N.set($("#rule-save"), "forwarding.saveRule");
+  $("#rule-cancel").hidden = false;
+  $("#rule-target").focus();
+}
+
+async function saveFallback(event) {
+  event.preventDefault();
+  try {
+    const answer = await api("PUT", "forwarding/fallback", { enabled: $("#fallback-enabled").checked,
+                                                             url: $("#fallback-url").value.trim() });
+    forwardingState.data = answer;
+    renderForwarding();
+    forwardingStatus("ok", answer.code, answer.params);
+  } catch (e) {
+    forwardingStatus("error", e.code, e.params);
+  }
+}
+
+/* A rule from the form (event) or from a row's switch (rule) */
+async function saveRule(event, rule) {
+  if (event) event.preventDefault();
+  const editing = rule ? rule.prefix : forwardingState.editing;
+  const body = rule ? { target: rule.target, mode: rule.mode, enabled: rule.enabled, note: rule.note }
+    : { prefix: $("#rule-prefix").value.trim(), target: $("#rule-target").value.trim(), mode: $("#rule-mode").value,
+        enabled: $("#rule-enabled").checked, note: $("#rule-note").value };
+  try {
+    const answer = editing ? await api("PUT", "forwarding/rules/" + encodeURIComponent(editing), body)
+                           : await api("POST", "forwarding/rules", body);
+    forwardingState.data = answer;
+    if (!rule) resetRuleForm();
+    renderForwarding();
+    const saved = answer.rules.find(r => r.prefix === answer.params.prefix);
+    if (saved && saved.enabled && saved.organisations.length) {
+      forwardingStatus("warn", "forwarding.ruleSavedOverlap", { prefix: saved.prefix,
+                                                                names: saved.organisations.join(", ") });
+    } else {
+      forwardingStatus("ok", answer.code, answer.params);
+    }
+  } catch (e) {
+    forwardingStatus("error", e.code, e.params);
+    if (rule) renderForwarding();               // the switch back as it was
+  }
+}
+
+async function removeRule(rule) {
+  if (!(await ask(t("forwarding.confirmRemove", { prefix: rule.prefix })))) return;
+  try {
+    const answer = await api("DELETE", "forwarding/rules/" + encodeURIComponent(rule.prefix));
+    forwardingState.data = answer;
+    if (forwardingState.editing === rule.prefix) resetRuleForm();
+    renderForwarding();
+    forwardingStatus("ok", answer.code, answer.params);
+  } catch (e) {
+    forwardingStatus("error", e.code, e.params);
+  }
 }
 
 /* ------------------------------------------------------------------ the privacy notice (ADR 0017)
@@ -2728,7 +2870,7 @@ function downloadAudit() {
    of the tenant API, and how long requests are kept (section 8). Nothing here identifies the people who scan: the
    server never stores it; the browser family and the approximate location (city) are derived when a scan arrives. */
 const REQUEST_OUTCOMES = ["redirect", "notFound", "unknown", "noLink", "choice", "linkset", "invalid", "error", "compressed",
-                          "page", "click"];
+                          "page", "click", "forwarded", "fallback"];
 const REQUEST_DEVICES = ["mobile", "tablet", "desktop", "automated", "unknown"];
 const REQUEST_BROWSERS = ["chrome", "safari", "firefox", "edge", "samsung", "opera", "app", "other"];
 const requestsState = { next: null, apiNext: null, tab: "resolver", retention: null };
@@ -3660,6 +3802,9 @@ function renderOverview() {
     tile("overview.q.noLink", q.noLink, { previous: q.previous.noLink, better: "down", warn: q.noLink > 0 }),
     tile("overview.q.invalid", q.invalid, { previous: q.previous.invalid, better: "down" }),
     tile("overview.q.error", q.error, { previous: q.previous.error, better: "down", warn: q.error > 0 }),
+    // sent to another resolver (ADR 0018): shown when there were any
+    ...(q.forwarded || q.previous.forwarded ? [tile("overview.q.forwarded", q.forwarded, { previous: q.previous.forwarded })] : []),
+    ...(q.fallback || q.previous.fallback ? [tile("overview.q.fallback", q.fallback, { previous: q.previous.fallback })] : []),
     tile("overview.avgMs", q.avgMs, { unit: "ms", note: q.p95Max !== null && q.p95Max !== undefined
          ? t("overview.p95Note", { ms: nf(q.p95Max) }) : "" }));
   const codeRows = (list, body, empty, actionKey) => {
@@ -3734,6 +3879,32 @@ function renderOverview() {
     const dd = el("dd", k === "overview.op.alerts" && (op.alerts || []).length ? "is-alert" : "", v);
     return [el("dt", "", t(k)), dd];
   }));
+
+  // Forwarding: the installation's, server administrators (ADR 0018)
+  const fw = d.forwarding;
+  $("#overview-forwarding-group").hidden = !fw;
+  if (fw) {
+    $("#overview-forwarding-tiles").replaceChildren(
+      tile("overview.f.fallback", t(fw.fallback.enabled ? "overview.on" : "overview.off"), { text: true,
+           note: fw.fallback.enabled ? fw.fallback.url : "" }),
+      tile("overview.f.fallbackRequests", fw.fallback.requests, { previous: fw.fallback.previous }),
+      tile("overview.f.rulesActive", t("overview.f.rulesActiveValue", { active: fw.rules.active, total: fw.rules.total }),
+           { text: true }),
+      tile("overview.f.rulesRequests", fw.rules.requests, { previous: fw.rules.previous }));
+    $("#overview-fallback-body").replaceChildren(...fw.fallback.topCodes.map(c => {
+      const tr = el("tr");
+      tr.append(el("td", "code", c.anchor), el("td", "num", nf(c.requests)));
+      return tr;
+    }));
+    $("#overview-fallback-empty").hidden = fw.fallback.topCodes.length > 0;
+    $("#overview-byrule-body").replaceChildren(...fw.rules.byRule.map(r => {
+      const tr = el("tr", r.enabled ? "" : "is-off");
+      tr.append(el("td", "code", r.prefix + (r.enabled ? "" : ` (${t("overview.off")})`)), el("td", "code", r.target),
+                el("td", "num", nf(r.requests)));
+      return tr;
+    }));
+    $("#overview-byrule-empty").hidden = fw.rules.byRule.length > 0;
+  }
 
   // Governance (administrators)
   const gov = d.governance;
@@ -5370,6 +5541,10 @@ async function init() {
   $("#overview-tenant").addEventListener("change", loadOverview);
   $("#alerts-filters").addEventListener("submit", loadAlerts);
   $("#privacy-form").addEventListener("submit", publishPrivacy);
+  $("#forwarding-fallback-form").addEventListener("submit", saveFallback);
+  $("#forwarding-rule-form").addEventListener("submit", e => saveRule(e));
+  $("#rule-cancel").addEventListener("click", resetRuleForm);
+  document.addEventListener("localechange", renderForwarding);
   $("#privacy-preview-button").addEventListener("click", previewPrivacy);
   $("#privacy-text").addEventListener("input", e => { e.target.dataset.edited = "1"; });
   for (const tab of $$("#org-tabs [role=tab]")) {

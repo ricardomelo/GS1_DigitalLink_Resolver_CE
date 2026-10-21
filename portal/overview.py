@@ -81,15 +81,18 @@ def _sorted_pairs(counter: dict, top: int) -> list[list]:
 
 def _quality_counts(entry: dict) -> dict:
     outcome = entry["outcome"]
+    # forwarded and fallback: sent to another resolver, by a prefix rule or as the last resort (ADR 0018)
     return {"requests": entry["total"] - _follow_ups(entry), "answered": sum(outcome.get(o, 0) for o in ANSWERED),
             "unknown": outcome.get("unknown", 0), "noLink": outcome.get("noLink", 0),
-            "invalid": outcome.get("invalid", 0), "error": outcome.get("error", 0)}
+            "invalid": outcome.get("invalid", 0), "error": outcome.get("error", 0),
+            "forwarded": outcome.get("forwarded", 0), "fallback": outcome.get("fallback", 0)}
 
 
-def usage_and_quality(scope: dict, whole: bool, per: dict, top: int, registered: set | None) -> tuple[dict, dict, dict]:
-    """(usage, quality, requests per key) of a period. registered: the anchors of the records in the scope, to tell
-    a scanned code nobody registered from one whose key has records but none for the qualifiers scanned (None when
-    the records could not be read)."""
+def usage_and_quality(scope: dict, whole: bool, per: dict, top: int,
+                      registered: set | None) -> tuple[dict, dict, dict, tuple[dict, dict]]:
+    """(usage, quality, requests per key, (the period's totals, the previous period's)) of a period. registered: the
+    anchors of the records in the scope, to tell a scanned code nobody registered from one whose key has records but
+    none for the qualifiers scanned (None when the records could not be read)."""
     now = requestlog.collect(scope, whole, per["from"], per["to"])
     before = requestlog.collect(scope, whole, per["previousFrom"], per["previousTo"], keys=False)
     total, keys = now["total"], now["keys"]
@@ -133,7 +136,7 @@ def usage_and_quality(scope: dict, whole: bool, per: dict, top: int, registered:
                "avgMs": round(total["ms"] / total["total"]) if total["total"] else None,
                "p95Max": max(now["p95"]) if whole and now["p95"] else None,
                "unknownCodes": worst("unknown"), "noLinkCodes": worst("noLink")}
-    return usage, quality, keys
+    return usage, quality, keys, (total, before["total"])
 
 
 # ----------------------------------------------------------------------------------------------- records
@@ -190,17 +193,20 @@ def governance(audit_scope: dict, allowed, per: dict, tenant: str | None, whole:
 
 # ----------------------------------------------------------------------------------------------- the whole answer
 def build(per: dict, scope: dict, whole: bool, records: list[dict] | None, last_check: dict,
-          operation: dict, governance_of=None, top: int = TOP_SCREEN, log_days: int | None = None) -> dict:
+          operation: dict, governance_of=None, top: int = TOP_SCREEN, log_days: int | None = None,
+          forwarding_of=None) -> dict:
     """The overview of a period (ADR 0007, section 3.2). governance_of: a function of (period, top) giving the
     governance group, or None when the user is not an administrator. log_days: how long the scope's requests are kept
-    (ADR 0006, section 8; the installation's when not given)."""
+    (ADR 0006, section 8; the installation's when not given). forwarding_of: a function of (requests per key, the
+    period's totals, the previous period's, top) giving the Forwarding group (server administrators; ADR 0018)."""
     registered = {r["anchor"] for r in records} if records is not None else None
-    usage, quality, requested = usage_and_quality(scope, whole, per, top, registered)
+    usage, quality, requested, (total, before) = usage_and_quality(scope, whole, per, top, registered)
     return {"period": _iso_period(per), "whole": whole, "logDays": requestlog.global_days() if log_days is None else log_days,
             "usage": usage, "quality": quality,
             "records": record_quality(records, requested, last_check, max(top, NOT_SCANNED_SAMPLE)),
             "operation": operation,
-            "governance": governance_of(per, top) if governance_of else None}
+            "governance": governance_of(per, top) if governance_of else None,
+            "forwarding": forwarding_of(requested, total, before, top) if forwarding_of else None}
 
 
 # ----------------------------------------------------------------------------------------------- files
@@ -241,7 +247,7 @@ def summary_rows(data: dict, labels: dict) -> list[list]:
         add("usage", "overview.country", f"{name}: {n}")
     for name, n in u.get("place", []):
         add("usage", "overview.place", f"{place_text(name)}: {n}")
-    for name in ("requests", "answered", "unknown", "noLink", "invalid", "error"):
+    for name in ("requests", "answered", "unknown", "noLink", "invalid", "error", "forwarded", "fallback"):
         add("quality", "overview.q." + name, q[name], q["previous"][name])
     add("quality", "overview.avgMs", q["avgMs"])
     if q.get("p95Max") is not None:
@@ -264,6 +270,15 @@ def summary_rows(data: dict, labels: dict) -> list[list]:
             add("operation", "overview.op." + name, op[name])
     if "alerts" in op:
         add("operation", "overview.op.alerts", len(op["alerts"]))
+    fw = data.get("forwarding")            # server administrators, the whole installation (ADR 0018)
+    if fw:
+        add("forwarding", "overview.f.fallback", _label(labels, "overview.on" if fw["fallback"]["enabled"]
+                                                         else "overview.off"))
+        add("forwarding", "overview.f.fallbackUrl", fw["fallback"]["url"])
+        add("forwarding", "overview.f.fallbackRequests", fw["fallback"]["requests"], fw["fallback"]["previous"])
+        add("forwarding", "overview.f.rulesActive", fw["rules"]["active"])
+        add("forwarding", "overview.f.rulesTotal", fw["rules"]["total"])
+        add("forwarding", "overview.f.rulesRequests", fw["rules"]["requests"], fw["rules"]["previous"])
     gov = data.get("governance")
     if gov:
         for action, n in sorted(gov["changes"].items()):
@@ -301,6 +316,14 @@ def tables(data: dict, labels: dict) -> list[tuple[str, list[str], list[list]]]:
     if data["records"].get("available"):
         out.append((L("overview.sheet.notScanned"), [L("overview.col.code")],
                     [[a] for a in data["records"]["notScannedSample"]]))
+    if data.get("forwarding"):
+        fw = data["forwarding"]
+        out.append((L("overview.sheet.fallback"), [L("overview.col.code"), L("overview.col.requests")],
+                    [[c["anchor"], c["requests"]] for c in fw["fallback"]["topCodes"]]))
+        out.append((L("overview.sheet.byRule"), [L("overview.col.prefix"), L("overview.col.destination"),
+                                                 L("overview.col.state"), L("overview.col.requests")],
+                    [[r["prefix"], r["target"], L("overview.on" if r["enabled"] else "overview.off"), r["requests"]]
+                     for r in fw["rules"]["byRule"]]))
     if data.get("governance"):
         out.append((L("overview.sheet.byUser"), [L("overview.col.user"), L("overview.col.changes")],
                     [list(p) for p in data["governance"]["byUser"]]))

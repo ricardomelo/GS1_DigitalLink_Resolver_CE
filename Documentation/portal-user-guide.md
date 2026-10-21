@@ -145,7 +145,8 @@ your password?** at once and tell your administrator.
 The round button at the top right opens the user menu: your user name, **Home page** (the resolver's
 home page), **Overview** (section 17), **Link editor** (sections 4 to 10), **Registered records** (section 11),
 **Requests** (section 16), **Users**, **API keys** and **Audit
-trail**, **Organisation management** and **Alerts** (administrators only; **Organisations** for server administrators),
+trail**, **Organisation management** and **Alerts** (administrators only; **Organisations**, **Forwarding** and
+**Privacy notice** for server administrators),
 **Options** and **Sign out**. On a wide screen (1,100 pixels or more) the same screens are also in a **side menu** on
 the left, the current one marked; the button at its top folds it to its icons and opens it again (the browser
 remembers the choice). The screens use up to 1,536 pixels of a wide monitor (96rem); the list of requests fits a
@@ -856,6 +857,30 @@ and makes it the notice in force at once. Every publication is a new numbered ve
 and an optional note on what changed; earlier versions stay readable from the page's list and are never changed. Adapt
 the default to your organisation (contact, legal basis, the law that applies) before going to production.
 
+### Forwarding (server administrators)
+
+![Forwarding](images/guide/forwarding.png)
+
+**Forwarding** (user menu, server administrators) decides what the resolver does with the requests it should not
+answer itself ([ADR 0018](adr/0018-forwarding.md)):
+
+- **Resolver of last resort.** Tick *Send codes this resolver does not know to another resolver* and **Save**: a
+  code nobody registered here is no longer answered with a "not found" page but sent, with its path and query string,
+  to that address — GS1's global resolver, `https://id.gs1.org`, unless you type another `https://` address. A code
+  that is registered here but lacks the link type asked, and a request that is not a valid GS1 Digital Link, are
+  answered here as before. Untick and save to switch it off; the address is kept.
+- **Forwarding by prefix.** A rule sends **every** code whose GS1 Company Prefix starts with its prefix (3 to 12
+  digits: a country's GS1 prefix, a company prefix or a range of it) to its destination, even codes registered here;
+  the longest matching prefix wins. *Keep the code's path* suits another resolver
+  (`https://other-resolver.example/01/…/10/…?…`); *Always this address* sends every code of the prefix to the same
+  page. Add a rule with the fields and **Add rule**; **Edit** fills the fields again (the prefix stays); the switch in
+  the list turns a rule on and off without removing it; **Remove** asks first. When a rule's prefix overlaps an
+  organisation's prefixes, the list names the organisations: their codes of that prefix are answered elsewhere.
+
+A destination is never this installation or one of its organisations' domains (the requests would come back). Every
+change is in the audit trail and reaches the resolver within 30 seconds. The overview shows how many requests each
+went to (section 17), and *Requests* shows them as *Forwarded by prefix* and *Sent to last resort*.
+
 ### Domains (administrators)
 
 ![Domains](images/guide/domains.png)
@@ -1019,8 +1044,9 @@ device and by link type asked.
 
 **Resolution quality.** The share of requests answered, the **Codes not registered (404)** — scanned, but nobody
 registered them — the codes **without a link of the type asked**, invalid requests, the resolver's errors and the
-average answer time (for the server administrator also the 95th percentile of the slowest day). These count every
-request, automated ones included. **Scanned codes nobody registered** lists them, most scanned first: **Register**
+average answer time (for the server administrator also the 95th percentile of the slowest day); when the server
+administrator turned forwarding on (section 14, *Forwarding*), the requests **forwarded by prefix rules** and those
+**sent to the resolver of last resort**, each apart. These count every request, automated ones included. **Scanned codes nobody registered** lists them, most scanned first: **Register**
 opens the editor on the code so that the next scan leads somewhere; *the key has other records* means the code's key
 is registered but not for the batch or serial scanned.
 
@@ -1037,6 +1063,10 @@ daily counts are complete, the installation's active alerts and the state of eac
 resolver through the proxy, the daily backup and the HTTPS certificate. The server administrator can also choose an
 **Organisation** at the top of the page: the figures are then that organisation's, as its administrators see them (or
 the operator's codes); Operation stays the installation's.
+
+**Forwarding** (server administrator only, for the whole installation). Whether the resolver of last resort is on and
+its address, the requests sent to it in the period (and the previous one) with the codes most sent there, how many
+prefix rules are on, the requests they forwarded, and each rule's requests; *Manage forwarding* opens the screen.
 
 **Governance** (administrators). Record changes (created, changed, deleted, imports) and by user, sign-ins and
 refused sign-ins, exports, active API keys and those expiring within 14 days, calls to the tenant API and how many

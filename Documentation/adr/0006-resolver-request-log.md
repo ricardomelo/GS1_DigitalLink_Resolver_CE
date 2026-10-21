@@ -95,7 +95,7 @@ Constraints:
 | `q` | the key qualifiers of the path; `null` for 21 and 235 |
 | `da` | AIs of the data attributes of the query string (names made of 2 to 4 digits) |
 | `lt` | the link type asked, without the vocabulary's address (`pip`); `linkset` for a linkset; absent for the default |
-| `s`, `o` | HTTP status and outcome: `redirect` 307, `choice` 300, `linkset` 200, `unknown` 404 (no record applies), `noLink` 404 (a record applies, no link of that type), `invalid` 400, `error` 5xx, `compressed` 200; `page` 200 and `click` 302 for the item's page reached as a default target and its buttons ([ADR 0011](0011-item-page.md); an automated client's are logged `linkset` and `redirect`) |
+| `s`, `o` | HTTP status and outcome: `redirect` 307, `choice` 300, `linkset` 200, `unknown` 404 (no record applies), `noLink` 404 (a record applies, no link of that type), `invalid` 400, `error` 5xx, `compressed` 200; `page` 200 and `click` 302 for the item's page reached as a default target and its buttons ([ADR 0011](0011-item-page.md); an automated client's are logged `linkset` and `redirect`); `forwarded` 307 (a prefix rule) and `fallback` 307 (the resolver of last resort) for a request sent to another resolver ([ADR 0018](0018-forwarding.md)) |
 | `lvl` | the level that answered (`""` for the key, `/10/L1` for a batch; unit values as `*`); redirect and choice only |
 | `to` | host of the target (redirect only) |
 | `ms` | milliseconds from the request's arrival in the resolver to its answer |

@@ -309,7 +309,27 @@ def guide_images(locale: str, folder: str, description: str) -> None:
         sso_images(browser, folder, locale)
         requests_images(browser, folder, locale)
         privacy_images(browser, folder, locale)
+        forwarding_images(browser, folder, locale)
         browser.close()
+
+
+def forwarding_images(browser, folder: str, locale: str) -> None:
+    """The Forwarding screen of a server administrator: the resolver of last resort on, two prefix rules, one over an
+    organisation's prefix (Documentation/adr/0018-forwarding.md)."""
+    import forwarding
+    if not forwarding.rules():
+        forwarding.set_fallback(True, "", "maria", set())
+        forwarding.save_rule("9521234", {"target": "https://resolver.example.net", "note": "Moved to its own resolver"},
+                             "maria", set(), new=True)
+        forwarding.save_rule("7895555", {"target": "https://beta.example.com/products", "mode": "fixed"}, "maria",
+                             set(), new=True)
+    page = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1100}).new_page()
+    page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
+    page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
+    page.click("#login-submit"); page.wait_for_timeout(1000)
+    page.goto(BASE + "#forwarding"); page.wait_for_timeout(1200)
+    save(page, f"{folder}/forwarding.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1100})
+    page.context.close()
 
 
 def privacy_images(browser, folder: str, locale: str) -> None:

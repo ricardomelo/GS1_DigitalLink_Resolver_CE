@@ -489,6 +489,7 @@ function renderPreview() {
   const g = readKey();
   // EAN/UPC beside the QR code: for GTINs of consumer units only (indicator 0), as the server decides
   $("#opt-linear-field").hidden = !(g.ai === "01" && (!g.ok || g.value.startsWith("0")));
+  fillSizeOptions();                             // the key's scanning environments (ADR 0010, section 7.6)
   const l = readQualifiers();
   const host = domainBase(g);
   const shown = g.ok ? g.value : "______________";
@@ -1032,7 +1033,7 @@ function labelOptionsQuery() {
   const params = new URLSearchParams({ hri: $("#opt-hri").value });
   if (symbol === "qr") { params.set("version", $("#opt-version").value); params.set("ecl", $("#opt-ecl").value); }
   else params.set("symbol", symbol);
-  if ($("#opt-env").value !== "retail") params.set("env", $("#opt-env").value);
+  params.set("env", $("#opt-env").value);
   if ($("#opt-hritext").value === "text") params.set("hritext", "text");
   if ($("#opt-size").value !== "100") params.set("size", $("#opt-size").value);
   if (!$("#opt-linear-field").hidden && $("#opt-linear").value !== "none") params.set("linear", $("#opt-linear").value);
@@ -1070,11 +1071,26 @@ function domainBase(g) {
   return best ? best.url : CONFIG.resolver;
 }
 
+/* The scanning environments of the key (label.environments_for() on the server): its own tables, else the trade
+   items'; direct part marking for every key. The first is the key's default. */
+function environmentsFor(ai) {
+  const envs = CONFIG?.labelEnvironments || {};
+  const own = new Set(Object.values(envs).flatMap(e => e.keys || []));
+  return Object.keys(envs).sort((a, b) => envs[a].rank - envs[b].rank).filter(name => envs[name].anyKey
+    || (envs[name].keys ? envs[name].keys.includes(ai) : !own.has(ai)));
+}
+
 /* "80 % (X 0.396 mm)": each size with the 2D symbol's X-dimension in the scanning environment, in the user's number
    format; only the sizes within the environment's ranges (with an EAN/UPC beside, its range too). The environment
-   offers its own 2D symbols and the linear symbol when it takes one (ADR 0010, section 7). */
+   offers its own 2D symbols and the linear symbol when it takes one, and only the key's environments are offered
+   (ADR 0010, section 7). */
 function fillSizeOptions() {
   const envs = CONFIG?.labelEnvironments;
+  if (envs) {
+    const allowed = environmentsFor(readKey().ai || "01");
+    for (const o of $("#opt-env").options) o.hidden = o.disabled = !allowed.includes(o.value);
+    if (!allowed.includes($("#opt-env").value)) $("#opt-env").value = allowed[0];
+  }
   const env = envs?.[$("#opt-env").value] || { x: [0.396, 0.495, 0.990], sizes: [80, 90, 100, 120, 150, 200],
                                                 symbols: ["qr", "dm", "gs1dm"], linearX: [0.264, 0.330, 0.660] };
   for (const o of $("#opt-symbol").options) o.hidden = o.disabled = !env.symbols.includes(o.value);

@@ -277,11 +277,20 @@
                 </select>
               </label>
               <label class="opt-field"><span data-i18n="label.env"></span>
-                <select id="opt-env">
+                <select id="opt-env" aria-describedby="opt-env-hint">
                   <option value="retail" data-i18n="label.env.retail"></option>
+                  <option value="retail-gd" data-i18n="label.env.retail-gd"></option>
+                  <option value="distribution" data-i18n="label.env.distribution"></option>
+                  <option value="pharmacy" data-i18n="label.env.pharmacy"></option>
+                  <option value="pharmacy-gd" data-i18n="label.env.pharmacy-gd"></option>
                   <option value="healthcare" data-i18n="label.env.healthcare"></option>
+                  <option value="other" data-i18n="label.env.other"></option>
+                  <option value="logistics" data-i18n="label.env.logistics"></option>
+                  <option value="assets" data-i18n="label.env.assets"></option>
+                  <option value="gsrn" data-i18n="label.env.gsrn"></option>
                   <option value="dpm" data-i18n="label.env.dpm"></option>
                 </select>
+                <small class="field-hint" id="opt-env-hint" data-i18n="label.envHint"></small>
               </label>
               <label class="opt-field"><span data-i18n="label.hri"></span>
                 <select id="opt-hri">

@@ -109,10 +109,37 @@ check("zip: every format, the README naming the symbol, its modules and the elem
 check("retail: every size, the 2D X 0.396–0.990 mm, EAN/UPC 0.264–0.660 mm",
       label.sizes_for("retail") == list(label.SIZES) and label.sizes_for("retail", True) == list(label.SIZES)
       and label.ENVIRONMENTS["retail"]["2d"] == (0.396, 0.495, 0.990))
-check("healthcare: GS1 DataMatrix at 0.254–0.495 mm (target 0.380): up to 120 %",
-      label.sizes_for("healthcare") == [80, 90, 100, 120] and label.ENVIRONMENTS["healthcare"]["symbols"] == ("gs1dm", "dm"))
-check("direct part marking: 0.254–0.615 mm (target 0.300), from 90 %, no linear symbol",
-      label.sizes_for("dpm") == [90, 100, 120, 150, 200] and label.ENVIRONMENTS["dpm"]["linear"] is None)
+check("healthcare, non-retail (table 6): Data Matrix at 0.254–0.990 mm (target 0.380), EAN/UPC from 0.170 mm: every size",
+      label.sizes_for("healthcare") == list(label.SIZES) and label.sizes_for("healthcare", True) == list(label.SIZES)
+      and label.ENVIRONMENTS["healthcare"]["2d"] == (0.254, 0.380, 0.990)
+      and label.ENVIRONMENTS["healthcare"]["linear"] == (0.170, 0.330, 0.660)
+      and label.ENVIRONMENTS["healthcare"]["symbols"] == ("gs1dm", "dm"))
+check("direct part marking (table 7): 0.254–0.615 mm (target 0.300), from 90 %, no linear symbol, the QR code too",
+      label.sizes_for("dpm") == [90, 100, 120, 150, 200] and label.ENVIRONMENTS["dpm"]["linear"] is None
+      and "qr" in label.ENVIRONMENTS["dpm"]["symbols"])
+# The tables of the GS1 General Specifications, release 26.0, section 5.12.3: the sizes each range allows
+for name, table, x, linear_x, sizes, with_linear in (
+        ("retail-gd", 3, (0.743, 0.990, 0.990), (0.495, 0.660, 0.660), [80, 90, 100], [80, 90, 100]),
+        ("distribution", 2, (0.743, 0.743, 1.50), (0.495, 0.660, 0.660), [100, 120, 150, 200], [100]),
+        ("pharmacy", 10, (0.396, 0.495, 0.990), (0.264, 0.330, 0.660), list(label.SIZES), list(label.SIZES)),
+        ("pharmacy-gd", 8, (0.750, 0.750, 1.520), (0.495, 0.660, 0.660), [100, 120, 150, 200], [100]),
+        ("other", 4, (0.375, 0.495, 0.990), (0.264, 0.330, 0.660), list(label.SIZES), list(label.SIZES)),
+        ("logistics", 5, (0.743, 0.743, 1.50), None, [100, 120, 150, 200], []),
+        ("assets", 9, (0.375, 0.375, 0.743), None, [100, 120, 150], []),
+        ("gsrn", 11, (0.254, 0.380, 0.495), None, [80, 90, 100, 120], [])):
+    env = label.ENVIRONMENTS[name]
+    check(f"{name} (table {table}): 2D {x[0]}–{x[2]} mm (target {x[1]}), sizes {sizes}, with an EAN/UPC {with_linear or 'none'}",
+          env["table"] == table and env["2d"] == x and env["linear"] == linear_x and label.sizes_for(name) == sizes
+          and (label.sizes_for(name, True) if env["linear"] else []) == with_linear,
+          (env, label.sizes_for(name), label.sizes_for(name, True)))
+check("a QR code only where the tables name one: not in the healthcare tables (6, 8, 10)",
+      [n for n, e in label.ENVIRONMENTS.items() if "qr" not in e["symbols"]] == ["pharmacy", "pharmacy-gd", "healthcare"])
+check("the environments of a key, its default first (figure 5-68): a GTIN the trade items' tables and DPM",
+      label.environments_for("01") == ["retail", "retail-gd", "distribution", "pharmacy", "pharmacy-gd", "healthcare",
+                                       "other", "dpm"] and label.environments_for("8006") == label.environments_for("01"))
+check("…an SSCC table 5, GDTI, GRAI, GIAI and GLN table 9, a GSRN table 11, each with DPM",
+      label.environments_for("00") == ["logistics", "dpm"] and label.environments_for("8004") == ["assets", "dpm"]
+      and label.environments_for("414") == ["assets", "dpm"] and label.environments_for("8018") == ["gsrn", "dpm"])
 svg = label.render_svg(options(symbol="gs1dm", environment="healthcare", size=120,
                                linear=("ean13", "9506000134352"))).decode()
 check("healthcare at 120 %: X 0.456 mm, the EAN-13 at 0.396 mm", "X = 0.456 mm" in svg
@@ -127,7 +154,8 @@ check("…the EAN/UPC drawn at the environment's own target (0.500 mm)", "EAN-13
 del label.ENVIRONMENTS["narrow"]
 for name, extra, code_expected in (
         ("a QR code in healthcare", dict(environment="healthcare"), "label.symbolNotForEnvironment"),
-        ("150 % in healthcare (0.570 mm)", dict(symbol="gs1dm", environment="healthcare", size=150), "label.sizeOutOfRange"),
+        ("120 % in retail and general distribution (1.188 mm)", dict(symbol="gs1dm", environment="retail-gd", size=120),
+         "label.sizeOutOfRange"),
         ("80 % in direct part marking (0.240 mm)", dict(symbol="dm", environment="dpm", size=80), "label.sizeOutOfRange"),
         ("an EAN-13 in direct part marking", dict(symbol="dm", environment="dpm", linear=("ean13", "9506000134352")),
          "label.linearNotForEnvironment")):
@@ -176,16 +204,30 @@ r = get(f"key=01&value={GTIN}&hritext=text")
 check("…HRI as text in the SVG", r.status_code == 200 and b"<text " in r.data)
 for query, expected in (("symbol=pdf417", "label.symbolInvalid"), ("env=moon", "label.environmentInvalid"),
                         ("hritext=bold", "label.hriTextInvalid"), ("env=healthcare", "label.symbolNotForEnvironment"),
-                        ("symbol=gs1dm&env=healthcare&size=200", "label.sizeOutOfRange"),
+                        ("symbol=gs1dm&env=retail-gd&size=150", "label.sizeOutOfRange"),
+                        ("env=logistics", "label.environmentNotForKey"),
                         ("symbol=dm&env=dpm&linear=auto", "label.linearNotForEnvironment")):
     r = get(f"key=01&value={GTIN}&{query}")
     check(f"refused: {query} → {expected}", r.status_code == 422 and r.get_json()["code"] == expected, r.get_json())
-r = get(f"key=01&value={GTIN}&symbol=gs1dm&env=healthcare&size=200")
-check("…the sizes of the environment offered in the refusal", r.get_json()["params"]["sizes"] == "80, 90, 100, 120"
-      and r.get_json()["params"]["max"] == "0.495", r.get_json())
+r = get(f"key=01&value={GTIN}&symbol=gs1dm&env=retail-gd&size=150")
+check("…the sizes of the environment offered in the refusal", r.get_json()["params"]["sizes"] == "80, 90, 100"
+      and r.get_json()["params"]["max"] == "0.990", r.get_json())
+r = get(f"key=01&value={GTIN}&env=moon")
+check("…an unknown environment answered with the names", "pharmacy-gd" in r.get_json()["params"]["names"], r.get_json())
+r = get(f"key=01&value={GTIN}&env=logistics")
+check("…an environment of other keys answered with the key's", r.get_json()["params"]["names"]
+      == "retail, retail-gd, distribution, pharmacy, pharmacy-gd, healthcare, other, dpm", r.get_json())
+r = get("key=00&value=095060001234567893&format=png")
+check("an SSCC without an environment: table 5, the QR code at 0.743 mm", r.status_code == 200
+      and r.headers.get("X-Dimension") == "0.743", (r.status_code, dict(r.headers)))
+r = get("key=414&value=9506000134352&symbol=gs1dm&size=150&format=png")
+check("a GLN: table 9, a GS1 DataMatrix at 150 % (0.562 mm)", r.status_code == 200
+      and r.headers.get("X-Dimension") == "0.562", (r.status_code, dict(r.headers)))
 cfg = root.get("/portal/api/config").get_json()["labelEnvironments"]
-check("the configuration gives the page every environment with its symbols, ranges and sizes",
-      set(cfg) == {"retail", "healthcare", "dpm"} and cfg["healthcare"]["sizesWithLinear"] == [80, 90, 100, 120]
+check("the configuration gives the page every environment with its table, keys, symbols, ranges and sizes",
+      sorted(cfg, key=lambda n: cfg[n]["rank"]) == list(label.ENVIRONMENTS) and cfg["pharmacy-gd"]["sizesWithLinear"] == [100]
+      and cfg["logistics"]["keys"] == ["00"] and cfg["retail"]["keys"] is None and cfg["dpm"]["anyKey"] is True
+      and cfg["gsrn"]["table"] == 11
       and cfg["dpm"]["linearX"] is None and cfg["dpm"]["sizesWithLinear"] == [] and cfg["retail"]["x"] == [0.396, 0.495, 0.99],
       cfg)
 key, _ = apikeys.create("Labels", ["labels:read"], 30, [], None, "root")
@@ -196,7 +238,9 @@ check("tenant API: the same options", r.status_code == 200 and ("Data Matrix", "
 
 i18n = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read()
 keys = ["label.symbol", "label.symbol.qr", "label.symbol.dm", "label.symbol.gs1dm", "label.env", "label.env.retail",
-        "label.env.healthcare", "label.env.dpm", "label.hriText", "label.hriText.outline", "label.hriText.text",
+        "label.env.healthcare", "label.env.dpm", "label.env.retail-gd", "label.env.distribution", "label.env.pharmacy",
+        "label.env.pharmacy-gd", "label.env.other", "label.env.logistics", "label.env.assets", "label.env.gsrn",
+        "label.envHint", "label.environmentNotForKey", "label.hriText", "label.hriText.outline", "label.hriText.text",
         "preview.dmInfo", "label.symbolInvalid", "label.environmentInvalid", "label.hriTextInvalid",
         "label.symbolNotForEnvironment", "label.linearNotForEnvironment", "label.sizeOutOfRange", "label.dataMatrixRefused"]
 missing = [k for k in keys if i18n.count(f'"{k}"') != 2]

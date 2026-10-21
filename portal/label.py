@@ -62,17 +62,53 @@ ERROR_LEVELS = ("l", "m", "q", "h")          # QR error correction: about 7 %, 1
 SYMBOLS = ("qr", "dm", "gs1dm")
 SYMBOL_NAMES = {"qr": "GS1 Digital Link QR code", "dm": "Data Matrix with a GS1 Digital Link URI",
                 "gs1dm": "GS1 DataMatrix"}
-# Scanning environments: the X-dimension (min, target, max) in mm of the 2D symbol and of EAN/UPC, from the GS1 General
-# Specifications' symbol specification tables (section 5.12.3), and the 2D symbols each takes. Sources and the values
-# still to be checked against the current release: ADR 0010, section 7.
+# Scanning environments: the GS1 General Specifications' symbol specification tables (release 26.0, section 5.12.3;
+# ADR 0010, section 7): the table, the X-dimension (min, target, max) in mm of the 2D symbol and of EAN/UPC, the 2D
+# symbols it takes and the keys it is for (None: the trade items' tables, for every key the others leave). A table that
+# names GS1 DataMatrix gives its range to both Data Matrix symbols; the QR code with the URI only where it names a QR
+# Code. The order is the decision tree's (figure 5-68): a key's first environment is its default.
+DM = ("gs1dm", "dm")
 ENVIRONMENTS = {
-    # Table 1 and its addendum for 2D symbols: trade items scanned at general retail point of sale
-    "retail": {"2d": (0.396, 0.495, 0.990), "linear": (0.264, 0.330, 0.660), "symbols": SYMBOLS},
-    # Regulated healthcare trade items: GS1 DataMatrix (and the Digital Link URI in a Data Matrix); EAN/UPC as retail
-    "healthcare": {"2d": (0.254, 0.380, 0.495), "linear": (0.264, 0.330, 0.660), "symbols": ("gs1dm", "dm")},
-    # Direct part marking: Data Matrix only, no linear symbol
-    "dpm": {"2d": (0.254, 0.300, 0.615), "linear": None, "symbols": ("gs1dm", "dm")},
+    # Trade items scanned at general retail point of sale, not in general distribution: table 1 and its addendum 2
+    "retail": {"table": 1, "2d": (0.396, 0.495, 0.990), "linear": (0.264, 0.330, 0.660), "symbols": SYMBOLS,
+               "keys": None},
+    # At retail point of sale and in general distribution: table 3 and its addendum 1
+    "retail-gd": {"table": 3, "2d": (0.743, 0.990, 0.990), "linear": (0.495, 0.660, 0.660), "symbols": SYMBOLS,
+                  "keys": None},
+    # In general distribution only: table 2 (GS1 DataMatrix and GS1 QR Code)
+    "distribution": {"table": 2, "2d": (0.743, 0.743, 1.50), "linear": (0.495, 0.660, 0.660), "symbols": SYMBOLS,
+                     "keys": None},
+    # Regulated healthcare retail consumer trade items, not in general distribution: table 10
+    "pharmacy": {"table": 10, "2d": (0.396, 0.495, 0.990), "linear": (0.264, 0.330, 0.660), "symbols": DM,
+                 "keys": None},
+    # Regulated healthcare in retail or non-retail pharmacy and in general distribution: table 8
+    "pharmacy-gd": {"table": 8, "2d": (0.750, 0.750, 1.520), "linear": (0.495, 0.660, 0.660), "symbols": DM,
+                    "keys": None},
+    # Regulated healthcare non-retail trade items not in general distribution (hospitals): table 6
+    "healthcare": {"table": 6, "2d": (0.254, 0.380, 0.990), "linear": (0.170, 0.330, 0.660), "symbols": DM,
+                   "keys": None},
+    # Not at retail point of sale, not in general distribution, not regulated healthcare: table 4
+    "other": {"table": 4, "2d": (0.375, 0.495, 0.990), "linear": (0.264, 0.330, 0.660), "symbols": SYMBOLS,
+              "keys": None},
+    # Logistic units (SSCC) in general distribution: table 5 (the GS1-128 it names is not drawn here)
+    "logistics": {"table": 5, "2d": (0.743, 0.743, 1.50), "linear": None, "symbols": SYMBOLS, "keys": ("00",)},
+    # GDTI, GRAI, GIAI and GLN: table 9
+    "assets": {"table": 9, "2d": (0.375, 0.375, 0.743), "linear": None, "symbols": SYMBOLS,
+               "keys": ("253", "8003", "8004", "414", "417")},
+    # GSRN: table 11
+    "gsrn": {"table": 11, "2d": (0.254, 0.380, 0.495), "linear": None, "symbols": SYMBOLS, "keys": ("8017", "8018")},
+    # Direct part marking, any key: table 7 (GS1 DataMatrix and GS1 QR Code)
+    "dpm": {"table": 7, "2d": (0.254, 0.300, 0.615), "linear": None, "symbols": SYMBOLS, "keys": "any"},
 }
+KEYS_WITH_TABLES = {key for env in ENVIRONMENTS.values() if isinstance(env["keys"], tuple) for key in env["keys"]}
+
+
+def environments_for(ai: str) -> list[str]:
+    """The scanning environments for a key, its default first: its own tables, else the trade items'; and DPM."""
+    def fits(env):
+        keys = env["keys"]
+        return keys == "any" or (ai in keys if isinstance(keys, tuple) else ai not in KEYS_WITH_TABLES)
+    return [name for name, env in ENVIRONMENTS.items() if fits(env)]
 OCR_B = "OCR-B, 'OCR B', 'OCR-B 10 BT', monospace"         # the font of EAN/UPC digits, when the HRI is text
 HRI_FONT_FAMILY = "'Liberation Sans', Arial, Helvetica, sans-serif"
 
@@ -122,11 +158,14 @@ def sizes_for(environment: str, with_linear: bool = False) -> list[int]:
     return [s for s in SIZES if all(low - 1e-9 <= target * s / 100 <= high + 1e-9 for low, target, high in ranges)]
 
 
-def check_environment(options: "LabelOptions") -> None:
-    """Refuses what the scanning environment does not allow (OutOfRange)."""
+def check_environment(options: "LabelOptions", ai: str | None = None) -> None:
+    """Refuses what the scanning environment does not allow, or (with the key's AI) an environment of other keys
+    (OutOfRange)."""
     env = ENVIRONMENTS.get(options.environment)
     if env is None:
-        raise OutOfRange("label.environmentInvalid")
+        raise OutOfRange("label.environmentInvalid", names=", ".join(ENVIRONMENTS))
+    if ai is not None and options.environment not in environments_for(ai):
+        raise OutOfRange("label.environmentNotForKey", names=", ".join(environments_for(ai)))
     if options.symbol not in env["symbols"]:
         raise OutOfRange("label.symbolNotForEnvironment")
     if options.linear and not env["linear"]:

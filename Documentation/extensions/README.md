@@ -1166,8 +1166,8 @@ It follows the symbol and text dimensions of the *QR Codes powered by GS1 design
 
 The label studio also draws a **Data Matrix with the GS1 Digital Link URI** or a **GS1 DataMatrix** with the element
 string (FNC1 first), with libzint ([ADR 0010](../adr/0010-label-studio.md), section 7). The **scanning environment**
-(retail point of sale, healthcare, direct part marking) limits the X-dimensions offered to its range of the GS1 General
-Specifications; the SVG can carry its human readable text as text (a font needed) instead of outlines. Each symbol is
+— one of the symbol specification tables of the GS1 General Specifications (release 26.0): eleven of the thirteen,
+those of the record's key offered — limits the X-dimensions offered to its range; the SVG can carry its human readable text as text (a font needed) instead of outlines. Each symbol is
 read back by an independent decoder in the tests.
 
 ### EPCs for RFID and NFC tags

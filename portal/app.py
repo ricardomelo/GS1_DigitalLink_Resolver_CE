@@ -995,12 +995,15 @@ def config():
         # the keys with an EPC and what a record needs before it has one (portal/epc.py; ADR 0010, section 8)
         epc={ai: epc.MINIMUM.get(ai, {}) for ai in epc.KEY_SCHEMES},
         # the label's scanning environments (Documentation/adr/0010-label-studio.md, section 7): their 2D symbols, the
-        # X-dimension ranges and the sizes that keep within them, without and with an EAN/UPC beside
-        labelEnvironments={name: {"symbols": list(env["symbols"]), "x": list(env["2d"]),
+        # X-dimension ranges and the sizes that keep within them, without and with an EAN/UPC beside; rank: the order
+        # of the decision tree (JSON objects reach the page with their keys sorted)
+        labelEnvironments={name: {"rank": rank, "table": env["table"],
+                                  "keys": env["keys"] if env["keys"] != "any" else None,
+                                  "anyKey": env["keys"] == "any", "symbols": list(env["symbols"]), "x": list(env["2d"]),
                                   "linearX": list(env["linear"]) if env["linear"] else None,
                                   "sizes": label.sizes_for(name), "sizesWithLinear": label.sizes_for(name, True)
                                   if env["linear"] else []}
-                           for name, env in label.ENVIRONMENTS.items()},
+                           for rank, (name, env) in enumerate(label.ENVIRONMENTS.items())},
     )
 
 
@@ -3196,8 +3199,11 @@ def zip_name(filename: str) -> str:
 
 def label_response(anchor: str, args) -> Response:
     """The label of a key (whose access was checked) from the request's options: the portal's and the tenant
-    API's (qualifiers, attr, hri, version, ecl, size, linear, domain, symbol=qr|dm|gs1dm, env=retail|healthcare|dpm,
-    hritext=outline|text, format=svg|png|pdf|zip; Documentation/adr/0010-label-studio.md)."""
+    API's (qualifiers, attr, hri, version, ecl, size, linear, domain, symbol=qr|dm|gs1dm, env (label.ENVIRONMENTS; by
+    default the key's first), hritext=outline|text, format=svg|png|pdf|zip; Documentation/adr/0010-label-studio.md)."""
+    key_ai = gs1.split_anchor(anchor)[0]
+    if args.get("env") and str(args.get("env")).strip().lower() not in label.ENVIRONMENTS:
+        raise ValidationError("label.environmentInvalid", names=", ".join(label.ENVIRONMENTS))
     pairs = request_qualifiers(args, anchor)
     uri, attribute_lines = digital_link_for(anchor, pairs, request_attributes(args), args.get("domain"))
     lines = gs1.hri_lines(anchor, pairs) + attribute_lines
@@ -3215,11 +3221,12 @@ def label_response(anchor: str, args) -> Response:
         symbol=label_choice(args.get("symbol"), label.SYMBOLS, "qr", "label.symbolInvalid"),
         # the GS1 DataMatrix's element string: every element of the record and the data attributes, whatever the HRI
         element_string="".join(lines),
-        environment=label_choice(args.get("env"), label.ENVIRONMENTS, "retail", "label.environmentInvalid"),
+        environment=label_choice(args.get("env"), label.ENVIRONMENTS, label.environments_for(key_ai)[0],
+                                 "label.environmentInvalid"),
         hri_text=label_choice(args.get("hritext"), ("outline", "text"), "outline", "label.hriTextInvalid") == "text",
     )
     try:
-        label.check_environment(options)
+        label.check_environment(options, key_ai)
         code = label.symbol(options)
     except label.DoesNotFit as exc:
         raise ValidationError("qr.tooLong" if exc.params["needed"] is None else "qr.tooSmall", **exc.params) from None

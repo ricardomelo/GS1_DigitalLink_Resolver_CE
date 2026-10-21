@@ -126,7 +126,7 @@ specification tables set it, rather than a bare percentage.
 
 - The portal's image installs `zint-bindings`; the tests also need `zxing-cpp` (development only).
 - A label of the healthcare and direct part marking environments cannot be a QR code.
-- The values of three table rows are an open item for the owner (7.2, item 3).
+- The values of three table rows are an open item for the owner (7.2, item 3); closed by section 7.6.
 
 ### 7.5 Delivery
 
@@ -134,6 +134,64 @@ specification tables set it, rather than a bare percentage.
 label options in `app.py`, `/config`, the tenant API's description, the label panel (`#opt-symbol`, `#opt-env`,
 `#opt-hritext`), tests `portal/test_datamatrix.py` (new) and `portal/test_datamatrix_e2e.py` (new, Chromium), 22
 mutations, all caught.
+
+### 7.6 Amendment of 21 October 2026 — checked against the General Specifications, release 26.0
+
+**Context.** The owner sent section 5.12 of the GS1 General Specifications, release 26.0 (ratified January 2026): the
+scanner functional bands (figure 5-67), the symbology operational environment decision tree (figure 5-68), its summary
+(table 5-42) and the thirteen symbol specification tables with their addenda for 2D symbols (5.12.3.1 to 5.12.3.13).
+
+**What the check found.**
+
+- *Retail point of sale* matches table 1 and its addendum 2 (tables 5-44 and 5-46): 2D 0.396 / 0.495 / 0.990 mm,
+  EAN/UPC 0.264 / 0.330 / 0.660 mm.
+- *Direct part marking* matches table 7 (5-53): 0.254 / 0.300 / 0.615 mm. The table names the GS1 QR Code beside the
+  GS1 DataMatrix, so the QR code is now offered there too.
+- *Healthcare* was wrong: 0.254 / 0.380 / **0.495** mm are table 11's (GSRN). The healthcare tables are three: table 6
+  (non-retail, not in general distribution: GS1 DataMatrix 0.254 / 0.380 / **0.990**, EAN/UPC from 0.170), table 10
+  (retail pharmacy, not in general distribution: 0.396 / 0.495 / 0.990) and table 8 (pharmacy and general
+  distribution: 0.750 / 0.750 / 1.520, EAN/UPC 0.495 / 0.660 / 0.660). One environment could not stand for all three.
+
+**Decision.**
+
+1. **One environment per table of the decision tree** that a label of the portal can follow (`label.ENVIRONMENTS`,
+   each with its `table`): trade items — `retail` (1), `retail-gd` (3), `distribution` (2), `pharmacy` (10),
+   `pharmacy-gd` (8), `healthcare` (6, the same name, now table 6's values), `other` (4); other keys — `logistics`
+   (5, SSCC), `assets` (9, GDTI, GRAI, GIAI, GLN), `gsrn` (11); and `dpm` (7) for every key.
+2. **By key** (figure 5-68, questions 1 and 4): `label.environments_for(ai)` gives a key its own tables or, for every
+   key without one, the trade items'; direct part marking for all. The first is the default when a label is asked
+   without `env` (an SSCC now gets table 5 by default, not retail); an environment of other keys is refused
+   (`label.environmentNotForKey`, naming the key's); the page offers only the key's environments.
+3. **Symbols**: where a table names the GS1 DataMatrix, both Data Matrix symbols take its range (tables 1 and 3 give
+   the Data Matrix with the URI the same range as the GS1 DataMatrix); the QR code with the URI only where a table names
+   a QR Code — so not in tables 6, 8 and 10.
+4. **Not offered**: table 12 (tobacco, EU Regulation 2018/574: grade 3.5 and the GS1 DotCode) and table 13 (long
+   distance: no target, a quality aperture of 80 % of the X chosen). Neither fits a size given as a percentage of a
+   target; both stay in this section for whoever needs them. GS1-128 and GS1 DataBar, named by several tables, are not
+   drawn by the portal; table 5's and table 9's ranges for them are not used.
+
+| Environment | Table | 2D symbols | 2D X (mm): min / target / max | EAN/UPC X (mm) | Keys | Sizes (with EAN/UPC) |
+|---|---|---|---|---|---|---|
+| `retail` | 1 + add. 2 | QR, DM, GS1 DM | 0.396 / 0.495 / 0.990 | 0.264 / 0.330 / 0.660 | trade items | 80–200 % (80–200 %) |
+| `retail-gd` | 3 + add. 1 | QR, DM, GS1 DM | 0.743 / 0.990 / 0.990 | 0.495 / 0.660 / 0.660 | trade items | 80–100 % (80–100 %) |
+| `distribution` | 2 | QR, DM, GS1 DM | 0.743 / 0.743 / 1.50 | 0.495 / 0.660 / 0.660 | trade items | 100–200 % (100 %) |
+| `pharmacy` | 10 | DM, GS1 DM | 0.396 / 0.495 / 0.990 | 0.264 / 0.330 / 0.660 | trade items | 80–200 % (80–200 %) |
+| `pharmacy-gd` | 8 | DM, GS1 DM | 0.750 / 0.750 / 1.520 | 0.495 / 0.660 / 0.660 | trade items | 100–200 % (100 %) |
+| `healthcare` | 6 | DM, GS1 DM | 0.254 / 0.380 / 0.990 | 0.170 / 0.330 / 0.660 | trade items | 80–200 % (80–200 %) |
+| `other` | 4 | QR, DM, GS1 DM | 0.375 / 0.495 / 0.990 | 0.264 / 0.330 / 0.660 | trade items | 80–200 % (80–200 %) |
+| `logistics` | 5 | QR, DM, GS1 DM | 0.743 / 0.743 / 1.50 | — | SSCC | 100–200 % |
+| `assets` | 9 | QR, DM, GS1 DM | 0.375 / 0.375 / 0.743 | — | GDTI, GRAI, GIAI, GLN | 100–150 % |
+| `gsrn` | 11 | QR, DM, GS1 DM | 0.254 / 0.380 / 0.495 | — | GSRN | 80–120 % |
+| `dpm` | 7 | QR, DM, GS1 DM | 0.254 / 0.300 / 0.615 | — | any | 90–200 % |
+
+*Trade items*: every key except those with a table of their own (SSCC, GDTI, GRAI, GIAI, GLN, GSRN). In table 3 the
+EAN/UPC's maximum equals its target, so the sizes stop at 100 %.
+
+**Consequences.** A label of the `healthcare` environment keeps its target (0.380 mm) and gains sizes up to 200 %. A
+label of an SSCC, GDTI, GRAI, GIAI, GLN or GSRN asked without `env` is drawn at its own table's target (an SSCC's QR
+code at 0.743 mm instead of 0.495); asked with `env=retail` it is refused. The General Specifications are updated every
+year: a new release is checked against this table, one line of `label.ENVIRONMENTS` per row. The PDF is GS1's and is
+not kept in the repository.
 
 ## 8. Amendment of 17 October 2026 — an EPC for every key that has one (item 9.10)
 

@@ -406,10 +406,28 @@ part: resolver address, identifier, qualifiers, data attributes) and a legend.
   attributes, as `(01)…(10)…` — in the GS1 DataMatrix that healthcare and industry scan (not an address: a scan gives
   the data, not the links). One 2D symbol per label; the EAN/UPC can stand beside any of them. The downloads carry the
   symbol chosen and are named after it (`qrcode_…`, `datamatrix_…`, `gs1datamatrix_…`).
-- **Scanning environment** — where the code will be scanned, which sets the module size range of the GS1 General
-  Specifications: *Retail point of sale* (every symbol, X 0.396–0.990 mm, EAN/UPC 0.264–0.660 mm), *Healthcare
-  (regulated items)* (Data Matrix only, X 0.254–0.495 mm) or *Direct part marking* (Data Matrix only, X 0.254–0.615
-  mm, no linear barcode). The **Size** list then offers only the sizes within the range.
+- **Scanning environment** — where the code will be scanned: one of the symbol specification tables of the GS1
+  General Specifications (release 26.0, section 5.12.3), which sets the module size range and the symbols allowed.
+  Only the environments of the record's key are offered, its usual one first. The **Size** list then offers only the
+  sizes within the range. Which to choose, following the specifications' decision tree (figure 5-68):
+
+  | Where the code is scanned | Environment (table) | 2D symbols, X in mm (min–max, target) | EAN/UPC, X in mm |
+  |---|---|---|---|
+  | GTIN at the retail checkout only | *Retail point of sale* (1) | all, 0.396–0.990 (0.495) | 0.264–0.660 |
+  | GTIN at the checkout and in warehouses (cases scanned in general distribution) | *Retail point of sale and general distribution* (3) | all, 0.743–0.990 (0.990) | 0.495–0.660 |
+  | GTIN in general distribution only | *General distribution only* (2) | all, 0.743–1.50 (0.743) | 0.495–0.660 |
+  | Regulated healthcare item sold in a pharmacy | *Healthcare: retail pharmacy* (10) | Data Matrix, 0.396–0.990 (0.495) | 0.264–0.660 |
+  | Regulated healthcare item in a pharmacy and in general distribution | *Healthcare and general distribution* (8) | Data Matrix, 0.750–1.520 (0.750) | 0.495–0.660 |
+  | Regulated healthcare item outside retail, e.g. hospitals | *Healthcare, non-retail* (6) | Data Matrix, 0.254–0.990 (0.380) | 0.170–0.660 |
+  | Neither retail, nor distribution, nor regulated healthcare | *Neither retail nor distribution* (4) | all, 0.375–0.990 (0.495) | 0.264–0.660 |
+  | SSCC (logistic units) | *Logistic units, SSCC* (5) | all, 0.743–1.50 (0.743) | — |
+  | GDTI, GRAI, GIAI, GLN | *GDTI, GRAI, GIAI and GLN* (9) | all, 0.375–0.743 (0.375) | — |
+  | GSRN | *GSRN* (11) | all, 0.254–0.495 (0.380) | — |
+  | Marked directly on the item (any key) | *Direct part marking* (7) | all, 0.254–0.615 (0.300) | — |
+
+  The healthcare tables name only the GS1 DataMatrix: there the QR code is not offered. Tables 12 (tobacco under EU
+  Regulation 2018/574) and 13 (long distance scanning) are not offered: they ask for a print quality or a range the
+  label does not set; GS1-128 and GS1 DataBar, which several tables name, are not drawn by the portal.
 - **Text in the SVG** — *Outlines, no font needed* (the default: it looks the same everywhere) or *Text, editable
   (needs the fonts)*: real text an artwork program can change, in Liberation Sans and OCR-B for the EAN/UPC digits;
   the printer must have those fonts. PNG and PDF always draw outlines.
@@ -419,7 +437,7 @@ part: resolver address, identifier, qualifiers, data attributes) and a legend.
   40 (177 × 177), when the artwork needs a constant size.
 - **Error correction** (QR code only) — L (7 %), M (15 %, the default), Q (25 %) or H (30 %): how much of the code can
   be damaged and still be read. The level is applied exactly as chosen.
-- **Size** — a percentage of the scanning environment's recommended size (at retail 80 % to 200 %); each choice shows
+- **Size** — a percentage of the scanning environment's target size (at retail 80 % to 200 %); each choice shows
   the module size (at retail X 0.396 mm to 0.990 mm).
   The text under the code stays 2.2 mm high at every size. Use 100 % unless the artwork needs another.
 - **Linear barcode beside it** (GTINs of products, indicator 0) — *None*; *EAN-13 / UPC-A / EAN-8, as the GTIN

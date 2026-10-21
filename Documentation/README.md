@@ -28,6 +28,7 @@ development tests' checks that prove it; the whole list of checks is the [invent
 | [Portal user guide](portal-user-guide.md), section 14 | the screens only server administrators see (organisations, the export maximum, the GCP length table, support access, alerts of the installation) |
 | [Changelog](extensions/CHANGELOG.md) | every change on the branch, with the commit |
 | [Conformance review](conformance-review.md) | clause-by-clause review against GS1 Digital Link URI Syntax 1.7 and GS1-Conformant Resolver 1.2.1: findings, evidence, candidate errata |
+| [Third-party software, data and licences](third-party.md) | what the software is made of besides its own code (components, data such as the DB-IP GeoIP database, services), each licence, what an operator must do, and why nothing restricts commercial use |
 
 ## Integrators
 

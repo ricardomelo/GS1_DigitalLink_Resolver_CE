@@ -657,7 +657,7 @@ The official integration test `tests/setup_test.py` needs the running stack and 
 
 ## Open backlog
 
-Status on 17 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly; items 9.1 to 9.7 from the staging tests of 15 and 16 October, 9.1 to 9.7 done in session 15; items 9.8 to 9.11 added by the owner on 17 October and done in session 16). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
+Status on 21 October 2026 (items 4.2 to 7.1 done in session 14; 7.2 to 7.4 partly; items 9.1 to 9.7 from the staging tests of 15 and 16 October, 9.1 to 9.7 done in session 15; items 9.8 to 9.11 added by the owner on 17 October and done in session 16; session 17 answered the staging tests of 20 October and the owner's notes — a space limit for the request log, an upgrade script from the official v3, Turkish, a map of requests, the label's scanning environments of the General Specifications 26.0, the project's logo, a privacy notice, the licences inventory — and the owner's decisions on 7.2 to 8.1 below). Phase 1, the conformance baseline, is complete: the clause-by-clause review, the
 registration model of GS1-Conformant Resolver 2.5.9, a default link above every record, the resolution
 fixes, EPC binary strings and GS1's own resolver test suite (passed on a staging installation). Item 2.1,
 the quick wins (session limits, home page, community notice), item 2.2, continuous integration (the
@@ -705,10 +705,10 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
-| Production | 7.2 | **Production readiness**, on the servers: an installation on a clean machine, the off-server copy set up, a restore rehearsal, the staging secrets rotated and the [production checklist](Documentation/extensions/README.md#going-to-production) worked through (the scripts and the installer's final check of a scan through the proxy are done) | S | — |
-| | 7.3 | **Polish**: review of the Portuguese AI names, logo on the home page and the resolver's pages (default link titles in the link's language, conformance review F21: done) | S | — |
-| | 7.4 | **Load test and scale-out rehearsal** on staging with `dev-tests/load/load_test.py` (done): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded ([procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)) | S | 2.3 |
-| Standards | 8.1 | **Errata and Work Requests to GS1** (drafted; to be reviewed and sent by the owner): E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
+| Production | 7.2 | **Later, when the owner decides (20 October 2026).** **Production readiness**, on the servers: an installation on a clean machine, the off-server copy set up, a restore rehearsal, the staging secrets rotated and the [production checklist](Documentation/extensions/README.md#going-to-production) worked through (the scripts and the installer's final check of a scan through the proxy are done) | S | — |
+| | 7.3 | **Polish**: review of the Portuguese AI names — left open by the owner on 20 October (the project's own logo on every page, default link titles in the link's language, conformance review F21: done) | S | — |
+| | 7.4 | **More exhaustive load tests before production** (one rehearsal done and written up; the tests recommended are listed in the [procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded | S | 2.3, with 7.2 |
+| Standards | 8.1 | **Errata and Work Requests to GS1** (drafted, and the material to send prepared on 20 October; to be reviewed and sent by the owner): E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
 
 The items of the "later" list are done: the record search reads scanners and RFID readers, exports follow the
 filters (which stay in the address), serial numbers registered with their batch can be fixed, the data entry API
@@ -743,7 +743,11 @@ tests/, useful_external_python_scripts/   official tests and conversion scripts
 
 ## Licence and credits
 
-Licensed under the [Apache License 2.0](LICENSE), like the official project.
+Licensed under the [Apache License 2.0](LICENSE), like the official project: anyone may install, run, change and
+redistribute it, commercially or not, keeping the notices; it comes with no warranty ("as is"). The components,
+data and services it uses — among them the **DB-IP** GeoIP database (Creative Commons Attribution 4.0, credited on
+the screens), Natural Earth's map data, d3, MongoDB (SSPL) — and their licences are listed in
+[Third-party software, data and licences](Documentation/third-party.md); none restricts commercial use.
 
 - **GS1 Resolver Community Edition** — the GS1 Resolver Community (original design and code by Nick
   Lansley and contributors).
@@ -751,4 +755,5 @@ Licensed under the [Apache License 2.0](LICENSE), like the official project.
   resolver to validate every request and by the portal to validate data attributes (Apache License 2.0,
   downloaded and built when the images are built).
 
-GS1, the GS1 logo and GS1 Digital Link are trademarks of GS1 AISBL.
+GS1, the GS1 logo and GS1 Digital Link are trademarks of GS1 AISBL. The project's own logo
+(`Documentation/images/logo`) is under the Apache License 2.0 like the code.

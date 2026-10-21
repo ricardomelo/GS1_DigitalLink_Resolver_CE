@@ -851,6 +851,17 @@ cannot carry a script to every visitor; the end-to-end test proved it only after
 in it was added (one of 21 mutations escaped until then). The default notice was written in the twelve languages; the
 operator adapts it before production.
 
+**The owner's other answers** (documents only). Whether the GeoIP database's licence allows any use, commercial
+included: DB-IP's *IP to City Lite* is under Creative Commons Attribution 4.0, which allows commercial use with the
+attribution the screens already show; the question widened into an inventory of every component, data source and
+service with its licence (`Documentation/third-party.md`), which found nothing that restricts commercial use — MongoDB's
+SSPL constrains offering MongoDB itself as a service, not running an application on it — and recorded what an operator
+must do, trademarks included. The load test of 15 October was written up with what it did not measure and the tests
+recommended before production. The native review of the nine draft languages will not be arranged (the files are in
+the repository for contributions); single sign-on was not tested on staging (contributions welcome); there is no e-mail
+relay for now; the Verified by GS1 address stays as it is; production readiness (7.2) waits for the owner; the
+Portuguese AI names (7.3) stay open; the errata material (8.1) was prepared for the owner to send.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

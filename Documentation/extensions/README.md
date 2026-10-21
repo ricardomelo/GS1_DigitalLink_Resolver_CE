@@ -1458,6 +1458,30 @@ and starts Node.js only when the engine's library is missing from its image, whi
 (`GS1 Barcode Syntax Engine not loaded … each check starts Node.js`). To check a running installation:
 `docker compose exec web-service python -c "import gs1_syntax; print(gs1_syntax.available())"` answers `True`.
 
+**What has been measured, and what has not.** One load test was run on staging, on 15 October 2026, with this script
+from a laptop over the internet: 100 requests a second for a minute through HTTPS, two replicas of each service, on the
+staging VM. It found the limit at about 26 requests a second, every resolver container at 100 % CPU while the database
+and the proxy sat at 2 % and 1 %: the official code started a Node.js process to check the syntax of every request
+(about 46 ms each). The resolver now asks the GS1 Barcode Syntax Engine's library in its own process (about 2 µs a
+check, `653ffc6`). **That is all that was measured.** The test was not repeated after the fix, and none was run against
+a production-sized machine, with the request log's writes at full rate, with several organisations' records, or for
+longer than a minute.
+
+**Before production, more exhaustive tests are recommended**, at least:
+
+1. the same rehearsal again on staging after the fix, at 20, 50, 100 and 200 requests a second, recording each run;
+2. a machine of the production size, with the expected peak (scans a second during a campaign, a TV advert, a recall)
+   and a margin of at least three times it;
+3. a soak test: a steady rate for an hour or more, watching memory, the request log's queue (`Request log: N event(s)
+   lost` in the resolver's output) and MongoDB's disk;
+4. the item's page and the linkset as well as plain redirects (`--mix`), and codes nobody registered (404s are logged
+   too);
+5. a scale-out step: more replicas of the resolver, then a MongoDB replica set, checking the gain at each step;
+6. a failure while loaded: a resolver container stopped, the database restarted — the proxy should keep answering.
+
+The results go into the history with the replica counts, the server's size and the rates; the agreed target sizes
+production. Until then, size production generously and watch the overview's answer times and the alerts.
+
 Scans are reads: MongoDB on the same server is rarely the limit before the CPU of the resolver's processes. When it
 is, or for availability, a MongoDB replica set (three members on separate machines, `MONGO_URI` and `PORTAL_DB_URI`
 listing them with `replicaSet=`) is the next step; the services need no change for it.

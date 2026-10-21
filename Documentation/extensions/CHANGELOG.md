@@ -54,6 +54,14 @@
   recorded, the days requests are kept, and that the installation is the sole responsibility of whoever operates it,
   neither GS1 nor the software's contributors answering for it, the software provided "as is". New collection
   `privacy_notice`; routes `GET /portal/privacy`, `GET` and `PUT /portal/api/privacy`. Commit `37b14e8`.
+- **Third-party software, data and licences** (`Documentation/third-party.md`): every component, data source and
+  service with its licence; what an operator must do (the notices, the DB-IP attribution, GS1's terms for the GCP
+  table, trademarks); why nothing restricts commercial use (MongoDB's SSPL included). The README's licence section
+  points to it and names DB-IP.
+- **The load test written up** (item 7.4, operator's guide): what the rehearsal of 15 October measured and what it did
+  not, and the more exhaustive tests recommended before production.
+- **The backlog after the owner's decisions of 20 October**: 7.2 later; 7.3 the logo done, the Portuguese AI names left
+  open; 7.4 more exhaustive load tests before production; 8.1 the material to send prepared, the owner sends it.
 
 ### Owner's additions of 17 October: the project's documentation (backlog item 9.11)
 - **An inventory of every feature drawn from the development tests** ([ADR 0016](../adr/0016-documentation-and-feature-inventory.md)):

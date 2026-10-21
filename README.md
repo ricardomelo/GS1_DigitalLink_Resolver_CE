@@ -706,7 +706,6 @@ know whose data they handle.
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
 | Production | 7.2 | **Later, when the owner decides (20 October 2026).** **Production readiness**, on the servers: an installation on a clean machine, the off-server copy set up, a restore rehearsal, the staging secrets rotated and the [production checklist](Documentation/extensions/README.md#going-to-production) worked through (the scripts and the installer's final check of a scan through the proxy are done) | S | — |
-| | 7.3 | **Polish**: review of the Portuguese AI names — left open by the owner on 20 October (the project's own logo on every page, default link titles in the link's language, conformance review F21: done) | S | — |
 | | 7.4 | **More exhaustive load tests before production** (one rehearsal done and written up; the tests recommended are listed in the [procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded | S | 2.3, with 7.2 |
 | Standards | 8.1 | **Errata and Work Requests to GS1** (drafted, and the material to send prepared on 20 October; to be reviewed and sent by the owner): E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
 

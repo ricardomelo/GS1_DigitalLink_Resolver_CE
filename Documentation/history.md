@@ -884,6 +884,13 @@ too) and the description file keeping the software's name. Replacing the name in
 placeholders were filled, or the screen's own hint, which names the original title, would have named the new one; a
 mutation showed it. 28 mutations: 27 caught (one only after it was aimed at the cache's check inside the lock, the outer one being a shortcut); the last showed the logo's own `nosniff` header to be redundant — every answer of the portal carries it — and it was removed.
 
+Right after, the owner asked not to forget the page's HTML title and the favicon (`d23f518`). The title had been
+replaced only by the pages' scripts, so the portal first showed the original, and the favicon stayed the project's. The
+portal now serves its three pages with the title, logo and icon in their HTML (the home page, plain files behind the
+proxy, still sets them from its script), and an icon of its own was added rather than the logo scaled down, because a
+logo is usually wide and unreadable at 16 pixels. 14 more mutations, all caught; one of them was caught at first for
+the wrong reason — it broke the script's syntax — and was rewritten until a check caught it for the right one.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

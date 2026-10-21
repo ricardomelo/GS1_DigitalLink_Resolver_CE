@@ -71,6 +71,12 @@
   within 30 seconds; **Restore the original** brings back the original title, logo and colours. Each change is in the
   journal (`appearance-save`, `appearance-reset`). The resolver's description file keeps the software's name.
   Commit `fbb44ff`.
+- **The appearance's tab icon and the title in the pages themselves** ([ADR 0019, section 6](../adr/0019-appearance.md)):
+  an **icon for the browsers' tabs** (favicon), set apart from the logo, with *Use the original icon*, shown on every
+  page — the portal, the home page, the resolver's pages (the item's page keeps its brand's logo) and the resolver's
+  `/favicon.ico`; the preview shows the browser's tab with the icon and the title. The portal now serves its pages with
+  the title, the logo and the icon already in their HTML, so the original no longer shows before the scripts run.
+  Commit `d23f518`.
 - **Third-party software, data and licences** (`Documentation/third-party.md`): every component, data source and
   service with its licence; what an operator must do (the notices, the DB-IP attribution, GS1's terms for the GCP
   table, trademarks); why nothing restricts commercial use (MongoDB's SSPL included). The README's licence section

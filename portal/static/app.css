@@ -41,7 +41,7 @@ a { color: var(--link); }
 /* ---------------------------------------------------------------- header */
 .site-header { background: #fff; box-shadow: var(--shadow); position: relative; z-index: 10; }
 .header-inner {
-  max-width: 76rem; margin: 0 auto; min-height: 4.5rem;
+  max-width: 96rem; margin: 0 auto; min-height: 4.5rem;
   display: flex; align-items: center; gap: 1.25rem;
   padding: .6rem clamp(1rem, 4vw, 2rem);
 }
@@ -93,7 +93,7 @@ a { color: var(--link); }
 
 /* ---------------------------------------------------------------- hero band */
 .hero { background: var(--gs1-blue); color: #fff; padding: 2.5rem 0 5.5rem; }
-.hero-inner { max-width: 76rem; margin: 0 auto; padding: 0 clamp(1rem, 4vw, 2rem); }
+.hero-inner { max-width: 96rem; margin: 0 auto; padding: 0 clamp(1rem, 4vw, 2rem); }
 .hero h1 { font-size: clamp(1.75rem, 3.4vw, 2.5rem); font-weight: 400; line-height: 1.12; margin: 0 0 .75rem; max-width: 22ch; }
 .hero p { margin: 0; max-width: 42rem; font-size: 1.0625rem; line-height: 1.55; color: #DCE6F2; }
 
@@ -103,7 +103,7 @@ a { color: var(--link); }
 
 /* ---------------------------------------------------------------- record list */
 .records-main {
-  max-width: 76rem; margin: -3.5rem auto 0; position: relative;
+  max-width: 96rem; margin: -3.5rem auto 0; position: relative;
   padding: 0 clamp(1rem, 4vw, 2rem) 4rem;
 }
 .records-toolbar { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: end; margin-bottom: .75rem; }
@@ -179,7 +179,7 @@ a { color: var(--link); }
 
 /* ---------------------------------------------------------------- layout */
 .layout {
-  max-width: 76rem; margin: -3.5rem auto 0; position: relative;
+  max-width: 96rem; margin: -3.5rem auto 0; position: relative;
   display: grid; gap: 1.5rem; align-items: start;
   grid-template-columns: minmax(0, 1fr);
   padding: 0 clamp(1rem, 4vw, 2rem) 4rem;
@@ -433,7 +433,7 @@ dialog::backdrop { background: rgba(0, 30, 74, .45); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1.5rem; }
 
 /* ---------------------------------------------------------------- sign-in page */
-.auth-layout { max-width: 76rem; margin: -3.5rem auto 0; padding: 0 clamp(1rem, 4vw, 2rem) 4rem; position: relative; }
+.auth-layout { max-width: 96rem; margin: -3.5rem auto 0; padding: 0 clamp(1rem, 4vw, 2rem) 4rem; position: relative; }
 .auth-card { max-width: 28rem; padding: clamp(1.5rem, 4vw, 2.25rem); }
 .auth-card h2 { font-size: 1.5rem; font-weight: 400; margin-bottom: 1.25rem; }
 .auth-card label { margin-top: 1rem; }
@@ -553,6 +553,20 @@ body:not([data-operator-view="true"]) .audit-tenant-col { display: none !importa
 .users-table input[type="email"] { min-width: 10rem; }
 .users-table th.count { text-align: end; }
 .tenants-name { flex: 1 1 14rem; }
+/* New organisation (owner's note of 20 October): the name level with the first prefix, "Add GCP" beside the
+   prefixes, the button level with the fields */
+#tenants-create { display: grid; grid-template-columns: minmax(12rem, 20rem) minmax(18rem, 1fr) auto;
+  align-items: start; gap: .75rem 1.5rem; }
+#tenants-create > .btn { margin-top: 1.55rem; }
+#tenants-create .prefix-rows { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .4rem .75rem; }
+#tenants-create .prefix-list { margin: 0; }
+#tenants-create .prefix-add { white-space: nowrap; min-height: 2.75rem; }
+#tenants-create .field-label { margin: 0; }
+#tenants-create .prefix-row input { flex-basis: 10rem; }
+@media (max-width: 720px) {
+  #tenants-create { grid-template-columns: 1fr; }
+  #tenants-create > .btn { margin-top: 0; justify-self: start; }
+}
 .tenants-name input { width: 100%; }
 .list-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: .5rem 1rem; }
 .list-head h2 { margin-bottom: .5rem; }
@@ -564,7 +578,7 @@ body:not([data-operator-view="true"]) .audit-tenant-col { display: none !importa
 @media (min-width: 721px) { .tenants-table td.count { text-align: end; } }
 .support-banner { background: #FFF1D6; border-bottom: 1px solid #F0C36D; color: #5C3A00; }
 .support-banner[hidden] { display: none; }
-.support-inner { max-width: 76rem; margin: 0 auto; padding: .6rem clamp(1rem, 4vw, 2rem); display: flex; flex-wrap: wrap; align-items: center;
+.support-inner { max-width: 96rem; margin: 0 auto; padding: .6rem clamp(1rem, 4vw, 2rem); display: flex; flex-wrap: wrap; align-items: center;
                  gap: .5rem 1rem; font-weight: 500; }
 .support-inner svg { flex: none; color: #9A5B00; }
 .support-inner span { flex: 1 1 18rem; }
@@ -640,6 +654,9 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .retention-table .retention-days { width: 12rem; }
 .retention-table td { vertical-align: middle; }
 .requests-table td { font-size: .875rem; }
+/* Nine columns within the content at 1280 px with the sidebar, without sideways scrolling (owner's note of 20 October) */
+.requests-table td { overflow-wrap: anywhere; }
+.requests-table .requests-outcome { white-space: normal; }
 .requests-table td.code { white-space: normal; word-break: break-all; }
 /* The map of requests (requests-map.js; ADR 0006, section 10): the map, the country's regions and cities beside it */
 .requests-map-box { margin: .5rem 0 1rem; }
@@ -765,8 +782,8 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 /* Wide screens: the screens of the user menu as a left sidebar, foldable to icons. Narrower: the user menu alone. */
 .sidebar { display: none; }
 @media (min-width: 1100px) {
-  body { padding-inline-start: 15rem; transition: padding-inline-start .15s; }
-  body.sidebar-folded { padding-inline-start: 4rem; }
+  body.has-sidebar { padding-inline-start: 15rem; transition: padding-inline-start .15s; }
+  body.has-sidebar.sidebar-folded { padding-inline-start: 4rem; }
   .sidebar {
     display: flex; flex-direction: column; position: fixed; inset-block: 0; inset-inline-start: 0; width: 15rem; z-index: 20;
     background: var(--gs1-blue-dark); color: #fff; overflow-y: auto; transition: width .15s;

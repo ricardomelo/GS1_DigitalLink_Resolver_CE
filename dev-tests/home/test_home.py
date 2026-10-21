@@ -234,7 +234,10 @@ def routing_checks(base: str) -> None:
     status, _, body = fetch(base + "/", accept="application/json")
     check(status == 200 and 'id="site-nav"' in body, "GET / with Accept: application/json → home page (no resolver content at /)")
 
-    for asset, kind in [("home.css", "text/css"), ("home.js", "javascript"), ("gs1-logo.png", "image/png"), ("favicon.png", "image/png")]:
+    check('<img src="/home/logo.svg"' in body and "gs1-logo.png" not in body,
+          "the home page shows the project's logo, not GS1's (backlog item 7.3)")
+    for asset, kind in [("home.css", "text/css"), ("home.js", "javascript"), ("logo.svg", "image/svg+xml"),
+                        ("gs1-logo.png", "image/png"), ("favicon.png", "image/png")]:
         status, headers, _ = fetch(base + "/home/" + asset)
         check(status == 200 and kind in headers.get("Content-Type", ""), f"GET /home/{asset} → 200 {kind}")
 

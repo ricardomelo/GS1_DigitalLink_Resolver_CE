@@ -58,10 +58,10 @@ home_app.add_url_rule("/.well-known/gs1resolver", "description", lambda: Respons
     json.dumps({"resolverRoot": "https://id.example.org", "contact": {"fn": "Example Org", "hasURL": "https://www.example.org/"}}), mimetype="application/json"))
 threading.Thread(target=make_server("127.0.0.1", HOME_PORT, home_app, threaded=True).serve_forever, daemon=True).start()
 
-# Hides the GS1 logo (header of the portal and of the home page) in every screenshot
-NO_LOGO = (".brand img { display: none !important; } .brand .product { border-left: 0 !important; padding-left: 0 !important; }"
-           # the sidebar scrolls with the page in the pictures: a fixed one is drawn once, over a full-page capture
-           " .sidebar { position: absolute !important; min-height: 100% !important; }")
+# Added to every screenshot. The headers show the project's own logo since 20 October 2026 (until then the GS1 logo
+# the official project shipped, hidden here). The sidebar scrolls with the page in the pictures: a fixed one is drawn
+# once, over a full-page capture.
+SHOT_STYLE = " .sidebar { position: absolute !important; min-height: 100% !important; }"
 
 
 def pip(href, lang="en", title="Product information"):
@@ -114,7 +114,7 @@ def confirm_portal(page, wait: int = 400) -> None:
     page.wait_for_timeout(wait)
 
 def save(page, name, clip=None, full=False):
-    page.add_style_tag(content=NO_LOGO)
+    page.add_style_tag(content=SHOT_STYLE)
     page.wait_for_timeout(100)
     path = os.path.join(OUT, name)
     page.screenshot(path=path, clip=clip, full_page=full)
@@ -149,7 +149,7 @@ import tenants  # noqa: E402 — organisations for the guide's images
 def sign_in(browser, locale, viewport=None):
     """A new browser in the locale, signed in as maria."""
     page = browser.new_context(locale=locale, viewport=viewport or {"width": 1280, "height": 1100}).new_page()
-    page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+    page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.on("dialog", lambda dialog: dialog.accept())    # "discard unsaved changes?" between pictures
     page.goto(BASE); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(800)
@@ -238,7 +238,7 @@ def guide_images(locale: str, folder: str, description: str) -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1100}).new_page()
-        page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+        page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
         page.on("dialog", lambda dialog: dialog.accept())    # "discard unsaved changes?" between pictures
         page.goto(BASE); page.wait_for_timeout(500)
         save(page, f"{folder}/sign-in.png", clip={"x": 0, "y": 0, "width": 1280, "height": 760})
@@ -354,7 +354,7 @@ def mail_images(browser, folder: str, locale: str) -> None:
     try:
         ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 900})
         page = ctx.new_page()
-        page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+        page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
         page.goto(BASE + "login"); page.wait_for_timeout(600)
         page.click("#forgot-open"); page.fill("#forgot-login", "maria@brand.example")
         page.click("#forgot-submit"); page.wait_for_timeout(1200)
@@ -371,7 +371,7 @@ def mail_images(browser, folder: str, locale: str) -> None:
 
         ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1100})
         page = ctx.new_page()
-        page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+        page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
         page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
         page.click("#login-submit"); page.wait_for_timeout(1000)
         page.goto(BASE + "#users"); page.wait_for_timeout(900)
@@ -390,7 +390,7 @@ def apikey_images(browser, folder: str, locale: str) -> None:
     """The API keys screen with a key just created (Documentation/adr/0005-tenant-api.md)."""
     ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1100})
     page = ctx.new_page()
-    page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+    page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(1000)
     page.goto(BASE + "#apikeys"); page.wait_for_timeout(900)
@@ -411,7 +411,7 @@ def domain_images(browser, folder: str, locale: str) -> None:
     domains.txt_records = lambda name: records.get(name, [])
     ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1300})
     page = ctx.new_page()
-    page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+    page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(1000)
     page.goto(BASE + "#domains"); page.wait_for_timeout(900)
@@ -458,7 +458,7 @@ def item_page_images(browser, folder: str, locale: str) -> None:
     logo = example_logo()
     ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1200})
     page = ctx.new_page()
-    page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+    page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(1000)
     page.goto(BASE + "#branding"); page.wait_for_timeout(900)
@@ -489,7 +489,7 @@ def sso_images(browser, folder: str, locale: str) -> None:
                           "clientSecret": "example-secret", "domains": ["brand.example"], "enabled": True}, "maria")
     ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1000})
     page = ctx.new_page()
-    page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+    page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(1000)
     page.goto(BASE + "#sso"); page.wait_for_timeout(900)
@@ -558,7 +558,7 @@ def requests_images(browser, folder: str, locale: str) -> None:
     seed_requests()
     ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1250})
     page = ctx.new_page()
-    page.on("load", lambda pg: pg.add_style_tag(content=NO_LOGO))
+    page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(1000)
     page.goto(BASE + "#requests"); page.wait_for_timeout(1500)

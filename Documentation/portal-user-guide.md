@@ -145,10 +145,12 @@ your password?** at once and tell your administrator.
 The round button at the top right opens the user menu: your user name, **Home page** (the resolver's
 home page), **Overview** (section 17), **Link editor** (sections 4 to 10), **Registered records** (section 11),
 **Requests** (section 16), **Users**, **API keys** and **Audit
-trail**, **Organisation** and **Alerts** (administrators only; **Organisations** for server administrators),
+trail**, **Organisation management** and **Alerts** (administrators only; **Organisations** for server administrators),
 **Options** and **Sign out**. On a wide screen (1,100 pixels or more) the same screens are also in a **side menu** on
 the left, the current one marked; the button at its top folds it to its icons and opens it again (the browser
-remembers the choice). On a phone every screen fits the width; wide tables scroll sideways inside their own box.
+remembers the choice). The screens use up to 1,536 pixels of a wide monitor (96rem); the list of requests fits a
+1,280-pixel screen with the side menu open. On a phone every screen fits the width; wide tables scroll sideways inside
+their own box.
 
 Questions such as *Remove this user?* open in the portal's own window: **Confirm** goes ahead, **Cancel** (or the Esc
 key) keeps everything as it was. What cannot be undone has a red button.
@@ -815,7 +817,8 @@ without changing them, only through support access.
 
 ![An organisation's page](images/guide/organisation.png)
 
-**Organisation** (user menu) gathers an organisation's settings in one place, each in a tab: its **Prefixes**, its
+**Organisation management** (user menu; the page is titled with the organisation's name) gathers an organisation's
+settings in one place, each in a tab: its **Prefixes**, its
 **Users** with their prefixes, its **Domains**, its **Item page** brands, its **Organisation sign-in**, its **API
 keys**, its **Exports** and its **Alerts**. Each tab links to the screen that changes it. An organisation's
 administrators see their own; the server administrator opens any organisation from **Organisations** (**Open**),

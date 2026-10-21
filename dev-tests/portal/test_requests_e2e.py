@@ -82,10 +82,12 @@ event(OPER, 7, dev="automated")
 for i in range(1, 12):
     for j in range(i % 4 + 1):
         event(ACME if j % 2 else OPER, minutes=60 * 24 * i + j, o="unknown" if j == 2 else "redirect")
-for day in range(1, 12):
-    requestlog.count_day(requestlog.today() - timedelta(days=day))
 for i in range(205):                                       # enough for a second page
     event(OPER, minutes=8 + i / 60, dev="tablet")
+# The past days' counts after every event: shortly after midnight (PORTAL_TIME_ZONE) some of "today's" events are
+# yesterday's
+for day in range(1, 12):
+    requestlog.count_day(requestlog.today() - timedelta(days=day))
 
 
 def sign_in(page, user, password):
@@ -157,6 +159,11 @@ with sync_playwright() as p:
           any("SGTIN+" in r and "nível /10/L7" in r for r in listed), [r for r in listed if "SGTIN" in r])
     check("a serial number appears only as its AI", any("/21/*" in r for r in listed))
     check("more requests: a button", page.is_visible("#requests-more"))
+    sideways = page.evaluate("() => { const w = document.querySelector('#requests-body').closest('.table-wrap'); "
+                             "return w.scrollWidth - w.clientWidth; }")
+    check("…the nine columns within the screen at 1280 px, without scrolling sideways", sideways <= 0,
+          (sideways, page.evaluate("() => [...document.querySelectorAll('#requests-body tr:first-child td')]"
+                                   ".map(td => Math.round(td.getBoundingClientRect().width))")))
 
     # The map of requests (ADR 0006, section 10): closed until asked for, then countries shaded and cities drawn
     check("the map: closed at first, nothing loaded", not page.is_visible("#requests-map svg")

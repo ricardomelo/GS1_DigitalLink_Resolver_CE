@@ -99,7 +99,7 @@ if os.environ.get("PORTAL_SESSION_HOURS", "").strip():
                 "PORTAL_SESSION_MAX_HOURS (default 12).")
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-PUBLIC_ASSETS = {"app.css", "i18n.js", "login.js", "password.js", "gs1-logo.png", "favicon.png"}   # needed by the login page
+PUBLIC_ASSETS = {"app.css", "i18n.js", "login.js", "password.js", "gs1-logo.png", "logo.svg", "favicon.png"}   # needed by the login page
 # The map of requests (ADR 0006, section 10): its script, d3, topojson-client and the countries, after sign-in
 PRIVATE_ASSETS = {"app.js", "requests-map.js", "d3.min.js", "topojson-client.min.js", "world-countries.json",
                   "iso3166.json"}

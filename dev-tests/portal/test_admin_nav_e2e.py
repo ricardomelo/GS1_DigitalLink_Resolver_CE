@@ -91,7 +91,27 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: errors.append(str(e)))
     natives = []
     page.on("dialog", lambda d: (natives.append(d.message), d.accept()))
+
+    # ------------------------------------------------------------ the layout fixes of 20 October and the project's logo
+    page.goto(BASE + "login"); page.wait_for_timeout(500)
+    left = page.evaluate("""() => [getComputedStyle(document.body).paddingInlineStart,
+        document.getElementById('login-form').getBoundingClientRect().left,
+        document.querySelector('.hero-inner h1').getBoundingClientRect().left]""")
+    check("the sign-in page: no room kept for a sidebar it does not have, the form under the title", left[0] == "0px"
+          and abs(left[1] - left[2]) < 1, left)
+    check("…the project's logo in the header, not GS1's", page.get_attribute(".site-header img", "src") == "logo.svg"
+          and page.evaluate("() => document.querySelector('.site-header img').naturalWidth") > 0)
     sign_in(page, "root", "root-password-long")
+    check("the portal: the sidebar's room kept", page.evaluate("() => getComputedStyle(document.body).paddingInlineStart")
+          == "240px")
+    check("…the menu says Organisation management", page.inner_text(".sidebar-item[href='#organisation']").strip()
+          == "Organisation management", page.inner_text(".sidebar-item[href='#organisation']"))
+    wide = browser.new_context(locale="en-GB", viewport={"width": 1920, "height": 900}).new_page()
+    sign_in(wide, "root", "root-password-long")
+    wide.goto(BASE + "#records"); wide.wait_for_timeout(600)
+    width = wide.evaluate("() => document.getElementById('records-view').getBoundingClientRect().width")
+    check("a wide screen: the content up to 96rem (1,536 px), wider than before (76rem)", 1216 < width <= 1536, width)
+    wide.close()
 
     # ------------------------------------------------------------ the sidebar
     check("wide screen: the sidebar, with the user menu's screens", page.is_visible("#sidebar")
@@ -115,6 +135,16 @@ with sync_playwright() as p:
     page.goto(BASE + "#tenants"); page.wait_for_timeout(700)
     rows = page.locator("#new-tenant-prefixes .prefix-row")
     check("new organisation: prefixes as rows, one to start with", rows.count() == 1)
+    boxes = {name: page.locator(selector).first.bounding_box() for name, selector in (
+        ("name", "#new-tenant-name"), ("prefix", "#new-tenant-prefixes .prefix-row input"),
+        ("add", "#new-tenant-prefixes .prefix-add"), ("create", "#tenants-create > .btn"))}
+    check("…the name level with the first prefix, Add GCP beside the prefixes, the button level with the fields",
+          abs(boxes["name"]["y"] - boxes["prefix"]["y"]) < 2
+          and boxes["add"]["x"] > boxes["prefix"]["x"] + boxes["prefix"]["width"]
+          and abs(boxes["add"]["y"] + boxes["add"]["height"] / 2 - boxes["prefix"]["y"] - boxes["prefix"]["height"] / 2) < 4
+          and boxes["create"]["x"] > boxes["add"]["x"] + boxes["add"]["width"]
+          and abs(boxes["create"]["y"] + boxes["create"]["height"] / 2 - boxes["name"]["y"] - boxes["name"]["height"] / 2) < 6,
+          boxes)
     page.fill("#new-tenant-name", "Gamma Teas")
     rows.nth(0).locator("input").fill("78a")
     check("…a row checked as it is typed", "4 to 12 digits" in rows.nth(0).inner_text()

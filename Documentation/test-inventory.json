@@ -53,6 +53,11 @@
   "admin_nav_e2e": {
    "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
    "checks": [
+    "the sign-in page: no room kept for a sidebar it does not have, the form under the title",
+    "…the project's logo in the header, not GS1's",
+    "the portal: the sidebar's room kept",
+    "…the menu says Organisation management",
+    "a wide screen: the content up to 96rem (1,536 px), wider than before (76rem)",
     "wide screen: the sidebar, with the user menu's screens",
     "…the current screen marked",
     "…a click opens the screen and marks it",
@@ -60,6 +65,7 @@
     "…remembered in this browser",
     "…unfolded again",
     "new organisation: prefixes as rows, one to start with",
+    "…the name level with the first prefix, Add GCP beside the prefixes, the button level with the fields",
     "…a row checked as it is typed",
     "…Add GCP and a remove button on each row",
     "…confirmed in the portal's own dialog, not the browser's",
@@ -99,7 +105,7 @@
     "no script errors",
     "the browser's own dialogs never used"
    ],
-   "count": 45,
+   "count": 51,
    "ciOnly": false
   },
   "api": {
@@ -1603,15 +1609,17 @@
     "nginx starts while a service name has no address yet",
     "…and answers that service's paths with an error meanwhile (502)",
     "…while the other services answer",
-    "the service is found once its name has an address, without restarting nginx (2.0 s)",
+    "the service is found once its name has an address, without restarting nginx (1.8 s)",
     "GET / → 200 text/html",
     "GET / serves the home page, not the resolver",
     "GET / carries the Content Security Policy",
     "GET / carries X-Content-Type-Options",
     "GET /?query → home page",
     "GET / with Accept: application/json → home page (no resolver content at /)",
+    "the home page shows the project's logo, not GS1's (backlog item 7.3)",
     "GET /home/home.css → 200 text/css",
     "GET /home/home.js → 200 javascript",
+    "GET /home/logo.svg → 200 image/svg+xml",
     "GET /home/gs1-logo.png → 200 image/png",
     "GET /home/favicon.png → 200 image/png",
     "GET /home → 301 to /",
@@ -1671,7 +1679,7 @@
     "phone: no horizontal scrolling",
     "without JavaScript: English text, menu visible"
    ],
-   "count": 70,
+   "count": 72,
    "ciOnly": false
   },
   "i18n": {
@@ -3724,6 +3732,7 @@
     "an EPC binary string shows its scheme and the level that answered",
     "a serial number appears only as its AI",
     "more requests: a button",
+    "…the nine columns within the screen at 1280 px, without scrolling sideways",
     "the map: closed at first, nothing loaded",
     "…the world's countries, those with requests shaded",
     "…a circle for each city the resolver placed",
@@ -3762,7 +3771,7 @@
     "the log switched off: a notice",
     "no script errors"
    ],
-   "count": 53,
+   "count": 54,
    "ciOnly": false
   },
   "resolver": {
@@ -3819,6 +3828,7 @@
     "HTML linkset page: javascript: and data: targets listed without a link",
     "HTML 404 page lists the same targets without links",
     "HTML pages: logo links to the home page",
+    "…the project's logo embedded as SVG, not GS1's",
     "CORS exposes Link",
     "upstream /01/09506000134376",
     "upstream /01/09506000134376/21/HELLOWORLD",
@@ -3974,7 +3984,7 @@
     "eight threads checking at once get every answer right",
     "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
    ],
-   "count": 205,
+   "count": 206,
    "ciOnly": false
   },
   "scan_search": {

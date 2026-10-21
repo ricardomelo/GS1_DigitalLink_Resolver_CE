@@ -567,7 +567,7 @@
  "nav.label": "포털 화면",
  "nav.fold": "사이드 메뉴 접기",
  "nav.unfold": "사이드 메뉴 열기",
- "menu.organisation": "조직",
+ "menu.organisation": "조직 관리",
  "menu.alerts": "알림",
  "prefixes.add": "GCP 추가",
  "prefixes.one": "GS1 업체코드(GCP)",

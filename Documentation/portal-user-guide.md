@@ -648,6 +648,11 @@ import or link check is running, the dialog says *In the queue…* until its tur
 job processor is not running, tell the resolver's administrator: the import starts as soon as the processor
 is back. If the processor is restarted in the middle, the import continues where it was.
 
+**Stop import**, under the progress, stops it: at once while it waits in the queue, after the record being written
+while it runs. The records already written stay, and the dialog lists them with the number not imported
+(*Import stopped. Created: 3 · Updated: 0 · Failed: 0 · Not imported: 5*). Importing the same file again later
+completes it: the records already there are updated, not duplicated.
+
 A serial number is written as in the label — `(22)V1(10)B42(21)S1` — and imported the same way: the
 record is the serial number's, and the variant and batch are kept with it as information. When an import
 changes the batch of an existing serial number, the preview shows the one it had (*before: …*).
@@ -672,8 +677,10 @@ The link checker asks each address whether it answers, without changing anything
 - **Every record** — **Check links** in the record list checks all the targets in the background; the
   summary (*Last link check: … Records with problems: 2.*) stays until the next check, a badge marks each
   record with problems, and **Only with problems** filters them. Opening such a record checks its
-  targets again. Like an import, the check may wait *In the queue…* for its turn.
-- **Import preview** — the option in the import dialog.
+  targets again. Like an import, the check may wait *In the queue…* for its turn. **Stop**, beside the
+  progress, ends it within a second; the previous result stays shown.
+- **Import preview** — the option in the import dialog, with its own **Stop**: the import itself is still
+  possible.
 
 Problems reported: an error answer (404, 500…), a site that refuses automatic checks (open the address
 in a browser to confirm), a site that does not answer, a redirect to a page without HTTPS, more than 5

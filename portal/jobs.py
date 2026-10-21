@@ -10,6 +10,10 @@ States:
   running    claimed by one worker, which renews "heartbeat" every HEARTBEAT_SECONDS
   finished   done; the result stays for FINISHED_SECONDS
   failed     stopped by an unexpected error, or interrupted more than MAX_ATTEMPTS times
+  cancelled  stopped by its user (cancel()): what was done stays done; kept for FINISHED_SECONDS
+
+A queued job is cancelled at once; a running one is marked "cancelRequested" and its worker stops after the item in
+hand (the next write of its Reporter raises Cancelled), so an import never stops half way through a record.
 
 A running job whose heartbeat is older than STALE_SECONDS belongs to a worker that died: it goes back to
 "queued" and the next worker continues it from "done". Every write a worker makes is conditional on the job
@@ -20,7 +24,7 @@ the browser use it to tell "waiting in the queue" from "no worker is running".
 
 Document of a job:
   {_id: token, type: "import" | "linkcheck" | "mail", user, state, created, queuedAt, startedAt, finishedAt,
-   heartbeat, worker, attempts, done, total, expiresAt, error, notBefore, ...the fields of its type}
+   heartbeat, worker, attempts, done, total, expiresAt, error, notBefore, cancelRequested, ...the fields of its type}
   import:    plan, keyRecords, results (one per record written, in plan order: len(results) == done)
   linkcheck: scope ("all" | "list"), urls ([{url, records: [record keys]}]), problems,
              records ([{record, problems}], scope "all")
@@ -49,7 +53,8 @@ WORKER_ALIVE_SECONDS = 30            # a worker seen within this time counts as 
 STALLED_SECONDS = 15                 # a job queued this long with no worker running is shown as stalled
 
 TYPES = ("import", "linkcheck", "mail")
-STATES = ("prepared", "queued", "running", "finished", "failed")
+STATES = ("prepared", "queued", "running", "finished", "failed", "cancelled")
+CANCELLABLE = ("import", "linkcheck")   # the jobs a person starts and watches; a message is not stopped
 
 
 class JobLost(Exception):
@@ -62,6 +67,10 @@ class Interrupted(Exception):
 
 class Deferred(Exception):
     """The job went back to the queue to be tried again later (Reporter.defer)."""
+
+
+class Cancelled(Exception):
+    """The job's user asked to stop it (cancel()); the worker marks it cancelled (cancelled())."""
 
 
 def _col():
@@ -106,6 +115,33 @@ def queue_prepared(token: str, user: str, **changes) -> dict | None:
         return_document=ReturnDocument.AFTER)
 
 
+def _cancel_fields(now) -> dict:
+    return {"state": "cancelled", "finishedAt": now, "expiresAt": now + timedelta(seconds=FINISHED_SECONDS)}
+
+
+def cancel(token: str, user: str, job_type: str) -> dict | None:
+    """Asks to stop a job of the user: a queued job is cancelled at once, a running one is marked and stopped by its
+    worker after the item in hand. Returns the job as it then is (a finished or failed job is left as it was), or None
+    when the user has no such job."""
+    assert job_type in CANCELLABLE
+    for _ in range(2):          # a running job handed back to the queue meanwhile is cancelled in the queue
+        now = store.now()
+        mine = {"_id": token, "user": user, "type": job_type, "expiresAt": {"$gt": now}}
+        queued = _col().find_one_and_update({**mine, "state": "queued"},
+                                            {"$set": _cancel_fields(now), "$unset": {"notBefore": ""}},
+                                            return_document=ReturnDocument.AFTER)
+        if queued:
+            return queued
+        running = _col().find_one_and_update({**mine, "state": "running"}, {"$set": {"cancelRequested": True}},
+                                             return_document=ReturnDocument.AFTER)
+        if running:
+            return running
+        found = get(token, user, job_type)
+        if found is None or found["state"] != "queued":
+            return found
+    return get(token, user, job_type)
+
+
 def workers_alive() -> int:
     """How many workers were seen within WORKER_ALIVE_SECONDS."""
     since = store.now() - timedelta(seconds=WORKER_ALIVE_SECONDS)
@@ -119,6 +155,8 @@ def status(job: dict) -> dict:
     if job["state"] == "queued":
         waited = (store.now() - job.get("queuedAt", job["created"])).total_seconds()
         out["stalled"] = waited > STALLED_SECONDS and workers_alive() == 0
+    if job["state"] == "running" and job.get("cancelRequested"):
+        out["cancelling"] = True
     if job["state"] == "failed":
         out["error"] = job.get("error") or "job.failed"
     return out
@@ -146,6 +184,8 @@ def requeue_stale() -> int:
     Returns how many jobs were given back."""
     stale = store.now() - timedelta(seconds=STALE_SECONDS)
     jobs = _col()
+    jobs.update_many({"state": "running", "heartbeat": {"$lt": stale}, "cancelRequested": True},
+                     {"$set": _cancel_fields(store.now()), "$unset": {"worker": ""}})
     failed = jobs.update_many({"state": "running", "heartbeat": {"$lt": stale}, "attempts": {"$gte": MAX_ATTEMPTS}},
                               {"$set": {"state": "failed", "error": "job.interrupted", "finishedAt": store.now(),
                                         "expiresAt": _later(FINISHED_SECONDS)},
@@ -177,14 +217,20 @@ class Reporter:
     def __init__(self, token: str, worker: str, stopping=lambda: False):
         self.token, self.worker, self.stopping = token, worker, stopping
 
-    def _update(self, change: dict) -> None:
+    def _update(self, change: dict, cancellable: bool = True) -> None:
+        """Writes the change; raises JobLost when the job is no longer this worker's, and Cancelled after the write
+        when its user asked to stop it (so the result of the item in hand is kept)."""
         change.setdefault("$set", {})["heartbeat"] = store.now()
-        if not _col().update_one({"_id": self.token, "worker": self.worker, "state": "running"}, change).matched_count:
+        doc = _col().find_one_and_update({"_id": self.token, "worker": self.worker, "state": "running"}, change,
+                                         projection={"cancelRequested": 1})
+        if doc is None:
             raise JobLost(self.token)
+        if cancellable and doc.get("cancelRequested"):
+            raise Cancelled(self.token)
 
     def beat(self) -> None:
-        """Renews the heartbeat."""
-        self._update({})
+        """Renews the heartbeat (from the heartbeat thread: a request to stop is left to the job's own writes)."""
+        self._update({}, cancellable=False)
 
     def progress(self, done: int, total: int | None = None) -> None:
         """Progress of a job whose items are not stored one by one (a link check)."""
@@ -203,13 +249,13 @@ class Reporter:
         """running → finished, with the job's result fields; the fields named in remove are dropped."""
         now = store.now()
         self._update({"$set": {"state": "finished", "finishedAt": now, "expiresAt": now + timedelta(seconds=FINISHED_SECONDS),
-                               **fields}, "$unset": {"worker": "", **{f: "" for f in remove}}})
+                               **fields}, "$unset": {"worker": "", **{f: "" for f in remove}}}, cancellable=False)
 
     def defer(self, seconds: float, **fields) -> None:
         """running → queued, not to be taken again for that many seconds (a temporary failure); raises
         Deferred so that the worker leaves the job."""
         self._update({"$set": {"state": "queued", "queuedAt": store.now(), "notBefore": _later(seconds), **fields},
-                      "$unset": {"worker": ""}})
+                      "$unset": {"worker": ""}}, cancellable=False)
         raise Deferred(self.token)
 
     def give_up(self, code: str, remove: tuple = (), **fields) -> None:
@@ -217,13 +263,23 @@ class Reporter:
         now = store.now()
         self._update({"$set": {"state": "failed", "error": code, "finishedAt": now,
                                "expiresAt": now + timedelta(seconds=FINISHED_SECONDS), **fields},
-                      "$unset": {"worker": "", **{f: "" for f in remove}}})
+                      "$unset": {"worker": "", **{f: "" for f in remove}}}, cancellable=False)
 
 
 def release(token: str, worker: str) -> None:
-    """running → queued at once (the worker is stopping): the next worker continues from "done"."""
+    """running → queued at once (the worker is stopping): the next worker continues from "done"; a job its user
+    asked to stop is cancelled instead."""
+    mine = {"_id": token, "worker": worker, "state": "running"}
+    if _col().update_one({**mine, "cancelRequested": True},
+                         {"$set": _cancel_fields(store.now()), "$unset": {"worker": ""}}).matched_count:
+        return
+    _col().update_one(mine, {"$set": {"state": "queued", "queuedAt": store.now()}, "$unset": {"worker": ""}})
+
+
+def cancelled(token: str, worker: str) -> None:
+    """running → cancelled (the worker stopped the job at its user's request)."""
     _col().update_one({"_id": token, "worker": worker, "state": "running"},
-                      {"$set": {"state": "queued", "queuedAt": store.now()}, "$unset": {"worker": ""}})
+                      {"$set": _cancel_fields(store.now()), "$unset": {"worker": ""}})
 
 
 def fail(token: str, worker: str, code: str = "job.failed") -> None:

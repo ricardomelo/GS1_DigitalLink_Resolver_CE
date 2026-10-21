@@ -482,6 +482,7 @@
       <p class="field-msg" id="records-count" aria-live="polite"></p>
       <div class="records-check">
         <p class="field-msg" id="records-check-msg" aria-live="polite"></p>
+        <button type="button" class="link-button" id="records-check-stop" data-i18n="job.stop" hidden></button>
         <label class="choice" id="records-problems-wrap" hidden>
           <input type="checkbox" id="records-problems"> <span data-i18n="records.problemsOnly"></span>
         </label>
@@ -1512,7 +1513,10 @@
       <div id="import-report" hidden>
         <p class="import-summary" id="import-summary"></p>
         <ul class="import-errors" id="import-errors"></ul>
-        <p class="field-msg" id="import-links-msg" aria-live="polite"></p>
+        <div class="import-links-line">
+          <p class="field-msg" id="import-links-msg" aria-live="polite"></p>
+          <button type="button" class="link-button" id="import-links-stop" data-i18n="job.stop" hidden></button>
+        </div>
         <ul class="import-warnings" id="import-warnings"></ul>
         <!-- Section 2.5.9: keys the import would leave with qualified records only -->
         <div class="import-keys" id="import-keys" hidden>
@@ -1536,6 +1540,7 @@
       </div>
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" id="import-cancel" data-i18n="options.cancel"></button>
+        <button type="button" class="btn btn-secondary" id="import-stop" data-i18n="import.stop" hidden></button>
         <button type="button" class="btn btn-primary" id="import-apply" disabled data-i18n="import.apply" data-i18n-params='{"count":0}'></button>
       </div>
     </div>

@@ -150,6 +150,9 @@ class Worker:
             log.info("Job %s handed back to the queue: the worker is stopping.", token)
         except jobs.Deferred:
             log.info("Job %s went back to the queue, to be tried again later.", token)
+        except jobs.Cancelled:
+            jobs.cancelled(token, self.name)
+            log.info("Job %s stopped at its user's request.", token)
         except jobs.JobLost:
             log.warning("Job %s was given to another worker while this one worked on it; left to it.", token)
         except Exception:                                   # noqa: BLE001 — any error ends this job only

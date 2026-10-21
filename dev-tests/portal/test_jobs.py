@@ -492,5 +492,161 @@ status = web.get(f"/portal/api/links/jobs/{token}").get_json()
 check("the next worker checks the whole list again (the cache answers what was done) and finishes",
       status["state"] == "finished" and status["done"] == 40 and status["problems"] == [], status)
 
+# ------------------------------------------------------------------ stopping a job (its user's request)
+clear()
+q = jobs.create("linkcheck", "maria", "queued", 3, scope="list", urls=[])
+check("cancel: another user's job, another type or an unknown token: None, nothing changed",
+      jobs.cancel(q, "joao", "linkcheck") is None and jobs.cancel(q, "maria", "import") is None
+      and jobs.cancel("nope", "maria", "linkcheck") is None and job(q)["state"] == "queued")
+doc = jobs.cancel(q, "maria", "linkcheck")
+check("cancel: a queued job is cancelled at once, kept 30 minutes",
+      doc["state"] == "cancelled" and job(q)["state"] == "cancelled"
+      and abs((job(q)["expiresAt"] - job(q)["finishedAt"]).total_seconds() - jobs.FINISHED_SECONDS) < 1, doc)
+check("cancel: a cancelled job is never claimed", jobs.claim("w1") is None)
+check("status: a cancelled job reports its state", jobs.status(job(q))["state"] == "cancelled")
+
+r = jobs.create("import", "maria", "queued", 3, plan=[], results=[])
+jobs.claim("w1")
+doc = jobs.cancel(r, "maria", "import")
+check("cancel: a running job is marked, still running, and its status says it is stopping",
+      doc["state"] == "running" and doc["cancelRequested"] is True and jobs.status(doc).get("cancelling") is True, doc)
+rep = jobs.Reporter(r, "w1")
+rep.beat()
+check("cancel: the heartbeat goes on (the stop is left to the job's own writes)", job(r)["state"] == "running")
+try:
+    rep.record(1, {"n": 1})
+    check("cancel: the next record raises Cancelled", False)
+except jobs.Cancelled:
+    check("cancel: the next record raises Cancelled, after storing its result",
+          job(r)["done"] == 1 and job(r)["results"] == [{"n": 1}])
+jobs.cancelled(r, "w1")
+doc = job(r)
+check("cancelled(): running → cancelled, worker released", doc["state"] == "cancelled" and "worker" not in doc, doc)
+check("cancel: a job that ended is left as it was", jobs.cancel(r, "maria", "import")["state"] == "cancelled")
+
+f = jobs.create("linkcheck", "maria", "queued", 1, scope="list", urls=[])
+jobs.claim("w1")
+jobs.cancel(f, "maria", "linkcheck")
+jobs.Reporter(f, "w1").finish(problems=[])
+check("cancel: asked as the job finishes, finish() still finishes it", job(f)["state"] == "finished")
+check("cancel: a finished job is left finished", jobs.cancel(f, "maria", "linkcheck")["state"] == "finished")
+
+st = jobs.create("linkcheck", "maria", "queued", 1, scope="list", urls=[])
+jobs.claim("w1")
+jobs.cancel(st, "maria", "linkcheck")
+age(st, "heartbeat", jobs.STALE_SECONDS + 1)
+jobs.requeue_stale()
+check("cancel: a job its user stopped, whose worker went silent, is cancelled, not queued again",
+      job(st)["state"] == "cancelled", job(st))
+rl = jobs.create("linkcheck", "maria", "queued", 1, scope="list", urls=[])
+jobs.claim("w1")
+jobs.cancel(rl, "maria", "linkcheck")
+jobs.release(rl, "w1")
+check("cancel: a stopping worker hands back a job its user stopped as cancelled", job(rl)["state"] == "cancelled", job(rl))
+rl2 = jobs.create("linkcheck", "maria", "queued", 1, scope="list", urls=[])
+jobs.claim("w1")
+jobs.release(rl2, "w1")
+check("release: a job nobody stopped goes back to the queue as before", job(rl2)["state"] == "queued", job(rl2))
+
+# the worker loop: stopped after the item in hand, the worker carries on with the next job
+clear()
+seen.clear()
+store.col("jobs").insert_one({"_id": "j-cancel", "type": "import", "user": "maria", "state": "queued", "created": store.now(),
+                              "attempts": 0, "done": 0, "total": 20, "expiresAt": store.now() + timedelta(hours=1)})
+wc = worker.Worker({"import": slow}, "external")          # the test's slow runner, as an import
+threading.Timer(0.4, lambda: jobs.cancel("j-cancel", "maria", "import")).start()
+wc.run_once()
+doc = job("j-cancel")
+check("worker: a job its user stops ends cancelled, with the items done kept",
+      doc["state"] == "cancelled" and 0 < doc["done"] < 20 and len(doc["results"]) == doc["done"]
+      and "worker" not in doc, doc)
+store.col("jobs").insert_one({"_id": "j-after", "type": "import", "user": "maria", "state": "queued", "created": store.now(),
+                              "attempts": 0, "done": 0, "total": 2, "expiresAt": store.now() + timedelta(hours=1)})
+wc.run_once()
+check("worker: carries on with the next job", job("j-after")["state"] == "finished")
+
+# through the API: an import
+clear()
+mock_data_entry.DB.clear()
+p = preview(sheet(600, 4))
+web.post("/portal/api/import/apply", json={"token": p["token"]})
+check("import cancel: another user's request is refused (import.expired), the job stays queued",
+      other.post("/portal/api/import/cancel", json={"token": p["token"]}).get_json().get("code") == "import.expired"
+      and job(p["token"])["state"] == "queued")
+check("import cancel: no token, an unknown one: import.expired",
+      web.post("/portal/api/import/cancel", json={}).get_json().get("code") == "import.expired"
+      and web.post("/portal/api/import/cancel", json={"token": "nope"}).get_json().get("code") == "import.expired")
+status = web.post("/portal/api/import/cancel", json={"token": p["token"]}).get_json()
+w.run_once()
+check("import cancel while queued: cancelled at once, nothing written",
+      status["state"] == "cancelled" and status["results"] == [] and job(p["token"])["state"] == "cancelled"
+      and not any(f"01_{gtin(n)}" in mock_data_entry.DB for n in range(600, 604)), status)
+
+p = preview(sheet(610, 6))
+web.post("/portal/api/import/apply", json={"token": p["token"]})
+calls = {"n": 0}
+
+
+def stopping_store_record(*args):
+    calls["n"] += 1
+    if calls["n"] == 2:
+        answer = web.post("/portal/api/import/cancel", json={"token": p["token"]}).get_json()
+        calls["answer"] = answer
+    return real_store_record(*args)
+
+
+portal.store_record = stopping_store_record
+w.run_once()
+portal.store_record = real_store_record
+status = web.get(f"/portal/api/import/status?token={p['token']}").get_json()
+check("import cancel while running: the answer says it is stopping",
+      calls["answer"]["state"] == "running" and calls["answer"]["cancelling"] is True, calls.get("answer"))
+check("import cancel while running: stops after the record in hand; the two written are kept and listed",
+      status["state"] == "cancelled" and [x["action"] for x in status["results"]] == ["created"] * 2
+      and status["total"] == 6 and f"01_{gtin(611)}" in mock_data_entry.DB and f"01_{gtin(612)}" not in mock_data_entry.DB,
+      status)
+events = list(store.col("journal").find({"action": "import"}).sort("at", -1).limit(1))
+check("import cancel: the journal has the counts and the records not imported",
+      events[0]["detail"] == "created=2 updated=0 failed=0 cancelled=4", events)
+
+p = preview(sheet(620, 3))
+web.post("/portal/api/import/apply", json={"token": p["token"]})
+calls = {"n": 0}
+
+
+def late_store_record(*args):
+    calls["n"] += 1
+    if calls["n"] == 3:
+        web.post("/portal/api/import/cancel", json={"token": p["token"]})
+    return real_store_record(*args)
+
+
+portal.store_record = late_store_record
+w.run_once()
+portal.store_record = real_store_record
+status = web.get(f"/portal/api/import/status?token={p['token']}").get_json()
+check("import cancel during the last record: the import simply finishes",
+      status["state"] == "finished" and len(status["results"]) == 3, status)
+
+# through the API: a link check
+linkcheck.clear_cache()
+r = web.post("/portal/api/links/jobs", json={"urls": [f"{BASE}/slow/c{n}" for n in range(200)]})
+token = r.get_json()["token"]
+check("link cancel: another user's request is refused (linkcheck.expired)",
+      other.post(f"/portal/api/links/jobs/{token}/cancel", json={}).get_json().get("code") == "linkcheck.expired")
+HITS["count"] = 0
+threading.Timer(0.5, lambda: web.post(f"/portal/api/links/jobs/{token}/cancel", json={})).start()
+started = time.monotonic()
+w.run_once()
+took, hits = time.monotonic() - started, HITS["count"]
+status = web.get(f"/portal/api/links/jobs/{token}").get_json()
+check("link cancel while running: cancelled, no result", status["state"] == "cancelled" and "problems" not in status,
+      status)
+check("link cancel: seen at the next progress write; the addresses not started are not requested (not all 200)",
+      hits < 200 and took < 5, (hits, took))
+r = web.post("/portal/api/links/jobs", json={"urls": [BASE + "/ok/q"]})
+status = web.post(f"/portal/api/links/jobs/{r.get_json()['token']}/cancel", json={}).get_json()
+check("link cancel while queued: cancelled at once", status["state"] == "cancelled", status)
+
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

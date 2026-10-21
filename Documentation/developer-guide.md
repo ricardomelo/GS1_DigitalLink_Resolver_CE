@@ -247,15 +247,18 @@ and writes the other entries back with `POST /api/new`; if that fails, the origi
 **A spreadsheet import.** `POST /import/preview` reads the file (`sheet.py`), validates every row with the
 editor's rules, compares with the resolver and keeps the plan as a `prepared` job (30 minutes).
 `POST /import/apply` queues it; a worker claims it and `run_import_job()` writes the records one by one with
-`store_record()`, storing each result as it goes; the browser polls `GET /import/status`.
+`store_record()`, storing each result as it goes; the browser polls `GET /import/status`. `POST /import/cancel`
+stops it after the record in hand (the records written stay).
 
 **A link check.** `POST /links/check` checks the few targets of one record at once. `POST /links/jobs` (every
 record, import preview) queues a job; the worker's `run_link_job()` checks each address once with
 `linkcheck.check_many()`; `GET /links/jobs/{token}` reports progress and problems; the last full check is
-kept in the database (settings `lastFullCheck`) for `GET /links/last`.
+kept in the database (settings `lastFullCheck`) for `GET /links/last`. `POST /links/jobs/{token}/cancel` stops a
+check within a second, with no result.
 
 **A background job** ([ADR 0001](adr/0001-portal-state-in-mongodb.md), section 3.3). States `prepared` →
-`queued` → `running` → `finished` or `failed`. The worker gives the jobs of silent workers back to the queue
+`queued` → `running` → `finished`, `failed` or `cancelled` (stopped by its user, section 3.3.1: a queued job at once,
+a running one marked `cancelRequested` and stopped by its worker at its next write, which raises `Cancelled`). The worker gives the jobs of silent workers back to the queue
 (`requeue_stale()`: heartbeat older than two minutes; after three attempts the job fails with
 `job.interrupted`), claims the oldest queued job atomically (`claim()`), and runs it while a thread renews the
 heartbeat every 10 seconds. Every write of a running job (`Reporter`) is conditional on the job still being
@@ -280,8 +283,8 @@ Organised in sections (comment lines `# ---- …`):
 | form → Resolver CE v3 | `request_key()`, `request_qualifiers()`, `build_document()` |
 | pages and assets | `/portal/`, `/portal/login`, static files (`PUBLIC_ASSETS` before sign-in — among them `logo.svg`, the project's logo —, `PRIVATE_ASSETS` after) |
 | portal API | sign-in, sign-out, password, health, `/config`, `/record` (GET, POST, DELETE) with `store_record()`, `/records` |
-| spreadsheets | `/export`, `/import/preview`, `/import/apply`, `/import/status`, `run_import_job()` (run by the worker) |
-| link checker | `/links/check`, `/links/jobs`, `/links/jobs/{token}`, `/links/last`, `run_link_job()` (run by the worker) |
+| spreadsheets | `/export`, `/import/preview`, `/import/apply`, `/import/status`, `/import/cancel`, `run_import_job()` (run by the worker) |
+| link checker | `/links/check`, `/links/jobs`, `/links/jobs/{token}`, `/links/jobs/{token}/cancel`, `/links/last`, `run_link_job()` (run by the worker) |
 | governance | `/users` (GET, POST, PUT, DELETE, reset) with `managed_account()`; `/tenants` (GET, POST, PUT, DELETE) with `record_owners()`; `/support` (POST, DELETE); `/history`, `/audit`, `/audit.csv` |
 | labels | `qr_version()`, `qr_error_level()`, `/digital-link`, `/qrcode` |
 | background jobs | `JOB_RUNNERS` (job type → function for `worker.py`); the embedded worker when `PORTAL_WORKER=embedded` |
@@ -434,10 +437,13 @@ checks `allowed()` again before writing each record.
 ### `jobs.py`, `worker.py`
 
 `jobs.py` is the queue: `create()`, `get()` (the user's job of a type, not expired), `queue_prepared()`,
-`status()` (state, progress, `stalled`, `error`), and for workers `announce()` / `withdraw()` /
+`cancel()` (the user's import or link check: a queued one cancelled, a running one marked), `status()` (state,
+progress, `stalled`, `cancelling`, `error`), and for workers `announce()` / `withdraw()` /
 `workers_alive()`, `requeue_stale()`, `claim()` (the oldest queued job whose `notBefore`, if any, has
 passed), `Reporter` (`beat()`, `progress()`, `record()`, `check_stop()`, `finish(remove=…)`, `defer(seconds)`
-— back in the queue for later, raising `Deferred` —, `give_up(code)`), `release()`, `fail()`. The types are
+— back in the queue for later, raising `Deferred` —, `give_up(code)`; `record()` and `progress()` raise `Cancelled`
+after their write when the user asked to stop), `release()` (a job marked to stop is cancelled instead),
+`cancelled()`, `fail()`. The types are
 `import`, `linkcheck` and `mail`. Between jobs, about once an hour (`HOUSEKEEPING_SECONDS`), the worker
 runs `app.HOUSEKEEPING` (`Worker.housekeep()`; a failing task is logged and the others run): today
 `notify_expiring_keys()` and `requestlog.aggregate()`; and every `monitor_seconds` (`app.MONITOR_SECONDS`, from
@@ -890,9 +896,9 @@ operator.
 | `GET /records` | reader | Every record with kind, qualifiers, `informative`, description, default link type, number of links, created/updated by and when, `noKeyRecord`, `breaksRules` |
 | `POST /export` `{format: xlsx\|csv, labels, only}` | reader | Spreadsheet of every record, or of those in `only` (`anchor\|qualifier path`, what a filtered list shows); the export limits apply (ADR 0012 §8) |
 | `POST /import/preview` `{filename, data (base64), labels, checkLinks}` | editor | Validation and comparison; `token`, `records` (with `informative`, `informativeBefore`, `noKeyRecord`), `errors`, `counts`, `links`, `keysWithoutRecord` |
-| `POST /import/apply` `{token, createKeyRecords?}` · `GET /import/status?token=` | editor | Queue a previewed import for the worker (with `createKeyRecords`, the keys' own records first); `state` (`queued`, `running`, `finished`, `failed`), `done`, `total`, `stalled`, `error`, and the results when finished |
+| `POST /import/apply` `{token, createKeyRecords?}` · `GET /import/status?token=` · `POST /import/cancel` `{token}` | editor | Queue a previewed import for the worker (with `createKeyRecords`, the keys' own records first); `state` (`queued`, `running`, `finished`, `failed`, `cancelled`), `done`, `total`, `stalled`, `cancelling`, `error`, and the results when finished or cancelled; stop it (the user's own; answers the status) |
 | `POST /links/check` `{urls}` | editor | Check addresses (editor) |
-| `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `GET /links/last` | editor · editor · reader | Background link check (status: `state` `queued`\|`running`\|`finished`\|`failed`, `done`, `total`, `stalled`, `error`) |
+| `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `POST /links/jobs/{token}/cancel` · `GET /links/last` | editor · editor · editor · reader | Background link check (status: `state` `queued`\|`running`\|`finished`\|`failed`\|`cancelled`, `done`, `total`, `stalled`, `cancelling`, `error`); stop it (the user's own; answers the status) |
 | `GET /history?key=&value=&qualifiers=` | reader | Versions of a record made in the scope of the request, with content |
 | `GET /users` · `POST /users` `{username, role, prefixes, email, tenant}` · `PUT /users/{name}` `{role, prefixes, email, disabled}` · `POST /users/{name}/reset` · `DELETE /users/{name}` | admin | User administration: a server admin manages every user (`tenant` chooses the organisation; the answer to GET adds `tenants`), a tenant administrator the users of his tenant; `tenantName` and `invited` on each user; temporary passwords in the answer. With mail on: `POST /users` with `invite` and an address answers `users.invited` without a password; `reset` answers `users.resetSent` (a link by e-mail) for a user with an address |
 | `GET /tenants` · `POST /tenants` `{name, prefixes}` · `PUT /tenants/{id}` `{name, prefixes, disabled}` · `DELETE /tenants/{id}` | server admin | Organisations; GET adds `users`, `records` and `prefixChecks` (each prefix against GS1's table, ADR 0015) per tenant, `operatorRecords`, `exportMaximum` and `gcpTable` |

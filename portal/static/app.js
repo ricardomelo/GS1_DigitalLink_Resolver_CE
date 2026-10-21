@@ -4613,23 +4613,42 @@ function jobWaitKey(status) {
 }
 
 /* Background job shared by the record list (every record) and the import preview (a list of URLs).
-   onProgress(done, total, status) is called on every poll; a failed job throws its error code. */
-async function runLinkJob(body, onProgress) {
+   onProgress(done, total, status) is called on every poll; a failed job throws its error code, a job stopped with
+   the stop button (shown while the job runs) throws "job.cancelled". */
+async function runLinkJob(body, onProgress, stop) {
   const job = await api("POST", "links/jobs", body);
-  onProgress(0, job.total, { state: "queued" });
-  for (;;) {
-    await new Promise(resolve => setTimeout(resolve, 800));
-    const status = await api("GET", "links/jobs/" + job.token);
-    if (status.state === "finished") return status;
-    if (status.state === "failed") throw new ApiError(status.error || "job.failed");
-    onProgress(status.done, status.total, status);
+  const onStop = async () => {
+    stop.disabled = true;
+    try { await api("POST", "links/jobs/" + job.token + "/cancel", {}); } catch { /* the next poll tells */ }
+  };
+  if (stop) {
+    stop.disabled = false;
+    stop.hidden = false;
+    stop.addEventListener("click", onStop);
+  }
+  try {
+    onProgress(0, job.total, { state: "queued" });
+    for (;;) {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      const status = await api("GET", "links/jobs/" + job.token);
+      if (status.state === "finished") return status;
+      if (status.state === "failed") throw new ApiError(status.error || "job.failed");
+      if (status.state === "cancelled") throw new ApiError("job.cancelled");
+      onProgress(status.done, status.total, status);
+    }
+  } finally {
+    if (stop) {
+      stop.hidden = true;
+      stop.removeEventListener("click", onStop);
+    }
   }
 }
 
-/* A progress message, or the queue message while the job waits; a stalled job is shown as a warning. */
+/* A progress message, the queue message while the job waits, or "stopping" once its user asked to stop it; a stalled
+   job is shown as a warning. */
 function showJobProgress(msg, key, done, total, status) {
   msg.className = "field-msg" + (status?.stalled ? " warn-text" : "");
-  I18N.set(msg, jobWaitKey(status) || key, { done, total });
+  I18N.set(msg, status?.cancelling ? "job.stopping" : jobWaitKey(status) || key, { done, total });
 }
 
 async function checkAllLinks() {
@@ -4639,11 +4658,12 @@ async function checkAllLinks() {
   msg.className = "field-msg";
   try {
     const status = await runLinkJob({ scope: "all" },
-      (done, total, job) => showJobProgress(msg, "records.checking", done, total, job));
+      (done, total, job) => showJobProgress(msg, "records.checking", done, total, job), $("#records-check-stop"));
     showLinkCheck(status);
     renderRecords();
   } catch (e) {
-    I18N.set(msg, e.code, e.params);
+    msg.className = "field-msg";
+    I18N.set(msg, e.code === "job.cancelled" ? "records.checkStopped" : e.code, e.params);
   } finally {
     button.disabled = false;
   }
@@ -4726,7 +4746,7 @@ async function checkImportLinks(links) {
   msg.className = "field-msg";
   try {
     const status = await runLinkJob({ urls: links.map(l => l.url) },
-      (done, total, job) => showJobProgress(msg, "import.linksChecking", done, total, job));
+      (done, total, job) => showJobProgress(msg, "import.linksChecking", done, total, job), $("#import-links-stop"));
     const bad = Object.fromEntries(status.problems.map(p => [p.url, p]));
     const items = links.filter(l => bad[l.url]).map(l => {
       const li = document.createElement("li");
@@ -4737,7 +4757,8 @@ async function checkImportLinks(links) {
     msg.className = "field-msg" + (items.length ? " warn-text" : " is-ok");
     I18N.set(msg, items.length ? "import.linksProblems" : "import.linksOk", { count: items.length });
   } catch (e) {
-    I18N.set(msg, e.code, e.params);
+    msg.className = "field-msg";
+    I18N.set(msg, e.code === "job.cancelled" ? "import.linksStopped" : e.code, e.params);
   }
 }
 
@@ -4749,6 +4770,8 @@ function openImport() {
   renderImportLimits();
   $("#import-report").hidden = true;
   $("#import-summary").hidden = false;
+  $("#import-stop").hidden = true;
+  $("#import-links-stop").hidden = true;
   $("#import-warnings").replaceChildren();
   I18N.set($("#import-links-msg"), null);
   importStatus(null, null);
@@ -4878,7 +4901,20 @@ async function applyImport() {
     const started = await api("POST", "import/apply", { token: importState.token,
       createKeyRecords: !$("#import-keys").hidden && $("#import-createkeys").checked });
     importStatus(null, "job.queued", { done: 0, total: started.total });
+    const stop = $("#import-stop");
+    stop.disabled = false;
+    stop.hidden = false;
     importState.polling = setInterval(pollImport, 700);
+  } catch (e) {
+    importStatus("error", e.code, e.params);
+  }
+}
+
+/* Stops an applied import: at once while it waits, after the record in hand while it runs; the next poll shows it. */
+async function stopImport() {
+  $("#import-stop").disabled = true;
+  try {
+    await api("POST", "import/cancel", { token: importState.token });
   } catch (e) {
     importStatus("error", e.code, e.params);
   }
@@ -4886,28 +4922,38 @@ async function applyImport() {
 
 async function pollImport() {
   let status;
+  const stop = $("#import-stop");
   try {
     status = await api("GET", "import/status?token=" + encodeURIComponent(importState.token));
   } catch (e) {
     clearInterval(importState.polling);
+    stop.hidden = true;
     importStatus("error", e.code, e.params);
     return;
   }
   if (status.state === "failed") {
     clearInterval(importState.polling);
+    stop.hidden = true;
     importStatus("error", status.error || "job.failed");
     return;
   }
-  if (status.state !== "finished") {
-    importStatus(status.stalled ? "warn" : null, jobWaitKey(status) || "import.running",
+  if (status.state !== "finished" && status.state !== "cancelled") {
+    importStatus(status.stalled ? "warn" : null,
+                 status.cancelling ? "job.stopping" : jobWaitKey(status) || "import.running",
                  { done: status.done, total: status.total });
     return;
   }
   clearInterval(importState.polling);
+  stop.hidden = true;
   importState.imported = true;
   const count = action => status.results.filter(r => r.action === action).length;
   const failed = count("failed");
-  importStatus(failed ? "error" : "ok", "import.done", { created: count("created"), updated: count("updated"), failed });
+  if (status.state === "cancelled") {
+    importStatus("warn", "import.stopped", { created: count("created"), updated: count("updated"), failed,
+                                             left: status.total - status.results.length });
+  } else {
+    importStatus(failed ? "error" : "ok", "import.done", { created: count("created"), updated: count("updated"), failed });
+  }
   $("#import-errors").replaceChildren(...status.results.filter(r => r.action === "failed").map(r => {
     const li = document.createElement("li");
     li.textContent = importErrorText({ row: r.rows[0], code: r.code, params: r.params || {} });
@@ -5668,6 +5714,7 @@ async function init() {
   $("#import-file").addEventListener("change", previewImport);
   $("#import-apply").addEventListener("click", applyImport);
   $("#import-cancel").addEventListener("click", closeImport);
+  $("#import-stop").addEventListener("click", stopImport);
   $("#import-close").addEventListener("click", closeImport);
   $("#import-dialog").addEventListener("cancel", e => { e.preventDefault(); closeImport(); });
   $("#records-user").addEventListener("change", renderRecords);

@@ -1945,6 +1945,14 @@ def run_import_job(job: dict, reporter: "jobs.Reporter") -> None:
     user = job["user"]
     plan = job["plan"]
     results = list(job.get("results") or [])[:job.get("done", 0)]
+
+    def logged(**more) -> dict:
+        counts = {a: sum(1 for r in results if r["action"] == a) for a in ("created", "updated", "failed")}
+        detail = " ".join(f"{k}={v}" for k, v in {**counts, **more}.items())
+        audit.info("user=%s action=import %s", user, detail)
+        log_event("import", detail=detail)
+        return counts
+
     with app.test_request_context():
         set_scope(user, users.get(user) or {})          # store_record logs and records who changed it
         for index in range(len(results), len(plan)):
@@ -1961,12 +1969,16 @@ def run_import_job(job: dict, reporter: "jobs.Reporter") -> None:
                 result["action"] = "created" if store_record(item["anchor"], pairs, item["doc"]) else "updated"
             except (ValidationError, UpstreamError) as exc:
                 result.update(action="failed", code=exc.code, params=exc.params)
-            reporter.record(index + 1, result)
             results.append(result)
-        counts = {a: sum(1 for r in results if r["action"] == a) for a in ("created", "updated", "failed")}
-        audit.info("user=%s action=import created=%d updated=%d failed=%d", user,
-                   counts["created"], counts["updated"], counts["failed"])
-        log_event("import", detail="created={created} updated={updated} failed={failed}".format(**counts))
+            try:
+                reporter.record(index + 1, result)
+            except jobs.Cancelled:
+                if len(results) == len(plan):           # asked to stop as the last record was written: finished
+                    continue
+                # stopped by the user after this record: the records written stay; cancelled = those not written
+                logged(cancelled=len(plan) - len(results))
+                raise
+        counts = logged()
     reporter.finish()
     notify.send(user, "import-finished", **counts)     # when the user switched "My background jobs" on
 
@@ -2003,7 +2015,26 @@ def import_status():
     job = jobs.get(request.args.get("token", ""), g.user, "import")
     if not job or job["state"] == "prepared":
         raise ValidationError("import.expired")
-    return jsonify({**jobs.status(job), "results": job.get("results", []) if job["state"] == "finished" else []})
+    return jsonify(_import_status(job))
+
+
+def _import_status(job: dict) -> dict:
+    """An import's status with, once it ended (finished or cancelled), the result of every record written."""
+    ended = job["state"] in ("finished", "cancelled")
+    return {**jobs.status(job), "results": job.get("results", []) if ended else []}
+
+
+@app.post("/portal/api/import/cancel")
+@require_login
+@role_required("editor")
+def import_cancel():
+    """Stops an applied import of the user: at once while it waits in the queue, after the record in hand while it
+    runs (the records written stay). Answers its status, as /import/status does."""
+    token = (request.get_json(silent=True) or {}).get("token", "")
+    job = jobs.cancel(token, g.user, "import") if isinstance(token, str) and token else None
+    if not job or job["state"] == "prepared":
+        raise ValidationError("import.expired")
+    return jsonify(_import_status(job))
 
 
 # --------------------------------------------------------------------------- link checker
@@ -2040,7 +2071,8 @@ def check_links():
 def run_link_job(job: dict, reporter: "jobs.Reporter") -> None:
     """Worker: checks every address of a link check once and maps problems back to records (scope "all")
     or to the addresses sent (editor and import preview). An interrupted check starts again from the first
-    address; the checker's cache (CACHE_SECONDS) answers the ones already checked.
+    address; the checker's cache (CACHE_SECONDS) answers the ones already checked. A check its user stops (at the
+    next progress write, within a second) ends with no result: the addresses not started yet are not requested.
     """
     urls = {item["url"]: item["records"] for item in job["urls"]}
     last = [0.0]
@@ -2049,7 +2081,11 @@ def run_link_job(job: dict, reporter: "jobs.Reporter") -> None:
         reporter.check_stop()
         now = time.monotonic()
         if done == total or now - last[0] >= 1:          # at most one write a second
-            reporter.progress(done, total)
+            try:
+                reporter.progress(done, total)
+            except jobs.Cancelled:
+                if done < total:                            # asked to stop as the last address was checked: finished
+                    raise
             last[0] = now
 
     results = linkcheck.check_many(list(urls), progress)
@@ -2108,13 +2144,30 @@ def link_job_status(token):
     job = jobs.get(token, g.user, "linkcheck")
     if not job:
         raise ValidationError("linkcheck.expired")
+    return jsonify(_link_job_status(job))
+
+
+@app.post("/portal/api/links/jobs/<token>/cancel")
+@require_login
+@role_required("editor")
+def link_job_cancel(token):
+    """Stops a link check of the user (its result is dropped; the last check of every record stays the one shown).
+    Answers its status, as GET /links/jobs/<token> does."""
+    job = jobs.cancel(token, g.user, "linkcheck")
+    if not job:
+        raise ValidationError("linkcheck.expired")
+    return jsonify(_link_job_status(job))
+
+
+def _link_job_status(job: dict) -> dict:
+    """Progress of a link check and, when finished, its problems."""
     out = jobs.status(job)
     if job["state"] == "finished":
         out["problems"] = job.get("problems", [])
         if job["scope"] == "all":
             out.update(_last_full_check(job.get("tenant")))
             out["records"] = {item["record"]: item["problems"] for item in job.get("records") or []}
-    return jsonify(out)
+    return out
 
 
 @app.get("/portal/api/links/last")

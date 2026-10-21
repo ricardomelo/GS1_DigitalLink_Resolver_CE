@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 
 import cv2
 from openpyxl import load_workbook
@@ -296,6 +297,67 @@ with sync_playwright() as p:
     check("import preview: optional address check", "Row 2: https://example.org/missing-page" in page.inner_text("#import-warnings")
           and page.is_enabled("#import-apply"), page.inner_text("#import-warnings"))
     page.click("#import-cancel")
+
+    # Stopping a job (its user's request): a link check, an import preview's address check, an import
+    def slow_links(job, reporter):
+        for n in range(60):
+            time.sleep(0.1)
+            reporter.progress(n + 1, 60)
+        reporter.finish(problems=[])
+
+    portal.JOB_RUNNERS["linkcheck"] = slow_links
+    check("stop button hidden while no check runs", not page.is_visible("#records-check-stop"))
+    page.click("#records-check"); page.wait_for_timeout(1200)
+    check("a running link check offers Stop", page.is_visible("#records-check-stop")
+          and page.inner_text("#records-check-stop") == "Stop")
+    page.click("#records-check-stop"); page.wait_for_timeout(2500)
+    check("link check stopped: said so, Stop gone, Check links available again",
+          page.inner_text("#records-check-msg") == "Link check stopped. The previous result still stands."
+          and not page.is_visible("#records-check-stop") and page.is_enabled("#records-check"),
+          page.inner_text("#records-check-msg"))
+    page.click("#records-import"); page.wait_for_timeout(200)
+    page.check("#import-checklinks")
+    page.set_input_files("#import-file", extra); page.wait_for_timeout(1500)
+    check("import preview: the address check offers Stop", page.is_visible("#import-links-stop"))
+    page.click("#import-links-stop"); page.wait_for_timeout(2500)
+    check("import preview: address check stopped, the import still possible",
+          page.inner_text("#import-links-msg") == "Address check stopped." and not page.is_visible("#import-links-stop")
+          and page.is_enabled("#import-apply"), page.inner_text("#import-links-msg"))
+    portal.JOB_RUNNERS["linkcheck"] = real_runner
+    page.click("#import-cancel")
+
+    def gtin13(n):
+        body = f"9506000{n:05d}"
+        total = sum(int(d) * (3 if i % 2 == 0 else 1) for i, d in enumerate(reversed(body)))
+        return "0" + body + str((10 - total % 10) % 10)
+
+    many = os.path.join(CONFIG, "many.csv")
+    with open(many, "w", encoding="utf-8") as fh:
+        fh.write("gtin;description;linkType;url\n" + "".join(f"{gtin13(700 + n)};Item {n};gs1:pip;https://example.org/i/{n}\n"
+                                                           for n in range(8)))
+    real_store = portal.store_record
+
+    def slow_store(*args):
+        time.sleep(0.4)
+        return real_store(*args)
+
+    portal.store_record = slow_store
+    page.click("#records-import"); page.wait_for_timeout(200)
+    page.uncheck("#import-checklinks")
+    page.set_input_files("#import-file", many); page.wait_for_timeout(1200)
+    check("import: Stop hidden before Apply", not page.is_visible("#import-stop"))
+    page.click("#import-apply"); page.wait_for_timeout(1200)
+    check("a running import offers Stop import", page.is_visible("#import-stop")
+          and page.inner_text("#import-stop") == "Stop import", page.inner_text("#import-status"))
+    page.click("#import-stop"); page.wait_for_timeout(2500)
+    status_text = page.inner_text("#import-status")
+    rows = page.query_selector_all("#import-body tr")
+    check("import stopped: the counts and the records not imported, the rows written listed, Stop gone",
+          status_text.startswith("Import stopped. Created: ") and "Not imported: " in status_text
+          and "is-warn" in page.get_attribute("#import-status", "class") and 0 < len(rows) < 8
+          and not page.is_visible("#import-stop") and page.inner_text("#import-cancel") == "Close", (status_text, len(rows)))
+    portal.store_record = real_store
+    page.click("#import-cancel"); page.wait_for_timeout(500)
 
     # Other primary identification keys (GS1 Digital Link URI Syntax 4.3)
     page.goto(BASE); page.wait_for_timeout(700)

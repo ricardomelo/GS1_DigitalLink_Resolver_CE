@@ -135,7 +135,8 @@ implementation added):
 - **Where jobs run**: `PORTAL_WORKER=external` (default) — the `portal-worker` service, the portal's image
   running `python worker.py`, always present in `docker-compose.yml`; `embedded` — a worker thread inside the
   portal process, for the development tests and a set-up without that service. One worker by default; its
-  replicas are decided with the others in step 4. No cancel button for now (a later backlog item).
+  replicas are decided with the others in step 4. No cancel button for now (a later backlog item; added on
+  21 October 2026, section 3.3.1).
 - **An interrupted import continues** from the first record not written. After three claims of the same job
   (`attempts`) a silent worker's job fails with `job.interrupted` instead of going back to the queue, so a job
   that kills its worker cannot loop for ever; what was written stays. **A link check starts again** from the
@@ -152,6 +153,33 @@ implementation added):
   (`ok` or `unavailable`), and the installer warns when the worker does not report.
 - **Expiry of unfinished jobs**: a queued or running job expires after a day, a safety net for jobs nobody
   will finish.
+
+#### 3.3.1 Stopping a job (21 October 2026)
+
+The owner asked for a way to stop an import or a link check that is running; the decisions were taken on the
+recommended options, the owner away. A job started by a person (`jobs.CANCELLABLE`: an import, a link check; not an
+e-mail message) can be stopped by that person, from the screen that shows its progress:
+
+- **State `cancelled`**, kept like a finished job for 30 minutes. A **queued** job is cancelled at once. A **running**
+  job is marked `cancelRequested`; its worker sees the mark at its next write (`Reporter.record()` or
+  `Reporter.progress()`), after that write, raises `Cancelled` and marks the job `cancelled`. An import therefore stops
+  **after the record in hand**, never half way through one, and a link check within a second (its progress is written
+  once a second); the addresses not started yet are not requested. The heartbeat, `finish()`, `defer()` and
+  `give_up()` never stop a job, so a job asked to stop as it ends simply ends.
+- **What was done stays done**: the records an import wrote are kept and listed, with the number not imported; the
+  journal's `import` event adds `cancelled=<records not imported>`; no *job finished* message is sent. A link check's
+  result is dropped, and the last check of every record stays the one shown.
+- **A worker that stops or dies** with a job marked to stop cancels it instead of handing it back to the queue
+  (`release()`, `requeue_stale()`).
+- `POST /portal/api/import/cancel` (`{token}`) and `POST /portal/api/links/jobs/<token>/cancel`: the user's own jobs
+  only (another user's job reads as expired); each answers the job's status, `cancelling: true` while the worker
+  finishes the item in hand. The browser shows *Stop* beside the progress of *Check links* and of the import
+  preview's address check, and *Stop import* in the import dialog.
+
+Not chosen: rolling back the records already imported (an import is a series of writes the data entry API cannot
+undo together, and the editor already changes or deletes a record); stopping in the middle of a record (the data
+entry API's call sequence for a record is not atomic); a confirmation before stopping (nothing is lost: the
+spreadsheet can be imported again, and the records written are updated, not duplicated).
 
 ### 3.4 Sign-in throttling and caches
 

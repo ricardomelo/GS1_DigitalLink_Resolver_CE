@@ -148,6 +148,7 @@ a { color: var(--link); }
 .import-check { margin-top: .75rem; font-size: .875rem; }
 .import-limits-title { margin: .5rem 0 0; color: var(--muted); font-size: .875rem; }
 .import-limits { margin: .15rem 0 0; padding-inline-start: 1.25rem; color: var(--muted); font-size: .875rem; }
+.import-links-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 1.25rem; }
 .import-warnings { margin: 0 0 1rem; padding-inline-start: 1.2rem; color: #9A5B00; font-size: .875rem; max-height: 8rem; overflow-y: auto; }
 .records-sheet .btn { min-height: 2.25rem; padding: .35rem 1rem; font-size: .875rem; }
 

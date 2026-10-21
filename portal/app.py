@@ -1228,14 +1228,16 @@ def config():
         # the keys with an EPC and what a record needs before it has one (portal/epc.py; ADR 0010, section 8)
         epc={ai: epc.MINIMUM.get(ai, {}) for ai in epc.KEY_SCHEMES},
         # the label's scanning environments (Documentation/adr/0010-label-studio.md, section 7): their 2D symbols, the
-        # X-dimension ranges and the sizes that keep within them, without and with an EAN/UPC beside; rank: the order
+        # X-dimension ranges and the sizes that keep within them, without and with an EAN/UPC beside (one size for
+        # both), and the EAN/UPC's own when it has a size of its own (section 7.7); rank: the order
         # of the decision tree (JSON objects reach the page with their keys sorted)
         labelEnvironments={name: {"rank": rank, "table": env["table"],
                                   "keys": env["keys"] if env["keys"] != "any" else None,
                                   "anyKey": env["keys"] == "any", "symbols": list(env["symbols"]), "x": list(env["2d"]),
                                   "linearX": list(env["linear"]) if env["linear"] else None,
                                   "sizes": label.sizes_for(name), "sizesWithLinear": label.sizes_for(name, True)
-                                  if env["linear"] else []}
+                                  if env["linear"] else [],
+                                  "linearSizes": label.linear_sizes_for(name) if env["linear"] else []}
                            for rank, (name, env) in enumerate(label.ENVIRONMENTS.items())},
     )
 
@@ -3434,7 +3436,8 @@ def zip_name(filename: str) -> str:
 
 def label_response(anchor: str, args) -> Response:
     """The label of a key (whose access was checked) from the request's options: the portal's and the tenant
-    API's (qualifiers, attr, hri, version, ecl, size, linear, domain, symbol=qr|dm|gs1dm, env (label.ENVIRONMENTS; by
+    API's (qualifiers, attr, hri, version, ecl, size, linear, linearsize (the EAN/UPC's own size; by default the
+    2D symbol's), domain, symbol=qr|dm|gs1dm, env (label.ENVIRONMENTS; by
     default the key's first), hritext=outline|text, format=svg|png|pdf|zip; Documentation/adr/0010-label-studio.md)."""
     key_ai = gs1.split_anchor(anchor)[0]
     if args.get("env") and str(args.get("env")).strip().lower() not in label.ENVIRONMENTS:
@@ -3445,6 +3448,9 @@ def label_response(anchor: str, args) -> Response:
     hri = HRI_MODES.get(args.get("hri", "full"))
     if hri is None:
         raise ValidationError("qr.hri")
+    linear_symbol = label_linear(anchor, pairs, args.get("linear"))
+    # the EAN/UPC's own size (ADR 0010, section 7.7): absent, the 2D symbol's; without a linear symbol, unused
+    linear_size = label_size(args.get("linearsize")) if linear_symbol and args.get("linearsize") else None
     options = label.LabelOptions(
         uri=uri,
         hri_lines=tuple(lines[:1] if hri == "key" else lines),
@@ -3452,7 +3458,8 @@ def label_response(anchor: str, args) -> Response:
         version=qr_version(args.get("version")),
         error=qr_error_level(args.get("ecl")),
         size=label_size(args.get("size")),
-        linear=label_linear(anchor, pairs, args.get("linear")),
+        linear=linear_symbol,
+        linear_size=linear_size,
         symbol=label_choice(args.get("symbol"), label.SYMBOLS, "qr", "label.symbolInvalid"),
         # the GS1 DataMatrix's element string: every element of the record and the data attributes, whatever the HRI
         element_string="".join(lines),

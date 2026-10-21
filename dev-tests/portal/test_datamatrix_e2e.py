@@ -3,7 +3,7 @@ The label panel's symbols and scanning environments in a real browser (Playwrigh
 0010-label-studio.md, section 7; item 9.3): the 2D symbol and the scanning environment offered, the symbols and sizes
 each environment takes (the others disabled), the QR options shown for a QR code only, the linear symbol hidden where
 none is used, the preview's line naming the Data Matrix, its modules and X-dimension, the downloads carrying the
-choices, the HRI as text, the choices remembered, Portuguese.
+choices, the HRI as text, the choices remembered, the EAN/UPC's own size (section 7.7), Portuguese.
 
   pip install -r portal/requirements.txt playwright mongomock && playwright install chromium
   python dev-tests/portal/test_datamatrix_e2e.py
@@ -99,6 +99,38 @@ with sync_playwright() as p:
           and "0.743" in page.inner_text("#opt-size option[value='100']"),
           (page.input_value("#opt-env"), page.inner_text("#opt-size option[value='100']")))
     page.select_option("#key-type", "01"); page.fill("#key-value", GTIN); page.wait_for_timeout(900)
+
+    # the EAN/UPC's own size (ADR 0010, section 7.7)
+    check("no linear barcode: no size of its own", not page.is_visible("#opt-linear-size-field"))
+    page.select_option("#opt-env", "distribution"); page.select_option("#opt-symbol", "gs1dm")
+    page.select_option("#opt-linear", "auto"); page.wait_for_timeout(900)
+    check("an EAN-13 beside: the 2D symbol keeps its own sizes (table 2: 100 to 200 %), the EAN-13 its own (80 to 100 %)",
+          enabled(page, "#opt-size") == ["100", "120", "150", "200"] and page.is_visible("#opt-linear-size")
+          and enabled(page, "#opt-linear-size") == ["", "80", "90", "100"] and page.input_value("#opt-linear-size") == "",
+          (enabled(page, "#opt-size"), enabled(page, "#opt-linear-size")))
+    page.select_option("#opt-size", "200"); page.wait_for_timeout(1200)
+    href = page.get_attribute("#download-svg", "href") or ""
+    follow = page.inner_text("#opt-linear-size option[value='']")
+    check("…by default as the 2D symbol, within its own range: the 2D at 200 % (1.486 mm), the EAN-13 at 100 % (0.660 mm)",
+          "100" in follow and "0.660" in follow and "size=200" in href and "linearsize=100" in href
+          and "1.486 mm" in page.inner_text("#qr-info") and "has-error" not in (page.get_attribute("#qr", "class") or ""),
+          (follow, href, page.inner_text("#qr-info")))
+    page.select_option("#opt-linear-size", "80"); page.wait_for_timeout(1200)
+    check("…a size of its own: 80 %", "linearsize=80" in (page.get_attribute("#download-svg", "href") or "")
+          and "0.528" in page.inner_text("#opt-linear-size option[value='80']"))
+    page.reload(); page.wait_for_timeout(900)
+    page.fill("#key-value", GTIN); page.wait_for_timeout(1200)
+    check("…remembered", page.input_value("#opt-linear-size") == "80" and page.input_value("#opt-size") == "200")
+    page.select_option("#opt-size", "100"); page.select_option("#opt-linear-size", ""); page.wait_for_timeout(1200)
+    href = page.get_attribute("#download-svg", "href") or ""
+    check("…as the 2D symbol at 100 %: no linearsize sent", "linear=auto" in href and "linearsize" not in href, href)
+    page.select_option("#opt-env", "retail"); page.wait_for_timeout(600)
+    page.select_option("#opt-linear-size", "120"); page.wait_for_timeout(600)
+    page.select_option("#opt-env", "distribution"); page.wait_for_timeout(900)
+    check("…a size of its own beyond the new environment's range: back to as the 2D symbol",
+          page.input_value("#opt-linear-size") == "" and "linearsize" not in (page.get_attribute("#download-svg", "href") or ""),
+          page.input_value("#opt-linear-size"))
+    page.select_option("#opt-linear", "none"); page.select_option("#opt-env", "retail"); page.wait_for_timeout(900)
     page.select_option("#locale", "pt-BR"); page.wait_for_timeout(400)
     check("in Portuguese", "Ambiente de leitura" in page.inner_text(".label-options")
           and "Ponto de venda no varejo" in page.inner_text("#opt-env"))

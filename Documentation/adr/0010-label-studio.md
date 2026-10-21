@@ -193,6 +193,44 @@ code at 0.743 mm instead of 0.495); asked with `env=retail` it is refused. The G
 year: a new release is checked against this table, one line of `label.ENVIRONMENTS` per row. The PDF is GS1's and is
 not kept in the repository.
 
+### 7.7 Amendment of 21 October 2026 — the EAN/UPC's own size
+
+**Context.** One size applied to both symbols: the EAN/UPC beside the 2D symbol was drawn at the same percentage of
+its own target, and only the sizes keeping both within their ranges were offered. The tables give the two symbols
+independent ranges, and the union locked the 2D symbol: with an EAN-13 beside, tables 2 and 8 allowed 100 % only,
+although their 2D range goes to 200 %. On a package the two are often printed at different magnifications (an EAN-13
+at 80 % beside a 2D symbol at 100 %). The owner asked during the staging tests whether the sizes should be separate and
+chose the recommended option.
+
+**Decision.**
+
+1. **A size of the EAN/UPC's own**, a percentage of the environment's EAN/UPC target, one of the same sizes, refused
+   outside the environment's EAN/UPC range (`label.linearSizeOutOfRange`, with the range and the sizes allowed).
+   `LabelOptions.linear_size`; `label.linear_sizes_for()`.
+2. **The 2D symbol's size then keeps within the 2D range alone.** Without a size of its own the EAN/UPC follows the 2D
+   symbol's and both ranges apply, as before: a label asked without it is the same as before this amendment.
+3. **The page** offers *Size of the linear barcode* when an EAN/UPC is chosen: *As the 2D symbol* (the default: the 2D
+   symbol's size, or the nearest the EAN/UPC's range allows, shown with its X-dimension) or a size of its own; the
+   2D symbol's sizes are its range's. The choice is remembered with the other options; one the environment does not
+   allow falls back to *As the 2D symbol*.
+4. **The portal and the tenant API** take `linearsize`; it is unused without `linear`. `/config` gives each
+   environment `linearSizes`. The zip's README gives the EAN/UPC's size as a percentage of its target and its
+   magnification (its X against 0.330 mm), which differ outside retail.
+
+| Environment | 2D sizes | EAN/UPC sizes | One size for both |
+|---|---|---|---|
+| `retail`, `pharmacy`, `healthcare`, `other` | 80–200 % | 80–200 % | 80–200 % |
+| `retail-gd` | 80–100 % | 80–100 % | 80–100 % |
+| `distribution`, `pharmacy-gd` | 100–200 % | 80–100 % | 100 % |
+
+### 7.8 Options considered
+
+| Point | Chosen (recommended) | Not chosen |
+|---|---|---|
+| Sizes of the two symbols | the EAN/UPC's own, by default the 2D symbol's | one size for both (locks the 2D symbol in tables 2 and 8) |
+| A size the EAN/UPC's range refuses while following | the nearest it allows, shown | the 2D symbol's sizes limited to both ranges (as before) |
+| The API without `linearsize` | as before: both ranges apply to the one size | the nearest size chosen silently (a label could change) |
+
 ## 8. Amendment of 17 October 2026 — an EPC for every key that has one (item 9.10)
 
 ### 8.1 Context

@@ -444,8 +444,12 @@ part: resolver address, identifier, qualifiers, data attributes) and a legend.
   the module size (at retail X 0.396 mm to 0.990 mm).
   The text under the code stays 2.2 mm high at every size. Use 100 % unless the artwork needs another.
 - **Linear barcode beside it** (GTINs of products, indicator 0) — *None*; *EAN-13 / UPC-A / EAN-8, as the GTIN
-  takes*; or *UPC-E* for a GTIN-12 that allows it: the familiar barcode drawn next to the QR code at the same size,
-  with its digits underneath, so that every till scans the product while the QR code gives the links.
+  takes*; or *UPC-E* for a GTIN-12 that allows it: the familiar barcode drawn next to the 2D symbol, with its digits
+  underneath, so that every till scans the product while the QR code gives the links.
+- **Size of the linear barcode** (shown with a linear barcode) — *As the 2D symbol* (the default: the same percentage,
+  or the nearest the environment's EAN/UPC range allows; the choice shows which and its module size), or a size of its
+  own within the EAN/UPC range (at retail 80 % to 200 %, X 0.264 mm to 0.660 mm). Each symbol keeps to its own range:
+  in *General distribution only*, for example, the 2D symbol can go to 200 % beside an EAN-13 at 100 %.
 - **Domain in the QR code** (shown when your organisation has a verified domain, section 14) — *Default of the
   prefix*: the domain set as the default of the record's GS1 Company Prefix, otherwise the resolver's address; the
   resolver's address; or one of your verified domains. The address under the code and the downloads follow the

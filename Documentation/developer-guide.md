@@ -367,15 +367,17 @@ pixels per QR module, 8 per linear module; DPI from X), `render_pdf()` (one page
 `symbol` (`SYMBOLS`: `qr`, `dm` — the URI in a Data Matrix —, `gs1dm` — `element_string` in GS1 mode), `environment`
 (`ENVIRONMENTS`: per environment its table of the General Specifications, the 2D and EAN/UPC X ranges, its symbols
 and its keys — ADR 0010 §7.6; `environments_for(ai)` gives a key's environments, its default first; `x_mm` and
-`linear_x_mm` are the targets times the size), `hri_text`. `data_matrix(data, gs1_mode)` encodes with libzint (`zint-bindings`; square ECC
+`linear_x_mm` are the targets times the size — the EAN/UPC's `linear_size` when given, ADR 0010 §7.7), `hri_text`. `data_matrix(data, gs1_mode)` encodes with libzint (`zint-bindings`; square ECC
 200; `DataMatrixError`) and reads `encoded_data` (rows of bytes, first module in bit 0) into a `DataMatrix`.
-`sizes_for(environment, with_linear)` gives the sizes within every range; `check_environment(options, ai)` raises
+`sizes_for(environment, with_linear)` gives the sizes within every range, `linear_sizes_for(environment)` the
+EAN/UPC's own; `check_environment(options, ai)` raises
 `OutOfRange` (`label.environmentInvalid`, `label.environmentNotForKey`, `label.symbolNotForEnvironment`, `label.linearNotForEnvironment`,
-`label.sizeOutOfRange`); `_layout()` calls it and lays out any matrix the same way. With `hri_text` the SVG writes
+`label.sizeOutOfRange`, `label.linearSizeOutOfRange`); `_layout()` calls it and lays out any matrix the same way. With `hri_text` the SVG writes
 `<text>` (Liberation Sans; OCR-B for the EAN/UPC digits, the text lines marked `"linear"`). `app.label_response()`
 reads `symbol`, `env` and `hritext` (`label_choice()`), gives the GS1 DataMatrix the record's whole element string,
 and answers `X-Symbol`, `X-Dimension` and `X-QR-*` or `X-DM-Modules`; `/config` gives `labelEnvironments`; the panel's
-`fillSizeOptions()` offers each environment's symbols and sizes.
+`fillSizeOptions()` offers each environment's symbols and sizes, and the EAN/UPC's (`linearSizeOf()`: the one chosen,
+else the 2D symbol's or the nearest its range allows).
 
 ### `linear.py` — EAN/UPC symbols
 
@@ -383,7 +385,7 @@ and answers `X-Symbol`, `X-Dimension` and `X-QR-*` or `X-DM-Modules`; `/config` 
 that `upce_from_upca()` zero-suppresses, number system 0), raising `NotPossible` otherwise; `encode(kind, digits)`
 checks the check digit and gives `Encoded`: the modules from the L/G/R tables and the parity tables (EAN-13's by its
 first digit, UPC-E's by its check digit), the extended modules, quiet zones, bar height and the digits with their
-centres and relative sizes. `app.label_size()`, `app.label_linear()` read `size=` and `linear=` (`label.sizeInvalid`,
+centres and relative sizes. `app.label_size()`, `app.label_linear()` read `size=`, `linearsize=` and `linear=` (`label.sizeInvalid`,
 `label.linearInvalid`, `label.linearNotPossible`); `label_response()` adds `format=pdf|zip` and the header
 `X-Linear-Symbol`; `zip_name()` keeps the names inside a zip to safe characters.
 

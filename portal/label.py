@@ -11,7 +11,8 @@ Renders the QR code label exported by the portal, following the symbol and text 
   100 % size. Printing smaller than 100 % would take the text below the minimum.
 
 - A linear barcode beside the QR code (EAN-13, UPC-A, EAN-8, UPC-E; linear.py) for the transition to 2D, at 0.330 mm
-  times the same size, with its quiet zones, guard bars and human readable digits.
+  times the same size or a size of its own (ADR 0010, section 7.7), with its quiet zones, guard bars and human readable
+  digits.
 
 Item 9.3 (ADR 0010, section 7): the 2D symbol may also be a Data Matrix carrying the GS1 Digital Link URI or a GS1 DataMatrix
 carrying the element string (FNC1 first, libzint through zint-bindings); the X-dimensions come from the scanning
@@ -117,7 +118,8 @@ HRI_FONT_FAMILY = "'Liberation Sans', Arial, Helvetica, sans-serif"
 class LabelOptions:
     """What to draw: the URI, the lines of human readable text, whether to show them, the QR version
     (None: the smallest that fits), the error correction level, the size (a percentage of the target X-dimensions)
-    and an EAN/UPC symbol beside the QR code ((kind, digits) from linear.symbol_for(), or None).
+    and an EAN/UPC symbol beside the QR code ((kind, digits) from linear.symbol_for(), or None) with its own size
+    (None: the same as the 2D symbol's).
     """
     uri: str
     hri_lines: tuple[str, ...]
@@ -130,6 +132,7 @@ class LabelOptions:
     element_string: str = ""                    # the element string with brackets, for "gs1dm"
     environment: str = "retail"                 # one of ENVIRONMENTS
     hri_text: bool = False                      # the SVG's HRI as text (needs the fonts) instead of outlines
+    linear_size: int | None = None              # the EAN/UPC's percentage of its target, one of SIZES; None: size
 
     @property
     def x_mm(self) -> float:
@@ -138,9 +141,14 @@ class LabelOptions:
 
     @property
     def linear_x_mm(self) -> float:
-        """The EAN/UPC X-dimension in millimetres."""
+        """The EAN/UPC X-dimension in millimetres: the environment's target times the linear symbol's size."""
         ranges = ENVIRONMENTS[self.environment]["linear"]
-        return (ranges[1] if ranges else LINEAR_X_MM) * self.size / 100
+        return (ranges[1] if ranges else LINEAR_X_MM) * self.linear_percent / 100
+
+    @property
+    def linear_percent(self) -> int:
+        """The EAN/UPC's size: its own, else the 2D symbol's."""
+        return self.size if self.linear_size is None else self.linear_size
 
 
 class OutOfRange(ValueError):
@@ -152,10 +160,17 @@ class OutOfRange(ValueError):
 
 
 def sizes_for(environment: str, with_linear: bool = False) -> list[int]:
-    """The sizes (percentages of the environment's targets) whose X-dimensions stay within its ranges."""
+    """The sizes (percentages of the environment's targets) whose X-dimensions stay within its ranges: the 2D
+    symbol's, and with_linear the EAN/UPC's too (one size for both)."""
     env = ENVIRONMENTS[environment]
     ranges = [env["2d"]] + ([env["linear"]] if with_linear and env["linear"] else [])
     return [s for s in SIZES if all(low - 1e-9 <= target * s / 100 <= high + 1e-9 for low, target, high in ranges)]
+
+
+def linear_sizes_for(environment: str) -> list[int]:
+    """The sizes of an EAN/UPC given a size of its own: those within the environment's linear range alone."""
+    low, target, high = ENVIRONMENTS[environment]["linear"] or (0, 0, -1)
+    return [s for s in SIZES if low - 1e-9 <= target * s / 100 <= high + 1e-9]
 
 
 def check_environment(options: "LabelOptions", ai: str | None = None) -> None:
@@ -170,10 +185,16 @@ def check_environment(options: "LabelOptions", ai: str | None = None) -> None:
         raise OutOfRange("label.symbolNotForEnvironment")
     if options.linear and not env["linear"]:
         raise OutOfRange("label.linearNotForEnvironment")
-    if options.size not in sizes_for(options.environment, bool(options.linear)):
+    # One size for both symbols keeps both within their ranges; a size of the linear symbol's own frees the 2D one
+    together = bool(options.linear) and options.linear_size is None
+    if options.size not in sizes_for(options.environment, together):
         low, _, high = env["2d"]
         raise OutOfRange("label.sizeOutOfRange", min=f"{low:.3f}", max=f"{high:.3f}",
-                         sizes=", ".join(map(str, sizes_for(options.environment, bool(options.linear)))))
+                         sizes=", ".join(map(str, sizes_for(options.environment, together))))
+    if options.linear and not together and options.linear_size not in linear_sizes_for(options.environment):
+        low, _, high = env["linear"]
+        raise OutOfRange("label.linearSizeOutOfRange", min=f"{low:.3f}", max=f"{high:.3f}",
+                         sizes=", ".join(map(str, linear_sizes_for(options.environment))))
 
 
 class DoesNotFit(ValueError):
@@ -307,6 +328,8 @@ def _layout(options: LabelOptions) -> _Layout:
     to the right with its own quiet zones, tops aligned."""
     if options.size not in SIZES:
         raise ValueError(f"size {options.size} is not one of {SIZES}")
+    if options.linear_size is not None and options.linear_size not in SIZES:
+        raise ValueError(f"linear size {options.linear_size} is not one of {SIZES}")
     check_environment(options)
     qr = symbol(options)
     matrix = [list(row) for row in qr.matrix]
@@ -340,7 +363,7 @@ def _layout(options: LabelOptions) -> _Layout:
 def _place_linear(options: LabelOptions, rects, texts, left: float, top: float, bottom: float) -> tuple[float, float]:
     """Adds the EAN/UPC symbol to the right of `left`; returns the new right edge and bottom."""
     code = linear.encode(*options.linear)
-    unit = options.linear_x_mm / options.x_mm           # one linear module in 2D modules (the same size applies)
+    unit = options.linear_x_mm / options.x_mm           # one linear module in 2D modules
     quiet_left, quiet_right = code.quiet
     x0 = left + LINEAR_GAP + quiet_left * unit
     bar_bottom = top + code.bar_height * unit
@@ -541,8 +564,10 @@ def render_zip(options: LabelOptions, name: str) -> bytes:
                   f"{options.environment}), quiet zone {QUIET_ZONE}X")
     if options.linear:
         kind, digits = options.linear
-        lines.append(f"{linear.NAMES[kind]}: {digits}, X = {options.linear_x_mm:.3f} mm "
-                     f"({options.size} % magnification), bar height {linear.BAR_HEIGHT[kind] * options.linear_x_mm:.2f} mm")
+        linear_target = (ENVIRONMENTS[options.environment]["linear"] or (0, LINEAR_X_MM, 0))[1]
+        lines.append(f"{linear.NAMES[kind]}: {digits}, X = {options.linear_x_mm:.3f} mm ({options.linear_percent} % of "
+                     f"the target {linear_target:.3f} mm, magnification {options.linear_x_mm / LINEAR_X_MM * 100:.0f} %), "
+                     f"bar height {linear.BAR_HEIGHT[kind] * options.linear_x_mm:.2f} mm")
     lines += [f"Human readable text: {' '.join(options.hri_lines) if options.show_hri else 'none'}",
               f"Label size: {w_mm:.1f} x {h_mm:.1f} mm; print at 100 % (no scaling) to keep these dimensions.",
               "Files: SVG and PDF are vector (for artwork); PNG is for screens and documents (its DPI gives the size)."]

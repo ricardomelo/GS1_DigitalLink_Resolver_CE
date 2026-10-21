@@ -4,7 +4,8 @@ Data Matrix on labels and the scanning environments (Documentation/adr/0010-labe
 decoder, zxing-cpp, as symbology ]d2 with the same element string) and a Data Matrix carrying the GS1 Digital Link URI
 (]d1, the URI), square, in PNG, SVG, PDF and the zip; the element string holding the record's qualifiers and its data
 attributes whatever the human readable text; the scanning environments (their X-dimensions, their symbols, the sizes
-that stay within their ranges, with an EAN/UPC beside too, a linear symbol refused where none is used); the HRI as text
+that stay within their ranges, with an EAN/UPC beside too, a linear symbol refused where none is used; the EAN/UPC's
+own size within its own range, section 7.7); the HRI as text
 in the SVG (OCR-B for EAN/UPC digits) or as outlines (the default); the headers, the file names, refusals, the tenant API,
 the configuration the page reads, and the texts in both languages.
 
@@ -152,6 +153,40 @@ svg = label.render_svg(options(environment="narrow", linear=("ean13", "950600013
 check("…the EAN/UPC drawn at the environment's own target (0.500 mm)", "EAN-13 9506000134352 at X = 0.500 mm" in svg
       and "(X = 0.500 mm)" in svg, re.search(r"<desc>.*</desc>", svg).group(0))
 del label.ENVIRONMENTS["narrow"]
+
+# The EAN/UPC's own size (section 7.7): each symbol within its own range
+check("the EAN/UPC's own sizes: its range alone (table 2: 80 to 100 %; table 6: every size; none in DPM)",
+      label.linear_sizes_for("distribution") == [80, 90, 100] and label.linear_sizes_for("pharmacy-gd") == [80, 90, 100]
+      and label.linear_sizes_for("healthcare") == list(label.SIZES) and label.linear_sizes_for("dpm") == [],
+      [label.linear_sizes_for(n) for n in ("distribution", "pharmacy-gd", "healthcare", "dpm")])
+ean = ("ean13", "9506000134352")
+svg = label.render_svg(options(symbol="gs1dm", environment="distribution", size=200, linear=ean, linear_size=100)).decode()
+check("…general distribution: the 2D symbol at 200 % (1.486 mm) beside an EAN-13 at 100 % (0.660 mm)",
+      "(X = 1.486 mm)" in svg and "EAN-13 9506000134352 at X = 0.660 mm" in svg, re.search(r"<desc>.*</desc>", svg).group(0))
+found = read(label.render_png(options(symbol="gs1dm", environment="distribution", size=200, linear=ean, linear_size=100)))
+check("…both read back", ("Data Matrix", "]d2", f"(01){GTIN}(10)ABC123(21)XYZ") in found
+      and any(f == "EAN-13" and t == "9506000134352" for f, _, t in found), found)
+lay = label._layout(options(symbol="gs1dm", environment="healthcare", linear=ean, linear_size=200))
+bars = [r for r in lay.rects if r[3] > 40]
+check("…healthcare: the Data Matrix at 100 % (0.380 mm), the EAN-13 at 200 %: bars 45.70 mm high",
+      abs(lay.x_mm - 0.380) < 1e-9 and abs(min(h for *_, h in bars) * lay.x_mm - 45.70) < 0.02,
+      (lay.x_mm, min(h for *_, h in bars) * lay.x_mm if bars else None))
+readme = zipfile.ZipFile(io.BytesIO(label.render_zip(options(symbol="gs1dm", environment="distribution", size=150,
+                                                               linear=ean, linear_size=90), "x"))).read("README.txt").decode()
+check("…the zip's README gives each its own size and the EAN/UPC's magnification",
+      "X = 1.115 mm (150 % of the target 0.743 mm" in readme
+      and "EAN-13: 9506000134352, X = 0.594 mm (90 % of the target 0.660 mm, magnification 180 %)" in readme, readme)
+for name, extra, code_expected in (
+        ("one size for both beyond the EAN/UPC's range (200 % in table 2)",
+         dict(symbol="gs1dm", environment="distribution", size=200, linear=ean), "label.sizeOutOfRange"),
+        ("the EAN/UPC's own size beyond its range (120 % in table 2)",
+         dict(symbol="gs1dm", environment="distribution", linear=ean, linear_size=120), "label.linearSizeOutOfRange")):
+    try:
+        label.render_svg(options(**extra))
+        got = None
+    except label.OutOfRange as exc:
+        got = exc.code
+    check(f"refused: {name} → {code_expected}", got == code_expected, got)
 for name, extra, code_expected in (
         ("a QR code in healthcare", dict(environment="healthcare"), "label.symbolNotForEnvironment"),
         ("120 % in retail and general distribution (1.188 mm)", dict(symbol="gs1dm", environment="retail-gd", size=120),
@@ -223,12 +258,27 @@ check("an SSCC without an environment: table 5, the QR code at 0.743 mm", r.stat
 r = get("key=414&value=9506000134352&symbol=gs1dm&size=150&format=png")
 check("a GLN: table 9, a GS1 DataMatrix at 150 % (0.562 mm)", r.status_code == 200
       and r.headers.get("X-Dimension") == "0.562", (r.status_code, dict(r.headers)))
+r = get(f"key=01&value={GTIN}&symbol=gs1dm&env=distribution&size=200&linear=auto&linearsize=100&format=png")
+found = read(r.data)
+check("portal: linearsize, the EAN/UPC's own size: the GS1 DataMatrix at 200 % beside an EAN-13 at 100 %",
+      r.status_code == 200 and r.headers.get("X-Dimension") == "1.486" and any(f == "EAN-13" for f, _, _ in found),
+      (r.status_code, found))
+r = get(f"key=01&value={GTIN}&symbol=gs1dm&env=distribution&linear=auto&linearsize=120")
+check("…beyond the EAN/UPC's range: refused with its range and sizes", r.status_code == 422
+      and r.get_json()["code"] == "label.linearSizeOutOfRange" and r.get_json()["params"]["sizes"] == "80, 90, 100"
+      and r.get_json()["params"]["min"] == "0.495", r.get_json())
+r = get(f"key=01&value={GTIN}&linear=auto&linearsize=75")
+check("…a size not offered: refused", r.status_code == 422 and r.get_json()["code"] == "label.sizeInvalid", r.get_json())
+r = get(f"key=01&value={GTIN}&symbol=gs1dm&env=distribution&size=200&linearsize=100&format=png")
+check("…without a linear symbol, unused", r.status_code == 200 and r.headers.get("X-Dimension") == "1.486"
+      and "X-Linear-Symbol" not in r.headers, (r.status_code, dict(r.headers)))
 cfg = root.get("/portal/api/config").get_json()["labelEnvironments"]
 check("the configuration gives the page every environment with its table, keys, symbols, ranges and sizes",
       sorted(cfg, key=lambda n: cfg[n]["rank"]) == list(label.ENVIRONMENTS) and cfg["pharmacy-gd"]["sizesWithLinear"] == [100]
       and cfg["logistics"]["keys"] == ["00"] and cfg["retail"]["keys"] is None and cfg["dpm"]["anyKey"] is True
       and cfg["gsrn"]["table"] == 11
-      and cfg["dpm"]["linearX"] is None and cfg["dpm"]["sizesWithLinear"] == [] and cfg["retail"]["x"] == [0.396, 0.495, 0.99],
+      and cfg["dpm"]["linearX"] is None and cfg["dpm"]["sizesWithLinear"] == [] and cfg["retail"]["x"] == [0.396, 0.495, 0.99]
+      and cfg["distribution"]["linearSizes"] == [80, 90, 100] and cfg["dpm"]["linearSizes"] == [],
       cfg)
 key, _ = apikeys.create("Labels", ["labels:read"], 30, [], None, "root")
 api = portal.app.test_client()
@@ -242,11 +292,12 @@ keys = ["label.symbol", "label.symbol.qr", "label.symbol.dm", "label.symbol.gs1d
         "label.env.pharmacy-gd", "label.env.other", "label.env.logistics", "label.env.assets", "label.env.gsrn",
         "label.envHint", "label.environmentNotForKey", "label.hriText", "label.hriText.outline", "label.hriText.text",
         "preview.dmInfo", "label.symbolInvalid", "label.environmentInvalid", "label.hriTextInvalid",
-        "label.symbolNotForEnvironment", "label.linearNotForEnvironment", "label.sizeOutOfRange", "label.dataMatrixRefused"]
+        "label.symbolNotForEnvironment", "label.linearNotForEnvironment", "label.sizeOutOfRange", "label.dataMatrixRefused",
+        "label.linearSize", "label.linearSize.follow", "label.linearSizeOutOfRange"]
 missing = [k for k in keys if i18n.count(f'"{k}"') != 2]
 check("texts in both languages", not missing, missing)
 openapi = open(os.path.join(PORTAL, "openapi.json"), encoding="utf-8").read()
-check("the tenant API's description lists the new options", all(f'"name": "{n}"' in openapi for n in ("symbol", "env", "hritext")))
+check("the tenant API's description lists the new options", all(f'"name": "{n}"' in openapi for n in ("symbol", "env", "hritext", "linearsize")))
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

@@ -379,6 +379,14 @@
                   <option value="upce" data-i18n="label.linear.upce"></option>
                 </select>
               </label>
+              <!-- The linear barcode's own size (ADR 0010, section 7.7): by default as the 2D symbol's -->
+              <label class="opt-field" id="opt-linear-size-field" hidden><span data-i18n="label.linearSize"></span>
+                <select id="opt-linear-size">
+                  <option value=""></option><option value="80"></option><option value="90"></option>
+                  <option value="100"></option><option value="120"></option><option value="150"></option>
+                  <option value="200"></option>
+                </select>
+              </label>
               <label class="opt-field"><span data-i18n="label.hriText"></span>
                 <select id="opt-hritext">
                   <option value="outline" data-i18n="label.hriText.outline"></option>

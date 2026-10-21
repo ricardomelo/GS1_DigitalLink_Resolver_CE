@@ -553,10 +553,10 @@ body:not([data-operator-view="true"]) .audit-tenant-col { display: none !importa
 .users-table input[type="email"] { min-width: 10rem; }
 .users-table th.count { text-align: end; }
 .tenants-name { flex: 1 1 14rem; }
-/* New organisation (owner's note of 20 October): the name level with the first prefix, "Add GCP" beside the
-   prefixes, the button level with the fields */
-#tenants-create { display: grid; grid-template-columns: minmax(12rem, 20rem) minmax(18rem, 1fr) auto;
-  align-items: start; gap: .75rem 1.5rem; }
+/* New organisation (owner's notes of 20 and 21 October): the name level with the first prefix, "Add GCP" beside the
+   prefixes, the button level with the fields and next to "Add GCP", not at the far right */
+#tenants-create { display: grid; grid-template-columns: minmax(12rem, 20rem) minmax(18rem, auto) auto;
+  justify-content: start; align-items: start; gap: .75rem 1.5rem; }
 #tenants-create > .btn { margin-top: 1.55rem; }
 #tenants-create .prefix-rows { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .4rem .75rem; }
 #tenants-create .prefix-list { margin: 0; }

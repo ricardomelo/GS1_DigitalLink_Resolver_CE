@@ -115,6 +115,10 @@ with sync_playwright() as p:
     wide.goto(BASE + "#records"); wide.wait_for_timeout(600)
     width = wide.evaluate("() => document.getElementById('records-view').getBoundingClientRect().width")
     check("a wide screen: the content up to 96rem (1,536 px), wider than before (76rem)", 1216 < width <= 1536, width)
+    wide.goto(BASE + "#tenants"); wide.wait_for_timeout(800)
+    add, create = (wide.locator(sel).first.bounding_box() for sel in ("#new-tenant-prefixes .prefix-add", "#tenants-create > .btn"))
+    check("…New organisation: Create organisation next to Add GCP, not at the far right (owner's note of 21 October)",
+          0 < create["x"] - add["x"] - add["width"] < 40, (add, create))
     wide.close()
 
     # ------------------------------------------------------------ the sidebar

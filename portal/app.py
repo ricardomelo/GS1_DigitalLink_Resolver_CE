@@ -3508,8 +3508,8 @@ def label_response(anchor: str, args) -> Response:
 # them inside this process; otherwise the portal-worker service does.
 JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job, "mail": notify.run_mail_job}
 # What the worker runs about once an hour, outside any job (worker.HOUSEKEEPING_SECONDS)
-HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate, requestlog.apply_retention, requestlog.apply_size_limit,
-                domains.recheck_all]
+HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate, requestlog.fold_noise, requestlog.apply_retention,
+                requestlog.apply_size_limit, domains.recheck_all]
 # What the worker runs every PORTAL_MONITOR_MINUTES (Documentation/adr/0008-monitoring-and-alerts.md)
 MONITORING = [monitor.run]
 MONITOR_SECONDS = monitor.minutes() * 60

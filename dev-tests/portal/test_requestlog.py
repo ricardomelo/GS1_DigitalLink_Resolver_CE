@@ -556,6 +556,97 @@ store.col("tenants").update_many({}, {"$unset": {"logDays": ""}})
 tenants.remove(other["id"])
 EVENTS.delete_many({})
 
+# ================================================================== counted, not stored (ADR 0006, section 11)
+import monitor  # noqa: E402
+COUNTS = requestlog.counts()
+for collection in (EVENTS, COUNTS, requestlog.daily()):
+    collection.delete_many({})
+for name in (requestlog.SETTING_FINAL, requestlog.SETTING_FOLDED):
+    store.col("settings").delete_one({"_id": name})
+D2 = date(2026, 9, 10)
+
+
+def count(b, n, cp=None, ai="01", v=None, o="redirect", dev="automated", ms=0, longest=0, **extra):
+    """A count as the resolver writes it: requests of one quarter of an hour (b, UTC) and one group."""
+    doc = {"b": b, "n": n, "ms": ms, "msMax": longest, "o": o, "dev": dev, "f": "uri",
+           "expiresAt": b + timedelta(days=90), **extra}
+    if cp:
+        doc.update(ai=ai, v=v or ("0" + cp), cp=cp)
+    COUNTS.insert_one(doc)
+
+
+event(ACME_IN, t=at(D2, 9), ms=4)                                          # a person's scan, stored
+count(at(D2, 9, 15), 40, ACME_IN, ms=400, longest=30)                      # an automated client's 40 requests
+count(at(D2, 10), 5, None, o="invalid", dev="mobile", ms=5, longest=2, br="safari")   # 5 without a key, a browser
+count(at(D2 - timedelta(days=1), 23, 45), 7, ACME_IN)                      # 23:45 the day before
+count(at(D2, 23, 45), 3, ACME_IN, o="unknown")                             # 23:45 local, 02:45 UTC the next day
+requestlog.count_day(D2)
+requestlog.count_day(D2 - timedelta(days=1))
+doc = requestlog.daily().find_one({"_id": f"{D2.isoformat()}|01|0{ACME_IN}"}) or {}
+check("a day counted with the requests counted, not stored: a key's total, automated, outcomes and times",
+      doc.get("total") == 44 and doc.get("automated") == 43 and doc.get("outcome") == {"redirect": 41, "unknown": 3}
+      and doc.get("ms") == 404 and doc.get("msMax") == 30, doc)
+whole = requestlog.daily().find_one({"_id": f"{D2.isoformat()}|*"}) or {}
+check("…the installation's day: the counts without a key too, with their devices and browsers",
+      whole.get("total") == 49 and whole.get("outcome", {}).get("invalid") == 5 and whole.get("keys") == 1
+      and whole.get("device") == {"mobile": 6, "automated": 43} and whole.get("browser") == {"safari": 5}, whole)
+check("…the times' percentiles are the stored events' only", (whole.get("p50"), whole.get("p95")) == (4, 4),
+      (whole.get("p50"), whole.get("p95")))
+check("…a count of 23:45 the day before stays on that day",
+      (requestlog.daily().find_one({"_id": f"{(D2 - timedelta(days=1)).isoformat()}|*"}) or {}).get("total") == 7)
+moment = max(NOW - timedelta(minutes=5), requestlog.day_bounds(requestlog.today())[0])   # today, also at 00:01
+quarter = moment.replace(minute=moment.minute // 15 * 15, second=0)
+event(OTHER, t=moment)
+count(quarter, 6, OTHER)
+count(quarter, 2, ACME_IN, o="unknown")
+days = root.get("/portal/api/requests/daily?days=1").get_json()["days"]
+check("today's requests per day: the stored events and the counts", days[-1]["total"] == 9
+      and days[-1]["automated"] == 8 and days[-1]["outcome"].get("unknown") == 2, days)
+days = ana.get("/portal/api/requests/daily?days=1").get_json()["days"]
+check("…an organisation's: its keys' counts only", days[-1]["total"] == 2, days)
+found = requestlog.collect({}, True, requestlog.today(), requestlog.today())
+check("…the overview's today (collect): the counts per key too", found["total"]["total"] == 9
+      and found["keys"][("01", "0" + OTHER)]["total"] == 7 and found["keys"][("01", "0" + ACME_IN)]["automated"] == 2,
+      (found["total"]["total"], {k: v["total"] for k, v in found["keys"].items()}))
+spikes = monitor.spikes(NOW, [])
+check("…the monitoring's 404s of the last hour count them", spikes["*"]["count"] == 2
+      and spikes["*"]["codes"] == [["/01/0" + ACME_IN, 2]], spikes["*"])
+
+# the events of before: deleted once their day is counted
+for collection in (EVENTS, COUNTS):
+    collection.delete_many({})
+kept = event(ACME_IN, t=at(D2, 9))
+event(OPER, t=at(D2, 10), dev="automated")
+event(None, t=at(D2, 11), o="invalid", s=400, p="/wp-login.php")
+later = event(OPER, t=at(D2 + timedelta(days=1), 9), dev="automated")
+check("before any day is counted, nothing is deleted", requestlog.fold_noise() == 0 and EVENTS.count_documents({}) == 4)
+store.set_setting(requestlog.SETTING_FINAL, D2.isoformat())
+deleted = requestlog.fold_noise()
+check("events of a counted day: the automated one and the one without a key deleted, a person's kept",
+      deleted == 2 and {d["_id"] for d in EVENTS.find({})} == {kept, later}, (deleted, list(EVENTS.find({}, {"t": 1}))))
+check("…a journal event", any(e["action"] == "requestlog-folded" and e["detail"] == "events=2"
+                             for e in journal.search(limit=20)))
+check("…recorded how far it went: the end of the counted day",
+      store.get_setting(requestlog.SETTING_FOLDED) == requestlog.day_bounds(D2)[1], store.get_setting(requestlog.SETTING_FOLDED))
+event(OPER, t=at(D2, 12), dev="automated")          # written late into a day already gone through
+check("…a later run looks only after it", requestlog.fold_noise() == 0 and EVENTS.count_documents({}) == 3)
+store.set_setting(requestlog.SETTING_FINAL, (D2 + timedelta(days=1)).isoformat())
+check("…the next counted day", requestlog.fold_noise() == 1 and later not in {d["_id"] for d in EVENTS.find({})})
+with store.lock("request-fold"):
+    check("another replica holding the lock: the run is skipped", requestlog.fold_noise() == 0)
+check("the worker's housekeeping deletes them right after counting the days",
+      portal.HOUSEKEEPING.index(requestlog.fold_noise) == portal.HOUSEKEEPING.index(requestlog.aggregate) + 1)
+for collection in (EVENTS, COUNTS, requestlog.daily()):
+    collection.delete_many({})
+for name in (requestlog.SETTING_FINAL, requestlog.SETTING_FOLDED):
+    store.col("settings").delete_one({"_id": name})
+count(at(D2, 9), 12, ACME_IN)
+counted = requestlog.aggregate(now=datetime.combine(D2 + timedelta(days=2), datetime.min.time(), UTC) + timedelta(hours=9))
+check("a first run with counts only: from the oldest count's day",
+      counted == 3 and (requestlog.daily().find_one({"_id": f"{D2.isoformat()}|*"}) or {}).get("total") == 12, counted)
+for collection in (EVENTS, COUNTS, requestlog.daily()):
+    collection.delete_many({})
+
 # ================================================================== configuration and failures
 cfg = ana.get("/portal/api/config").get_json()
 check("configuration: the log's retention and the scope", cfg.get("requestLog") == {"days": 90, "whole": False}, cfg.get("requestLog"))
@@ -579,7 +670,7 @@ i18n = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read()
 for message_code in ("requests.badDate", "requests.badFilter", "requests.unavailable", "requests.retentionInvalid",
                      "requests.retentionOff", "requests.retentionSaved", "audit.action.requestlog-retention",
                      "requests.spaceInvalid", "requests.spaceSaved", "audit.action.requestlog-space",
-                     "audit.action.requestlog-trimmed"):
+                     "audit.action.requestlog-trimmed", "audit.action.requestlog-folded", "requests.countedOnly"):
     check(f"{message_code} in both languages", i18n.count(f'"{message_code}"') == 2, i18n.count(f'"{message_code}"'))
 
 print(f"\n{len(failures)} failure(s)")

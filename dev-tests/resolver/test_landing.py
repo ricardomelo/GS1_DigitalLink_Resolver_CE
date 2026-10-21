@@ -68,6 +68,7 @@ import web_pages  # noqa: E402
 
 web_logic._call_gs1_toolkit = lambda s: True
 EVENTS = mongomock.MongoClient()["resolver_log"]["requests"]
+COUNTS = EVENTS.database["request_counts"]
 request_log.WRITER.collection = lambda: EVENTS
 PORTAL = mongomock.MongoClient()["resolver_portal"]
 domains.MAP.database = lambda: PORTAL
@@ -169,9 +170,12 @@ def ask(path, host=None, accept="text/html", ua=MOBILE, language="en-GB"):
         headers["X-Forwarded-Host"] = host
     request_log.WRITER.flush()
     EVENTS.delete_many({})
+    COUNTS.delete_many({})
     response = client.get("/api" + path, headers=headers)
     request_log.WRITER.flush()
     events = list(EVENTS.find({}, {"_id": 0}))
+    if not events:      # an automated client's request is counted, not stored (ADR 0006, section 11)
+        events = [{"counted": True, **c} for c in COUNTS.find({}, {"_id": 0})]
     return response, (events[0] if len(events) == 1 else None)
 
 
@@ -227,7 +231,7 @@ check("?linkType=linkset in a browser without view=page: the same page, logged a
       r.status_code == 200 and "_click?" in r.get_data(as_text=True) and e and e["o"] == "linkset" and e["f"] == "uri", e)
 r, e = ask(ACME + PAGE, ua="curl/8.5.0")
 check("an automated client's page view: a plain linkset answer (counted apart as automated)",
-      e and e["o"] == "linkset" and e["dev"] == "automated", e)
+      e and e["o"] == "linkset" and e["dev"] == "automated" and e.get("counted"), e)
 
 r, _ = ask(ACME2 + PAGE)
 html2 = r.get_data(as_text=True)
@@ -296,7 +300,7 @@ check("…logged: form landing, outcome click, the link type, the target's host,
       and e.get("to") == "acme.example.com" and e.get("v") == "07891234500014", e)
 r, e = ask(targets["recipeInfo"], ua="python-requests/2.32")
 check("…an automated client's click: redirected, logged as a plain redirect", r.status_code == 302
-      and e and e["o"] == "redirect", e)
+      and e and e["o"] == "redirect" and e.get("counted"), e)
 
 query = parse_qs(urlparse(targets["recipeInfo"]).query)
 

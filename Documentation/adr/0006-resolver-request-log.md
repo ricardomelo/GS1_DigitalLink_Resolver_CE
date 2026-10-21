@@ -103,7 +103,10 @@ Constraints:
 | `dev` | `mobile`, `tablet`, `desktop`, `automated` (crawlers, link previews, monitors, command-line tools and libraries), `unknown` (no User-Agent) |
 | `ref` | host of the Referer, when there is one |
 | `c` | two-letter country code from the header named by `RESOLVER_LOG_COUNTRY_HEADER` (empty by default: no country) |
-| `p` | the first 200 characters of the path, only for an invalid request in which no key could be read (to recognise probes) |
+| `p` | the first 200 characters of the path, only for an invalid request in which no key could be read (to recognise probes); events recorded before section 11 only |
+
+Since section 11, a request from an automated client and a request in which no key could be read are counted per
+quarter of an hour in `request_counts` instead of being stored as events.
 
 The resolver's routes fill the fields they know in `flask.g`; an `after_request` hook adds status, target, time and
 headers, and queues the event. `web_logic.read_document()` returns the level and the reason of a 404 in private keys
@@ -437,3 +440,75 @@ which section 8, decision 3 had chosen not to store.
   everyone there.
 - Requests logged before this change appear in their country's shade, not as circles; the map says so.
 - The portal's image carries about 1 MB more of static files.
+
+## 11. Amendment of 21 October 2026 — automated requests and requests without a key counted, not listed
+
+### 11.1 Context
+
+During the staging tests of 21 October the owner found the log flooded with requests that are not people scanning a
+code, hiding the ones that matter and filling the space limit of section 9 (which deletes the oldest events, the
+relevant ones among them). A count by outcome, device class and presence of a key over seven days on staging gave
+about 89,500 events: **82,872 (92.6 %) from automated clients** (command-line tools, scripts, crawlers; most of them
+with a GS1 key), **2,737 without a key** (probes such as `/wp-login.php`), 3,756 invalid or unknown codes from
+browsers (GS1's test suite runs in a browser) and about 125 scans by people. Three options were put: (1) automated
+requests and requests without a key counted per period but not stored one by one; (2) none of them recorded at all;
+(3) stored with a short life and deleted first by the space limit. **The owner chose option 1.**
+
+Recording nothing (2) would have taken them out of the daily aggregates too — they are counted from the events — so
+the overview's automated requests, its quality tiles and the monitoring's baseline would have changed meaning; and
+an invalid GS1 code read by a phone (a misprinted label) is worth keeping one by one.
+
+### 11.2 Decision
+
+1. **Not stored as events**: a request from an automated client (`dev` = `automated`, section 3.1) and a request in
+   which no GS1 key could be read (no `ai`: a probe, a malformed address). Every other request is an event as before,
+   an invalid GS1 code from a browser or a phone included.
+2. **Counted instead**, in `resolver_log.request_counts`: one document per **15 minutes** (UTC) and per combination of
+   the fields the daily aggregates group by (section 3.2: key, company part, outcome, device class, form, language,
+   link type, browser, country, region, city), with the number of requests, the sum and the longest of their times.
+   Fifteen minutes place each count in the right day of every time zone in use (all are whole quarters of an hour from
+   UTC). The path of a request without a key, the referrer, the target's host, the qualifiers, the data attributes,
+   the level and the position are not kept: a count says how many, not which.
+3. **Everything that counts reads both**: the daily aggregates (`count_day()`), today's figures of the overview and of
+   the requests per day (`collect()`, `per_day()`) and the monitoring's 404 spikes. Totals, the automated requests,
+   outcomes, devices, countries and the forwarding figures are what they were. The percentiles of the time taken
+   (p50, p95, p99) are those of the stored events only — people's requests.
+4. **The list, its export and the map** show the stored events: people's requests with a GS1 key. The *Include
+   automated requests* box goes; a line under the filters says what is counted but not listed. `automated=1` and
+   `device=automated` are still accepted by the route (events recorded before this change).
+5. **Events recorded before the change**: the worker's hourly housekeeping deletes the automated events and those
+   without a key of the days already counted into the aggregates (up to `requestStats.finalUntil`), so their counts
+   stay and the list and the space are freed within a day of the update; the journal records it
+   (`requestlog-folded`, `events=N`). The same step removes any such event a resolver of an earlier version still
+   writes during an update.
+6. **Expiry**: a count expires as an event of its company part would (the retention of section 8, read when it is
+   created; TTL index). Counts of finished days live on in the aggregates. The space limit of section 9 measures the
+   events' collection only; the counts are bounded by their combinations per quarter of an hour.
+
+### 11.3 Design
+
+- `web_server/src/request_log.py`: `COUNTS` (`request_counts`), `BUCKET_MINUTES` (15), `counted_only(doc)`,
+  `count_of(doc)` (the group, its bucket and its `_id`, a hash of both); `Writer._write()` inserts the stored events
+  and adds the others with one upsert per group of the batch (`$inc` `n` and `ms`, `$max` `msMax`); the indexes of
+  `request_counts`: `b`, `cp` + `b`, `expiresAt` (TTL).
+- `portal/requestlog.py`: `counts()`; `_count_groups(match)` groups counts as `GROUP_ID` groups events, used by
+  `count_day()`, `collect()`, `per_day()` and `monitor.spikes()`; `fold_noise()` (the housekeeping of decision 5,
+  under the lock `request-fold`). The portal's role `requestLogPrune` already allows deleting events.
+- The *Requests* screen: the box and its text go; `requests.countedOnly` in every language.
+
+### 11.4 Options considered
+
+| Point | Chosen | Not chosen |
+|---|---|---|
+| What is left out | automated clients and requests without a key (the owner's option 1) | nothing recorded (option 2: the aggregates and the overview change meaning); a short life (option 3: the list still flooded for days) |
+| Invalid GS1 codes from people | kept as events | counted only (a misprinted label read by phones is what the operator looks for) |
+| Period of a count | 15 minutes, UTC | an hour (the days of a zone at half an hour from UTC would be wrong); the installation's day (the resolver would need the portal's time zone, and a change of zone would misplace them) |
+| Events from before | deleted once their day is counted | converted into counts (a crash halfway would count some twice); kept until they expire (the list flooded for up to the retention) |
+
+### 11.5 Consequences
+
+- On staging the log keeps about one event in twenty-three; in production, with fewer tests, the share depends on the
+  crawlers and integrations that reach the resolver.
+- An integration (an ERP, a link checker) that resolves codes is in the totals and among the automated requests of the
+  overview, not in the list.
+- The day of the update keeps its automated events in the list until it is counted as finished.

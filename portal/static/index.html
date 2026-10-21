@@ -1376,12 +1376,12 @@
             <input id="requests-country" maxlength="2" autocomplete="off" autocapitalize="characters"
                    data-i18n-attr="placeholder:requests.countryPlaceholder">
           </div>
-          <label class="choice requests-automated"><input type="checkbox" id="requests-automated">
-            <span data-i18n="requests.automated"></span></label>
           <button type="submit" class="btn btn-primary" data-i18n="audit.filter"></button>
           <button type="button" class="btn btn-ghost needs-export" id="requests-csv" data-i18n="audit.csv"></button>
         </form>
         <p class="field-msg" id="requests-count" aria-live="polite"></p>
+        <!-- Automated requests and requests without a key are counted, not listed (ADR 0006, section 11) -->
+        <p class="field-msg" id="requests-counted-only" data-i18n="requests.countedOnly"></p>
         <!-- Where the requests of these filters come from (ADR 0006, section 10): loaded when opened -->
         <details class="requests-map-box" id="requests-map-box">
           <summary data-i18n="requests.mapHeading"></summary>

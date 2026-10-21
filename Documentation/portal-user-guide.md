@@ -529,7 +529,7 @@ Every search and filter of the portal, here and on the other screens:
 | Screen | Searches and filters |
 |---|---|
 | Registered records (this section) | text (identifier, key name, description, batch, serial); identifier type; qualifier; changed by; status (no record of the key, serial registered with batch or variant); only with link problems; a GS1 Digital Link or element string (exact, more general and more specific records); a scanner's raw data; an RFID reader's EPC of any key (SGTIN, SSCC, SGLN, GRAI, GIAI, GSRN, GDTI, SGCN, CPI, ITIP) or a compressed link `eh…`/`ex…`; kept in the page's address |
-| Requests (section 16) | dates, a code, outcome, device, browser, country, automated requests; the organisation for a server administrator; the tenant API's calls by key |
+| Requests (section 16) | dates, a code, outcome, device, browser, country; the organisation for a server administrator; the tenant API's calls by key |
 | Audit trail (section 15) | user, dates, text |
 | Alerts (section 14) | organisation (server administrators), kind, dates |
 | Users (section 14) | organisation (server administrators) |
@@ -1002,8 +1002,11 @@ the phone, the **Approximate location** (city, region — a state or province �
 on that city) and the time
 the resolver took, in milliseconds. Filter by date (**From**, **To**), **Code** (a GTIN, a GS1 Company Prefix or a
 Digital Link path such as `/01/…`), **Outcome** (*Not found (404)* gathers both kinds of 404), **Device**,
-**Browser** and **Country** (two letters, such as `BR`); tick **Include automated requests** to see the machines'
-requests too. **Export CSV** downloads what the filters show, up to 50,000 requests, for Excel.
+**Browser** and **Country** (two letters, such as `BR`). **Export CSV** downloads what the filters show, up to 50,000
+requests, for Excel. The list holds people's requests with a GS1 code, valid or not: requests from automated clients
+(crawlers, scripts, command-line tools) and requests without a GS1 code (probes such as `/wp-login.php`) are counted —
+they are in the overview's totals, its automated requests and its quality figures — but not listed, so they neither
+hide the requests that matter nor fill the space limit.
 
 **Map: where the requests come from.** Under the filters, opened with a click: a world map of the requests the filters
 select. Each country is shaded by its number of requests, from pale to dark blue; each city is an orange circle, larger

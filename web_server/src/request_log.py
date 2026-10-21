@@ -12,6 +12,10 @@ event in a bounded queue in memory. A background thread of each server process w
 answer never waits for the database; a full queue or a failing database drops events, counts them and says so in the
 resolver's output at most once a minute.
 
+Requests from automated clients and requests in which no GS1 key could be read are not stored one by one: they are
+counted per quarter of an hour in "request_counts", grouped as the portal's daily aggregates group events (ADR 0006,
+section 11).
+
 The browser family and the approximate location (country, region, city; geoip.py) are derived when the request
 arrives; the client's address is used for the lookup and forgotten (ADR 0006, section 8). How long an event is kept is
 set in the portal, for the installation and per organisation (Retention, read from the portal's database).
@@ -23,6 +27,8 @@ Settings, read at every request (so a test can change them):
   RESOLVER_GEOIP_DB, RESOLVER_LOG_ADDRESS_HEADER   the GeoIP database and the client's address (geoip.py)
 """
 import atexit
+import hashlib
+import json
 import logging
 import os
 import queue
@@ -41,6 +47,9 @@ log = logging.getLogger(__name__)
 
 DB_NAME = "resolver_log"
 COLLECTION = "requests"
+COUNTS = "request_counts"      # automated requests and requests without a key, counted (ADR 0006, section 11)
+BUCKET_MINUTES = 15            # the period of a count: every time zone is a whole number of quarters from UTC
+COUNT_FIELDS = ("ai", "v", "cp", "o", "dev", "f", "lang", "lt", "br", "c", "rg", "ci")   # the aggregates' groups
 DEFAULT_DAYS = 90
 QUEUE_SIZE = 10_000            # events waiting in one process
 BATCH_SIZE = 500               # events written at once
@@ -298,6 +307,23 @@ def outcome(status: int, noted: dict[str, Any]) -> str:
     return "error"
 
 
+# ----------------------------------------------------------------------------------------------- counted only
+def counted_only(doc: dict[str, Any]) -> bool:
+    """A request counted but not stored as an event: from an automated client, or without a GS1 key (ADR 0006,
+    section 11)."""
+    return doc.get("dev") == "automated" or not doc.get("ai")
+
+
+def count_of(doc: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """The count an event adds to: its _id (a hash of its quarter of an hour and its group) and the count's fields
+    without the numbers ({"b": quarter, the group's fields, "expiresAt"})."""
+    moment = doc["t"]
+    bucket = moment.replace(minute=moment.minute - moment.minute % BUCKET_MINUTES, second=0, microsecond=0)
+    group = {name: doc[name] for name in COUNT_FIELDS if doc.get(name) is not None}
+    key = hashlib.sha1(json.dumps([bucket.isoformat(), group], sort_keys=True).encode()).hexdigest()
+    return key, {"b": bucket, **group, "expiresAt": bucket + (doc["expiresAt"] - moment)}
+
+
 # ----------------------------------------------------------------------------------------------- retention
 class Retention:
     """How long an event is kept, as the portal sets it (ADR 0006, section 8): the installation's days (the setting
@@ -376,11 +402,13 @@ class Writer:
         self.dropped = 0                      # events lost since the last warning
         self.lost_total = 0                   # events lost in this process
         self.written = 0
+        self.counted = 0                      # requests added to counts (ADR 0006, section 11)
         self._warned = 0.0
         self._pid = None
         self._queue: queue.Queue | None = None
         self._thread: threading.Thread | None = None
         self._indexed = False
+        self._counts_indexed = False
         self._lock = threading.Lock()
 
     def _ensure_thread(self) -> None:
@@ -424,15 +452,46 @@ class Writer:
             self._indexed = True
         return target
 
+    def _counts(self):
+        """The counts' collection, beside the events' (its indexes made at its first write)."""
+        counts = self._target().database[COUNTS]
+        if not self._counts_indexed:
+            counts.create_index([("b", -1)])
+            counts.create_index([("cp", 1), ("b", -1)])
+            counts.create_index([("expiresAt", 1)], expireAfterSeconds=0)
+            self._counts_indexed = True
+        return counts
+
     def _write(self, batch: list[dict[str, Any]]) -> None:
+        """Stores the batch's events and adds the others to their counts (one upsert per count of the batch)."""
+        stored = [doc for doc in batch if not counted_only(doc)]
+        groups: dict[str, dict[str, Any]] = {}
+        for doc in batch:
+            if counted_only(doc):
+                key, fields = count_of(doc)
+                entry = groups.setdefault(key, {"fields": fields, "n": 0, "ms": 0, "max": 0})
+                entry["n"] += 1
+                entry["ms"] += doc.get("ms") or 0
+                entry["max"] = max(entry["max"], doc.get("ms") or 0)
         for attempt in (1, 2):
             try:
-                self._target().insert_many(batch, ordered=False)
-                self.written += len(batch)
+                if stored:
+                    self._target().insert_many(stored, ordered=False)
+                    self.written += len(stored)
+                    stored = []
+                if groups:
+                    counts = self._counts()
+                    for key in list(groups):
+                        entry = groups[key]
+                        counts.update_one({"_id": key}, {"$inc": {"n": entry["n"], "ms": entry["ms"]},
+                                                          "$max": {"msMax": entry["max"]},
+                                                          "$setOnInsert": entry["fields"]}, upsert=True)
+                        self.counted += entry["n"]
+                        del groups[key]
                 return
             except Exception as exc:
                 if attempt == 2:
-                    self._lost(len(batch), f"{type(exc).__name__}: {exc}")
+                    self._lost(len(stored) + sum(e["n"] for e in groups.values()), f"{type(exc).__name__}: {exc}")
                 else:
                     time.sleep(0.2)
 

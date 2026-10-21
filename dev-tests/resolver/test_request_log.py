@@ -12,6 +12,7 @@ test client, and events are written to mongomock.
 import copy
 import importlib
 import json
+from datetime import datetime, timedelta
 import os
 import sys
 import threading
@@ -75,6 +76,8 @@ web_logic.compress_gs1_digital_link = lambda link: {"SUCCESS": True, "COMPRESSED
 
 MONGO = mongomock.MongoClient()
 EVENTS = MONGO["resolver_log"]["requests"]
+COUNTS = MONGO["resolver_log"]["request_counts"]      # automated requests and requests without a key (section 11)
+COUNTED = []                                           # the counts of the last ask()
 PORTAL_DB = MONGO["resolver_portal"]
 request_log.WRITER.collection = lambda: EVENTS
 request_log.RETENTION.database = lambda: PORTAL_DB
@@ -97,13 +100,20 @@ def ask(path, method="GET", accept="*/*", language="pt-BR,pt;q=0.9", agent=IPHON
     """One request; returns (response, the event it produced or None)."""
     request_log.WRITER.flush()
     EVENTS.delete_many({})
+    COUNTS.delete_many({})
     sent = {"Accept": accept, "User-Agent": agent, "X-Forwarded-For": "203.0.113.9", **headers}
     if language is not None:
         sent["Accept-Language"] = language
     response = client.open("/api" + path, method=method, headers=sent)
     request_log.WRITER.flush()
     found = list(EVENTS.find({}, {"_id": 0}))
+    COUNTED[:] = list(COUNTS.find({}, {"_id": 0}))
     return response, (found[0] if len(found) == 1 else (None if not found else found))
+
+
+def counted():
+    """The one count of the last ask(), or None."""
+    return COUNTED[0] if len(COUNTED) == 1 else None
 
 
 G = "/01/07898357410015"
@@ -185,9 +195,14 @@ r, e = ask(G + "/21/S1/10/L1")
 check("a request the syntax check refuses: 400 'invalid', key kept, no path",
       r.status_code in (400, 307) and e and (e.get("o") == "invalid") == (r.status_code == 400) and "p" not in e, (r.status_code, e))
 r, e = ask("/wp-login.php", agent="Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
-check("a probe: 400 'invalid', its path kept (no key), automated",
-      r.status_code == 400 and e and e.get("o") == "invalid" and e.get("p") == "/wp-login.php" and "ai" not in e
-      and e.get("dev") == "automated", e)
+c = counted()
+check("a probe from a crawler: 400 'invalid', counted, not stored (section 11); no path, no key in the count",
+      r.status_code == 400 and e is None and c and c.get("o") == "invalid" and c.get("dev") == "automated"
+      and c.get("n") == 1 and "p" not in c and "ai" not in c and c.get("f") == "uri", (e, COUNTED))
+r, e = ask("/wp-login.php")
+c = counted()
+check("…from a phone's browser too: no key, counted with its device and browser", e is None and c
+      and c.get("dev") == "mobile" and c.get("br") == "app" and c.get("o") == "invalid", (e, COUNTED))
 r, e = ask("/AbCdEf?17=261231")
 check("a compressed GS1 Digital Link: form 'compressed', key and qualifiers as decompressed, no path",
       r.status_code == 307 and e and e.get("f") == "compressed" and e.get("ai") == "01" and e.get("q") == {"10": "123"}
@@ -200,8 +215,9 @@ check("an EPC binary string: form 'epc' with its scheme, batch and serial's AI f
       r.status_code == 307 and e and e.get("f") == "epc" and e.get("epc") == "SGTIN+" and e.get("ai") == "01"
       and e.get("q") == {"10": "123", "21": None} and e.get("da") == ["17"] and "261231" not in json.dumps(e, default=str), e)
 r, e = ask("/eh00000000000000000000000000")
-check("an EPC binary string that does not decode: 'invalid', form 'epc'", r.status_code == 400 and e
-      and e.get("o") == "invalid" and e.get("f") == "epc", e)
+c = counted()
+check("an EPC binary string that does not decode: 'invalid', form 'epc', counted (no key)", r.status_code == 400
+      and e is None and c and c.get("o") == "invalid" and c.get("f") == "epc", (e, COUNTED))
 r, e = ask(G, method="HEAD")
 check("HEAD is recorded with its method", r.status_code == 307 and e and e.get("m") == "HEAD", e)
 r, e = ask(G, language=None)
@@ -211,7 +227,27 @@ check("Accept-Language '*': no language", e and "lang" not in e, e)
 r, e = ask(G, agent="")
 check("no User-Agent: device 'unknown', no browser", e and e.get("dev") == "unknown" and "br" not in e, e)
 r, e = ask(G, agent="curl/8.5.0")
-check("an automated client: no browser", e and e.get("dev") == "automated" and "br" not in e, e)
+c = counted()
+check("an automated client with a key: counted, not stored; its key, outcome, no browser", e is None and c
+      and (c.get("ai"), c.get("v"), c.get("cp"), c.get("o"), c.get("dev")) == ("01", "07898357410015", "7898357410015",
+                                                                                "redirect", "automated")
+      and "br" not in c and c.get("n") == 1, (e, COUNTED))
+check("…its quarter of an hour, UTC", c and c["b"].minute % 15 == 0 and c["b"].second == 0
+      and c["b"].microsecond == 0 and timedelta(0) <= datetime.utcnow() - c["b"] < timedelta(minutes=16), c)
+request_log.WRITER.flush()
+COUNTS.delete_many({})
+for query in ("", "", "", "?linkType=gs1:instructions"):
+    client.get("/api" + G + query, headers={"User-Agent": "curl/8.5.0", "Accept-Language": "pt-BR"})
+request_log.WRITER.flush()
+found = sorted(COUNTS.find({}), key=lambda d: -d["n"])
+check("…requests of the same group add up in one count (n, times summed, the longest kept); another link type, "
+      "another count", [d["n"] for d in found] == [3, 1] and all(0 <= d["msMax"] <= d["ms"] for d in found)
+      and found[1].get("lt") == "instructions" and EVENTS.count_documents({}) == 0, found)
+counts_indexes = COUNTS.index_information()
+check("…indexes of the counts: quarter, company part, expiry (TTL)",
+      any(v.get("expireAfterSeconds") == 0 and v["key"] == [("expiresAt", 1)] for v in counts_indexes.values())
+      and any(v["key"] == [("cp", 1), ("b", -1)] for v in counts_indexes.values())
+      and any(v["key"] == [("b", -1)] for v in counts_indexes.values()), counts_indexes)
 
 # ---------------------------------------------------------------- not recorded
 for path in ["/heartbeat", "/favicon.ico", "/robots.txt", "/.well-known/gs1resolver"]:
@@ -379,6 +415,8 @@ os.environ["RESOLVER_GEOIP_DB"] = ""
 
 # ---------------------------------------------------------------- retention set in the portal
 def kept_days(e):
+    if not e and counted():            # a request counted, not stored: its count's expiry
+        e = {"expiresAt": counted()["expiresAt"], "t": counted()["b"]}
     return round((e["expiresAt"] - e["t"]).total_seconds() / 86400) if e else None
 
 
@@ -478,7 +516,7 @@ class Counting(Blocking):
 counting = Counting()
 request_log.WRITER = request_log.Writer(collection=lambda: counting)
 for _ in range(1200):
-    request_log.WRITER.put({"t": 1})
+    request_log.WRITER.put({"t": 1, "ai": "01", "dev": "mobile"})      # stored events (section 11)
 request_log.WRITER.flush(10)
 check("events are written in batches of at most 500", sum(counting.batches) == 1200 and max(counting.batches) <= 500
       and len(counting.batches) >= 3, counting.batches)

@@ -9,7 +9,10 @@ The resolver writes one event per resolution request into the collection "reques
     query time, so a prefix moved between organisations takes its history along;
   - lists events (newest first, in pages) and turns them into rows for the screen and the CSV export;
   - counts each day's events per primary key into the portal's collection "request_daily" (aggregate(), run by the
-    worker's hourly housekeeping), in the installation's time zone, kept PORTAL_STATS_DAYS;
+    worker's hourly housekeeping), in the installation's time zone, kept PORTAL_STATS_DAYS, together with the counts
+    the resolver keeps instead of events for automated requests and requests without a key ("request_counts", ADR
+    0006, section 11); the housekeeping deletes such events recorded before that change once their day is counted
+    (fold_noise());
   - records the tenant API's calls (record_api_call(), collection "api_requests") and lists them;
   - keeps the retention set in the portal (ADR 0006, section 8): the installation's days (server administrators) and
     each organisation's, never longer; the resolver reads both to date each event's expiry, and the worker's
@@ -41,6 +44,7 @@ log = logging.getLogger("portal.requestlog")
 
 LOG_DB = "resolver_log"
 EVENTS = "requests"
+COUNTS = "request_counts"                 # automated requests and requests without a key, counted (section 11)
 DAILY = "request_daily"
 API_CALLS = "api_requests"
 # page and click: the item's page and its buttons, people following a scan (Documentation/adr/0011-item-page.md)
@@ -55,6 +59,8 @@ MAX_EXPORT = 50_000
 FINAL_AFTER = timedelta(minutes=10)        # a day is counted for the last time this long after it ended
 TOP = 20                                   # languages and link types kept per key and day
 SETTING_FINAL = "requestStats.finalUntil"
+SETTING_FOLDED = "requestLog.foldedUntil"   # the events left out since section 11 deleted up to this time
+NOISE = {"$or": [{"dev": "automated"}, {"ai": {"$exists": False}}]}    # events now counted, not stored
 SETTING_DAYS = "requestLog.days"            # the installation's retention (the resolver reads it: request_log.py)
 MAX_DAYS = 3650
 SETTING_MAX = "requestLog.maxBytes"         # the most space the log may use on disk (ADR 0006, section 9)
@@ -322,6 +328,10 @@ def parse_day(text) -> date | None:
 
 
 # ----------------------------------------------------------------------------------------------- collections
+def counts():
+    return store.db().client[LOG_DB][COUNTS]
+
+
 def events():
     """The resolver's events (read only for the portal's user)."""
     return store.db().client[LOG_DB][EVENTS]
@@ -567,8 +577,11 @@ def per_day(scope: dict, whole: bool, days: int = 30) -> list[dict]:
     match = {"t": {"$gte": start, "$lt": end}}
     raw_query = {"$and": [scope, match]} if scope else match
     entry = {"total": 0, "automated": 0, "outcome": {}}
-    for group in events().aggregate([{"$match": raw_query},
-                                     {"$group": {"_id": {"o": "$o", "dev": "$dev"}, "n": {"$sum": 1}}}]):
+    count_query = {"$and": [scope, _quarters(start, end)]} if scope else _quarters(start, end)
+    for group in [*events().aggregate([{"$match": raw_query},
+                                       {"$group": {"_id": {"o": "$o", "dev": "$dev"}, "n": {"$sum": 1}}}]),
+                  *counts().aggregate([{"$match": count_query},
+                                       {"$group": {"_id": {"o": "$o", "dev": "$dev"}, "n": {"$sum": "$n"}}}])]:
         n = group["n"]
         entry["total"] += n
         if group["_id"].get("dev") == "automated":
@@ -620,6 +633,18 @@ GROUP_ID = {"ai": "$ai", "v": "$v", "cp": "$cp", "o": "$o", "dev": "$dev", "f": 
             "br": "$br", "c": "$c", "rg": "$rg", "ci": "$ci"}
 
 
+def _quarters(start: datetime, end: datetime) -> dict:
+    """The counts of an interval of UTC times whose ends are whole quarters of an hour (a day in any time zone)."""
+    return {"b": {"$gte": start, "$lt": end}}
+
+
+def _count_groups(match: dict) -> list[dict]:
+    """The counts matching `match`, grouped as GROUP_ID groups the events: [{"_id", "n", "ms", "max"}]."""
+    return list(counts().aggregate([
+        {"$match": match},
+        {"$group": {"_id": GROUP_ID, "n": {"$sum": "$n"}, "ms": {"$sum": "$ms"}, "max": {"$max": "$msMax"}}}]))
+
+
 def _percentile(match: dict, count: int, percent: int):
     """The time taken at a percentile among `count` events with a time (nearest rank)."""
     if not count:
@@ -630,14 +655,16 @@ def _percentile(match: dict, count: int, percent: int):
 
 
 def count_day(day: date, run: str | None = None) -> int:
-    """Counts one day's events into request_daily: a document per primary key and one for the whole installation.
-    Replaces that day's documents (those not produced again are removed). Returns the number of keys."""
+    """Counts one day's events, and the day's counts of requests not stored (section 11), into request_daily: a
+    document per primary key and one for the whole installation. Replaces that day's documents (those not produced
+    again are removed). The times' percentiles are the stored events'. Returns the number of keys."""
     run = run or uuid.uuid4().hex
     start, end = day_bounds(day)
     match = {"t": {"$gte": start, "$lt": end}}
-    groups = events().aggregate([
+    groups = [*events().aggregate([
         {"$match": match},
-        {"$group": {"_id": GROUP_ID, "n": {"$sum": 1}, "ms": {"$sum": "$ms"}, "max": {"$max": "$ms"}}}])
+        {"$group": {"_id": GROUP_ID, "n": {"$sum": 1}, "ms": {"$sum": "$ms"}, "max": {"$max": "$ms"}}}]),
+        *_count_groups(_quarters(start, end))]
     keys: dict[tuple, dict] = {}
     whole = _empty()
     for group in groups:
@@ -688,8 +715,9 @@ def _aggregate(now: datetime | None) -> int:
     if final:
         first = final + timedelta(days=1)
     else:
-        oldest = next(iter(events().find({}, {"t": 1}).sort("t", 1).limit(1)), None)
-        first = local_day(oldest["t"]) if oldest else current
+        oldest = [doc[field] for collection, field in ((events(), "t"), (counts(), "b"))
+                  for doc in collection.find({}, {field: 1}).sort(field, 1).limit(1)]
+        first = local_day(min(oldest)) if oldest else current
     first = max(first, current - timedelta(days=global_days()))
     counted = 0
     day = first
@@ -703,6 +731,43 @@ def _aggregate(now: datetime | None) -> int:
     if not final or finished > final:
         store.set_setting(SETTING_FINAL, finished.isoformat())
     return counted
+
+
+def fold_noise(now: datetime | None = None) -> int:
+    """The worker's hourly housekeeping (ADR 0006, section 11): deletes the events the resolver now counts instead of
+    storing (automated clients', and those without a key) that were recorded before that change, once their day is
+    counted into the aggregates (up to requestStats.finalUntil), so their numbers stay. Also removes those a resolver
+    of an earlier version writes during an update. One replica at a time; returns the number deleted."""
+    if not log_days():
+        return 0
+    try:
+        with store.lock("request-fold", hold_seconds=1800, wait_seconds=0):
+            return _fold_noise()
+    except store.LockTimeout:
+        return 0
+
+
+def _fold_noise() -> int:
+    final = parse_day(store.get_setting(SETTING_FINAL))
+    if not final:
+        return 0
+    until = day_bounds(final)[1]
+    since = store.get_setting(SETTING_FOLDED)
+    span = {"$lt": until}
+    if isinstance(since, datetime):
+        if since >= until:
+            return 0
+        span["$gte"] = since
+    deleted = events().delete_many({"$and": [{"t": span}, NOISE]}).deleted_count
+    store.set_setting(SETTING_FOLDED, until)
+    if deleted:
+        log.info("Request log: %d automated event(s) or event(s) without a key of counted days deleted.", deleted)
+        try:
+            import journal
+            journal.append("requestlog-folded", "-", detail=f"events={deleted}")
+        except Exception as exc:   # noqa: BLE001 — the journal never stops the housekeeping
+            log.warning("Journal event not written: %s", exc)
+    return deleted
 
 
 # ----------------------------------------------------------------------------------------------- periods (ADR 0007)
@@ -753,9 +818,11 @@ def collect(scope: dict, whole: bool, first: date, last: date, keys: bool = True
         start, end = day_bounds(current)
         match = {"t": {"$gte": start, "$lt": end}}
         query = {"$and": [scope, match]} if scope else match
-        groups = events().aggregate([
+        count_query = {"$and": [scope, _quarters(start, end)]} if scope else _quarters(start, end)
+        groups = [*events().aggregate([
             {"$match": query},
-            {"$group": {"_id": GROUP_ID, "n": {"$sum": 1}, "ms": {"$sum": "$ms"}, "max": {"$max": "$ms"}}}])
+            {"$group": {"_id": GROUP_ID, "n": {"$sum": 1}, "ms": {"$sum": "$ms"}, "max": {"$max": "$ms"}}}]),
+            *_count_groups(count_query)]
         today_entry = days.setdefault(current.isoformat(), _empty())
         for group in groups:
             g, n = group["_id"], group["n"]

@@ -211,17 +211,18 @@ with sync_playwright() as p:
     page.click("#requests-filters button[type=submit]"); page.wait_for_timeout(800)
     listed = rows(page)
     check("filter: a GTIN-13", listed and all(ACME in r for r in listed), listed[:3])
-    page.fill("#requests-code", ""); page.check("#requests-automated")
-    page.click("#requests-filters button[type=submit]"); page.wait_for_timeout(800)
-    check("automated requests on request, also a probe without a key", any("/wp-login.php" in r and "Requisição inválida" in r
-                                                                            for r in rows(page)))
+    page.fill("#requests-code", ""); page.click("#requests-filters button[type=submit]"); page.wait_for_timeout(800)
+    devices = page.eval_on_selector_all("#requests-device option", "os => os.map(o => o.value)")
+    check("automated requests counted, not listed (ADR 0006, section 11): no box to include them, no such device, "
+          "a line saying so", page.locator("#requests-automated").count() == 0 and "automated" not in devices
+          and "não aparecem nesta lista" in page.inner_text("#requests-counted-only")
+          and not any("/wp-login.php" in r for r in rows(page)), (devices, page.inner_text("#requests-counted-only")))
     with page.expect_download() as download:
         page.click("#requests-csv")
     path = download.value.path()
     text = open(path, encoding="utf-8-sig").read()
     check("CSV export with the filters, the organisation column", download.value.suggested_filename.startswith("resolver-requests-")
-          and "wp-login.php" in text and text.splitlines()[0].endswith(";organisation"), text[:120])
-    page.uncheck("#requests-automated")
+          and ACME[1:] in text and "wp-login.php" not in text and text.splitlines()[0].endswith(";organisation"), text[:120])
 
     page.click("#requests-tab-api"); page.wait_for_timeout(600)
     check("administrators have the tenant API's tab (no call yet)", page.is_visible("#requests-api")

@@ -218,8 +218,10 @@ application's `after_request` hook (`request_log.record()`) adds status, target 
 browser family, referrer host and the approximate location (`geoip.LOCATOR.locate()` on the address of
 `RESOLVER_LOG_ADDRESS_HEADER`, which goes no further), dates the event's expiry by its company part's owner
 (`request_log.RETENTION`), and puts the event in the process's queue; the writer thread inserts batches into
-`resolver_log.requests`. The worker's hourly housekeeping counts each day into `request_daily`
-(`requestlog.aggregate()`), deletes what a shortened retention no longer keeps (`requestlog.apply_retention()`) and
+`resolver_log.requests` — except an automated client's request and one without a GS1 key, which it adds to their
+quarter of an hour's count in `resolver_log.request_counts` (ADR 0006 §11). The worker's hourly housekeeping counts each
+day's events and counts into `request_daily` (`requestlog.aggregate()`), deletes the automated events and those
+without a key of the days counted that a resolver before §11 stored (`requestlog.fold_noise()`), deletes what a shortened retention no longer keeps (`requestlog.apply_retention()`) and
 the oldest events of a log beyond its most space (`requestlog.apply_size_limit()`).
 
 **An NFC tag with an EPC.** `GET /eh30164596f40c0e5cbe991a83` (or `/exMBZFlvQMDly-mRqD`) → proxy →
@@ -513,13 +515,20 @@ the events' company part `cp` (an organisation's prefixes, anchored; for the ope
 starts; narrowed to the user's own prefixes); `app.log_sees_everything()` is true for a server administrator outside
 support access and not limited to prefixes, who sees every event, also those without a key. `list_events(args,
 scope)` applies the filters (`from`/`to` as days of `PORTAL_TIME_ZONE`, `code` as an anchor, a key value, a GTIN-13 or
-a prefix, `outcome` with `notFound` for both 404s, `device`, automated requests left out unless asked) and pages with
+a prefix, `outcome` with `notFound` for both 404s, `device`, automated requests left out unless asked — the events
+recorded before ADR 0006 §11) and pages with
 `before` = `<time>|<id>` of the last row. `per_day()` reads `request_daily` for past days and the raw events for today.
 `aggregate()` (in `app.HOUSEKEEPING`) takes the `request-stats` lock without waiting (another replica holding it: skip),
 counts every day from the one after `requestStats.finalUntil` (the first time, from the oldest event) up to today with
 `count_day()` — one `$match` + `$group` by key, outcome, device, form, language and link type, folded in Python into a
 document per key and one per day (`|*`) with percentiles of the time taken, written with a run stamp and the day's
-documents of other runs removed — then records the last finished day (ten minutes after midnight, yesterday).
+documents of other runs removed — then records the last finished day (ten minutes after midnight, yesterday). Section 11 of the ADR: `counts()`;
+`_count_groups(match)` groups `request_counts` as `GROUP_ID` groups the events (`n`, `ms` and `msMax` summed and
+maxed), and `count_day()`, `collect()` and `per_day()` add them to the events' groups (`_quarters(start, end)`: the
+counts of an interval); percentiles stay the events'; the first run starts from the oldest event or count.
+`fold_noise()` (in `app.HOUSEKEEPING` right after `aggregate()`, lock `request-fold`) deletes `NOISE` events —
+automated, or without `ai` — from `requestLog.foldedUntil` up to the end of `requestStats.finalUntil`, journal
+`requestlog-folded`. `monitor.spikes()` adds the counts' 404s of the last hour (from its first whole quarter).
 `record_api_call()` and `list_api_calls()` keep and list the tenant API's calls (`api_requests`); `api_v1.py` records
 each call in an `after_request` hook, with the key seen (also a refused one), the route's template, status and time.
 
@@ -957,7 +966,10 @@ the `lock:<name>` documents | — |
 
 The resolver's own log is another database, **`resolver_log`**, which the portal's user may read and prune only: its
 collection `requests` holds one event per resolution request (fields in [ADR 0006](adr/0006-resolver-request-log.md),
-sections 3.1 and 8.3; indexes on time, company part + time, key + time, TTL on `expiresAt`). The daily backup keeps it.
+sections 3.1 and 8.3; indexes on time, company part + time, key + time, TTL on `expiresAt`), except automated clients'
+requests and those without a key, which `request_counts` counts per quarter of an hour and per group of the daily
+aggregates (`b`, the group's fields, `n`, `ms`, `msMax`, `expiresAt`; indexes on `b`, company part + `b`, TTL on
+`expiresAt`; ADR 0006 §11). The daily backup keeps both.
 A tenant's `logDays` (absent: the installation's) is how long its events are kept.
 
 Journal retention: an event is kept for `PORTAL_JOURNAL_SESSION_DAYS` (180), `PORTAL_JOURNAL_RECORD_DAYS` (0)
@@ -1061,7 +1073,10 @@ which mount the same volume), and the files of earlier versions renamed `*.migra
   `Writer`: a bounded
   queue per process (started at the first event and again after a fork), a daemon thread writing batches of up to 500
   with one retry, events lost counted (`lost_total`) and reported at most once a minute, `flush()` (tests, and at
-  exit). `create_app()` gives the writer `mongo.cx["resolver_log"]["requests"]` and `RETENTION` the portal's database
+  exit). `counted_only(doc)` (an automated client's request, or one without a key) and `count_of(doc)` (its quarter
+  of an hour `b`, `COUNT_FIELDS` and the `_id`, a SHA-1 of both): `_write()` inserts the batch's other events and
+  adds these with one upsert per count (`$inc` `n` and `ms`, `$max` `msMax`, `$setOnInsert` the fields; the indexes of
+  `request_counts` made at its first write; ADR 0006 §11). `create_app()` gives the writer `mongo.cx["resolver_log"]["requests"]` and `RETENTION` the portal's database
   unless a test set others.
 - `forwarding.py` (new, [ADR 0018](adr/0018-forwarding.md)): `Forwarding` reads the enabled rules of
   `forwarding_rules` (longest prefix first) and the setting `forwarding.fallback` from the portal's database at most

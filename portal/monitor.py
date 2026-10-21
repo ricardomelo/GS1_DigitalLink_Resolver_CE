@@ -239,9 +239,14 @@ def spikes(now: datetime, tenant_list: list[dict]) -> dict[str, dict]:
     found: dict[str, dict] = {"*": {"count": 0, "codes": {}}}
     for t in tenant_list:
         found[t["id"]] = {"count": 0, "codes": {}}
-    groups = requestlog.events().aggregate([
+    quarter = start.replace(minute=start.minute - start.minute % 15, second=0, microsecond=0)
+    groups = [*requestlog.events().aggregate([
         {"$match": {"t": {"$gte": start, "$lt": now}, "o": "unknown"}},
-        {"$group": {"_id": {"ai": "$ai", "v": "$v", "cp": "$cp"}, "n": {"$sum": 1}}}])
+        {"$group": {"_id": {"ai": "$ai", "v": "$v", "cp": "$cp"}, "n": {"$sum": 1}}}]),
+        # and the counts of automated requests (ADR 0006, section 11), by whole quarters of an hour
+        *requestlog.counts().aggregate([
+            {"$match": {"b": {"$gte": quarter, "$lt": now}, "o": "unknown"}},
+            {"$group": {"_id": {"ai": "$ai", "v": "$v", "cp": "$cp"}, "n": {"$sum": "$n"}}}])]
     for group in groups:
         g, n = group["_id"], group["n"]
         anchor = f"/{g['ai']}/{g['v']}" if g.get("ai") else "?"

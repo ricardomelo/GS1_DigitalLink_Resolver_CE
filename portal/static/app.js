@@ -3026,7 +3026,9 @@ function fillRequestFilters() {
   const outcome = $("#requests-outcome"), device = $("#requests-device"), browser = $("#requests-browser");
   if (outcome.options.length) return;
   outcome.append(i18nOption("requests.any", ""), ...REQUEST_OUTCOMES.map(o => i18nOption("requests.outcome." + o, o)));
-  device.append(i18nOption("requests.any", ""), ...REQUEST_DEVICES.map(d => i18nOption("requests.device." + d, d)));
+  // automated clients' requests are counted, not listed (ADR 0006, section 11)
+  device.append(i18nOption("requests.any", ""), ...REQUEST_DEVICES.filter(d => d !== "automated")
+    .map(d => i18nOption("requests.device." + d, d)));
   browser.append(i18nOption("requests.any", ""), ...REQUEST_BROWSERS.map(b => i18nOption("requests.browser." + b, b)));
 }
 
@@ -3035,7 +3037,6 @@ function requestsQuery() {
   [["from", "#requests-from"], ["to", "#requests-to"], ["code", "#requests-code"], ["outcome", "#requests-outcome"],
    ["device", "#requests-device"], ["browser", "#requests-browser"], ["country", "#requests-country"]]
     .forEach(([name, sel]) => { if ($(sel).value.trim()) params.set(name, $(sel).value.trim()); });
-  if ($("#requests-automated").checked) params.set("automated", "1");
   return params;
 }
 

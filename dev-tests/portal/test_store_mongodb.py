@@ -118,6 +118,23 @@ try:
         check("portal user: deletes old events of the request log (the retention set in the portal)",
               log.delete_many({"t": {"$lt": datetime(2026, 2, 1)}}).deleted_count == 1
               and log.find_one({"_id": "probe-event"}) is not None)
+        counts = root["resolver_log"]["request_counts"]
+        for ms in (3, 9):       # the resolver's upsert, twice (web_server/src/request_log.py; ADR 0006, section 11)
+            counts.update_one({"_id": "probe-count"}, {"$inc": {"n": 1, "ms": ms}, "$max": {"msMax": ms},
+                                                       "$setOnInsert": {"b": datetime(2026, 10, 14), "o": "redirect",
+                                                                        "dev": "automated", "cp": "7898357410015"}},
+                              upsert=True)
+        grouped = list(client["resolver_log"]["request_counts"].aggregate([
+            {"$match": {"_id": "probe-count"}},
+            {"$group": {"_id": {"o": "$o", "dev": "$dev"}, "n": {"$sum": "$n"}, "ms": {"$sum": "$ms"},
+                        "max": {"$max": "$msMax"}}}]))
+        check("request counts: the resolver's upsert adds up; the portal user reads and groups them",
+              [(g["n"], g["ms"], g["max"]) for g in grouped] == [(2, 12, 9)], grouped)
+        root["resolver_log"]["requests"].insert_one({"_id": "bot-event", "t": datetime(2026, 1, 2), "dev": "automated"})
+        check("portal user: deletes the automated events and those without a key of counted days",
+              log.delete_many({"$and": [{"t": {"$lt": datetime(2026, 2, 1)}},
+                                        {"$or": [{"dev": "automated"}, {"ai": {"$exists": False}}]}]}).deleted_count == 1)
+        counts.delete_one({"_id": "probe-count"})
         try:
             client["resolver_log"]["other"].delete_many({})
             check("portal user: deletes nothing else in resolver_log", False)

@@ -830,6 +830,17 @@ page received the environments as a JSON object, whose keys Flask sorts: the "fi
 values) went unnoticed while the checks compared only the sizes; they now compare the ranges. The PDF stays out of the
 repository.
 
+**The logo and the layout** (`3a17b40`). The owner asked for a logo in the same blue that recalls a resolver, possibly
+with a QR code: the mark is a QR code whose lower-right corner, the one without a finder pattern, holds a node
+branching into three links. It replaced the GS1 logo in every header, which the screenshots of the guides had been
+hiding until now; they show the new one. The sign-in page looked pushed to the right because the room for the
+sidebar was kept on every page, the sign-in page included; it is now kept only on the page that has the sidebar, and
+the sign-in form lines up under the title. The content may now take 96rem of a wide monitor, and the list of requests
+lets long words wrap, so its nine columns fit a 1,280-pixel screen with the side menu (the follow-up noted in the
+previous handover). 13 mutations: 11 caught (one after the resolver's check decoded the embedded logo instead of
+trusting its type), one equivalent at the tested width (the *New organisation* grid replaced by the former flex row),
+and one showed a rule to be unnecessary (narrower cells), which was removed.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

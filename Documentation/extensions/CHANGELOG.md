@@ -38,6 +38,14 @@
   QR code. Only a key's environments are offered, its usual one first: **an SSCC, GDTI, GRAI, GIAI, GLN or GSRN label
   asked without `env` follows its own table** (an SSCC's QR code at 0.743 mm), and `env=retail` for them is refused
   (`label.environmentNotForKey`). Commit `6350211`.
+- **The project's own logo** (backlog item 7.3): a QR code whose corner branches into links, in GS1 blue, in the
+  headers of the portal, the sign-in page, the home page and the resolver's pages, instead of the GS1 logo the official
+  project shipped (`gs1-logo.png` stays in the repository, unused). Its files, with a wordmark, are in
+  `Documentation/images/logo` (Apache 2.0). Commit `3a17b40`.
+- **Layout** (the owner's notes of 20 October): the sign-in page no longer keeps the sidebar's room (it looked pushed
+  to the right); the screens use up to 1,536 pixels of a wide monitor instead of 1,216; the list of requests fits a
+  1,280-pixel screen with the side menu, without scrolling sideways; *New organisation* puts the name level with the
+  first prefix and *Add GCP* beside the prefixes; the side menu says *Organisation management*. Commit `3a17b40`.
 
 ### Owner's additions of 17 October: the project's documentation (backlog item 9.11)
 - **An inventory of every feature drawn from the development tests** ([ADR 0016](../adr/0016-documentation-and-feature-inventory.md)):

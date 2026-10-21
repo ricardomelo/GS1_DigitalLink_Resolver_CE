@@ -59,6 +59,7 @@
     "…the menu says Organisation management",
     "…every name of the side menu within it, a long one on two lines",
     "a wide screen: the content up to 96rem (1,536 px), wider than before (76rem)",
+    "…New organisation: Create organisation next to Add GCP, not at the far right (owner's note of 21 October)",
     "wide screen: the sidebar, with the user menu's screens",
     "…the current screen marked",
     "…a click opens the screen and marks it",
@@ -106,7 +107,7 @@
     "no script errors",
     "the browser's own dialogs never used"
    ],
-   "count": 52,
+   "count": 53,
    "ciOnly": false
   },
   "api": {
@@ -117,7 +118,7 @@
     "the key's item: tidy name, sorted scopes, 30 days, no hash",
     "only the secret's SHA-256 is stored, under the organisation",
     "expiry: 30 days from now",
-    "list: the organisation's keys, the scopes, the limits",
+    "list: the organisation's keys, the scopes, the limits2026-10-21 16:36:25,958 INFO portal.worker Job 533790d123c64d27b5ea9c295e471f75 (mail of ana) started, attempt 1, from item 0 of 1.",
     "refused: apikeys.nameInvalid (ab)",
     "refused: apikeys.scopesInvalid (No scope)",
     "refused: apikeys.scopesInvalid (Bad scope)",
@@ -141,7 +142,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_1a43879320b…)",
+    "a wrong key is refused (rk_a54316c79b5…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -544,6 +545,13 @@
     "healthcare at 120 %: X 0.456 mm, the EAN-13 at 0.396 mm",
     "the sizes with an EAN/UPC beside keep both within their ranges",
     "…the EAN/UPC drawn at the environment's own target (0.500 mm)",
+    "the EAN/UPC's own sizes: its range alone (table 2: 80 to 100 %; table 6: every size; none in DPM)",
+    "…general distribution: the 2D symbol at 200 % (1.486 mm) beside an EAN-13 at 100 % (0.660 mm)",
+    "…both read back",
+    "…healthcare: the Data Matrix at 100 % (0.380 mm), the EAN-13 at 200 %: bars 45.70 mm high",
+    "…the zip's README gives each its own size and the EAN/UPC's magnification",
+    "refused: one size for both beyond the EAN/UPC's range (200 % in table 2) → label.sizeOutOfRange",
+    "refused: the EAN/UPC's own size beyond its range (120 % in table 2) → label.linearSizeOutOfRange",
     "refused: a QR code in healthcare → label.symbolNotForEnvironment",
     "refused: 120 % in retail and general distribution (1.188 mm) → label.sizeOutOfRange",
     "refused: 80 % in direct part marking (0.240 mm) → label.sizeOutOfRange",
@@ -568,12 +576,16 @@
     "…an environment of other keys answered with the key's",
     "an SSCC without an environment: table 5, the QR code at 0.743 mm",
     "a GLN: table 9, a GS1 DataMatrix at 150 % (0.562 mm)",
+    "portal: linearsize, the EAN/UPC's own size: the GS1 DataMatrix at 200 % beside an EAN-13 at 100 %",
+    "…beyond the EAN/UPC's range: refused with its range and sizes",
+    "…a size not offered: refused",
+    "…without a linear symbol, unused",
     "the configuration gives the page every environment with its table, keys, symbols, ranges and sizes",
     "tenant API: the same options",
     "texts in both languages",
     "the tenant API's description lists the new options"
    ],
-   "count": 55,
+   "count": 66,
    "ciOnly": false
   },
   "datamatrix_e2e": {
@@ -593,10 +605,17 @@
     "the choices remembered",
     "back at retail with a QR code: the QR options again",
     "an SSCC: logistic units (table 5) and direct part marking only, table 5 chosen",
+    "no linear barcode: no size of its own",
+    "an EAN-13 beside: the 2D symbol keeps its own sizes (table 2: 100 to 200 %), the EAN-13 its own (80 to 100 %)",
+    "…by default as the 2D symbol, within its own range: the 2D at 200 % (1.486 mm), the EAN-13 at 100 % (0.660 mm)",
+    "…a size of its own: 80 %",
+    "…remembered",
+    "…as the 2D symbol at 100 %: no linearsize sent",
+    "…a size of its own beyond the new environment's range: back to as the 2D symbol",
     "in Portuguese",
     "no script errors"
    ],
-   "count": 16,
+   "count": 23,
    "ciOnly": false
   },
   "deploy": {
@@ -2769,7 +2788,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:38919/ok",
+    "internal address refused: http://127.0.0.1:34519/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -2891,7 +2910,7 @@
     "recovery: ten requests per browser address",
     "recovery: an empty entry is a mistake to correct",
     "an open session of the user before the reset",
-    "recovery link: password set",
+    "recovery link: password set2026-10-21 16:35:53,769 INFO portal.worker Job cb1de897311d4b51869f2e3352300dba (mail of maria) started, attempt 1, from item 0 of 1.",
     "…the old password no longer works, the new one does",
     "…every open session ended",
     "…and every other link of the account stopped working",
@@ -4307,7 +4326,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.003 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.005 ms; Node.js: tens of ms)"
    ],
    "count": 207,
    "ciOnly": false

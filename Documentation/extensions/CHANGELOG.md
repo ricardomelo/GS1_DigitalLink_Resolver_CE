@@ -6,6 +6,16 @@
 - **Fixed: the request log's space limit could not be saved on a fresh page**: on *Requests → Retention*, *Save*
   beside *Most space on disk (MB)* reloaded the page unless the days had been saved first in the same page, and each
   save of the days added another copy of its handler. Commit `4797247`.
+- **The linear barcode's own size** ([ADR 0010, section 7.7](../adr/0010-label-studio.md)): with an EAN/UPC beside the
+  2D symbol, the label panel offers *Size of the linear barcode* — *As the 2D symbol* (the default: the same
+  percentage, or the nearest the environment's EAN/UPC range allows) or a size of its own; each symbol keeps to its own
+  range, so in general distribution (table 2) or healthcare and general distribution (table 8) the 2D symbol can now go
+  to 200 % beside an EAN-13 at 100 %. The portal and the tenant API take `linearsize` (refused outside the range with
+  `label.linearSizeOutOfRange`); without it a label is drawn as before. The zip's README gives the EAN/UPC's percentage
+  of its target and its magnification. Commit `83b06a3`.
+- **New organisation's button next to *Add GCP***: on a wide screen *Create organisation* no longer stands at the far
+  right of the form. Commit `890c383`.
+- **The backlog's item 7.3 dropped** (the review of the Portuguese AI names), by the owner's decision of 21 October.
 
 ### The staging tests of 20 October and the owner's notes (session 17)
 - **A limit on the space the request log may use** (finding F1; [ADR 0006, section 9](../adr/0006-resolver-request-log.md)):

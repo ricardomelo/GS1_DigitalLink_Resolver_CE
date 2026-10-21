@@ -902,6 +902,23 @@ the days form's handler, so it existed only once the days had been saved in the 
 the days first and never met that page; its space checks now start on a freshly loaded page and check that the
 refusal leaves the page in place (the old code fails it).
 
+**The linear barcode's own size** (`83b06a3`; ADR 0010 §7.7). Testing the label environments, the owner asked whether
+the percentage applied to the linear barcode too — it did, each symbol at its own target — and then whether the two
+sizes should be separate. The tables give each symbol its own range, and one size for both had locked the 2D symbol at
+100 % beside an EAN-13 in tables 2 and 8. The EAN/UPC now takes a size of its own, by default the 2D symbol's or the
+nearest its range allows; the API without the new parameter draws what it drew before. Writing the zip's README showed
+that it called the percentage of the target a "magnification", which is measured against 0.330 mm and differs outside
+retail: it now gives both. 16 mutations, all caught.
+
+**New organisation's button** (`890c383`). On a wide screen the prefixes' column took the spare width and pushed
+*Create organisation* to the far right. The existing check ran at 1,280 pixels, where there is little spare width, and
+passed with the old layout; the new one runs at 1,920.
+
+**A wrong check digit in the test plan.** The forwarding check used `09521234000019`, whose check digit is 3: the
+resolver rightly refused it before forwarding. The plan was corrected and its other codes verified.
+
+**Item 7.3 dropped** by the owner: the review of the Portuguese AI names will not be arranged.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -1050,8 +1067,6 @@ refusal leaves the page in place (the old code fails it).
 - The off-server backup copy's destination and a restore rehearsal on the servers (`BACKUP_COPY_TO`,
   `scripts/restore-rehearsal.sh`, item 7.2); the load test's rehearsal on staging (item 7.4).
 - The items delivered in session 14 (4.2 to 7.4 and the "later" list) are still to be confirmed on staging.
-- Review of the 221 Portuguese AI names and of the Portuguese engine messages; decision on the GS1 logo on the
-  home page and resolver pages.
 - Items 2.4, 2.5, 3.1, 3.2 and 4.1 were confirmed on staging and in CI on 14 October (session 13); a real e-mail
   relay for staging and production is still to be set up.
 - The resolver's own `/heartbeat` answers 500 (official code: a Flask-RESTX resource returns a `jsonify` response

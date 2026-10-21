@@ -932,6 +932,32 @@ first test run showed that the writer's own tests feed it bare dictionaries with
 counts' indexes must not be made with the events' (a stand-in collection has no database); a check of today's figures
 was written so that it does not depend on the hour. 20 mutations, all caught.
 
+## Session 19 — two follow-ups
+
+While the owner ran the rest of the staging round, two of the small follow-ups were built, on the owner's request and
+on the recommended options.
+
+**Stopping a running import or link check** (`2bdae36`; ADR 0001 §3.3.1). Step 3 of item 2.3 had left the cancel button
+for later. A job is stopped only where its own writes happen — after a record of an import, at a link check's progress
+write — so an import never stops half way through a record, and the heartbeat, which runs in a thread of its own,
+never stops one. Two cases were found while writing the tests: a stop asked as the last record is written must let the
+import finish rather than call it stopped, and a worker that is shut down or dies with a job marked to stop must
+cancel it rather than hand it back to the queue. The browser's request to stop sends an empty JSON body: the portal
+refuses any write without one (the same-origin rule), which the first test run showed. A first time limit for the
+stopped link check was too tight, because the stop is seen only at the next progress write, once a second; the test
+now uses enough addresses to tell a stopped check from a finished one. 17 mutations, all caught.
+
+**An alert when GS1's GCP length table is old** (`83b266d`; ADR 0008 §3.1). The age is counted from the date GS1
+gave the list, not from the upload, so an old file uploaded today is still reported; the reminder is weekly, since
+an old list makes some results less accurate and nothing stops. The end-to-end test's lists are dated, so the limit
+it runs with is computed from today: the list of 17 September stays recent and the one of 1 March old whatever the day
+the test runs. 12 mutations, all caught.
+
+**Werkzeug 3.1.9** (`949ab50`). The owner asked to take the official project's pull request #129, a Dependabot bump of
+the resolver's Werkzeug from 3.1.7. The data entry API pinned the same version, and the CI and the session hook install
+both services' requirements in one pip command, which cannot satisfy two pins of one package: both moved. The whole
+battery passed with it.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -1069,6 +1095,8 @@ was written so that it does not depend on the hour. 20 mutations, all caught.
   was written), not only what a query returns.
 - Hold a test double to the real component with a test that runs both: a stand-in corrected by hand drifts again, a
   comparison fails as soon as it does (item 9.1, bug B1).
+- A test that uses a dated fixture against a limit counted from today changes its answer with the calendar: compute
+  the limit from today in the test, so the fixture stays on the same side of it.
 - A mutation that makes the code loop for ever is caught (the test cannot pass) but can stop a mutation loop that
   waits on it: give each run its own time limit and treat a timeout as caught.
 

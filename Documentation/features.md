@@ -179,6 +179,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Export | XLSX (with Link types, Keys and Languages sheets) or CSV, one row per target, headers in the user's language | `429dce7` | `sheet`: export · `exports` |
 | Two-step import | Preview with New / Changed / Unchanged / With errors and every wrong row explained, then apply in the background with progress; run by the job worker, so it survives a restart of the portal and continues after a restart of the worker; *In the queue…* while it waits | `429dce7`, `7339e3c`, `a072e9d` | `portal_e2e`: import preview counts · `jobs`: preview: the import becomes a prepared job |
 | Never deletes | Records not in the file stay | `429dce7` | `registration`: an import never deletes |
+| Stopping an import | *Stop import*: at once while queued, after the record being written while it runs; the records written stay and are listed with the number not imported; the journal says how many were not ([ADR 0001 §3.3.1](adr/0001-portal-state-in-mongodb.md)) | `2bdae36` | `jobs`: import cancel · `jobs`: cancel · `portal_e2e`: import stopped |
 | Any BCP 47 language | `pt-BR`, `en-US`, `vi`, `und`… accepted and kept | `7339e3c` | `sheet`: BCP 47 |
 | Limits per format | XLSX and CSV/TXT: 5,000 rows and 700 KB, shown in the dialog | `9d12f9d` | `sheet`: 700 KB |
 | Excel-friendly | Windows-1252, UTF-8 and UTF-16 ("Unicode text") files; separator detected; scientific notation detected; formula protection on export | `429dce7`, `1b58bfd` | `special_chars`: Excel · `special_chars`: no cell starts with |
@@ -193,6 +194,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Check targets (editor) | After each save and on demand; result under each target | `0da20ee` | `linkcheck` · `portal_e2e`: opening a record with problems checks its targets |
 | Check links (every record) | Background job, run by the job worker; summary kept; badge per record; *Only with problems* | `0da20ee`, `a072e9d` | `portal_e2e`: check every record · `jobs`: link check |
 | Import preview check | Optional, does not stop the import | `0da20ee` | `linkcheck` |
+| Stopping a check | *Stop* beside the progress of *Check links* and of the import preview's check ends it within a second, with no result; the previous full check stays shown ([ADR 0001 §3.3.1](adr/0001-portal-state-in-mongodb.md)) | `2bdae36` | `jobs`: link cancel · `portal_e2e`: link check stopped · `portal_e2e`: address check stopped |
 | SSRF guard | Only public addresses are contacted, at every redirect | `0da20ee` | `linkcheck`: internal address refused |
 | Clear reasons | HTTP errors, blocked checks (401/403/429), unreachable, HTTPS downgrade, too many redirects, private address, invalid | `0da20ee` | `linkcheck` |
 
@@ -269,6 +271,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Feature | What it does | Since | Checks |
 |---|---|---|---|
 | Monitoring and alerts | The worker checks the resolver through the proxy, the daily backup, the certificate and spikes of codes nobody registered every 5 minutes, and e-mails the administrators when something goes wrong and when it is right again; states in the overview ([ADR 0008](adr/0008-monitoring-and-alerts.md)) | `57a5420` | `monitor` |
+| Old GCP length table | An alert when the date GS1 gave the list in use is `PORTAL_MONITOR_GCP_DAYS` (90) days old or more, reminded weekly, resolved by a newer list; its age in the overview and on the *Organisations* panel ([ADR 0008 §3.1](adr/0008-monitoring-and-alerts.md)) | `83b266d` | `monitor`: the GCP table · `monitor`: GET /gcp · `gcp_e2e`: its age said beside it · `overview_e2e`: an old GCP length table |
 | Alert history | Each alert raised and ended, kept 400 days, listed on the *Alerts* screen by organisation, kind and date ([ADR 0013](adr/0013-administration-and-navigation.md)) | `a3b3cea` | `admin_nav`: a check going into alert is recorded once · `admin_nav_e2e`: alert history |
 
 ## Portal: robustness and security

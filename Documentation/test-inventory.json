@@ -125,7 +125,7 @@
     "refused: apikeys.daysInvalid (Zero)",
     "refused: apikeys.daysInvalid (Too long)",
     "refused: apikeys.nameExists (erp INTEGRATION)",
-    "refused: users.prefixOutsideTenant (Outside)2026-10-21 17:23:20,208 INFO portal.worker Job 3bdccc74f1e2485d984c23d81d40cb53 (mail of ana) started, attempt 1, from item 0 of 1.",
+    "refused: users.prefixOutsideTenant (Outside)",
     "the longest validity follows PORTAL_API_KEY_MAX_DAYS",
     "default validity: 90 days",
     "a server administrator creates keys for the operator",
@@ -142,7 +142,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_9aa944c0d04…)",
+    "a wrong key is refused (rk_9448b286137…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -799,9 +799,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (205 features)",
+    "features.md: every table has a Checks column (209 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (295 references)",
+    "…each reference names a program of the inventory (309 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (68)",
     "…and the inventory holds no program that no longer exists",
@@ -1582,6 +1582,8 @@
     "an older list: asked in the portal's dialog",
     "…cancelled: the list in use kept",
     "…confirmed: replaced",
+    "a list as old as the monitoring reports: its age said beside it",
+    "…a recent one: nothing said",
     "the organisation's page: the warning under its prefixes",
     "the editor: the key's GS1 Company Prefix under the key, with the list's date",
     "…a range that is not a GS1 Company Prefix said so",
@@ -1592,7 +1594,7 @@
     "no script errors",
     "the browser's own dialogs never used"
    ],
-   "count": 20,
+   "count": 22,
    "ciOnly": false
   },
   "governance": {
@@ -1865,7 +1867,7 @@
     "nginx starts while a service name has no address yet",
     "…and answers that service's paths with an error meanwhile (502)",
     "…while the other services answer",
-    "the service is found once its name has an address, without restarting nginx (1.9 s)",
+    "the service is found once its name has an address, without restarting nginx (2.0 s)",
     "GET / → 200 text/html",
     "GET / serves the home page, not the resolver",
     "GET / carries the Content Security Policy",
@@ -2337,9 +2339,36 @@
     "a list of addresses (import preview): each checked once, problems only",
     "stop during a link check: the job goes back to the queue",
     "stop during a link check: pending addresses are cancelled (not all 40 requested, done in seconds)",
-    "the next worker checks the whole list again (the cache answers what was done) and finishes"
+    "the next worker checks the whole list again (the cache answers what was done) and finishes",
+    "cancel: another user's job, another type or an unknown token: None, nothing changed",
+    "cancel: a queued job is cancelled at once, kept 30 minutes",
+    "cancel: a cancelled job is never claimed",
+    "status: a cancelled job reports its state",
+    "cancel: a running job is marked, still running, and its status says it is stopping",
+    "cancel: the heartbeat goes on (the stop is left to the job's own writes)",
+    "cancel: the next record raises Cancelled, after storing its result",
+    "cancelled(): running → cancelled, worker released",
+    "cancel: a job that ended is left as it was",
+    "cancel: asked as the job finishes, finish() still finishes it",
+    "cancel: a finished job is left finished",
+    "cancel: a job its user stopped, whose worker went silent, is cancelled, not queued again",
+    "cancel: a stopping worker hands back a job its user stopped as cancelled",
+    "release: a job nobody stopped goes back to the queue as before",
+    "worker: a job its user stops ends cancelled, with the items done kept",
+    "worker: carries on with the next job",
+    "import cancel: another user's request is refused (import.expired), the job stays queued",
+    "import cancel: no token, an unknown one: import.expired",
+    "import cancel while queued: cancelled at once, nothing written",
+    "import cancel while running: the answer says it is stopping",
+    "import cancel while running: stops after the record in hand; the two written are kept and listed",
+    "import cancel: the journal has the counts and the records not imported",
+    "import cancel during the last record: the import simply finishes",
+    "link cancel: another user's request is refused (linkcheck.expired)",
+    "link cancel while running: cancelled, no result",
+    "link cancel: seen at the next progress write; the addresses not started are not requested (not all 200)",
+    "link cancel while queued: cancelled at once"
    ],
-   "count": 70,
+   "count": 97,
    "ciOnly": false
   },
   "keys": {
@@ -2788,7 +2817,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:36595/ok",
+    "internal address refused: http://127.0.0.1:34355/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -3046,7 +3075,7 @@
   "monitor": {
    "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
    "checks": [
-    "defaults: every 5 minutes, the description file through the proxy, 26 hours, 21 days, 20 and 3 times",
+    "defaults: every 5 minutes, the description file through the proxy, 26 hours, 21 days, 90 days, 20 and 3 times",
     "a setting that is not a number: the default",
     "PORTAL_MONITOR_MINUTES=0: monitoring off, run() does nothing",
     "the certificate's host: FQDN by default",
@@ -3097,6 +3126,20 @@
     "below 80 %: resolved, a message",
     "…one alert in the history, raised and ended",
     "…a new rise starts from 80 % again, a second alert in the history",
+    "the GCP table: without a list, not checked and no message (the table is optional)",
+    "…a list GS1 dated 30 days ago: ok, with its date and age",
+    "…89 days: still ok",
+    "…90 days: an alert, a message to the server administrators who want alerts",
+    "…the message gives the list's date, its age and the limit",
+    "…no reminder the next day",
+    "…a reminder a week later",
+    "PORTAL_MONITOR_GCP_DAYS=120: the same list is ok again, resolved with a message",
+    "PORTAL_MONITOR_GCP_DAYS=0: not checked",
+    "a newer list uploaded: resolved, a message naming it",
+    "…each alert in the history, raised and ended",
+    "GET /gcp: the list and its age against the limit",
+    "…a recent list is not old",
+    "…no list: no age",
     "overview of a server administrator: every active alert and the state of each check",
     "…an organisation's administrator: its own spike only, no checks (no Operation)",
     "…an operator user: no installation alerts",
@@ -3109,7 +3152,7 @@
     "the category alerts: optional and on by default",
     "…a user's choice is kept",
     "…messages in the recipient's language",
-    "nine alert messages",
+    "eleven alert messages",
     "alert-resolver-down: both languages with the same placeholders",
     "alert-resolver-up: both languages with the same placeholders",
     "alert-backup-failed: both languages with the same placeholders",
@@ -3119,9 +3162,11 @@
     "alert-404-spike: both languages with the same placeholders",
     "alert-log-space: both languages with the same placeholders",
     "alert-log-space-ok: both languages with the same placeholders",
+    "alert-gcp-table: both languages with the same placeholders",
+    "alert-gcp-table-ok: both languages with the same placeholders",
     "the screen's texts in both languages"
    ],
-   "count": 74,
+   "count": 90,
    "ciOnly": false
   },
   "overview": {
@@ -3190,7 +3235,7 @@
     "the resolver cannot be read: the overview still answers, without records",
     "the log cannot be read: 503 requests.unavailable",
     "signed out: 401",
-    "every overview text in both languages (166 keys)",
+    "every overview text in both languages (169 keys)",
     "the API's description has /stats and the scope stats:read",
     "sign-in opens the overview"
    ],
@@ -3225,11 +3270,12 @@
     "a server administrator: the whole installation",
     "…with the worker, e-mail and the daily counts",
     "…and the state of each monitoring check",
+    "…an old GCP length table: its check with the list's date and age, and the active alert",
     "a phone: no sideways scrolling",
     "…tiles in one or two columns",
     "no errors in the page"
    ],
-   "count": 28,
+   "count": 29,
    "ciOnly": false
   },
   "portal_config": {
@@ -3313,6 +3359,14 @@
     "a worker that starts takes the waiting job and it finishes",
     "a job that fails: the browser stops waiting and says so",
     "import preview: optional address check",
+    "stop button hidden while no check runs",
+    "a running link check offers Stop",
+    "link check stopped: said so, Stop gone, Check links available again",
+    "import preview: the address check offers Stop",
+    "import preview: address check stopped, the import still possible",
+    "import: Stop hidden before Apply",
+    "a running import offers Stop import",
+    "import stopped: the counts and the records not imported, the rows written listed, Stop gone",
     "every key of section 4.3 offered, each with its name",
     "GLN: its own label and qualifiers (254, 7040)",
     "GLN check digit feedback",
@@ -3478,7 +3532,7 @@
     "password changed",
     "signed out"
    ],
-   "count": 222,
+   "count": 230,
    "ciOnly": false
   },
   "portal_e2e_without_engine": {
@@ -3542,6 +3596,14 @@
     "a worker that starts takes the waiting job and it finishes",
     "a job that fails: the browser stops waiting and says so",
     "import preview: optional address check",
+    "stop button hidden while no check runs",
+    "a running link check offers Stop",
+    "link check stopped: said so, Stop gone, Check links available again",
+    "import preview: the address check offers Stop",
+    "import preview: address check stopped, the import still possible",
+    "import: Stop hidden before Apply",
+    "a running import offers Stop import",
+    "import stopped: the counts and the records not imported, the rows written listed, Stop gone",
     "every key of section 4.3 offered, each with its name",
     "GLN: its own label and qualifiers (254, 7040)",
     "GLN check digit feedback",
@@ -3658,7 +3720,7 @@
     "password changed",
     "signed out"
    ],
-   "count": 173,
+   "count": 181,
    "ciOnly": false
   },
   "privacy": {
@@ -3756,7 +3818,7 @@
     "saving with mode target creates the key's record with that target, the default link type and language",
     "an invalid target for the key's record stops the save",
     "import preview lists the keys left without a record of their own, once",
-    "applying with createKeyRecords adds the keys' records to the plan2026-10-21 17:22:08,002 INFO portal.worker Job 61451b14bf7f41298d1ea561bfdd255c (import of maria) started, attempt 1, from item 0 of 5.",
+    "applying with createKeyRecords adds the keys' records to the plan",
     "the key's record is created with the targets of its first qualified record in the file",
     "without createKeyRecords the import writes only its own rows"
    ],
@@ -4349,7 +4411,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.003 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
    ],
    "count": 207,
    "ciOnly": false

@@ -2,6 +2,21 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Two follow-ups (session 19)
+- **Stopping a running import or link check** ([ADR 0001, section 3.3.1](../adr/0001-portal-state-in-mongodb.md)):
+  *Stop import* in the import dialog, *Stop* beside the progress of *Check links* and of the import preview's address
+  check. A job waiting in the queue is cancelled at once; a running import stops after the record being written, a
+  link check within a second. The records already imported stay and are listed with the number not imported (journal
+  `import` with `cancelled=<n>`); a stopped link check keeps no result. New state `cancelled`;
+  `POST /portal/api/import/cancel` and `POST /portal/api/links/jobs/<token>/cancel`. Commit `2bdae36`.
+- **An alert when GS1's GCP length table in use is old** ([ADR 0008, section 3.1](../adr/0008-monitoring-and-alerts.md)):
+  the monitoring's new check *GCP length table* is an alert when the date GS1 gave the list is
+  `PORTAL_MONITOR_GCP_DAYS` (90) days old or more, by e-mail to the server administrators with a weekly reminder and a
+  message when a newer list is uploaded; unknown without a list. The overview's *Operation* shows the list's date and
+  age, the *Organisations* panel says the age under the list, `GET /portal/api/gcp` adds `age`. Commit `83b266d`.
+- **Werkzeug 3.1.9**, from the official project's pull request #129 (Dependabot, the resolver): the data entry API
+  moves with it, since the services' requirements are installed together in the tests. Commit `949ab50`.
+
 ### The staging tests of 21 October (session 18)
 - **Fixed: the request log's space limit could not be saved on a fresh page**: on *Requests → Retention*, *Save*
   beside *Most space on disk (MB)* reloaded the page unless the days had been saved first in the same page, and each

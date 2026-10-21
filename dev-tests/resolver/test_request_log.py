@@ -146,7 +146,7 @@ check("never the values of data attributes", "261231" not in text and "000500" n
 check("the browser family", e.get("br") == "app", e)       # an iPhone User-Agent without "Safari/": an app's web view
 check("only the documented fields", set(e) <= {"t", "expiresAt", "m", "f", "epc", "ai", "v", "cp", "q", "da", "lt", "s",
                                                 "o", "lvl", "to", "ms", "lang", "dev", "br", "ref", "c", "rg", "ci",
-                                                "p"}, sorted(e))
+                                                "ll", "p"}, sorted(e))
 check("no country without RESOLVER_LOG_COUNTRY_HEADER", "c" not in e, e)
 
 # ---------------------------------------------------------------- levels and unit qualifiers
@@ -318,14 +318,17 @@ r, e = ask(G, **{"X-Real-IP": "191.0.5.77"})
 check("the location of the address in X-Real-IP: country, region and city", e and (e.get("c"), e.get("rg"), e.get("ci"))
       == ("BR", "Sao Paulo", "Campinas"), e)
 check("…the names in English", e and e.get("ci") == "Campinas", e)
-check("…never the address, nor coordinates", e and "191.0" not in json.dumps(e, default=str)
-      and "22.9" not in json.dumps(e, default=str) and not {"lat", "lon", "ll", "ip"} & set(e), e)
+check("…the city's position, to a tenth of a degree (about 11 km), for the map", e and e.get("ll") == [-22.9, -47.1], e)
+check("…never the address, nor the database's exact coordinates (only the rounded city position)", e
+      and "191.0" not in json.dumps(e, default=str) and "47.06" not in json.dumps(e, default=str)
+      and not {"lat", "lon", "ip"} & set(e), e)
 check("…the answer is the same", r.status_code == 307 and r.headers["Location"] == "https://www.example.org/product",
       r.headers.get("Location"))
 r, e = ask(G, **{"X-Real-IP": "2804:1:abcd::7"})
 check("an IPv6 address", e and (e.get("c"), e.get("rg"), e.get("ci")) == ("BR", "Parana", "Curitiba"), e)
 r, e = ask(G, **{"X-Real-IP": "41.0.3.3"})
-check("a network the database knows only by country", e and e.get("c") == "ZA" and "rg" not in e and "ci" not in e, e)
+check("a network the database knows only by country: no region, city or position", e and e.get("c") == "ZA"
+      and "rg" not in e and "ci" not in e and "ll" not in e, e)
 for address in ("10.1.2.3", "127.0.0.1", "192.168.0.9", "fd00::1", "203.0.113.9", "not-an-address", "8.8.8.8"):
     r, e = ask(G, **{"X-Real-IP": address})
     check(f"no location for {address!r} (private, reserved, malformed or not in the database)", e and "c" not in e
@@ -351,8 +354,8 @@ os.environ["RESOLVER_LOG_COUNTRY_HEADER"] = "CF-IPCountry"
 r, e = ask(G, **{"X-Real-IP": "191.0.5.77", "CF-IPCountry": "BR"})
 check("a country header that agrees keeps the region and city", e and (e.get("c"), e.get("ci")) == ("BR", "Campinas"), e)
 r, e = ask(G, **{"X-Real-IP": "191.0.5.77", "CF-IPCountry": "PT"})
-check("a country header that disagrees wins, without the database's region and city", e and e.get("c") == "PT"
-      and "rg" not in e and "ci" not in e, e)
+check("a country header that disagrees wins, without the database's region, city and position", e and e.get("c") == "PT"
+      and "rg" not in e and "ci" not in e and "ll" not in e, e)
 del os.environ["RESOLVER_LOG_COUNTRY_HEADER"]
 time.sleep(0.05)
 write_geoip(DBFILE + ".new", [("191.0.0.0/16", "BR", "Sao Paulo", "Sao Paulo")])

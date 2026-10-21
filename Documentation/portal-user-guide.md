@@ -915,11 +915,22 @@ scan —, *Click on the item page*…), the **Answer** (the link type asked, the
 record that answered — the key's or a batch's — and the site the person was sent to), the **Device** class (phone,
 tablet, computer, automated) with the **browser** (Chrome, Safari, Firefox, Edge, Samsung Internet, Opera, *App* for
 scanner apps and the browsers inside apps such as Instagram's) and the site the person came from, the **Language** of
-the phone, the **Approximate location** (city and country, the region when you point at it; the city opens Google Maps on that city) and the time
+the phone, the **Approximate location** (city, region — a state or province — and country; the city opens Google Maps
+on that city) and the time
 the resolver took, in milliseconds. Filter by date (**From**, **To**), **Code** (a GTIN, a GS1 Company Prefix or a
 Digital Link path such as `/01/…`), **Outcome** (*Not found (404)* gathers both kinds of 404), **Device**,
 **Browser** and **Country** (two letters, such as `BR`); tick **Include automated requests** to see the machines'
 requests too. **Export CSV** downloads what the filters show, up to 50,000 requests, for Excel.
+
+**Map: where the requests come from.** Under the filters, opened with a click: a world map of the requests the filters
+select. Each country is shaded by its number of requests, from pale to dark blue; each city is an orange circle, larger
+with more requests. Point at a country or a city to see its count; zoom with the mouse wheel, the **+** and **−**
+buttons or by dragging, and go back to the **whole world** with the third button. A click on a country zooms to it and
+lists its regions and cities with their requests beside the map. A city is placed at the database's point for it,
+never more precisely; requests from before this map appear in their country's shade only. The map is drawn from files
+of the portal (Natural Earth's countries, public domain): nothing is sent to a map service.
+
+![The map of requests](images/guide/requests-map.png)
 
 **What is kept.** Nothing that identifies the people who scan: not their address, not their browser's full
 identification, not serial numbers, not the values of data attributes. The browser family and the approximate
@@ -927,7 +938,7 @@ location are worked out when the scan arrives, and the address is then forgotten
 free database (credited under the list) and can be wrong behind a VPN or a mobile network. Each request is kept for
 the number of days of the **Retention** tab (shown under the list); the daily counts behind the bars are kept longer.
 
-**Who sees what.** Each user sees the requests of the codes in his reach (his organisation, his GS1 Company
+**Who sees what.** Each user sees the requests of the codes in their reach (their organisation, their GS1 Company
 Prefixes). The server administrator sees the whole installation, with an **Organisation** column, including
 invalid requests that have no code; during support access, the organisation's.
 

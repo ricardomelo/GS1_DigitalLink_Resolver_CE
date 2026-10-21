@@ -100,7 +100,9 @@ if os.environ.get("PORTAL_SESSION_HOURS", "").strip():
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 PUBLIC_ASSETS = {"app.css", "i18n.js", "login.js", "password.js", "gs1-logo.png", "favicon.png"}   # needed by the login page
-PRIVATE_ASSETS = {"app.js"}
+# The map of requests (ADR 0006, section 10): its script, d3, topojson-client and the countries, after sign-in
+PRIVATE_ASSETS = {"app.js", "requests-map.js", "d3.min.js", "topojson-client.min.js", "world-countries.json",
+                  "iso3166.json"}
 
 
 def _secret_key() -> bytes:
@@ -2413,7 +2415,7 @@ def audit_csv():
 # --------------------------------------------------------------------------- request log (ADR 0006)
 REQUEST_CSV_COLUMNS = ["at", "method", "form", "epc", "key", "value", "qualifiers", "attributes", "linkType", "status",
                        "outcome", "level", "target", "ms", "language", "device", "referrer", "country", "browser",
-                       "region", "city", "path"]
+                       "region", "city", "latitude", "longitude", "path"]
 
 
 @app.errorhandler(requestlog.FilterError)
@@ -2471,6 +2473,19 @@ def list_requests():
     return jsonify(**found, days=requestlog.days_for(g.tenant, g.tenants), whole=whole)
 
 
+@app.get("/portal/api/requests/places")
+@require_login
+def request_places():
+    """The map of requests (ADR 0006, section 10): the requests of the Requests screen's filters per country and per
+    place, with each city's position."""
+    scope, whole = request_log_scope()
+    try:
+        found = requestlog.places(request.args, scope)
+    except PyMongoError as exc:
+        return _log_unavailable(exc)
+    return jsonify(**found, whole=whole)
+
+
 @app.get("/portal/api/requests.csv")
 @require_login
 def requests_csv():
@@ -2495,7 +2510,8 @@ def requests_csv():
     columns = REQUEST_CSV_COLUMNS + (["organisation"] if whole else [])
     writer.writerow(columns)
     for event in found["events"]:                   # paths of invalid requests and referrers are typed by anyone
-        writer.writerow([sheet.protect(" ".join(event[c]) if isinstance(event.get(c), list) else
+        writer.writerow([event[c] if isinstance(event.get(c), float) else       # a position: a number, not a formula
+                         sheet.protect(" ".join(event[c]) if isinstance(event.get(c), list) else
                                        ("" if event.get(c) is None else event[c])) for c in columns])
     log_event("requests-export", detail=f'rows={len(found["events"])}')
     stamp = time.strftime("%Y%m%d-%H%M")

@@ -70,7 +70,10 @@ def event(value=None, minutes=5, o="redirect", s=307, dev="mobile", **extra):
 
 # today: Acme's scans, the operator's, a probe and a crawler; earlier days for the bars
 event(ACME, 2, lang="pt-br", lvl="", to="www.acme.example", ref="www.instagram.com", br="chrome", c="BR",
-      rg="Sao Paulo", ci="Campinas")
+      rg="Sao Paulo", ci="Campinas", ll=[-22.9, -47.1])
+# two more places for the map (ADR 0006, section 10), an hour earlier
+event(OPER, 60, br="firefox", c="PT", rg="Lisbon", ci="Lisbon", ll=[38.7, -9.1])
+event(OPER, 61, br="firefox", c="DE", rg="Berlin", ci="Berlin", ll=[52.5, 13.4])
 event(ACME, 3, o="unknown", s=404, lang="en", q={"10": "L7", "21": None})
 event(ACME, 4, f="epc", epc="SGTIN+", lvl="/10/L7", to="batch.acme.example", da=["17"], q={"10": "L7", "21": None})
 event(OPER, 5, dev="desktop", lt="pip", lvl="", to="www.example.org")
@@ -140,7 +143,7 @@ with sync_playwright() as p:
           "Redirecionada" in listed[0] and "www.acme.example" in listed[0] and "Celular" in listed[0]
           and "www.instagram.com" in listed[0] and "pt-br" in listed[0], listed[0])
     check("…its browser and approximate location (ADR 0006, section 8)", "Chrome" in listed[0]
-          and "Campinas, BR" in listed[0], listed[0])
+          and "Campinas, Sao Paulo, BR" in listed[0], listed[0])
     link = page.eval_on_selector("#requests-body tr:first-child td.requests-place a",
                                  "a => [a.href, a.target, a.rel, a.title]")
     check("…the city opens Google Maps searched by its names, in a new tab",
@@ -154,6 +157,29 @@ with sync_playwright() as p:
           any("SGTIN+" in r and "nível /10/L7" in r for r in listed), [r for r in listed if "SGTIN" in r])
     check("a serial number appears only as its AI", any("/21/*" in r for r in listed))
     check("more requests: a button", page.is_visible("#requests-more"))
+
+    # The map of requests (ADR 0006, section 10): closed until asked for, then countries shaded and cities drawn
+    check("the map: closed at first, nothing loaded", not page.is_visible("#requests-map svg")
+          and not page.evaluate("Boolean(window.d3)"))
+    page.click("#requests-map-box summary")
+    page.wait_for_selector("#requests-map svg path.map-country", timeout=10000)
+    shades = page.eval_on_selector_all("#requests-map path.map-country", "ps => Object.fromEntries(ps.filter(p => "
+                                       "p.dataset.code).map(p => [p.dataset.code, p.getAttribute('fill')]))")
+    check("…the world's countries, those with requests shaded", len(shades) > 150 and shades["BR"] != shades["FR"]
+          and shades["PT"] != shades["FR"] and shades["FR"].upper() == "#E6EBF1", {k: shades.get(k) for k in ("BR", "PT", "FR")})
+    check("…a circle for each city the resolver placed", page.locator("#requests-map circle.map-city").count() == 3)
+    check("…a summary of the requests located", "3 de" in page.inner_text("#requests-map .map-side")
+          and "3 países" in page.inner_text("#requests-map .map-side"), page.inner_text("#requests-map .map-side"))
+    check("…credits the map and the GeoIP database", "Natural Earth" in page.inner_text("#requests-map-box")
+          and page.get_attribute("#requests-map-box a", "href") == "https://db-ip.com")
+    page.dispatch_event('#requests-map path[data-code="BR"]', "click"); page.wait_for_timeout(900)
+    side = page.inner_text("#requests-map .map-side")
+    check("…a click on a country zooms to it and lists its regions and cities", "Brasil" in side and "Sao Paulo" in side
+          and "Campinas" in side and "is-focus" in page.get_attribute('#requests-map path[data-code="BR"]', "class")
+          and "scale" in (page.get_attribute("#requests-map svg > g", "transform") or ""), side)
+    page.click("#requests-map .map-tools button:nth-child(3)"); page.wait_for_timeout(600)
+    check("…the whole world again", "Campinas" not in page.inner_text("#requests-map .map-side"))
+    shot(page, "requests-map")
     shot(page, "requests-admin")
     page.click("#requests-more"); page.wait_for_timeout(800)
     check("…which adds the next page", len(rows(page)) > 200 and not page.is_visible("#requests-more"), len(rows(page)))
@@ -166,6 +192,9 @@ with sync_playwright() as p:
     page.click("#requests-filters button[type=submit]"); page.wait_for_timeout(800)
     listed = rows(page)
     check("filter: a country, typed in either case", len(listed) == 1 and "Campinas" in listed[0], listed[:3])
+    page.wait_for_timeout(500)
+    check("…the map follows the filters", page.locator("#requests-map circle.map-city").count() == 1
+          and "1 de 1 " in page.inner_text("#requests-map .map-side"), page.inner_text("#requests-map .map-side"))
     page.fill("#requests-country", "")
     page.select_option("#requests-outcome", "notFound"); page.click("#requests-filters button[type=submit]")
     page.wait_for_timeout(800)

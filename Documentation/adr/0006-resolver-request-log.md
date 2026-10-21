@@ -273,6 +273,7 @@ An event gains:
 | `br` | browser family (decision 1); absent for `automated` and `unknown` devices |
 | `c` | two-letter country code: the country header when configured and present, otherwise the GeoIP database |
 | `rg`, `ci` | region and city in English from the GeoIP database (at most 100 characters each), when it knows them |
+| `ll` | the city's position from the GeoIP database, `[latitude, longitude]` rounded to a tenth of a degree, only with a city (section 10) |
 
 - `web_server/src/geoip.py`: `Locator` (the file, opened lazily, reopened when its modification time changes,
   `maxminddb` in memory-mapped mode), `client_address()` (the header's first address, or the connection's) and
@@ -384,3 +385,55 @@ then at every further 5 %.** This section replaces the last sentence of section 
 - With mongomock (the development tests) the sizes are unknown: the limit is never applied and the check is *unknown*;
   the tests give the statistics themselves.
 
+## 10. Amendment of 20 October 2026 — a map of where requests come from
+
+### 10.1 Context
+
+The owner asked for a world map of the approximate locations on the *Requests* screen, shaded like a heat map, where
+regions can be clicked and zoomed, and for the region (state, province) to appear beside the city in the list. The
+countries and the names of regions and cities were already recorded (section 8); a map needs a position for each city,
+which section 8, decision 3 had chosen not to store.
+
+### 10.2 Decision
+
+1. **The city's position is recorded** (`ll`, `[latitude, longitude]`), taken from the GeoIP database's record of the
+   city and **rounded to a tenth of a degree** (about 11 km): the place the database gives for the city, never more
+   precise than the city itself. Only when the city is known; dropped with the region and the city when the country
+   header disagrees with the database. The client's address is still never stored. This replaces section 8,
+   decision 3; requests logged before this change have no position and count on the map by country only.
+2. **The map** (`portal/static/requests-map.js`): a box under the list, closed by default and loaded when opened. It
+   draws the requests the screen's filters select: each **country shaded** by its number of requests (a logarithmic
+   scale from pale to GS1 blue), each **city a circle** sized by its requests. The wheel, a drag and the **+**, **−**
+   and **whole world** buttons zoom and move; a **click on a country** zooms to it and lists its regions and cities
+   with their counts beside the map. Hovering a country or a city shows its count.
+3. **Everything is served by the portal**, after sign-in: d3 7.9.0 (ISC), topojson-client 3.1.0 (ISC), the countries
+   of world-atlas 2.0.2 (`countries-50m`, Natural Earth, public domain) and the ISO 3166 numeric codes that join them to
+   the log's country codes. No map service is called and no key is needed; the screen credits Natural Earth and DB-IP.
+4. **The list shows the region**: *Campinas, Sao Paulo, BR*.
+5. **The CSV export** gains `latitude` and `longitude` (empty without a position).
+
+### 10.3 Design
+
+- `web_server/src/geoip.py`: `POINT_DECIMALS` (1), `_point()`; `locate()` adds `ll` with a city.
+  `web_server/src/request_log.py`: `ll` dropped with `rg` and `ci` when the country header disagrees.
+- `portal/requestlog.py`: `row()` gives `latitude` and `longitude`; `places(args, scope)` counts the filtered requests
+  per country and per place (country, region, city), the `MAX_PLACES` (5,000) most frequent places, each with its
+  position when one was recorded.
+- Route `GET /portal/api/requests/places` (the filters of `GET /portal/api/requests`, the same scope):
+  `{"countries": [[code, n]], "places": [{country, region, city, position, requests}], "total", "located"}`.
+
+### 10.4 Options considered
+
+| Point | Chosen | Not chosen |
+|---|---|---|
+| Position | the city's, from the GeoIP database, rounded to 0.1° | none, placing cities by a gazetteer of names (another data file, ambiguous names); the database's position unrounded (suggests a precision it does not have) |
+| Drawing | d3 and topojson served by the portal | a map service with tiles (a key, requests to a third party with the operator's data); a static image (no zoom or click) |
+| Countries | Natural Earth 1:50m through world-atlas (750 KB, loaded when the map is opened) | 1:110m (small countries missing); 1:10m (several MB) |
+| Loading | when the box is opened | with the screen (the files for everyone who never opens it) |
+
+### 10.5 Consequences
+
+- A city's position is personal data no more than its name: it is the database's point for the city, the same for
+  everyone there.
+- Requests logged before this change appear in their country's shade, not as circles; the map says so.
+- The portal's image carries about 1 MB more of static files.

@@ -1162,6 +1162,13 @@
           <button type="button" class="btn btn-ghost needs-export" id="requests-csv" data-i18n="audit.csv"></button>
         </form>
         <p class="field-msg" id="requests-count" aria-live="polite"></p>
+        <!-- Where the requests of these filters come from (ADR 0006, section 10): loaded when opened -->
+        <details class="requests-map-box" id="requests-map-box">
+          <summary data-i18n="requests.mapHeading"></summary>
+          <div class="requests-map" id="requests-map"></div>
+          <p class="field-msg"><span data-i18n="requests.mapNote"></span>
+            <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">IP Geolocation by DB-IP</a></p>
+        </details>
         <div class="table-wrap">
           <table class="records-table requests-table">
             <thead>
@@ -1357,6 +1364,7 @@
   </template>
 
   <script src="i18n.js"></script>
+  <script src="requests-map.js"></script>
   <script src="password.js"></script>
   <script src="app.js"></script>
 </body>

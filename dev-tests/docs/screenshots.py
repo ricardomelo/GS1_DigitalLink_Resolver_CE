@@ -515,9 +515,13 @@ def seed_requests() -> None:
              ("07895555000017", "", "acme.example", 2), ("09506000999982", None, None, 1)]
     agents = ["mobile"] * 14 + ["tablet", "desktop", "desktop", "automated"]
     browsers = ["chrome"] * 6 + ["safari"] * 4 + ["samsung", "app", "app", "firefox", "edge"]
-    places = [("BR", "Sao Paulo", "Sao Paulo")] * 5 + [("BR", "Rio de Janeiro", "Rio de Janeiro")] * 3 + [
-        ("BR", "Minas Gerais", "Belo Horizonte"), ("BR", "Parana", "Curitiba"), ("PT", "Lisbon", "Lisbon"),
-        ("GB", "England", "London"), ("BR", None, None)]
+    # country, region, city and the city's position (ADR 0006, sections 8 and 10)
+    places = [("BR", "Sao Paulo", "Sao Paulo", [-23.5, -46.6])] * 5 + [
+        ("BR", "Rio de Janeiro", "Rio de Janeiro", [-22.9, -43.2])] * 3 + [
+        ("BR", "Minas Gerais", "Belo Horizonte", [-19.9, -43.9]), ("BR", "Parana", "Curitiba", [-25.4, -49.3]),
+        ("PT", "Lisbon", "Lisbon", [38.7, -9.1]), ("GB", "England", "London", [51.5, -0.1]),
+        ("AR", "Buenos Aires", "Buenos Aires", [-34.6, -58.4]), ("US", "New York", "New York", [40.7, -74.0]),
+        ("BR", None, None, None)]
     for day in range(30):
         for i in range(int(18 + 10 * math.sin(day / 3) + rnd.randint(0, 6))):
             value, level, host, _ = rnd.choices(codes, weights=[c[3] for c in codes])[0]
@@ -527,8 +531,8 @@ def seed_requests() -> None:
                    "lang": rnd.choice(["pt-br", "pt-br", "pt-br", "en", "es"])}
             if doc["dev"] != "automated":     # the browser family and the approximate location (ADR 0006, section 8)
                 doc["br"] = rnd.choice(browsers)
-                country, region, city = rnd.choice(places)
-                doc.update({k: v for k, v in (("c", country), ("rg", region), ("ci", city)) if v})
+                country, region, city, point = rnd.choice(places)
+                doc.update({k: v for k, v in (("c", country), ("rg", region), ("ci", city), ("ll", point)) if v})
             if level is None:
                 doc.update(s=404, o="unknown")
             else:
@@ -559,6 +563,10 @@ def requests_images(browser, folder: str, locale: str) -> None:
     page.click("#login-submit"); page.wait_for_timeout(1000)
     page.goto(BASE + "#requests"); page.wait_for_timeout(1500)
     save(page, f"{folder}/requests.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1250})
+    page.click("#requests-map-box summary")                          # the map of requests (ADR 0006, section 10)
+    page.wait_for_selector("#requests-map circle.map-city"); page.wait_for_timeout(500)
+    page.dispatch_event('#requests-map path[data-code="BR"]', "click"); page.wait_for_timeout(1000)
+    save_element(page, f"{folder}/requests-map.png", "#requests-map-box")
     page.click("#requests-tab-retention"); page.wait_for_timeout(1000)   # how long requests are kept (item 9.5)
     save_element(page, f"{folder}/requests-retention.png", "#requests-retention")
     page.goto(BASE + "#overview"); page.wait_for_timeout(1500)   # the overview (ADR 0007), the same month

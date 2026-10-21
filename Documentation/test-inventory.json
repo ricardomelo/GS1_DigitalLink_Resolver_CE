@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-20",
+ "generated": "2026-10-21",
  "programs": {
   "admin_nav": {
    "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
@@ -3483,10 +3483,11 @@
     "browser family of 'Mozilla/5.0 (Windows NT 10.0) Gecko Trident/7.0; rv:11.0'…: other",
     "the location of the address in X-Real-IP: country, region and city",
     "…the names in English",
-    "…never the address, nor coordinates",
+    "…the city's position, to a tenth of a degree (about 11 km), for the map",
+    "…never the address, nor the database's exact coordinates (only the rounded city position)",
     "…the answer is the same",
     "an IPv6 address",
-    "a network the database knows only by country",
+    "a network the database knows only by country: no region, city or position",
     "no location for '10.1.2.3' (private, reserved, malformed or not in the database)",
     "no location for '127.0.0.1' (private, reserved, malformed or not in the database)",
     "no location for '192.168.0.9' (private, reserved, malformed or not in the database)",
@@ -3500,7 +3501,7 @@
     "RESOLVER_LOG_ADDRESS_HEADER names another header: its first address",
     "an empty RESOLVER_LOG_ADDRESS_HEADER: the connection's address",
     "a country header that agrees keeps the region and city",
-    "a country header that disagrees wins, without the database's region and city",
+    "a country header that disagrees wins, without the database's region, city and position",
     "a newer file replacing the database is read without a restart",
     "a broken file: no location, the same answer",
     "no file: no location, the same answer",
@@ -3522,7 +3523,7 @@
     "a failing database: the answer is the same, the events lost and counted",
     "events are written in batches of at most 500"
    ],
-   "count": 125,
+   "count": 126,
    "ciOnly": false
   },
   "requestlog": {
@@ -3602,7 +3603,13 @@
     "filter by country (either case)",
     "…an unknown browser or a malformed country refused",
     "…within the scope only",
-    "CSV: browser, region and city after the country",
+    "…the city's position as latitude and longitude",
+    "the map: requests per country, most first, and the requests without a location counted apart",
+    "…per place with the city's position, a country alone without one",
+    "…with the list's filters",
+    "…within the scope only",
+    "…a filter that cannot be read refused",
+    "CSV: browser, region, city and the city's position after the country",
     "aggregates: browsers, countries and places per key",
     "…and for the installation",
     "the overview: browsers, countries and cities",
@@ -3676,7 +3683,7 @@
     "audit.action.requestlog-space in both languages",
     "audit.action.requestlog-trimmed in both languages"
    ],
-   "count": 147,
+   "count": 153,
    "ciOnly": false
   },
   "requests_e2e": {
@@ -3698,9 +3705,17 @@
     "an EPC binary string shows its scheme and the level that answered",
     "a serial number appears only as its AI",
     "more requests: a button",
+    "the map: closed at first, nothing loaded",
+    "…the world's countries, those with requests shaded",
+    "…a circle for each city the resolver placed",
+    "…a summary of the requests located",
+    "…credits the map and the GeoIP database",
+    "…a click on a country zooms to it and lists its regions and cities",
+    "…the whole world again",
     "…which adds the next page",
     "filter: a browser",
     "filter: a country, typed in either case",
+    "…the map follows the filters",
     "filter: not found (404)",
     "filter: a GTIN-13",
     "automated requests on request, also a probe without a key",
@@ -3728,7 +3743,7 @@
     "the log switched off: a notice",
     "no script errors"
    ],
-   "count": 45,
+   "count": 53,
    "ciOnly": false
   },
   "resolver": {

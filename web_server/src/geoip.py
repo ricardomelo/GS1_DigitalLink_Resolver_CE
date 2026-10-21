@@ -1,6 +1,7 @@
 """
 The approximate location of a request for the log of resolver requests (Documentation/adr/0006-resolver-request-log.md,
-section 8): country, region and city, looked up in a GeoIP database file at the moment of the request. The client's
+section 8): country, region and city — and, with a city, the city's position to a tenth of a degree, for the map of
+requests (section 10) — looked up in a GeoIP database file at the moment of the request. The client's
 address is used for the lookup only — it is never returned, stored or written in a log line.
 
 The file is an MMDB in the GeoIP2/GeoLite2 City layout: DB-IP's "IP to City Lite" by default (Creative Commons
@@ -24,6 +25,7 @@ DEFAULT_PATH = '/geoip/dbip-city-lite.mmdb'
 DEFAULT_HEADER = 'X-Real-IP'
 CHECK_SECONDS = 60
 MAX_NAME = 100
+POINT_DECIMALS = 1                            # a tenth of a degree, about 11 km: a city, never a street
 
 
 def database_path() -> str:
@@ -57,6 +59,17 @@ def _public(address: str | None) -> str | None:
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
     return str(ip) if ip.is_global else None
+
+
+def _point(location) -> list[float] | None:
+    """[latitude, longitude] of a GeoIP record's location, rounded to POINT_DECIMALS; None when absent or invalid."""
+    try:
+        lat, lon = float(location['latitude']), float(location['longitude'])
+    except (TypeError, KeyError, ValueError):
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return None
+    return [round(lat, POINT_DECIMALS), round(lon, POINT_DECIMALS)]
 
 
 def _english(node) -> str | None:
@@ -120,8 +133,8 @@ class Locator:
         self._reader, self._opened = None, None
 
     def locate(self, address: str | None) -> dict:
-        """{"c": "BR", "rg": "Sao Paulo", "ci": "Campinas"} with what the database knows of a public address; {} for
-        anything else. Never raises."""
+        """{"c": "BR", "rg": "Sao Paulo", "ci": "Campinas", "ll": [-22.9, -47.1]} with what the database knows of a
+        public address (ll only with a city); {} for anything else. Never raises."""
         ip = _public(address)
         if ip is None:
             return {}
@@ -144,6 +157,9 @@ class Locator:
         city = _english(found.get('city'))
         if city:
             out['ci'] = city
+            point = _point(found.get('location'))
+            if point:
+                out['ll'] = point
         return out
 
 

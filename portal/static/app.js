@@ -2788,17 +2788,33 @@ function requestRow(e) {
                                        e.browser ? t("requests.browser." + e.browser) : "", e.referrer || ""]
     .filter(Boolean).join(" · "));
   requestCell(tr, "requests.language", e.language || "—");
-  // "Campinas, BR" in the table; the region in the link's title and in the map's search
+  // "Campinas, Sao Paulo, BR" in the table, the region (state, province) when the GeoIP database knows it
   const place = placeText(e.city, e.region, e.country);
-  requestCell(tr, "requests.location", e.city ? mapLink(placeText(e.city, null, e.country), place) : (place || "—"),
+  requestCell(tr, "requests.location", e.city ? mapLink(place, place) : (place || "—"),
               "requests-place");
   requestCell(tr, "requests.ms", e.ms ?? "—", "num");
   requestCell(tr, "audit.tenant", e.organisation || t("users.operatorName"), "requests-org-col");
   return tr;
 }
 
+/* The map of the requests these filters select (ADR 0006, section 10; requests-map.js), drawn when its box is open */
+async function loadRequestMap() {
+  const box = $("#requests-map");
+  if (!$("#requests-map-box").open) return;
+  const status = el("p", "field-msg", t("requests.mapLoading"));
+  box.replaceChildren(status);
+  try {
+    const data = await api("GET", "requests/places?" + requestsQuery().toString());
+    await RequestsMap.render(box, data);
+  } catch (e) {
+    I18N.set(status, e.code || "requests.mapFailed", e.params);
+    box.replaceChildren(status);
+  }
+}
+
 async function loadRequests(event, more = false) {
   if (event) event.preventDefault();
+  if (!more) loadRequestMap();
   const params = requestsQuery();
   if (more && requestsState.next) params.set("before", requestsState.next);
   if (!more) {
@@ -5201,6 +5217,7 @@ async function init() {
   $("#support-leave").addEventListener("click", endSupport);
   $("#audit-csv").addEventListener("click", downloadAudit);
   $("#requests-filters").addEventListener("submit", e => loadRequests(e));
+  $("#requests-map-box").addEventListener("toggle", () => loadRequestMap());
   $("#requests-more").addEventListener("click", () => loadRequests(null, true));
   $("#requests-csv").addEventListener("click", downloadRequests);
   $("#requests-tab-resolver").addEventListener("click", () => showRequestsTab("resolver"));

@@ -270,6 +270,7 @@ def event(noted: dict[str, Any], response: Response) -> dict[str, Any]:
             if doc.get("c") not in (None, country.upper()):
                 doc.pop("rg", None)           # the database's region and city are of another country
                 doc.pop("ci", None)
+                doc.pop("ll", None)
             doc["c"] = country.upper()
     return doc
 

@@ -485,11 +485,39 @@ def row(doc: dict, tenant_names: dict | None = None, tenant_list: list[dict] | N
         "target": doc.get("to"), "ms": doc.get("ms"), "language": doc.get("lang"), "device": doc.get("dev"),
         "referrer": doc.get("ref"), "country": doc.get("c"), "browser": doc.get("br"), "region": doc.get("rg"),
         "city": doc.get("ci"), "path": doc.get("p"),
+        "latitude": (doc.get("ll") or [None, None])[0], "longitude": (doc.get("ll") or [None, None])[1],
     }
     if tenant_names is not None:
         owner = owner_of(doc.get("cp"), tenant_list or [])
         out["organisation"] = tenant_names.get(owner) if owner else None
     return out
+
+
+MAX_PLACES = 5000
+
+
+def places(args, scope: dict) -> dict:
+    """The map of requests (ADR 0006, section 10): the requests a listing's filters select, counted per country and per
+    place (country, region, city) with the place's position when the resolver recorded one (the city's, to a tenth of
+    a degree); the MAX_PLACES most frequent places. {"countries": [[code, n]], "places": [{country, region, city,
+    position, requests}], "total", "located"} — requests without a country are in total only."""
+    match = event_query(args, scope)
+    countries, total, located = [], 0, 0
+    for group in events().aggregate([{"$match": match}, {"$group": {"_id": "$c", "n": {"$sum": 1}}}]):
+        total += group["n"]
+        if group["_id"]:
+            located += group["n"]
+            countries.append([group["_id"], group["n"]])
+    countries.sort(key=lambda c: (-c[1], c[0]))
+    found = events().aggregate([
+        {"$match": {"$and": [match, {"c": {"$exists": True}}]} if match else {"c": {"$exists": True}}},
+        {"$group": {"_id": {"c": "$c", "rg": "$rg", "ci": "$ci"}, "n": {"$sum": 1}, "ll": {"$max": "$ll"}}},
+        {"$sort": {"n": -1}}, {"$limit": MAX_PLACES}])
+    out = [{"country": g["_id"].get("c"), "region": g["_id"].get("rg"), "city": g["_id"].get("ci"),
+            "position": g.get("ll") if isinstance(g.get("ll"), list) and len(g["ll"]) == 2 else None,
+            "requests": g["n"]} for g in found]
+    out.sort(key=lambda p: (-p["requests"], p["country"] or "", p["region"] or "", p["city"] or ""))
+    return {"countries": countries, "places": out, "total": total, "located": located}
 
 
 def list_events(args, scope: dict, limit: int | None = None, organisations: list[dict] | None = None) -> dict:

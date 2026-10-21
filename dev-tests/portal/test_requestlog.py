@@ -349,9 +349,9 @@ EVENTS.delete_many({})
 requestlog.daily().delete_many({})
 store.col("settings").delete_one({"_id": requestlog.SETTING_FINAL})
 located = {
-    "chrome": event(ACME_IN, br="chrome", c="BR", rg="Sao Paulo", ci="Campinas"),
-    "safari": event(ACME_IN, br="safari", c="BR", rg="Sao Paulo", ci="Campinas"),
-    "app": event(ACME_OUT, br="app", c="PT", rg="Lisbon", ci="Lisbon"),
+    "chrome": event(ACME_IN, br="chrome", c="BR", rg="Sao Paulo", ci="Campinas", ll=[-22.9, -47.1]),
+    "safari": event(ACME_IN, br="safari", c="BR", rg="Sao Paulo", ci="Campinas", ll=[-22.9, -47.1]),
+    "app": event(ACME_OUT, br="app", c="PT", rg="Lisbon", ci="Lisbon", ll=[38.7, -9.1]),
     "country": event(OPER, br="chrome", c="ZA"),
 }
 rows = {e["id"]: e for e in root.get("/portal/api/requests").get_json()["events"]}
@@ -368,11 +368,29 @@ check("…an unknown browser or a malformed country refused", code(root.get("/po
       == "requests.badFilter" and code(root.get("/portal/api/requests?country=BRA")) == "requests.badFilter")
 _, found = seen(ana, "?country=PT")
 check("…within the scope only", found == {str(located["app"])}, found)
+check("…the city's position as latitude and longitude", (row.get("latitude"), row.get("longitude")) == (-22.9, -47.1)
+      and rows.get(str(located["country"]), {}).get("latitude") is None, row)
+EVENTS.insert_one({"t": NOW, "ai": "01", "v": "0" + OPER, "cp": OPER, "o": "redirect", "dev": "mobile", "br": "chrome"})
+m = root.get("/portal/api/requests/places").get_json() or {}
+check("the map: requests per country, most first, and the requests without a location counted apart",
+      m.get("countries") == [["BR", 2], ["PT", 1], ["ZA", 1]] and m.get("total") == 5 and m.get("located") == 4, m)
+check("…per place with the city's position, a country alone without one",
+      m.get("places") == [{"country": "BR", "region": "Sao Paulo", "city": "Campinas", "position": [-22.9, -47.1], "requests": 2},
+                          {"country": "PT", "region": "Lisbon", "city": "Lisbon", "position": [38.7, -9.1], "requests": 1},
+                          {"country": "ZA", "region": None, "city": None, "position": None, "requests": 1}], m.get("places"))
+m = root.get("/portal/api/requests/places?browser=safari").get_json() or {}
+check("…with the list's filters", m.get("countries") == [["BR", 1]] and m.get("total") == 1, m)
+m = ana.get("/portal/api/requests/places").get_json() or {}
+check("…within the scope only", m.get("countries") == [["BR", 2], ["PT", 1]] and m.get("whole") is False, m)
+check("…a filter that cannot be read refused", code(root.get("/portal/api/requests/places?country=BRA")) == "requests.badFilter")
+EVENTS.delete_one({"cp": OPER, "c": {"$exists": False}, "br": "chrome"})
 text = root.get("/portal/api/requests.csv?browser=chrome").get_data().decode("utf-8").lstrip("\ufeff")
 table = list(csv.reader(io.StringIO(text), delimiter=";"))
 head = table[0]
-check("CSV: browser, region and city after the country", head[head.index("country"):head.index("country") + 4]
-      == ["country", "browser", "region", "city"] and any(r[head.index("city")] == "Campinas" for r in table[1:]), head)
+check("CSV: browser, region, city and the city's position after the country",
+      head[head.index("country"):head.index("country") + 6] == ["country", "browser", "region", "city", "latitude",
+                                                                 "longitude"]
+      and any(r[head.index("city")] == "Campinas" and r[head.index("latitude")] == "-22.9" for r in table[1:]), head)
 requestlog.count_day(requestlog.today())
 doc = requestlog.daily().find_one({"_id": f"{requestlog.today().isoformat()}|01|0{ACME_IN}"}) or {}
 check("aggregates: browsers, countries and places per key", doc.get("browser") == {"chrome": 1, "safari": 1}

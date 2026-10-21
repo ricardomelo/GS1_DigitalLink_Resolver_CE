@@ -862,6 +862,17 @@ the repository for contributions); single sign-on was not tested on staging (con
 relay for now; the Verified by GS1 address stays as it is; production readiness (7.2) waits for the owner; the
 Portuguese AI names (7.3) stay open; the errata material (8.1) was prepared for the owner to send.
 
+**Forwarding** (`8673873`; ADR 0018). Before the staging round, the owner asked for a default destination for the keys
+the resolver does not know — GS1's global resolver unless the operator says otherwise — and for destinations by
+prefix, both switched on and off in the portal, with indicators in the overview. The resolver reads them from the
+portal's database as it already reads domains and brands, so a change needs no restart. Two choices were the
+recommended ones, the owner being away: the resolver of last resort stays off after installation, because switching
+it on changes the answer to every unknown key (and GS1's test suite expects a 404); and a prefix rule wins over the
+resolver's own records, as the owner described it — "any key with the prefix is simply sent on". The per-rule counts
+come from the counts per key matched against the current rules, which spares the request log a field. Looking at the
+screen showed that the side menu cut *Organisation management* (from the previous delivery): long names now wrap,
+with a check. 33 mutations, all caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

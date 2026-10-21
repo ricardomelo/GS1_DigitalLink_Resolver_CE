@@ -54,6 +54,15 @@
   recorded, the days requests are kept, and that the installation is the sole responsibility of whoever operates it,
   neither GS1 nor the software's contributors answering for it, the software provided "as is". New collection
   `privacy_notice`; routes `GET /portal/privacy`, `GET` and `PUT /portal/api/privacy`. Commit `37b14e8`.
+- **Forwarding to other resolvers** ([ADR 0018](../adr/0018-forwarding.md)), set by server administrators on the
+  portal's new *Forwarding* screen: a **resolver of last resort** (off after installation; `https://id.gs1.org` unless
+  another address is set) answers 307 with the request's path and query string for a key this resolver does not know,
+  instead of 404; **prefix rules** (3 to 12 digits) send every key of a prefix to a destination — another resolver,
+  the path kept, or a fixed address — before this resolver's own records, the longest prefix first. Both switch on and
+  off in the portal and reach the resolver within 30 seconds. The request log records the outcomes *forwarded* and
+  *fallback*; the overview counts both and gives server administrators a *Forwarding* group (the last resort, its
+  requests and codes, the rules and the requests of each), in the exports too. The side menu's long names wrap.
+  Commit `8673873`.
 - **Third-party software, data and licences** (`Documentation/third-party.md`): every component, data source and
   service with its licence; what an operator must do (the notices, the DB-IP attribution, GS1's terms for the GCP
   table, trademarks); why nothing restricts commercial use (MongoDB's SSPL included). The README's licence section

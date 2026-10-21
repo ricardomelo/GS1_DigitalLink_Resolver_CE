@@ -23,6 +23,12 @@
 - **Every language of a target listed**: the *Language* field of a target opens a list of the 200-odd languages the
   browser names, scrolled, with a count and *type to filter*, in the same order, filtered by what is typed. Commit
   `984f2ce`.
+- **A map of where requests come from** on the *Requests* screen ([ADR 0006, section 10](../adr/0006-resolver-request-log.md)):
+  a world map of the requests the filters select, each country shaded by its requests, each city a circle; zoom with
+  the wheel, a drag or buttons; a click on a country zooms to it and lists its regions and cities. The resolver now
+  records the city's position from the GeoIP database, rounded to a tenth of a degree (`ll`); the CSV gains `latitude`
+  and `longitude`; the list shows the region beside the city. d3, topojson-client and Natural Earth's countries are
+  served by the portal (no map service). New route `GET /portal/api/requests/places`. Commit `a287a64`.
 
 ### Owner's additions of 17 October: the project's documentation (backlog item 9.11)
 - **An inventory of every feature drawn from the development tests** ([ADR 0016](../adr/0016-documentation-and-feature-inventory.md)):

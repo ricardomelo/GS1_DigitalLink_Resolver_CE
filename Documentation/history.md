@@ -811,6 +811,15 @@ was replaced by the portal's own list, scrolled, counted, filtered by the part a
 that a list placed with fixed coordinates under a field near the bottom of the window ends up off-screen or behind the
 page; it now lives inside the field's box and opens upwards when there is no room below. 12 mutations, all caught.
 
+**A map of where requests come from** (`a287a64`; ADR 0006 §10). The log had the names of countries, regions and cities but,
+by the decision of 17 October, no coordinates; placing cities by their names would have needed a gazetteer and guesses
+between namesakes, while the GeoIP database already gives each city a point. That point is now kept, rounded to a
+tenth of a degree, so it says no more than the city's name. The map is d3 over Natural Earth's countries, served by the
+portal and loaded only when the box is opened; a click on a country zooms to it and lists its regions and cities, and
+the map follows the list's filters. Adding the map's texts replaced, unnoticed at first, an existing message of the
+same name (the Google Maps link's title): the location check of the end-to-end test caught it. 12 mutations, all
+caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

@@ -891,6 +891,17 @@ proxy, still sets them from its script), and an icon of its own was added rather
 logo is usually wide and unreadable at 16 pixels. 14 more mutations, all caught; one of them was caught at first for
 the wrong reason — it broke the script's syntax — and was rewritten until a check caught it for the right one.
 
+## Session 18 — the staging tests of 21 October
+
+The staging round of session 17's deliveries, run by the owner on the head `5251e13`, with each finding fixed as it
+came.
+
+**The space limit's Save reloaded the page** (`4797247`). Typing 0 in *Most space on disk* and saving reloaded the
+page instead of refusing the value, and nothing happened after it. The space form's handler had been registered inside
+the days form's handler, so it existed only once the days had been saved in the same page. The end-to-end test saved
+the days first and never met that page; its space checks now start on a freshly loaded page and check that the
+refusal leaves the page in place (the old code fails it).
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

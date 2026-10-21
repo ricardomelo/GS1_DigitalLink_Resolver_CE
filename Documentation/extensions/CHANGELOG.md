@@ -2,6 +2,11 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### The staging tests of 21 October (session 18)
+- **Fixed: the request log's space limit could not be saved on a fresh page**: on *Requests → Retention*, *Save*
+  beside *Most space on disk (MB)* reloaded the page unless the days had been saved first in the same page, and each
+  save of the days added another copy of its handler. Commit `4797247`.
+
 ### The staging tests of 20 October and the owner's notes (session 17)
 - **A limit on the space the request log may use** (finding F1; [ADR 0006, section 9](../adr/0006-resolver-request-log.md)):
   server administrators set the most space on disk on *Requests → Retention* (megabytes; empty: no limit). Beyond it,

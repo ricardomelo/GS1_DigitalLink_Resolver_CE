@@ -246,11 +246,16 @@ with sync_playwright() as p:
     check("…an organisation's fewer days saved", tenants.get(acme["id"])["logDays"] == 30
           and page.input_value(f"#retention-orgs-body tr[data-tenant='{acme['id']}'] input") == "30",
           page.inner_text("#retention-status"))
+    # the space form on a fresh page, before any other form of the tab was saved (it once had no handler until then)
+    page.goto(BASE + "#requests"); page.reload(); page.wait_for_timeout(1500)
+    page.click("#requests-tab-retention"); page.wait_for_timeout(800)
+    page.evaluate("window.__samePage = true")
     check("…the most space on disk: empty (no limit), with what it does", page.is_visible("#retention-max-mb")
           and page.input_value("#retention-max-mb") == "" and "80 %" in page.inner_text("#retention-max-hint")
           and not page.is_visible("#retention-max-share"), page.inner_text("#requests-retention")[:400])
     page.fill("#retention-max-mb", "0"); page.click("#retention-max-save"); page.wait_for_timeout(600)
-    check("…0 MB refused", "megabytes" in page.inner_text("#retention-status") and requestlog.max_bytes() is None,
+    check("…0 MB refused", "megabytes" in page.inner_text("#retention-status")
+          and requestlog.max_bytes() is None and page.evaluate("window.__samePage === true"),
           page.inner_text("#retention-status"))
     page.fill("#retention-max-mb", "2048"); page.click("#retention-max-save"); page.wait_for_timeout(800)
     check("…2048 MB saved and shown as 2 GB", "2 GB" in page.inner_text("#retention-status")

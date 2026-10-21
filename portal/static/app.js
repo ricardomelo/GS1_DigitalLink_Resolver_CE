@@ -5597,11 +5597,11 @@ async function init() {
   $("#retention-global").addEventListener("submit", e => {
     e.preventDefault();
     saveRetention({ days: $("#retention-global-days").value.trim() });
+  });
   $("#retention-max").addEventListener("submit", e => {
     e.preventDefault();
     const value = $("#retention-max-mb").value.trim();
     saveRetention({ maxMegabytes: value === "" ? null : value });
-  });
   });
   $("#requests-api-filters").addEventListener("submit", e => loadApiCalls(e));
   $("#requests-api-more").addEventListener("click", () => loadApiCalls(null, true));

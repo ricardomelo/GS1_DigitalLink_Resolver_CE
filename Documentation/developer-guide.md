@@ -1141,6 +1141,13 @@ The table of every behaviour change, with the clause of the standard, is in the 
 - `informativeQualifiers` (`INFORMATIVE_QUALIFIERS`): on a serial-number entry of 01 or 8006, a list like
   `qualifiers`, stored next to it in MongoDB, returned by `GET` and `/summary`, merged by `PUT` (absent:
   kept; empty list: cleared) and by an upsert on the same entry. Declared in the Swagger model.
+- `POST /new` on an entry that exists (same qualifiers; `_process_document_upsert()`): `_merged_entry()` merges the
+  links as `PUT` does — both entries through `_convert_mongo_linkset_to_v3()`, `_find_matching_link()` on (linktype,
+  hreflang, context), back through `_author_db_linkset_document()` — and takes the item description sent; the key's
+  default link type stays. The official code added the new linkset object to the entry, so the same record sent twice
+  had every link twice (official pull request #128; its fix applied `_find_matching_link()` to the linkset objects,
+  which carry no linktype, so a link in another language replaced the type's links). The portal sends it when two
+  people create the same record at once and when it restores a key's records after a failed rewrite.
 
 ## 11. Proxy and home page (`frontend_proxy_server/`)
 

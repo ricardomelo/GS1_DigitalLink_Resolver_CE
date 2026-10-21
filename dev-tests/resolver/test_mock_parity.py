@@ -2,7 +2,8 @@
 The portal's stand-in for the data entry API (dev-tests/portal/mock_data_entry.py) against the real one: the same
 calls, in the order the portal makes them, must give the same records back. Both staging bugs of 15 October hid
 behind stand-ins that did more than the real component (Documentation/history.md, session 14); this program keeps
-the data entry stand-in honest. It covers what the portal relies on: POST /new (a new key, a new record of a key),
+the data entry stand-in honest. It covers what the portal relies on: POST /new (a new key, a new record of a key, a
+record that exists),
 PUT (links merged by type, language and context; the shared default link type;
 informative qualifiers), DELETE of some links, GET and GET /summary with links — with and without links of type
 gs1:defaultLink (Documentation/adr/0011-item-page.md, amendment of 17 October 2026).
@@ -114,8 +115,13 @@ def record(links, default, qualifiers=None, **extra):
 # ---------------------------------------------------------------- a key without the item's page
 succeeded("new key", both("post", "/new", record([link("gs1:pip", "https://a.example/p")], "gs1:pip")))
 same("new key")
-# (POST /new on a record that exists is left out: the real API then adds a second linkset item to the record, and
-# the portal never does it — it creates with POST and changes with PUT)
+# POST /new on a record that exists merges its links as PUT does (official pull request #128); the portal does it
+# when two people create the same record at once, and when it restores a key's records after a failed rewrite
+succeeded("the same record again by POST", both("post", "/new", record([link("gs1:pip", "https://a.example/p")], "gs1:pip")))
+same("the same record again")
+succeeded("POST on a record that exists", both("post", "/new", record(
+    [link("gs1:pip", "https://a.example/p1"), link("gs1:pip", "https://a.example/pt", lang="pt")], "gs1:pip")))
+same("POST on a record that exists")
 succeeded("a second link added by PUT", both("put", "/01/09506000134352", record([link("gs1:faqs", "https://a.example/f")], "gs1:pip")))
 same("added link")
 succeeded("a batch record", both("post", "/new", record([link("gs1:pip", "https://a.example/b")], "gs1:pip",

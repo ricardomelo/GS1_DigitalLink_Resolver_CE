@@ -1,12 +1,11 @@
 """
 In-memory stand-in for the Resolver CE data-entry API, used by the portal end-to-end test.
-It reproduces the behaviours the portal must cope with: POST /new appends links to an existing
-entry, PUT merges by (linktype, hreflang, context), DELETE removes links or the whole document;
+It reproduces the behaviours the portal must cope with: POST /new on an existing entry and PUT both merge by (linktype, hreflang, context), DELETE removes links or the whole document;
 informativeQualifiers are kept like the real API does, and a registration with AI 21 plus AI 22 or
 AI 10 is refused (GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2).
 Bearer token: "tok".
 """
-# Emula o data-entry do Resolver CE (semântica relevante: upsert com extend, PUT merge, DELETE parcial)
+# Stands in for the Resolver CE data entry API (what matters: upsert and PUT merge links, partial DELETE)
 import copy
 from flask import Flask, request, jsonify
 app = Flask(__name__)
@@ -36,7 +35,11 @@ def upsert(doc):
     if did in DB:
         for e in DB[did]["entries"]:
             if qm(e["qualifiers"],ent["qualifiers"]):
-                e["links"].extend(ent["links"])
+                for nl in ent["links"]:
+                    m=[i for i,l in enumerate(e["links"]) if key(l)==key(nl)]
+                    if m: e["links"][m[0]].update(nl)
+                    else: e["links"].append(nl)
+                e["itemDescription"]=ent["itemDescription"]
                 if "informativeQualifiers" in doc: e["informative"]=ent["informative"]
                 return 200
         DB[did]["entries"].append(ent); return 200

@@ -163,6 +163,29 @@ data = client.get("/api/01/09506000134352", headers=AUTH).get_json()["data"]
 check("POST /new on an existing serial record updates its informative qualifiers", any(
     e.get("qualifiers") == [{"21": "S1"}] and e.get("informativeQualifiers") == [{"10": "B9"}] for e in data), data)
 
+
+def batch_links():
+    data = client.get("/api/01/09506000134352", headers=AUTH).get_json()["data"]
+    return next((e.get("links") for e in data if e.get("qualifiers") == [{"10": "B1"}]), None)
+
+
+# The merge of POST /new on an existing record is PUT's, on (linktype, hreflang, context) (official pull request #128)
+post(entry(qualifiers=[{"10": "B1"}]))
+r = post(entry(qualifiers=[{"10": "B1"}]))
+links = batch_links()
+stored = [e for e in STORE["01_09506000134352"]["data"] if e["qualifiers"] == [{"10": "B1"}]]
+check("POST /new of the same record again does not duplicate its links",
+      r.status_code in (200, 201) and links is not None and len(links) == 1 and len(stored[0]["linkset"]) == 1,
+      (links, stored))
+post(entry(qualifiers=[{"10": "B1"}], links=[{**PIP[0], "href": "https://example.com/p2"}]))
+links = batch_links()
+check("POST /new on an existing record: a link of the same type, languages and context replaced in place",
+      links is not None and [l.get("href") for l in links] == ["https://example.com/p2"], links)
+post(entry(qualifiers=[{"10": "B1"}], links=[{**PIP[0], "hreflang": ["pt"], "href": "https://example.com/pt"}]))
+links = batch_links()
+check("POST /new on an existing record: a link in other languages added",
+      links is not None and sorted(l.get("href") for l in links) == ["https://example.com/p2", "https://example.com/pt"], links)
+
 # ---------------------------------------------------------------- POST /validate: what POST /new would refuse, nothing stored
 before = copy.deepcopy(STORE)
 r = client.post("/api/validate", json=[entry(qualifiers=[{"10": "B1"}]), entry(qualifiers=[{"10": "B1"}, {"21": "S1"}])],

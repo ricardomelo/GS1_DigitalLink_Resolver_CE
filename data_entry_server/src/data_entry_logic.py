@@ -492,8 +492,10 @@ def _process_document_upsert(authored_doc: dict[str, Any]) -> tuple[dict[str, An
                 found = False
                 for existing_db_entry in existing_db_document['data']:
                     if _do_qualifiers_match(existing_db_entry['qualifiers'], entry['qualifiers']):
-                        # If the qualifiers match, update the linkset
-                        existing_db_entry['linkset'].extend(entry['linkset'])
+                        # If the qualifiers match, merge the links as PUT does: the official extend() added a second
+                        # linkset object, so sending the same record again duplicated every link (official pull
+                        # request #128, whose fix compared the linkset objects themselves, which carry no linktype)
+                        existing_db_entry.update(_merged_entry(existing_db_document, existing_db_entry, entry))
                         if 'informativeQualifiers' in entry:
                             existing_db_entry['informativeQualifiers'] = entry['informativeQualifiers']
                         found = True
@@ -715,6 +717,24 @@ def _find_matching_link(existing_links: list[dict[str, Any]], new_link: dict[str
             return i
 
     return None
+
+
+def _merged_entry(db_doc: dict[str, Any], existing_entry: dict[str, Any], new_entry: dict[str, Any]) -> dict[str, Any]:
+    """
+    A stored record (one data entry of db_doc) with the links of new_entry, a data entry of the same qualifiers,
+    merged as update_document merges them: by (linktype, hreflang, context), matching links updated, others added.
+    The item description is new_entry's; the key's default link type stays db_doc's.
+    """
+    existing_v3 = _convert_mongo_linkset_to_v3({**db_doc, 'data': [existing_entry]})[0]
+    new_v3 = _convert_mongo_linkset_to_v3({**db_doc, 'data': [new_entry]})[0]
+    for new_link in new_v3['links']:
+        idx = _find_matching_link(existing_v3['links'], new_link)
+        if idx is not None:
+            existing_v3['links'][idx].update(new_link)
+        else:
+            existing_v3['links'].append(new_link)
+    existing_v3['itemDescription'] = new_v3['itemDescription'] or existing_v3['itemDescription']
+    return _author_db_linkset_document(existing_v3)['data']['data'][0]
 
 
 def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any], int]:

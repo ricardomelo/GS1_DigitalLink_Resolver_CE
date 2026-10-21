@@ -958,6 +958,22 @@ the resolver's Werkzeug from 3.1.7. The data entry API pinned the same version, 
 both services' requirements in one pip command, which cannot satisfy two pins of one package: both moved. The whole
 battery passed with it.
 
+## Session 20 — the official project's pull request #128
+
+With no new findings from staging, the owner took the recommended follow-up: compare the official project's open pull
+request #128 with the fork. Of its three fixes, two were already in the fork — the resolver adds a query string to an
+address that has one with `&` (`_append_query()`), and the rewritten `read_document()` answers a pair on every path.
+The third, `POST /new` duplicating the links of a record that exists, was still there (`5d04806`). Taken as proposed,
+it passed the first two new checks and failed the third: in MongoDB a record's `linkset` holds one object keyed by link
+type URIs, not links, so `_find_matching_link()` found every object equal and `update()` replaced the type's links — a
+link in another language removed the English one. The fix goes through the v3 format, as `PUT` does. The portal's
+stand-in for the API appended too, and `test_mock_parity.py` had left the case out because the portal "never does
+it"; it does, when two people create the same record at once and on the restore after a failed rewrite, so the
+stand-in merges now and the parity program covers it. 6 mutations, the pull request's own fix among them, all caught.
+
+Found on the way and left for the owner: `PUT` with qualifiers that no record of the key has answers 200 and writes
+the links into the key's first record (official code; the portal only puts records that exist).
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -1099,6 +1115,9 @@ battery passed with it.
   the limit from today in the test, so the fixture stays on the same side of it.
 - A mutation that makes the code loop for ever is caught (the test cannot pass) but can stop a mutation loop that
   waits on it: give each run its own time limit and treat a timeout as caught.
+- A fix from elsewhere is a proposal: test it against the data as stored before taking it. The official pull request
+  #128 reused a helper written for the v3 format on MongoDB's linkset objects, and only a check with a second
+  language showed it.
 
 ## Open items
 

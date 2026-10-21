@@ -2,6 +2,16 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### The official project's pull request #128 (session 20)
+- **Fixed: `POST /new` of a record that exists duplicated its links** (data entry API, deliberate change to official
+  code): sending again a record the key already had (the same qualifiers) added a second linkset object to it, so each
+  link appeared twice. The links are now merged as `PUT` merges them — by link type, languages and context, a matching
+  link replaced, any other added — and the item description sent replaces the stored one. The portal sends such a
+  request when two people create the same record at once and when it restores a key's records after a failed rewrite.
+  From the official project's pull request #128, whose fix compared the linkset objects themselves: a link in another
+  language would have replaced the type's links. The pull request's two other fixes (the query string added to an
+  address that has one, `read_document()`'s answers) were already in the fork. Commit `5d04806`.
+
 ### Two follow-ups (session 19)
 - **Stopping a running import or link check** ([ADR 0001, section 3.3.1](../adr/0001-portal-state-in-mongodb.md)):
   *Stop import* in the import dialog, *Stop* beside the progress of *Check links* and of the import preview's address

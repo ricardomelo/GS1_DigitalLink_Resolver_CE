@@ -121,7 +121,7 @@
     "list: the organisation's keys, the scopes, the limits",
     "refused: apikeys.nameInvalid (ab)",
     "refused: apikeys.scopesInvalid (No scope)",
-    "refused: apikeys.scopesInvalid (Bad scope)",
+    "refused: apikeys.scopesInvalid (Bad scope)2026-10-21 20:31:39,305 INFO portal.worker Job 30e1ad7806b84335aa6936aaa076265b (mail of ana) started, attempt 1, from item 0 of 1.",
     "refused: apikeys.daysInvalid (Zero)",
     "refused: apikeys.daysInvalid (Too long)",
     "refused: apikeys.nameExists (erp INTEGRATION)",
@@ -142,7 +142,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_9448b286137…)",
+    "a wrong key is refused (rk_b3c02218bed…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -492,6 +492,9 @@
     "PUT with an empty list clears them",
     "PUT refuses informative qualifiers on a batch record → 400",
     "POST /new on an existing serial record updates its informative qualifiers",
+    "POST /new of the same record again does not duplicate its links",
+    "POST /new on an existing record: a link of the same type, languages and context replaced in place",
+    "POST /new on an existing record: a link in other languages added",
     "POST /validate names the item POST /new would refuse and why",
     "…and stores nothing",
     "…one entry, valid: no problem",
@@ -512,7 +515,7 @@
     "engine: PUT refuses an invalid value (an informative batch too long) → 400",
     "without the engine (no script): values not checked, as before"
    ],
-   "count": 72,
+   "count": 75,
    "ciOnly": false
   },
   "datamatrix": {
@@ -2817,7 +2820,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:34355/ok",
+    "internal address refused: http://127.0.0.1:41841/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -3042,6 +3045,10 @@
    "checks": [
     "new key: both accept",
     "new key: GET /01/09506000134352 gives the same records",
+    "the same record again by POST: both accept",
+    "the same record again: GET /01/09506000134352 gives the same records",
+    "POST on a record that exists: both accept",
+    "POST on a record that exists: GET /01/09506000134352 gives the same records",
     "a second link added by PUT: both accept",
     "added link: GET /01/09506000134352 gives the same records",
     "a batch record: both accept",
@@ -3069,7 +3076,7 @@
     "DELETE of the whole key: both accept",
     "after the DELETE both answer 404"
    ],
-   "count": 28,
+   "count": 32,
    "ciOnly": false
   },
   "monitor": {
@@ -4411,7 +4418,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.003 ms; Node.js: tens of ms)"
    ],
    "count": 207,
    "ciOnly": false

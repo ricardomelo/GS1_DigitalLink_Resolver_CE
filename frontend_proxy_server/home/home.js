@@ -53,6 +53,7 @@
       "card.github.title": "GS1 Resolver CE no GitHub",
       "card.github.text": "Código aberto (Apache 2.0) do Resolver usado por este serviço.",
       "footer.operatedBy": "Operado por",
+      "footer.privacy": "Aviso de privacidade",
       "footer.notice": "Software mantido pela sua comunidade, não pela GS1 nem por qualquer Organização-Membro GS1. Quem opera esta instalação é responsável pelo seu uso.",
     },
     "en-GB": {
@@ -82,6 +83,7 @@
       "card.github.title": "GS1 Resolver CE on GitHub",
       "card.github.text": "Open-source code (Apache 2.0) of the resolver behind this service.",
       "footer.operatedBy": "Operated by",
+      "footer.privacy": "Privacy notice",
       "footer.notice": "Software maintained by its community, not by GS1 or any GS1 Member Organisation. Whoever operates this installation is responsible for its use.",
     },
     "es": {
@@ -111,6 +113,7 @@
       "card.github.title": "GS1 Resolver CE en GitHub",
       "card.github.text": "Código abierto (Apache 2.0) del resolver en el que se basa este servicio.",
       "footer.operatedBy": "Operado por",
+      "footer.privacy": "Aviso de privacidad",
       "footer.notice": "Software mantenido por su comunidad, no por GS1 ni por ninguna Organización Miembro de GS1. Quien opera esta instalación es responsable de su uso.",
     },
     "fr": {
@@ -140,6 +143,7 @@
       "card.github.title": "GS1 Resolver CE sur GitHub",
       "card.github.text": "Code open source (Apache 2.0) du résolveur sur lequel repose ce service.",
       "footer.operatedBy": "Exploité par",
+      "footer.privacy": "Avis de confidentialité",
       "footer.notice": "Logiciel maintenu par sa communauté, et non par GS1 ni par une organisation membre de GS1. L’exploitant de cette installation est responsable de son utilisation.",
     },
     "de": {
@@ -169,6 +173,7 @@
       "card.github.title": "GS1 Resolver CE auf GitHub",
       "card.github.text": "Open-Source-Code (Apache 2.0) des Resolvers hinter diesem Dienst.",
       "footer.operatedBy": "Betrieben von",
+      "footer.privacy": "Datenschutzhinweis",
       "footer.notice": "Software, die von ihrer Community gepflegt wird, nicht von GS1 oder einer GS1-Mitgliedsorganisation. Wer diese Installation betreibt, ist für ihre Nutzung verantwortlich.",
     },
     "it": {
@@ -198,6 +203,7 @@
       "card.github.title": "GS1 Resolver CE su GitHub",
       "card.github.text": "Codice open source (Apache 2.0) del resolver alla base di questo servizio.",
       "footer.operatedBy": "Gestito da",
+      "footer.privacy": "Informativa sulla privacy",
       "footer.notice": "Software mantenuto dalla sua comunità, non da GS1 né da alcuna Organizzazione Membro GS1. Chi gestisce questa installazione è responsabile del suo utilizzo.",
     },
     "tr": {
@@ -227,6 +233,7 @@
       "card.github.title": "GitHub'da GS1 Resolver CE",
       "card.github.text": "Bu hizmetin arkasındaki çözümleyicinin açık kaynak kodu (Apache 2.0).",
       "footer.operatedBy": "İşleten",
+      "footer.privacy": "Gizlilik bildirimi",
       "footer.notice": "Yazılım, GS1 veya herhangi bir GS1 Üye Kuruluşu tarafından değil, topluluğu tarafından sürdürülmektedir. Bu kurulumu işleten kişi veya kuruluş, kullanımından sorumludur.",
     },
     "zh-Hans": {
@@ -256,6 +263,7 @@
       "card.github.title": "GitHub上的GS1 Resolver CE",
       "card.github.text": "此服务所用解析器的开源代码（Apache 2.0）。",
       "footer.operatedBy": "运营方：",
+      "footer.privacy": "隐私声明",
       "footer.notice": "本软件由其社区维护，而非由GS1或任何GS1成员组织维护。本安装的运营者对其使用负责。",
     },
     "ja": {
@@ -285,6 +293,7 @@
       "card.github.title": "GitHub の GS1 Resolver CE",
       "card.github.text": "このサービスを支えるリゾルバーのオープンソースコード（Apache 2.0）。",
       "footer.operatedBy": "運用者：",
+      "footer.privacy": "プライバシーに関するお知らせ",
       "footer.notice": "このソフトウェアはコミュニティによって保守されており、GS1やGS1加盟組織によるものではありません。このインストール環境の運用者が、その利用について責任を負います。",
     },
     "ko": {
@@ -314,6 +323,7 @@
       "card.github.title": "GitHub의 GS1 Resolver CE",
       "card.github.text": "이 서비스를 구동하는 리졸버의 오픈 소스 코드(Apache 2.0)입니다.",
       "footer.operatedBy": "운영:",
+      "footer.privacy": "개인정보 처리 안내",
       "footer.notice": "이 소프트웨어는 GS1 또는 GS1 회원기관이 아닌 커뮤니티에서 유지 관리합니다. 이 설치 환경의 운영자가 사용에 대한 책임을 집니다.",
     },
     "hi": {
@@ -343,6 +353,7 @@
       "card.github.title": "GitHub पर GS1 Resolver CE",
       "card.github.text": "इस सेवा के पीछे के रिज़ॉल्वर का ओपन-सोर्स कोड (Apache 2.0)।",
       "footer.operatedBy": "संचालक",
+      "footer.privacy": "गोपनीयता सूचना",
       "footer.notice": "इस सॉफ़्टवेयर का रखरखाव इसका समुदाय करता है, GS1 या कोई GS1 सदस्य संगठन नहीं। इस इंस्टॉलेशन को चलाने वाला इसके उपयोग के लिए उत्तरदायी है।",
     },
     "ar": {
@@ -372,6 +383,7 @@
       "card.github.title": "GS1 Resolver CE على GitHub",
       "card.github.text": "الشيفرة المفتوحة المصدر (Apache 2.0) للمحلِّل الذي تقوم عليه هذه الخدمة.",
       "footer.operatedBy": "يشغّله",
+      "footer.privacy": "إشعار الخصوصية",
       "footer.notice": "برنامج يصونه مجتمعه، لا GS1 ولا أي منظمة عضو في GS1. ويتحمّل من يشغّل هذا التثبيت مسؤولية استخدامه.",
     },
   };

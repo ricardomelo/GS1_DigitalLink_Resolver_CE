@@ -754,6 +754,15 @@ curl -s -o label.svg -H "Authorization: Bearer $KEY" 'https://id.example.org/por
 Errors come as `{"code": "...", "params": {...}}` with the portal's message codes (`api.keyMissing`,
 `api.keyInvalid`, `api.scope`, `api.rateLimit`, `access.prefix`, `record.notFound`, the GS1 and validation codes).
 
+## Privacy notice
+
+The footer of every page links to `/portal/privacy`, the installation's privacy notice
+([ADR 0017](../adr/0017-privacy-notice.md)), open to anyone. Until a server administrator publishes a version in the
+portal (*Privacy notice*), it shows a default text in the reader's language with `RESOLVER_ORG_NAME` and the days
+requests are kept; it says that the installation is the operator's sole responsibility and that the software comes "as
+is". Each publication is a version kept in the portal's database (`privacy_notice`, part of the backup). Write the
+operator's own notice before going to production.
+
 ## Request log
 
 The resolver records each resolution request — a GS1 Digital Link URI, a compressed one, an EPC binary string,
@@ -1599,6 +1608,7 @@ A checklist for an installation that will be printed on products (item 7.2):
 - [ ] **Firewall**: only 80 and 443 open to the world; 8080 and 27017 bound to 127.0.0.1 (`PROXY_BIND_ADDRESS`,
   `DATABASE_BIND_ADDRESS`).
 - [ ] **Description file**: `RESOLVER_ORG_NAME`, contact and, if any, `RESOLVER_TERMS_URL` are the operator's.
+- [ ] **Privacy notice**: the operator's own text published in the portal (*Privacy notice*), not the default.
 - [ ] **Load**: replicas sized from a load test (`dev-tests/load/`).
 
 ## Development tests

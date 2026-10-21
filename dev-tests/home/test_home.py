@@ -234,6 +234,8 @@ def routing_checks(base: str) -> None:
     status, _, body = fetch(base + "/", accept="application/json")
     check(status == 200 and 'id="site-nav"' in body, "GET / with Accept: application/json → home page (no resolver content at /)")
 
+    check('<a href="/portal/privacy" data-i18n="footer.privacy">' in body,
+          "the home page's footer links to the installation's privacy notice (ADR 0017)")
     check('<img src="/home/logo.svg"' in body and "gs1-logo.png" not in body,
           "the home page shows the project's logo, not GS1's (backlog item 7.3)")
     for asset, kind in [("home.css", "text/css"), ("home.js", "javascript"), ("logo.svg", "image/svg+xml"),
@@ -407,6 +409,8 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
         check("não pela GS1 nem por qualquer Organização-Membro GS1" in page.locator("#notice").inner_text()
               and "responsável pelo seu uso" in page.locator("#notice").inner_text(),
               "footer notice in Portuguese: community software, operator responsible")
+        check(page.locator(".site-footer a[href='/portal/privacy']").inner_text() == "Aviso de privacidade",
+              "footer link to the privacy notice, in Portuguese")
         operator_link = page.locator("#operator-name a")
         check(operator_link.count() == 1 and operator_link.get_attribute("href") == "https://www.example.org/"
               and operator_link.evaluate("a => a.firstChild.textContent") == "Example Org"

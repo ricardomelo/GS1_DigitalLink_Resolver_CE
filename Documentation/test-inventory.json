@@ -2,7 +2,7 @@
  "generated": "2026-10-21",
  "programs": {
   "admin_nav": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "an organisation's administrator opens their organisation's page",
     "…its users with their prefixes",
@@ -51,7 +51,7 @@
    "ciOnly": false
   },
   "admin_nav_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "the sign-in page: no room kept for a sidebar it does not have, the form under the title",
     "…the project's logo in the header, not GS1's",
@@ -109,7 +109,7 @@
    "ciOnly": false
   },
   "api": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "an editor cannot list or create keys",
     "a tenant administrator creates a key: 201, the full key once",
@@ -208,7 +208,7 @@
    "ciOnly": false
   },
   "api_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "an organisation's administrator has API keys in the menu",
     "choosing a menu item closes the menu, though the pointer is still over it",
@@ -690,7 +690,7 @@
    "ciOnly": false
   },
   "domains": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "an organisation's administrator adds a domain (name tidied, stem with its slash)",
     "…with the TXT record to add",
@@ -768,7 +768,7 @@
    "ciOnly": false
   },
   "domains_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "administrators have Domains in the menu",
     "the screen opens with its title, no domain yet",
@@ -1128,7 +1128,7 @@
    "ciOnly": false
   },
   "exports": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "PORTAL_EXPORT_LIMITS read once: reader and editor kept, malformed entries and the administrators' ignored",
     "…they became the operator's limits and those of the organisation that existed",
@@ -1609,13 +1609,14 @@
     "nginx starts while a service name has no address yet",
     "…and answers that service's paths with an error meanwhile (502)",
     "…while the other services answer",
-    "the service is found once its name has an address, without restarting nginx (1.8 s)",
+    "the service is found once its name has an address, without restarting nginx (2.0 s)",
     "GET / → 200 text/html",
     "GET / serves the home page, not the resolver",
     "GET / carries the Content Security Policy",
     "GET / carries X-Content-Type-Options",
     "GET /?query → home page",
     "GET / with Accept: application/json → home page (no resolver content at /)",
+    "the home page's footer links to the installation's privacy notice (ADR 0017)",
     "the home page shows the project's logo, not GS1's (backlog item 7.3)",
     "GET /home/home.css → 200 text/css",
     "GET /home/home.js → 200 javascript",
@@ -1658,6 +1659,7 @@
     "menu text in Portuguese",
     "no GS1 Digital Link syntax box on the home page",
     "footer notice in Portuguese: community software, operator responsible",
+    "footer link to the privacy notice, in Portuguese",
     "operator from the description file, linked to contact.hasURL as an external link",
     "desktop: menu visible, no menu button",
     "external links are marked (icon and accessible text)",
@@ -1679,7 +1681,7 @@
     "phone: no horizontal scrolling",
     "without JavaScript: English text, menu visible"
    ],
-   "count": 72,
+   "count": 74,
    "ciOnly": false
   },
   "i18n": {
@@ -2545,7 +2547,7 @@
    "ciOnly": false
   },
   "mail": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "mail off without PORTAL_MAIL_HOST",
     "a relay without a sender is refused",
@@ -2690,7 +2692,7 @@
    "ciOnly": false
   },
   "mail_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "sign-in page: recovery offered",
     "users: the invitation box, ticked, and its hint",
@@ -2769,7 +2771,7 @@
    "ciOnly": false
   },
   "monitor": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "defaults: every 5 minutes, the description file through the proxy, 26 hours, 21 days, 20 and 3 times",
     "a setting that is not a number: the default",
@@ -3386,6 +3388,74 @@
    "count": 173,
    "ciOnly": false
   },
+  "privacy": {
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "checks": [
+    "anyone, signed in or not: no version yet, the operator's name and the days requests are kept",
+    "…the page itself, with the footer's notice and its own script",
+    "…its script, style and the project's logo without signing in",
+    "…but not the portal's own script",
+    "the default notice in every language, with the operator's name and the days requests are kept",
+    "…on the operator's sole responsibility, not GS1's nor the contributors', the software \"as is\"",
+    "…and in Portuguese",
+    "…what is recorded: no address, an approximate location, the days",
+    "publishing: not without signing in",
+    "…not by an organisation's administrator (server administrators only)",
+    "…refused: an empty text → privacy.textRequired",
+    "…refused: no text → privacy.textRequired",
+    "…refused: a text too long → privacy.textTooLong",
+    "…refused: control characters → privacy.textInvalid",
+    "…refused: a note too long → privacy.noteTooLong",
+    "…the limit named",
+    "…nothing stored by a refusal",
+    "a server administrator publishes version 1: line breaks made \\n, tabs kept, the note's spaces tidied",
+    "…in the journal, with the version",
+    "…shown to anyone as the notice in force",
+    "version 2: in force, the list newest first and without the texts",
+    "…version 1 still readable as published, by its number",
+    "…an unknown version (9): 404 privacy.unknown",
+    "…an unknown version (abc): 404 privacy.unknown",
+    "…an unknown version (0): 404 privacy.unknown",
+    "…no way to change or delete a version",
+    "two administrators at once: the second refused (privacy.conflict), the first's version kept",
+    "support access: no publishing (403 privacy.readOnly)",
+    "every text of the notice in the twelve languages (28 keys)",
+    "…the footer's link on the resolver's pages too"
+   ],
+   "count": 30,
+   "ciOnly": false
+  },
+  "privacy_e2e": {
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
+   "checks": [
+    "the sign-in page: a footer link to the privacy notice",
+    "…which opens without signing in: the default notice in the reader's language",
+    "…with the days requests are kept and the operator's responsibility, \"as is\"",
+    "…headings as headings, said to be the default notice, no list of versions yet",
+    "…in English when the reader chooses it",
+    "the portal's footer: the privacy link",
+    "a server administrator: Privacy notice in the menu",
+    "…the screen: no version yet, the text starting from the default notice",
+    "…the hint names the words replaced",
+    "…the preview: heading, the words replaced, a list, the address a link, markup shown as text",
+    "…publishing asks first, in the portal's own dialog",
+    "…cancelled: nothing published",
+    "…confirmed: version 1 published and listed",
+    "…the state says the version in force",
+    "…version 2 on top of the list",
+    "the public page: the version in force, its number and date",
+    "…the versions listed, the one shown marked",
+    "…an earlier version: its text, said to be earlier, a link to the one in force",
+    "…markup in a notice never run",
+    "…an unknown version said so",
+    "an organisation's administrator: no privacy screen in the menu",
+    "…nor by its address",
+    "a phone: the notice within the width",
+    "no script errors"
+   ],
+   "count": 24,
+   "ciOnly": false
+  },
   "registration": {
    "area": "Records: keys, qualifiers, links and the editor",
    "checks": [
@@ -3828,6 +3898,7 @@
     "HTML linkset page: javascript: and data: targets listed without a link",
     "HTML 404 page lists the same targets without links",
     "HTML pages: logo links to the home page",
+    "…the footer links to the installation's privacy notice, in the page's language (ADR 0017)",
     "…the project's logo embedded as SVG, not GS1's",
     "CORS exposes Link",
     "upstream /01/09506000134376",
@@ -3982,9 +4053,9 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.003 ms; Node.js: tens of ms)"
    ],
-   "count": 206,
+   "count": 207,
    "ciOnly": false
   },
   "scan_search": {
@@ -4011,7 +4082,7 @@
    "ciOnly": false
   },
   "session": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "configuration carries the session limits",
     "keep-alive answers the same limits",
@@ -4163,7 +4234,7 @@
    "ciOnly": false
   },
   "sso": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "an organisation's administrator: its configuration (none yet), the address to register",
     "an editor may not",
@@ -4232,7 +4303,7 @@
    "ciOnly": false
   },
   "sso_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "no organisation sign-in offered before one is on",
     "administrators have Organisation sign-in in the menu",
@@ -4321,7 +4392,7 @@
    "ciOnly": false
   },
   "tenants": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy notice",
    "checks": [
     "server administrator signs in",
     "before any tenant: an operator editor writes every record (behaviour unchanged)",

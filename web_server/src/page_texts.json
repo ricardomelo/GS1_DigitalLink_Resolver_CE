@@ -20,7 +20,8 @@
    "status": "Código da resposta: {status}",
    "footer": "Serviço GS1 Digital Link operado por",
    "language": "Idioma",
-   "home": "Página inicial do Resolver"
+   "home": "Página inicial do Resolver",
+   "privacy": "Aviso de privacidade"
   },
   "landing": {
    "links": "Informações sobre este item",
@@ -113,7 +114,8 @@
    "status": "Response code: {status}",
    "footer": "GS1 Digital Link service operated by",
    "language": "Language",
-   "home": "Resolver home page"
+   "home": "Resolver home page",
+   "privacy": "Privacy notice"
   },
   "landing": {
    "links": "About this item",
@@ -206,7 +208,8 @@
    "status": "Código de respuesta: {status}",
    "footer": "Servicio GS1 Digital Link operado por",
    "language": "Idioma",
-   "home": "Página de inicio del resolver"
+   "home": "Página de inicio del resolver",
+   "privacy": "Aviso de privacidad"
   },
   "landing": {
    "links": "Sobre este artículo",
@@ -299,7 +302,8 @@
    "status": "Code de réponse : {status}",
    "footer": "Service GS1 Digital Link exploité par",
    "language": "Langue",
-   "home": "Page d’accueil du résolveur"
+   "home": "Page d’accueil du résolveur",
+   "privacy": "Avis de confidentialité"
   },
   "landing": {
    "links": "À propos de cet article",
@@ -392,7 +396,8 @@
    "status": "Antwortcode: {status}",
    "footer": "GS1-Digital-Link-Dienst betrieben von",
    "language": "Sprache",
-   "home": "Startseite des Resolvers"
+   "home": "Startseite des Resolvers",
+   "privacy": "Datenschutzhinweis"
   },
   "landing": {
    "links": "Über diesen Artikel",
@@ -485,7 +490,8 @@
    "status": "Codice di risposta: {status}",
    "footer": "Servizio GS1 Digital Link gestito da",
    "language": "Lingua",
-   "home": "Pagina iniziale del resolver"
+   "home": "Pagina iniziale del resolver",
+   "privacy": "Informativa sulla privacy"
   },
   "landing": {
    "links": "Informazioni su questo articolo",
@@ -578,7 +584,8 @@
    "status": "Yanıt kodu: {status}",
    "footer": "GS1 Digital Link hizmetini işleten:",
    "language": "Dil",
-   "home": "Çözümleyici ana sayfası"
+   "home": "Çözümleyici ana sayfası",
+   "privacy": "Gizlilik bildirimi"
   },
   "landing": {
    "links": "Bu ürün hakkında",
@@ -671,7 +678,8 @@
    "status": "响应代码：{status}",
    "footer": "GS1 Digital Link服务运营方：",
    "language": "语言",
-   "home": "解析器首页"
+   "home": "解析器首页",
+   "privacy": "隐私声明"
   },
   "landing": {
    "links": "关于此商品",
@@ -764,7 +772,8 @@
    "status": "応答コード：{status}",
    "footer": "GS1 Digital Link サービスの運用者：",
    "language": "言語",
-   "home": "リゾルバーのホームページ"
+   "home": "リゾルバーのホームページ",
+   "privacy": "プライバシーに関するお知らせ"
   },
   "landing": {
    "links": "このアイテムについて",
@@ -857,7 +866,8 @@
    "status": "응답 코드: {status}",
    "footer": "GS1 Digital Link 서비스 운영:",
    "language": "언어",
-   "home": "리졸버 홈페이지"
+   "home": "리졸버 홈페이지",
+   "privacy": "개인정보 처리 안내"
   },
   "landing": {
    "links": "이 품목에 관하여",
@@ -950,7 +960,8 @@
    "status": "उत्तर कोड: {status}",
    "footer": "GS1 Digital Link सेवा, जिसका संचालन करता है",
    "language": "भाषा",
-   "home": "रिज़ॉल्वर का होम पेज"
+   "home": "रिज़ॉल्वर का होम पेज",
+   "privacy": "गोपनीयता सूचना"
   },
   "landing": {
    "links": "इस आइटम के बारे में",
@@ -1043,7 +1054,8 @@
    "status": "رمز الاستجابة: {status}",
    "footer": "خدمة GS1 Digital Link يشغّلها",
    "language": "اللغة",
-   "home": "الصفحة الرئيسية للمحلِّل"
+   "home": "الصفحة الرئيسية للمحلِّل",
+   "privacy": "إشعار الخصوصية"
   },
   "landing": {
    "links": "عن هذا المنتج",

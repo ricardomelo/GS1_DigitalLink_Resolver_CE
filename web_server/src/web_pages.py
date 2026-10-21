@@ -22,7 +22,7 @@ from urllib.parse import unquote, urlparse
 from flask import render_template_string, request
 
 PRODUCT_NAME = os.getenv('RESOLVER_PRODUCT_NAME', 'GS1 Resolver Community Edition')
-# Operator shown in the footer (see .env.example); the footer is omitted when no name is set.
+# Operator shown in the footer (see .env.example), beside the link to the installation's privacy notice (ADR 0017).
 ORG_NAME = os.getenv('RESOLVER_ORG_NAME', '').strip()
 ORG_URL = os.getenv('RESOLVER_ORG_URL', '').strip()
 LOCALE_COOKIE = 'gs1resolver_lang'
@@ -111,7 +111,7 @@ footer{max-width:60rem;margin:0 auto;padding:0 clamp(1rem,4vw,2rem) 2rem;font-si
 </div></header>
 <section class="hero"><div><h1>{{ title }}</h1></div></section>
 <main><div class="card">{{ body|safe }}</div></main>
-{% if org %}<footer>{{ footer }} {% if org_url %}<a href="{{ org_url }}">{{ org }}</a>{% else %}{{ org }}{% endif %}.</footer>{% endif %}
+<footer>{% if org %}{{ footer }} {% if org_url %}<a href="{{ org_url }}">{{ org }}</a>{% else %}{{ org }}{% endif %}. {% endif %}<a href="/portal/privacy">{{ privacy_label }}</a></footer>
 <script>
 /* Language menu: remembers the choice in a cookie (shared with the portal) and re-renders the page.
    A cookie rather than a query parameter keeps the Digital Link URI untouched. */
@@ -243,6 +243,7 @@ def _page(locale: str, title: str, body: str, fonts: bool = True, icon: str | No
     page's own favicon (the brand's logo on the item's page)."""
     return render_template_string(_BASE, locale=locale, title=title, product=PRODUCT_NAME, logo=LOGO_DATA_URI, fonts=fonts, icon=icon,
                                   org=ORG_NAME, org_url=ORG_URL, footer=_t(locale, 'footer'),
+                                  privacy_label=_t(locale, 'privacy'),
                                   language_label=_t(locale, 'language'), home_label=_t(locale, 'home'),
                                   locales=SUPPORTED_LOCALES, direction='rtl' if locale in RIGHT_TO_LEFT else 'ltr',
                                   cookie=LOCALE_COOKIE, body=body)

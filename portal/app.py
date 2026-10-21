@@ -45,6 +45,7 @@ import migrate
 import monitor
 import notify
 import overview
+import privacy
 import requestlog
 import sheet
 import sso
@@ -99,7 +100,9 @@ if os.environ.get("PORTAL_SESSION_HOURS", "").strip():
                 "PORTAL_SESSION_MAX_HOURS (default 12).")
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-PUBLIC_ASSETS = {"app.css", "i18n.js", "login.js", "password.js", "gs1-logo.png", "logo.svg", "favicon.png"}   # needed by the login page
+# Needed by the sign-in page and the privacy notice (ADR 0017), which anyone opens
+PUBLIC_ASSETS = {"app.css", "i18n.js", "login.js", "password.js", "gs1-logo.png", "logo.svg", "favicon.png",
+                 "privacy.js"}
 # The map of requests (ADR 0006, section 10): its script, d3, topojson-client and the countries, after sign-in
 PRIVATE_ASSETS = {"app.js", "requests-map.js", "d3.min.js", "topojson-client.min.js", "world-countries.json",
                   "iso3166.json"}
@@ -717,6 +720,50 @@ def assets(name):
     if name in PRIVATE_ASSETS and current_user():
         return send_from_directory(STATIC_DIR, name)
     return Response(status=404)
+
+
+@app.get("/portal/privacy")
+def privacy_page():
+    """The installation's privacy notice, for anyone (Documentation/adr/0017-privacy-notice.md)."""
+    return send_from_directory(STATIC_DIR, "privacy.html")
+
+
+@app.get("/portal/api/privacy")
+def privacy_notice():
+    """The notice in force (or ?version=n), the list of versions, the operator's name and the days requests are kept —
+    for anyone, signed in or not. notice is null while no version is published: the page shows the default text."""
+    asked = request.args.get("version")
+    try:
+        shown = privacy.version(asked) if asked else privacy.current()
+        if asked and shown is None:
+            return message("privacy.unknown", 404)
+        versions = privacy.history()
+    except PyMongoError as exc:
+        log.warning("Privacy notice not read: %s", exc)
+        return message("upstream.unavailable", 503)
+    return jsonify(notice=shown, current=versions[0]["version"] if versions else None, versions=versions,
+                   operator=notify.operator_name(), days=requestlog.global_days())
+
+
+@app.put("/portal/api/privacy")
+@require_login
+@admin_required
+@server_admin_required
+def publish_privacy_notice():
+    """{text, note}: a new version of the notice (server administrators outside support access). A journal event."""
+    if g.support:
+        return message("privacy.readOnly", 403)
+    data = request.get_json(silent=True) or {}
+    found = privacy.publish(data.get("text"), data.get("note"), g.user)
+    audit.info("user=%s action=privacy-publish version=%s", g.user, found["version"])
+    log_event("privacy-publish", tenant=None, detail=f'version={found["version"]}')
+    return message("privacy.published", 200, params={"version": found["version"]}, notice=found)
+
+
+@app.errorhandler(privacy.PrivacyError)
+def on_privacy_error(err):
+    """A version of the privacy notice refused: 422 with the message code."""
+    return message(err.code, 422, params=err.params)
 
 
 @app.get("/portal/locales/<tag>.json")

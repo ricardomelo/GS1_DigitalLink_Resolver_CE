@@ -807,6 +807,19 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 }
 .menu-item[aria-current="page"] { background: var(--page); box-shadow: inset 3px 0 0 var(--gs1-orange); }
 
+/* ---------------------------------------------------------------- the privacy notice (ADR 0017) */
+.footer-links { margin: 0 0 .5rem; }
+.footer-links a { color: var(--link); }
+.privacy-form { display: grid; gap: .4rem; max-width: 60rem; }
+.privacy-form textarea { width: 100%; font: .9375rem/1.5 var(--sans); min-height: 18rem; }
+.privacy-actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin-top: .5rem; }
+.privacy-text { max-width: 46rem; line-height: 1.6; }
+.privacy-text h2 { margin-top: 0; }
+.privacy-text h3 { margin: 1.5rem 0 .5rem; color: var(--gs1-blue); }
+.privacy-preview { border: 1px dashed var(--line); border-radius: 6px; padding: 1rem 1.25rem; margin: 1rem 0; }
+.privacy-history { padding-inline-start: 1.25rem; }
+.privacy-history a[aria-current="page"] { font-weight: 600; }
+
 /* ---------------------------------------------------------------- the portal's own dialogs */
 .ask-dialog { width: min(32rem, calc(100vw - 2rem)); }
 .ask-dialog #ask-text { white-space: pre-line; margin-top: 0; }

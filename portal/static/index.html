@@ -84,6 +84,10 @@
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 7V3H2v18h20V7H12ZM6 19H4v-2h2v2Zm0-4H4v-2h2v2Zm0-4H4V9h2v2Zm0-4H4V5h2v2Zm4 12H8v-2h2v2Zm0-4H8v-2h2v2Zm0-4H8V9h2v2Zm0-4H8V5h2v2Zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10Zm-2-8h-2v2h2v-2Zm0 4h-2v2h2v-2Z"/></svg>
                 <span data-i18n="menu.organisation"></span>
               </a>
+              <a class="menu-item nav-item needs-server-admin" role="menuitem" href="#privacy" id="menu-privacy">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Zm-1 5h2v6h-2V7Zm0 8h2v2h-2v-2Z"/></svg>
+                <span data-i18n="menu.privacy"></span>
+              </a>
               <a class="menu-item nav-item needs-admin" role="menuitem" href="#alerts" id="menu-alerts">
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6v-5c0-3.1-1.6-5.6-4.5-6.3V4a1.5 1.5 0 0 0-3 0v.7C7.6 5.4 6 7.9 6 11v5l-2 2v1h16v-1l-2-2Z"/></svg>
                 <span data-i18n="menu.alerts"></span>
@@ -809,6 +813,42 @@
     </section>
   </main>
 
+  <!-- The installation's privacy notice (server administrators; ADR 0017) -->
+  <main class="records-main" id="privacy-view" hidden>
+    <section class="sheet">
+      <p class="status" id="privacy-admin-status" role="status" hidden></p>
+      <p class="field-msg" id="privacy-state"></p>
+      <form class="privacy-form" id="privacy-form" novalidate>
+        <label for="privacy-text" data-i18n="privacy.text"></label>
+        <textarea id="privacy-text" rows="18" aria-describedby="privacy-text-hint"></textarea>
+        <p class="field-msg" id="privacy-text-hint"></p>
+        <label for="privacy-note" data-i18n="privacy.note"></label>
+        <input id="privacy-note" maxlength="200" autocomplete="off">
+        <div class="privacy-actions">
+          <button type="button" class="btn btn-ghost" id="privacy-preview-button" data-i18n="privacy.preview"></button>
+          <button type="submit" class="btn btn-primary" id="privacy-publish" data-i18n="privacy.publish"></button>
+          <a href="privacy" target="_blank" rel="noopener" data-i18n="privacy.view"></a>
+        </div>
+      </form>
+      <article class="privacy-text privacy-preview" id="privacy-preview" hidden></article>
+      <h2 data-i18n="privacy.versions"></h2>
+      <div class="table-wrap">
+        <table class="records-table">
+          <thead>
+            <tr>
+              <th scope="col" class="num" data-i18n="privacy.col.version"></th>
+              <th scope="col" data-i18n="privacy.col.at"></th>
+              <th scope="col" data-i18n="privacy.col.by"></th>
+              <th scope="col" data-i18n="privacy.col.note"></th>
+              <th scope="col"><span class="visually-hidden" data-i18n="privacy.view"></span></th>
+            </tr>
+          </thead>
+          <tbody id="privacy-versions"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
   <!-- Alert history (administrators; ADR 0013) -->
   <main class="records-main" id="alerts-view" hidden>
     <section class="sheet">
@@ -1281,6 +1321,7 @@
   </main>
 
   <footer class="site-footer">
+    <p class="footer-links"><a href="privacy" data-i18n="footer.privacy"></a></p>
     <p class="notice" id="notice" data-i18n="footer.notice"></p>
   </footer>
 
@@ -1374,6 +1415,7 @@
 
   <script src="i18n.js"></script>
   <script src="requests-map.js"></script>
+  <script src="privacy.js"></script>
   <script src="password.js"></script>
   <script src="app.js"></script>
 </body>

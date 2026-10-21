@@ -840,6 +840,22 @@ maximum above them; server administrators have no limit. In support access the t
 kind and dates and, for the server administrator, by organisation. An organisation's administrators see their
 organisation's spikes. Alerts are listed from this version on (kept 400 days); earlier ones were not recorded.
 
+### Privacy notice (server administrators)
+
+![The privacy notice](images/guide/privacy.png)
+
+Every page of the installation — the portal and its sign-in page, the home page, the resolver's pages and the item's
+page — has a **Privacy notice** link in its footer, which anyone can open without signing in. Until the server
+administrator publishes one, it shows a default notice in the reader's language: what the resolver and the portal
+record, how many days requests are kept, and that the installation is the sole responsibility of whoever operates it,
+the software being provided "as is". **Privacy notice** (user menu, server administrators) is where the installation's
+own notice is written: the text starts from the default, in plain text — a blank line between paragraphs, `# ` before
+a heading, `- ` before an item of a list; addresses become links; `{operator}` and `{days}` become the operator's name
+and the days requests are kept. **Preview** shows it as the page will; **Publish new version** asks for confirmation
+and makes it the notice in force at once. Every publication is a new numbered version, with the date, who published it
+and an optional note on what changed; earlier versions stay readable from the page's list and are never changed. Adapt
+the default to your organisation (contact, legal basis, the law that applies) before going to production.
+
 ### Domains (administrators)
 
 ![Domains](images/guide/domains.png)

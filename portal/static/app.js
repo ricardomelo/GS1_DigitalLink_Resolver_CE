@@ -1444,7 +1444,8 @@ function isRecordsView() { return location.hash.split("?")[0] === "#records"; }
 
 const VIEWS = { "#records": "records", "#users": "users", "#audit": "audit", "#tenants": "tenants", "#apikeys": "apikeys",
                 "#requests": "requests", "#overview": "overview", "#domains": "domains",
-                "#branding": "branding", "#sso": "sso", "#organisation": "organisation", "#alerts": "alerts" };
+                "#branding": "branding", "#sso": "sso", "#organisation": "organisation", "#alerts": "alerts",
+                "#privacy": "privacy" };
 
 /* Shows the editor, the record list, the user administration, the organisations or the audit trail, following
    the address (#records, #users, #tenants, #audit), so the browser's back button and bookmarks work. Users and the
@@ -1455,7 +1456,7 @@ function applyView() {
   if ((view === "users" || view === "audit" || view === "apikeys" || view === "domains"
        || view === "branding" || view === "sso" || view === "organisation" || view === "alerts") && CONFIG
       && CONFIG.accountRole !== "admin") view = "editor";
-  if (view === "tenants" && CONFIG && !CONFIG.serverAdmin) view = "editor";
+  if ((view === "tenants" || view === "privacy") && CONFIG && !CONFIG.serverAdmin) view = "editor";
   $("#editor-view").hidden = view !== "editor";
   $("#records-view").hidden = view !== "records";
   $("#users-view").hidden = view !== "users";
@@ -1469,11 +1470,12 @@ function applyView() {
   $("#sso-view").hidden = view !== "sso";
   $("#organisation-view").hidden = view !== "organisation";
   $("#alerts-view").hidden = view !== "alerts";
+  $("#privacy-view").hidden = view !== "privacy";
   markCurrent(view);
   if (view !== "apikeys") forgetNewKey();
   const titles = { editor: "intro", records: "records", users: "users", audit: "audit", tenants: "tenants",
                    apikeys: "apikeys", requests: "requests", overview: "overview", domains: "domains",
-                   branding: "branding", sso: "sso", organisation: "org", alerts: "alerts" };
+                   branding: "branding", sso: "sso", organisation: "org", alerts: "alerts", privacy: "privacy" };
   I18N.set($("#hero-title"), `${titles[view]}.title`);
   I18N.set($("#hero-lede"), `${titles[view]}.lede`);
   const link = $("#hero-link");
@@ -1491,6 +1493,74 @@ function applyView() {
   if (view === "sso" && CONFIG) loadSso();
   if (view === "organisation" && CONFIG) loadOrganisation();
   if (view === "alerts" && CONFIG) loadOrganisations().then(() => loadAlerts());
+  if (view === "privacy" && CONFIG) loadPrivacy();
+}
+
+/* ------------------------------------------------------------------ the privacy notice (ADR 0017)
+   Server administrators write the installation's notice; each publication is a new version. The text starts from the
+   version in force, or the default notice in the administrator's language; the preview uses the public page's own
+   renderer (privacy.js). */
+const privacyState = { data: null };
+
+function privacyStatus(kind, key, params) {
+  const box = $("#privacy-admin-status");
+  box.hidden = !key;
+  box.className = "status" + (kind ? " is-" + kind : "");
+  if (key) I18N.set(box, key, params);
+}
+
+async function loadPrivacy() {
+  // The hint names the two words replaced in the text: kept as they are written
+  I18N.set($("#privacy-text-hint"), "privacy.textHint", { operator: "{operator}", days: "{days}" });
+  try {
+    const data = privacyState.data = await api("GET", "privacy");
+    const notice = data.versions.length ? (await api("GET", "privacy?version=" + data.current)).notice : null;
+    I18N.set($("#privacy-state"), notice ? "privacy.versionOf" : "privacy.defaultInUse",
+             notice ? { version: notice.version, when: formatWhen(notice.at) } : {});
+    const box = $("#privacy-text");
+    if (!box.dataset.edited) box.value = notice ? notice.text : t("privacy.default");
+    $("#privacy-versions").replaceChildren(...data.versions.map(v => {
+      const tr = el("tr");
+      const view = el("a", "", t("privacy.view"));
+      view.href = "privacy?version=" + v.version;
+      view.target = "_blank";
+      view.rel = "noopener";
+      [el("td", "num", String(v.version)), el("td", "", formatWhen(v.at)), el("td", "", v.by || ""),
+       el("td", "", v.note || "")].forEach(td => tr.append(td));
+      const action = el("td");
+      action.append(view);
+      tr.append(action);
+      return tr;
+    }));
+    const readOnly = Boolean(CONFIG.support);
+    $("#privacy-text").readOnly = readOnly;
+    $("#privacy-publish").hidden = readOnly;
+    if (readOnly) privacyStatus("warn", "privacy.readOnly");
+  } catch (e) {
+    privacyStatus("error", e.code, e.params);
+  }
+}
+
+function previewPrivacy() {
+  const data = privacyState.data || {};
+  const box = $("#privacy-preview");
+  PrivacyText.render(box, $("#privacy-text").value, { operator: data.operator || "—", days: String(data.days ?? "") });
+  box.hidden = false;
+}
+
+async function publishPrivacy(event) {
+  event.preventDefault();
+  const next = (privacyState.data?.current || 0) + 1;
+  if (!(await ask(t("privacy.confirmPublish", { version: next })))) return;
+  try {
+    const answer = await api("PUT", "privacy", { text: $("#privacy-text").value, note: $("#privacy-note").value });
+    delete $("#privacy-text").dataset.edited;
+    $("#privacy-note").value = "";
+    await loadPrivacy();
+    privacyStatus("ok", answer.code, answer.params);
+  } catch (e) {
+    privacyStatus("error", e.code, e.params);
+  }
 }
 
 /* ------------------------------------------------------------------ navigation (ADR 0013) */
@@ -5299,6 +5369,9 @@ async function init() {
   $("#new-user-tenant").addEventListener("change", newUserPicker);
   $("#overview-tenant").addEventListener("change", loadOverview);
   $("#alerts-filters").addEventListener("submit", loadAlerts);
+  $("#privacy-form").addEventListener("submit", publishPrivacy);
+  $("#privacy-preview-button").addEventListener("click", previewPrivacy);
+  $("#privacy-text").addEventListener("input", e => { e.target.dataset.edited = "1"; });
   for (const tab of $$("#org-tabs [role=tab]")) {
     tab.addEventListener("click", () => { orgState.tab = tab.dataset.tab; renderOrganisation(); });
   }

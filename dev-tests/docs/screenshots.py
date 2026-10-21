@@ -1,7 +1,8 @@
 """
 Produces the screenshots used by README.md (Documentation/images/*.png) and by the portal user guide in
-English (Documentation/images/guide/*.png) from the real portal and home page, with example data and no network access. The GS1 logo is hidden in the images (it is a GS1
-trademark and the images illustrate the software, not an endorsement). Run it again after visual changes.
+English (Documentation/images/guide/*.png) from the real portal and home page, with example data and no network access.
+The headers show the project's own logo (since 20 October 2026; the GS1 logo the official project shipped was hidden
+here). Run it again after visual changes.
 
   pip install -r portal/requirements.txt playwright pillow && playwright install chromium
   python dev-tests/docs/screenshots.py
@@ -307,7 +308,17 @@ def guide_images(locale: str, folder: str, description: str) -> None:
         item_page_images(browser, folder, locale)
         sso_images(browser, folder, locale)
         requests_images(browser, folder, locale)
+        privacy_images(browser, folder, locale)
         browser.close()
+
+
+def privacy_images(browser, folder: str, locale: str) -> None:
+    """The privacy notice as anyone sees it, before a version is published: the default text in the reader's language
+    (Documentation/adr/0017-privacy-notice.md)."""
+    page = browser.new_context(locale=locale, viewport={"width": 1280, "height": 900}).new_page()
+    page.goto(BASE + "privacy"); page.wait_for_timeout(1200)
+    save(page, f"{folder}/privacy.png", clip={"x": 0, "y": 0, "width": 1280, "height": 900})
+    page.context.close()
 
 
 def tenant_images(page, folder: str, locale: str) -> None:

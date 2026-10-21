@@ -42,7 +42,7 @@ adds what an organisation needs to run one for its members:
 | Everyone | [Features](Documentation/features.md): every feature, what it does, when it was added and the checks that prove it |
 | Server administrators and operators | [Operator's guide](Documentation/extensions/README.md) (installation, configuration, operation, production) · [Changelog](Documentation/extensions/CHANGELOG.md) |
 | Integrators | [Tenant API reference](Documentation/api-reference.md), generated from the API's OpenAPI description |
-| Developers and maintainers | [Developer guide](Documentation/developer-guide.md) · [Inventory of features](Documentation/test-inventory.md) (every check of every test) · [History](Documentation/history.md) · [Conformance review](Documentation/conformance-review.md) · [Architecture decisions](Documentation/README.md#architecture-decision-records) (ADR 0001 to 0016) |
+| Developers and maintainers | [Developer guide](Documentation/developer-guide.md) · [Inventory of features](Documentation/test-inventory.md) (every check of every test) · [History](Documentation/history.md) · [Conformance review](Documentation/conformance-review.md) · [Architecture decisions](Documentation/README.md#architecture-decision-records) (ADR 0001 to 0017) |
 
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).

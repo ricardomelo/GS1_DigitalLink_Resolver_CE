@@ -213,6 +213,8 @@ unsafe_404 = get(UNSAFE + "?linkType=gs1:recallStatus", "text/html").get_data(as
 check("HTML 404 page lists the same targets without links", 'class="unlinked"' in unsafe_404 and "javascript:alert" not in unsafe_404)
 check("HTML pages: logo links to the home page", '<a class="brand" href="/" title="Página inicial do Resolver">' in html)
 embedded = re.search(r'<img src="data:image/svg\+xml;base64,([A-Za-z0-9+/=]+)"', html)
+check("…the footer links to the installation's privacy notice, in the page's language (ADR 0017)",
+      '<a href="/portal/privacy">Aviso de privacidade</a>' in html)
 check("…the project's logo embedded as SVG, not GS1's", embedded is not None and 'alt="GS1"' not in html
       and base64.b64decode(embedded.group(1)).startswith(b"<svg") and b"Digital Link Resolver" in base64.b64decode(embedded.group(1)))
 check("CORS exposes Link", "Link" in (get(G).headers.get("Access-Control-Expose-Headers") or ""))

@@ -85,7 +85,9 @@ repository, nor downloaded by the installation.
 
 - New collection `gcp_table` (one document); new module `portal/gcp.py`; no new dependency.
 - Each portal process holds the table in memory once used (about 15 MB for today's list).
-- The table ages: the screen shows its date, and GS1 publishes new versions; the operator uploads them.
+- The table ages: the screen shows its date, and GS1 publishes new versions; the operator uploads them. Since 21
+  October 2026 the monitoring reports a list `PORTAL_MONITOR_GCP_DAYS` (90) days old or more, by e-mail weekly and on
+  the screen ([ADR 0008](0008-monitoring-and-alerts.md), section 3.1).
 - A list larger than about 1.4 times today's would no longer fit the 1 MB limit once compressed: the command line
   stays available, or the limit is raised.
 

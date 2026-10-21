@@ -2270,13 +2270,15 @@ async function saveOrgPrefixes() {
 /* ------------------------------------------------------------------ alert history (ADR 0013) */
 // An active alert in the overview's facts: a spike's count, the log's share of its space
 function overviewAlert(a) {
-  return t("overview.alert." + a.kind, { count: a.detail?.count ?? "", percent: nf(a.detail?.percent ?? 0) });
+  return t("overview.alert." + a.kind, { count: a.detail?.count ?? "", percent: nf(a.detail?.percent ?? 0),
+                                         days: a.detail?.days ?? "" });
 }
 
 function alertText(a) {
   const d = a.detail || {};
   const what = a.kind === "404" ? t("overview.alert.404", { count: d.count ?? "" })
     : a.kind === "logspace" && d.percent !== undefined ? t("overview.alert.logspace", { percent: nf(d.percent) })
+    : a.kind === "gcptable" && d.days !== undefined ? t("overview.alert.gcptable", { days: d.days })
     : t("overview.check." + a.kind);
   const extra = d.error || d.reason || (d.host ? d.host : "") || "";
   return extra ? `${what} · ${extra}` : what;
@@ -2294,7 +2296,7 @@ async function loadAlerts(event) {
   const kinds = $("#alerts-kind");
   if (!kinds.options.length) {
     kinds.replaceChildren(i18nOption("alerts.anyKind", ""),
-                          ...["resolver", "backup", "certificate", "logspace", "404"].map(k => i18nOption("alerts.kind." + k, k)));
+                          ...["resolver", "backup", "certificate", "logspace", "gcptable", "404"].map(k => i18nOption("alerts.kind." + k, k)));
   }
   const fromHash = new URLSearchParams(location.hash.split("?")[1] || "").get("tenant");
   if (fromHash !== null && !event) $("#alerts-tenant").value = fromHash;
@@ -2724,10 +2726,13 @@ let newTenantRows = null;
    GS1's 9 MB file passes the 1 MB limit of the proxies; the portal checks it before it replaces the one in use. */
 async function showGcpTable() {
   try {
-    const { table } = await api("GET", "gcp");
+    const { table, age } = await api("GET", "gcp");
     if (table) I18N.set($("#gcp-current"), "gcp.current", { date: formatDay(table.date), count: nf(table.count),
                                                            user: table.uploadedBy, when: formatWhen(table.uploadedAt) });
     else I18N.set($("#gcp-current"), "gcp.none");
+    // as old as the monitoring reports (PORTAL_MONITOR_GCP_DAYS, ADR 0008): said beside the list
+    $("#gcp-age").hidden = !age?.old;
+    if (age?.old) I18N.set($("#gcp-age"), "gcp.old", { days: nf(age.days), max: nf(age.maxDays) });
   } catch (e) {
     I18N.set($("#gcp-current"), e.code, e.params);
   }
@@ -4011,14 +4016,16 @@ function renderOverview() {
     if (!c) return t("overview.state.unknown");
     const d = c.detail || {};
     if (c.kind === "logspace" && d.reason === "noLimit") return t("overview.check.noLimit");
+    if (c.kind === "gcptable" && d.reason === "none") return t("overview.check.gcpNone");
     const extra = c.kind === "backup" && d.at ? t("overview.check.backupAt", { when: formatWhen(d.at) })
       : c.kind === "certificate" && d.expires ? t("overview.check.certExpires", { when: formatWhen(d.expires), days: d.days })
       : c.kind === "logspace" && d.percent !== undefined
         ? t("overview.check.spaceUse", { percent: nf(d.percent), max: formatBytes(d.max) })
+      : c.kind === "gcptable" && d.date ? t("overview.check.gcpAge", { date: formatDay(d.date), days: d.days })
       : "";
     return t("overview.state." + (c.state || "unknown")) + (extra ? " · " + extra : "");
   };
-  if (op.checks) ["resolver", "backup", "certificate", "logspace"].forEach(name => facts.push(["overview.check." + name, checkText(op.checks[name])]));
+  if (op.checks) ["resolver", "backup", "certificate", "logspace", "gcptable"].forEach(name => facts.push(["overview.check." + name, checkText(op.checks[name])]));
   if (d.operation) facts.push(["overview.op.alerts", (op.alerts || []).length
     ? op.alerts.map(a => overviewAlert(a) + " · " +
                          t("overview.alertSince", { when: formatWhen(a.since) })).join("\n")

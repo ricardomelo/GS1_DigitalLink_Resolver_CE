@@ -59,13 +59,24 @@ Constraints:
 ### 3.1 State (`alerts`, `portal/monitor.py`)
 
 ```
-{_id: "resolver" | "backup" | "certificate" | "logspace" | "404:*" | "404:<tenant id>",
+{_id: "resolver" | "backup" | "certificate" | "logspace" | "gcptable" | "404:*" | "404:<tenant id>",
  state: "ok" | "alert" | "unknown", since, checkedAt, failures (resolver), detail: {…},
  notifiedAt (the last message), notifiedLevel (logspace: the step last told), tenant (404 of an organisation)}
 ```
 
 `logspace`, the request log's space against its limit, was added on 20 October 2026
 (ADR 0006, section 9): an alert from 80 % of the limit with a message at each further step of 5 points, no reminder.
+
+`gcptable`, the age of GS1's GCP length table in use (ADR 0015), was added on 21 October 2026, the owner away, on the
+recommended options: an alert when the date GS1 gave the list (its `date` attribute, not the upload) is
+`PORTAL_MONITOR_GCP_DAYS` (90) days old or more; unknown without a list (the table is optional) or with the setting at
+0. GS1 adds company prefixes continuously and the table is password-protected, so nothing downloads it: the alert
+reminds the server administrators to upload a newer one. Its reminder is weekly, not daily (`GCP_REMIND_DAYS`, 7): an
+old list makes some EPCs and warnings less accurate, nothing stops working. Uploading a list younger than the limit
+resolves it. The *Organisations* screen says the list's age next to it from the same limit, and
+`GET /portal/api/gcp` adds `age` (`days`, `maxDays`, `old`). Not chosen: the upload's date (an old file uploaded
+today would look new); a daily reminder (noise for weeks while the operator waits for GS1's file); a setting on the
+screen (the other limits of the monitoring are in `.env` too).
 
 `run()` (in `app.MONITORING`) takes the lock, runs each check, updates its document and decides the messages:
 `ok → alert` sends *alert*, `alert` for 24 hours more sends *reminder*, `alert → ok` sends *resolved* (not for spikes).
@@ -82,8 +93,8 @@ docker compose exec -T -e BACKUP_OK=… -e BACKUP_FILE=… -e BACKUP_SIZE=… -e
 ### 3.3 Messages (`mailtexts.py`, category `alerts`)
 
 `alert-resolver-down`, `alert-resolver-up`, `alert-backup-failed`, `alert-backup-ok`, `alert-certificate`,
-`alert-certificate-ok`, `alert-404-spike`; `alert-log-space`, `alert-log-space-ok` (ADR 0006, section 9); in every
-language of ADR 0014.
+`alert-certificate-ok`, `alert-404-spike`; `alert-log-space`, `alert-log-space-ok` (ADR 0006, section 9);
+`alert-gcp-table`, `alert-gcp-table-ok`; in every language of ADR 0014.
 
 ### 3.4 Configuration
 
@@ -95,6 +106,7 @@ language of ADR 0014.
 | `PORTAL_MONITOR_BACKUP_HOURS` | 26 | the longest time without a good backup |
 | `PORTAL_MONITOR_TLS_HOST` | `FQDN` | the host whose certificate is checked (empty or `localhost`: not checked) |
 | `PORTAL_MONITOR_CERT_DAYS` | 21 | an alert when the certificate expires within this many days |
+| `PORTAL_MONITOR_GCP_DAYS` | 90 | an alert when GS1's GCP length table in use is this many days old (0: not checked) |
 | `PORTAL_ALERT_404_MIN` | 20 | the fewest 404 `unknown` in an hour that make a spike |
 | `PORTAL_ALERT_404_FACTOR` | 3 | how many times the usual hourly number a spike is |
 

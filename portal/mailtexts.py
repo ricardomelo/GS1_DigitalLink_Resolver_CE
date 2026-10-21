@@ -348,6 +348,33 @@ TEXTS = {
                   "Você recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → "
                   "E-mail."),
     },
+    "alert-gcp-table": {
+        "en-GB": ("Alert: GS1's GCP length table in use is {days} days old",
+                  "Hello,\n\nThe portal of {operator} uses GS1's GCP length table of {date}: {days} days old (reported "
+                  "from {max} days; since {since}). GS1 adds company prefixes all the time, so with an old list the EPC "
+                  "of a newer prefix and the warnings on the organisations' prefixes may be wrong.\n\nDownload GS1's "
+                  "latest list (GCPPrefixFormatList.xml) and upload it in Organisations → GS1 Company Prefix length "
+                  "table. You will be reminded every week while the list is this old.\n\nYou receive this message as a "
+                  "server administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Alerta: a tabela de tamanhos de GCP da GS1 em uso tem {days} dias",
+                  "Olá,\n\nO portal de {operator} usa a tabela de tamanhos de GCP da GS1 de {date}: {days} dias (o aviso "
+                  "começa em {max} dias; desde {since}). A GS1 acrescenta prefixos de empresa o tempo todo; com uma "
+                  "lista antiga, o EPC de um prefixo mais novo e os avisos sobre os prefixos das organizações podem "
+                  "estar errados.\n\nBaixe a lista mais recente da GS1 (GCPPrefixFormatList.xml) e envie-a em "
+                  "Organizações → Tabela de tamanhos do prefixo de empresa GS1. Você será lembrado toda semana enquanto "
+                  "a lista estiver assim antiga.\n\nVocê recebe esta mensagem como administrador do servidor; pode "
+                  "desligar os alertas em Opções → E-mail."),
+    },
+    "alert-gcp-table-ok": {
+        "en-GB": ("Resolved: GS1's GCP length table is up to date",
+                  "Hello,\n\nThe portal of {operator} now uses GS1's GCP length table of {date}, {days} days old. The old "
+                  "list had been reported on {since}.\n\nYou receive this message as a server administrator; you can "
+                  "switch alerts off in Options → E-mail."),
+        "pt-BR": ("Resolvido: a tabela de tamanhos de GCP da GS1 está em dia",
+                  "Olá,\n\nO portal de {operator} agora usa a tabela de tamanhos de GCP da GS1 de {date}, com {days} "
+                  "dias. A lista antiga tinha sido avisada em {since}.\n\nVocê recebe esta mensagem como administrador do "
+                  "servidor; pode desligar os alertas em Opções → E-mail."),
+    },
     "test": {
         "en-GB": ("Test message from the link management portal",
                   "Hello,\n\n"

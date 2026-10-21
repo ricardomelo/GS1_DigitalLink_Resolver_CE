@@ -13,6 +13,7 @@ import os
 import sys
 import tempfile
 import threading
+from datetime import date, datetime, timezone
 
 from playwright.sync_api import sync_playwright
 from werkzeug.serving import make_server
@@ -29,6 +30,10 @@ os.environ.update(DATA_ENTRY_URL=f"http://127.0.0.1:{DATA_ENTRY_PORT}/api", SESS
 os.environ.setdefault("PORTAL_DB_URI", "mongomock://")
 os.environ["PORTAL_WORKER"] = "embedded"
 os.environ.pop("PORTAL_EXPORT_LIMITS", None)
+# The age the monitoring reports (ADR 0008), set from today so that the test's list of 17 September 2026 is never old
+# and its list of 1 March 2026 always is, whatever the day the test runs
+LIST_AGE = (datetime.now(timezone.utc).date() - date(2026, 9, 17)).days
+os.environ["PORTAL_MONITOR_GCP_DAYS"] = str(LIST_AGE + 30)
 sys.path[:0] = [HERE, PORTAL]
 
 import mock_data_entry  # noqa: E402
@@ -141,7 +146,12 @@ with sync_playwright() as p:
     upload(page, "older.xml")
     page.click("#ask-ok"); page.wait_for_timeout(1500)
     check("…confirmed: replaced", gcp.info()["count"] == 3 and "01/03/2026" in page.inner_text("#gcp-current"))
+    old_days = (datetime.now(timezone.utc).date() - date(2026, 3, 1)).days
+    check("a list as old as the monitoring reports: its age said beside it",
+          page.is_visible("#gcp-age") and page.inner_text("#gcp-age") == f"This list is {old_days:,} days old (reported "
+          f"from {LIST_AGE + 30:,}): upload GS1's latest list.", page.inner_text("#gcp-age"))
     upload(page, "list.xml")
+    check("…a recent one: nothing said", not page.is_visible("#gcp-age"))
 
     page.goto(BASE + "#organisation?id=" + acme["id"]); page.wait_for_timeout(900)
     check("the organisation's page: the warning under its prefixes", "7898357: shorter"

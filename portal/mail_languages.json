@@ -82,6 +82,14 @@
     "Resuelto: el registro de solicitudes usa el {percent} % de su espacio",
     "Hola:\n\nEl registro de solicitudes al resolver de {operator} ocupa {used} en disco, el {percent} % de los {max} que puede usar: por debajo del 80 % notificado el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
    ],
+   "alert-gcp-table": [
+    "Alerta: la tabla de longitudes de GCP de GS1 en uso tiene {days} días",
+    "Hola:\n\nEl portal de {operator} usa la tabla de longitudes de GCP de GS1 del {date}: {days} días de antigüedad (se avisa a partir de {max} días; desde {since}). GS1 añade prefijos de empresa continuamente; con una lista antigua, el EPC de un prefijo más reciente y los avisos sobre los prefijos de las organizaciones pueden ser erróneos.\n\nDescargue la lista más reciente de GS1 (GCPPrefixFormatList.xml) y súbala en Organizaciones → Tabla de longitudes del Prefijo de Empresa GS1. Se lo recordaremos cada semana mientras la lista tenga esta antigüedad.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
+   "alert-gcp-table-ok": [
+    "Resuelto: la tabla de longitudes de GCP de GS1 está al día",
+    "Hola:\n\nEl portal de {operator} usa ahora la tabla de longitudes de GCP de GS1 del {date}, con {days} días. La lista antigua se había notificado el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
    "test": [
     "Mensaje de prueba del portal de gestión de enlaces",
     "Hola:\n\nEste es un mensaje de prueba enviado el {when} (UTC) para comprobar la configuración de correo electrónico del portal. Si puede leerlo, el servidor de envío aceptó el mensaje y lo entregó."
@@ -170,6 +178,14 @@
    "alert-log-space-ok": [
     "Résolu : le journal des requêtes utilise {percent} % de son espace",
     "Bonjour,\n\nLe journal des requêtes au résolveur de {operator} occupe {used} sur le disque, soit {percent} % des {max} qu'il peut utiliser : en dessous des 80 % signalés le {since}.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-gcp-table": [
+    "Alerte : la table des longueurs de GCP de GS1 utilisée date de {days} jours",
+    "Bonjour,\n\nLe portail de {operator} utilise la table des longueurs de GCP de GS1 du {date} : {days} jours (signalée à partir de {max} jours ; depuis le {since}). GS1 ajoute sans cesse des préfixes d'entreprise ; avec une liste ancienne, l'EPC d'un préfixe plus récent et les avertissements sur les préfixes des organisations peuvent être faux.\n\nTéléchargez la dernière liste de GS1 (GCPPrefixFormatList.xml) et envoyez-la dans Organisations → Table des longueurs du préfixe d'entreprise GS1. Un rappel vous sera envoyé chaque semaine tant que la liste sera aussi ancienne.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-gcp-table-ok": [
+    "Résolu : la table des longueurs de GCP de GS1 est à jour",
+    "Bonjour,\n\nLe portail de {operator} utilise désormais la table des longueurs de GCP de GS1 du {date}, vieille de {days} jours. L'ancienne liste avait été signalée le {since}.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
    ],
    "test": [
     "Message de test du portail de gestion des liens",
@@ -260,6 +276,14 @@
     "Behoben: Das Anfrageprotokoll belegt {percent} % seines Speicherplatzes",
     "Hallo,\n\ndas Protokoll der Resolver-Anfragen von {operator} belegt {used} auf der Festplatte, {percent} % der {max}, die es nutzen darf: unter den 80 %, die am {since} gemeldet wurden.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
    ],
+   "alert-gcp-table": [
+    "Warnung: Die verwendete GCP-Längentabelle von GS1 ist {days} Tage alt",
+    "Hallo,\n\ndas Portal von {operator} verwendet die GCP-Längentabelle von GS1 vom {date}: {days} Tage alt (gemeldet ab {max} Tagen; seit {since}). GS1 fügt laufend Basisnummern hinzu; mit einer alten Liste können die EPC einer neueren Basisnummer und die Hinweise zu den Präfixen der Organisationen falsch sein.\n\nLaden Sie die aktuelle Liste von GS1 herunter (GCPPrefixFormatList.xml) und laden Sie sie unter Organisationen → Längentabelle der GS1-Basisnummern hoch. Solange die Liste so alt ist, werden Sie jede Woche erinnert.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
+   "alert-gcp-table-ok": [
+    "Behoben: Die GCP-Längentabelle von GS1 ist aktuell",
+    "Hallo,\n\ndas Portal von {operator} verwendet jetzt die GCP-Längentabelle von GS1 vom {date}, {days} Tage alt. Die alte Liste war am {since} gemeldet worden.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
    "test": [
     "Testnachricht des Linkverwaltungsportals",
     "Guten Tag,\n\ndies ist eine Testnachricht, die am {when} (UTC) gesendet wurde, um die E-Mail-Einstellungen des Portals zu prüfen. Wenn Sie sie lesen können, hat der Mailserver die Nachricht angenommen und zugestellt."
@@ -348,6 +372,14 @@
    "alert-log-space-ok": [
     "Risolto: il registro delle richieste usa il {percent} % del suo spazio",
     "Buongiorno,\n\nil registro delle richieste al resolver di {operator} occupa {used} su disco, il {percent} % dei {max} che può usare: sotto l'80 % segnalato il {since}.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-gcp-table": [
+    "Avviso: la tabella delle lunghezze del GCP di GS1 in uso ha {days} giorni",
+    "Buongiorno,\n\nil portale di {operator} usa la tabella delle lunghezze del GCP di GS1 del {date}: {days} giorni (segnalata da {max} giorni; dal {since}). GS1 aggiunge di continuo prefissi aziendali; con un elenco vecchio, l'EPC di un prefisso più recente e gli avvisi sui prefissi delle organizzazioni possono essere errati.\n\nScarichi l'elenco più recente di GS1 (GCPPrefixFormatList.xml) e lo carichi in Organizzazioni → Tabella delle lunghezze del prefisso aziendale GS1. Riceverà un promemoria ogni settimana finché l'elenco sarà così vecchio.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-gcp-table-ok": [
+    "Risolto: la tabella delle lunghezze del GCP di GS1 è aggiornata",
+    "Buongiorno,\n\nil portale di {operator} usa ora la tabella delle lunghezze del GCP di GS1 del {date}, di {days} giorni. Il vecchio elenco era stato segnalato il {since}.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
    ],
    "test": [
     "Messaggio di prova dal portale di gestione dei link",
@@ -438,6 +470,14 @@
     "Çözüldü: istek kaydı alanının %{percent}'ini kullanıyor",
     "Merhaba,\n\n{operator} kuruluşunun çözümleyici istekleri kaydı diskte {used} kullanıyor; bu, kullanabileceği {max} alanın %{percent}'i: {since} tarihinde bildirilen %80'in altında.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
    ],
+   "alert-gcp-table": [
+    "Uyarı: kullanılan GS1 GCP uzunluk tablosu {days} günlük",
+    "Merhaba,\n\n{operator} portalı GS1'in {date} tarihli GCP uzunluk tablosunu kullanıyor: {days} günlük ({max} günden itibaren bildirilir; {since} tarihinden beri). GS1 sürekli yeni firma önekleri ekler; eski bir listeyle daha yeni bir önekin EPC'si ve kuruluşların önekleriyle ilgili uyarılar yanlış olabilir.\n\nGS1'in en güncel listesini (GCPPrefixFormatList.xml) indirin ve Kuruluşlar → GS1 Firma Öneki uzunluk tablosu bölümünden yükleyin. Liste bu kadar eski kaldıkça her hafta hatırlatılacaksınız.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "alert-gcp-table-ok": [
+    "Çözüldü: GS1 GCP uzunluk tablosu güncel",
+    "Merhaba,\n\n{operator} portalı artık GS1'in {date} tarihli, {days} günlük GCP uzunluk tablosunu kullanıyor. Eski liste {since} tarihinde bildirilmişti.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
    "test": [
     "Bağlantı yönetim portalından deneme iletisi",
     "Merhaba,\n\nBu, portalın e-posta ayarlarını kontrol etmek için {when} (UTC) tarihinde gönderilmiş bir deneme iletisidir. Okuyabiliyorsanız aktarıcı iletiyi kabul etti ve teslim etti."
@@ -526,6 +566,14 @@
    "alert-log-space-ok": [
     "已解决：请求日志已使用其空间的 {percent} %",
     "您好：\n\n{operator} 的解析器请求日志在磁盘上占用 {used}，为其可用 {max} 的 {percent} %：已低于 {since} 报告的 80 %。\n\n您以服务器管理员身份收到此消息；可在“选项 → 电子邮件”中关闭警报。"
+   ],
+   "alert-gcp-table": [
+    "警报：正在使用的 GS1 厂商识别代码长度表已有 {days} 天",
+    "您好：\n\n{operator} 的门户使用 GS1 于 {date} 发布的厂商识别代码长度表，已有 {days} 天（满 {max} 天起提醒；自 {since} 起）。GS1 不断新增厂商识别代码；列表过旧时，较新代码的 EPC 以及关于各组织前缀的提示可能不正确。\n\n请下载 GS1 的最新列表（GCPPrefixFormatList.xml），并在“组织 → GS1 厂商识别代码长度表”中上传。只要列表仍这么旧，每周都会提醒您一次。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-gcp-table-ok": [
+    "已解决：GS1 厂商识别代码长度表已是最新",
+    "您好：\n\n{operator} 的门户现在使用 GS1 于 {date} 发布的厂商识别代码长度表，已有 {days} 天。旧列表的提醒发出于 {since}。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
    ],
    "test": [
     "来自链接管理门户的测试邮件",
@@ -616,6 +664,14 @@
     "解決: リクエストログが容量の {percent} % を使用しています",
     "こんにちは。\n\n{operator} のリゾルバーのリクエストログはディスク上で {used} を使用しており、使用できる {max} の {percent} % です。{since} に通知した 80 % を下回りました。\n\nサーバー管理者としてこのメッセージを受け取っています。アラートは「オプション → メール」でオフにできます。"
    ],
+   "alert-gcp-table": [
+    "アラート：使用中の GS1 事業者コード桁数表は {days} 日前のものです",
+    "こんにちは。\n\n{operator} のポータルは {date} 付けの GS1 事業者コード桁数表を使用しており、{days} 日経過しています（{max} 日から通知、{since} から）。GS1 は事業者コードを随時追加しているため、古い表では新しいコードの EPC や、組織のプレフィックスに関する警告が正しくない場合があります。\n\nGS1 の最新の表（GCPPrefixFormatList.xml）をダウンロードし、「組織 → GS1 事業者コード桁数表」でアップロードしてください。表がこのように古い間は、毎週お知らせします。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
+   "alert-gcp-table-ok": [
+    "解決：GS1 事業者コード桁数表が最新になりました",
+    "こんにちは。\n\n{operator} のポータルは現在、{date} 付けの GS1 事業者コード桁数表（{days} 日経過）を使用しています。古い表は {since} に通知されていました。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
    "test": [
     "リンク管理ポータルからのテストメッセージ",
     "こんにちは。\n\nこれは、ポータルのメール設定を確認するために {when}（UTC）に送信されたテストメッセージです。このメッセージが読めれば、リレーがメッセージを受け付けて配信しています。"
@@ -704,6 +760,14 @@
    "alert-log-space-ok": [
     "해결됨: 요청 로그가 공간의 {percent} %를 사용 중입니다",
     "안녕하세요.\n\n{operator}의 리졸버 요청 로그가 디스크에서 {used}를 사용하고 있으며, 이는 사용할 수 있는 {max}의 {percent} %입니다. {since}에 알린 80 % 아래로 내려왔습니다.\n\n서버 관리자로서 이 메시지를 받습니다. 알림은 옵션 → 이메일에서 끌 수 있습니다."
+   ],
+   "alert-gcp-table": [
+    "알림: 사용 중인 GS1 업체코드 길이 표가 {days}일 지났습니다",
+    "안녕하세요.\n\n{operator}의 포털은 {date}자 GS1 업체코드 길이 표를 사용하고 있으며, {days}일이 지났습니다({max}일부터 알림, {since}부터). GS1은 업체코드를 계속 추가하므로, 오래된 표로는 새 업체코드의 EPC와 조직 접두어에 대한 경고가 틀릴 수 있습니다.\n\nGS1의 최신 표(GCPPrefixFormatList.xml)를 내려받아 조직 → GS1 업체코드 길이 표에서 업로드하십시오. 표가 이만큼 오래된 동안 매주 다시 알려 드립니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-gcp-table-ok": [
+    "해결됨: GS1 업체코드 길이 표가 최신입니다",
+    "안녕하세요.\n\n{operator}의 포털은 이제 {date}자 GS1 업체코드 길이 표({days}일 경과)를 사용합니다. 오래된 표는 {since}에 알려 드렸습니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
    ],
    "test": [
     "링크 관리 포털 테스트 메시지",
@@ -794,6 +858,14 @@
     "हल हुआ: अनुरोध लॉग अपनी जगह का {percent} % उपयोग कर रहा है",
     "नमस्ते,\n\n{operator} के रिज़ॉल्वर अनुरोधों का लॉग डिस्क पर {used} घेर रहा है, जो उसे मिली {max} जगह का {percent} % है: {since} को सूचित 80 % से कम।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ई-मेल में अलर्ट बंद कर सकते हैं।"
    ],
+   "alert-gcp-table": [
+    "अलर्ट: उपयोग में GS1 GCP लंबाई तालिका {days} दिन पुरानी है",
+    "नमस्ते,\n\n{operator} का पोर्टल {date} की GS1 GCP लंबाई तालिका का उपयोग करता है: {days} दिन पुरानी ({max} दिन से सूचना; {since} से)। GS1 लगातार नए कंपनी प्रीफ़िक्स जोड़ता है; पुरानी सूची से किसी नए प्रीफ़िक्स का EPC और संगठनों के प्रीफ़िक्स संबंधी चेतावनियाँ गलत हो सकती हैं।\n\nGS1 की नवीनतम सूची (GCPPrefixFormatList.xml) डाउनलोड करें और उसे संगठन → GS1 कंपनी प्रीफ़िक्स लंबाई तालिका में अपलोड करें। जब तक सूची इतनी पुरानी रहेगी, आपको हर सप्ताह याद दिलाया जाएगा।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
+   "alert-gcp-table-ok": [
+    "हल हुआ: GS1 GCP लंबाई तालिका अद्यतन है",
+    "नमस्ते,\n\n{operator} का पोर्टल अब {date} की GS1 GCP लंबाई तालिका का उपयोग करता है, जो {days} दिन पुरानी है। पुरानी सूची की सूचना {since} को दी गई थी।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
    "test": [
     "लिंक प्रबंधन पोर्टल से परीक्षण संदेश",
     "नमस्ते,\n\nयह पोर्टल की ईमेल सेटिंग जाँचने के लिए {when} (UTC) को भेजा गया एक परीक्षण संदेश है। यदि आप इसे पढ़ पा रहे हैं, तो रिले ने संदेश स्वीकार किया और उसे पहुँचा दिया।"
@@ -882,6 +954,14 @@
    "alert-log-space-ok": [
     "تم الحل: سجل الطلبات يستخدم {percent} % من مساحته",
     "مرحبًا،\n\nيشغل سجل طلبات المحلِّل لدى {operator} مساحة {used} على القرص، أي {percent} % من {max} المسموح بها: أقل من 80 % التي أُبلغ عنها في {since}.\n\nتتلقى هذه الرسالة بصفتك مسؤول الخادم؛ يمكنك إيقاف التنبيهات من الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-gcp-table": [
+    "تنبيه: عمر جدول أطوال GCP من GS1 المستخدم {days} يومًا",
+    "مرحبًا،\n\nتستخدم بوابة {operator} جدول أطوال GCP من GS1 الصادر في {date}، وعمره {days} يومًا (يُبلَّغ عنه من {max} يومًا؛ منذ {since}). تضيف GS1 بادئات شركات جديدة باستمرار؛ ومع قائمة قديمة قد يكون رمز EPC لبادئة أحدث والتحذيرات بشأن بادئات المؤسسات غير صحيحة.\n\nنزّل أحدث قائمة من GS1 ‏(GCPPrefixFormatList.xml) وارفعها في المؤسسات ← جدول أطوال بادئة شركة GS1. سيصلك تذكير كل أسبوع ما دامت القائمة بهذا القِدم.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-gcp-table-ok": [
+    "تم الحل: جدول أطوال GCP من GS1 محدَّث",
+    "مرحبًا،\n\nتستخدم بوابة {operator} الآن جدول أطوال GCP من GS1 الصادر في {date}، وعمره {days} يومًا. كان قد أُبلغ عن القائمة القديمة في {since}.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
    ],
    "test": [
     "رسالة اختبار من بوابة إدارة الروابط",

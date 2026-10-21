@@ -814,6 +814,8 @@ belong to no organisation (the operator's).
   page compresses it, the portal checks it (a refused file names the problem, and the list in use stays) and replaces
   the list in use at once. The panel shows the list's date, its number of prefixes and who uploaded it when; a list older
   than the one in use is asked about first. Upload each new version GS1 publishes; nothing is downloaded automatically.
+  When GS1's date on the list in use is 90 days old or more (`PORTAL_MONITOR_GCP_DAYS`), the panel says so under it and
+  the server administrators receive an alert by e-mail, repeated weekly until a newer list is uploaded.
   With a list, an organisation's prefix that disagrees with it is pointed out under its prefixes — longer than GS1's
   company prefix there, shorter than the prefixes it covers, or not a GS1 Company Prefix range —, here and on the
   organisation's page; it is still accepted.
@@ -848,7 +850,8 @@ maximum above them; server administrators have no limit. In support access the t
 ### Alerts (administrators)
 
 **Alerts** (user menu) lists every alert the monitoring raised (section 17): when it started, when it ended (or
-*Ongoing*), its kind (resolver down, backup, certificate, spike of unregistered codes) and its detail, filtered by
+*Ongoing*), its kind (resolver down, backup, certificate, request log space, GCP length table, spike of unregistered
+codes) and its detail, filtered by
 kind and dates and, for the server administrator, by organisation. An organisation's administrators see their
 organisation's spikes. Alerts are listed from this version on (kept 400 days); earlier ones were not recorded.
 
@@ -1091,7 +1094,8 @@ organisation's users see its spikes of codes nobody registered).
 
 **Operation** (server administrator only). Whether the job worker runs, whether e-mail is on, up to which day the
 daily counts are complete, the installation's active alerts and the state of each check of the monitoring: the
-resolver through the proxy, the daily backup and the HTTPS certificate. The server administrator can also choose an
+resolver through the proxy, the daily backup, the HTTPS certificate, the request log's space and the GCP length table
+(the date and age of GS1's list in use). The server administrator can also choose an
 **Organisation** at the top of the page: the figures are then that organisation's, as its administrators see them (or
 the operator's codes); Operation stays the installation's.
 

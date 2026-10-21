@@ -11,7 +11,8 @@ Categories (TEMPLATES maps each message to one):
   security    the password or the e-mail address was changed, the account was locked: always
   jobs        an import or a link check the user started has finished: optional, off by default
   alerts      monitoring (Documentation/adr/0008-monitoring-and-alerts.md): the resolver down, the backup, the
-              certificate, the request log's space, spikes of 404 — to administrators: optional, on by default
+              certificate, the request log's space, the GCP length table's age, spikes of 404 — to administrators:
+              optional, on by default
 """
 import logging
 import os
@@ -40,6 +41,7 @@ TEMPLATES = {
     "alert-resolver-down": "alerts", "alert-resolver-up": "alerts", "alert-backup-failed": "alerts",
     "alert-backup-ok": "alerts", "alert-certificate": "alerts", "alert-certificate-ok": "alerts",
     "alert-404-spike": "alerts", "alert-log-space": "alerts", "alert-log-space-ok": "alerts",
+    "alert-gcp-table": "alerts", "alert-gcp-table-ok": "alerts",
 }
 # Waits before each new try after a temporary failure, in minutes; after the last, the message has failed.
 RETRY_MINUTES = (1, 5, 15, 60, 120)

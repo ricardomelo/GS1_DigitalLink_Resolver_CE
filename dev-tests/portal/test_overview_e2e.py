@@ -205,6 +205,16 @@ with sync_playwright() as p:
     check("…and the state of each monitoring check", "Resolver (through the proxy)" in operation
           and "Daily backup" in operation and "HTTPS certificate" in operation, operation)
     shot(root, "overview-root")
+    # an old GCP length table, as the monitoring records it (ADR 0008): its row and the active alert
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    portal.store.col("alerts").replace_one({"_id": "gcptable"}, {
+        "_id": "gcptable", "state": "alert", "since": now, "checkedAt": now,
+        "detail": {"date": "2026-03-01T00:00:00Z", "days": 234, "max": 90}}, upsert=True)
+    root.reload(); root.wait_for_timeout(1200)
+    operation = root.inner_text("#overview-operation")
+    check("…an old GCP length table: its check with the list's date and age, and the active alert",
+          "list of 01/03/2026 (234 days old)" in operation and "GCP length table 234 days old" in operation, operation)
+    portal.store.col("alerts").delete_one({"_id": "gcptable"})
     root_ctx.close()
 
     # ------------------------------------------------------------ a phone

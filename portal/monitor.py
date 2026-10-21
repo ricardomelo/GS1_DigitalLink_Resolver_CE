@@ -4,7 +4,7 @@ Monitoring and alerts by e-mail (Documentation/adr/0008-monitoring-and-alerts.md
 The job worker calls run() every PORTAL_MONITOR_MINUTES (app.MONITORING, worker.py); one replica at a time does the
 checks (the "monitor" lock, not waited for). Each check keeps a document in the portal's collection "alerts":
 
-    {_id: "resolver" | "backup" | "certificate" | "logspace" | "404:*" | "404:<tenant id>",
+    {_id: "resolver" | "backup" | "certificate" | "logspace" | "gcptable" | "404:*" | "404:<tenant id>",
      state: "ok" | "alert" | "unknown", since, checkedAt, failures, detail, notifiedAt, notifiedLevel, tenant}
 
 Each alert raised is also recorded in "alert_history" (Documentation/adr/0013-administration-and-navigation.md):
@@ -16,6 +16,8 @@ kept HISTORY_DAYS after it was raised. A change of state decides the messages (c
 reminder every REMIND_HOURS while it lasts, one when it is resolved (not for spikes of 404, which simply end). The
 request log's space (Documentation/adr/0006-resolver-request-log.md, section 9) is an alert from SPACE_ALERT % of its
 limit, with a message at each step of SPACE_STEP points it reaches (80, 85, 90, 95, 100) instead of daily reminders.
+GS1's GCP length table in use (Documentation/adr/0015-gcp-length-table.md) is an alert from PORTAL_MONITOR_GCP_DAYS
+days after the date GS1 gave it, reminded every GCP_REMIND_DAYS days.
 Server administrators receive the installation's alerts; an organisation's administrators its spikes of 404.
 
 Settings (section 3.4 of the ADR):
@@ -25,6 +27,7 @@ Settings (section 3.4 of the ADR):
   PORTAL_MONITOR_BACKUP_HOURS  the longest time without a good backup                               (26)
   PORTAL_MONITOR_TLS_HOST      the host whose certificate is checked (empty or localhost: not)      (FQDN)
   PORTAL_MONITOR_CERT_DAYS     an alert when the certificate expires within this many days          (21)
+  PORTAL_MONITOR_GCP_DAYS      an alert when GS1's GCP length table in use is this many days old; 0: not checked (90)
   PORTAL_ALERT_404_MIN         the fewest 404 "unknown" in an hour that make a spike                (20)
   PORTAL_ALERT_404_FACTOR      how many times the usual hourly number a spike is                     (3)
 """
@@ -37,6 +40,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 from pymongo.errors import PyMongoError
 
+import gcp
 import notify
 import requestlog
 import store
@@ -57,7 +61,8 @@ TOP_CODES = 5
 DEFAULT_URL = "http://frontend-proxy-service/.well-known/gs1resolver"
 SPACE_ALERT = 80
 SPACE_STEP = 5
-CHECKS = ("resolver", "backup", "certificate", "logspace")
+CHECKS = ("resolver", "backup", "certificate", "logspace", "gcptable")
+GCP_REMIND_DAYS = 7
 HISTORY = "alert_history"
 HISTORY_DAYS = 400
 KINDS = CHECKS + ("404",)
@@ -102,6 +107,11 @@ def tls_host() -> str:
 
 def cert_days() -> int:
     return _number("PORTAL_MONITOR_CERT_DAYS", 21)
+
+
+def gcp_days() -> int:
+    """PORTAL_MONITOR_GCP_DAYS: the age of GS1's GCP length table that is reported (0: not checked)."""
+    return _number("PORTAL_MONITOR_GCP_DAYS", 90)
 
 
 def spike_min() -> int:
@@ -196,6 +206,29 @@ def check_space() -> tuple[str, dict]:
     level = min(100, int(percent // SPACE_STEP) * SPACE_STEP)
     detail = {"used": measured["used"], "max": limit, "percent": round(percent, 1), "level": level}
     return ("alert" if percent >= SPACE_ALERT else "ok"), detail
+
+
+def gcp_age(now: datetime | None = None) -> dict | None:
+    """The age of GS1's GCP length table in use, from the date GS1 gave it: {date, days, maxDays, old}; None without a
+    list. old is False when the check is off (PORTAL_MONITOR_GCP_DAYS=0)."""
+    found = gcp.info()
+    if not found or not found.get("date"):
+        return None
+    dated = store.parse_iso(found["date"])
+    days = max(0, int(((now or _now()) - dated).total_seconds() // 86400)) if dated else 0
+    limit = gcp_days()
+    return {"date": found["date"], "days": days, "maxDays": limit, "old": bool(limit) and days >= limit}
+
+
+def check_gcp_table(now: datetime) -> tuple[str, dict]:
+    """("alert" | "ok" | "unknown", detail): the GCP length table GS1 dated PORTAL_MONITOR_GCP_DAYS days ago or more is
+    an alert; unknown without a list (it is optional) or with the check off."""
+    if not gcp_days():
+        return "unknown", {"reason": "notChecked"}
+    age = gcp_age(now)
+    if age is None:
+        return "unknown", {"reason": "none"}
+    return ("alert" if age["old"] else "ok"), {"date": age["date"], "days": age["days"], "max": age["maxDays"]}
 
 
 def _megabytes(n) -> str:
@@ -302,9 +335,9 @@ def _tell(template: str, tenant: str | None = None, **params) -> int:
 
 # ----------------------------------------------------------------------------------------------- state
 def _update(doc_id: str, state: str, detail: dict, now: datetime, templates: tuple, tenant: str | None = None,
-            params: dict | None = None, **extra) -> str | None:
-    """Stores a check's new state and sends what the change calls for: templates = (alert, resolved or None).
-    Returns the message sent ("alert", "reminder", "resolved") or None."""
+            params: dict | None = None, remind_hours: float = REMIND_HOURS, **extra) -> str | None:
+    """Stores a check's new state and sends what the change calls for: templates = (alert, resolved or None), a
+    reminder every remind_hours while it lasts. Returns the message sent ("alert", "reminder", "resolved") or None."""
     previous = _col().find_one({"_id": doc_id}) or {}
     was = previous.get("state")
     doc = {"state": state, "checkedAt": now, "detail": detail, **extra}
@@ -314,7 +347,7 @@ def _update(doc_id: str, state: str, detail: dict, now: datetime, templates: tup
     if state == "alert":
         doc["since"] = previous.get("since") if was == "alert" else now
         notified = previous.get("notifiedAt") if was == "alert" else None
-        if notified is None or now - notified >= timedelta(hours=REMIND_HOURS):
+        if notified is None or now - notified >= timedelta(hours=remind_hours):
             sent = "reminder" if notified is not None else "alert"
             _tell(templates[0], tenant, since=_text(doc["since"]), **(params or {}))
             doc["notifiedAt"] = now
@@ -397,6 +430,12 @@ def _run(now: datetime) -> dict:
                                                "error": detail.get("error") or ""})
     # the request log's space against its limit
     found["logspace"] = _update_space(now)
+    # the age of GS1's GCP length table, reminded weekly
+    state, detail = check_gcp_table(now)
+    found["gcptable"] = _update("gcptable", state, detail, now, ("alert-gcp-table", "alert-gcp-table-ok"),
+                                params={"date": (detail.get("date") or "")[:10], "days": detail.get("days", ""),
+                                        "max": detail.get("max", "")},
+                                remind_hours=GCP_REMIND_DAYS * 24)
     # spikes of 404 per scope
     tenant_list = tenants.load()
     for scope, entry in spikes(now, tenant_list).items():

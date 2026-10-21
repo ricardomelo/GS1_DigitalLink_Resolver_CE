@@ -2,7 +2,8 @@
 Monitoring and alerts by e-mail (Documentation/adr/0008-monitoring-and-alerts.md): the settings; the resolver checked
 through a stand-in proxy (two failed rounds before an alert, a reminder a day, a message when it answers again, the
 probe of a registered code); the backup's record (unknown, late, failed, good again); the certificate (expiring,
-invalid, unreachable, once an hour); the request log's space against its limit (80 %, then every 5); spikes of 404 per scope against the usual hourly number; who receives what (server
+invalid, unreachable, once an hour); the request log's space against its limit (80 %, then every 5); the age of GS1's
+GCP length table (unknown without one, an alert from 90 days, reminded weekly, resolved by a newer list); spikes of 404 per scope against the usual hourly number; who receives what (server
 administrators, an organisation's administrators, the category switched off, disabled accounts); the lock and the
 switch; the worker's schedule; the overview's alerts per scope; the messages in both languages.
 
@@ -39,7 +40,8 @@ os.environ["PORTAL_DB_URI"] = "mongomock://"
 os.environ["PORTAL_DB_NAME"] = f"devtest_monitor_{os.getpid()}"
 os.environ["PORTAL_WORKER"] = "external"            # messages stay queued: nothing sends them here
 for name in ("RESOLVER_LOG_DAYS", "PORTAL_MONITOR_MINUTES", "PORTAL_MONITOR_PROBE", "PORTAL_ALERT_404_MIN",
-             "PORTAL_ALERT_404_FACTOR", "PORTAL_MONITOR_BACKUP_HOURS", "PORTAL_MONITOR_CERT_DAYS", "FQDN"):
+             "PORTAL_ALERT_404_FACTOR", "PORTAL_MONITOR_BACKUP_HOURS", "PORTAL_MONITOR_CERT_DAYS", "PORTAL_MONITOR_GCP_DAYS",
+             "FQDN"):
     os.environ.pop(name, None)
 
 import mock_data_entry  # noqa: E402
@@ -47,6 +49,7 @@ import store  # noqa: E402
 import users  # noqa: E402
 users.create("root", "root-password-long", "admin", must_change=False, email="root@example.org")
 import app as portal  # noqa: E402
+import gcp  # noqa: E402
 import mailtexts  # noqa: E402
 import monitor  # noqa: E402
 import notify  # noqa: E402
@@ -112,9 +115,9 @@ def client(username, password):
 
 
 # ================================================================== settings
-check("defaults: every 5 minutes, the description file through the proxy, 26 hours, 21 days, 20 and 3 times",
-      (monitor.minutes(), monitor.backup_hours(), monitor.cert_days(), monitor.spike_min(), monitor.spike_factor())
-      == (5, 26, 21, 20, 3) and monitor.DEFAULT_URL == "http://frontend-proxy-service/.well-known/gs1resolver")
+check("defaults: every 5 minutes, the description file through the proxy, 26 hours, 21 days, 90 days, 20 and 3 times",
+      (monitor.minutes(), monitor.backup_hours(), monitor.cert_days(), monitor.gcp_days(), monitor.spike_min(),
+       monitor.spike_factor()) == (5, 26, 21, 90, 20, 3) and monitor.DEFAULT_URL == "http://frontend-proxy-service/.well-known/gs1resolver")
 os.environ["PORTAL_MONITOR_MINUTES"] = "soon"
 check("a setting that is not a number: the default", monitor.minutes() == 5)
 os.environ["PORTAL_MONITOR_MINUTES"] = "0"
@@ -336,6 +339,69 @@ requestlog._collstats = saved_stats
 store.col("settings").delete_one({"_id": requestlog.SETTING_MAX})
 clear()
 
+# ================================================================== the age of GS1's GCP length table (ADR 0008, 0015)
+def gcp_list(days_old, now=S):
+    """Stores a small list GS1 dated that many days before now (forced: it may be older than the one in use)."""
+    date = (now - timedelta(days=days_old)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    gcp.save(gcp.parse(f'<GCPPrefixFormatList date="{date}"><entry prefix="789" gcpLength="7"/>'
+                       f'</GCPPrefixFormatList>'.encode()), "root", force=True)
+
+
+def gcp_round(days_after=0):
+    return monitor._run(S + timedelta(days=days_after, seconds=1))["gcptable"]
+
+
+clear()
+store.col("gcp_table").delete_many({})
+gcp_round()
+check("the GCP table: without a list, not checked and no message (the table is optional)",
+      state("gcptable") == "unknown" and ALERTS.find_one({"_id": "gcptable"})["detail"] == {"reason": "none"}
+      and not sent("alert-gcp-table"), ALERTS.find_one({"_id": "gcptable"}))
+gcp_list(30)
+check("…a list GS1 dated 30 days ago: ok, with its date and age", gcp_round() is None and state("gcptable") == "ok"
+      and ALERTS.find_one({"_id": "gcptable"})["detail"]["days"] == 30
+      and ALERTS.find_one({"_id": "gcptable"})["detail"]["max"] == 90, ALERTS.find_one({"_id": "gcptable"}))
+gcp_list(89)
+check("…89 days: still ok", gcp_round() is None and state("gcptable") == "ok")
+gcp_list(90)
+check("…90 days: an alert, a message to the server administrators who want alerts",
+      gcp_round() == "alert" and state("gcptable") == "alert" and sent("alert-gcp-table") == [("root", "alert-gcp-table")],
+      sent())
+job = MAIL.find_one({"template": "alert-gcp-table"})
+check("…the message gives the list's date, its age and the limit",
+      job and "90 days old" in job["subject"] and (S - timedelta(days=90)).strftime("%Y-%m-%d") in job["text"]
+      and "from 90 days" in job["text"], job and (job["subject"], job["text"][:400]))
+check("…no reminder the next day", gcp_round(1) is None and len(sent("alert-gcp-table")) == 1)
+check("…a reminder a week later", gcp_round(7) == "reminder" and len(sent("alert-gcp-table")) == 2, sent())
+os.environ["PORTAL_MONITOR_GCP_DAYS"] = "120"
+check("PORTAL_MONITOR_GCP_DAYS=120: the same list is ok again, resolved with a message",
+      gcp_round(8) == "resolved" and sent()[-1] == ("root", "alert-gcp-table-ok"), sent()[-2:])
+os.environ["PORTAL_MONITOR_GCP_DAYS"] = "0"
+gcp_round(8)
+check("PORTAL_MONITOR_GCP_DAYS=0: not checked", state("gcptable") == "unknown"
+      and ALERTS.find_one({"_id": "gcptable"})["detail"] == {"reason": "notChecked"})
+del os.environ["PORTAL_MONITOR_GCP_DAYS"]
+gcp_list(100)
+gcp_round(9)
+gcp_list(5, S + timedelta(days=9))
+check("a newer list uploaded: resolved, a message naming it", gcp_round(9) == "resolved"
+      and sent()[-1] == ("root", "alert-gcp-table-ok"), sent()[-2:])
+hist = list(store.col(monitor.HISTORY).find({"check": "gcptable"}))
+check("…each alert in the history, raised and ended", len(hist) == 2 and all(h["endedAt"] for h in hist)
+      and hist[0]["kind"] == "gcptable", hist)
+gcp_list(100, NOW)
+root = client("root", "root-password-long")
+answer = root.get("/portal/api/gcp").get_json()
+check("GET /gcp: the list and its age against the limit", answer["table"]["count"] == 1
+      and answer["age"] == {"date": answer["table"]["date"], "days": 100, "maxDays": 90, "old": True}, answer)
+gcp_list(10, NOW)
+check("…a recent list is not old", root.get("/portal/api/gcp").get_json()["age"]["old"] is False)
+store.col("gcp_table").delete_many({})
+check("…no list: no age", root.get("/portal/api/gcp").get_json() == {"table": None, "age": None})
+gcp.forget()
+monitor._run(S + timedelta(days=10))
+clear()
+
 # ================================================================== the overview shows the alerts
 ANSWER["/.well-known/gs1resolver"] = 503
 monitor._run(S + timedelta(minutes=10)); monitor._run(S + timedelta(minutes=15))
@@ -345,8 +411,8 @@ monitor._run(S + timedelta(minutes=20))
 root = client("root", "root-password-long")
 op = root.get("/portal/api/overview").get_json()["operation"]
 check("overview of a server administrator: every active alert and the state of each check",
-      sorted(a["kind"] for a in op["alerts"]) == ["404", "404", "backup", "resolver"] and set(op["checks"]) == {"resolver", "backup",
-                                                                                                    "certificate", "logspace"},
+      sorted(a["kind"] for a in op["alerts"]) == ["404", "404", "backup", "resolver"]
+      and set(op["checks"]) == {"resolver", "backup", "certificate", "logspace", "gcptable"},
       op.get("alerts"))
 # Operation is the server administrators' only (ADR 0013); everyone else's alerts come with record quality
 ana = client("ana", "ana-password-long")
@@ -394,7 +460,7 @@ monitor._run(S + timedelta(minutes=30))
 job = MAIL.find_one({"template": "alert-404-spike", "user": "ana"})
 check("…messages in the recipient's language", job and "códigos sem cadastro" in job["subject"], job and job["subject"])
 templates = [t for t in mailtexts.TEXTS if t.startswith("alert-")]
-check("nine alert messages", len(templates) == 9, templates)
+check("eleven alert messages", len(templates) == 11, templates)
 for template in templates:
     en, pt = mailtexts.TEXTS[template]["en-GB"], mailtexts.TEXTS[template]["pt-BR"]
     same = mailtexts.placeholders(en[0] + en[1]) == mailtexts.placeholders(pt[0] + pt[1])
@@ -403,8 +469,9 @@ i18n = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read()
 keys = ["prefs.alerts", "overview.op.alerts", "overview.op.noAlerts", "overview.alertSince", "overview.check.resolver",
         "overview.check.backup", "overview.check.certificate", "overview.check.backupAt", "overview.check.certExpires",
         "overview.state.ok", "overview.state.alert", "overview.state.unknown"] + \
-       [f"overview.alert.{k}" for k in ("resolver", "backup", "certificate", "404", "logspace")] + \
-       ["overview.check.logspace", "overview.check.spaceUse", "overview.check.noLimit", "alerts.kind.logspace"]
+       [f"overview.alert.{k}" for k in ("resolver", "backup", "certificate", "404", "logspace", "gcptable")] + \
+       ["overview.check.logspace", "overview.check.spaceUse", "overview.check.noLimit", "alerts.kind.logspace",
+        "overview.check.gcptable", "overview.check.gcpAge", "overview.check.gcpNone", "alerts.kind.gcptable", "gcp.old"]
 missing = [k for k in keys if i18n.count(f'"{k}"') != 2]
 check("the screen's texts in both languages", not missing, missing)
 

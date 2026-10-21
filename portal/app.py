@@ -2556,8 +2556,8 @@ def on_gcp_error(err):
 @server_admin_required
 def gcp_table():
     """GS1's GCP length table in use (Documentation/adr/0015-gcp-length-table.md): its date, number of prefixes, who
-    uploaded it and when; null without one."""
-    return jsonify({"table": gcp.info()})
+    uploaded it and when; null without one. age: how old GS1's date is against PORTAL_MONITOR_GCP_DAYS (ADR 0008)."""
+    return jsonify({"table": gcp.info(), "age": monitor.gcp_age()})
 
 
 @app.post("/portal/api/gcp")

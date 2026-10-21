@@ -1022,10 +1022,12 @@ The job worker checks the installation every `PORTAL_MONITOR_MINUTES` (5; 0 swit
 | Certificate | a TLS connection to `PORTAL_MONITOR_TLS_HOST` (`FQDN`) on port 443, once an hour | expires within `PORTAL_MONITOR_CERT_DAYS` (21) or does not verify; unknown when the host cannot be reached or is `localhost` |
 | 404 spikes | requests answered "code not registered" in the last hour, for the installation and for each organisation | at least `PORTAL_ALERT_404_MIN` (20) and `PORTAL_ALERT_404_FACTOR` (3) times the usual hour of the 7 days before |
 | Request log space | the log's used pages and indexes (`collStats`) against the most space set on *Requests → Retention* (ADR 0006 §9) | from 80 % of the limit; unknown without a limit |
+| GCP length table | the date GS1 gave the list in use (ADR 0015) | `PORTAL_MONITOR_GCP_DAYS` (90) days old or more; unknown without a list or with the setting at 0 |
 
 **Messages** (with e-mail on): one when a check goes into alert, a reminder every 24 hours while it lasts, one when it
 is resolved (spikes simply end). The request log's space has no daily reminder: one message at 80 % and one at each
-further 5 % reached (85, 90, 95, 100), and one when it falls below 80 % again. Server administrators receive the resolver, backup, certificate and installation's
+further 5 % reached (85, 90, 95, 100), and one when it falls below 80 % again. An old GCP length table is reminded
+weekly. Server administrators receive the resolver, backup, certificate and installation's
 spikes; an organisation's administrators its own spikes. The category *alerts* is on by default; each user may switch
 it off in Options → E-mail. Without e-mail the states are still shown in the overview's *Operation* group (every check
 for server administrators; the organisation's spikes for its users).

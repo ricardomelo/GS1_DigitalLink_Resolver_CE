@@ -873,6 +873,17 @@ come from the counts per key matched against the current rules, which spares the
 screen showed that the side menu cut *Organisation management* (from the previous delivery): long names now wrap,
 with a check. 33 mutations, all caught.
 
+**The installation's appearance** (`fbb44ff`; ADR 0019). The owner asked for a function like the item's page brands
+that lets the operator change the logo, the colours and the title *GS1 Resolver Community Edition*, with a button that
+restores the original. One setting in the portal's database holds them; the portal and the home page apply it through
+a small public style sheet that redefines the pages' own design tokens, and the resolver reads it as it reads brands
+and forwarding. The points the owner left open took the recommended option, the owner being away: three colours
+rather than every token (twelve colours would be easy to make unreadable), colours refused when white text falls
+below WCAG's 4.5:1 rather than a mere warning, the title replacing the product's name in every text (the tab titles
+too) and the description file keeping the software's name. Replacing the name in the texts had to happen before their
+placeholders were filled, or the screen's own hint, which names the original title, would have named the new one; a
+mutation showed it. 28 mutations: 27 caught (one only after it was aimed at the cache's check inside the lock, the outer one being a shortcut); the last showed the logo's own `nosniff` header to be redundant — every answer of the portal carries it — and it was removed.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

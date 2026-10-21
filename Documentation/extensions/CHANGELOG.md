@@ -63,6 +63,14 @@
   *fallback*; the overview counts both and gives server administrators a *Forwarding* group (the last resort, its
   requests and codes, the rules and the requests of each), in the exports too. The side menu's long names wrap.
   Commit `8673873`.
+- **The installation's appearance** ([ADR 0019](../adr/0019-appearance.md)), set by server administrators on the
+  portal's new *Appearance* screen: a **title** in place of *GS1 Resolver Community Edition* (in the headers and the
+  browsers' tab titles), a **logo** (PNG, JPEG or WebP, up to 200 KB) and three **colours** — main, action and highlight
+  — with a live preview; a colour on which white text would be hard to read (below 4.5:1) is refused. The portal (its
+  sign-in page and privacy notice too) and the home page show it at once, the resolver's pages and the item's page
+  within 30 seconds; **Restore the original** brings back the original title, logo and colours. Each change is in the
+  journal (`appearance-save`, `appearance-reset`). The resolver's description file keeps the software's name.
+  Commit `fbb44ff`.
 - **Third-party software, data and licences** (`Documentation/third-party.md`): every component, data source and
   service with its licence; what an operator must do (the notices, the DB-IP attribution, GS1's terms for the GCP
   table, trademarks); why nothing restricts commercial use (MongoDB's SSPL included). The README's licence section

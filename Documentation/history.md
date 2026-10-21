@@ -820,6 +820,16 @@ the map follows the list's filters. Adding the map's texts replaced, unnoticed a
 same name (the Google Maps link's title): the location check of the end-to-end test caught it. 12 mutations, all
 caught.
 
+**The X-dimension, checked** (`6350211`; ADR 0010 §7.6). The owner sent section 5.12 of the General Specifications,
+release 26.0, with the decision tree and its thirteen tables. Retail and direct part marking matched what had been
+built from secondary sources in session 15; *healthcare* did not — its range was table 11's, the GSRN's, and the
+healthcare tables are three, with ranges up to 1.52 mm. Rather than correct one line, each table a label of the portal
+can follow became an environment, and the key now decides which are offered, as the tree's first questions do. The
+page received the environments as a JSON object, whose keys Flask sorts: the "first is the default" rule picked
+*distribution* for a GTIN until each environment carried its rank. One of 11 mutations (table 8 given table 2's
+values) went unnoticed while the checks compared only the sizes; they now compare the ranges. The PDF stays out of the
+repository.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

@@ -29,6 +29,15 @@
   records the city's position from the GeoIP database, rounded to a tenth of a degree (`ll`); the CSV gains `latitude`
   and `longitude`; the list shows the region beside the city. d3, topojson-client and Natural Earth's countries are
   served by the portal (no map service). New route `GET /portal/api/requests/places`. Commit `a287a64`.
+- **The label's scanning environments checked against the GS1 General Specifications, release 26.0**
+  ([ADR 0010, section 7.6](../adr/0010-label-studio.md)): one environment per symbol specification table of the
+  decision tree — retail point of sale (1), retail and general distribution (3), general distribution only (2),
+  retail pharmacy (10), healthcare and general distribution (8), non-retail healthcare (6), other trade items (4),
+  logistic units (5), GDTI/GRAI/GIAI/GLN (9), GSRN (11) and direct part marking (7). *Healthcare* now follows table 6
+  (Data Matrix up to 0.990 mm, EAN/UPC from 0.170 mm; it had table 11's 0.495 mm); direct part marking also takes the
+  QR code. Only a key's environments are offered, its usual one first: **an SSCC, GDTI, GRAI, GIAI, GLN or GSRN label
+  asked without `env` follows its own table** (an SSCC's QR code at 0.743 mm), and `env=retail` for them is refused
+  (`label.environmentNotForKey`). Commit `6350211`.
 
 ### Owner's additions of 17 October: the project's documentation (backlog item 9.11)
 - **An inventory of every feature drawn from the development tests** ([ADR 0016](../adr/0016-documentation-and-feature-inventory.md)):

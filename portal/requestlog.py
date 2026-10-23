@@ -38,6 +38,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from pymongo import DESCENDING
 
+import gs1
 import store
 
 log = logging.getLogger("portal.requestlog")
@@ -59,8 +60,13 @@ MAX_EXPORT = 50_000
 FINAL_AFTER = timedelta(minutes=10)        # a day is counted for the last time this long after it ended
 TOP = 20                                   # languages and link types kept per key and day
 SETTING_FINAL = "requestStats.finalUntil"
-SETTING_FOLDED = "requestLog.foldedUntil"   # the events left out since section 11 deleted up to this time
-NOISE = {"$or": [{"dev": "automated"}, {"ai": {"$exists": False}}]}    # events now counted, not stored
+# The events left out since section 11 deleted up to this time. Was "requestLog.foldedUntil" until probes recorded with
+# a key that is none (see NOISE) became noise: a new name, so every counted day is looked at once more
+SETTING_FOLDED = "requestLog.noiseFoldedUntil"
+KEYS = sorted(gs1.PRIMARY_KEYS)             # an event's "ai" must be one of them: the resolver's KEY_AIS
+# Events now counted, not stored: automated clients' and those naming no GS1 primary key (no "ai", or a probe's first
+# segment such as "wp-admin", which resolvers before 23 October 2026 recorded as one)
+NOISE = {"$or": [{"dev": "automated"}, {"ai": {"$nin": KEYS}}]}
 SETTING_DAYS = "requestLog.days"            # the installation's retention (the resolver reads it: request_log.py)
 MAX_DAYS = 3650
 SETTING_MAX = "requestLog.maxBytes"         # the most space the log may use on disk (ADR 0006, section 9)
@@ -427,8 +433,10 @@ def _code_filter(text: str) -> dict:
 
 def event_query(args, scope: dict) -> dict:
     """The query of a listing: scope, period, code, outcome, device class; automated requests are left out unless
-    asked for (automated=1, or device=automated)."""
+    asked for (automated=1, or device=automated). Only events of a GS1 primary key: those of probes recorded before
+    23 October 2026 wait in the collection until fold_noise() deletes them."""
     parts = [scope] if scope else []
+    parts.append({"ai": {"$in": KEYS}})
     parts.append(_interval(args))
     parts.append(_code_filter(args.get("code", "")))
     outcome = (args.get("outcome") or "").strip()

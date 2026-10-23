@@ -522,7 +522,7 @@ starts; narrowed to the user's own prefixes); `app.log_sees_everything()` is tru
 support access and not limited to prefixes, who sees every event, also those without a key. `list_events(args,
 scope)` applies the filters (`from`/`to` as days of `PORTAL_TIME_ZONE`, `code` as an anchor, a key value, a GTIN-13 or
 a prefix, `outcome` with `notFound` for both 404s, `device`, automated requests left out unless asked — the events
-recorded before ADR 0006 §11) and pages with
+recorded before ADR 0006 §11 —, and only events whose `ai` is a primary key, `KEYS` = `gs1.PRIMARY_KEYS`, §12) and pages with
 `before` = `<time>|<id>` of the last row. `per_day()` reads `request_daily` for past days and the raw events for today.
 `aggregate()` (in `app.HOUSEKEEPING`) takes the `request-stats` lock without waiting (another replica holding it: skip),
 counts every day from the one after `requestStats.finalUntil` (the first time, from the oldest event) up to today with
@@ -533,7 +533,9 @@ documents of other runs removed — then records the last finished day (ten minu
 maxed), and `count_day()`, `collect()` and `per_day()` add them to the events' groups (`_quarters(start, end)`: the
 counts of an interval); percentiles stay the events'; the first run starts from the oldest event or count.
 `fold_noise()` (in `app.HOUSEKEEPING` right after `aggregate()`, lock `request-fold`) deletes `NOISE` events —
-automated, or without `ai` — from `requestLog.foldedUntil` up to the end of `requestStats.finalUntil`, journal
+automated, or whose `ai` is not in `KEYS` (absent included; §12) — from `requestLog.noiseFoldedUntil` (`SETTING_FOLDED`;
+`requestLog.foldedUntil` before §12, so every counted day is gone through once more) up to the end of
+`requestStats.finalUntil`, journal
 `requestlog-folded`. `monitor.spikes()` adds the counts' 404s of the last hour (from its first whole quarter).
 `record_api_call()` and `list_api_calls()` keep and list the tenant API's calls (`api_requests`); `api_v1.py` records
 each call in an `after_request` hook, with the key seen (also a refused one), the route's template, status and time.
@@ -1084,7 +1086,8 @@ which mount the same volume), and the files of earlier versions renamed `*.migra
   `Writer`: a bounded
   queue per process (started at the first event and again after a fork), a daemon thread writing batches of up to 500
   with one retry, events lost counted (`lost_total`) and reported at most once a minute, `flush()` (tests, and at
-  exit). `counted_only(doc)` (an automated client's request, or one without a key) and `count_of(doc)` (its quarter
+  exit). `counted_only(doc)` (an automated client's request, or one without a key: `event()` keeps `ai`, `v` and `cp`
+  only when the first segment is in `KEY_AIS`, the dictionary's primary keys, ADR 0006 §12) and `count_of(doc)` (its quarter
   of an hour `b`, `COUNT_FIELDS` and the `_id`, a SHA-1 of both): `_write()` inserts the batch's other events and
   adds these with one upsert per count (`$inc` `n` and `ms`, `$max` `msMax`, `$setOnInsert` the fields; the indexes of
   `request_counts` made at its first write; ADR 0006 §11). `create_app()` gives the writer `mongo.cx["resolver_log"]["requests"]` and `RETENTION` the portal's database

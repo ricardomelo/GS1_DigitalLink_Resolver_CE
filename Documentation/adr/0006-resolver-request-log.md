@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (the log on the server: capture in the resolver, daily aggregates and reading in the portal, the tenant API's calls), 3 (the *Requests* screen). **Amended** on 17 October 2026 (section 8, item 9.5) and on 20 October 2026 (section 9, finding F1 of the staging tests) |
+| Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (the log on the server: capture in the resolver, daily aggregates and reading in the portal, the tenant API's calls), 3 (the *Requests* screen). **Amended** on 17 October 2026 (section 8, item 9.5), on 20 October 2026 (section 9, finding F1 of the staging tests; section 10), on 21 October 2026 (section 11) and on 23 October 2026 (section 12) |
 | Backlog items | 4.1 — log of resolver requests; 9.5 — browser, approximate location and retention set in the portal; F1 (staging tests of 20 October) — a limit by size |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 |
 
@@ -512,3 +512,49 @@ an invalid GS1 code read by a phone (a misprinted label) is worth keeping one by
 - An integration (an ERP, a link checker) that resolves codes is in the totals and among the automated requests of the
   overview, not in the list.
 - The day of the update keeps its automated events in the list until it is counted as finished.
+
+## 12. Amendment of 23 October 2026 — a probe is not a key
+
+### 12.1 Context
+
+After section 11 the owner still found the list on staging full of requests with random paths — robots looking for
+weaknesses (`/wp-admin/setup-config.php`, `/admin/.env`, `/2024/01/shell.php`). Section 11 leaves out requests
+without a key, but a path of two or more segments reaches the resolver's route `/<AI>/<value>`, and the route noted
+its first segment as the key: `wp-admin` with the value `setup-config.php`. Such a request had a "key", came with a
+browser's User-Agent, and was stored and listed (as `unknown`, 404: the official resolver looks the document up
+before checking the syntax). The overview was not misled — a key's figures need a company part, which only a
+numerical AI has — but a numerical first segment such as a year could reach its list of codes.
+
+### 12.2 Decision
+
+1. **A key is a GS1 Digital Link primary key.** The resolver records `ai` and `v` only when the first segment is one
+   of the primary keys of GS1's Barcode Syntax Dictionary (the AIs with `dlpkey`: 00, 01, 253, 255, 401, 402, 414,
+   415, 417, 8003, 8004, 8006, 8010, 8013, 8017, 8018). Any other path is a request without a key: counted, not
+   stored (section 11). A primary key with a value that is not one (`/01/wp-login.php`) is still a GS1 code read
+   wrong, stored and listed.
+2. **The events of before**: section 11's housekeeping also deletes, once their day is counted, the events whose `ai`
+   is none of the primary keys. Its progress is kept under a new name (`requestLog.noiseFoldedUntil`), so every
+   counted day still in the log is gone through once more after the update. The list, its export and the map leave
+   them out at once, also those of days not yet counted.
+
+### 12.3 Design
+
+- `web_server/src/request_log.py`: `KEY_AIS`; `event()` keeps `ai`, `v` and `cp` only for them.
+  `dev-tests/resolver/test_request_log.py` compares `KEY_AIS` with the portal's `gs1_dictionary.json`.
+- `portal/requestlog.py`: `KEYS` (`gs1.PRIMARY_KEYS`); `NOISE` matches an `ai` not in `KEYS` (absent included);
+  `SETTING_FOLDED` = `requestLog.noiseFoldedUntil`; `event_query()` keeps `ai` in `KEYS`.
+
+### 12.4 Options considered
+
+| Point | Chosen | Not chosen |
+|---|---|---|
+| What is a key | a primary key of the dictionary | any numerical AI (a year, or a qualifier such as `/10/…`, would still be one); a valid GS1 Digital Link only (an invalid code read by a phone, a misprinted label, is what the operator looks for: section 11) |
+| A probe's answer | 404, as the official resolver gives it | 400 for a first segment that is no key (changes official behaviour that the conformance suite reads) |
+| The events of before | deleted once their day is counted, hidden from the list at once | left to expire (the list flooded for up to the retention) |
+
+### 12.5 Consequences
+
+- The list holds scans of GS1 codes only; robots still count among the requests and in the overview's totals and
+  quality figures, as section 11 decided.
+- The first housekeeping after the update goes through every counted day once more (one deletion by query).
+

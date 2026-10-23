@@ -203,6 +203,25 @@ r, e = ask("/wp-login.php")
 c = counted()
 check("…from a phone's browser too: no key, counted with its device and browser", e is None and c
       and c.get("dev") == "mobile" and c.get("br") == "app" and c.get("o") == "invalid", (e, COUNTED))
+DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36"
+r, e = ask("/wp-admin/setup-config.php", agent=DESKTOP)
+c = counted()
+check("a probe of two segments from a browser (404, as the official resolver answers it): its first segment is no "
+      "primary key, counted, not stored; no key in the count", r.status_code == 404 and e is None and c
+      and "ai" not in c and "v" not in c and "cp" not in c and c.get("o") == "unknown" and c.get("dev") == "desktop",
+      (r.status_code, e, COUNTED))
+r, e = ask("/2024/01/shell.php", agent=DESKTOP)
+c = counted()
+check("…a number that is no primary key (a year) neither: counted, no key, no company part", e is None and c
+      and "ai" not in c and "cp" not in c, (e, COUNTED))
+r, e = ask("/01/wp-login.php", agent=DESKTOP)
+check("…but a primary key with a value that is not one is a GS1 code read wrong: stored, with its key",
+      e and e.get("ai") == "01" and e.get("v") == "wp-login.php" and e.get("o") == "unknown", e)
+check("the resolver's primary keys are those of GS1's dictionary (the portal's)",
+      request_log.KEY_AIS == set(json.load(open(os.path.join(REPO, "portal", "gs1_dictionary.json")))["ais"].keys()
+                                 & {code for code, entry in json.load(open(os.path.join(REPO, "portal",
+                                    "gs1_dictionary.json")))["ais"].items() if "dlpkey" in entry}),
+      sorted(request_log.KEY_AIS))
 r, e = ask("/AbCdEf?17=261231")
 check("a compressed GS1 Digital Link: form 'compressed', key and qualifiers as decompressed, no path",
       r.status_code == 307 and e and e.get("f") == "compressed" and e.get("ai") == "01" and e.get("q") == {"10": "123"}

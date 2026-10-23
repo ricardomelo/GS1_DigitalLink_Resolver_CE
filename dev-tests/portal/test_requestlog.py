@@ -104,6 +104,10 @@ ids = {
     "other": event(OTHER, dev="desktop"),
     "probe": event(None, o="invalid", s=400, p="=HYPERLINK(\"http://x\")"),
     "bot": event(OPER, dev="automated"),
+    # a GS1 code read wrong, whose value a person (or a probe) chose: /01/=HYPERLINK(...)
+    "formula": EVENTS.insert_one({"t": NOW - timedelta(minutes=4), "m": "GET", "f": "uri", "s": 400, "o": "invalid",
+                                  "dev": "mobile", "ai": "01", "v": "=HYPERLINK(\"http://x\")",
+                                  "expiresAt": NOW + timedelta(days=90)}).inserted_id,
 }
 
 
@@ -118,8 +122,9 @@ def ids_of(*names):
 
 # ================================================================== who sees what
 r, got = seen(root)
-check("a server administrator sees the whole installation (automated requests hidden by default)",
-      got == ids_of("acme_in", "acme_out", "oper", "other", "probe"), got)
+check("a server administrator sees the whole installation (automated requests hidden by default, and an event "
+      "without a key recorded before ADR 0006 section 11)", got == ids_of("acme_in", "acme_out", "oper", "other", "formula"),
+      got)
 rows = {e["id"]: e for e in r.get_json()["events"]}
 check("…with the organisation of each event", rows[str(ids["acme_in"])]["organisation"] == "Acme Foods"
       and rows[str(ids["oper"])]["organisation"] is None and r.get_json()["whole"] is True, rows[str(ids["acme_in"])])
@@ -214,7 +219,7 @@ check("CSV: UTF-8 with BOM, ';', a header", r.status_code == 200 and text.starts
       and r.mimetype == "text/csv", text[:80])
 table = list(csv.reader(io.StringIO(text.lstrip("﻿")), delimiter=";"))
 probe_row = next((row for row in table if row and "HYPERLINK" in ";".join(row)), [])
-check("CSV: a probe's path cannot become a formula in Excel", any(c.startswith("'=HYPERLINK") for c in probe_row), probe_row)
+check("CSV: a code's value cannot become a formula in Excel", any(c.startswith("'=HYPERLINK") for c in probe_row), probe_row)
 check("CSV: a server administrator's export names the organisation", table[0][-1] == "organisation"
       and any(row[-1] == "Acme Foods" for row in table[1:]), table[0])
 check("CSV: the export is a journal event", any(e["action"] == "requests-export" and e["user"] == "root"
@@ -378,6 +383,16 @@ check("…per place with the city's position, a country alone without one",
       m.get("places") == [{"country": "BR", "region": "Sao Paulo", "city": "Campinas", "position": [-22.9, -47.1], "requests": 2},
                           {"country": "PT", "region": "Lisbon", "city": "Lisbon", "position": [38.7, -9.1], "requests": 1},
                           {"country": "ZA", "region": None, "city": None, "position": None, "requests": 1}], m.get("places"))
+# A probe a resolver before 23 October 2026 recorded with its first segment as the key (/wp-admin/setup-config.php)
+probe = EVENTS.insert_one({"t": NOW, "ai": "wp-admin", "v": "setup-config.php", "o": "unknown", "s": 404,
+                           "dev": "desktop", "br": "chrome", "c": "CN", "rg": "Beijing", "ci": "Beijing",
+                           "ll": [39.9, 116.4]}).inserted_id
+_, found = seen(root, "")
+m = root.get("/portal/api/requests/places").get_json() or {}
+check("an event whose key is no GS1 primary key (a probe recorded by an earlier resolver): not listed, not on the map",
+      str(probe) not in found and len(found) == 5 and m.get("total") == 5 and "CN" not in dict(m.get("countries", [])),
+      (found, m.get("countries")))
+EVENTS.delete_one({"_id": probe})
 m = root.get("/portal/api/requests/places?browser=safari").get_json() or {}
 check("…with the list's filters", m.get("countries") == [["BR", 1]] and m.get("total") == 1, m)
 m = ana.get("/portal/api/requests/places").get_json() or {}
@@ -618,13 +633,15 @@ for collection in (EVENTS, COUNTS):
 kept = event(ACME_IN, t=at(D2, 9))
 event(OPER, t=at(D2, 10), dev="automated")
 event(None, t=at(D2, 11), o="invalid", s=400, p="/wp-login.php")
+EVENTS.update_one({"_id": event(None, t=at(D2, 11, 30), o="unknown", s=404, v="setup-config.php")},
+                  {"$set": {"ai": "wp-admin"}})                # a probe recorded with a key that is none
 later = event(OPER, t=at(D2 + timedelta(days=1), 9), dev="automated")
-check("before any day is counted, nothing is deleted", requestlog.fold_noise() == 0 and EVENTS.count_documents({}) == 4)
+check("before any day is counted, nothing is deleted", requestlog.fold_noise() == 0 and EVENTS.count_documents({}) == 5)
 store.set_setting(requestlog.SETTING_FINAL, D2.isoformat())
 deleted = requestlog.fold_noise()
-check("events of a counted day: the automated one and the one without a key deleted, a person's kept",
-      deleted == 2 and {d["_id"] for d in EVENTS.find({})} == {kept, later}, (deleted, list(EVENTS.find({}, {"t": 1}))))
-check("…a journal event", any(e["action"] == "requestlog-folded" and e["detail"] == "events=2"
+check("events of a counted day: the automated one, the one without a key and the one whose key is no primary key "
+      "deleted, a person's kept", deleted == 3 and {d["_id"] for d in EVENTS.find({})} == {kept, later}, (deleted, list(EVENTS.find({}, {"t": 1}))))
+check("…a journal event", any(e["action"] == "requestlog-folded" and e["detail"] == "events=3"
                              for e in journal.search(limit=20)))
 check("…recorded how far it went: the end of the counted day",
       store.get_setting(requestlog.SETTING_FOLDED) == requestlog.day_bounds(D2)[1], store.get_setting(requestlog.SETTING_FOLDED))

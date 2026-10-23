@@ -12,8 +12,8 @@ event in a bounded queue in memory. A background thread of each server process w
 answer never waits for the database; a full queue or a failing database drops events, counts them and says so in the
 resolver's output at most once a minute.
 
-Requests from automated clients and requests in which no GS1 key could be read are not stored one by one: they are
-counted per quarter of an hour in "request_counts", grouped as the portal's daily aggregates group events (ADR 0006,
+Requests from automated clients and requests in which no GS1 key could be read (no path of a primary key: KEY_AIS)
+are not stored one by one: they are counted per quarter of an hour in "request_counts", grouped as the portal's daily aggregates group events (ADR 0006,
 section 11).
 
 The browser family and the approximate location (country, region, city; geoip.py) are derived when the request
@@ -57,6 +57,10 @@ FLUSH_SECONDS = 1.0            # the longest an event waits in the queue when th
 WARN_SECONDS = 60              # at most one warning a minute about lost events
 UNIT_QUALIFIERS = {"21", "235"}        # they name a single unit: only the AI is kept
 COMPANY_AFTER_FIRST_DIGIT = {"01", "8006", "00", "8003"}   # indicator, extension or filler digit before the prefix
+# The primary keys of GS1 Digital Link (the AIs with "dlpkey" in GS1's Barcode Syntax Dictionary, as the portal reads
+# it): a path whose first segment is none of them names no GS1 key, such as a probe for /wp-admin/setup-config.php
+KEY_AIS = frozenset({"00", "01", "253", "255", "401", "402", "414", "415", "417", "8003", "8004", "8006", "8010",
+                     "8013", "8017", "8018"})
 MAX_VALUE = 100
 MAX_PATH = 200
 MAX_DAYS = 3650                # the longest retention the portal accepts
@@ -232,7 +236,7 @@ def event(noted: dict[str, Any], response: Response) -> dict[str, Any]:
     if noted.get("epc"):
         doc["epc"] = str(noted["epc"])[:40]
     ai, value = noted.get("ai"), noted.get("value")
-    if ai and value is not None:
+    if str(ai) in KEY_AIS and value is not None:
         doc["ai"], doc["v"] = str(ai)[:10], str(value)[:MAX_VALUE]
         cp = company_part(doc["ai"], doc["v"])
         if cp:

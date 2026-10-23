@@ -142,7 +142,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_93b2836eaae…)",
+    "a wrong key is refused (rk_c1ca4edf741…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -502,6 +502,14 @@
     "DELETE of links with qualifiers no record of the key has → 404, nothing removed",
     "PUT without qualifiers on a key with only a batch record → 404, the batch unchanged",
     "DELETE of links without qualifiers on that key → 404, the batch keeps its link",
+    "POST /new with a body that is not JSON → 400 saying so",
+    "POST /new of a record without a link of its default link type → 400 naming the type, nothing stored",
+    "POST /new with a list, one record without a link of its default link type → 400, nothing stored",
+    "POST /new with a body that is neither an object nor a list → 400",
+    "PUT with a body that is not JSON, or not an object → 400, nothing changed",
+    "DELETE with a body that is not JSON → 400, the document kept",
+    "DELETE with a body that is not an object → 400, the document kept (the official code deleted it)",
+    "POST /validate with a body that is not JSON → 400 saying so",
     "POST /validate names the item POST /new would refuse and why",
     "…and stores nothing",
     "…one entry, valid: no problem",
@@ -522,7 +530,7 @@
     "engine: PUT refuses an invalid value (an informative batch too long) → 400",
     "without the engine (no script): values not checked, as before"
    ],
-   "count": 82,
+   "count": 90,
    "ciOnly": false
   },
   "datamatrix": {
@@ -809,9 +817,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (211 features)",
+    "features.md: every table has a Checks column (213 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (315 references)",
+    "…each reference names a program of the inventory (321 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (68)",
     "…and the inventory holds no program that no longer exists",
@@ -1877,7 +1885,7 @@
     "nginx starts while a service name has no address yet",
     "…and answers that service's paths with an error meanwhile (502)",
     "…while the other services answer",
-    "the service is found once its name has an address, without restarting nginx (2.0 s)",
+    "the service is found once its name has an address, without restarting nginx (1.8 s)",
     "GET / → 200 text/html",
     "GET / serves the home page, not the resolver",
     "GET / carries the Content Security Policy",
@@ -2827,7 +2835,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:43331/ok",
+    "internal address refused: http://127.0.0.1:46261/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"

@@ -2,6 +2,15 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### A body that cannot be used (session 22)
+- **Fixed: the data entry API answered 500 to a body that was not JSON, and a `DELETE` whose body was a list deleted
+  the whole document** (deliberate change to official code): `POST /new`, `POST /validate`, `PUT` and a `DELETE` with
+  a body now answer 400 *Request body is not valid JSON*, and `PUT` and a `DELETE` with a body that is not an object
+  400 *Request body must be a JSON object*; nothing is written.
+- **Fixed: `POST /new` of a record without a link of its default link type answered a broken status** (the status
+  line read `0 error`): it now answers 400 *No link of the default link type …*. The portal was not affected by
+  either. Commit `dc3e97e`.
+
 ### A list of a key's records (session 22)
 - **Fixed: `POST /new` with a list kept only the first record of a key that exists** (data entry API, deliberate
   change to official code): a list holding several records of one key (the key's own record and a batch, say)

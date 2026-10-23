@@ -998,6 +998,14 @@ all caught. The container's Chromium had moved to build 1243 while the pinned Pl
 browser programs could not start until a folder of links gave 1243 the old names (for the session only; the hook is
 unchanged).
 
+The owner ran the sections of sessions 21 and 22 on staging the same day. The first version of the session 22 script
+answered 500: the body reached the server as JSON it could not read (most likely a character changed when copying
+from the browser), and the official handlers turn that into 500. The plan's script now writes the bodies to files and
+checks them before sending; it passed. The same handlers, read again, showed that a `DELETE` whose body was a list
+deleted the whole document, and that `POST /new` of a record without a link of its default link type answered a
+status made of two dictionary keys; both answer 400 now, with a body that is not JSON (`dc3e97e`). 8 mutations, all
+caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

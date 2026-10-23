@@ -622,6 +622,8 @@ def requests_images(browser, folder: str, locale: str) -> None:
     save_element(page, f"{folder}/requests-retention.png", "#requests-retention")
     page.goto(BASE + "#overview"); page.wait_for_timeout(1500)   # the overview (ADR 0007), the same month
     page.wait_for_selector("#overview-map circle.map-city")     # with the map of its requests (ADR 0006 §13)
+    # the menu closed: a full-page capture draws the sidebar over the page's left part
+    page.add_style_tag(content=".sidebar { display: none !important; }"); page.wait_for_timeout(300)
     save(page, f"{folder}/overview.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1900}, full=True)   # to the map
     ctx.close()
 

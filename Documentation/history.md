@@ -1008,6 +1008,15 @@ caught. Last, the session start hook took over the session's Chromium workaround
 the pinned Playwright wants and links the image's newer ones under their names; the e2e group passed with its
 variables alone.
 
+## Session 23 — browser tests that wait for the sign-in
+
+Nothing new on staging, in the plan's threads or in the official repository. The check that failed once in session
+22's battery, *wrong password message*, paused a fixed 900 ms after the click; with the sign-in slowed by 1.5 s the
+old code failed it and three other checks, and the portal program stopped after its seventh. The six sign-ins of the
+portal and mail programs now wait for what they expect, up to 10 s, and a timeout fails only the check that follows
+(`76fa572`); the other programs' `sign_in()` helpers already waited for the overview's address. Both mutations
+behaved as intended: the slow sign-in passes, a changed wrong-password text fails that one check.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

@@ -2,6 +2,12 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Browser tests that wait for the sign-in (session 23)
+- **Development: the portal and mail browser programs wait for the sign-in's outcome instead of a fixed pause**: six
+  sign-ins paused 800–1,200 ms before checking, which a loaded machine can outlast (*wrong password message* failed
+  once that way in session 22). Each now waits, for up to 10 s, for the message, the overview or the new-password
+  dialog it expects; a timeout is reported by the check that follows. Check names unchanged. Commit `76fa572`.
+
 ### Cloud sessions with a newer Chromium (session 22)
 - **Development: the session start hook links a newer Chromium under the build the pinned Playwright wants**: the
   cloud image moved from Chromium 1194 to 1243 and the browser programs no longer started; the hook now reads the

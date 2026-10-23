@@ -974,6 +974,17 @@ stand-in merges now and the parity program covers it. 6 mutations, the pull requ
 Found on the way and left for the owner: `PUT` with qualifiers that no record of the key has answers 200 and writes
 the links into the key's first record (official code; the portal only puts records that exist).
 
+## Session 21 — a record the key does not have
+
+The owner finished the staging sections of sessions 19 and 20 with nothing found, and the follow-up recommended at the
+end of session 20 was taken: `PUT` with qualifiers that no record of the key has (`8dbe297`). The same fallback to the
+document's first record was in `delete_links()`, so a `DELETE` of links for such a record removed the first record's
+links of the same type and languages; both answer 404 now. One existing check, *PUT refuses informative qualifiers
+on a batch record*, sent a batch the key did not have and passed only because the fallback checked the key's own
+record; it now names a batch that exists. The first parity check of the `DELETE` asked to remove a link the first
+record did not have, so the official code answered 404 as well and its mutation went uncaught; it now names one the
+first record has. 8 mutations, all caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

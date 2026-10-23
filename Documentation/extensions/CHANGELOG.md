@@ -2,6 +2,13 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### A record the key does not have (session 21)
+- **Fixed: `PUT` and a `DELETE` of links for a record the key does not have changed the key's first record** (data
+  entry API, deliberate change to official code): a `PUT /api/<key>` whose qualifiers matched none of the key's
+  records answered 200 and merged its links into the key's first record, and a `DELETE` with links removed them from
+  it. Both now answer 404 *Record not found* and change nothing. The portal was not affected (it only sends them for
+  records it has just read); a system calling the data entry API directly was. Commit `8dbe297`.
+
 ### The official project's pull request #128 (session 20)
 - **Fixed: `POST /new` of a record that exists duplicated its links** (data entry API, deliberate change to official
   code): sending again a record the key already had (the same qualifiers) added a second linkset object to it, so each

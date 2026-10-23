@@ -142,7 +142,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_32a69074206…)",
+    "a wrong key is refused (rk_e1c38dace26…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -822,9 +822,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (215 features)",
+    "features.md: every table has a Checks column (219 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (326 references)",
+    "…each reference names a program of the inventory (343 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (68)",
     "…and the inventory holds no program that no longer exists",
@@ -2973,7 +2973,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:36503/ok",
+    "internal address refused: http://127.0.0.1:40743/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -3280,10 +3280,11 @@
     "404 in the last hour per scope: the installation and the organisation",
     "…the most requested codes first",
     "…25 with nothing usual: a spike (at least 20)",
+    "…robots' 404 without a GS1 key, stored by an earlier resolver or counted, are no spike (ADR 0006 §14)",
     "a spike: a message to the server administrators and to the organisation's administrators",
     "…with the codes and the numbers",
     "…not to readers, nor to administrators who switched alerts off",
-    "a usual hour of 10: 25 is not 3 times as many, no spike",
+    "a usual hour of 10 (the codes with a GS1 key, not the installation's robots): 25 is not 3 times as many, no spike",
     "the spike ends: ok, no message",
     "PORTAL_ALERT_404_FACTOR=2: 25 is more than twice 10",
     "PORTAL_ALERT_404_MIN=30: 25 is too few",
@@ -3337,7 +3338,7 @@
     "alert-gcp-table-ok: both languages with the same placeholders",
     "the screen's texts in both languages"
    ],
-   "count": 90,
+   "count": 91,
    "ciOnly": false
   },
   "overview": {
@@ -3374,7 +3375,10 @@
     "…no governance for a reader",
     "an operator user: the operator's requests and records only",
     "…a compressed link's answer counts as answered",
-    "a server administrator: the whole installation, requests without a key included",
+    "a server administrator: the whole installation, its scans and quality those of GS1 codes only (ADR 0006 §14)",
+    "…the requests without a GS1 code counted apart: the probe, the automated one, the probe kept with a year as key",
+    "…how codes are scanned: no probe's device",
+    "…an organisation's overview has no such figure (it has no requests without a key)",
     "…but only codes in the lists of codes",
     "…the slowest day's 95th percentile (the whole installation's daily counts)",
     "…the server's operation: worker, e-mail, the last day counted",
@@ -3400,17 +3404,19 @@
     "…a typed value protected against formulas",
     "…the codes scanned (up to 100)",
     "export: CSV with a BOM, ';' and the message codes as labels when none are sent",
+    "…no requests without a GS1 code for an organisation",
     "…cells protected",
     "…each export is a journal event",
+    "…the whole installation's export: the requests without a GS1 code with the previous period",
     "…a writing call needs the portal's origin",
     "the resolver cannot be read: the overview still answers, without records",
     "the log cannot be read: 503 requests.unavailable",
     "signed out: 401",
-    "every overview text in both languages (169 keys)",
+    "every overview text in both languages (171 keys)",
     "the API's description has /stats and the scope stats:read",
     "sign-in opens the overview"
    ],
-   "count": 66,
+   "count": 71,
    "ciOnly": false
   },
   "overview_e2e": {
@@ -3419,6 +3425,7 @@
     "sign-in opens the overview",
     "…the scope and the period are written",
     "usage: the organisation's scans by people (6 of the record, 3 of the unknown code)",
+    "…no tile of requests without a GS1 code for an organisation",
     "…one bar per day of the period",
     "…the bars have a text alternative",
     "…the most scanned codes",
@@ -3442,6 +3449,7 @@
     "in Portuguese",
     "a reader sees usage, quality and records but no governance",
     "a server administrator: the whole installation",
+    "…the requests without a GS1 code in a tile of their own, out of the scans, explained on hover (ADR 0006 §14)",
     "…with the worker, e-mail and the daily counts",
     "…and the state of each monitoring check",
     "…the map of the whole installation: the operator's requests too",
@@ -3451,7 +3459,7 @@
     "…tiles in one or two columns",
     "no errors in the page"
    ],
-   "count": 34,
+   "count": 36,
    "ciOnly": false
   },
   "portal_config": {
@@ -4040,7 +4048,7 @@
     "a request the syntax check refuses: 400 'invalid', key kept, no path",
     "a probe from a crawler: 400 'invalid', counted, not stored (section 11); no path, no key in the count",
     "…from a phone's browser too: no key, counted with its device and browser",
-    "a probe of two segments from a browser (404, as the official resolver answers it): its first segment is no primary key, counted, not stored; no key in the count",
+    "a probe of two segments from a browser (400, as the syntax check answers it): its first segment is no primary key, counted, not stored; no key in the count",
     "…a number that is no primary key (a year) neither: counted, no key, no company part",
     "…but a primary key with a value that is not one is a GS1 code read wrong: stored, with its key",
     "the resolver's primary keys are those of GS1's dictionary (the portal's)",
@@ -4057,6 +4065,7 @@
     "…requests of the same group add up in one count (n, times summed, the longest kept); another link type, another count",
     "…indexes of the counts: quarter, company part, expiry (TTL)",
     "/heartbeat is not recorded",
+    "/heartbeat answers 200 with its message (the official code answered 500)",
     "/favicon.ico is not recorded",
     "/robots.txt is not recorded",
     "/.well-known/gs1resolver is not recorded",
@@ -4139,7 +4148,7 @@
     "a failing database: the answer is the same, the events lost and counted",
     "events are written in batches of at most 500"
    ],
-   "count": 134,
+   "count": 135,
    "ciOnly": false
   },
   "requestlog": {
@@ -4596,7 +4605,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.005 ms; Node.js: tens of ms)"
    ],
    "count": 207,
    "ciOnly": false

@@ -2,6 +2,23 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### People's figures count GS1 codes only (session 25)
+- **Changed: robots no longer count as people in the whole installation's overview.** Robots that probe the server
+  with a browser's User-Agent were counted among the **Scans**, in *How codes are scanned* and in the resolution
+  quality. The whole installation's scans, item page views and clicks, shares, scans per day and quality now count
+  requests with a GS1 primary key only, as an organisation's always did; the automated requests and the answer times
+  still count every request. **New: Requests without a GS1 code**, a tile of the whole installation's overview (with
+  the previous period, in the Excel and CSV exports), counts the requests whose address starts with no GS1 key; its
+  title says what they are. The monitoring's spikes of codes nobody registered count primary keys only. ADR 0006 §14.
+  Commit `3e66425`.
+- **Documented: probes answer 400.** A robot's path such as `/wp-admin/setup-config.php` is answered 400 (the syntax
+  check refuses it before the database is read), not 404 as ADR 0006 §12 said: the development test's stand-in for the
+  check accepted every path; the test now asks the GS1 Barcode Syntax Engine. Commit `3e66425`.
+
+### The resolver's heartbeat (session 25)
+- **Fixed: `GET /heartbeat` of the resolver answered 500** (official code: a `jsonify()` response inside a tuple). It
+  answers 200 with its message. Commit `6f28308`.
+
 ### Robots out of the list of requests (session 24)
 - **Fixed: robots probing random paths still filled the Requests screen**: a path of two or more segments, such as
   `/wp-admin/setup-config.php`, was recorded with its first segment as the GS1 key, so it was stored and listed

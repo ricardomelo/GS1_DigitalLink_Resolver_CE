@@ -1032,10 +1032,22 @@ The owner, back on staging, found the request list still full of robots probing 
 counts requests without a key instead of storing them, but a path of two segments such as
 `/wp-admin/setup-config.php` reached the route `/<AI>/<value>`, which took `wp-admin` for the key. The resolver now
 records a key only for a GS1 Digital Link primary key of the dictionary; events stored before leave the list at once
-and are deleted once their day is counted (`a4a4f26`, ADR 0006 §12). The probes still answer 404, as the official
-resolver does. The owner also asked for the Requests screen's map on the overview, in the empty space under the most
+and are deleted once their day is counted (`a4a4f26`, ADR 0006 §12). The probes keep the official answer (400:
+the staging run showed it; this record first said 404, see session 25). The owner also asked for the Requests screen's map on the overview, in the empty space under the most
 scanned codes: it now shows the period's requests there, following a server administrator's choice of organisation
 (`93236e7`, ADR 0006 §13). 7 mutations, all caught.
+
+## Session 25 — people's figures count GS1 codes only
+
+The owner ran the staging sections of sessions 23 and 24: all ticked. The robots' probes answered **400**, where the
+plan said 404: the syntax check refuses such a path before the database is read, and the development test's
+stand-in for the check accepted every path, so the rehearsal had given 404. The test now asks the GS1 Barcode Syntax
+Engine and ADR 0006 §12 is corrected. The owner's answer to the question left open in session 24 (robots with a
+browser's User-Agent counted as people in the whole installation's figures) was option A: the whole installation's
+scans, shares and quality now count requests with a GS1 primary key, read from the documents per key as an
+organisation's are, the requests without a GS1 code have a tile of their own, and the monitoring's 404 spikes count
+primary keys only (`3e66425`, ADR 0006 §14; 10 mutations, all caught). The resolver's own `/heartbeat`, which
+answered 500 in the official code, answers 200 (`6f28308`).
 
 ## How the main areas evolved
 
@@ -1194,8 +1206,7 @@ scanned codes: it now shows the period's requests there, following a server admi
 - The items delivered in session 14 (4.2 to 7.4 and the "later" list) are still to be confirmed on staging.
 - Items 2.4, 2.5, 3.1, 3.2 and 4.1 were confirmed on staging and in CI on 14 October (session 13); a real e-mail
   relay for staging and production is still to be set up.
-- The resolver's own `/heartbeat` answers 500 (official code: a Flask-RESTX resource returns a `jsonify` response
-  inside a tuple); the portal's health check uses the data entry API's, so nothing depends on it. A candidate for a
-  small fix and an issue upstream.
+- The resolver's own `/heartbeat` answered 500 in the official code (a Flask-RESTX resource returned a `jsonify`
+  response inside a tuple): fixed in session 25 (`6f28308`), to be offered upstream with the other fixes.
 
 Next steps: the open backlog, in the agreed order, is in the README ([Open backlog](../README.md#open-backlog)).

@@ -2,6 +2,21 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Robots out of the list of requests (session 24)
+- **Fixed: robots probing random paths still filled the Requests screen**: a path of two or more segments, such as
+  `/wp-admin/setup-config.php`, was recorded with its first segment as the GS1 key, so it was stored and listed
+  although requests without a key are only counted (ADR 0006 §11). The resolver now records a key only when the path
+  starts with a GS1 Digital Link primary key (GTIN `01`, SSCC `00`, GLN `414` …); anything else is counted with the
+  requests without a key. A GS1 code read wrong (`/01/` followed by something that is not a GTIN) is still listed.
+  Such events already stored leave the list, its export and the map at once, and the worker's housekeeping deletes
+  them once their day is counted (journal `requestlog-folded`). ADR 0006 §12. Commit `a4a4f26`.
+
+### The map of requests on the overview (session 24)
+- **New: the overview shows the map of where the period's requests come from**, under *Most scanned codes* and beside
+  *How codes are scanned*: the Requests screen's map for the overview's 7, 30 or 90 days, a click on a country listing
+  its regions and cities under the map; it follows a server administrator's choice of organisation. On a phone it
+  comes between the two lists. ADR 0006 §13. Commit `93236e7`.
+
 ### Addresses on the name requested (session 23)
 - **Fixed: GS1's resolver test suite failed with *No default link found* on a second name of the installation**
   (deliberate change to official code): the resolver wrote the linkset's anchors, the `Link` header's pointer to the

@@ -142,7 +142,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_6b8f6d2b875…)",
+    "a wrong key is refused (rk_32a69074206…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -825,6 +825,7 @@
     "features.md: every table has a Checks column (215 features)",
     "…every feature cites at least one check",
     "…each reference names a program of the inventory (326 references)",
+    "…and words found in one of its checks",
     "every test program is in the inventory (68)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
@@ -837,7 +838,7 @@
     "…and every decision record (19)",
     "every relative link of the documents leads to a file (34 documents)"
    ],
-   "count": 14,
+   "count": 15,
    "ciOnly": false
   },
   "domains": {
@@ -2022,7 +2023,7 @@
     "nginx starts while a service name has no address yet",
     "…and answers that service's paths with an error meanwhile (502)",
     "…while the other services answer",
-    "the service is found once its name has an address, without restarting nginx (1.9 s)",
+    "the service is found once its name has an address, without restarting nginx (2.0 s)",
     "GET / → 200 text/html",
     "GET / serves the home page, not the resolver",
     "GET / carries the Content Security Policy",
@@ -2972,7 +2973,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:36127/ok",
+    "internal address refused: http://127.0.0.1:36503/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -3422,6 +3423,9 @@
     "…the bars have a text alternative",
     "…the most scanned codes",
     "…shares by device and language",
+    "…the map of where the requests come from: under the most scanned codes, beside how codes are scanned",
+    "…the period's requests of the organisation: its city, 3 of its 9 requests located, not the operator's",
+    "…drawn again for another period",
     "quality: the scanned codes nobody registered, highlighted",
     "…listed with a Register button",
     "records: one record, scanned",
@@ -3440,12 +3444,14 @@
     "a server administrator: the whole installation",
     "…with the worker, e-mail and the daily counts",
     "…and the state of each monitoring check",
+    "…the map of the whole installation: the operator's requests too",
+    "…one organisation chosen: the map of its requests only",
     "…an old GCP length table: its check with the list's date and age, and the active alert",
     "a phone: no sideways scrolling",
     "…tiles in one or two columns",
     "no errors in the page"
    ],
-   "count": 29,
+   "count": 34,
    "ciOnly": false
   },
   "portal_config": {
@@ -4034,6 +4040,10 @@
     "a request the syntax check refuses: 400 'invalid', key kept, no path",
     "a probe from a crawler: 400 'invalid', counted, not stored (section 11); no path, no key in the count",
     "…from a phone's browser too: no key, counted with its device and browser",
+    "a probe of two segments from a browser (404, as the official resolver answers it): its first segment is no primary key, counted, not stored; no key in the count",
+    "…a number that is no primary key (a year) neither: counted, no key, no company part",
+    "…but a primary key with a value that is not one is a GS1 code read wrong: stored, with its key",
+    "the resolver's primary keys are those of GS1's dictionary (the portal's)",
     "a compressed GS1 Digital Link: form 'compressed', key and qualifiers as decompressed, no path",
     "?compress: 'compressed'",
     "an EPC binary string: form 'epc' with its scheme, batch and serial's AI from the tag, the expiry date's AI only",
@@ -4129,13 +4139,13 @@
     "a failing database: the answer is the same, the events lost and counted",
     "events are written in batches of at most 500"
    ],
-   "count": 130,
+   "count": 134,
    "ciOnly": false
   },
   "requestlog": {
    "area": "Requests and the overview",
    "checks": [
-    "a server administrator sees the whole installation (automated requests hidden by default)",
+    "a server administrator sees the whole installation (automated requests hidden by default, and an event without a key recorded before ADR 0006 section 11)",
     "…with the organisation of each event",
     "automated=1 shows automated requests too",
     "an organisation's administrator sees its events only",
@@ -4166,7 +4176,7 @@
     "…and 03:30 UTC to the 11th",
     "pages of 3: every event once, newest first, ties on the second kept apart",
     "CSV: UTF-8 with BOM, ';', a header",
-    "CSV: a probe's path cannot become a formula in Excel",
+    "CSV: a code's value cannot become a formula in Excel",
     "CSV: a server administrator's export names the organisation",
     "CSV: the export is a journal event",
     "CSV of an organisation: its events only, no organisation column",
@@ -4212,6 +4222,11 @@
     "…the city's position as latitude and longitude",
     "the map: requests per country, most first, and the requests without a location counted apart",
     "…per place with the city's position, a country alone without one",
+    "an event whose key is no GS1 primary key (a probe recorded by an earlier resolver): not listed, not on the map",
+    "the map for the overview of one organisation chosen by a server administrator: its requests only",
+    "…of the operator",
+    "…an organisation that does not exist refused",
+    "…the choice ignored for anyone but a server administrator: their own scope",
     "…with the list's filters",
     "…within the scope only",
     "…a filter that cannot be read refused",
@@ -4283,7 +4298,7 @@
     "…the overview's today (collect): the counts per key too",
     "…the monitoring's 404s of the last hour count them",
     "before any day is counted, nothing is deleted",
-    "events of a counted day: the automated one and the one without a key deleted, a person's kept",
+    "events of a counted day: the automated one, the one without a key and the one whose key is no primary key deleted, a person's kept",
     "…a journal event",
     "…recorded how far it went: the end of the counted day",
     "…a later run looks only after it",
@@ -4308,7 +4323,7 @@
     "audit.action.requestlog-folded in both languages",
     "requests.countedOnly in both languages"
    ],
-   "count": 172,
+   "count": 177,
    "ciOnly": false
   },
   "requests_e2e": {
@@ -4581,7 +4596,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.006 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
    ],
    "count": 207,
    "ciOnly": false

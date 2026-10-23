@@ -1026,6 +1026,17 @@ header, the JSON-LD `@id` and the description file's root are now on the name re
 The owner also approved the open question of session 22: a `DELETE` whose body names no link answers 400 instead of
 deleting the whole document (`56b905d`); the standard covers resolution only. 13 mutations, all caught.
 
+## Session 24 — robots out of the request list, and the map on the overview
+
+The owner, back on staging, found the request list still full of robots probing random paths. Section 11 of ADR 0006
+counts requests without a key instead of storing them, but a path of two segments such as
+`/wp-admin/setup-config.php` reached the route `/<AI>/<value>`, which took `wp-admin` for the key. The resolver now
+records a key only for a GS1 Digital Link primary key of the dictionary; events stored before leave the list at once
+and are deleted once their day is counted (`a4a4f26`, ADR 0006 §12). The probes still answer 404, as the official
+resolver does. The owner also asked for the Requests screen's map on the overview, in the empty space under the most
+scanned codes: it now shows the period's requests there, following a server administrator's choice of organisation
+(`93236e7`, ADR 0006 §13). 7 mutations, all caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |
@@ -1167,6 +1178,8 @@ deleting the whole document (`56b905d`); the standard covers resolution only. 13
   the limit from today in the test, so the fixture stays on the same side of it.
 - A mutation that makes the code loop for ever is caught (the test cannot pass) but can stop a mutation loop that
   waits on it: give each run its own time limit and treat a timeout as caught.
+- A rule about "requests without a key" is only as good as the place that decides what a key is: the route took any
+  first segment for one. Name the set (the dictionary's primary keys) where the value is first read.
 - A fix from elsewhere is a proposal: test it against the data as stored before taking it. The official pull request
   #128 reused a helper written for the v3 format on MongoDB's linkset objects, and only a check with a second
   language showed it.

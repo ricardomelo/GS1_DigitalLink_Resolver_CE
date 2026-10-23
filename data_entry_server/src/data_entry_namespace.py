@@ -27,6 +27,20 @@ logger = logging.getLogger(__name__)
 new_document_model, new_document_link_model = register_request_models(data_entry_namespace)
 new_document_response_item_model = register_response_models(data_entry_namespace)
 
+
+def _json_body(object_only: bool = False) -> tuple[Any, tuple[dict[str, Any], int] | None]:
+    """
+    The request's JSON body and None, or None and the 400 answer when it cannot be read (or, with object_only, is not
+    an object). The official handlers read request.json inside their catch-all, so a body that was not JSON answered
+    500 "Error creating document:400 Bad Request", and a DELETE with one went on to delete the whole document.
+    """
+    data = request.get_json(silent=True)
+    if data is None:
+        return None, ({"response_status": 400, "error": "Request body is not valid JSON"}, 400)
+    if object_only and not isinstance(data, dict):
+        return None, ({"response_status": 400, "error": "Request body must be a JSON object"}, 400)
+    return data, None
+
 class TokenResource(Resource):
     @staticmethod
     def is_auth_token_ok() -> dict[str, bool | str]:
@@ -91,7 +105,9 @@ class NewDocOperations(TokenResource):
             if not request.is_json:
                 return "Request must be in JSON format", 415
 
-            data = request.json
+            data, refusal = _json_body()
+            if refusal:
+                return refusal
             response_data, http_response_status = data_entry_logic.create_document(data)
             return response_data, http_response_status
 
@@ -113,7 +129,10 @@ class ValidateOperations(TokenResource):
             return token_result['message'], 403
         if not request.is_json:
             return "Request must be in JSON format", 415
-        return data_entry_logic.validate_documents(request.json), 200
+        data, refusal = _json_body()
+        if refusal:
+            return refusal
+        return data_entry_logic.validate_documents(data), 200
 
 
 # Every protected resource declares the BearerAuth scheme so that Swagger UI's "Authorize" value is
@@ -196,7 +215,9 @@ class DocOperations(TokenResource):
             if not request.is_json:
                 return "Request must be in JSON format", 415
 
-            data = request.json
+            data, refusal = _json_body(object_only=True)
+            if refusal:
+                return refusal
             document_id = f'{anchor_ai_code}_{anchor_ai}'
             response_data, http_response_status = data_entry_logic.update_document(document_id, data)
             return response_data, http_response_status
@@ -221,9 +242,12 @@ class DocOperations(TokenResource):
             document_id = f'{anchor_ai_code}_{anchor_ai}'
 
             # If the request carries a JSON body with links, perform a partial delete
-            # (remove only the specified links). Otherwise delete the whole document.
+            # (remove only the specified links). Otherwise delete the whole document; a body that cannot be read
+            # is refused, never taken for no body.
             if request.is_json and request.content_length:
-                data = request.json
+                data, refusal = _json_body(object_only=True)
+                if refusal:
+                    return refusal
                 if 'links' in data and len(data['links']) > 0:
                     response_data, http_response_status = data_entry_logic.delete_links(document_id, data)
                     return response_data, http_response_status

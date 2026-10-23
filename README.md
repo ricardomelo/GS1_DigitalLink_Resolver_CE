@@ -353,6 +353,9 @@ documentation: `https://<FQDN>/api/docs` (**Authorize** with `Bearer <token>`).
 | `POST /api/validate` | **new** | What `POST /new` would refuse in one or more entries (registration rules and values), nothing stored: `{"problems": [{"item", "error"}]}` |
 | `GET /api/heartbeat` | official | Liveness (public) |
 
+A body that is not JSON (for `PUT` and a `DELETE` with a body, not an object), or a record without a link of its
+default link type, answers 400 with `error`, and nothing is written (the official handlers answered 500).
+
 ```bash
 TOKEN=…   # SESSION_TOKEN from .env
 curl -s -X POST https://id.example.org/api/new -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{

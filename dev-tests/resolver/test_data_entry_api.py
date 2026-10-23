@@ -12,7 +12,9 @@ checks, through Flask's test client:
     of a serial-number record: stored, returned, listed in /summary, changed and cleared by PUT;
   * POST /new on a record that exists merges its links as PUT does, and a list writes every record of a key (a
     record sent twice merged); PUT and a DELETE of links with qualifiers no record of the key has answer 404 and
-    change nothing.
+    change nothing;
+  * a body that is not JSON (or, for PUT and DELETE, not an object) and a record without a link of its default link
+    type answer 400 and change nothing.
 
   pip install -r data_entry_server/src/requirements.txt
   python dev-tests/resolver/test_data_entry_api.py
@@ -233,6 +235,40 @@ r = client.delete("/api/01/09521234000013", json={"links": [{"linktype": "gs1:pi
                   headers=AUTH)
 check("DELETE of links without qualifiers on that key → 404, the batch keeps its link",
       r.status_code == 404 and STORE == before, r.get_data(as_text=True))
+
+# ---------------------------------------------------------------- error answers: 400 for a body that cannot be used
+# The official handlers read the body inside their catch-all (a body that was not JSON answered 500), POST /new of a
+# record without a link of its default link type answered a status made of two dictionary keys, and a DELETE whose
+# body was a list deleted the whole document
+db.delete_document = lambda document_id: (STORE.pop(document_id, None), {"response_status": 200})[1]
+JSON = {**AUTH, "Content-Type": "application/json"}
+before = copy.deepcopy(STORE)
+r = client.post("/api/new", data="{,}", headers=JSON)
+check("POST /new with a body that is not JSON → 400 saying so", r.status_code == 400
+      and "not valid JSON" in (r.get_json() or {}).get("error", ""), (r.status_code, r.get_data(as_text=True)))
+r = post(entry("/01/09506000134376", links=[]))
+check("POST /new of a record without a link of its default link type → 400 naming the type, nothing stored",
+      r.status_code == 400 and "gs1:pip" in (r.get_json() or {}).get("error", "") and STORE == before,
+      (r.status, r.get_data(as_text=True)))
+r = post([entry("/01/09506000134376"), entry("/01/09506000134376", qualifiers=[{"10": "B1"}], links=[])])
+check("POST /new with a list, one record without a link of its default link type → 400, nothing stored",
+      r.status_code == 400 and STORE == before, (r.status, r.get_data(as_text=True)))
+r = client.post("/api/new", data='"text"', headers=JSON)
+check("POST /new with a body that is neither an object nor a list → 400", r.status_code == 400 and STORE == before,
+      (r.status, r.get_data(as_text=True)))
+r = client.put("/api/01/09506000134352", data="{,}", headers=JSON)
+r2 = client.put("/api/01/09506000134352", data="[]", headers=JSON)
+check("PUT with a body that is not JSON, or not an object → 400, nothing changed",
+      r.status_code == r2.status_code == 400 and STORE == before, (r.status_code, r2.status_code))
+r = client.delete("/api/01/09506000134352", data="{,}", headers=JSON)
+check("DELETE with a body that is not JSON → 400, the document kept", r.status_code == 400 and STORE == before,
+      (r.status_code, r.get_data(as_text=True)))
+r = client.delete("/api/01/09506000134352", data='[{"linktype": "gs1:pip"}]', headers=JSON)
+check("DELETE with a body that is not an object → 400, the document kept (the official code deleted it)",
+      r.status_code == 400 and STORE == before, (r.status_code, r.get_data(as_text=True)))
+r = client.post("/api/validate", data="{,}", headers=JSON)
+check("POST /validate with a body that is not JSON → 400 saying so", r.status_code == 400
+      and "not valid JSON" in (r.get_json() or {}).get("error", ""), (r.status_code, r.get_data(as_text=True)))
 
 # ---------------------------------------------------------------- POST /validate: what POST /new would refuse, nothing stored
 before = copy.deepcopy(STORE)

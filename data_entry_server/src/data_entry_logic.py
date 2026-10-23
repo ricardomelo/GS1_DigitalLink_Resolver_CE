@@ -420,6 +420,10 @@ def _author_db_linkset_document(data_entry_format: dict[str, Any]) -> dict[str, 
                         "title": link['title']
                     }
 
+        if 'defaultLink' not in linkset_obj:
+            # The official code went on to a KeyError, which create_document() returned without a status
+            return {"response_status": 400, "error": f"No link of the default link type {default_linktype}"}
+
         # finally we re-arrange 'defaultLink' to be the first element in the list and
         # defaultLinkMulti to be the second element in the list:
         rearranged_linkset_obj = {
@@ -608,19 +612,22 @@ def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[s
             if problem:
                 return {"response_status": 400, "error": problem}, 400
             authored_linkset_doc = _author_db_linkset_document(data)
+            if authored_linkset_doc['response_status'] != 200:
+                return authored_linkset_doc, authored_linkset_doc['response_status']
             validated_doc = _validate_data(authored_linkset_doc)
 
             # Process the single 'data' entry for insertion using the helper function and get the result and status
             create_result, status = _process_document_upsert(validated_doc['data'])
             return create_result, status  # Return the result and status
 
-        # If 'data' is not a list nor a dictionary, return an error response.
+        # If 'data' is not a list nor a dictionary, return an error response (with its status: the official code
+        # returned the dictionary alone, which the namespace unpacked as body and status)
         else:
-            return {"response_status": 400, "error": "Invalid data format: " + str(data)}
+            return {"response_status": 400, "error": "Invalid data format: " + str(data)}, 400
 
     except Exception as e:
         # If there's any exception during processing, return a server error response
-        return {"response_status": 500, "error": "Internal Server Error - " + str(e)}
+        return {"response_status": 500, "error": "Internal Server Error - " + str(e)}, 500
 
 
 def read_document(document_id: str) -> dict[str, Any]:

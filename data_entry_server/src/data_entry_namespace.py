@@ -41,6 +41,14 @@ def _json_body(object_only: bool = False) -> tuple[Any, tuple[dict[str, Any], in
         return None, ({"response_status": 400, "error": "Request body must be a JSON object"}, 400)
     return data, None
 
+
+def _names_links(data: dict[str, Any]) -> bool:
+    """Whether a DELETE's body names links to remove: 'links' a non-empty list of objects. The official handler took
+    any other body ({}, the qualifiers alone, "links": []) for a request to delete the whole document."""
+    links = data.get('links')
+    return isinstance(links, list) and bool(links) and all(isinstance(link, dict) for link in links)
+
+
 class TokenResource(Resource):
     @staticmethod
     def is_auth_token_ok() -> dict[str, bool | str]:
@@ -229,7 +237,8 @@ class DocOperations(TokenResource):
     @data_entry_namespace.doc(description="Delete a document or remove specific links from it using its anchor. "
                          "If a JSON body with a 'links' list is provided, only the matching links "
                          "are removed (matched by linktype, hreflang and context). "
-                         "If no body is provided, the entire document is deleted.",
+                         "If no body is provided, the entire document is deleted; a body that names no link "
+                         "(no 'links', an empty list) is refused with 400.",
              params={'anchor': 'The anchor of the document to delete or modify'})
     def delete(self, anchor_ai_code: str, anchor_ai: str) -> tuple[Any, int] | Response:
         try:
@@ -241,16 +250,18 @@ class DocOperations(TokenResource):
 
             document_id = f'{anchor_ai_code}_{anchor_ai}'
 
-            # If the request carries a JSON body with links, perform a partial delete
-            # (remove only the specified links). Otherwise delete the whole document; a body that cannot be read
-            # is refused, never taken for no body.
+            # A JSON body removes the links it names (a partial delete); without a body the whole document is
+            # deleted. A body that cannot be read, or names no link, is refused, never taken for no body.
             if request.is_json and request.content_length:
                 data, refusal = _json_body(object_only=True)
                 if refusal:
                     return refusal
-                if 'links' in data and len(data['links']) > 0:
-                    response_data, http_response_status = data_entry_logic.delete_links(document_id, data)
-                    return response_data, http_response_status
+                if not _names_links(data):
+                    return {"response_status": 400,
+                            "error": "A DELETE with a body removes the links it names: 'links' must be a non-empty "
+                                     "list of links. Send no body to delete the whole document"}, 400
+                response_data, http_response_status = data_entry_logic.delete_links(document_id, data)
+                return response_data, http_response_status
 
             response_data = data_entry_logic.delete_document(document_id)
             return response_data, response_data['response_status']

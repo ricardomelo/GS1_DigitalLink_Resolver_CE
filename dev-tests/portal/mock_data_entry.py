@@ -59,9 +59,12 @@ def new():
 def doc(c,v):
     if not auth(): return "no",403
     did=f"{c}_{v}"
+    d=request.get_json(silent=True)
+    if request.method=="DELETE" and isinstance(d,dict) and request.content_length and not (
+            isinstance(d.get("links"),list) and d["links"] and all(isinstance(l,dict) for l in d["links"])):
+        return jsonify(response_status=400,error="a DELETE body must name links"),400
     if did not in DB: return jsonify(response_status=404,error="nf"),404
     if request.method=="GET": return jsonify(data=v3(did),response_status=200)
-    d=request.get_json(silent=True)
     ents=DB[did]["entries"]
     idx=next((i for i,e in enumerate(ents) if qm(e["qualifiers"],(d or {}).get("qualifiers",[]))),None)
     if idx is None and (request.method=="PUT" or (d and d.get("links"))):

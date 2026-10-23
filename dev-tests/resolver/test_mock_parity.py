@@ -193,6 +193,13 @@ succeeded("a list on a key that exists", both("post", "/new", [
     {**record([link("gs1:pip", "https://b.example/l2")], "gs1:pip", [{"10": "L2"}]), "anchor": OTHER}]))
 same("a list on a key that exists", OTHER)
 
+# A DELETE whose body names no link deletes nothing: both answer 400 (the official code deleted the whole document)
+for body in ({"qualifiers": [{"10": "B1"}]}, {"links": []}):
+    real, mock = both("delete", "/01/09506000134352", body)
+    check(f"DELETE with a body that names no link ({json.dumps(body)[:24]}): both answer 400",
+          real.status_code == mock.status_code == 400, (real.status_code, mock.status_code))
+same("after a DELETE whose body names no link")
+
 real, mock = both("get", "/summary?links=true")
 check("GET /summary with links gives the same lines", normal(real.get_json()) == normal(mock.get_json()),
       f"real {normal(real.get_json())}\n      stand-in {normal(mock.get_json())}")

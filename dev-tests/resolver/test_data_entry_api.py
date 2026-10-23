@@ -19,6 +19,7 @@ checks, through Flask's test client:
   pip install -r data_entry_server/src/requirements.txt
   python dev-tests/resolver/test_data_entry_api.py
 """
+import json
 import os
 import sys
 import types
@@ -266,6 +267,12 @@ check("DELETE with a body that is not JSON → 400, the document kept", r.status
 r = client.delete("/api/01/09506000134352", data='[{"linktype": "gs1:pip"}]', headers=JSON)
 check("DELETE with a body that is not an object → 400, the document kept (the official code deleted it)",
       r.status_code == 400 and STORE == before, (r.status_code, r.get_data(as_text=True)))
+# a body that names no link is not a request to delete everything (the official code deleted the whole document)
+for body in ({}, {"qualifiers": [{"10": "B1"}]}, {"links": []}, {"links": "gs1:pip"}, {"links": ["gs1:pip"]}):
+    r = client.delete("/api/01/09506000134352", json=body, headers=AUTH)
+    check(f"DELETE with a body that names no link ({json.dumps(body)[:30]}) → 400, the document kept",
+          r.status_code == 400 and "links" in (r.get_json() or {}).get("error", "") and STORE == before,
+          (r.status_code, r.get_data(as_text=True)))
 r = client.post("/api/validate", data="{,}", headers=JSON)
 check("POST /validate with a body that is not JSON → 400 saying so", r.status_code == 400
       and "not valid JSON" in (r.get_json() or {}).get("error", ""), (r.status_code, r.get_data(as_text=True)))

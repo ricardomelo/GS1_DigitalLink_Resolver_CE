@@ -347,14 +347,16 @@ documentation: `https://<FQDN>/api/docs` (**Authorize** with `Bearer <token>`).
 | `GET /api/{AI}/{value}` | official | Read every record (entry) of a key |
 | `GET /api/{AI}/{value}/{qualifiers…}` | official | Read the entry of a qualifier set |
 | `PUT /api/{AI}/{value}` | official | Merge-update an entry (links matched by type, language and context); 404 when no entry of the key has the qualifiers sent |
-| `DELETE /api/{AI}/{value}` | official | Delete the document, or only the links sent in the body (of the entry with the qualifiers sent; 404 when there is none) |
+| `DELETE /api/{AI}/{value}` | official | Delete the document (no body), or only the links sent in the body's `links` (of the entry with the qualifiers sent; 404 when there is none) |
 | `GET /api/index` | official, **now protected** | Identifiers of every document |
 | `GET /api/summary[?links=true]` | **new** | One line per record: anchor, qualifiers, description, default link type, number of links (and the links) |
 | `POST /api/validate` | **new** | What `POST /new` would refuse in one or more entries (registration rules and values), nothing stored: `{"problems": [{"item", "error"}]}` |
 | `GET /api/heartbeat` | official | Liveness (public) |
 
 A body that is not JSON (for `PUT` and a `DELETE` with a body, not an object), or a record without a link of its
-default link type, answers 400 with `error`, and nothing is written (the official handlers answered 500).
+default link type, answers 400 with `error`, and nothing is written (the official handlers answered 500). So does a
+`DELETE` whose body names no link (`{}`, the qualifiers alone, `"links": []`), which the official code took for a
+request to delete the whole document.
 
 ```bash
 TOKEN=…   # SESSION_TOKEN from .env

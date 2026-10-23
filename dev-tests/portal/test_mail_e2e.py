@@ -16,7 +16,7 @@ import tempfile
 import threading
 import time
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 from werkzeug.serving import make_server
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -67,6 +67,16 @@ def link_of(msg):
     found = re.search(r"http://127\.0\.0\.1:\d+/portal/login#(?:invite|reset)=[A-Za-z0-9_-]+",
                       msg.get_body(("plain",)).get_content())
     return found.group(0) if found else None
+
+
+def until(wait):
+    """Runs a Playwright wait for a condition (instead of a fixed pause); False when it times out, so that the check
+    after it reports the failure instead of the program stopping."""
+    try:
+        wait()
+        return True
+    except PlaywrightTimeoutError:
+        return False
 
 
 def sign_in(page, user, password):
@@ -131,7 +141,8 @@ with sync_playwright() as p:
     check("password chosen: back to the sign-in page, the user name filled in",
           maria.is_visible("#login-form") and "Senha definida" in maria.inner_text("#login-status")
           and maria.input_value("#username") == "maria", maria.inner_text("#login-status"))
-    maria.fill("#password", "maria-password-long"); maria.click("#login-submit"); maria.wait_for_timeout(1200)
+    maria.fill("#password", "maria-password-long"); maria.click("#login-submit")
+    until(lambda: maria.wait_for_url(BASE + "#overview", timeout=10000))
     check("the invited user signs in (the overview opens)", maria.url == BASE + "#overview", maria.url)
 
     ctx_again, again = new_page("pt-BR")

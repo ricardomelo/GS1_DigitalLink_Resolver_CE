@@ -15,7 +15,7 @@ import time
 import cv2
 from openpyxl import load_workbook
 import numpy as np
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 from werkzeug.serving import make_server
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -62,6 +62,16 @@ def check(name, condition, detail=""):
         failures.append(name)
 
 
+def until(wait):
+    """Runs a Playwright wait for a condition (instead of a fixed pause, which a loaded machine outlasts); False when
+    it times out, so that the check after it reports the failure instead of the program stopping."""
+    try:
+        wait()
+        return True
+    except PlaywrightTimeoutError:
+        return False
+
+
 def answer(page, accept=True, into=None, wait=300):
     """Answers the portal's own confirmation (Documentation/adr/0013-administration-and-navigation.md) when an action
     opened one, its question kept in `into`; True when there was one."""
@@ -82,7 +92,8 @@ with sync_playwright() as p:
 
     page.goto(BASE)
     check("unauthenticated → sign-in page", page.url.endswith("/portal/login"), page.url)
-    page.fill("#username", "tester"); page.fill("#password", "wrong"); page.click("#login-submit"); page.wait_for_timeout(900)
+    page.fill("#username", "tester"); page.fill("#password", "wrong"); page.click("#login-submit")
+    until(lambda: page.locator("#login-status", has_text="Incorrect").wait_for(timeout=10000))
     check("wrong password message", "Incorrect" in page.inner_text("#login-status"))
     page.fill("#password", "a-long-test-password")
     reveal = page.locator("#password + .reveal")
@@ -94,7 +105,9 @@ with sync_playwright() as p:
     reveal.click()
     check("password hidden again", page.get_attribute("#password", "type") == "password")
     reveal.click()
-    page.click("#login-submit"); page.wait_for_timeout(800)
+    page.click("#login-submit")
+    until(lambda: page.wait_for_url(BASE + "#overview", timeout=10000))
+    until(lambda: page.locator("#overview-view").wait_for(timeout=5000))
     check("signed in: the overview opens", page.url.endswith("/portal/#overview") and page.is_visible("#overview-view")
           and not page.is_visible("#editor-view"), page.url)
     page.goto(BASE); page.wait_for_timeout(500)
@@ -745,7 +758,7 @@ with sync_playwright() as p:
         phone.goto(BASE); phone.fill("#username", "tester"); phone.fill("#password", "a-long-test-password")
         phone.tap("#password + .reveal")
         check("phone: password shown with a tap", phone.get_attribute("#password", "type") == "text")
-        phone.tap("#login-submit"); phone.wait_for_timeout(900)
+        phone.tap("#login-submit"); until(lambda: phone.wait_for_url(BASE + "#overview", timeout=10000))
         phone.goto(BASE); phone.wait_for_timeout(600)
         phone.fill("#key-value", "09506000134352"); phone.wait_for_timeout(300)
         phone.tap("#opt-attrs"); phone.wait_for_timeout(200)
@@ -804,7 +817,7 @@ with sync_playwright() as p:
     reader_ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900})
     reader = reader_ctx.new_page()
     reader.goto(BASE); reader.fill("#username", "reader1"); reader.fill("#password", temp)
-    reader.click("#login-submit"); reader.wait_for_timeout(1000)
+    reader.click("#login-submit"); until(lambda: reader.locator("#options-dialog").wait_for(timeout=10000))
     check("temporary password: the new-password dialog opens", reader.is_visible("#options-dialog")
           and reader.is_visible("#must-change-note"))
     reader.fill("#current-password", temp); reader.fill("#new-password", "reader1-own-password")
@@ -982,7 +995,7 @@ with sync_playwright() as p:
     acme_ctx = browser.new_context(locale="pt-BR", viewport={"width": 1280, "height": 900})
     acme = acme_ctx.new_page()
     acme.goto(BASE); acme.fill("#username", "acme-admin"); acme.fill("#password", acme_temp)
-    acme.click("#login-submit"); acme.wait_for_timeout(1000)
+    acme.click("#login-submit"); until(lambda: acme.locator("#options-dialog").wait_for(timeout=10000))
     acme.fill("#current-password", acme_temp); acme.fill("#new-password", "acme-admin-password")
     acme.fill("#confirm-password", "acme-admin-password"); acme.click("#password-save"); acme.wait_for_timeout(700)
     acme.click("#password-cancel"); acme.wait_for_timeout(200)

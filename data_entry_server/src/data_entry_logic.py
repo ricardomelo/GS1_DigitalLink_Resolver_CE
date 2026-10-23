@@ -468,61 +468,54 @@ def _do_qualifiers_match(qualifiers1: list[dict[str, str]], qualifiers2: list[di
 
 # Process the document for insertion or update in the database
 def _process_document_upsert(authored_doc: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """
+    Writes every entry of authored_doc (several when a list sent to POST /new has more than one record of the key):
+    an entry with the qualifiers of a stored one, or of one before it in authored_doc, is merged into it; any other
+    is added. The document is written once, at the end. The official code returned after the first entry when the
+    document existed, so the other records of a list were dropped with a 201, and a new document kept a record sent
+    twice as two entries with the same qualifiers.
+    """
     try:
-        # Convert the incoming dictionary date entry item to a linkset-style document ("authored_doc")
-
         # Try to read the document from the database
         read_result = data_entry_db.read_document(authored_doc['_id'])
 
-        # Document already exists with the id
         if read_result["response_status"] == 200:
             logger.info('Document already exists in database: %s', authored_doc['_id'])
-
-            # Get the document from the read_result
-            existing_db_document = read_result["data"]
-
-            # Iterate through each key-value pair in the authored_doc
-            for entry in authored_doc['data']:
-                # each entry consists of qualifiers and linkset
-                # what we need to do is to see if there is a match in the qualifiers, bearing in mind that the
-                # qualifiers may be in a different order
-                # if there is a match, we need to update the linkset
-                # if there is no match, we need to add the entry to the document
-                # First match the qualifiers:
-                found = False
-                for existing_db_entry in existing_db_document['data']:
-                    if _do_qualifiers_match(existing_db_entry['qualifiers'], entry['qualifiers']):
-                        # If the qualifiers match, merge the links as PUT does: the official extend() added a second
-                        # linkset object, so sending the same record again duplicated every link (official pull
-                        # request #128, whose fix compared the linkset objects themselves, which carry no linktype)
-                        existing_db_entry.update(_merged_entry(existing_db_document, existing_db_entry, entry))
-                        if 'informativeQualifiers' in entry:
-                            existing_db_entry['informativeQualifiers'] = entry['informativeQualifiers']
-                        found = True
-                        break
-
-                if not found:
-                    # If the qualifiers don't match, add the entry to the document
-                    existing_db_document['data'].append(entry)
-
-                update_result = data_entry_db.update_document(existing_db_document)
-
-                # Build the result entry and return it along with update status 200 (as the doc was updated)
-                return {"entry": authored_doc['_id'], "qualifiers": entry['qualifiers'], "result": update_result}, 200
-
-        # Document doesn't exist, so we create it
+            document = read_result["data"]
         elif read_result["response_status"] == 404:
             logger.info('Document does not exist: %s', authored_doc['_id'])
-
-            # Perform the document creation in the database
-            create_result = data_entry_db.create_document(authored_doc)
-
-            # Build the result entry and return it along with creation status 201
-            return {"entry": authored_doc['_id'], "result": create_result}, 201
-
-        # If response status is neither 200 nor 404, return the read_result and its status
+            document = {**authored_doc, 'data': []}
         else:
+            # If response status is neither 200 nor 404, return the read_result and its status
             return read_result, read_result["response_status"]
+
+        for entry in authored_doc['data']:
+            # each entry consists of qualifiers and linkset; the qualifiers may be in a different order
+            existing_db_entry = next((e for e in document['data']
+                                      if _do_qualifiers_match(e['qualifiers'], entry['qualifiers'])), None)
+            if existing_db_entry is not None:
+                # If the qualifiers match, merge the links as PUT does: the official extend() added a second
+                # linkset object, so sending the same record again duplicated every link (official pull
+                # request #128, whose fix compared the linkset objects themselves, which carry no linktype)
+                existing_db_entry.update(_merged_entry(document, existing_db_entry, entry))
+                if 'informativeQualifiers' in entry:
+                    existing_db_entry['informativeQualifiers'] = entry['informativeQualifiers']
+            else:
+                # If the qualifiers don't match, add the entry to the document
+                document['data'].append(entry)
+
+        if read_result["response_status"] == 200:
+            update_result = data_entry_db.update_document(document)
+
+            # Build the result entry and return it along with update status 200 (as the doc was updated)
+            return {"entry": authored_doc['_id'], "qualifiers": authored_doc['data'][0]['qualifiers'],
+                    "result": update_result}, 200
+
+        # Perform the document creation in the database
+        create_result = data_entry_db.create_document(document)
+
+        # Build the result entry and return it along with creation status 201
+        return {"entry": authored_doc['_id'], "result": create_result}, 201
 
     except Exception as e:
         logger.error('_process_document_insert: Error processing document: %s', e, exc_info=True)

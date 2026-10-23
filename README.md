@@ -343,7 +343,7 @@ documentation: `https://<FQDN>/api/docs` (**Authorize** with `Bearer <token>`).
 
 | Operation | Origin | Purpose |
 |---|---|---|
-| `POST /api/new` | official | Create records; appends to an existing document (v3 format, list accepted, v2 converted) |
+| `POST /api/new` | official | Create records; appends to an existing document (v3 format, list accepted — every record of a key written, a record sent twice merged — v2 converted) |
 | `GET /api/{AI}/{value}` | official | Read every record (entry) of a key |
 | `GET /api/{AI}/{value}/{qualifiers…}` | official | Read the entry of a qualifier set |
 | `PUT /api/{AI}/{value}` | official | Merge-update an entry (links matched by type, language and context); 404 when no entry of the key has the qualifiers sent |

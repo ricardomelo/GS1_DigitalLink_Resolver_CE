@@ -3,7 +3,7 @@ The portal's stand-in for the data entry API (dev-tests/portal/mock_data_entry.p
 calls, in the order the portal makes them, must give the same records back. Both staging bugs of 15 October hid
 behind stand-ins that did more than the real component (Documentation/history.md, session 14); this program keeps
 the data entry stand-in honest. It covers what the portal relies on: POST /new (a new key, a new record of a key, a
-record that exists),
+record that exists, a list of a key's records),
 PUT (links merged by type, language and context; the shared default link type;
 informative qualifiers; 404 for a record the key does not have), DELETE of some links (404 likewise), GET and GET /summary with links — with and without links of type
 gs1:defaultLink (Documentation/adr/0011-item-page.md, amendment of 17 October 2026).
@@ -179,6 +179,19 @@ real, mock = both("delete", "/01/09506000134352", {"qualifiers": [{"10": "B404"}
 check("DELETE of links of a record that does not exist: both answer 404", real.status_code == mock.status_code == 404,
       (real.status_code, mock.status_code))
 same("after the DELETE of links of a record that does not exist")
+
+# A list sent to POST /new writes every record of a key (the portal restores a key's records with one): the real API
+# stopped at the first record when the document existed, and kept a record sent twice as two entries
+OTHER = "/01/09506000134369"
+succeeded("a list naming a record twice, new key", both("post", "/new", [
+    {**record([link("gs1:pip", "https://b.example/p")], "gs1:pip"), "anchor": OTHER},
+    {**record([link("gs1:pip", "https://b.example/pt", lang="pt")], "gs1:pip"), "anchor": OTHER}]))
+same("a list naming a record twice", OTHER)
+succeeded("a list on a key that exists", both("post", "/new", [
+    {**record([link("gs1:pip", "https://b.example/p2")], "gs1:pip"), "anchor": OTHER},
+    {**record([link("gs1:pip", "https://b.example/l1")], "gs1:pip", [{"10": "L1"}]), "anchor": OTHER},
+    {**record([link("gs1:pip", "https://b.example/l2")], "gs1:pip", [{"10": "L2"}]), "anchor": OTHER}]))
+same("a list on a key that exists", OTHER)
 
 real, mock = both("get", "/summary?links=true")
 check("GET /summary with links gives the same lines", normal(real.get_json()) == normal(mock.get_json()),

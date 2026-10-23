@@ -10,8 +10,9 @@ checks, through Flask's test client:
   * the registration rules of GS1-Conformant Resolver 1.2.1, section 2.5.9 (qualifiers allowed for each
     key, AI 235 alone, no AI 22 or AI 10 with AI 21) on POST /new and PUT, and the informative qualifiers
     of a serial-number record: stored, returned, listed in /summary, changed and cleared by PUT;
-  * POST /new on a record that exists merges its links as PUT does; PUT and a DELETE of links with qualifiers no
-    record of the key has answer 404 and change nothing.
+  * POST /new on a record that exists merges its links as PUT does, and a list writes every record of a key (a
+    record sent twice merged); PUT and a DELETE of links with qualifiers no record of the key has answer 404 and
+    change nothing.
 
   pip install -r data_entry_server/src/requirements.txt
   python dev-tests/resolver/test_data_entry_api.py
@@ -188,6 +189,29 @@ post(entry(qualifiers=[{"10": "B1"}], links=[{**PIP[0], "hreflang": ["pt"], "hre
 links = batch_links()
 check("POST /new on an existing record: a link in other languages added",
       links is not None and sorted(l.get("href") for l in links) == ["https://example.com/p2", "https://example.com/pt"], links)
+
+# A list sent to POST /new writes every record of a key, the document once: the official code stopped at the first
+# record when the document existed, and a new document kept a record sent twice as two entries
+stored = [e["qualifiers"] for e in STORE["01_09506000134352"]["data"]]
+r = post([entry(qualifiers=[{"10": "L1"}]), entry(qualifiers=[{"10": "L2"}])])
+after = [e["qualifiers"] for e in STORE["01_09506000134352"]["data"]]
+check("POST /new with a list on a key that exists stores every record, keeping the others",
+      r.status_code == 201 and after == stored + [[{"10": "L1"}], [{"10": "L2"}]], (r.status_code, after))
+PT = [{**PIP[0], "hreflang": ["pt"], "href": "https://example.com/pt"}]
+r = post([entry("/01/09506000134369"), entry("/01/09506000134369", links=PT)])
+data = STORE.get("01_09506000134369", {}).get("data", [])
+links = client.get("/api/01/09506000134369", headers=AUTH).get_json().get("data", [{}])[0].get("links", [])
+check("POST /new with a list naming a record twice, new key: one record, its links merged",
+      r.status_code == 201 and len(data) == 1 and sorted(l.get("href") for l in links)
+      == ["https://example.com/p", "https://example.com/pt"], (data, links))
+r = post([entry("/01/09506000134369", links=[{**PIP[0], "href": "https://example.com/p2"}]),
+          entry("/01/09506000134369", qualifiers=[{"10": "L1"}])])
+data = client.get("/api/01/09506000134369", headers=AUTH).get_json().get("data", [])
+own = next((e.get("links") for e in data if not e.get("qualifiers")), [])
+check("POST /new with a list on a key that exists: its record merged, a new record added",
+      r.status_code == 201 and len(data) == 2 and sorted(l.get("href") for l in own)
+      == ["https://example.com/p2", "https://example.com/pt"] and any(e.get("qualifiers") == [{"10": "L1"}] for e in data),
+      data)
 
 # PUT and a DELETE of links name one record by its qualifiers: none of the key's records with them is a 404, not a
 # change to the key's first record

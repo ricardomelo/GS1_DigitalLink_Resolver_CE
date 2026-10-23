@@ -4,11 +4,15 @@
 
 Nothing yet.
 
-## 2.0.0 — 23 October 2026
+## 3.1.0 — 23 October 2026
 
 The first release on `master`, the default branch from now on: everything below down to 1.1.0. Conformant to the
 GS1-Conformant Resolver standard 1.2.1 and GS1 Digital Link URI Syntax 1.7.0; GS1's test suite for Resolver 1.2.1
-passes 31 of 31. Based on the official GS1 Resolver CE 3.0.0 at `bf885fd`.
+passes 31 of 31. Based on the official GS1 Resolver CE 3.0.0 at `bf885fd`, and numbered after it: the same
+architecture, services, routes and stored data, an official v3 installation upgraded in place, with additions and
+fixes — a minor release of v3, not a new generation. The fork's checkpoints 1.0.0 and 1.1.0 below came before this
+numbering. Changes of behaviour an integrator may notice: `GET /api/index` requires the token; bodies the data entry
+API cannot use, and a `DELETE` body that names no link, answer 400.
 
 ### Branches (session 25)
 - `master` holds the releases and is the default branch; development stays on `gs1br/develop`. The continuous

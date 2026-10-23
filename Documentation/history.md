@@ -1051,8 +1051,10 @@ answered 500 in the official code, answers 200 (`6f28308`).
 
 With the staging sections done, the owner asked for the code on `master`, made the default branch, and a release:
 `master`, which still held the official `bf885fd`, was brought up to `gs1br/develop` (fast-forward), the continuous
-integration runs on both branches, and the changelog's unreleased section became **2.0.0**, tagged `v2.0.0` with a
-GitHub release. Development stays on `gs1br/develop`.
+integration runs on both branches, and the changelog's unreleased section became **3.1.0**, tagged `v3.1.0` with a
+GitHub release: numbered after the official 3.0.0 it extends (same architecture and data, upgraded in place), so that
+it does not read as older than the official release (2.0.0 was proposed first; 4.0 would announce a new generation,
+as 3.0 did when it replaced the Node.js resolver). Development stays on `gs1br/develop`.
 
 ## How the main areas evolved
 

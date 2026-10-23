@@ -4,7 +4,7 @@ import os
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 
-from flask import request, abort, Response, send_from_directory, jsonify, make_response
+from flask import request, abort, Response, send_from_directory, make_response
 from flask_restx import Namespace, Resource
 
 import domains
@@ -81,11 +81,12 @@ def _page_linkset(identifiers: str, qualifier_path: str | None) -> list[dict] | 
 
 @web_namespace.route('/heartbeat')
 class Heartbeat(Resource):
-    def get(self) -> tuple[Response, int]:
+    def get(self) -> tuple[dict[str, str], int]:
         """
         Return a simple heartbeat response to indicate the application is running.
+        A dict, which Flask-RESTX turns into JSON: the official jsonify() response inside a tuple answered 500.
         """
-        return jsonify({'response_message': 'Server is running!'}), 200
+        return {'response_message': 'Server is running!'}, 200
 
     def head(self) -> Response:
         """

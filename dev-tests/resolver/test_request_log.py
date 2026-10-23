@@ -278,7 +278,11 @@ check("…indexes of the counts: quarter, company part, expiry (TTL)",
 # ---------------------------------------------------------------- not recorded
 for path in ["/heartbeat", "/favicon.ico", "/robots.txt", "/.well-known/gs1resolver"]:
     r, e = ask(path)
-    check(f"{path} is not recorded", e is None, (r.status_code, e))   # (/heartbeat answers 500 here, as before)
+    check(f"{path} is not recorded", e is None, (r.status_code, e))
+    if path == "/heartbeat":
+        check("/heartbeat answers 200 with its message (the official code answered 500)", r.status_code == 200
+              and (r.get_json(silent=True) or {}).get("response_message") == "Server is running!",
+              (r.status_code, r.data[:200]))
 r, e = ask(G, method="OPTIONS")
 check("OPTIONS is not recorded", e is None, e)
 

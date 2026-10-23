@@ -1049,6 +1049,11 @@ organisation's are, the requests without a GS1 code have a tile of their own, an
 primary keys only (`3e66425`, ADR 0006 §14; 10 mutations, all caught). The resolver's own `/heartbeat`, which
 answered 500 in the official code, answers 200 (`6f28308`).
 
+With the staging sections done, the owner asked for the code on `master`, made the default branch, and a release:
+`master`, which still held the official `bf885fd`, was brought up to `gs1br/develop` (fast-forward), the continuous
+integration runs on both branches, and the changelog's unreleased section became **2.0.0**, tagged `v2.0.0` with a
+GitHub release. Development stays on `gs1br/develop`.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

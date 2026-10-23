@@ -2,6 +2,18 @@
 
 ## Unreleased (branch gs1br/develop)
 
+Nothing yet.
+
+## 2.0.0 — 23 October 2026
+
+The first release on `master`, the default branch from now on: everything below down to 1.1.0. Conformant to the
+GS1-Conformant Resolver standard 1.2.1 and GS1 Digital Link URI Syntax 1.7.0; GS1's test suite for Resolver 1.2.1
+passes 31 of 31. Based on the official GS1 Resolver CE 3.0.0 at `bf885fd`.
+
+### Branches (session 25)
+- `master` holds the releases and is the default branch; development stays on `gs1br/develop`. The continuous
+  integration runs on both.
+
 ### People's figures count GS1 codes only (session 25)
 - **Changed: robots no longer count as people in the whole installation's overview.** Robots that probe the server
   with a browser's User-Agent were counted among the **Scans**, in *How codes are scanned* and in the resolution

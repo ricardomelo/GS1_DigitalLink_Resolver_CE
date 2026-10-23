@@ -107,7 +107,7 @@ the portal programs without a browser; `e2e` = `test_portal_e2e.py` with the eng
 `PORTAL_TEST_MONGO_URI`). `DEV_TESTS_TIMEOUT` (seconds, default 1200) limits each program.
 
 **Continuous integration.** `.github/workflows/dev-tests.yml` runs one job per group on GitHub Actions on every
-push and pull request to `gs1br/develop`, with `DEV_TESTS_STRICT=1`; the job `database` starts a `mongo:7`
+push and pull request to `master` and `gs1br/develop`, with `DEV_TESTS_STRICT=1`; the job `database` starts a `mongo:7`
 service container and runs the `portal` and `database` groups on it (`PORTAL_DB_URI` and
 `PORTAL_TEST_MONGO_URI` set to it); `database` is informative (`e2e` and `install` were too, until step 4 of
 item 2.3). `.github/actions/dev-tests-setup/action.yml` prepares the runner and holds every pinned version

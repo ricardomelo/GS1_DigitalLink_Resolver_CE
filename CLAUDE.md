@@ -1,8 +1,9 @@
 # Working on this repository with Claude Code
 
-Instructions for Claude Code sessions on the **GS1 Digital Link Resolver CE — Expansion Pack** (branch
-`gs1br/develop`, the default). The state of the work, the next item and anything not meant for a public
-document arrive in the maintainer's handover at the start of each session; read it first. The README's
+Instructions for Claude Code sessions on the **GS1 Digital Link Resolver CE — Expansion Pack** (development on
+branch `gs1br/develop`; the default branch, `master`, holds the releases). The state of the work, the next item and
+anything not meant for a public document arrive in the maintainer's handover at the start of each session; read it
+first. The README's
 *Open backlog* is the reference for the items.
 
 ## Language
@@ -25,7 +26,8 @@ document arrive in the maintainer's handover at the start of each session; read 
 ## Commits and delivery
 
 - Push straight to `gs1br/develop` (`git push -u origin gs1br/develop`); fetch and rebase first. Pushed
-  commits are never rewritten.
+  commits are never rewritten. A release brings `master` up to `gs1br/develop` (fast-forward only, after a green CI),
+  with a tag `vX.Y.Z`, a GitHub release and the CHANGELOG's *Unreleased* section renamed to its version.
 - One topic per commit, with a message that explains why. Subjects carry an area prefix (`portal:`, `docs:`,
   `resolver, portal:`, `scripts:` …). Code and its technical documents go in one commit; then a `docs:` commit
   with the CHANGELOG, `features.md` and `history.md` citing the code commit's hash.

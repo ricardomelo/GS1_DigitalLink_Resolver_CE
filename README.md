@@ -1,6 +1,6 @@
 # GS1 Digital Link Resolver CE — Expansion Pack
 
-[![Development tests](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml/badge.svg?branch=gs1br/develop)](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml)
+[![Development tests](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml/badge.svg?branch=master)](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml)
 ![GS1-Conformant Resolver 1.2.1](https://img.shields.io/badge/GS1--Conformant%20Resolver-1.2.1-002c6c)
 ![GS1 Digital Link URI Syntax 1.7.0](https://img.shields.io/badge/GS1%20Digital%20Link%20URI%20Syntax-1.7.0-002c6c)
 ![GS1 Digital Link Test Suite 1.2.1: 31 of 31](https://img.shields.io/badge/GS1%20Digital%20Link%20Test%20Suite%201.2.1-31%20of%2031-2e7d32)
@@ -643,7 +643,6 @@ On a server with a DNS name pointing to it:
 ```bash
 git clone https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE.git
 cd GS1_DigitalLink_Resolver_CE
-git switch gs1br/develop            # if it is not the default branch
 sudo scripts/install.sh
 ```
 
@@ -678,7 +677,7 @@ sudo FQDN=id.example.org TLS_MODE=letsencrypt CERTBOT_EMAIL=ops@example.org \
 
 1. **Docker.** Install Docker Engine and the Compose plugin (≥ 2.24) following
    [docs.docker.com/engine/install](https://docs.docker.com/engine/install/).
-2. **Code.** Clone this repository and switch to `gs1br/develop`.
+2. **Code.** Clone this repository (its default branch, `master`, holds the latest release).
 3. **Configuration.** Create `.env` next to `docker-compose.yml` (values here replace `.env.example`):
 
    ```bash
@@ -801,6 +800,11 @@ copies on another machine. Before going live, work through the
 
 ## Development and tests
 
+**Branches and releases.** `master`, the default branch, holds the latest release (tags `vX.Y.Z`, with their notes
+under *Releases*); development happens on `gs1br/develop`, which a release brings `master` up to. Both run the
+continuous integration. `scripts/upgrade-from-official.sh` follows `gs1br/develop` unless `UPGRADE_BRANCH` says
+otherwise.
+
 The tests in [`dev-tests/`](dev-tests/README.md) run without Docker or MongoDB (the portal's database is
 replaced by `mongomock`; CI also runs them on a real MongoDB):
 
@@ -846,7 +850,7 @@ DEV_TESTS_STRICT=1 python -m pytest dev-tests -m portal   # as in CI: what is mi
 ```
 
 **Continuous integration.** The workflow `.github/workflows/dev-tests.yml` runs the tests on GitHub Actions on
-every push and pull request to `gs1br/develop` (changes to documentation only do not start it), in six jobs
+every push and pull request to `master` and `gs1br/develop` (changes to documentation only do not start it), in six jobs
 in parallel: resolver (with EPC binary strings, the data entry API and GS1's suite), portal, portal on a
 real MongoDB (a `mongo:7` service container), portal in Chromium, home page through nginx, and installer.
 The portal on MongoDB is an informative job: a failure there is shown but does not fail the run (the

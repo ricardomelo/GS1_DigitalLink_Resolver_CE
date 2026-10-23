@@ -1343,7 +1343,7 @@ writes both in the issue; one issue per release; it never pushes (`contents: rea
 job then fails with "repository has disabled issues": switch them on in Settings → Features → Issues.
 
 `.github/workflows/dev-tests.yml` runs one job per group in parallel on every push and pull request to
-`gs1br/develop` (not for changes to `Documentation/` or Markdown files only), in strict mode. The `database`
+`master` and `gs1br/develop` (not for changes to `Documentation/` or Markdown files only), in strict mode. The `database`
 job starts a `mongo:7` service container and runs the `portal` and `database` groups on it. `database` is
 informative (`continue-on-error`) until it proves stable; `e2e` and `install` started that way and are
 required since step 4 of item 2.3. The composite action

@@ -2768,7 +2768,9 @@ def list_requests():
 @require_login
 def request_places():
     """The map of requests (ADR 0006, section 10): the requests of the Requests screen's filters per country and per
-    place, with each city's position."""
+    place, with each city's position. The overview draws it for its period, and passes a server administrator's
+    choice of organisation (tenant, as GET /portal/api/overview: scoped_view())."""
+    scoped_view(request.args.get("tenant"))
     scope, whole = request_log_scope()
     try:
         found = requestlog.places(request.args, scope)

@@ -33,7 +33,9 @@ Constraints:
    compared with the period of the same length just before it.
 3. **Five groups of indicators**, every one limited to the scope of the request:
    - **Usage** — scans by people (automated requests counted apart), per day, the most scanned codes, shares by
-     device class, language, form of the request (URI, compressed, EPC) and link type asked;
+     device class, language, form of the request (URI, compressed, EPC) and link type asked; since 23 October 2026
+     the map of where the period's requests come from, under the most scanned codes
+     ([ADR 0006 §13](0006-resolver-request-log.md));
    - **Resolution quality** — the share of requests answered, **scanned codes that are not registered (404
      `unknown`) first**, each with a link that opens it in the editor, codes without a link of the type asked (404
      `noLink`), invalid requests, errors, the average time of an answer (and, for the whole installation, the

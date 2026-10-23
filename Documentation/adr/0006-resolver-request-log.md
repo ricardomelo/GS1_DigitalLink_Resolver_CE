@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (the log on the server: capture in the resolver, daily aggregates and reading in the portal, the tenant API's calls), 3 (the *Requests* screen). **Amended** on 17 October 2026 (section 8, item 9.5), on 20 October 2026 (section 9, finding F1 of the staging tests; section 10), on 21 October 2026 (section 11) and on 23 October 2026 (section 12) |
+| Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (the log on the server: capture in the resolver, daily aggregates and reading in the portal, the tenant API's calls), 3 (the *Requests* screen). **Amended** on 17 October 2026 (section 8, item 9.5), on 20 October 2026 (section 9, finding F1 of the staging tests; section 10), on 21 October 2026 (section 11) and on 23 October 2026 (sections 12 and 13) |
 | Backlog items | 4.1 — log of resolver requests; 9.5 — browser, approximate location and retention set in the portal; F1 (staging tests of 20 October) — a limit by size |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 |
 
@@ -558,3 +558,33 @@ numerical AI has — but a numerical first segment such as a year could reach it
   quality figures, as section 11 decided.
 - The first housekeeping after the update goes through every counted day once more (one deletion by query).
 
+## 13. Amendment of 23 October 2026 — the map on the overview
+
+### 13.1 Context and decision
+
+The owner asked for the map of section 10 on the overview, in the empty space under *Most scanned codes*, to the left
+of *How codes are scanned*. **The overview shows the map for its period** there, a country's regions and cities listed
+under the map (the column is narrow); on a phone it comes between the two lists. It draws the requests the
+*Requests* screen would list for the same days and scope — people's, with a key, within the log's retention — and
+follows a server administrator's choice of organisation. It is loaded after the overview's figures, so they never
+wait for it.
+
+### 13.2 Design
+
+- `GET /portal/api/requests/places` takes `tenant` as `GET /portal/api/overview` does (`app.scoped_view()`): a server
+  administrator's choice of organisation or the operator; ignored for anyone else.
+- `portal/static/app.js`: `loadOverviewMap()`, called by `loadOverview()` with the period's `from` and `to`; drawn
+  again when the language changes. `index.html`: `#overview-map-box` under the most scanned codes; `app.css`:
+  `.overview-map` (one column).
+
+### 13.3 Options considered
+
+| Point | Chosen | Not chosen |
+|---|---|---|
+| Data | the period's events, as on *Requests* | the daily aggregates (they keep the countries and the 20 commonest places, not the positions, and count automated requests); a new overview field (the figures would wait for the map) |
+| Place | under the most scanned codes, beside the shares (the owner's request) | across the whole width (more height, the empty space left as it was) |
+
+### 13.4 Consequences
+
+- The map stops at the log's retention: a period longer than the events kept shows the days kept, and its text says
+  how many of the period's requests have a place.

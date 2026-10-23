@@ -1074,7 +1074,11 @@ link previews, monitors — are counted apart, and so are the **Item page views*
 once there are any: they follow a scan, they are not scans). One bar per day as on the Requests screen (in orange the scans that
 found nothing), the **Most scanned codes** (select a code to open it in the editor) and **How codes are scanned**: by
 device class, by form of the link (GS1 Digital Link, compressed link, EPC binary from an RFID tag), by language of the
-device and by link type asked.
+device and by link type asked. Under the most scanned codes, the **map of where the requests come from** for the
+period, as on the Requests screen (section 16): countries shaded by their requests, cities as circles; a click
+on a country zooms to it and lists its regions and cities under the map. It shows the requests the Requests screen
+lists — people's scans of GS1 codes, for the days the log still keeps — and follows the organisation a server
+administrator chose.
 
 **Resolution quality.** The share of requests answered, the **Codes not registered (404)** — scanned, but nobody
 registered them — the codes **without a link of the type asked**, invalid requests, the resolver's errors and the

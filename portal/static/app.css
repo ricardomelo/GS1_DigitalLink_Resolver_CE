@@ -684,6 +684,9 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .map-ramp { display: inline-block; width: 6rem; height: .6rem; border-radius: 2px; }
 .map-dot { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; background: var(--gs1-orange); }
 @media (max-width: 900px) { .requests-map { grid-template-columns: 1fr; } .map-side { max-height: none; } }
+/* On the overview, in the column of the most scanned codes: a country's regions and cities under the map */
+.overview-map { grid-template-columns: 1fr; }
+.overview-map .map-side { order: 1; max-height: 16rem; }
 .requests-outcome.is-redirect, .requests-outcome.is-linkset, .requests-outcome.is-choice,
 .requests-outcome.is-compressed { background: #E7F4EC; color: var(--ok); }
 .requests-outcome.is-unknown, .requests-outcome.is-noLink { background: #FFF4E0; color: #9A5B00; }

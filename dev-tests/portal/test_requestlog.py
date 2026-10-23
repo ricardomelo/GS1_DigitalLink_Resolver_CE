@@ -392,6 +392,16 @@ m = root.get("/portal/api/requests/places").get_json() or {}
 check("an event whose key is no GS1 primary key (a probe recorded by an earlier resolver): not listed, not on the map",
       str(probe) not in found and len(found) == 5 and m.get("total") == 5 and "CN" not in dict(m.get("countries", [])),
       (found, m.get("countries")))
+m = root.get(f"/portal/api/requests/places?tenant={acme['id']}").get_json() or {}
+check("the map for the overview of one organisation chosen by a server administrator: its requests only",
+      m.get("countries") == [["BR", 2], ["PT", 1]] and m.get("total") == 3 and m.get("whole") is False, m)
+m = root.get("/portal/api/requests/places?tenant=operator").get_json() or {}
+check("…of the operator", m.get("countries") == [["ZA", 1]] and m.get("total") == 2, m)
+check("…an organisation that does not exist refused",
+      code(root.get("/portal/api/requests/places?tenant=nobody")) == "tenants.unknown")
+m = ana.get("/portal/api/requests/places?tenant=operator").get_json() or {}
+check("…the choice ignored for anyone but a server administrator: their own scope",
+      m.get("countries") == [["BR", 2], ["PT", 1]] and m.get("total") == 3, m)
 EVENTS.delete_one({"_id": probe})
 m = root.get("/portal/api/requests/places?browser=safari").get_json() or {}
 check("…with the list's filters", m.get("countries") == [["BR", 1]] and m.get("total") == 1, m)

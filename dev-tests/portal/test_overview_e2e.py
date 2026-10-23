@@ -16,7 +16,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 from openpyxl import load_workbook
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 from werkzeug.serving import make_server
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -87,6 +87,28 @@ def texts(page, selector):
     return page.eval_on_selector_all(selector, "ns => ns.map(n => n.innerText)")
 
 
+def until(wait):
+    """Runs a Playwright wait for a condition; False when it times out, so that the check after it reports the failure
+    instead of the program stopping."""
+    try:
+        wait()
+        return True
+    except PlaywrightTimeoutError:
+        return False
+
+
+def map_text(page):
+    """The text beside the overview's map (how many requests are located), or '' without a map."""
+    return page.evaluate("() => document.querySelector('#overview-map .map-side')?.innerText || ''")
+
+
+def shaded(page, country):
+    """Whether the overview's map shades a country (it has requests there)."""
+    fill = page.evaluate("c => document.querySelector(`#overview-map path[data-code=\"${c}\"]`)?.getAttribute('fill')",
+                         country) or ""
+    return fill.upper() not in ("", "#E6EBF1")
+
+
 # Acme's record, scanned on several days; a code nobody registered; the operator's scans
 client = portal.app.test_client()
 client.post("/portal/api/login", json={"username": "ana", "password": "ana-password-long"},
@@ -94,12 +116,13 @@ client.post("/portal/api/login", json={"username": "ana", "password": "ana-passw
 client.post("/portal/api/record", json={"key": "01", "value": ACME, "description": "Acme biscuits", "links": [
     {"linkType": "gs1:pip", "url": "https://acme.example/b", "hreflang": ["en"], "title": "Biscuits"}]},
             headers={"Origin": f"http://127.0.0.1:{PORT}"})
+CAMPINAS = {"c": "BR", "rg": "Sao Paulo", "ci": "Campinas", "ll": [-22.9, -47.1]}
 for minutes in (2, 3, 4, 60 * 24 * 3, 60 * 24 * 3 + 1, 60 * 24 * 10):
-    event(ACME, minutes, lang="pt-br")
+    event(ACME, minutes, lang="pt-br", **(CAMPINAS if minutes < 5 else {}))   # the last three with a place
 for minutes in (5, 6, 60 * 24 * 2):
     event(UNKNOWN, minutes, o="unknown", s=404)
 event(ACME, 7, dev="automated")
-event(OPER, 8, dev="desktop")
+event(OPER, 8, dev="desktop", c="PT", rg="Lisbon", ci="Lisbon", ll=[38.7, -9.1])
 event(None, 9, o="invalid", s=400, p="/wp-login.php", dev="automated")
 for day in range(1, 12):
     requestlog.count_day(requestlog.today() - timedelta(days=day))
@@ -129,6 +152,24 @@ with sync_playwright() as p:
     check("…the most scanned codes", top and top[0].startswith("/01/" + ACME), top)
     shares = page.inner_text("#overview-shares")
     check("…shares by device and language", "Phone" in shares and "pt-br" in shares, shares[:200])
+    until(lambda: page.wait_for_selector("#overview-map circle.map-city", timeout=10000))
+    where = {name: page.locator(sel).bounding_box() for name, sel in
+             (("map", "#overview-map-box"), ("top", "#overview-top-body"), ("shares", "#overview-shares"))}
+    check("…the map of where the requests come from: under the most scanned codes, beside how codes are scanned",
+          abs(where["map"]["x"] - where["top"]["x"]) < 20 and where["map"]["y"] > where["top"]["y"] + where["top"]["height"]
+          and where["map"]["y"] < where["shares"]["y"] + where["shares"]["height"]
+          and where["map"]["x"] + where["map"]["width"] <= where["shares"]["x"], where)
+    side = map_text(page)
+    check("…the period's requests of the organisation: its city, 3 of its 9 requests located, not the operator's",
+          shaded(page, "BR") and not shaded(page, "PT") and page.locator("#overview-map circle.map-city").count() == 1
+          and "3 of 9 requests" in side, side)
+    page.select_option("#overview-days", "7")
+    until(lambda: page.wait_for_function(
+        "() => /of 8 requests/.test(document.querySelector('#overview-map .map-side')?.innerText)", timeout=10000))
+    check("…drawn again for another period", "3 of 8 requests" in map_text(page), map_text(page))
+    page.select_option("#overview-days", "30")
+    until(lambda: page.wait_for_function(
+        "() => /of 9 requests/.test(document.querySelector('#overview-map .map-side')?.innerText)", timeout=10000))
     unknown = page.inner_text("#overview-tile-unknown")
     check("quality: the scanned codes nobody registered, highlighted", "3" in unknown
           and "is-warn" in page.get_attribute("#overview-tile-unknown", "class"), unknown)
@@ -204,6 +245,16 @@ with sync_playwright() as p:
           and "Daily counts complete up to" in operation, operation)
     check("…and the state of each monitoring check", "Resolver (through the proxy)" in operation
           and "Daily backup" in operation and "HTTPS certificate" in operation, operation)
+    until(lambda: root.wait_for_selector("#overview-map circle.map-city", timeout=10000))
+    check("…the map of the whole installation: the operator's requests too", shaded(root, "BR") and shaded(root, "PT")
+          and root.locator("#overview-map circle.map-city").count() == 2)
+    root.select_option("#overview-tenant", acme["id"])
+    check("…one organisation chosen: the map of its requests only", until(lambda: root.wait_for_function(
+        "() => document.querySelectorAll('#overview-map circle.map-city').length === 1", timeout=10000))
+          and shaded(root, "BR") and not shaded(root, "PT"))
+    root.select_option("#overview-tenant", "")
+    until(lambda: root.wait_for_function(
+        "() => document.querySelectorAll('#overview-map circle.map-city').length === 2", timeout=10000))
     shot(root, "overview-root")
     # an old GCP length table, as the monitoring records it (ADR 0008): its row and the active alert
     now = datetime.now(timezone.utc).replace(tzinfo=None)

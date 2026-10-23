@@ -3794,7 +3794,7 @@ async function saveBranding(event) {
 /* ------------------------------------------------------------------ overview (Documentation/adr/0007-overview-indicators.md)
    The page opened after sign-in: indicators of the scope for the last 7, 30 or 90 days, each compared with the period
    before it. Everything is computed by the server (GET overview); this part only draws it. */
-const overviewState = { data: null, loading: 0 };
+const overviewState = { data: null, places: null, loading: 0 };
 const nf = n => new Intl.NumberFormat(I18N.locale).format(n);
 
 function el(tag, className, text) {
@@ -3875,10 +3875,34 @@ async function loadOverview() {
                                   + (tenant ? "&tenant=" + encodeURIComponent(tenant) : ""));
     if (ticket !== overviewState.loading) return;          // a newer period was chosen meanwhile
     overviewState.data = data;
+    overviewState.places = null;
     $("#overview-status").textContent = "";
     renderOverview();
+    loadOverviewMap(ticket, data, tenant);
   } catch (e) {
     if (ticket === overviewState.loading) I18N.set($("#overview-status"), e.code, e.params);
+  }
+}
+
+/* The map of the period's requests (ADR 0006, section 10; requests-map.js) under the most scanned codes: the
+   requests the Requests screen lists for these days (people's, with a key, within the log's retention) */
+async function loadOverviewMap(ticket, data, tenant) {
+  const box = $("#overview-map");
+  $("#overview-map-box").hidden = !(data.logDays > 0);
+  if (!(data.logDays > 0)) return;
+  const status = el("p", "field-msg", t("requests.mapLoading"));
+  box.replaceChildren(status);
+  try {
+    const params = new URLSearchParams({ from: data.period.from, to: data.period.to });
+    if (tenant) params.set("tenant", tenant);
+    const places = await api("GET", "requests/places?" + params.toString());
+    if (ticket !== overviewState.loading) return;
+    overviewState.places = places;
+    await RequestsMap.render(box, places);
+  } catch (e) {
+    if (ticket !== overviewState.loading) return;
+    I18N.set(status, e.code || "requests.mapFailed", e.params);
+    box.replaceChildren(status);
   }
 }
 
@@ -3943,6 +3967,7 @@ function renderOverview() {
     shareTable("overview.byBrowser", u.browser || [], name => t("requests.browser." + name)),
     shareTable("overview.byCountry", u.country || []),
     shareTable("overview.byPlace", u.place || [], placeFromKey));
+  if (overviewState.places) RequestsMap.render($("#overview-map"), overviewState.places).catch(() => {});
 
   // Resolution quality (every request, automated ones included)
   const q = d.quality;

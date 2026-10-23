@@ -1,6 +1,50 @@
 # GS1 Digital Link Resolver CE — Expansion Pack
 
 [![Development tests](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml/badge.svg?branch=gs1br/develop)](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml)
+![GS1-Conformant Resolver 1.2.1](https://img.shields.io/badge/GS1--Conformant%20Resolver-1.2.1-002c6c)
+![GS1 Digital Link URI Syntax 1.7.0](https://img.shields.io/badge/GS1%20Digital%20Link%20URI%20Syntax-1.7.0-002c6c)
+![GS1 Digital Link Test Suite 1.2.1: 31 of 31](https://img.shields.io/badge/GS1%20Digital%20Link%20Test%20Suite%201.2.1-31%20of%2031-2e7d32)
+![Languages: 12](https://img.shields.io/badge/languages-12-f26334)
+![Licence: Apache 2.0](https://img.shields.io/badge/licence-Apache%202.0-blue)
+
+**Run your own GS1 Digital Link resolver — and everything around it.** The official GS1 Resolver Community Edition
+resolves QR codes; this edition turns it into a complete platform that any organisation can put in front of its
+members, its brands and its partners: a portal where people register links without writing a line of JSON, labels
+ready for print, a branded page that shows every link of a product, live figures on how codes are scanned, an
+organisation's own domain in every QR code, forwarding to other resolvers — every code of a prefix, or GS1's global
+resolver for any code not found here —, several organisations on one server, and the governance, privacy and
+operation tools a production service needs. Free and open source, installed with one script.
+
+<p align="center">
+  <img src="Documentation/images/home.png" alt="Home page of the resolver" width="820">
+</p>
+
+### Why it stands out
+
+- **Conformant to the current GS1 standards, and proved so.** Conformant to the
+  [**GS1-Conformant Resolver standard 1.2.1**](https://ref.gs1.org/standards/resolver/) and to
+  [**GS1 Digital Link URI Syntax 1.7.0**](https://ref.gs1.org/standards/digital-link/uri-syntax/), the current
+  releases (ratified in August 2026), and tested with the
+  [**GS1 Digital Link Test Suite for the GS1-Conformant Resolver standard, version 1.2.1**](https://ref.gs1.org/test-suites/resolver/):
+  **31 of 31 tests pass**, on a live installation under two domain names and in every run of the development
+  tests ([conformance review](Documentation/conformance-review.md)). In step with the official GS1 Resolver CE up to
+  its current version (**3.0.0** with the updates of March 2026, commit
+  [`bf885fd`](https://github.com/gs1/GS1_DigitalLink_Resolver_CE/commit/bf885fdf4888f0395229478bf6b50342c1f761a8)).
+- **Every GS1 key, every qualifier, every data attribute** of GS1 Digital Link URI Syntax 1.7.0, validated by the GS1
+  Barcode Syntax Engine itself.
+- **Nothing to code.** Records, labels, imports, domains, brands and users are managed in a web portal; systems that
+  prefer an API have one, with keys of their own.
+- **Part of the GS1 network, not an island.** **Forwarding by prefix** sends every code of a GS1 Company Prefix, a
+  country's GS1 prefix or a range — even codes registered here — to another resolver (keeping the code's path) or to a
+  fixed page; and a **resolver of last resort** sends any code for which no record is found here to **GS1's
+  global resolver** (`https://id.gs1.org`) or another one, with its path and query string, instead of a "not found"
+  page. Both are set in the portal, take effect within 30 seconds and are counted in the overview.
+- **Built for many.** One installation serves many organisations, each with its own GS1 Company Prefixes, users,
+  domains, brands, limits and audit trail.
+- **Yours, in looks and in language.** Your logo, your colours, your title — in twelve languages, Arabic (right to
+  left) included.
+- **Tested like a product.** More than 4,700 automated checks in 68 programs — resolver, APIs, portal, browsers,
+  installer — run on every change.
 
 > **Important notice and disclaimer (from the official project).** This freely licensed open source
 > software is not maintained by GS1. Issues raised here may be answered by the community but will not be
@@ -16,21 +60,183 @@
 
 This repository is a fork of the official
 [**GS1 Resolver Community Edition v3**](https://github.com/gs1/GS1_DigitalLink_Resolver_CE) (based on commit
-[`bf885fd`](https://github.com/gs1/GS1_DigitalLink_Resolver_CE/commit/bf885fdf4888f0395229478bf6b50342c1f761a8))
-maintained on branch `gs1br/develop`. It keeps the official resolver and data entry API and
-adds what an organisation needs to run one for its members:
+[`bf885fd`](https://github.com/gs1/GS1_DigitalLink_Resolver_CE/commit/bf885fdf4888f0395229478bf6b50342c1f761a8)).
+It keeps the official resolver and data entry API — their names, routes and behaviour — and adds the rest; every
+deliberate change is recorded in the [changelog](Documentation/extensions/CHANGELOG.md) and in an
+[architecture decision record](Documentation/README.md#architecture-decision-records).
 
-- a **link management portal** that simplifies the management of links, in Brazilian Portuguese and British English;
-- every **primary identification key and key qualifier** of the
-  [GS1 Digital Link URI Syntax 1.7](https://ref.gs1.org/standards/digital-link/uri-syntax/);
-- **conformance fixes** to the resolver ([GS1-Conformant Resolver 1.2.1](https://ref.gs1.org/standards/resolver/))
-  and HTML pages for people who open a link in a browser;
-- a **home page**, a **configurable resolver description file**, **security hardening**;
-- an **interactive installer for Ubuntu**, a **daily backup** and **development tests** for everything.
+---
+
+## A tour of the platform
+
+### The overview: every code, every scan, at a glance
 
 <p align="center">
-  <img src="Documentation/images/home.png" alt="Home page of the resolver" width="820">
+  <img src="Documentation/images/guide/overview.png" alt="The overview: scans, automated requests, scans per day, most scanned codes, the map of where requests come from and how codes are scanned" width="760">
 </p>
+
+The page that opens after sign-in tells each organisation how its codes are doing, for the last 7, 30 or 90 days, each
+figure set against the period before:
+
+| Group | What it shows |
+|---|---|
+| **Usage** | Scans by people, automated requests (crawlers, integrations, link previews) and, for the whole installation, requests without a GS1 code (robots' probes) — each counted apart; scans per day in a chart, the codes that found nothing marked; the most scanned codes; views and clicks of the item's page |
+| **Where and how** | A world map of where the scans come from (country, region and city, approximate, without storing addresses); scans by device class, form of the link (GS1 Digital Link, compressed link, EPC binary from RFID/NFC), language of the phone, link type asked, browser and country |
+| **Resolution quality** | The share of requests answered, codes scanned that nobody registered (with a button to register them), codes without the link type asked, invalid requests, errors, answer times, requests forwarded to other resolvers |
+| **Record quality** | Records and keys by key type, records that break GS1's rules, records without a description, keys nobody scanned, broken links found by the link checker, active alerts |
+| **Operation** | For the server administrator: the job worker, e-mail, the daily counts, the backup, the HTTPS certificate, the request log's space and the GCP length table |
+| **Governance** | Record changes by user, sign-ins and refused sign-ins, exports, users by role, API keys active and expiring, calls to the API |
+
+Everything exports to **Excel** and **CSV**, and organisations' own systems read the same figures through the API
+(`GET /portal/api/v1/stats`). Underneath, the **Requests** screen lists every scan — code, outcome, device, browser,
+language, approximate place, time taken — with filters, its own map and a CSV export, kept as long as each
+organisation chooses, within the installation's limit.
+
+### The link editor: from a GS1 key to a working QR code in three steps
+
+<p align="center">
+  <img src="Documentation/images/portal-editor.png" alt="Portal editor with a GTIN, its qualifiers, targets and QR code" width="640">
+</p>
+
+1. **Identify the item** — choose the key (GTIN, SSCC, GLN, GIAI and the other twelve) and its qualifiers (variant,
+   batch, serial…). Check digits, the GS1 Company Prefix, lengths, character sets and the combinations GS1 allows are
+   checked as you type, with the reason in plain words.
+2. **Describe it** — the name people will see.
+3. **Point it somewhere** — one row per web address, each with its **GS1 link type** (product information,
+   instructions, leaflet, recipes, recall status… the link types of the GS1 Web Vocabulary), its language and title. One
+   of them, or the item's page, is the **default target**: what opens when someone simply scans the code.
+
+The preview draws the GS1 Digital Link with each part coloured and its QR code as you type; **Try now** scans it for
+you. Changing a target takes effect at once for every code already printed — packaging is never reprinted to change
+where a code leads. Every save checks the links, every change is kept in the record's **history**, any version can be
+restored, and the **record list** finds any record by code, description, qualifier, or by pasting a Digital Link, an
+element string or an RFID reading. Thousands of records come and go as **spreadsheets** (XLSX or CSV), with a
+preview that shows what will change before anything is written.
+
+### The item's page: one code, every link, in your brand
+
+<p align="center">
+  <img src="Documentation/images/guide/item-page-phone.png" alt="The item's page on a phone: the brand's logo and colours, a button per link with its icon, other languages and Verified by GS1" width="300">
+</p>
+
+A product has a page for the consumer, recipes, nutrition facts, recycling, where to buy… Make **the item's page** the
+default target and a scan opens a menu of all of them: made by the resolver itself, mobile first, a button per link
+with the icon of its link type, the visitor's language first and the others a tap away, and — for GTINs and GLNs, when
+the installation switches it on — a button to check the code in **Verified by GS1**. Each GS1 Company Prefix (or a
+longer prefix, for one brand) gets its **own brand name, logo, main colour and button colour**, with the text colour
+chosen for legibility; the page follows a change within a minute. Page views and clicks are counted apart from scans,
+so the overview tells which links people actually open.
+
+### The label and barcode generator: print-ready, by the GS1 rules
+
+<p align="center">
+  <img src="Documentation/images/guide/label-panel.png" alt="The label block: the QR code with its human readable text, the downloads and the label options" width="760">
+</p>
+
+Every record has its label, drawn as you type and downloaded as **SVG** (in millimetres, for artwork), **PNG**,
+**vector PDF** or all three in a **ZIP** with a sheet of the sizes. The options:
+
+| Option | Choices |
+|---|---|
+| **2D symbol** | QR code (GS1 Digital Link), Data Matrix (GS1 Digital Link) or GS1 DataMatrix with the element string, for healthcare and industry |
+| **Scanning environment** | The symbol specification tables of the GS1 General Specifications (section 5.12.3) — retail point of sale, general distribution, regulated healthcare (pharmacy, hospital), logistic units (SSCC), assets and locations, GSRN, direct part marking — each with its module sizes and the symbols it allows; only the key's environments are offered, its usual one first |
+| **Size** | A share of the environment's target, within its range (at retail 80 to 200 %, X from 0.396 to 0.990 mm), the module size shown for each |
+| **Linear barcode beside it** | EAN-13, UPC-A, EAN-8 or UPC-E for the transition to 2D, at the 2D symbol's size or one of its own within the EAN/UPC range |
+| **Human readable text** | Every element string, the key only, or none |
+| **QR code version and error correction** | Automatic (the smallest that fits) or any version from 1 to 40; L, M, Q or H — applied exactly, the version and modules used written under the code |
+| **Text in the SVG** | Outlines (looks the same everywhere) or editable text for artwork programs |
+| **Data attributes** | Expiry, best before, net weight, price… any of the 500-odd GS1 Digital Link data attributes in the code, checked with the association rules of the General Specifications, never stored |
+| **Domain in the QR code** | The resolver's address, or one of the organisation's verified domains |
+| **RFID and NFC (EPC)** | For a serialised item: its EPC (SGTIN-96/198, SSCC-96, SGLN, GRAI, GIAI, GSRN, GDTI, SGCN, CPI, ITIP) in hexadecimal and as a tag URI, and the compressed GS1 Digital Link for NFC tags, which this resolver reads like the QR code |
+
+When the content does not fit the chosen version, the label says so and offers the ways out.
+
+### Many organisations, one installation
+
+One installation can serve a whole community — a GS1 Member Organisation and its members, a group and its companies,
+a service provider and its clients. Each **organisation** owns its GS1 Company Prefixes and has its own users,
+records, domains, brands, sign-in, API keys, export limits, alerts and audit trail; nobody sees another
+organisation's codes. The server administrator creates, renames, disables and removes organisations, moves prefixes
+between them (their records and history follow), uploads **GS1's GCP length table** (the portal points out prefixes
+that disagree with it and warns when the list grows old), sets the most rows any export may hold, and helps an
+organisation through **support access**: read only, with a reason, recorded in that organisation's audit trail.
+
+### Users, roles and access
+
+- **Roles** — administrator, editor, reader — and, per user, the **GS1 Company Prefixes** they may see and change.
+- **Invitations by e-mail** or **temporary passwords**, password recovery, sign-in lockout after repeated failures,
+  sessions that end after inactivity, security notices by e-mail.
+- **Single sign-on** with each organisation's own identity provider (OpenID Connect: Microsoft Entra ID, Google
+  Workspace, Okta, Keycloak…), password sign-in switched off per organisation if it wants.
+- **API keys** for each organisation's systems, with scopes (read, write, labels, statistics), a validity of 30 to
+  365 days, optional prefixes, last use shown, revoked in one click.
+
+### Your own domain in every QR code — and forwarding
+
+<p align="center">
+  <img src="Documentation/images/guide/domains.png" alt="Domains: an organisation's domain, its DNS proof and its HTTPS certificate" width="640">
+</p>
+
+People trust a code that carries a name they know. An organisation can print **its own domain** in its QR codes —
+`https://id.yourbrand.com/01/…`, with an optional path stem such as `/gs1` (GS1 Digital Link URI Syntax §4.11) — and
+the consumer who scans it sees the brand's address, not a third party's. The organisation proves the domain is its own
+with a DNS TXT record, then either **points it at the resolver** (the server sets up the site and its **HTTPS
+certificate by itself** within minutes) or **forwards the scans from its own web server** to the resolver, keeping the
+path and query string (rules for nginx and Apache are shown). A domain can be the default of chosen GS1 Company
+Prefixes, and the resolver answers on it for that organisation's codes only. Linksets and the description file are
+written on the name that was asked, so GS1's test suite passes on every domain.
+
+**Forwarding** decides what happens to the requests this resolver should not answer itself: codes nobody registered
+here can go to a **resolver of last resort** (GS1's global resolver, `https://id.gs1.org`, or another), and **rules by
+prefix** send every code of a country's prefix, a company or a range to another resolver or page — keeping the code's
+path, or always to the same address. Each rule can be switched off without removing it, and the overview counts what
+went where.
+
+### Customise the whole platform
+
+<p align="center">
+  <img src="Documentation/images/guide/appearance.png" alt="Appearance: the title, the logo, the browser icon and the three colours with their preview" width="640">
+</p>
+
+**Appearance** gives the installation its operator's look in one screen: a **title** in place of the product's name, a
+**logo**, the **browsers' tab icon** and three **colours** (main, action and highlight; a colour that would leave white
+text unreadable is refused with its contrast). A live preview follows the form; one save applies it to the portal, the
+home page, the resolver's pages and the item's page. Every text people read — portal, resolver pages, item's page, home
+page, e-mail messages — exists in **twelve languages**: Brazilian Portuguese, British English, Spanish, French, German,
+Italian, Turkish, Simplified Chinese, Japanese, Korean, Hindi and Arabic, chosen from the browser and switched at any
+time.
+
+### APIs for your systems
+
+| API | For | How |
+|---|---|---|
+| **Resolver** (public) | Anyone who scans | GS1 Digital Link, linksets (RFC 9264, JSON-LD on request), compressed links and EPC binary strings, the description file `/.well-known/gs1resolver` |
+| **Data entry API** (`/api`) | The installation's operator | The official REST API with a bearer token and Swagger, extended: every record in one request (`GET /api/summary`), the index behind the token, bodies that cannot be used refused with 400 |
+| **Tenant API** (`/portal/api/v1`) | Each organisation's ERP, PIM or shop | Records, labels and statistics with the organisation's own API keys and scopes, described in [OpenAPI](portal/openapi.json) and in the [API reference](Documentation/api-reference.md); every call logged |
+
+### Privacy by design
+
+The resolver logs requests **without the client's address, its User-Agent, serial numbers or the values of data
+attributes**; places are approximate (a city, a tenth of a degree). How many days requests are kept is set by the
+server administrator and, never longer, by each organisation; a limit on the space the log may use deletes the oldest
+first. Every page has a **Privacy notice** link: the server administrator writes the installation's own notice in the
+portal, previews it and publishes it as a new numbered version, earlier versions staying readable.
+
+### Audit trail and history
+
+Every sign-in, refused sign-in, record change, import, export, change of users, organisations, domains, forwarding or
+appearance is in the **audit trail**, filtered by user, period and identifier and exported to CSV; each organisation
+has its own, and what the server administrator did to it is tagged. Every record has its **history**: who changed
+what and when, each version in full, restorable.
+
+### And more
+
+- **Link checker**: every link checked after each save, on demand, and all of them in the background; HTTP errors,
+  addresses that do not answer, HTTPS downgrades and endless redirects reported.
+- **Monitoring with alerts by e-mail**: the resolver down, a failed or late backup, the certificate about to expire,
+  the request log's space, an old GCP length table, spikes of codes nobody registered.
+- **Operations**: an interactive installer for Ubuntu 22.04 and 24.04, a daily backup, replicas of every service,
+  HTTPS for organisations' domains, a home page, a configurable resolver description file and security hardening.
 
 ---
 
@@ -49,22 +255,23 @@ This README covers the overview, the API, installation and operation. The index 
 
 ## Contents
 
-1. [The original project](#the-original-project)
-2. [What this fork adds](#what-this-fork-adds)
-3. [Architecture](#architecture)
-4. [The link management portal](#the-link-management-portal)
-5. [GS1 Digital Link coverage](#gs1-digital-link-coverage)
-6. [API reference](#api-reference)
-7. [System requirements](#system-requirements)
-8. [Installation with the Ubuntu script](#installation-with-the-ubuntu-script)
-9. [Manual installation](#manual-installation)
+1. [A tour of the platform](#a-tour-of-the-platform)
+2. [The original project](#the-original-project)
+3. [What this fork adds](#what-this-fork-adds)
+4. [Architecture](#architecture)
+5. [The link management portal](#the-link-management-portal)
+6. [GS1 Digital Link coverage](#gs1-digital-link-coverage)
+7. [API reference](#api-reference)
+8. [System requirements](#system-requirements)
+9. [Installation with the Ubuntu script](#installation-with-the-ubuntu-script)
+10. [Manual installation](#manual-installation)
    - [Upgrading an installation of the official GS1 Resolver CE v3](#upgrading-an-installation-of-the-official-gs1-resolver-ce-v3)
-10. [Configuration](#configuration)
-11. [Operation](#operation)
-12. [Development and tests](#development-and-tests)
-13. [Open backlog](#open-backlog)
-14. [Repository layout](#repository-layout)
-15. [Licence and credits](#licence-and-credits)
+11. [Configuration](#configuration)
+12. [Operation](#operation)
+13. [Development and tests](#development-and-tests)
+14. [Open backlog](#open-backlog)
+15. [Repository layout](#repository-layout)
+16. [Licence and credits](#licence-and-credits)
 
 ---
 
@@ -94,13 +301,13 @@ the official Postman collection is at
 | **Item page** | A page of all the links of an item as the default target of its code: made by the resolver, mobile first, an icon per link type, the visitor's language first, the logo and colours of the brand of each GS1 Company Prefix (uploaded in the portal), page views and clicks counted apart from scans, and a link to Verified by GS1 for GTINs and GLNs when the installation switches it on ([ADR 0011](Documentation/adr/0011-item-page.md)) |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, built from the GS1 Barcode Syntax Dictionary of the engine release every service uses |
 | **Data attributes** | Every data attribute of URI Syntax §4.10 in QR codes, validated by the GS1 Barcode Syntax Engine (formats, check digits, dates, code lists and the association rules of the General Specifications), its messages in the user's language; passed on by the resolver to the targets |
-| **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, the default link unless the request decides a language variant, request paths checked by the GS1 Barcode Syntax Engine, values with `%2F`, the query string passed on exactly as sent, EPC binary strings (`/eh…`, `/ex…`) from NFC tags decompressed, HTML pages in pt-BR / en-GB for browsers |
+| **Resolver** | Qualifier walk-up (serial → batch → variant → key), 404 rules, `linkType` forms, `defaultLink`, RFC 9264 linkset valid against GS1's schema, JSON-LD on request, the default link unless the request decides a language variant, request paths checked by the GS1 Barcode Syntax Engine, values with `%2F`, the query string passed on exactly as sent, EPC binary strings (`/eh…`, `/ex…`) from NFC tags decompressed, HTML pages for browsers in twelve languages |
 | **Data entry API** | `GET /api/summary` (all records in one request); `GET /api/index` now requires the token; Swagger "Authorize" works on every protected operation |
 | **Configuration** | `.env.example` defaults + optional `.env` for every service; description file (`/.well-known/gs1resolver`) built from the configuration; bind addresses for the published ports |
 | **Request log** | The resolver records each request it answers — code, outcome, level, target, time, language, device class — without the client's address, User-Agent, serial numbers or data attribute values; daily counts per key; a *Requests* screen per user's reach, with a CSV export; the tenant API's calls ([ADR 0006](Documentation/adr/0006-resolver-request-log.md)); an **overview** opened after sign-in — usage, scanned codes nobody registered, record quality, operation and governance for the last 7, 30 or 90 days against the period before, exported to Excel and CSV and read by organisations' systems through the tenant API ([ADR 0007](Documentation/adr/0007-overview-indicators.md)) |
 | **Home page** (`/`) | Menu to the portal, the API documentation, the GS1 Digital Link standard, gs1.org and this code; domain independent |
 | **Operations** | Interactive installer for Ubuntu 22.04 / 24.04; daily backup of the database and the portal's configuration; monitoring by the worker with alerts by e-mail — the resolver down through the proxy, a failed or late backup, the certificate expiring, spikes of codes nobody registered ([ADR 0008](Documentation/adr/0008-monitoring-and-alerts.md)); Compose restarts the proxy when a service behind it is recreated |
-| **Quality** | Development tests for the resolver, the data entry API, the portal (unit and browser end-to-end), the home page, the installer and the link checker; comparison with the GS1 Syntax Engine; GS1's own resolver test suite passed (31 of 31) and also run in the development tests |
+| **Quality** | Development tests for the resolver, the data entry API, the portal (unit and browser end-to-end), the home page, the installer and the link checker; comparison with the GS1 Syntax Engine; the GS1 Digital Link Test Suite for the GS1-Conformant Resolver standard 1.2.1 passed (31 of 31) and also run in the development tests |
 
 The full change log is in [Documentation/extensions/CHANGELOG.md](Documentation/extensions/CHANGELOG.md) and
 the detailed documentation in [Documentation/extensions/README.md](Documentation/extensions/README.md).
@@ -154,10 +361,6 @@ two processes by default (`*_PROCESSES`). The database and the proxy run once, u
 ## The link management portal
 
 Step-by-step instructions for every task are in the [portal user guide](Documentation/portal-user-guide.md).
-
-<p align="center">
-  <img src="Documentation/images/portal-editor.png" alt="Portal editor with a GTIN, its qualifiers, targets and QR code" width="640">
-</p>
 
 **Editor** — three steps:
 
@@ -237,7 +440,7 @@ server's own network. Sites that answer "200" for missing pages ("soft 404") can
 
 **Users and sessions** — per-user passwords (salted scrypt hashes), sign-in lockout after repeated
 failures, sessions that end after 30 minutes without use (with a warning before) and 12 hours after the
-sign-in at the latest. The interface follows the browser's language (pt-BR or en-GB) and can be
+sign-in at the latest. The interface follows the browser's language (one of twelve) and can be
 switched at any time.
 
 ### Governance
@@ -326,7 +529,7 @@ content no longer fits the chosen QR version.
 | `…?linkType=gs1:pip` (also `pip`, `https://gs1.org/voc/pip`, `defaultLink`) | Redirect to that link type; `404` if the record has none |
 | `…?linkType=linkset` or `Accept: application/linkset+json` | Linkset (RFC 9264, valid against GS1's linkset schema); `application/ld+json` for JSON-LD |
 | `Accept-Language`, `Accept`, `context` | Choose between links of the same type by language, media type or context |
-| Browser (`Accept: text/html`) on an error | HTML page (not found, information not available with the available links, invalid code), pt-BR / en-GB |
+| Browser (`Accept: text/html`) on an error | HTML page (not found, information not available with the available links, invalid code), in twelve languages |
 | `GET /eh{hexadecimal}`, `GET /ex{base 64}` | EPC binary string (e.g. from an NFC tag) resolved as the GS1 Digital Link it stands for; data attributes it carries are passed on in the query string; `400` if it does not decode |
 | `GET /.well-known/gs1resolver` | Resolver description file; `resolverRoot` and `contact` from the configuration (`resolverRoot` is the organisation's domain and stem when asked on one) |
 | `…?linkType=linkset` in a browser; `…?linkType=linkset&view=page` | The item's page: the brand of the prefix, a button per link, the visitor's language first, Verified by GS1 when switched on; with `view=page` (a record's default target) counted as a page view ([ADR 0011](Documentation/adr/0011-item-page.md)) |

@@ -2,6 +2,12 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Cloud sessions with a newer Chromium (session 22)
+- **Development: the session start hook links a newer Chromium under the build the pinned Playwright wants**: the
+  cloud image moved from Chromium 1194 to 1243 and the browser programs no longer started; the hook now reads the
+  wanted builds from Playwright's `browsers.json` and, when the image has newer ones, links them under the wanted
+  names in `~/.cache/dev-tests/pw-browsers`. The CI is not affected. Commit `c4c5192`.
+
 ### A body that cannot be used (session 22)
 - **Fixed: the data entry API answered 500 to a body that was not JSON, and a `DELETE` whose body was a list deleted
   the whole document** (deliberate change to official code): `POST /new`, `POST /validate`, `PUT` and a `DELETE` with

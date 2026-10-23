@@ -1004,7 +1004,9 @@ from the browser), and the official handlers turn that into 500. The plan's scri
 checks them before sending; it passed. The same handlers, read again, showed that a `DELETE` whose body was a list
 deleted the whole document, and that `POST /new` of a record without a link of its default link type answered a
 status made of two dictionary keys; both answer 400 now, with a body that is not JSON (`dc3e97e`). 8 mutations, all
-caught.
+caught. Last, the session start hook took over the session's Chromium workaround (`c4c5192`): it reads the builds
+the pinned Playwright wants and links the image's newer ones under their names; the e2e group passed with its
+variables alone.
 
 ## How the main areas evolved
 

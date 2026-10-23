@@ -20,7 +20,8 @@ GS1_TESTSUITE_COMMIT=32597c108ac1ecb9e90ce0081bb3a16e5a61e616
 GS1_WEBVOC_COMMIT=f8f407bf717233c871dca2f62f4e45b0940e8cad   # GS1 Web Vocabulary 1.16, the link types' source
 COMPOSE_VERSION=v2.29.7
 NGINX_VERSION=1.30.5
-# Playwright stays on the release whose Chromium (1194) is pre-installed in /opt/pw-browsers.
+# Playwright stays on the release whose Chromium (1194) was pre-installed in /opt/pw-browsers; a newer build
+# there is linked under 1194's names (below).
 PLAYWRIGHT_VERSION=1.56.0
 mkdir -p "$DEV_TOOLS/bin"
 
@@ -29,6 +30,38 @@ python3 -m pip install -q --break-system-packages --ignore-installed blinker \
   -r web_server/src/requirements.txt -r portal/requirements.txt -r data_entry_server/src/requirements.txt \
   pytest jsonschema "playwright==$PLAYWRIGHT_VERSION" opencv-python-headless pillow pypdf mongomock "zxing-cpp>=2.2,<4" \
   "mmdb-writer>=0.2.7,<0.3"
+
+# Chromium for Playwright: the builds the pinned release wants (its browsers.json) when /opt/pw-browsers has them;
+# otherwise the newest ones there, linked under the wanted builds' names in $DEV_TOOLS/pw-browsers. The image moved
+# from 1194 to 1243 (October 2026), with another folder layout, and every browser program failed to start.
+PW_BROWSERS=/opt/pw-browsers
+read -r PW_CHROMIUM PW_HEADLESS < <(python3 -c 'import json, os, playwright
+d = {b["name"]: b["revision"] for b in json.load(open(os.path.join(os.path.dirname(playwright.__file__),
+     "driver", "package", "browsers.json")))["browsers"]}
+print(d["chromium"], d["chromium-headless-shell"])')
+[[ -n ${PW_HEADLESS:-} ]] || { echo "Playwright's browsers.json not read" >&2; exit 1; }
+pw_alias() {  # <folder name> <wanted revision> <executable the pinned release starts> <its name in newer builds>
+  local wanted="$PW_PATH/$1-$2" newest exe
+  newest=$(ls -d "$PW_BROWSERS/$1"-[0-9]* 2>/dev/null | sort -V | tail -1 || true)
+  [[ -n $newest ]] || { echo "no $1 build in $PW_BROWSERS" >&2; exit 1; }
+  exe=$(find "$newest" -maxdepth 2 -type f \( -name "$3" -o -name "$4" \) | head -1 || true)
+  [[ -n $exe ]] || { echo "no $3 or $4 in $newest" >&2; exit 1; }
+  rm -rf "$wanted" && mkdir -p "$wanted/chrome-linux"
+  ln -s "$(dirname "$exe")"/* "$wanted/chrome-linux/"
+  [[ -e "$wanted/chrome-linux/$3" ]] || ln -s "$exe" "$wanted/chrome-linux/$3"
+  touch "$wanted/INSTALLATION_COMPLETE" "$wanted/DEPENDENCIES_VALIDATED"
+}
+if [[ -d "$PW_BROWSERS/chromium-$PW_CHROMIUM" && -d "$PW_BROWSERS/chromium_headless_shell-$PW_HEADLESS" ]]; then
+  PW_PATH=$PW_BROWSERS
+else
+  PW_PATH="$DEV_TOOLS/pw-browsers"
+  mkdir -p "$PW_PATH"
+  pw_alias chromium "$PW_CHROMIUM" chrome chrome
+  pw_alias chromium_headless_shell "$PW_HEADLESS" headless_shell chrome-headless-shell
+  for other in "$PW_BROWSERS"/*; do  # ffmpeg and the rest, as they are
+    case "$(basename "$other")" in chromium-[0-9]*|chromium_headless_shell-[0-9]*) ;; *) ln -sfn "$other" "$PW_PATH/" ;; esac
+  done
+fi
 
 # npm packages: the resolver's engine, the EPC library and the JSON schema validator of GS1's suite
 npm_package() {  # <folder> <package@version> [module]
@@ -107,7 +140,7 @@ export GS1_RESOLVER_TESTSUITE="$DEV_TOOLS/gs1-testsuite"
 export GS1_WEB_VOCABULARY="$DEV_TOOLS/gs1-webvoc/v1.16/gs1Voc.jsonld"
 export COMPOSE_BIN="$DEV_TOOLS/bin/docker-compose"
 export NGINX_BIN="$DEV_TOOLS/nginx/sbin/nginx"
-export PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
+export PLAYWRIGHT_BROWSERS_PATH="$PW_PATH"
 export PYTHONUNBUFFERED=1
 VARS
 fi

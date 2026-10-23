@@ -652,7 +652,9 @@ packages and the browser are cached. Each job's result, with its check counts, i
 
 **Claude Code cloud sessions.** `CLAUDE.md` holds the conventions of this repository for Claude Code, and
 `.claude/hooks/session-start.sh` prepares a cloud session for the tests: the same pieces and pinned versions as
-the CI setup, installed into `~/.cache/dev-tests`, with the variables the programs read.
+the CI setup, installed into `~/.cache/dev-tests`, with the variables the programs read. When the image's
+Chromium (`/opt/pw-browsers`) is newer than the build the pinned Playwright wants, the hook links it under that
+build's names (`~/.cache/dev-tests/pw-browsers`) and points `PLAYWRIGHT_BROWSERS_PATH` there.
 
 The official integration test `tests/setup_test.py` needs the running stack and reads the token from
 `SESSION_TOKEN`. The screenshots of this README and of the user guide are produced by

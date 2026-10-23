@@ -130,7 +130,7 @@ so the overview tells which links people actually open.
 ### The label and barcode generator: print-ready, by the GS1 rules
 
 <p align="center">
-  <img src="Documentation/images/guide/label-panel.png" alt="The label block: the QR code with its human readable text, the downloads and the label options" width="760">
+  <img src="Documentation/images/guide/label-epc.png" alt="The label block: a QR code with an EAN-13 beside it, the downloads, the label options and the RFID and NFC block open with the item's SGTIN-198, its tag URI and the links for NFC" width="760">
 </p>
 
 Every record has its label, drawn as you type and downloaded as **SVG** (in millimetres, for artwork), **PNG**,

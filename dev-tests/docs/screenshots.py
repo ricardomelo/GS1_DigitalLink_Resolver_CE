@@ -8,6 +8,7 @@ here). Run it again after visual changes.
   python dev-tests/docs/screenshots.py
 """
 import json
+import math
 import os
 import re
 import sys
@@ -125,21 +126,43 @@ def save(page, name, clip=None, full=False):
     print("wrote", os.path.relpath(path, REPO))
 
 
-def save_element(page, name, selector, pad=12, extra_height=0):
-    """Screenshot of one element of the page (with a margin), wherever it is on the page."""
-    page.locator(selector).first.scroll_into_view_if_needed()
+def save_tall(page, name, height=None):
+    """The page from its top, `height` pixels (the whole page by default), in a window that tall: a full-page capture
+    lays the page out again and draws the sidebar over its left part."""
+    size = page.viewport_size
+    height = height or page.evaluate("document.documentElement.scrollHeight")
+    page.set_viewport_size({"width": size["width"], "height": height})
+    page.wait_for_timeout(500)
+    page.evaluate("window.scrollTo(0, 0)")
     page.wait_for_timeout(150)
-    box = page.locator(selector).first.bounding_box()
-    height = page.evaluate("window.innerHeight")
-    if box["y"] - pad >= 0 and box["y"] + box["height"] + pad + extra_height <= height:
-        # in view: captured as laid out (a full-page capture lays the page out again, without the sidebar of wide
-        # screens, and the element moves)
-        save(page, name, clip={"x": max(box["x"] - pad, 0), "y": box["y"] - pad,
-                               "width": box["width"] + 2 * pad, "height": box["height"] + 2 * pad + extra_height})
-        return
-    scroll_x, scroll_y = page.evaluate("[window.scrollX, window.scrollY]")
-    save(page, name, clip={"x": max(box["x"] + scroll_x - pad, 0), "y": max(box["y"] + scroll_y - pad, 0),
-                           "width": box["width"] + 2 * pad, "height": box["height"] + 2 * pad + extra_height}, full=True)
+    save(page, name, clip={"x": 0, "y": 0, "width": size["width"], "height": height})
+    page.set_viewport_size(size)
+    page.wait_for_timeout(150)
+
+
+def save_element(page, name, selector, pad=12, extra_height=0):
+    """Screenshot of one element of the page (with a margin), wherever it is on the page. Always captured in view, as
+    laid out: a full-page capture lays the page out again without the sidebar of wide screens, so the element moved
+    and the picture lost its left part. An element taller than the window gets a taller window for the capture."""
+    element = page.locator(selector).first
+    size = page.viewport_size
+    element.scroll_into_view_if_needed()
+    page.wait_for_timeout(150)
+    box = element.bounding_box()
+    need = math.ceil(box["height"] + 2 * pad + extra_height) + 8
+    if need > size["height"]:
+        page.set_viewport_size({"width": size["width"], "height": need})
+        page.wait_for_timeout(300)
+    box = element.bounding_box()
+    if box["y"] - pad < 0 or box["y"] + box["height"] + pad + extra_height > page.viewport_size["height"]:
+        page.evaluate("dy => window.scrollBy(0, dy)", box["y"] - pad)
+        page.wait_for_timeout(150)
+        box = element.bounding_box()
+    save(page, name, clip={"x": max(box["x"] - pad, 0), "y": max(box["y"] - pad, 0),
+                           "width": box["width"] + 2 * pad, "height": box["height"] + 2 * pad + extra_height})
+    if page.viewport_size != size:
+        page.set_viewport_size(size)
+        page.wait_for_timeout(150)
 
 
 os.makedirs(OUT, exist_ok=True)
@@ -203,7 +226,7 @@ with sync_playwright() as p:
     # Editor: GTIN with variant, batch and serial
     open_record(page, "09506000134376", {"22": "V1", "10": "B42", "21": "S1001"})
     page.click("#check-links"); page.wait_for_timeout(1200)
-    save(page, "portal-editor.png", full=True)
+    save_tall(page, "portal-editor.png")
 
     # QR code panel with data attributes (needs the GS1 Barcode Syntax Engine: GS1_SYNTAX_ENGINE_DIR)
     if syntax.ENGINE.available:
@@ -265,6 +288,13 @@ def guide_images(locale: str, folder: str, description: str) -> None:
         open_record(page, "09506000134376", {"22": "V1", "10": "B42", "21": "S1001"})
         save_element(page, f"{folder}/label-panel.png", ".label-panel")
         save_element(page, f"{folder}/step1-serial.png", "section.step:first-of-type")
+        # the same label with an EAN-13 beside the QR code and the RFID and NFC block open (the README's tour)
+        page.select_option("#opt-linear", "auto"); page.wait_for_timeout(800)
+        page.click("#epc summary"); page.select_option("#epc-prefix", "7")      # GS1 Company Prefix 9506000
+        page.wait_for_selector("#epc-out dt"); page.wait_for_timeout(500)
+        save_element(page, f"{folder}/label-epc.png", ".label-panel")
+        page.select_option("#epc-prefix", ""); page.click("#epc summary")
+        page.select_option("#opt-linear", "none"); page.wait_for_timeout(500)
 
         # Saving a batch of a GTIN without a record of its own (section 2.5.9), and copying targets
         open_record(page, "09506000134901", {"10": "L1"})
@@ -622,9 +652,7 @@ def requests_images(browser, folder: str, locale: str) -> None:
     save_element(page, f"{folder}/requests-retention.png", "#requests-retention")
     page.goto(BASE + "#overview"); page.wait_for_timeout(1500)   # the overview (ADR 0007), the same month
     page.wait_for_selector("#overview-map circle.map-city")     # with the map of its requests (ADR 0006 §13)
-    # the menu closed: a full-page capture draws the sidebar over the page's left part
-    page.add_style_tag(content=".sidebar { display: none !important; }"); page.wait_for_timeout(300)
-    save(page, f"{folder}/overview.png", clip={"x": 0, "y": 0, "width": 1280, "height": 1900}, full=True)   # to the map
+    save_tall(page, f"{folder}/overview.png", 1900)                 # down to the map
     ctx.close()
 
 

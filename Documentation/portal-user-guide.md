@@ -464,6 +464,8 @@ a shorter content.
 **RFID and NFC (EPC).** For every key the EPC Tag Data Standard encodes, the block offers *RFID and NFC (EPC)* once the
 record holds what the EPC needs:
 
+![The label with an EAN-13 beside the QR code and the RFID and NFC block open](images/guide/label-epc.png)
+
 | Key | EPC | Needs first |
 |---|---|---|
 | GTIN | SGTIN-96 (a numeric serial number without leading zeros), else SGTIN-198 | a serial number (21) |

@@ -41,6 +41,9 @@ operation tools a production service needs. Free and open source, installed with
   page. Both are set in the portal, take effect within 30 seconds and are counted in the overview.
 - **Built for many.** One installation serves many organisations, each with its own GS1 Company Prefixes, users,
   domains, brands, limits and audit trail.
+- **Built to scale.** Python, Flask, MongoDB and nginx in Docker; every service stateless and replicated at will,
+  the GS1 syntax check in process, the request log written in the background — see
+  [the stack and the architecture](#software-stack-and-an-architecture-built-to-scale).
 - **Yours, in looks and in language.** Your logo, your colours, your title — in twelve languages, Arabic (right to
   left) included.
 - **Tested like a product.** More than 4,700 automated checks in 68 programs — resolver, APIs, portal, browsers,
@@ -228,6 +231,35 @@ Every sign-in, refused sign-in, record change, import, export, change of users, 
 appearance is in the **audit trail**, filtered by user, period and identifier and exported to CSV; each organisation
 has its own, and what the server administrator did to it is tagged. Every record has its **history**: who changed
 what and when, each version in full, restorable.
+
+### Software stack and an architecture built to scale
+
+| Layer | Technology |
+|---|---|
+| **Resolver, data entry API, portal** | Python 3.12, Flask 3.1 and Flask-RESTX (the official services' framework), served by gunicorn 26 |
+| **GS1 rules** | The [GS1 Barcode Syntax Engine](https://github.com/gs1/gs1-syntax-engine) 1.4.1 — its C library inside each service, the same release everywhere — and GS1's Digital Link toolkit on Node.js 24 for compression |
+| **Database** | MongoDB 7: the official records, the request log and the portal's own database (users, history, audit trail, jobs), which the portal reaches with a user of its own |
+| **Front end** | The portal in plain JavaScript, HTML and CSS — no framework, no build step — with D3 and TopoJSON for the maps; 12 languages, right to left included |
+| **Labels and files** | segno (QR code), libzint (Data Matrix, GS1 DataMatrix), Pillow and fontTools (PNG, PDF, outlined SVG text), openpyxl (Excel) |
+| **Sign-in and domains** | Salted scrypt passwords, OpenID Connect with PyJWT, DNS proofs with dnspython, HTTPS certificates by Certbot |
+| **Edge and operation** | nginx 1.30 in front, Docker Compose, an interactive installer for Ubuntu 22.04 and 24.04, a daily backup, a job worker |
+| **Quality** | pytest, Playwright with Chromium, mongomock and a real MongoDB in CI, GS1's resolver test suite and JSON schemas, GitHub Actions in six jobs |
+
+The architecture is designed to **scale out** from the first install:
+
+- **Stateless services.** The resolver, the data entry API, the portal and the job worker keep no state of their own:
+  every one runs as many containers as `.env` asks (`*_REPLICAS`), each with several server processes
+  (`*_PROCESSES`). The proxy asks Docker's DNS for the replicas every 10 seconds and shares the requests among them,
+  so replicas are added or removed without a restart.
+- **A resolution never waits.** The GS1 syntax check runs in the resolver's own process (about 2 µs a check, its
+  recent answers kept, where the official code started a Node.js process of about 46 ms for each request); the
+  request log is written by a background thread in batches of up to 500 events, so a scan never waits for the
+  database; the hourly housekeeping counts each day into aggregates, so the overview reads days, not millions of scans.
+- **Long work off the request path.** Imports, link checks and e-mail are jobs in the database, claimed by any number
+  of workers, resumed where they stopped if a worker dies; housekeeping that must run once takes a lock, so replicas
+  never repeat it.
+- **Room to grow.** Scaling out the resolver, then moving the database to a MongoDB replica set, are the steps of the
+  operator's guide's load-test plan, with a load-test script, to size an installation before production.
 
 ### And more
 

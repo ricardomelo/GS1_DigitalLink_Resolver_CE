@@ -1148,6 +1148,11 @@ The table of every behaviour change, with the clause of the standard, is in the 
   had every link twice (official pull request #128; its fix applied `_find_matching_link()` to the linkset objects,
   which carry no linktype, so a link in another language replaced the type's links). The portal sends it when two
   people create the same record at once and when it restores a key's records after a failed rewrite.
+- `PUT` and a `DELETE` of links name one entry by the body's `qualifiers` (none: the key's own entry):
+  `_matched_record_index()`; when no entry of the key has them, 404 `Record not found: <id><qualifiers>`
+  (`_record_not_found()`) and nothing is written. The official code fell back to the document's first entry, so a
+  `PUT` for a batch the key did not have changed the key's first record, and a `DELETE` removed its links. The portal
+  only sends them for entries it has just read; the stand-in (`mock_data_entry.py`) answers 404 too.
 
 ## 11. Proxy and home page (`frontend_proxy_server/`)
 

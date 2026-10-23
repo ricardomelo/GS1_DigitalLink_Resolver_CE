@@ -737,10 +737,26 @@ def _merged_entry(db_doc: dict[str, Any], existing_entry: dict[str, Any], new_en
     return _author_db_linkset_document(existing_v3)['data']['data'][0]
 
 
+def _matched_record_index(v3_list: list[dict[str, Any]], qualifiers: list[dict[str, str]]) -> int | None:
+    """
+    The index of the record (v3 item) of a document whose qualifiers are the given ones, or None.
+    Without qualifiers this is the key's own record, not the first record of the document.
+    """
+    for i, v3_item in enumerate(v3_list):
+        if _do_qualifiers_match(v3_item.get('qualifiers', []), qualifiers):
+            return i
+    return None
+
+
+def _record_not_found(document_id: str, qualifiers: list[dict[str, str]]) -> dict[str, Any]:
+    path = ''.join(f'/{ai}/{value}' for item in qualifiers or [] if isinstance(item, dict) for ai, value in item.items())
+    return {"response_status": 404, "error": f"Record not found: {document_id}{path or ' (no qualifiers)'}"}
+
+
 def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any], int]:
     """
     Idempotent update of an existing document.
-    - Returns 404 if the document does not exist.
+    - Returns 404 if the document does not exist, or has no record with the payload's qualifiers.
     - Preserves fields not present in the payload.
     - Merges links: matches by (linktype, hreflang, context).
       Matching links are updated; unmatched links are added.
@@ -758,13 +774,10 @@ def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, A
         if not existing_v3_list:
             return {"response_status": 500, "error": "Failed to convert existing document"}, 500
 
-        # 3. Find the matching v3 item by qualifiers (default: no qualifiers)
-        payload_qualifiers = data.get('qualifiers', [])
-        matched_idx = 0
-        for i, v3_item in enumerate(existing_v3_list):
-            if _do_qualifiers_match(v3_item.get('qualifiers', []), payload_qualifiers):
-                matched_idx = i
-                break
+        # 3. Find the matching v3 item by qualifiers (default: no qualifiers); none is a 404, not the first record
+        matched_idx = _matched_record_index(existing_v3_list, data.get('qualifiers', []))
+        if matched_idx is None:
+            return _record_not_found(document_id, data.get('qualifiers', [])), 404
 
         matched_v3 = existing_v3_list[matched_idx]
 
@@ -817,7 +830,7 @@ def delete_links(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any]
     """
     Remove specific links from an existing document.
     Links are matched by the uniqueness key (linktype, hreflang, context).
-    Returns 404 if the document does not exist.
+    Returns 404 if the document does not exist, or has no record with the payload's qualifiers.
     Returns 404 if none of the requested links were found in the document.
     """
     try:
@@ -833,13 +846,10 @@ def delete_links(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any]
         if not existing_v3_list:
             return {"response_status": 500, "error": "Failed to convert existing document"}, 500
 
-        # 3. Find matching v3 item by qualifiers
-        payload_qualifiers = data.get('qualifiers', [])
-        matched_idx = 0
-        for i, v3_item in enumerate(existing_v3_list):
-            if _do_qualifiers_match(v3_item.get('qualifiers', []), payload_qualifiers):
-                matched_idx = i
-                break
+        # 3. Find matching v3 item by qualifiers; none is a 404, not the first record
+        matched_idx = _matched_record_index(existing_v3_list, data.get('qualifiers', []))
+        if matched_idx is None:
+            return _record_not_found(document_id, data.get('qualifiers', [])), 404
 
         matched_v3 = existing_v3_list[matched_idx]
 

@@ -9,7 +9,9 @@ checks, through Flask's test client:
     "Authorize" button of /api/docs sends the token with them;
   * the registration rules of GS1-Conformant Resolver 1.2.1, section 2.5.9 (qualifiers allowed for each
     key, AI 235 alone, no AI 22 or AI 10 with AI 21) on POST /new and PUT, and the informative qualifiers
-    of a serial-number record: stored, returned, listed in /summary, changed and cleared by PUT.
+    of a serial-number record: stored, returned, listed in /summary, changed and cleared by PUT;
+  * POST /new on a record that exists merges its links as PUT does; PUT and a DELETE of links with qualifiers no
+    record of the key has answer 404 and change nothing.
 
   pip install -r data_entry_server/src/requirements.txt
   python dev-tests/resolver/test_data_entry_api.py
@@ -156,7 +158,8 @@ r = client.put("/api/01/09506000134352", json={"qualifiers": [{"21": "S1"}], "in
 data = client.get("/api/01/09506000134352", headers=AUTH).get_json()["data"]
 check("PUT with an empty list clears them", any(
     e.get("qualifiers") == [{"21": "S1"}] and "informativeQualifiers" not in e for e in data), data)
-r = client.put("/api/01/09506000134352", json={"qualifiers": [{"10": "B1"}], "informativeQualifiers": [{"22": "V1"}]}, headers=AUTH)
+r = client.put("/api/01/09506000134352", json={"qualifiers": [{"22": "V1"}, {"10": "B1"}], "informativeQualifiers": [{"22": "V2"}]},
+               headers=AUTH)
 check("PUT refuses informative qualifiers on a batch record → 400", r.status_code == 400, r.get_data(as_text=True))
 r = post(entry(qualifiers=[{"21": "S1"}], informativeQualifiers=[{"10": "B9"}]))
 data = client.get("/api/01/09506000134352", headers=AUTH).get_json()["data"]
@@ -185,6 +188,27 @@ post(entry(qualifiers=[{"10": "B1"}], links=[{**PIP[0], "hreflang": ["pt"], "hre
 links = batch_links()
 check("POST /new on an existing record: a link in other languages added",
       links is not None and sorted(l.get("href") for l in links) == ["https://example.com/p2", "https://example.com/pt"], links)
+
+# PUT and a DELETE of links name one record by its qualifiers: none of the key's records with them is a 404, not a
+# change to the key's first record
+before = copy.deepcopy(STORE)
+r = client.put("/api/01/09506000134352", json={"qualifiers": [{"10": "B404"}], "links": PIP}, headers=AUTH)
+check("PUT with qualifiers no record of the key has → 404 naming the record, nothing changed",
+      r.status_code == 404 and "/10/B404" in r.get_json().get("error", "") and STORE == before, r.get_data(as_text=True))
+r = client.delete("/api/01/09506000134352", json={"qualifiers": [{"10": "B404"}],
+                                                   "links": [{"linktype": "gs1:pip", "hreflang": ["en"], "context": []}]},
+                  headers=AUTH)
+check("DELETE of links with qualifiers no record of the key has → 404, nothing removed",
+      r.status_code == 404 and STORE == before, r.get_data(as_text=True))
+post(entry("/01/09521234000013", qualifiers=[{"10": "B1"}]))
+before = copy.deepcopy(STORE)
+r = client.put("/api/01/09521234000013", json={"itemDescription": "z", "links": PIP}, headers=AUTH)
+check("PUT without qualifiers on a key with only a batch record → 404, the batch unchanged",
+      r.status_code == 404 and STORE == before, r.get_data(as_text=True))
+r = client.delete("/api/01/09521234000013", json={"links": [{"linktype": "gs1:pip", "hreflang": ["en"], "context": []}]},
+                  headers=AUTH)
+check("DELETE of links without qualifiers on that key → 404, the batch keeps its link",
+      r.status_code == 404 and STORE == before, r.get_data(as_text=True))
 
 # ---------------------------------------------------------------- POST /validate: what POST /new would refuse, nothing stored
 before = copy.deepcopy(STORE)

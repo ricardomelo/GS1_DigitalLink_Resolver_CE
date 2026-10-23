@@ -346,8 +346,8 @@ documentation: `https://<FQDN>/api/docs` (**Authorize** with `Bearer <token>`).
 | `POST /api/new` | official | Create records; appends to an existing document (v3 format, list accepted, v2 converted) |
 | `GET /api/{AI}/{value}` | official | Read every record (entry) of a key |
 | `GET /api/{AI}/{value}/{qualifiers…}` | official | Read the entry of a qualifier set |
-| `PUT /api/{AI}/{value}` | official | Merge-update an entry (links matched by type, language and context) |
-| `DELETE /api/{AI}/{value}` | official | Delete the document, or only the links sent in the body |
+| `PUT /api/{AI}/{value}` | official | Merge-update an entry (links matched by type, language and context); 404 when no entry of the key has the qualifiers sent |
+| `DELETE /api/{AI}/{value}` | official | Delete the document, or only the links sent in the body (of the entry with the qualifiers sent; 404 when there is none) |
 | `GET /api/index` | official, **now protected** | Identifiers of every document |
 | `GET /api/summary[?links=true]` | **new** | One line per record: anchor, qualifiers, description, default link type, number of links (and the links) |
 | `POST /api/validate` | **new** | What `POST /new` would refuse in one or more entries (registration rules and values), nothing stored: `{"problems": [{"item", "error"}]}` |

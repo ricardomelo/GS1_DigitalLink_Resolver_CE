@@ -1,6 +1,7 @@
 """
 In-memory stand-in for the Resolver CE data-entry API, used by the portal end-to-end test.
 It reproduces the behaviours the portal must cope with: POST /new on an existing entry and PUT both merge by (linktype, hreflang, context), DELETE removes links or the whole document;
+PUT and a DELETE of links with qualifiers no record of the key has answer 404;
 informativeQualifiers are kept like the real API does, and a registration with AI 21 plus AI 22 or
 AI 10 is refused (GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2).
 Bearer token: "tok".
@@ -62,9 +63,9 @@ def doc(c,v):
     if request.method=="GET": return jsonify(data=v3(did),response_status=200)
     d=request.get_json(silent=True)
     ents=DB[did]["entries"]
-    idx=0
-    for i,e in enumerate(ents):
-        if qm(e["qualifiers"],(d or {}).get("qualifiers",[])): idx=i;break
+    idx=next((i for i,e in enumerate(ents) if qm(e["qualifiers"],(d or {}).get("qualifiers",[]))),None)
+    if idx is None and (request.method=="PUT" or (d and d.get("links"))):
+        return jsonify(response_status=404,error="Record not found"),404
     if request.method=="PUT":
         e=ents[idx]
         if "itemDescription" in d: e["itemDescription"]=d["itemDescription"]

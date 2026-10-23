@@ -5,7 +5,7 @@ behind stand-ins that did more than the real component (Documentation/history.md
 the data entry stand-in honest. It covers what the portal relies on: POST /new (a new key, a new record of a key, a
 record that exists),
 PUT (links merged by type, language and context; the shared default link type;
-informative qualifiers), DELETE of some links, GET and GET /summary with links — with and without links of type
+informative qualifiers; 404 for a record the key does not have), DELETE of some links (404 likewise), GET and GET /summary with links — with and without links of type
 gs1:defaultLink (Documentation/adr/0011-item-page.md, amendment of 17 October 2026).
 
 No Docker, no MongoDB: the real data entry application with its database layer replaced by a dictionary, as in
@@ -166,6 +166,19 @@ succeeded("default links in two languages", both("put", "/01/09506000134352", re
     [link("gs1:pip", "https://a.example/b-es", "es"), link("gs1:defaultLink", "https://a.example/b-es", "es")],
     "gs1:defaultLink", [{"10": "B1"}])))
 same("default links in two languages")
+
+# PUT and a DELETE of links with qualifiers no record of the key has: 404 on both, nothing changed (the link is one
+# the key's first record has, where the official code removed it)
+real, mock = both("put", "/01/09506000134352", record([link("gs1:pip", "https://a.example/x")], "gs1:defaultLink",
+                                                      [{"10": "B404"}]))
+check("PUT of a record that does not exist: both answer 404", real.status_code == mock.status_code == 404,
+      (real.status_code, mock.status_code))
+same("after the PUT of a record that does not exist")
+real, mock = both("delete", "/01/09506000134352", {"qualifiers": [{"10": "B404"}],
+                                                   "links": [{"linktype": "gs1:pip", "hreflang": ["en"], "context": []}]})
+check("DELETE of links of a record that does not exist: both answer 404", real.status_code == mock.status_code == 404,
+      (real.status_code, mock.status_code))
+same("after the DELETE of links of a record that does not exist")
 
 real, mock = both("get", "/summary?links=true")
 check("GET /summary with links gives the same lines", normal(real.get_json()) == normal(mock.get_json()),

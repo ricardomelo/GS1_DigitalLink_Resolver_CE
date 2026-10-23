@@ -2,6 +2,16 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### A list of a key's records (session 22)
+- **Fixed: `POST /new` with a list kept only the first record of a key that exists** (data entry API, deliberate
+  change to official code): a list holding several records of one key (the key's own record and a batch, say)
+  answered 201 but, when the key was already registered, stored only the first record and dropped the others; and a
+  list naming a record twice for a new key stored it twice, with the same qualifiers. Every record of the list is now
+  written, merged into a stored record with the same qualifiers (or one before it in the list) as `PUT` merges links,
+  and the key's document is written once. The portal sends such a list when it rewrites a key's document, after
+  deleting it, and when it restores a key's records after a failed rewrite: that restore lost records if the failed
+  write had created the document. A system calling the data entry API directly was affected. Commit `9e0c266`.
+
 ### A record the key does not have (session 21)
 - **Fixed: `PUT` and a `DELETE` of links for a record the key does not have changed the key's first record** (data
   entry API, deliberate change to official code): a `PUT /api/<key>` whose qualifiers matched none of the key's

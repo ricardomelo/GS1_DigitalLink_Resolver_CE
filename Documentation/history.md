@@ -985,6 +985,19 @@ record; it now names a batch that exists. The first parity check of the `DELETE`
 record did not have, so the official code answered 404 as well and its mutation went uncaught; it now names one the
 first record has. 8 mutations, all caught.
 
+## Session 22 — a list of a key's records
+
+Nothing new on staging or in the plan's threads, and nothing new in the official repository (`master` still the
+fork's base; no pull request after #129). Looking for other places where the data entry API quietly wrote less than
+it was sent, after session 21's fallback to the first record, found one: `_process_document_upsert()` returned after
+the first entry of a document that existed, so `POST /new` with a list of several records of a registered key stored
+only the first and answered 201; a new key kept a record listed twice as two entries (`9e0c266`). It came with the
+official change that made a list use the upsert instead of deleting and creating the document (official commit
+`aae5ebc`, for issue #121). The portal's stand-in wrote every record, so the parity program now compares lists too. 5 mutations,
+all caught. The container's Chromium had moved to build 1243 while the pinned Playwright looks for 1194, so the
+browser programs could not start until a folder of links gave 1243 the old names (for the session only; the hook is
+unchanged).
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

@@ -90,7 +90,10 @@ Constraints:
   organisation, the operator or a user's prefixes; the installation's documents `|*` for the whole installation, so
   that requests without a key count too) and today's raw events grouped the same way. Outcomes in the aggregates
   count every request, automated ones included (the aggregates do not split outcomes by device class): the quality
-  figures therefore count every request, the usage figures only people's.
+  figures therefore count every request, the usage figures only people's. Since ADR 0006 §14 people's figures and
+  the quality figures count requests with a GS1 primary key only, also for the whole installation (its documents per
+  key); its automated requests and answer times stay every request's, and its requests without a GS1 code are a
+  figure of their own (`usage.noKey`).
 - **Top lists** keep 10 entries on screen and 100 in the export.
 - **Records** are those the record list shows (`app.visible_records()`, shared with `GET /portal/api/records`);
   when the resolver cannot be read, `available` is false and the other groups are still answered.

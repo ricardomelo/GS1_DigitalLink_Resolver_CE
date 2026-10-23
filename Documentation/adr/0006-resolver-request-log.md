@@ -521,8 +521,9 @@ After section 11 the owner still found the list on staging full of requests with
 weaknesses (`/wp-admin/setup-config.php`, `/admin/.env`, `/2024/01/shell.php`). Section 11 leaves out requests
 without a key, but a path of two or more segments reaches the resolver's route `/<AI>/<value>`, and the route noted
 its first segment as the key: `wp-admin` with the value `setup-config.php`. Such a request had a "key", came with a
-browser's User-Agent, and was stored and listed (as `unknown`, 404: the official resolver looks the document up
-before checking the syntax). The overview was not misled — a key's figures need a company part, which only a
+browser's User-Agent, and was stored and listed (as `invalid`, 400: the syntax check refuses the path before any
+document is looked up; this section first said `unknown`, 404, from development tests whose stand-in for the check
+accepted every path — corrected on 23 October 2026 after the staging run). The overview was not misled — a key's figures need a company part, which only a
 numerical AI has — but a numerical first segment such as a year could reach its list of codes.
 
 ### 12.2 Decision
@@ -549,13 +550,13 @@ numerical AI has — but a numerical first segment such as a year could reach it
 | Point | Chosen | Not chosen |
 |---|---|---|
 | What is a key | a primary key of the dictionary | any numerical AI (a year, or a qualifier such as `/10/…`, would still be one); a valid GS1 Digital Link only (an invalid code read by a phone, a misprinted label, is what the operator looks for: section 11) |
-| A probe's answer | 404, as the official resolver gives it | 400 for a first segment that is no key (changes official behaviour that the conformance suite reads) |
+| A probe's answer | the official one, 400 (the syntax check refuses it before the database is read) | another status for a first segment that is no key (changes official behaviour that the conformance suite reads) |
 | The events of before | deleted once their day is counted, hidden from the list at once | left to expire (the list flooded for up to the retention) |
 
 ### 12.5 Consequences
 
 - The list holds scans of GS1 codes only; robots still count among the requests and in the overview's totals and
-  quality figures, as section 11 decided.
+  quality figures, as section 11 decided (until section 14).
 - The first housekeeping after the update goes through every counted day once more (one deletion by query).
 
 ## 13. Amendment of 23 October 2026 — the map on the overview
@@ -588,3 +589,60 @@ wait for it.
 
 - The map stops at the log's retention: a period longer than the events kept shows the days kept, and its text says
   how many of the period's requests have a place.
+
+## 14. Amendment of 23 October 2026 — people's figures count GS1 codes only
+
+### 14.1 Context
+
+Section 11 counts requests without a key instead of storing them, and section 12 made every probe one of them. Robots
+that send a browser's User-Agent are not *automated* for the resolver (section 3.1), so the whole installation's
+overview still counted them as people: among the **Scans**, in *How codes are scanned* and in the quality figures. On
+staging, section 11's count gave 2,737 such requests in seven days against about 125 scans by people, and the
+staging run of section 12 showed what they are answered: 400, refused by the syntax check. An organisation's
+figures were never affected: they are read from the documents per key, and a request without a key has no company
+part. Three options were put to the owner: (A) people's figures and the quality tiles count requests with a key
+only, the requests without a key shown apart; (B) every request without a key taken for an automated one; (C) as
+section 11 left it. **The owner took option A.**
+
+### 14.2 Decision
+
+1. **The whole installation's scans, page views and clicks, how codes are scanned (device, form, language, link
+   type, browser, country, city), the requests per day and the quality figures** are those of the requests with a GS1
+   primary key, read from the documents per key as an organisation's are. The **automated requests**, the average
+   answer time and the slowest day's 95th percentile stay the installation's (every request), as do the forwarding
+   figures.
+2. **Requests without a GS1 code**: a tile of the whole installation's overview (with the previous period, in its
+   exports), the installation's requests less those with a key — probes, malformed addresses, robots, whatever
+   their client; its title says what they are. An organisation's overview has none.
+3. **The monitoring's 404 spikes** (ADR 0008) count, for the installation as for an organisation, the 404s of GS1
+   primary keys in the last hour against the usual hourly number of the same.
+4. Documents per key whose `ai` is no primary key (kept by resolvers before section 12, such as `2024` for
+   `/2024/01/shell.php`) are left out everywhere, an organisation's figures included.
+
+### 14.3 Design
+
+- `portal/requestlog.py`: `collect()` answers also `keyed` (`total`, `days`) — the documents per key with `ai` in
+  `KEYS` and today's groups with such an `ai` (`KEY_SET`); for anything but the whole installation it is `total` and
+  `days` themselves. The documents per key are read for the previous period too (they were not for the whole
+  installation).
+- `portal/overview.py`: `usage_and_quality()` takes people's figures and the quality from `keyed`; `usage.noKey` and
+  `usage.previous.noKey` for the whole installation; `summary_rows()` adds `overview.noKey`.
+- `portal/monitor.py`: `spikes()` matches `ai` in `KEYS` in the events, the counts and the baseline (the documents
+  per key for `*`, the installation's documents `|*` before).
+- `portal/static/app.js`: the tile `#overview-tile-nokey` (shown when either period has any), `tile()`'s `title`;
+  `overview.noKey` and `overview.noKeyHint` in every language.
+
+### 14.4 Options considered
+
+| Point | Chosen | Not chosen |
+|---|---|---|
+| Robots with a browser's User-Agent | out of people's figures, counted apart (option A) | taken for automated clients (B: they would swell the automated requests, which mean integrations and crawlers); left as they were (C) |
+| Where the figures come from | the documents per key, already kept | a new field in the installation's daily documents (the days counted before it would lack it) |
+| The time taken | every request | requests with a key only (the resolver's load includes the probes) |
+
+### 14.5 Consequences
+
+- The whole installation's scans equal the sum of every scope's; the installation's total of requests is the scans,
+  the automated requests with a key, the item page's follow-ups and the requests without a GS1 code.
+- The overview of the whole installation reads the documents per key of both periods: more reads for a large
+  installation (the period's own were already read).

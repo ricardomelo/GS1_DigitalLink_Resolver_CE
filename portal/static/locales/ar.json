@@ -316,6 +316,8 @@
  "overview.group.governance": "الحوكمة",
  "overview.scans": "عمليات المسح",
  "overview.automated": "الطلبات الآلية",
+ "overview.noKey": "طلبات بلا رمز GS1",
+ "overview.noKeyHint": "عناوين لا تبدأ بمفتاح GS1، معظمها روبوتات تبحث عن ثغرات: يُرد عليها وتُحصى، ولا تدخل في عمليات المسح ولا في جودة الحلّ.",
  "overview.perDayAvg": "عمليات المسح يوميًا (المتوسط)",
  "overview.codesScanned": "الرموز الممسوحة",
  "overview.pageViews": "مشاهدات صفحة المنتج",

@@ -266,23 +266,25 @@ def _update_space(now: datetime) -> str | None:
 
 
 def spikes(now: datetime, tenant_list: list[dict]) -> dict[str, dict]:
-    """The 404 "unknown" of the last hour per scope ("*" the installation, or a tenant id) with the usual hourly
+    """The 404 "unknown" of GS1 primary keys in the last hour per scope ("*" the installation, or a tenant id) with the usual hourly
     number of the BASELINE_DAYS days before: {scope: {"count", "usual", "codes": [[anchor, n]], "spike"}}."""
     start = now - SPIKE_WINDOW
     found: dict[str, dict] = {"*": {"count": 0, "codes": {}}}
     for t in tenant_list:
         found[t["id"]] = {"count": 0, "codes": {}}
     quarter = start.replace(minute=start.minute - start.minute % 15, second=0, microsecond=0)
+    # codes nobody registered: requests with a GS1 primary key only, never a robot's probe (ADR 0006, section 14)
+    keyed = {"ai": {"$in": requestlog.KEYS}}
     groups = [*requestlog.events().aggregate([
-        {"$match": {"t": {"$gte": start, "$lt": now}, "o": "unknown"}},
+        {"$match": {"t": {"$gte": start, "$lt": now}, "o": "unknown", **keyed}},
         {"$group": {"_id": {"ai": "$ai", "v": "$v", "cp": "$cp"}, "n": {"$sum": 1}}}]),
         # and the counts of automated requests (ADR 0006, section 11), by whole quarters of an hour
         *requestlog.counts().aggregate([
-            {"$match": {"b": {"$gte": quarter, "$lt": now}, "o": "unknown"}},
+            {"$match": {"b": {"$gte": quarter, "$lt": now}, "o": "unknown", **keyed}},
             {"$group": {"_id": {"ai": "$ai", "v": "$v", "cp": "$cp"}, "n": {"$sum": "$n"}}}])]
     for group in groups:
         g, n = group["_id"], group["n"]
-        anchor = f"/{g['ai']}/{g['v']}" if g.get("ai") else "?"
+        anchor = f"/{g['ai']}/{g['v']}"
         scopes = ["*"]
         owner = requestlog.owner_of(g.get("cp"), tenant_list)
         if owner:
@@ -298,10 +300,10 @@ def spikes(now: datetime, tenant_list: list[dict]) -> dict[str, dict]:
     out = {}
     for scope, entry in found.items():
         if scope == "*":
-            query = {**span, "ai": {"$exists": False}}
+            query = {**span, **keyed}
         else:
             tenant_scope = requestlog.scope_filter(tenant_list, scope, [], False)
-            query = {"$and": [tenant_scope, span, {"ai": {"$exists": True}}]}
+            query = {"$and": [tenant_scope, span, keyed]}
         past = sum((doc.get("outcome") or {}).get("unknown", 0)
                    for doc in requestlog.daily().find(query, {"outcome": 1}))
         usual = past / hours

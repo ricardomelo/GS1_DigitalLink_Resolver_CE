@@ -316,6 +316,8 @@
  "overview.group.governance": "Gouvernance",
  "overview.scans": "Scans",
  "overview.automated": "Requêtes automatisées",
+ "overview.noKey": "Requêtes sans code GS1",
+ "overview.noKeyHint": "Adresses qui ne commencent pas par une clé GS1, surtout des robots à la recherche de failles : traitées et comptées, hors des scans et de la qualité de la résolution.",
  "overview.perDayAvg": "Scans par jour (moyenne)",
  "overview.codesScanned": "Codes scannés",
  "overview.pageViews": "Vues de la page de l’article",

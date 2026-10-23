@@ -316,6 +316,8 @@
  "overview.group.governance": "Yönetişim",
  "overview.scans": "Okutmalar",
  "overview.automated": "Otomatik istekler",
+ "overview.noKey": "GS1 kodu olmayan istekler",
+ "overview.noKeyHint": "GS1 anahtarıyla başlamayan adresler, çoğunlukla açık arayan robotlar: yanıtlanır ve sayılır, okutmalara ve çözümleme kalitesine dahil edilmez.",
  "overview.perDayAvg": "Günlük okutma (ortalama)",
  "overview.codesScanned": "Okutulan kodlar",
  "overview.pageViews": "Ürün sayfası görüntülemeleri",

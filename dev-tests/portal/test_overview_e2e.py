@@ -144,6 +144,7 @@ with sync_playwright() as p:
     scans = page.inner_text("#overview-tile-scans")
     check("usage: the organisation's scans by people (6 of the record, 3 of the unknown code)",
           "9" in scans.split("\n")[1], scans)
+    check("…no tile of requests without a GS1 code for an organisation", page.locator("#overview-tile-nokey").count() == 0)
     bars = page.eval_on_selector_all("#overview-chart .requests-bar", "bs => bs.length")
     check("…one bar per day of the period", bars == 30, bars)
     check("…the bars have a text alternative", "9 scans" in (page.get_attribute("#overview-chart", "aria-label") or ""),
@@ -240,6 +241,10 @@ with sync_playwright() as p:
     sign_in(root, "root", "root-password-long")
     check("a server administrator: the whole installation", "The whole installation" in root.inner_text("#overview-scope")
           and "10" in root.inner_text("#overview-tile-scans").split("\n")[1], root.inner_text("#overview-tile-scans"))
+    nokey = root.inner_text("#overview-tile-nokey") if root.locator("#overview-tile-nokey").count() else ""
+    check("…the requests without a GS1 code in a tile of their own, out of the scans, explained on hover (ADR 0006 §14)",
+          nokey.startswith("Requests without a GS1 code") and nokey.split("\n")[1] == "1"
+          and "robots" in (root.get_attribute("#overview-tile-nokey", "title") or ""), nokey)
     operation = root.inner_text("#overview-operation")
     check("…with the worker, e-mail and the daily counts", "Job worker" in operation and "E-mail" in operation
           and "Daily counts complete up to" in operation, operation)

@@ -137,6 +137,7 @@ event(OPER, 0, n=2, dev="desktop")
 event(OPER, 0, o="compressed", dev="desktop", s=200)    # a ?compress request: answered
 event(None, 0, o="invalid", dev="automated", p="/=1+1")
 event(None, 0, o="invalid", s=400, p="/probe")         # a person's mistyped address: no key
+event(None, 2, o="unknown", ai="2024", v="01", cp="01")  # a probe /2024/01/x.php as resolvers before section 12 kept it
 event(ACME_A, 40, n=4)
 event(ACME_A, 0, n=1, lang="=1+1")                 # a typed language, to prove cells are protected
 
@@ -215,9 +216,17 @@ check("…a compressed link's answer counts as answered", (oto_data["quality"]["
       == (3, 3), oto_data["quality"])
 
 root_data = root.get("/portal/api/overview").get_json()
-check("a server administrator: the whole installation, requests without a key included",
-      root_data["whole"] and root_data["usage"]["scans"] == 20 and root_data["usage"]["automated"] == 2
-      and root_data["quality"]["invalid"] == 2, (root_data["usage"]["scans"], root_data["quality"]["invalid"]))
+check("a server administrator: the whole installation, its scans and quality those of GS1 codes only (ADR 0006 §14)",
+      root_data["whole"] and root_data["usage"]["scans"] == 19 and root_data["usage"]["automated"] == 2
+      and root_data["quality"]["invalid"] == 0 and root_data["quality"]["unknown"] == 4,
+      (root_data["usage"]["scans"], root_data["usage"]["automated"], root_data["quality"]))
+check("…the requests without a GS1 code counted apart: the probe, the automated one, the probe kept with a year as key",
+      root_data["usage"]["noKey"] == 3 and root_data["usage"]["previous"]["noKey"] == 0, root_data["usage"])
+check("…how codes are scanned: no probe's device", root_data["usage"]["device"] == {"mobile": 16, "desktop": 3,
+                                                                                    "automated": 1},
+      root_data["usage"]["device"])
+check("…an organisation's overview has no such figure (it has no requests without a key)",
+      "noKey" not in data["usage"] and "noKey" not in oto_data["usage"]["previous"], sorted(data["usage"]))
 check("…but only codes in the lists of codes", all(c["key"] == "01" and c["value"] for c in root_data["usage"]["topCodes"])
       and len(root_data["usage"]["topCodes"]) == 4, root_data["usage"]["topCodes"])
 check("…the slowest day's 95th percentile (the whole installation's daily counts)",
@@ -304,10 +313,17 @@ check("export: CSV with a BOM, ';' and the message codes as labels when none are
       text.startswith("﻿") and rows[0] == ["overview.col.group", "overview.col.indicator", "overview.col.value",
                                                 "overview.col.previous"]
       and ["overview.group.usage", "overview.scans", "16", "0"] in rows, rows[:3])
+check("…no requests without a GS1 code for an organisation",
+      not any(row[1] == "overview.noKey" for row in rows), [row for row in rows if "noKey" in row[1]])
 check("…cells protected", any(row[2].startswith("'=") for row in rows) and not any(row[2].startswith("=") for row in rows),
       [row for row in rows if "1+1" in row[2]])
 events = store.col("journal").count_documents({"action": "overview-export"})
 check("…each export is a journal event", events == 2, events)
+r = root.post("/portal/api/overview/export", json={"format": "csv", "days": 30, "labels": {}}, headers=ORIGIN)
+check("…the whole installation's export: the requests without a GS1 code with the previous period",
+      ["overview.group.usage", "overview.noKey", "3", "0"] in list(csv.reader(io.StringIO(r.data.decode("utf-8")
+                                                                                    .lstrip("\ufeff")), delimiter=";")),
+      r.status_code)
 check("…a writing call needs the portal's origin", ana.post("/portal/api/overview/export", json={"format": "csv"},
                                                              headers={"Origin": "https://evil.example"}).status_code == 403)
 

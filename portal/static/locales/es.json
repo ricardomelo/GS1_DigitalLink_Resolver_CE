@@ -316,6 +316,8 @@
  "overview.group.governance": "Gobernanza",
  "overview.scans": "Lecturas",
  "overview.automated": "Solicitudes automatizadas",
+ "overview.noKey": "Solicitudes sin código GS1",
+ "overview.noKeyHint": "Direcciones que no empiezan por una clave GS1, casi siempre robots que buscan fallos: respondidas y contadas, fuera de las lecturas y de la calidad de la resolución.",
  "overview.perDayAvg": "Lecturas por día (promedio)",
  "overview.codesScanned": "Códigos leídos",
  "overview.pageViews": "Visitas a la página del artículo",

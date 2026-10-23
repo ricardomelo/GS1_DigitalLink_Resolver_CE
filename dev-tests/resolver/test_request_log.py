@@ -67,7 +67,9 @@ os.environ["RESOLVER_GEOIP_DB"] = ""          # no location until the GeoIP sect
 import web_logic  # noqa: E402
 import request_log  # noqa: E402
 import geoip  # noqa: E402
+import gs1_syntax  # noqa: E402
 
+SYNTAX_CHECK = web_logic._call_gs1_toolkit
 web_logic._call_gs1_toolkit = lambda s: True
 web_logic.uncompress_gs1_digital_link = lambda link: (
     {"SUCCESS": True, "identifiers": [{"01": "07898357410015"}], "qualifiers": [{"10": "123"}]} if link == "AbCdEf"
@@ -204,11 +206,14 @@ c = counted()
 check("…from a phone's browser too: no key, counted with its device and browser", e is None and c
       and c.get("dev") == "mobile" and c.get("br") == "app" and c.get("o") == "invalid", (e, COUNTED))
 DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36"
+# The syntax check as a resolver makes it (the GS1 Barcode Syntax Engine; without it here, a check that refuses
+# everything, as the engine refuses these three paths): the stub above would let a probe reach the database
+web_logic._call_gs1_toolkit = SYNTAX_CHECK if gs1_syntax.available() else (lambda s: False)
 r, e = ask("/wp-admin/setup-config.php", agent=DESKTOP)
 c = counted()
-check("a probe of two segments from a browser (404, as the official resolver answers it): its first segment is no "
-      "primary key, counted, not stored; no key in the count", r.status_code == 404 and e is None and c
-      and "ai" not in c and "v" not in c and "cp" not in c and c.get("o") == "unknown" and c.get("dev") == "desktop",
+check("a probe of two segments from a browser (400, as the syntax check answers it): its first segment is no "
+      "primary key, counted, not stored; no key in the count", r.status_code == 400 and e is None and c
+      and "ai" not in c and "v" not in c and "cp" not in c and c.get("o") == "invalid" and c.get("dev") == "desktop",
       (r.status_code, e, COUNTED))
 r, e = ask("/2024/01/shell.php", agent=DESKTOP)
 c = counted()
@@ -216,7 +221,9 @@ check("…a number that is no primary key (a year) neither: counted, no key, no 
       and "ai" not in c and "cp" not in c, (e, COUNTED))
 r, e = ask("/01/wp-login.php", agent=DESKTOP)
 check("…but a primary key with a value that is not one is a GS1 code read wrong: stored, with its key",
-      e and e.get("ai") == "01" and e.get("v") == "wp-login.php" and e.get("o") == "unknown", e)
+      r.status_code == 400 and e and e.get("ai") == "01" and e.get("v") == "wp-login.php" and e.get("o") == "invalid",
+      (r.status_code, e))
+web_logic._call_gs1_toolkit = lambda s: True
 check("the resolver's primary keys are those of GS1's dictionary (the portal's)",
       request_log.KEY_AIS == set(json.load(open(os.path.join(REPO, "portal", "gs1_dictionary.json")))["ais"].keys()
                                  & {code for code, entry in json.load(open(os.path.join(REPO, "portal",

@@ -316,6 +316,8 @@
  "overview.group.governance": "ガバナンス",
  "overview.scans": "スキャン",
  "overview.automated": "自動リクエスト",
+ "overview.noKey": "GS1 コードのないリクエスト",
+ "overview.noKeyHint": "GS1 キーで始まらないアドレス（主に脆弱性を探るロボット）。応答・集計されますが、スキャン数と解決の品質には含まれません。",
  "overview.perDayAvg": "1日あたりのスキャン（平均）",
  "overview.codesScanned": "スキャンされたコード",
  "overview.pageViews": "アイテムページの表示回数",

@@ -316,6 +316,8 @@
  "overview.group.governance": "गवर्नेंस",
  "overview.scans": "स्कैन",
  "overview.automated": "स्वचालित अनुरोध",
+ "overview.noKey": "GS1 कोड के बिना अनुरोध",
+ "overview.noKeyHint": "ऐसे पते जो GS1 कुंजी से शुरू नहीं होते, ज़्यादातर कमज़ोरियाँ खोजने वाले रोबोट: इनका उत्तर दिया जाता है और गिना जाता है, पर स्कैन और रिज़ॉल्यूशन की गुणवत्ता में नहीं।",
  "overview.perDayAvg": "प्रति दिन स्कैन (औसत)",
  "overview.codesScanned": "स्कैन किए गए कोड",
  "overview.pageViews": "आइटम पेज व्यू",

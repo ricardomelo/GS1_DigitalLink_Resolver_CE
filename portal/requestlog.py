@@ -64,6 +64,7 @@ SETTING_FINAL = "requestStats.finalUntil"
 # a key that is none (see NOISE) became noise: a new name, so every counted day is looked at once more
 SETTING_FOLDED = "requestLog.noiseFoldedUntil"
 KEYS = sorted(gs1.PRIMARY_KEYS)             # an event's "ai" must be one of them: the resolver's KEY_AIS
+KEY_SET = frozenset(KEYS)
 # Events now counted, not stored: automated clients' and those naming no GS1 primary key (no "ai", or a probe's first
 # segment such as "wp-admin", which resolvers before 23 October 2026 recorded as one)
 NOISE = {"$or": [{"dev": "automated"}, {"ai": {"$nin": KEYS}}]}
@@ -796,14 +797,16 @@ def _add(target: dict, doc: dict) -> None:
 
 def collect(scope: dict, whole: bool, first: date, last: date, keys: bool = True) -> dict:
     """The requests of the days [first, last] of the installation's time zone in a scope (ADR 0007, section 3.2):
-    {"total": entry, "days": {day: entry}, "keys": {(ai, value): entry with "cp"}, "p95": [daily p95 values]}, an
-    entry being {"total", "automated", "outcome", "device", "form", "language", "linkType", "browser", "country",
-    "place", "ms", "msMax"} with
-    dictionaries of counts. Finished days come from the aggregates, today from the raw events. For the whole
-    installation the totals come from the installation's documents (requests without a key included); otherwise
-    from the documents per key of the scope."""
+    {"total": entry, "days": {day: entry}, "keyed": {"total": entry, "days": {day: entry}}, "keys": {(ai, value): entry
+    with "cp"}, "p95": [daily p95 values]}, an entry being {"total", "automated", "outcome", "device", "form",
+    "language", "linkType", "browser", "country", "place", "ms", "msMax"} with dictionaries of counts. Finished days
+    come from the aggregates, today from the raw events. For the whole installation "total" and "days" come from the
+    installation's documents (requests without a key included); otherwise from the documents per key of the scope.
+    "keyed" holds the requests with a GS1 primary key only (ADR 0006, section 14), the same as "total" for anything
+    but the whole installation. keys=False leaves "keys" empty."""
     current = today()
     total, days, per_key, p95 = _empty(), {}, {}, []
+    keyed_total, keyed_days = (total, days) if not whole else (_empty(), {})
     past_last = min(last, current - timedelta(days=1))
     if first <= past_last:
         span = {"day": {"$gte": first.isoformat(), "$lte": past_last.isoformat()}}
@@ -813,15 +816,14 @@ def collect(scope: dict, whole: bool, first: date, last: date, keys: bool = True
                 _add(days.setdefault(doc["day"], _empty()), doc)
                 if doc.get("p95") is not None:
                     p95.append(doc["p95"])
-        if keys or not whole:
-            query = {"$and": [scope, span, {"ai": {"$exists": True}}]} if scope else {**span, "ai": {"$exists": True}}
-            for doc in daily().find(query):
-                if not whole:
-                    _add(total, doc)
-                    _add(days.setdefault(doc["day"], _empty()), doc)
-                if keys:
-                    entry = per_key.setdefault((doc.get("ai"), doc.get("v")), {**_empty(), "cp": doc.get("cp")})
-                    _add(entry, doc)
+        # documents per key: of a primary key only (a probe's "key" of before 23 October 2026 left out: section 12)
+        query = {"$and": [scope, span, {"ai": {"$in": KEYS}}]} if scope else {**span, "ai": {"$in": KEYS}}
+        for doc in daily().find(query):
+            _add(keyed_total, doc)
+            _add(keyed_days.setdefault(doc["day"], _empty()), doc)
+            if keys:
+                entry = per_key.setdefault((doc.get("ai"), doc.get("v")), {**_empty(), "cp": doc.get("cp")})
+                _add(entry, doc)
     if first <= current <= last:
         start, end = day_bounds(current)
         match = {"t": {"$gte": start, "$lt": end}}
@@ -832,15 +834,22 @@ def collect(scope: dict, whole: bool, first: date, last: date, keys: bool = True
             {"$group": {"_id": GROUP_ID, "n": {"$sum": 1}, "ms": {"$sum": "$ms"}, "max": {"$max": "$ms"}}}]),
             *_count_groups(count_query)]
         today_entry = days.setdefault(current.isoformat(), _empty())
+        keyed_today = keyed_days.setdefault(current.isoformat(), _empty()) if whole else today_entry
         for group in groups:
             g, n = group["_id"], group["n"]
             doc = _group_doc(g, n, group.get("ms"), group.get("max"))
-            _add(total, doc)
-            _add(today_entry, doc)
-            if keys and g.get("cp"):
+            with_key = g.get("ai") in KEY_SET
+            if whole or with_key:
+                _add(total, doc)
+                _add(today_entry, doc)
+            if whole and with_key:
+                _add(keyed_total, doc)
+                _add(keyed_today, doc)
+            if keys and with_key and g.get("cp"):
                 entry = per_key.setdefault((g.get("ai"), g.get("v")), {**_empty(), "cp": g.get("cp")})
                 _add(entry, doc)
-    return {"total": total, "days": days, "keys": per_key, "p95": p95}
+    return {"total": total, "days": days, "keyed": {"total": keyed_total, "days": keyed_days}, "keys": per_key,
+            "p95": p95}
 
 
 # ----------------------------------------------------------------------------------------------- tenant API calls

@@ -42,7 +42,8 @@ Constraints:
      when the host cannot be reached (no message: a server that cannot reach its own name is common behind NAT) or
      when the host is `localhost` (development);
    - **404 spikes** — requests answered "code not registered" (outcome `unknown`) in the last hour, for the whole
-     installation and for each organisation: a spike when they are at least `PORTAL_ALERT_404_MIN` (20) **and** at
+     installation and for each organisation (requests with a GS1 primary key only since ADR 0006 §14: a robot's probe
+     is no code): a spike when they are at least `PORTAL_ALERT_404_MIN` (20) **and** at
      least `PORTAL_ALERT_404_FACTOR` (3) times the hourly average of the 7 days before (from the daily counts); the
      message names the most requested codes.
 3. **Messages**: a message when a check goes into alert, a reminder every 24 hours while it lasts, and a message when

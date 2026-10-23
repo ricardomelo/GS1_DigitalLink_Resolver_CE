@@ -265,6 +265,15 @@ check("404 in the last hour per scope: the installation and the organisation",
       found["*"]["count"] == 25 and found[acme["id"]]["count"] == 25 and found["*"]["usual"] == 0, found)
 check("…the most requested codes first", found[acme["id"]]["codes"][0] == ["/01/07891234500014", 15], found[acme["id"]]["codes"])
 check("…25 with nothing usual: a spike (at least 20)", found["*"]["spike"] and found[acme["id"]]["spike"])
+robots = EVENTS.insert_many([{"t": S - timedelta(minutes=5), "o": "unknown", "s": 404, "dev": "desktop", **extra,
+                              "expiresAt": S + timedelta(days=90)}
+                             for extra in [{}] * 20 + [{"ai": "wp-admin", "v": "setup-config.php"}] * 20]).inserted_ids
+requestlog.counts().insert_one({"_id": "robots", "b": S - timedelta(minutes=15), "o": "unknown", "dev": "desktop",
+                                "n": 40, "expiresAt": S + timedelta(days=90)})
+check("…robots' 404 without a GS1 key, stored by an earlier resolver or counted, are no spike (ADR 0006 §14)",
+      monitor.spikes(S, tenants.load())["*"]["count"] == 25, monitor.spikes(S, tenants.load())["*"])
+EVENTS.delete_many({"_id": {"$in": robots}})
+requestlog.counts().delete_one({"_id": "robots"})
 monitor._run(S)
 check("a spike: a message to the server administrators and to the organisation's administrators",
       sorted(sent("alert-404-spike")) == [("ana", "alert-404-spike"), ("root", "alert-404-spike")], sent())
@@ -274,11 +283,12 @@ check("…not to readers, nor to administrators who switched alerts off", ("edu"
       and ("sam", "alert-404-spike") not in sent())
 for day in range(1, 8):
     key = (requestlog.today() - timedelta(days=day)).isoformat()
-    requestlog.daily().insert_one({"_id": f"{key}|*", "day": key, "total": 400, "outcome": {"unknown": 240}})
+    # the installation's 404: ten times as many, robots' probes without a key among them
+    requestlog.daily().insert_one({"_id": f"{key}|*", "day": key, "total": 4000, "outcome": {"unknown": 2400}})
     requestlog.daily().insert_one({"_id": f"{key}|01|07891234500014", "day": key, "ai": "01", "v": "07891234500014",
                                    "cp": "7891234500014", "total": 400, "outcome": {"unknown": 240}})
 found = monitor.spikes(S, tenants.load())
-check("a usual hour of 10: 25 is not 3 times as many, no spike", found["*"]["usual"] == 10 and not found["*"]["spike"]
+check("a usual hour of 10 (the codes with a GS1 key, not the installation's robots): 25 is not 3 times as many, no spike", found["*"]["usual"] == 10 and not found["*"]["spike"]
       and found[acme["id"]]["usual"] == 10 and not found[acme["id"]]["spike"], found)
 before = len(sent())
 monitor._run(S + timedelta(minutes=5))

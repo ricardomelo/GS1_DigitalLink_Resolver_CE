@@ -316,6 +316,8 @@
  "overview.group.governance": "治理",
  "overview.scans": "扫描次数",
  "overview.automated": "自动化请求",
+ "overview.noKey": "不含 GS1 代码的请求",
+ "overview.noKeyHint": "不以 GS1 标识代码开头的地址，多为探测漏洞的机器人：已应答并计数，但不计入扫描次数和解析质量。",
  "overview.perDayAvg": "日均扫描次数",
  "overview.codesScanned": "被扫描的代码",
  "overview.pageViews": "商品页面浏览量",

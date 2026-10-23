@@ -3829,6 +3829,7 @@ function tile(labelKey, value, opts = {}) {
     box.append(small);
   }
   if (opts.id) box.id = opts.id;
+  if (opts.title) box.title = opts.title;
   return box;
 }
 
@@ -3925,6 +3926,10 @@ function renderOverview() {
   $("#overview-usage-tiles").replaceChildren(
     tile("overview.scans", u.scans, { previous: u.previous.scans, better: "up", id: "overview-tile-scans" }),
     tile("overview.automated", u.automated, { previous: u.previous.automated }),
+    // the whole installation: probes and malformed addresses, never in the scans (ADR 0006, section 14)
+    ...(u.noKey !== undefined && (u.noKey || u.previous.noKey) ? [
+      tile("overview.noKey", u.noKey, { previous: u.previous.noKey, id: "overview-tile-nokey",
+                                        title: t("overview.noKeyHint") })] : []),
     tile("overview.perDayAvg", new Intl.NumberFormat(I18N.locale, { maximumFractionDigits: 1 }).format(u.scans / days),
          { text: true }),
     tile("overview.codesScanned", u.topCodes.length >= 10 ? t("overview.tenOrMore") : u.topCodes.length,
@@ -3969,7 +3974,7 @@ function renderOverview() {
     shareTable("overview.byPlace", u.place || [], placeFromKey));
   if (overviewState.places) RequestsMap.render($("#overview-map"), overviewState.places).catch(() => {});
 
-  // Resolution quality (every request, automated ones included)
+  // Resolution quality (every request with a GS1 key, automated ones included)
   const q = d.quality;
   const answeredPct = q.requests ? share(q.answered, q.requests) : null;
   $("#overview-quality-tiles").replaceChildren(

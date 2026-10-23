@@ -1015,8 +1015,8 @@ Digital Link path such as `/01/…`), **Outcome** (*Not found (404)* gathers bot
 **Browser** and **Country** (two letters, such as `BR`). **Export CSV** downloads what the filters show, up to 50,000
 requests, for Excel. The list holds people's requests with a GS1 code, valid or not: requests from automated clients
 (crawlers, scripts, command-line tools) and requests without a GS1 code (probes such as `/wp-login.php`) are counted —
-they are in the overview's totals, its automated requests and its quality figures — but not listed, so they neither
-hide the requests that matter nor fill the space limit.
+in the overview's automated requests and its *Requests without a GS1 code* — but not listed, so they neither hide the
+requests that matter nor fill the space limit.
 
 **Map: where the requests come from.** Under the filters, opened with a click: a world map of the requests the filters
 select. Each country is shaded by its number of requests, from pale to dark blue; each city is an orange circle, larger
@@ -1071,7 +1071,10 @@ scans, fewer codes not found), in red otherwise.
 
 **Usage.** **Scans** are the requests made by people (phones, tablets, computers); **Automated requests** — crawlers,
 link previews, monitors — are counted apart, and so are the **Item page views** and **Clicks on the item page** (shown
-once there are any: they follow a scan, they are not scans). One bar per day as on the Requests screen (in orange the scans that
+once there are any: they follow a scan, they are not scans). For the whole installation, **Requests without a GS1
+code** counts the requests whose address does not start with a GS1 key — mostly robots probing the server for
+weaknesses, even when they pretend to be a browser —; they are answered (400) and counted there only, never among
+the scans, how codes are scanned or the resolution quality (the tile is shown when there were any). One bar per day as on the Requests screen (in orange the scans that
 found nothing), the **Most scanned codes** (select a code to open it in the editor) and **How codes are scanned**: by
 device class, by form of the link (GS1 Digital Link, compressed link, EPC binary from an RFID tag), by language of the
 device and by link type asked. Under the most scanned codes, the **map of where the requests come from** for the
@@ -1084,7 +1087,8 @@ administrator chose.
 registered them — the codes **without a link of the type asked**, invalid requests, the resolver's errors and the
 average answer time (for the server administrator also the 95th percentile of the slowest day); when the server
 administrator turned forwarding on (section 14, *Forwarding*), the requests **forwarded by prefix rules** and those
-**sent to the resolver of last resort**, each apart. These count every request, automated ones included. **Scanned codes nobody registered** lists them, most scanned first: **Register**
+**sent to the resolver of last resort**, each apart. These count every request with a GS1 code, automated ones
+included. **Scanned codes nobody registered** lists them, most scanned first: **Register**
 opens the editor on the code so that the next scan leads somewhere; *the key has other records* means the code's key
 is registered but not for the batch or serial scanned.
 

@@ -316,6 +316,8 @@
  "overview.group.governance": "거버넌스",
  "overview.scans": "스캔",
  "overview.automated": "자동 요청",
+ "overview.noKey": "GS1 코드가 없는 요청",
+ "overview.noKeyHint": "GS1 키로 시작하지 않는 주소로, 대부분 취약점을 찾는 로봇입니다. 응답하고 집계하지만 스캔과 해석 품질에서는 제외됩니다.",
  "overview.perDayAvg": "일평균 스캔",
  "overview.codesScanned": "스캔된 코드",
  "overview.pageViews": "품목 페이지 조회",

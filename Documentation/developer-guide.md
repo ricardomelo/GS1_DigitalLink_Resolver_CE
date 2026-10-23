@@ -537,6 +537,10 @@ automated, or whose `ai` is not in `KEYS` (absent included; §12) — from `requ
 `requestLog.foldedUntil` before §12, so every counted day is gone through once more) up to the end of
 `requestStats.finalUntil`, journal
 `requestlog-folded`. `monitor.spikes()` adds the counts' 404s of the last hour (from its first whole quarter).
+§14: `collect()` also answers `keyed` (`total`, `days`: the documents per key with `ai` in `KEYS`, today's groups
+with an `ai` in `KEY_SET`; the same objects as `total` and `days` outside the whole installation), from which
+`overview.usage_and_quality()` takes people's figures and the quality, `usage.noKey` being the installation's total
+less `keyed`'s; `monitor.spikes()` matches `ai` in `KEYS` in the events, the counts and the baseline.
 `record_api_call()` and `list_api_calls()` keep and list the tenant API's calls (`api_requests`); `api_v1.py` records
 each call in an `after_request` hook, with the key seen (also a refused one), the route's template, status and time.
 

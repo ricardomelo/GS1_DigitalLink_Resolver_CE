@@ -92,16 +92,20 @@ def usage_and_quality(scope: dict, whole: bool, per: dict, top: int,
                       registered: set | None) -> tuple[dict, dict, dict, tuple[dict, dict]]:
     """(usage, quality, requests per key, (the period's totals, the previous period's)) of a period. registered: the
     anchors of the records in the scope, to tell a scanned code nobody registered from one whose key has records but
-    none for the qualifiers scanned (None when the records could not be read)."""
+    none for the qualifiers scanned (None when the records could not be read). People's scans, how codes are scanned
+    and the quality figures count the requests with a GS1 primary key only; for the whole installation the automated
+    requests are all of them, and the requests without a GS1 code are counted apart (ADR 0006, section 14)."""
     now = requestlog.collect(scope, whole, per["from"], per["to"])
     before = requestlog.collect(scope, whole, per["previousFrom"], per["previousTo"], keys=False)
     total, keys = now["total"], now["keys"]
+    coded, coded_before = now["keyed"]["total"], before["keyed"]["total"]
     per_day = []
     day = per["from"]
     while day <= per["to"]:
-        entry = now["days"].get(day.isoformat()) or requestlog._empty()
+        entry = now["keyed"]["days"].get(day.isoformat()) or requestlog._empty()
         scans = _scans(entry)
-        per_day.append({"day": day.isoformat(), "scans": scans, "automated": entry["automated"],
+        automated = (now["days"].get(day.isoformat()) or requestlog._empty())["automated"]
+        per_day.append({"day": day.isoformat(), "scans": scans, "automated": automated,
                         "notFound": min(_not_found(entry), scans)})
         day += timedelta(days=1)
 
@@ -110,20 +114,24 @@ def usage_and_quality(scope: dict, whole: bool, per: dict, top: int,
 
     scanned = sorted(((k, e) for k, e in keys.items() if _scans(e)), key=lambda kv: (-_scans(kv[1]), str(kv[0])))
     usage = {
-        "scans": _scans(total), "automated": total["automated"],
-        "pageViews": total["outcome"].get("page", 0), "clicks": total["outcome"].get("click", 0),
-        "previous": {"scans": _scans(before["total"]), "automated": before["total"]["automated"],
-                     "pageViews": before["total"]["outcome"].get("page", 0),
-                     "clicks": before["total"]["outcome"].get("click", 0)},
+        "scans": _scans(coded), "automated": total["automated"],
+        "pageViews": coded["outcome"].get("page", 0), "clicks": coded["outcome"].get("click", 0),
+        "previous": {"scans": _scans(coded_before), "automated": before["total"]["automated"],
+                     "pageViews": coded_before["outcome"].get("page", 0),
+                     "clicks": coded_before["outcome"].get("click", 0)},
         "perDay": per_day,
         "topCodes": [code(ai, v, e, scans=_scans(e), notFound=min(_not_found(e), _scans(e)))
                      for (ai, v), e in scanned[:top]],
-        "device": dict(total["device"]), "form": {f: n for f, n in total["form"].items() if f != "landing"},
-        "language": _sorted_pairs(total["language"], top), "linkType": _sorted_pairs(total["linkType"], top),
+        "device": dict(coded["device"]), "form": {f: n for f, n in coded["form"].items() if f != "landing"},
+        "language": _sorted_pairs(coded["language"], top), "linkType": _sorted_pairs(coded["linkType"], top),
         # the browser family and the approximate location (ADR 0006, section 8); a place is "country|region|city"
-        "browser": _sorted_pairs(total["browser"], top), "country": _sorted_pairs(total["country"], top),
-        "place": _sorted_pairs(total["place"], top),
+        "browser": _sorted_pairs(coded["browser"], top), "country": _sorted_pairs(coded["country"], top),
+        "place": _sorted_pairs(coded["place"], top),
     }
+    if whole:
+        # probes, malformed addresses, robots: answered and counted, never a code anybody scanned
+        usage["noKey"] = max(0, total["total"] - coded["total"])
+        usage["previous"]["noKey"] = max(0, before["total"]["total"] - coded_before["total"])
 
     def worst(outcome):
         found = sorted(((k, e) for k, e in keys.items() if e["outcome"].get(outcome)),
@@ -132,7 +140,7 @@ def usage_and_quality(scope: dict, whole: bool, per: dict, top: int,
                      registered=None if registered is None else f"/{ai}/{v}" in registered)
                 for (ai, v), e in found[:top]]
 
-    quality = {**_quality_counts(total), "previous": _quality_counts(before["total"]),
+    quality = {**_quality_counts(coded), "previous": _quality_counts(coded_before),
                "avgMs": round(total["ms"] / total["total"]) if total["total"] else None,
                "p95Max": max(now["p95"]) if whole and now["p95"] else None,
                "unknownCodes": worst("unknown"), "noLinkCodes": worst("noLink")}
@@ -231,6 +239,8 @@ def summary_rows(data: dict, labels: dict) -> list[list]:
     u, q, r = data["usage"], data["quality"], data["records"]
     add("usage", "overview.scans", u["scans"], u["previous"]["scans"])
     add("usage", "overview.automated", u["automated"], u["previous"]["automated"])
+    if "noKey" in u:
+        add("usage", "overview.noKey", u["noKey"], u["previous"]["noKey"])
     add("usage", "overview.pageViews", u["pageViews"], u["previous"]["pageViews"])
     add("usage", "overview.clicks", u["clicks"], u["previous"]["clicks"])
     for name, n in sorted(u["device"].items()):

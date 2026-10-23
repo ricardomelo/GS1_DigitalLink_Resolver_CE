@@ -37,6 +37,7 @@ if not (SUITE and AJV and os.path.isdir(SUITE) and os.path.isdir(AJV)):
     sys.exit(0)
 
 FQDN = "id.example.org"
+ALIAS = "alias.example.org"     # another name of the same installation (a second domain on its proxy)
 ORIGIN = "https://ref.gs1.org/test-suites/resolver/"
 
 # ---------------------------------------------------------------- the resolver (as in test_resolver.py)
@@ -103,7 +104,8 @@ app = create_app()
 
 
 def behind_proxy(environ, start_response):
-    """What the proxy does: the request URI, unchanged, under /api."""
+    """What the proxy does: the request URI, unchanged, under /api, and the public host in X-Forwarded-Host."""
+    environ["HTTP_X_FORWARDED_HOST"] = environ.get("HTTP_HOST", "")
     environ["PATH_INFO"] = "/api" + environ.get("PATH_INFO", "")
     for key in ("RAW_URI", "REQUEST_URI"):
         if environ.get(key):
@@ -120,11 +122,12 @@ LOWER_CASE = False      # header names as HTTP/2 sends them (curl negotiates HTT
 
 
 def call(method, url, headers):
-    """One request to the resolver for a URL on FQDN; returns (status, reason, [(name, value)], body)."""
+    """One request to the resolver for a URL on FQDN or ALIAS, with that host; returns (status, reason,
+    [(name, value)], body)."""
     parts = urlsplit(url)
     path = parts.path + ("?" + parts.query if parts.query else "")
     conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=20)
-    conn.request(method, path, headers={"Host": FQDN, **headers})
+    conn.request(method, path, headers={"Host": parts.hostname, **headers})
     r = conn.getresponse()
     body = r.read()
     conn.close()
@@ -203,7 +206,7 @@ def route(r):
                          body=json.dumps(tester(urlsplit(url).query)))
     if url in LOCAL:
         return r.fulfill(status=200, headers=CORS, content_type="application/json", body=LOCAL[url])
-    if urlsplit(url).hostname == FQDN:                  # the browser's own requests (TLS check, description file)
+    if urlsplit(url).hostname in (FQDN, ALIAS):         # the browser's own requests (TLS check, description file)
         status, _, headers, body = call(r.request.method, url,
                                         {k: v for k, v in r.request.headers.items() if k.lower() != "host"})
         return r.fulfill(status=status, headers=dict(headers), body=body)
@@ -248,6 +251,19 @@ author({"anchor": GLN, "itemDescription": "Suite GLN", "defaultLinktype": "gs1:s
     link("gs1:support", "https://example.com/gln/support", "Atendimento"),
     link("gs1:socialMedia", "https://example.com/gln/social", "Redes sociais")]})
 
+# C: a record whose default target is the item's page (Documentation/adr/0011-item-page.md), as the portal writes
+# it: the key's default link type becomes gs1:defaultLink, the record's page is its link of that type, and a batch
+# with a default target of its own carries a copy of it as gs1:defaultLink (section 8 there)
+C = "/01/07898357410053"
+author({"anchor": C, "itemDescription": "Suite C", "defaultLinktype": "gs1:defaultLink", "links": [
+    link("gs1:defaultLink", f"https://{FQDN}{C}?linkType=linkset&view=page", "Item page", "und"),
+    link("gs1:pip", "https://example.com/c/pip", "Produto"),
+    link("gs1:instructions", "https://example.com/c/instructions", "Instruções")]})
+author({"anchor": C, "qualifiers": [{"10": "LOT1"}], "itemDescription": "Suite C lote",
+        "defaultLinktype": "gs1:defaultLink", "links": [
+            link("gs1:defaultLink", "https://example.com/c/lot1", "Lote LOT1"),
+            link("gs1:pip", "https://example.com/c/lot1", "Lote LOT1")]})
+
 BASE = {"isURL", "validDL", "isHttps", "plausibleDL", "basicWalkUp", "tlsOK", "rdFile", "httpVersion", "corsCheck",
         "methodsCheck", "reportWith400", "noErrorWith200", "trailingSlash", "legacyLinkHeaders", "qsPassedOn",
         "ltLinksetNoRedirect", "ltAcceptHeader", "validLinkset", "linksetJsonldCheck", "declaredContentType",
@@ -270,6 +286,14 @@ SCENARIOS = [
       "loForgs1defaultLinkMulti1"}, {"loForgs1defaultLinkMulti0": "fail", "loForgs1defaultLinkMulti1": "fail"}),
     ("GLN", f"https://{FQDN}{GLN}", {"loForgs1support", "loForgs1socialMedia"}, {}),
     ("GTIN, HTTP/2 header names", f"https://{FQDN}{A}", {"loForgs1pip", "loForgs1instructions", "loForgs1certificationInfo"}, {}),
+    ("GTIN, default target the item's page", f"https://{FQDN}{C}", {"loForgs1pip", "loForgs1instructions"}, {}),
+    ("GTIN + batch, default target the item's page", f"https://{FQDN}{C}/10/LOT1",
+     {"loForgs1pip", "loForgs1instructions"}, {}),
+    # The same installation reached by another of its names: the linkset's anchors are on the name requested
+    ("GTIN on another name of the installation", f"https://{ALIAS}{A}",
+     {"loForgs1pip", "loForgs1instructions", "loForgs1certificationInfo"}, {}),
+    ("GTIN + batch on another name, default target the item's page", f"https://{ALIAS}{C}/10/LOT1",
+     {"loForgs1pip", "loForgs1instructions"}, {}),
 ]
 
 # Without the GS1 Barcode Syntax Engine the stub accepts any path, so the suite's invalid URI (the key

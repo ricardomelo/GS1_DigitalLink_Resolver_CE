@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). Implemented in one delivery. **Amended** on 17 October 2026 (section 7, item 9.6) |
+| Status | **Accepted** (14 October 2026). Implemented in one delivery. **Amended** on 17 October 2026 (section 7, item 9.6) and on 23 October 2026 (section 8, the addresses on the name requested) |
 | Backlog items | 5.1 — the tenant's own domain in the QR code; 9.6 — domains without the terminal |
 | Decided by | the owner of the branch, away during the session, who asked for the recommended option on every point of section 4 |
 
@@ -166,3 +166,45 @@ whether a domain could be added entirely in the interface, certificate included.
 `scripts/custom-domains.sh` (the report, the waits, the lock, `--quiet`) and `scripts/custom-domains.cron`; the
 installer's schedule; `portal/domains.py` (`host_states()`, the state in `public()`), the list's `hostRun`; the card;
 tests in `test_deploy.py`, `test_install.sh`, `test_domains.py` and `test_domains_e2e.py`; the documentation.
+
+## 8. Amendment of 23 October 2026 — the addresses on the name requested
+
+### 8.1 Context
+
+GS1's resolver test suite, run by the owner on staging, passed for a URI on the installation's name (`FQDN`) and failed
+for the same installation reached by a second name its proxy also serves: *No default link found*, and none of the
+link type tests ran. The suite looks in the linkset for an anchor equal to the URI it asked for, and the resolver wrote
+every anchor, the `Link` header's pointer to the linkset and the JSON-LD `@id` on `FQDN`, whatever name the request was
+made on — even on an organisation's verified domain, whose description file already named the domain (section 3.3).
+A GS1 Digital Link URI names the same item on any domain (GS1 Digital Link URI Syntax, section 4.11); the official code
+has the same `FQDN` addresses.
+
+### 8.2 Decision
+
+The addresses the resolver writes about a request are on the name it was made on (`domains.public_name()`): an
+organisation's verified domain with its stem; otherwise the host the proxy names in `X-Forwarded-Host`, when it is a
+valid host name (lower case, without port); otherwise — a request that did not come through the proxy, or a header
+that is not a host name — `FQDN`, as before. This covers the linkset's anchors (plain and JSON-LD), the JSON-LD
+`@id`, the `Link` header of linksets and redirects, and the description file's `resolverRoot`. Stored records are
+unchanged; links that hold an address (the item's page as a default target) keep the one the portal wrote.
+
+### 8.3 Options considered
+
+| Point | Chosen (recommended) | Not chosen |
+|---|---|---|
+| Which name | the one requested, as the proxy names it | always `FQDN` (fails GS1's suite on every other name); a list of the installation's names in `.env` (one more setting to keep in step with the host's nginx and certificates, which already decide which names reach the resolver) |
+| Without `X-Forwarded-Host` | `FQDN` | `Host` (inside the containers it is the upstream's name, `resolver-web`) |
+| An odd header | `FQDN` unless it is a valid host name | written as sent |
+
+### 8.4 Consequences
+
+- The host's nginx decides which names reach the resolver (its `server_name` and certificates); each of them now gets
+  conformant linksets. Nothing to configure.
+- Responses carrying a name are not cached by a shared cache (the resolver sets no public caching on them); a cache put
+  in front of the resolver must key on the host, as any would.
+
+### 8.5 Delivery
+
+`web_server/src/domains.py` (`public_name()`), `web_logic.public_root()` used by the linkset, its JSON-LD and the
+`Link` header, `_resolver_description()`; scenarios in `test_gs1_suite.py` (the item's page as default target, and
+another name of the installation) and checks in `test_domains_resolver.py`; 8 mutations, all caught.

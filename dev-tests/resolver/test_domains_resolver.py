@@ -138,6 +138,50 @@ check("the description file on the domain names the domain and its stem as the r
 r, _ = ask("/.well-known/gs1resolver")
 check("…on the installation's name, the installation's", json.loads(r.data)["resolverRoot"] == "https://id.example.org")
 
+# ---------------------------------------------------------------- the addresses written about a request
+# A GS1 Digital Link URI names the same item on any of the installation's names; the linkset's anchors, its Link
+# header and the JSON-LD @id are on the name the request was made on (GS1's test suite compares the anchor with the
+# URI it asked for), and so is the description file's root
+
+
+def anchors(path, host=None, header="X-Forwarded-Host"):
+    r, _ = ask(path, host, header=header, accept="application/linkset+json")
+    return [item.get("anchor") for item in json.loads(r.data or b"{}").get("linkset", [])], r.headers.get("Link", "")
+
+
+found, link = anchors("/gs1" + ACME + "/10/A%2FB", "id.acme.example")
+check("linkset on an organisation's domain: the anchors carry the domain and its stem",
+      found == ["https://id.acme.example/gs1" + ACME + "/10/A%2FB", "https://id.acme.example/gs1" + ACME], found)
+check("…and so does the Link header", link.startswith("<https://id.acme.example/gs1" + ACME + "/10/A%2FB?linkType=linkset>"),
+      link)
+found, link = anchors(BETA, "alias.example.net")
+check("linkset on another name of the installation: the anchors are on that name",
+      found == ["https://alias.example.net" + BETA], found)
+check("…and so is the Link header", link.startswith(f"<https://alias.example.net{BETA}?linkType=linkset>"), link)
+r, _ = ask(BETA, "alias.example.net")
+check("…the Link header of a redirect too", goes_to(r, "https://beta.example.com/")
+      and r.headers.get("Link", "").startswith(f"<https://alias.example.net{BETA}?linkType=linkset>"),
+      r.headers.get("Link"))
+r, _ = ask(BETA, "alias.example.net", accept="application/ld+json")
+body = json.loads(r.data or b"{}")
+check("…the JSON-LD linkset's @id and anchors too", body.get("@id") == "https://alias.example.net" + BETA
+      and [i.get("anchor") for i in body.get("linkset", [])] == ["https://alias.example.net" + BETA], body.get("@id"))
+r, _ = ask("/.well-known/gs1resolver", "alias.example.net")
+check("…and the description file's resolver root", json.loads(r.data)["resolverRoot"] == "https://alias.example.net",
+      json.loads(r.data).get("resolverRoot"))
+check("a port and capitals in the name are left out", anchors(BETA, "Alias.Example.NET:443")[0]
+      == ["https://alias.example.net" + BETA])
+check("the installation's own name: its anchors", anchors(BETA, "id.example.org")[0] == ["https://id.example.org" + BETA])
+check("no X-Forwarded-Host (a request that did not come through the proxy): the installation's name",
+      anchors(BETA)[0] == ["https://id.example.org" + BETA]
+      and anchors(BETA, "web-service:4000", header="Host")[0] == ["https://id.example.org" + BETA])
+for bad in ("bad_host.example", "evil.example/path", "a..b", "-x.example", "x" * 64 + ".example"):
+    found, link = anchors(BETA, bad)
+    check(f"a host that is not a valid host name ({bad[:20]}): the installation's name",
+          found == ["https://id.example.org" + BETA] and link.startswith("<https://id.example.org/"), (found, link))
+r, _ = ask("/.well-known/gs1resolver", "bad_host.example")
+check("…in the description file too", json.loads(r.data)["resolverRoot"] == "https://id.example.org")
+
 # ---------------------------------------------------------------- without a stem; how the host is read
 check("a domain without a stem resolves its codes", goes_to(ask(ACME, "go.acme.example")[0], "https://acme.example.com/"))
 check("…and refuses the others", ask(BETA, "go.acme.example")[0].status_code == 404)

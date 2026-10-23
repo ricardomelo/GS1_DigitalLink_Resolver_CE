@@ -14,9 +14,15 @@ Host):
     nobody registered (allows()).
 
 A host that is not a registered domain (the installation's own name above all) is served exactly as before.
+
+public_name() gives the name a request was made on, for the addresses the resolver writes about it (the linkset's
+anchors, the Link header, the description file's root): a GS1 Digital Link URI names the same item on any of the
+installation's names, and a client compares the anchors with the URI it asked for (GS1's conformance test suite
+requires the anchor to be that URI).
 """
 import logging
 import os
+import re
 import threading
 import time
 
@@ -27,6 +33,7 @@ logger = logging.getLogger(__name__)
 CACHE_SECONDS = 60
 ENV_KEY = 'gs1resolver.domain'
 MOUNT = '/api'                      # the blueprint's prefix: the proxy sends /api<request URI>
+_HOST_NAME = re.compile(r'^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$')
 
 
 def portal_db_name() -> str:
@@ -84,6 +91,20 @@ def request_host(environ: dict) -> str:
     if host.startswith('['):                          # an IPv6 literal is never a registered domain
         return ''
     return host.split(':')[0]
+
+
+def public_name(environ: dict) -> str | None:
+    """The public name the request was made on, as the start of its URI without the scheme: an organisation's domain
+    with its stem ("id.acme.example/gs1"), or the host the proxy names in X-Forwarded-Host when it is a valid host
+    name (another name of the installation). None without X-Forwarded-Host (a request that did not come through the
+    proxy): the caller then uses the installation's FQDN."""
+    entry = environ.get(ENV_KEY)
+    if entry:
+        return entry['host'] + entry['stem']
+    if not environ.get('HTTP_X_FORWARDED_HOST'):
+        return None
+    host = request_host(environ)
+    return host if _HOST_NAME.match(host) else None
 
 
 def _without_stem(path: str, stem: str) -> str | None:

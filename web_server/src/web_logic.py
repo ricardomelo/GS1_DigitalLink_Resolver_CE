@@ -6,6 +6,9 @@ import subprocess
 from typing import Any
 from urllib.parse import quote, unquote
 
+from flask import has_request_context, request
+
+import domains
 
 import gs1_syntax
 import web_db
@@ -221,6 +224,14 @@ def _do_qualifiers_match(qualifier_path: str | None, doc_qualifiers: list[dict[s
         return False, [f"Unexpected error occurred. Details: {str(e)}"]
 
 
+def public_root() -> str:
+    """https:// and the name the request was made on (domains.public_name()), in front of the GS1 paths of the
+    addresses the resolver writes about it: the installation's FQDN outside a request or when the proxy named no
+    host."""
+    name = domains.public_name(request.environ) if has_request_context() else None
+    return f"https://{name or os.getenv('FQDN', 'set-domain-name-in-env-variable-FQDN.com')}"
+
+
 def _author_link_header_with_pointer_to_linkset(linkset: list[dict[str, Any]]) -> str:
     """
     This function creates a Link header with a pointer to the linkset.
@@ -232,7 +243,7 @@ def _author_link_header_with_pointer_to_linkset(linkset: list[dict[str, Any]]) -
     :return: The Link header with a pointer to the linkset.
     """
     identifiers = linkset[0].get("anchor")
-    return f'<https://{os.getenv("FQDN", "set-domain-name-in-env-variable-FQDN.com")}{identifiers}?linkType=linkset>; rel="linkset"; type="application/linkset+json"; title="Linkset for {identifiers}"'
+    return f'<{public_root()}{identifiers}?linkType=linkset>; rel="linkset"; type="application/linkset+json"; title="Linkset for {identifiers}"'
 
 
 
@@ -671,7 +682,7 @@ def format_linkset_for_external_use(response_data: dict[str, Any], identifiers: 
       the JSON-LD context is referenced in the Link header.
     - as_json_ld=True (Accept: application/ld+json): same content with the @context embedded (section 2.10).
     """
-    fqdn = os.getenv('FQDN', 'replace_with_environment_variable_FQDN_see_README.com')
+    root = public_root()                       # the anchors are on the name the request was made on
     linkset = []
     for item in response_data['data']:
         out = {}
@@ -679,7 +690,7 @@ def format_linkset_for_external_use(response_data: dict[str, Any], identifiers: 
             if key.startswith('_'):
                 continue
             if key == 'anchor':
-                out['anchor'] = value if str(value).startswith('http') else f"https://{fqdn}{value}"
+                out['anchor'] = value if str(value).startswith('http') else f"{root}{value}"
             elif key in ('itemDescription', 'description'):
                 if value:
                     out[key] = value
@@ -717,7 +728,7 @@ def format_linkset_for_external_use(response_data: dict[str, Any], identifiers: 
             "itemDescription": {"@id": "rdfs:comment"},
             "linkset": "@nest"
         },
-        "@id": f"https://{fqdn}/{ai_code}/{ai_value}",
+        "@id": f"{root}/{ai_code}/{ai_value}",
         "gs1:elementStrings": f"({ai_code}){ai_value}",
         "linkset": linkset,
     }

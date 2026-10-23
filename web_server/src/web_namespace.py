@@ -306,8 +306,9 @@ def _resolver_description() -> Response:
     """
     Resolver Description File (GS1-Conformant Resolver standard, section 3).
     public/gs1resolver.json holds everything that does not depend on the installation; the resolver
-    root and the operator's contact details come from the environment (FQDN and RESOLVER_*, see
-    .env.example), so the same image serves any domain without editing the file.
+    root is the name the request was made on (domains.public_name(), else FQDN) and the operator's contact
+    details come from the environment (RESOLVER_*, see .env.example), so the same image serves any domain
+    without editing the file.
     """
     with open(os.path.join(static_folder_path, 'gs1resolver.json'), encoding='utf-8') as fh:
         description = json.load(fh)
@@ -316,12 +317,11 @@ def _resolver_description() -> Response:
     if terms:
         description['termsOfUse'] = terms            # the operator's own terms of use, when there are any
 
-    fqdn = os.getenv('FQDN', '').strip()
-    if fqdn:
-        description['resolverRoot'] = f'https://{fqdn}'
-    domain = request.environ.get(domains.ENV_KEY)
-    if domain:                                       # an organisation's own domain (ADR 0009)
-        description['resolverRoot'] = f"https://{domain['host']}{domain['stem']}"
+    # the name the request was made on: an organisation's own domain with its stem (ADR 0009), another name of the
+    # installation, else FQDN
+    root = domains.public_name(request.environ) or os.getenv('FQDN', '').strip()
+    if root:
+        description['resolverRoot'] = f'https://{root}'
 
     org_name = os.getenv('RESOLVER_ORG_NAME', '').strip()
     if org_name:

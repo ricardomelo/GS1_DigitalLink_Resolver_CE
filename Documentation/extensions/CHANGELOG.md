@@ -2,6 +2,22 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Addresses on the name requested (session 23)
+- **Fixed: GS1's resolver test suite failed with *No default link found* on a second name of the installation**
+  (deliberate change to official code): the resolver wrote the linkset's anchors, the `Link` header's pointer to the
+  linkset and the JSON-LD `@id` on `FQDN` whatever name the request came on, and the suite looks for an anchor equal
+  to the URI it asked for. They are now on the name requested: an organisation's verified domain with its stem, or
+  another name the proxy passes on in `X-Forwarded-Host` (a valid host name); `FQDN` otherwise. The description
+  file's `resolverRoot` follows the same rule. Nothing to configure; stored records unchanged. The item's page as the
+  default target was not the cause (the suite passes for it). ADR 0009 §8. Commit `69063b0`.
+
+### A DELETE that names no link (session 23)
+- **Changed: a data entry API `DELETE` whose body names no link answers 400** (deliberate change to official code):
+  `{}`, a body with the qualifiers alone or with `"links": []` deleted the whole document, every record of the key;
+  `"links"` as a string answered 500. A body must now list the links to remove; without a body the whole document is
+  deleted, as before. The portal is not affected (it sends a body only with the links it removes). Resolution is
+  untouched, so conformance to the GS1-Conformant Resolver standard is unchanged. Commit `56b905d`.
+
 ### Browser tests that wait for the sign-in (session 23)
 - **Development: the portal and mail browser programs wait for the sign-in's outcome instead of a fixed pause**: six
   sign-ins paused 800–1,200 ms before checking, which a loaded machine can outlast (*wrong password message* failed

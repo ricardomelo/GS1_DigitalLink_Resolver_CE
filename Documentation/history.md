@@ -1017,6 +1017,15 @@ portal and mail programs now wait for what they expect, up to 10 s, and a timeou
 (`76fa572`); the other programs' `sign_in()` helpers already waited for the overview's address. Both mutations
 behaved as intended: the slow sign-in passes, a changed wrong-password text fails that one check.
 
+The owner then ran GS1's resolver test suite on staging: a GTIN passed, two others failed with *No default link
+found*, all link type tests skipped. The failing runs were on a second name of the installation (`.com.br`), the
+passing one on `FQDN`; the owner suspected the item's page as default target. GS1's suite, run here unchanged with
+four new scenarios, passed for the item's page and failed exactly as on staging for another name: the resolver wrote
+every anchor on `FQDN`, and the suite looks for an anchor equal to the URI it asked for. The anchors, the `Link`
+header, the JSON-LD `@id` and the description file's root are now on the name requested (`69063b0`, ADR 0009 §8).
+The owner also approved the open question of session 22: a `DELETE` whose body names no link answers 400 instead of
+deleting the whole document (`56b905d`); the standard covers resolution only. 13 mutations, all caught.
+
 ## How the main areas evolved
 
 | Area | 1.0.0 (session 1) | Now |

@@ -1056,7 +1056,17 @@ GitHub release: numbered after the official 3.0.0 it extends (same architecture 
 it does not read as older than the official release (2.0.0 was proposed first; 4.0 would announce a new generation,
 as 3.0 did when it replaced the Node.js resolver). Development stays on `gs1br/develop`.
 
-## How the main areas evolved
+## Session 26 — the EPC's hexadecimal as the tag stores it
+
+An independent encoder of label files, compared with this portal, found that the `epc-tds` library could not read the
+hexadecimal of SGLN-195, GRAI-170 and GIAI-202 that the label block gave: it was padded to a whole digit, where a tag's
+EPC bank is padded to a 16-bit word (TDS 2.3). The owner chose to correct `hex` in place, as nothing used the API yet:
+it is padded to a multiple of 16 bits (an SGTIN-198 has 52 digits), while the NFC link `…/eh…` keeps the shorter form,
+so tags already written stay the same (`68f2051`, ADR 0010 §9; 3 mutations, all caught). The comparisons with `epc-tds`
+had not seen it: they ignore trailing zeros, because the library's own widths vary (50 digits for an SGTIN-198 and an
+SGLN-195, 52 for a GIAI-202); the widths are now checked against the standard.
+
+
 
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|
@@ -1202,6 +1212,9 @@ as 3.0 did when it replaced the Node.js resolver). Development stays on `gs1br/d
 - A fix from elsewhere is a proposal: test it against the data as stored before taking it. The official pull request
   #128 reused a helper written for the v3 format on MongoDB's linkset objects, and only a check with a second
   language showed it.
+- A comparison that ignores a difference to get past a library's quirk can hide a real defect: the tests compared the
+  EPC with `epc-tds` without the trailing zeros (its own widths vary), and the short hexadecimal went unnoticed. What
+  a tolerance leaves out needs a check of its own against the standard.
 
 ## Open items
 

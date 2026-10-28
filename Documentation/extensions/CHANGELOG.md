@@ -2,7 +2,15 @@
 
 ## Unreleased (branch gs1br/develop)
 
-Nothing yet.
+### The EPC's hexadecimal as the tag stores it (session 26)
+- **Fixed: the EPC in hexadecimal was a few digits short for the longer schemes.** A tag's EPC bank is written in
+  16-bit words (TDS 2.3: the PC bits count words, the EPC is padded with zeros to the next word), but the label block's
+  *EPC (hexadecimal)* — the `hex` of `GET /portal/api/epc`, which goes to an RFID encoder — was padded to a whole digit
+  only: an SGTIN-198 had 50 digits instead of 52, an SGLN-195 49, a GRAI-170 43, a GIAI-202 51, an ITIP-212 53, and a
+  CPI-var fell short whenever its length is not a multiple of 16. `hex` is now padded with zeros to a multiple of 16
+  bits; the 96-bit schemes do not change. The NFC link (`compressedHex`, `…/eh…`) and base 64 (`…/ex…`) do not change,
+  so NFC tags already written stay valid; the resolver reads the EPC with or without the extra zeros, so the record
+  search by an RFID reader's EPC finds the record either way. ADR 0010 §9. Commit `68f2051`.
 
 ## 3.1.0 — 23 October 2026
 

@@ -313,3 +313,31 @@ This amendment; `portal/epc.py`, `portal/epc_schemes.json`, `portal/tools/gen_ep
 the decoder's fix; `test_epc.py` (every key and partition decoded back, `epc-tds` for eight scheme families, the API and
 the record search by each new EPC), `test_epc_binary.py` (12-digit company prefixes) and `test_domains_e2e.py` (the
 block for a GLN, an SSCC and a GRAI in Chromium), mutation-checked; texts in the eleven languages; the documentation.
+
+## 9. Amendment of 28 October 2026 — the tag's hexadecimal padded to a 16-bit word
+
+### 9.1 Context
+
+The block's *EPC (hexadecimal)* — the `hex` of `GET /portal/api/epc`, given to an RFID encoder — padded the bits with
+zeros only to a whole hexadecimal digit, and the NFC link (`compressedHex`, `…/eh…`) used the same value. A tag's EPC
+bank is written in 16-bit words: the length in the PC bits counts words, and the EPC is padded with zeros to the next
+word (TDS 2.3). For the schemes whose length is not a multiple of 16 the hexadecimal was therefore a few digits short
+of what a tag holds: SGTIN-198 50 digits instead of 52, SGLN-195 49 instead of 52, GRAI-170 43 instead of 44, GIAI-202
+51 instead of 52, ITIP-212 53 instead of 56, and CPI-var whenever its length is not a multiple of 16 (GDTI-174 and
+ITIP-110 gained only zero bits within a digit). An independent encoder of label files found it when the `epc-tds`
+library did not read the short form of SGLN-195, GRAI-170 and GIAI-202.
+
+### 9.2 Decision
+
+- `hex` is the tag's EPC bank: the bits padded with zeros to a multiple of 16 (`Epc.hex`). The 96-bit schemes do not
+  change. `hex` keeps its name (nothing used the API yet); the block's label stays *EPC (hexadecimal)*.
+- The NFC link keeps the hexadecimal padded to a whole digit (`Epc.link_hex`; EPCB 4.2.1): `…/eh…` does not change,
+  so links already written into NFC tags stay the same. Base 64 (`base64`, `…/ex…`) does not change either.
+- The resolver's decoder reads both forms (the zeros after the EPC are padding), so the record list's search finds a
+  record by the hexadecimal an RFID reader gives, padded or not.
+
+### 9.3 Delivery
+
+`portal/epc.py` (`hex`, `link_hex`), the route's `compressedHex`; `test_epc.py`: the SGTIN-198's 52 and 50 digits,
+every scheme's widths, the 96-bit example unchanged, the API's `hex` and `compressedHex`, each decoded back by the
+resolver in both forms, mutation-checked.

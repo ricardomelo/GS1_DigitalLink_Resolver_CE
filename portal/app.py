@@ -3133,7 +3133,7 @@ def epc_of_record():
     return jsonify(scheme=found.scheme, hex=found.hex, base64=found.base64, tagUri=found.tag_uri,
                    pureIdentity=found.pure_identity, prefixLength=length, prefixFrom=source,
                    tableDate=listed["date"] if source == "table" else None,
-                   compressedHex=f"{base}/eh{found.hex}", compressedBase64=f"{base}/ex{found.base64}")
+                   compressedHex=f"{base}/eh{found.link_hex}", compressedBase64=f"{base}/ex{found.base64}")
 
 
 # --------------------------------------------------------------------------- reading a scanned code (record search)

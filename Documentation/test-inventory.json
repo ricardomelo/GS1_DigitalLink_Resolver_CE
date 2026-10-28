@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-23",
+ "generated": "2026-10-28",
  "programs": {
   "admin_nav": {
    "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
@@ -142,7 +142,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_e1c38dace26…)",
+    "a wrong key is refused (rk_b2df967f358…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -824,7 +824,7 @@
    "checks": [
     "features.md: every table has a Checks column (219 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (343 references)",
+    "…each reference names a program of the inventory (345 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (68)",
     "…and the inventory holds no program that no longer exists",
@@ -1230,7 +1230,9 @@
    "area": "Labels, RFID and NFC",
    "checks": [
     "the Tag Data Standard's example: SGTIN-96 3074257BF7194E4000001A85",
-    "every partition and kind of serial number decoded back by the resolver (eh… and ex…)",
+    "…a 96-bit EPC: the tag's hexadecimal and the link's are the same 24 digits",
+    "an SGTIN-198's hexadecimal for the tag: padded to a 16-bit word, 52 digits (TDS 2.3); the link's (/eh…): to a digit, 50",
+    "every partition and kind of serial number decoded back by the resolver (eh… of the link and of the tag, ex…)",
     "SGTIN-96 for a numeric serial below 2^38 without leading zeros, SGTIN-198 otherwise",
     "the URIs escape the serial number's reserved characters",
     "refused: ('0950600013435', '1', 7) → epc.gtin",
@@ -1243,6 +1245,8 @@
     "the definitions file is what the resolver's TDT artefacts give (gen_epc_schemes.py --check)",
     "…every scheme the encoder tries is in it",
     "every key with an EPC, every partition, numeric and alphanumeric: decoded back by the resolver (16 schemes besides the SGTIN's)",
+    "…every scheme's hexadecimal for the tag padded to a 16-bit word, the link's to a digit",
+    "…SGLN-195 52 digits, GRAI-170 44, GIAI-202 52, GDTI-174 44, ITIP-110 28, ITIP-212 56; 96-bit schemes 24",
     "…the 96-bit scheme for numeric values without leading zeros, the longer one otherwise",
     "a GLN without extension: SGLN with the extension 0 (TDS 6.3.3)",
     "a CPI's '/' and '#' escaped in its URIs (%2F, %23)",
@@ -1259,6 +1263,7 @@
     "the organisation's code: its prefix's length, filter 1, the EPC and the URIs",
     "…the compressed links on the installation's address, decoded back to the record",
     "a chosen length and filter; a batch with the serial (informative) does not change the EPC",
+    "…the SGTIN-198's hexadecimal for the tag 52 digits, the NFC link's 50 (/eh… unchanged), both decoded back",
     "a code of no organisation: the length must be chosen",
     "…and then it is",
     "refused: key=01&value=07891234500076 → epc.needsQualifier",
@@ -1292,7 +1297,7 @@
     "…the record list's search by that EPC finds the 8006",
     "the texts in both languages (29)"
    ],
-   "count": 62,
+   "count": 67,
    "ciOnly": false
   },
   "exports": {
@@ -2973,7 +2978,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:40743/ok",
+    "internal address refused: http://127.0.0.1:40527/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -4605,7 +4610,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.005 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
    ],
    "count": 207,
    "ciOnly": false

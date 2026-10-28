@@ -4,7 +4,7 @@ section 8): SGTIN-96 and SGTIN-198 encoded as the EPC Tag Data Standard says —
 limits of SGTIN-96 —, and every other key the standard encodes (SSCC, SGLN, GRAI, GIAI, GSRN, GSRNP, GDTI, SGCN, CPI,
 ITIP) for every partition, numeric and alphanumeric, each decoded back by the resolver's own decoder
 (web_server/src/epc_binary.py) from eh… and ex…, and compared with an independent library (epc-tds, when EPC_TDS is set);
-the definitions file against the TDT artefacts; what a record needs first; and GET /portal/api/epc: the company prefix's
+the tag's hexadecimal padded to a 16-bit word, the NFC link's to a digit (ADR 0010 section 9); the definitions file against the TDT artefacts; what a record needs first; and GET /portal/api/epc: the company prefix's
 length from the organisation's prefixes or chosen, the filter (1 for trade items, 0 otherwise), the label's domain,
 refusals, access, a search of the record list by each new EPC read through a resolver, both languages.
 
@@ -105,16 +105,21 @@ e = epc.sgtin("80614141123458", "6789", 7, 3)
 check("the Tag Data Standard's example: SGTIN-96 3074257BF7194E4000001A85", e.hex == "3074257bf7194e4000001a85"
       and e.tag_uri == "urn:epc:tag:sgtin-96:3.0614141.812345.6789"
       and e.pure_identity == "urn:epc:id:sgtin:0614141.812345.6789", (e.hex, e.tag_uri))
+check("…a 96-bit EPC: the tag's hexadecimal and the link's are the same 24 digits", e.link_hex == e.hex, e.link_hex)
+e = epc.sgtin("09506000134352", "ABC-12", 7, 1)
+check("an SGTIN-198's hexadecimal for the tag: padded to a 16-bit word, 52 digits (TDS 2.3); the link's (/eh…): to a "
+      "digit, 50", len(e.bits) == 198 and len(e.hex) == 52 and len(e.link_hex) == 50 and e.hex == e.link_hex + "00",
+      (e.hex, e.link_hex))
 wrong = []
 for length in range(6, 13):
     for serial in ("1001", "274877906943", "274877906944", "0", "012", "ABC-12/x?", "x" * 20):
         e = epc.sgtin("09506000134352", serial, length, 1)
-        for segment in ("eh" + e.hex, "ex" + e.base64):
+        for segment in ("eh" + e.link_hex, "eh" + e.hex, "ex" + e.base64):
             decoded = epc_binary.decompress(segment)
             from urllib.parse import quote
             if decoded.path() != "/01/09506000134352/21/" + quote(serial, safe="") or decoded.scheme.lower() != e.scheme:
                 wrong.append((length, serial, segment, decoded.scheme, decoded.path()))
-check("every partition and kind of serial number decoded back by the resolver (eh… and ex…)", not wrong, wrong[:3])
+check("every partition and kind of serial number decoded back by the resolver (eh… of the link and of the tag, ex…)", not wrong, wrong[:3])
 check("SGTIN-96 for a numeric serial below 2^38 without leading zeros, SGTIN-198 otherwise",
       [epc.sgtin("09506000134352", s, 7).scheme for s in ("1001", "0", "274877906943", "274877906944", "012", "A1")]
       == ["sgtin-96", "sgtin-96", "sgtin-96", "sgtin-198", "sgtin-198", "sgtin-198"])
@@ -197,7 +202,7 @@ KEYS = [
     ("8006", lambda: gtin("1" + PREFIX12) + "0102", {"21": "77"}, "itip-110"),
     ("8006", lambda: gtin("1" + PREFIX12) + "0102", {"21": "x/7"}, "itip-212"),
 ]
-wrong, seen = [], set()
+wrong, seen, widths = [], set(), {}
 for ai, make, qualifiers, scheme in KEYS:
     value = make()
     expected = epc.path_of(ai, value, qualifiers)
@@ -208,7 +213,9 @@ for ai, make, qualifiers, scheme in KEYS:
             wrong.append((ai, value, length, exc.code))
             continue
         seen.add(e.scheme)
-        for segment in ("eh" + e.hex, "ex" + e.base64):
+        widths.setdefault(e.scheme, set()).add((len(e.bits) + 15) // 16 * 4 == len(e.hex) and e.hex.startswith(e.link_hex)
+                                               and len(e.link_hex) == (len(e.bits) + 3) // 4)
+        for segment in ("eh" + e.link_hex, "eh" + e.hex, "ex" + e.base64):
             decoded = epc_binary.decompress(segment)
             # a numeric reference that starts with 0 at this partition goes to the longer scheme (TDS 14.3.2)
             family = [n.lower() for n in epc.KEY_SCHEMES[ai]]
@@ -217,6 +224,13 @@ for ai, make, qualifiers, scheme in KEYS:
                 wrong.append((ai, value, length, segment[:2], e.scheme, decoded.scheme, decoded.path(), expected))
 check(f"every key with an EPC, every partition, numeric and alphanumeric: decoded back by the resolver "
       f"({len(seen)} schemes besides the SGTIN's)", not wrong and len(seen) == 16, (wrong[:3], sorted(seen)))
+check("…every scheme's hexadecimal for the tag padded to a 16-bit word, the link's to a digit",
+      widths and all(v == {True} for v in widths.values()), widths)
+LENGTHS = {"sgln-195": 52, "grai-170": 44, "giai-202": 52, "gdti-174": 44, "itip-110": 28, "itip-212": 56}
+got = {s: len(epc.encode(ai, make(), q, 7, 1).hex) for ai, make, q, s in KEYS if s in LENGTHS}
+check("…SGLN-195 52 digits, GRAI-170 44, GIAI-202 52, GDTI-174 44, ITIP-110 28, ITIP-212 56; 96-bit schemes 24",
+      got == LENGTHS and all(len(epc.encode(ai, make(), q, 7, 1).hex) == 24 for ai, make, q, s in KEYS
+                             if s.endswith("-96")), got)
 check("…the 96-bit scheme for numeric values without leading zeros, the longer one otherwise",
       [epc.encode("8004", v, {}, 7).scheme for v in ("950600099", "9506000099", "9506000A9")]
       == ["giai-96", "giai-202", "giai-202"]
@@ -307,6 +321,11 @@ data = r.get_json() or {}
 check("a chosen length and filter; a batch with the serial (informative) does not change the EPC",
       data.get("prefixLength") == 8 and data.get("prefixFrom") == "chosen" and data.get("scheme") == "sgtin-198"
       and data["tagUri"].startswith("urn:epc:tag:sgtin-198:0.78912345."), data)
+link = data.get("compressedHex", "").rsplit("/eh", 1)[-1]
+check("…the SGTIN-198's hexadecimal for the tag 52 digits, the NFC link's 50 (/eh… unchanged), both decoded back",
+      len(data.get("hex", "")) == 52 and len(link) == 50 and data["hex"] == link + "00"
+      and epc_binary.decompress("eh" + data["hex"]).path() == epc_binary.decompress("eh" + link).path()
+      == f"/01/{G}/21/S1", (data.get("hex"), link))
 OPER = gtin("0950600013436")
 r = root.get(f"/portal/api/epc?key=01&value={OPER}&qualifiers=/21/7")
 check("a code of no organisation: the length must be chosen", r.status_code == 422 and code(r) == "epc.prefixLength")
@@ -357,7 +376,9 @@ for ai, value, qualifiers, scheme, bracketed in API_KEYS:
     check(f"API: {scheme} of a {ai} with the organisation's prefix (filter {filter_expected} by default)",
           r.status_code == 200 and data.get("scheme") == scheme and data.get("prefixLength") == 7
           and data.get("tagUri", "").startswith(f"urn:epc:tag:{scheme}:{filter_expected}.7891234")
-          and data.get("compressedHex") == f"https://id.example.org/eh{data.get('hex')}", data)
+          and data.get("compressedHex") == "https://id.example.org/eh" + epc.encode(
+              ai, value, dict(zip(qualifiers.split("/")[1::2], qualifiers.split("/")[2::2])), 7, filter_expected).link_hex,
+          data)
     found = ana.post("/portal/api/code/read", json={"text": data.get("hex", "").upper()}, headers=ORIGIN).get_json() or {}
     check(f"…the record list's search by that EPC finds the {ai}", found.get("bracketed") == bracketed.format(v=value)
           and found.get("source") == "epc", found)

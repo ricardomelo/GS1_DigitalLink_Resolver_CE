@@ -64,8 +64,14 @@ class Epc:
 
     @property
     def hex(self) -> str:
-        bits = self.bits + "0" * (-len(self.bits) % 4)
-        return format(int(bits, 2), f"0{len(bits) // 4}x")
+        """The tag's EPC bank as an RFID encoder writes it: the bits padded with zeros to a whole 16-bit word (TDS
+        2.3: the PC bits' length counts words), so an SGTIN-198 is 52 digits; 96-bit schemes are unchanged."""
+        return _hex(self.bits, 16)
+
+    @property
+    def link_hex(self) -> str:
+        """The hexadecimal of the compressed link (/eh…): the bits padded only to a whole digit (EPCB 4.2.1)."""
+        return _hex(self.bits, 4)
 
     @property
     def base64(self) -> str:
@@ -74,6 +80,11 @@ class Epc:
 
 
 Sgtin = Epc                     # the name of item 1.x's single scheme
+
+
+def _hex(bits: str, multiple: int) -> str:
+    bits += "0" * (-len(bits) % multiple)
+    return format(int(bits, 2), f"0{len(bits) // 4}x")
 
 
 # ------------------------------------------------------------------------------------------------- TDT artefacts

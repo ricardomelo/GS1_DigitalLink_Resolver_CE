@@ -478,8 +478,8 @@ record holds what the EPC needs:
 | CPID | CPI-96 / CPI-var | its serial (8011) |
 | ITIP | ITIP-110 / ITIP-212 | a serial number (21) |
 
-The other keys (GINC, GSIN, party GLN…) have no EPC. The block shows the EPC in hexadecimal (to write into an RFID tag)
-and as a tag URI, and the **link for NFC**, the compressed GS1 Digital Link (`…/eh…`, `…/ex…`) to
+The other keys (GINC, GSIN, party GLN…) have no EPC. The block shows the EPC in hexadecimal (to write into an RFID tag: padded with zeros to whole 16-bit words, as
+the tag stores it — an SGTIN-198 has 52 digits) and as a tag URI, and the **link for NFC**, the compressed GS1 Digital Link (`…/eh…`, `…/ex…`) to
 write into an NFC or hybrid tag; this resolver reads it like the QR code. The EPC needs the length of the GS1 Company
 Prefix: the portal takes it from GS1's GCP length table when the server administrator has loaded it (the block says
 so, with the list's date), otherwise from your organisation's prefixes; for other codes choose it — your choice always

@@ -2,9 +2,10 @@
 
 Instructions for Claude Code sessions on the **GS1 Digital Link Resolver CE — Expansion Pack** (development on
 branch `gs1br/develop`; the default branch, `master`, holds the releases). The state of the work, the next item and
-anything not meant for a public document arrive in the maintainer's handover at the start of each session; read it
-first. The README's
-*Open backlog* is the reference for the items.
+anything not meant for a public document are in the handover, *Handover — GS1_Digital_Link_CE*, in the maintainer's
+Google Drive folder `ClaudeAI/GS1_Digital_Link_CE` (Google Drive connector): read it first, and at the end of each
+session add the session's section at the top (newest first). Keep there, not in the repository, what must persist
+between sessions and is not for the public. The README's *Open backlog* is the reference for the items.
 
 ## Language
 

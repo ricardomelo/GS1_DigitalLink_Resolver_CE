@@ -27,7 +27,14 @@ first. The README's
 
 - Push straight to `gs1br/develop` (`git push -u origin gs1br/develop`); fetch and rebase first. Pushed
   commits are never rewritten. A release brings `master` up to `gs1br/develop` (fast-forward only, after a green CI),
-  with a tag `vX.Y.Z`, a GitHub release and the CHANGELOG's *Unreleased* section renamed to its version.
+  with a tag `vX.Y.Z`, a GitHub release and the CHANGELOG's *Unreleased* section renamed to its version. Cloud
+  sessions cannot push tags or create releases: give the maintainer the steps on GitHub and the release notes.
+- `upstream` is the branch offered to the official GS1 repository as a pull request: `master` without what only the
+  fork needs (`CLAUDE.md`, `.claude/`, `Documentation/history.md` and the links to it; the fork's addresses become
+  the official repository's; `master` the only branch), the commit `d8cc51f`. After each release, merge the release
+  tag into `upstream` (never rebase), keep those files deleted (a modify/delete conflict on `history.md` is
+  expected), check that nothing new names the fork, run every test on it, then push: an open pull request follows the
+  branch.
 - One topic per commit, with a message that explains why. Subjects carry an area prefix (`portal:`, `docs:`,
   `resolver, portal:`, `scripts:` …). Code and its technical documents go in one commit; then a `docs:` commit
   with the CHANGELOG, `features.md` and `history.md` citing the code commit's hash.

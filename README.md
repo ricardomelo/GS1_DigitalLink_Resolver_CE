@@ -835,7 +835,8 @@ copies on another machine. Before going live, work through the
 **Branches and releases.** `master`, the default branch, holds the latest release (tags `vX.Y.Z`, with their notes
 under *Releases*); development happens on `gs1br/develop`, which a release brings `master` up to. Both run the
 continuous integration. `scripts/upgrade-from-official.sh` follows `gs1br/develop` unless `UPGRADE_BRANCH` says
-otherwise.
+otherwise. `upstream` is the latest release as offered to the official repository, without the files only this fork
+needs (its conventions for Claude Code and the history of its working sessions); it follows each release.
 
 The tests in [`dev-tests/`](dev-tests/README.md) run without Docker or MongoDB (the portal's database is
 replaced by `mongomock`; CI also runs them on a real MongoDB):

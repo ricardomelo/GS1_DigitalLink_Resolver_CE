@@ -2,6 +2,14 @@
 
 ## Unreleased (branch gs1br/develop)
 
+Nothing yet.
+
+## 3.1.1 — 29 October 2026
+
+A correction of 3.1.0: the EPC's hexadecimal for RFID tags as the tag stores it. Change of behaviour an integrator may
+notice: the `hex` of `GET /portal/api/epc` is longer for the schemes whose length is not a multiple of 16 bits; the
+NFC links (`…/eh…`, `…/ex…`) do not change.
+
 ### The EPC's hexadecimal as the tag stores it (session 26)
 - **Fixed: the EPC in hexadecimal was a few digits short for the longer schemes.** A tag's EPC bank is written in
   16-bit words (TDS 2.3: the PC bits count words, the EPC is padded with zeros to the next word), but the label block's

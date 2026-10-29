@@ -1065,6 +1065,8 @@ it is padded to a multiple of 16 bits (an SGTIN-198 has 52 digits), while the NF
 so tags already written stay the same (`68f2051`, ADR 0010 §9; 3 mutations, all caught). The comparisons with `epc-tds`
 had not seen it: they ignore trailing zeros, because the library's own widths vary (50 digits for an SGTIN-198 and an
 SGLN-195, 52 for a GIAI-202); the widths are now checked against the standard.
+The owner confirmed the fix on staging, and it was released as **3.1.1** (tag `v3.1.1`, with a GitHub release), a
+correction of 3.1.0.
 
 
 

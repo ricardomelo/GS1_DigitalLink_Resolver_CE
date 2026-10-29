@@ -28,7 +28,7 @@ first. The README's
 - Push straight to `gs1br/develop` (`git push -u origin gs1br/develop`); fetch and rebase first. Pushed
   commits are never rewritten. A release brings `master` up to `gs1br/develop` (fast-forward only, after a green CI),
   with a tag `vX.Y.Z`, a GitHub release and the CHANGELOG's *Unreleased* section renamed to its version. Cloud
-  sessions cannot push tags or create releases: give the maintainer the steps on GitHub and the release notes.
+  sessions cannot push tags, create releases or delete branches: give the maintainer the steps on GitHub and the release notes.
 - `upstream` is the branch offered to the official GS1 repository as a pull request: `master` without what only the
   fork needs (`CLAUDE.md`, `.claude/`, `Documentation/history.md` and the links to it; the fork's addresses become
   the official repository's; `master` the only branch), the commit `d8cc51f`. After each release, merge the release

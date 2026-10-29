@@ -1069,7 +1069,7 @@ The owner confirmed the fix on staging, and it was released as **3.1.1** (tag `v
 correction of 3.1.0. The branch `upstream/3.1.0`, the Expansion Pack offered to the official repository as a pull
 request, was brought up to 3.1.1 and given one commit of its own (`d8cc51f`): without the conventions for Claude Code,
 this diary and the links to it, with the official repository's addresses, and with `master` as its only branch; every
-test passes on it.
+test passes on it. It is published as `upstream/3.1.1`, the name of the pull request's branch.
 
 
 

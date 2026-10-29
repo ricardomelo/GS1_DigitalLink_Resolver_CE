@@ -8,8 +8,8 @@
 
 ## 1. Context
 
-The portal was written to run as **one gunicorn worker with threads**. That was a deliberate simplification
-(decision 10 of the [history](../history.md)), and it shows in where the portal keeps its state.
+The portal was written to run as **one gunicorn worker with threads**. That was a deliberate simplification of
+the first versions, and it shows in where the portal keeps its state.
 
 **Files in the `resolver-portal-config` volume** (`/app/config`), each written atomically under an advisory
 file lock:

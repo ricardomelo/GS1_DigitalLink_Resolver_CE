@@ -110,7 +110,7 @@ check("the API reference is what portal/openapi.json gives (gen_api_reference.py
 # ------------------------------------------------------------------------------------------------ the index
 index = read("Documentation", "README.md")
 manuals = ["portal-user-guide.md", "extensions/README.md", "developer-guide.md", "api-reference.md", "features.md",
-           "test-inventory.md", "history.md", "conformance-review.md", "translation-glossary.md",
+           "test-inventory.md", "conformance-review.md", "translation-glossary.md",
            "extensions/CHANGELOG.md"]
 absent = [m for m in manuals if f"]({m})" not in index]
 check("the documentation index names every manual", not absent, absent)

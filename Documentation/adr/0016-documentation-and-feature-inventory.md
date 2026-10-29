@@ -40,7 +40,7 @@ sentences are already the most complete and the most current description of the 
    - integrators — **`api-reference.md`**, generated from `portal/openapi.json` by `portal/tools/gen_api_reference.py`
      (every operation, parameter, answer and message code of `/portal/api/v1`).
    `Documentation/README.md` becomes the index by reader.
-5. **British English only**, as `CLAUDE.md` says; manuals in Portuguese are left for the owner to ask for.
+5. **British English only**, as the repository's conventions say; manuals in Portuguese are left for the owner to ask for.
 
 ## 3. Design
 

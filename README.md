@@ -1,6 +1,6 @@
 # GS1 Digital Link Resolver CE — Expansion Pack
 
-[![Development tests](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml/badge.svg?branch=master)](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml)
+[![Development tests](https://github.com/gs1/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml/badge.svg?branch=master)](https://github.com/gs1/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml)
 ![GS1-Conformant Resolver 1.2.1](https://img.shields.io/badge/GS1--Conformant%20Resolver-1.2.1-002c6c)
 ![GS1 Digital Link URI Syntax 1.7.0](https://img.shields.io/badge/GS1%20Digital%20Link%20URI%20Syntax-1.7.0-002c6c)
 ![GS1 Digital Link Test Suite 1.2.1: 31 of 31](https://img.shields.io/badge/GS1%20Digital%20Link%20Test%20Suite%201.2.1-31%20of%2031-2e7d32)
@@ -280,7 +280,7 @@ The architecture is designed to **scale out** from the first install:
 | Everyone | [Features](Documentation/features.md): every feature, what it does, when it was added and the checks that prove it |
 | Server administrators and operators | [Operator's guide](Documentation/extensions/README.md) (installation, configuration, operation, production) · [Changelog](Documentation/extensions/CHANGELOG.md) |
 | Integrators | [Tenant API reference](Documentation/api-reference.md), generated from the API's OpenAPI description |
-| Developers and maintainers | [Developer guide](Documentation/developer-guide.md) · [Inventory of features](Documentation/test-inventory.md) (every check of every test) · [History](Documentation/history.md) · [Conformance review](Documentation/conformance-review.md) · [Architecture decisions](Documentation/README.md#architecture-decision-records) (ADR 0001 to 0019) |
+| Developers and maintainers | [Developer guide](Documentation/developer-guide.md) · [Inventory of features](Documentation/test-inventory.md) (every check of every test) · [Conformance review](Documentation/conformance-review.md) · [Architecture decisions](Documentation/README.md#architecture-decision-records) (ADR 0001 to 0019) |
 
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).
@@ -673,7 +673,7 @@ curl -s -X PUT -H "Authorization: Bearer $KEY" -H 'Content-Type: application/jso
 On a server with a DNS name pointing to it:
 
 ```bash
-git clone https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE.git
+git clone https://github.com/gs1/GS1_DigitalLink_Resolver_CE.git
 cd GS1_DigitalLink_Resolver_CE
 sudo scripts/install.sh
 ```
@@ -756,7 +756,7 @@ the data entry API's token in `.env`, runs the installer and compares the number
 ```bash
 cd ~/GS1_DigitalLink_Resolver_CE        # the folder of the official installation
 curl -fsSLo upgrade-from-official.sh \
-  https://raw.githubusercontent.com/ricardomelo/GS1_DigitalLink_Resolver_CE/gs1br/develop/scripts/upgrade-from-official.sh
+  https://raw.githubusercontent.com/gs1/GS1_DigitalLink_Resolver_CE/master/scripts/upgrade-from-official.sh
 sudo bash upgrade-from-official.sh --check   # only the checks: changes nothing
 sudo bash upgrade-from-official.sh           # asks before changing anything, then the installer's questions
 ```
@@ -832,9 +832,8 @@ copies on another machine. Before going live, work through the
 
 ## Development and tests
 
-**Branches and releases.** `master`, the default branch, holds the latest release (tags `vX.Y.Z`, with their notes
-under *Releases*); development happens on `gs1br/develop`, which a release brings `master` up to. Both run the
-continuous integration. `scripts/upgrade-from-official.sh` follows `gs1br/develop` unless `UPGRADE_BRANCH` says
+**Branches and releases.** `master` holds the latest release (tags `vX.Y.Z`, with their notes under *Releases*) and
+runs the continuous integration. `scripts/upgrade-from-official.sh` follows `master` unless `UPGRADE_BRANCH` says
 otherwise.
 
 The tests in [`dev-tests/`](dev-tests/README.md) run without Docker or MongoDB (the portal's database is
@@ -882,7 +881,7 @@ DEV_TESTS_STRICT=1 python -m pytest dev-tests -m portal   # as in CI: what is mi
 ```
 
 **Continuous integration.** The workflow `.github/workflows/dev-tests.yml` runs the tests on GitHub Actions on
-every push and pull request to `master` and `gs1br/develop` (changes to documentation only do not start it), in six jobs
+every push and pull request to `master` (changes to documentation only do not start it), in six jobs
 in parallel: resolver (with EPC binary strings, the data entry API and GS1's suite), portal, portal on a
 real MongoDB (a `mongo:7` service container), portal in Chromium, home page through nginx, and installer.
 The portal on MongoDB is an informative job: a failure there is shown but does not fail the run (the
@@ -890,12 +889,6 @@ portal in Chromium and the installer started that way too and are required since
 runs on nginx 1.30 from nginx.org, as in the proxy image. The versions of Python, Node.js, the engines,
 GS1's suite, Docker Compose and nginx are pinned in `.github/actions/dev-tests-setup/action.yml`; engines,
 packages and the browser are cached. Each job's result, with its check counts, is on the run's summary page.
-
-**Claude Code cloud sessions.** `CLAUDE.md` holds the conventions of this repository for Claude Code, and
-`.claude/hooks/session-start.sh` prepares a cloud session for the tests: the same pieces and pinned versions as
-the CI setup, installed into `~/.cache/dev-tests`, with the variables the programs read. When the image's
-Chromium (`/opt/pw-browsers`) is newer than the build the pinned Playwright wants, the hook links it under that
-build's names (`~/.cache/dev-tests/pw-browsers`) and points `PLAYWRIGHT_BROWSERS_PATH` there.
 
 The official integration test `tests/setup_test.py` needs the running stack and reads the token from
 `SESSION_TOKEN`. The screenshots of this README and of the user guide are produced by
@@ -944,7 +937,7 @@ an inventory of every feature drawn from the tests' checks ([ADR 0016](Documenta
 and item 7.1, single sign-on per organisation
 with OpenID Connect and per-role limits on exports ([ADR 0012](Documentation/adr/0012-single-sign-on.md)), are
 complete too. What was
-done is in the [history](Documentation/history.md) and the [changelog](Documentation/extensions/CHANGELOG.md).
+done is in the [changelog](Documentation/extensions/CHANGELOG.md).
 The items below are in the agreed order; sizes are relative (S, M, L). The order puts first what later items
 build on: the portal's data store and tenants come before the API, e-mail and analytics, which all need to
 know whose data they handle.
@@ -978,8 +971,7 @@ scripts/                        install.sh, templates/ (nginx), resolver-backup.
                                 restore-rehearsal.sh, rotate-secrets.sh, upgrade-from-official.sh
 dev-tests/                      development tests (see above)
 .github/                        workflows/dev-tests.yml (continuous integration), actions/dev-tests-setup/
-CLAUDE.md, .claude/             conventions and the session start hook for Claude Code cloud sessions
-Documentation/                  README.md (index), portal-user-guide.md, features.md, history.md,
+Documentation/                  README.md (index), portal-user-guide.md, features.md,
                                 developer-guide.md, extensions/ (detailed documentation, changelog),
                                 images/ (README), adr/ (architecture decision records),
                                 images/guide/ (user guide), upstream-README.md

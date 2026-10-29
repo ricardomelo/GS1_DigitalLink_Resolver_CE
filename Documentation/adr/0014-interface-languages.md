@@ -38,7 +38,7 @@ explanations of 57 link types, about 110 KB in English), 18 e-mail messages and 
    languages (Portuguese keeps its own: official translations come from each GS1 Member Organisation); link type codes
    (`gs1:pip`), GS1 terms that are names (*GS1 Digital Link*, *GS1 Company Prefix* is translated where GS1 has a usual
    name, otherwise kept), product names and addresses. The GS1 Barcode Syntax Engine's messages are translated.
-5. **Every text in every language, checked**: a new text needs all eleven languages; `CLAUDE.md` says so and
+5. **Every text in every language, checked**: a new text needs all eleven languages, and
    `dev-tests/portal/test_i18n.py` refuses a message missing, empty or with different `{placeholders}` in any language
    of the portal, the e-mails, the resolver's pages, the item's page and the home page.
 6. **The translations are drafted by Claude** from the English (and checked against the Portuguese) with a glossary
@@ -84,7 +84,7 @@ explanations of 57 link types, about 110 KB in English), 18 e-mail messages and 
 
 This record; `i18n.js`, the catalogues of the nine languages, the right-to-left rules of `app.css`; `mailtexts.py`;
 `web_pages.py`, `landing.py` and `page_texts.json`; the home page; `test_i18n.py` and `test_languages_e2e.py`; the
-`CLAUDE.md` rule; the translation guide (`Documentation/translation-glossary.md`); the documentation.
+translation guide (`Documentation/translation-glossary.md`); the documentation.
 
 ## 7. Amendment of 20 October 2026 — Turkish, the menus' order, the target languages' list
 

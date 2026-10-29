@@ -353,7 +353,7 @@ def upgrade_checks() -> None:
         (expansion / "docker-compose.yml").write_text(official_compose + "  portal-service: {}\n")
         (expansion / "scripts").mkdir()
         (expansion / "scripts" / "install.sh").write_text(f"echo \"install $*\" >> {calls}; touch {work / 'installed'}\n")
-        git(expansion, "init", "-q", "-b", "gs1br/develop")
+        git(expansion, "init", "-q", "-b", "master")
         git(expansion, "add", "-A")
         git(expansion, "commit", "-q", "-m", "expansion")
         # the official installation
@@ -402,7 +402,7 @@ esac
     order = [next((i for i, l in enumerate(lines) if key in l), -1) for key in ("mongodump", "compose down", "install")]
     check(order[0] >= 0 and order == sorted(order) and "compose down --remove-orphans" in calls and " -v" not in calls,
           "upgrade: backup, then the official containers stopped (volume kept), then the installer", lines)
-    check(branch == "gs1br/develop" and "main" in git(official, "branch").stdout,
+    check(branch == "master" and "main" in git(official, "branch").stdout,
           "upgrade: the Expansion Pack's branch in the same folder, the official branch kept", branch)
     env = (official / ".env").read_text()
     check("MONGO_INITDB_ROOT_PASSWORD='gs1resolver'" in env and "SESSION_TOKEN='secret'" in env

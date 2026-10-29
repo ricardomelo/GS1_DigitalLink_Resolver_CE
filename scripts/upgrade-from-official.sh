@@ -11,7 +11,7 @@
 # A copy of this script can be fetched into the official folder first (the official project does not have it):
 #
 #   curl -fsSLo upgrade-from-official.sh \
-#     https://raw.githubusercontent.com/ricardomelo/GS1_DigitalLink_Resolver_CE/gs1br/develop/scripts/upgrade-from-official.sh
+#     https://raw.githubusercontent.com/gs1/GS1_DigitalLink_Resolver_CE/master/scripts/upgrade-from-official.sh
 #   sudo bash upgrade-from-official.sh
 #
 # Steps: (1) checks — an official installation, no uncommitted changes to the official files, the database answers
@@ -22,12 +22,12 @@
 # (6) scripts/install.sh, which builds and starts every service, the portal included; (7) the records counted again
 # and compared. Rollback instructions are printed at the end and kept in the log.
 #
-# Settings (environment): UPGRADE_REPOSITORY (the Expansion Pack's git address), UPGRADE_BRANCH (gs1br/develop),
+# Settings (environment): UPGRADE_REPOSITORY (the Expansion Pack's git address), UPGRADE_BRANCH (master),
 # UPGRADE_REMOTE (expansion), BACKUP_DIR (/var/backups/resolver), INSTALL_ARGS (passed to scripts/install.sh).
 set -euo pipefail
 
-UPGRADE_REPOSITORY="${UPGRADE_REPOSITORY:-https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE.git}"
-UPGRADE_BRANCH="${UPGRADE_BRANCH:-gs1br/develop}"
+UPGRADE_REPOSITORY="${UPGRADE_REPOSITORY:-https://github.com/gs1/GS1_DigitalLink_Resolver_CE.git}"
+UPGRADE_BRANCH="${UPGRADE_BRANCH:-master}"
 UPGRADE_REMOTE="${UPGRADE_REMOTE:-expansion}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/resolver}"
 INSTALL_ARGS="${INSTALL_ARGS:-}"

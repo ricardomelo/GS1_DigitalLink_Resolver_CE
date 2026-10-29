@@ -1,5 +1,5 @@
 # Continuous integration: the development tests (dev-tests/README.md) on every push and pull request
-# to the release branch (master) and the development branch (gs1br/develop), in six jobs that run in parallel. Each job runs its group of programs
+# to master, in six jobs that run in parallel. Each job runs its group of programs
 # through the pytest layer (dev-tests/test_programs.py) in strict mode: a missing engine, browser or
 # tool fails the job instead of skipping checks.
 #
@@ -10,10 +10,10 @@ name: Development tests
 
 on:
   push:
-    branches: [master, gs1br/develop]
+    branches: [master]
     paths-ignore: ["Documentation/**", "**/*.md"]
   pull_request:
-    branches: [master, gs1br/develop]
+    branches: [master]
     paths-ignore: ["Documentation/**", "**/*.md"]
   workflow_dispatch:
 

@@ -1,7 +1,7 @@
 """
 The portal's stand-in for the data entry API (dev-tests/portal/mock_data_entry.py) against the real one: the same
 calls, in the order the portal makes them, must give the same records back. Both staging bugs of 15 October hid
-behind stand-ins that did more than the real component (Documentation/history.md, session 14); this program keeps
+behind stand-ins that did more than the real component (session 14 of the fork's history); this program keeps
 the data entry stand-in honest. It covers what the portal relies on: POST /new (a new key, a new record of a key, a
 record that exists, a list of a key's records),
 PUT (links merged by type, language and context; the shared default link type;

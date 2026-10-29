@@ -44,7 +44,6 @@ development tests' checks that prove it; the whole list of checks is the [invent
 | [Developer guide](developer-guide.md) | services, source files, request flows, the portal's API, its data, the tests with their counts, how to extend |
 | [Development tests](../dev-tests/README.md) | every test program, how to set up and run them |
 | [Inventory of features](test-inventory.md) | every check of every test program, grouped by area |
-| [History](history.md) | how the project evolved session by session, decisions, lessons, open items |
 | [Translation guide](translation-glossary.md) | the rules and glossary for the texts of the twelve interface languages, and how to contribute corrections |
 | [Official README](upstream-README.md) | the README of the official GS1 Resolver CE, kept for reference |
 

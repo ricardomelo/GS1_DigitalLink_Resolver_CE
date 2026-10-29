@@ -1655,7 +1655,7 @@ it, and a clone elsewhere would start with an empty database.
 | 1. Checks | `docker-compose.yml` is the official one (no `portal-service`); no uncommitted change to the official files; the database answers with the credentials of `.env`, else `.env.example`'s (`gs1resolver`); the records counted per collection | it stops; nothing changed. `--check` stops here in any case |
 | 2. Backup | `mongodump --archive --gzip` of the whole database into `BACKUP_DIR` (`/var/backups/resolver`), `pre-upgrade-<date>.archive.gz`, mode 600 | it stops; nothing changed |
 | 3. Stop | `docker compose down --remove-orphans` with the official file (the volume is kept) | it stops |
-| 4. Code | the remote `expansion` (`UPGRADE_REPOSITORY`) fetched, its `gs1br/develop` checked out as a local branch; the official branch stays | the way back is printed |
+| 4. Code | the remote `expansion` (`UPGRADE_REPOSITORY`) fetched, its `master` checked out as a local branch; the official branch stays | the way back is printed |
 | 5. `.env` | the database's user, password and connection string, and the data entry API's token, written when `.env` does not set them (a copy `.env.bak-<time>` first) so the installer keeps them | — |
 | 6. Installer | `scripts/install.sh` (its questions; `INSTALL_ARGS` passes options such as `--non-interactive`) | the way back is printed |
 | 7. Compare | the records counted again: a collection with fewer records ends with status 1 and the way back | — |

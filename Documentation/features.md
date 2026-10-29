@@ -1,8 +1,7 @@
 # Features
 
 Every feature of the GS1 Digital Link Resolver CE — Expansion Pack, grouped by component, with what it
-does, the commit that introduced it (on branch `gs1br/develop`, oldest first in
-[history.md](history.md)) and the development tests' checks that prove it: `program` names a test program, and the
+does, the commit that introduced it and the development tests' checks that prove it: `program` names a test program, and the
 words after it are found in the names of its checks, listed in the [inventory of features](test-inventory.md)
 ([ADR 0016](adr/0016-documentation-and-feature-inventory.md); `dev-tests/docs/test_docs.py` fails when a feature cites
 no check). Features of the official GS1 Resolver CE v3 that the fork keeps unchanged are
@@ -354,7 +353,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 |---|---|---|---|
 | Development tests | Resolver, GS1's resolver test suite run in Chromium against the resolver code, EPC binary decoder (checked against TDS annex E.3 and the `epc-tds` library), data entry, keys, governance, spreadsheets, special characters, data attributes, link checker, background jobs (also as worker processes on a real MongoDB), portal end to end in Chromium (desktop and phone), home page and replicas through nginx, installer through shims, deployment (Compose, gunicorn) | `0733a3f` and later | `docs`: every test program is in the inventory |
 | Development tests through pytest | `pytest dev-tests` runs every program, by group (`-m resolver`, `portal`, `e2e`, `home`, `install`, `database`), with each program's check count; strict mode for CI | `d68a883`, `d783f3d` | `docs`: every test program is in the inventory |
-| Continuous integration | GitHub Actions runs the tests in six parallel jobs on every push and pull request to `master` and `gs1br/develop`, one of them on a real MongoDB 7 (service container), the proxy test on nginx 1.30; pinned versions, cached engines and browser; status badge in the README | `d68a883`, `d783f3d`, `20f3304` | `deploy`: engine release |
+| Continuous integration | GitHub Actions runs the tests in six parallel jobs on every push and pull request to `master`, one of them on a real MongoDB 7 (service container), the proxy test on nginx 1.30; pinned versions, cached engines and browser; status badge in the README | `d68a883`, `d783f3d`, `20f3304` | `deploy`: engine release |
 | Weekly engine update check | A scheduled GitHub Actions job opens an issue when a newer GS1 Barcode Syntax Engine is released: what changes in the dictionary, the messages that need a translation, the portal's test results with it | `6f6ce19`, `e7c5a6d` | `deploy`: engine |
 | Screenshots | `dev-tests/docs/screenshots.py` regenerates the README and user guide images | `f14d8c4`, session 4 | `docs`: every relative link |
 | Documentation | README, user guide, features, history, developer guide, extensions documentation, changelog | `539bab0` and later | `docs` |

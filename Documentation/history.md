@@ -1223,7 +1223,8 @@ test passes on it. One branch without a version (first `upstream/3.1.0`, then `u
 
 ## Open items
 
-- Security notice to the official maintainers about the public `GET /api/index` (drafted).
+- Security notice to the official maintainers about the public `GET /api/index`: sent on 29 October 2026; the pull
+  request from `upstream` waits for their answer.
 - Rotation of the development secrets of the staging installation, with `scripts/rotate-secrets.sh` (item 7.2).
 - A fresh installation with `scripts/install.sh` on a clean machine (only the re-run path is proven).
 - The off-server backup copy's destination and a restore rehearsal on the servers (`BACKUP_COPY_TO`,

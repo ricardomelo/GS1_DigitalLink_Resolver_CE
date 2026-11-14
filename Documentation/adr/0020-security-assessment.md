@@ -49,7 +49,10 @@ to the official maintainers about the public `GET /api/index` (29 October 2026) 
    Concrete weaknesses — where, how, a reproduction — go into a **private findings register** kept outside the
    repository, in the owner's folder with the handover, until they are fixed. A fix's commit and the changelog then say
    what was wrong at the level an operator needs. A weakness in code that came from the official project is reported
-   to its maintainers privately first.
+   to its maintainers privately first. *Changed by the owner on 14 November 2026:* such weaknesses are fixed in the fork
+   and published with their fix, like the fork's own, without a private notice first; the notice about `GET /api/index`
+   of 29 October had no answer, and fixing quickly matters more than waiting. Weaknesses not yet fixed stay out of the
+   public documents, wherever the code came from.
 4. **Every finding is proved by a development test** that fails on the code before the fix and passes after it (the
    project's mutation rule); the test stays in the suite as a security regression test.
 5. **Controls that change the product** — a second factor, approval by a second person for safety-critical link types,
@@ -71,6 +74,7 @@ to the official maintainers about the public `GET /api/index` (29 October 2026) 
 |---|---|---|
 | Order | the threat model first, then the review by area | a broad review of the code first, documented afterwards (faster, but nothing to measure completeness against and less of what a validation asks for); automated scanners and an external penetration test only (cheaper, far narrower) |
 | Where findings live | a private register until fixed | issues or documents in the public repository (discloses live weaknesses) |
+| Official code (14 November) | fixed and published, as the fork's own (the owner's choice) | a private notice to GS1 first, the fix held until they answer (the recommendation; an earlier notice had no answer) |
 | Proof of a finding | a development test that fails before the fix | a description only (findings that cannot be reproduced are kept as *suspected*) |
 | Product controls | one item and ADR each, chosen by the owner | decided together here (too large for one record, and each changes how organisations work) |
 

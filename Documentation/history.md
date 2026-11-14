@@ -1113,6 +1113,12 @@ example password is only warned about, because the installer keeps it for a data
 would have stopped an upgraded installation. 61 new checks (`home` 121, `deploy` 153; 12 mutations, all caught);
 4,648 checks passed in 67 programs.
 
+The second fix, U-001 in the private register, was in code from the official project: the resolver put the value of a
+template record's batch or serial into the linkset's JSON text, so a value with quotes could replace the target
+(`8c06f72`). It also covered the `{0}`/`{1}` templates of serialised keys, which had the same flaw. The fix was first
+held for a private notice to GS1, as ADR 0020 said; the owner decided to fix and publish the official code's weaknesses
+like the fork's own, since the notice of 29 October was never answered (ADR 0020 §2.3, amended).
+
 - `geo` with `proxy` does what `real_ip` would, and is always built into nginx: the development build of nginx has
   no `real_ip` module, the image's has; choosing `geo` keeps the test and the image the same.
 - A check that refuses to start must not stop installations that cannot avoid the value: the installer's own code

@@ -20,6 +20,15 @@ address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use th
   naming the setting; MongoDB's example password is logged as a warning. The installer already replaces the first two.
 - The installer's summary says whether the data entry API is open, and to whom. Commit `8405225`.
 
+### Template values can no longer change a target (session 28)
+- **Fixed (security; code from the official project): a request could redirect a template record to a host of its
+  choice.** For a record whose qualifier is a template (`{lotnumber}`, which the official data entry API accepts and
+  the portal does not create) and for the `{0}`/`{1}` of a serialised key (GIAI, GRAI, SSCC), the resolver put the
+  request's value into the stored links as JSON text and parsed it again; GS1's character set 82 allows quotes and
+  commas in a batch or serial value, so a crafted link on the resolver's own domain could add or replace a link's
+  members, its address among them. The value now goes into a copy of the stored links string by string,
+  percent-encoded inside an address. Installations without template records were not affected. Commit `8c06f72`.
+
 ### A security assessment, phase 0: the threat model (session 27)
 - **Added: [`Documentation/threat-model.md`](../threat-model.md)**, the first step of a security assessment with a view
   to medicines and medical devices ([ADR 0020](../adr/0020-security-assessment.md)): the services and their trust

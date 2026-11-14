@@ -1,0 +1,468 @@
+# Threat model
+
+The system's assets, the parties that may harm them, the ways in, the controls that exist — each with the place in
+the code that proves it — and the controls that are missing. Written as Phase 0 of the security assessment
+([ADR 0020](adr/0020-security-assessment.md)) on 14 November 2026.
+
+## Contents
+
+1. [Purpose and scope](#1-purpose-and-scope)
+2. [System overview](#2-system-overview)
+3. [Assets](#3-assets)
+4. [Actors](#4-actors)
+5. [Entry points](#5-entry-points)
+6. [Threats](#6-threats)
+7. [Patient-safety hazards that are not attacks](#7-patient-safety-hazards-that-are-not-attacks)
+8. [Security controls in place](#8-security-controls-in-place)
+9. [Gaps and recommended controls](#9-gaps-and-recommended-controls)
+10. [Plan for the code review](#10-plan-for-the-code-review)
+11. [Assumptions and open questions](#11-assumptions-and-open-questions)
+
+## 1. Purpose and scope
+
+**Intended use considered.** The resolver is to be validated, in future, as part of a healthcare information chain: a
+QR code or Data Matrix on a medicine or a medical device is resolved to its electronic leaflet, product information,
+safety information or recall notice. A wrong, missing, stale or attacker-chosen answer can therefore reach a patient
+or a professional. Impact is judged first by that consequence, then by the consequence for the operator and the
+organisations that register links.
+
+**What is covered.** The software of this repository as installed by `scripts/install.sh`: the front-end proxy, the
+resolver (`web_server/`), the official data entry API (`data_entry_server/`), the portal and its worker (`portal/`),
+MongoDB, the home page, the host's reverse proxy and scheduled scripts (`scripts/`), and the build and test pipeline.
+
+**What is not covered.** The content of the target sites; the scanning apps and phones; the operator's host, network
+and staff procedures beyond what the installer sets up; the identity providers, mail relay, DNS and certificate
+authority themselves (they appear as parties that can fail or be compromised); physical labels and printing.
+
+**Frameworks.** OWASP ASVS (level 2, level 3 for the routing decision and the audit trail), IEC 81001-5-1, ISO 14971,
+GAMP 5 and the ALCOA+ data-integrity principles, and the Brazilian data protection law (LGPD) are used as a lens to
+ask questions. **Nothing here claims conformance to any of them.**
+
+**Method.** The documents describe intent; the code is the evidence. Each control cites `path:line` and was read in
+the code; statements marked *not verified* were taken from documents or configuration without a run. Threats use
+STRIDE (spoofing, tampering, repudiation, information disclosure, denial of service, elevation of privilege). Ratings
+are likelihood × impact on three levels each. Weaknesses that are not yet fixed are described as missing or partial
+controls; their details are kept in a private register until fixed.
+
+**Maintenance.** This document changes with any change to a route, a role, a service, a stored collection, an external
+party or a control (`CLAUDE.md`, *Keep the documents in step*), and is reviewed at each release.
+
+## 2. System overview
+
+```mermaid
+flowchart LR
+    subgraph internet["Internet (untrusted)"]
+        scan["Scanner, browser, app, crawler"]
+        user["Portal user"]
+        sys["Organisation's system"]
+    end
+    subgraph host["Operator's host"]
+        edge["Host nginx + Certbot<br/>TLS, ports 80/443"]
+        subgraph docker["Docker network (internal)"]
+            proxy["frontend-proxy-service<br/>nginx :80 (host 8080)"]
+            web["web-service<br/>resolver :4000"]
+            de["data-entry-service<br/>official API :3000"]
+            portal["portal-service :8000"]
+            worker["portal-worker"]
+            db[("MongoDB :27017<br/>resolver_ce, resolver_portal,<br/>resolver_log")]
+        end
+        cron["cron: backup, GeoIP,<br/>organisations' domains"]
+    end
+    idp["Identity providers (OIDC)"]
+    mail["Mail relay (SMTP)"]
+    dns["DNS"]
+    ca["Certificate authority"]
+    targets["Target sites<br/>(leaflets, notices)"]
+    other["Other resolvers<br/>(forwarding)"]
+
+    scan -->|HTTPS| edge
+    user -->|HTTPS| edge
+    sys -->|"HTTPS, API key or token"| edge
+    edge --> proxy
+    proxy -->|"/AI/value…, /.well-known"| web
+    proxy -->|"/api, /swaggerui"| de
+    proxy -->|"/portal/"| portal
+    portal -->|"bearer token"| de
+    web -->|"root user"| db
+    de -->|"root user"| db
+    portal -->|"own user"| db
+    worker --> db
+    worker -->|"link checks"| targets
+    portal --> idp
+    worker --> mail
+    worker --> dns
+    cron --> ca
+    cron --> db
+    scan -.->|"307 redirect"| targets
+    scan -.->|"307 redirect"| other
+```
+
+### 2.1 Services and what each exposes
+
+| Service | Reachable from the internet | Internal only | Evidence |
+|---|---|---|---|
+| Host nginx | 80, 443 for the installation's name and each organisation's verified domain; passes every path on | — | `scripts/templates/nginx-site-https.conf:1-32`, `scripts/custom-domains.sh:104-113` |
+| `frontend-proxy-service` | through the host proxy: `/` and `/home/` (static), `/portal/`, `/api`, `/swaggerui`, everything else to the resolver | port 8080 on the host, bound as `PROXY_BIND_ADDRESS` | `frontend_proxy_server/nginx.conf:58-122`, `docker-compose.yml:172` |
+| `web-service` (resolver) | `/{AI}/{value}[/{qualifier}/{value}…]`, compressed links and EPC forms (one segment), `/.well-known/gs1resolver`, `/_click`, `/_brand/{prefix}`, `/favicon.ico`, `/robots.txt`, `/heartbeat`; GET, HEAD, OPTIONS; no authentication | port 4000 | `web_server/src/web_namespace.py:24-227` |
+| `data-entry-service` | `/api/new`, `/api/validate`, `/api/summary`, `/api/index`, `/api/{AI}/{value}` (GET, PUT, DELETE), `/api/docs`; bearer token; `/api/heartbeat` open | port 3000 | `data_entry_server/src/data_entry_namespace.py:54-65`, `:68-292` |
+| `portal-service` | pages, `/portal/api/*` (session), `/portal/api/v1/*` (API key), sign-in, recovery and SSO routes, `/portal/healthz` | port 8000 | `portal/app.py:696-3576`, `portal/api_v1.py:109-249` |
+| `portal-worker` | nothing | jobs, housekeeping, monitoring; outbound HTTP, DNS, SMTP | `portal/app.py:3559-3566` |
+| `database-service` | nothing when bound to loopback | port 27017, bound as `DATABASE_BIND_ADDRESS` | `docker-compose.yml:19`, `scripts/install.sh:307` |
+
+### 2.2 Data stores
+
+| Database | Collections that matter | Written by | Read by |
+|---|---|---|---|
+| `resolver_ce` | `gs1resolver`: one document per key, every record (qualifier set) and its links | data entry API | resolver, data entry API |
+| `resolver_portal` | `users`, `tenants`, `journal` (audit trail and versions), `record_meta`, `api_keys`, `tokens`, `sso`, `domains`, `domain_hosts`, `branding`, `forwarding_rules`, `settings` (appearance, forwarding fallback, retention, locks), `jobs`, `login_failures`, `request_daily`, `api_requests`, `alert_history`, `gcp_table` | portal, worker; the domains script (`domain_hosts`) | portal, worker; the resolver reads `tenants`, `domains`, `branding`, `forwarding_rules`, `settings` (`web_server/src/__init__.py:81-101`) |
+| `resolver_log` | `requests`, `request_counts` | resolver | portal (read, prune: `portal/db_init.py:42`) |
+| Files | `.env` (every secret, mode 600), the `resolver-portal-config` volume (fallback session key), `/var/backups/resolver`, `./geoip` | installer, scripts | services, scripts |
+
+### 2.3 Trust boundaries
+
+1. **Internet → host proxy.** Everything arriving is untrusted, including the `Host` and `X-Forwarded-*` headers.
+2. **Proxy → services.** The services trust the proxy for the public host name and the client's address.
+3. **Portal → data entry API.** The portal holds the API's token and is the only place where organisations,
+   prefixes, roles and the target rule are enforced; the API itself knows none of them.
+4. **Services → MongoDB.** The portal has its own user; the resolver and the data entry API use the root user.
+5. **Organisation ↔ organisation.** Separation is derived at query time from GS1 Company Prefixes
+   (`portal/tenants.py:69-78`), not stored on the records.
+6. **Operator ↔ organisation.** Server administrators see an organisation's data only through support access.
+7. **Portal and worker → outside.** Requests to addresses supplied by users (targets, identity providers, domains).
+8. **Resolver → target.** The redirect hands the person over to a site the resolver does not control.
+9. **Repository → running system.** Images are built on the server from the checkout and public registries.
+
+## 3. Assets
+
+Ranked by the harm their loss causes; I = integrity, A = availability, C = confidentiality.
+
+| # | Asset | Why it matters | Property |
+|---|---|---|---|
+| A1 | The routing decision of each request | It decides which leaflet, notice or page a person receives | I, A |
+| A2 | Records of safety-critical link types (`gs1:epil`, `gs1:smpc`, `gs1:eifu`, `gs1:recallStatus`, `gs1:safetyInfo`) | A changed or deleted target misinforms silently | I |
+| A3 | Every other record, default links, forwarding rules and the resolver of last resort | Wrong product information; a route to a hostile site under a trusted name | I |
+| A4 | Availability of resolution | Printed codes cannot be changed; an outage removes access to safety information | A |
+| A5 | Separation between organisations | One organisation must not read or change another's records, log, users or settings | C, I |
+| A6 | Credentials: the data entry token, the session key, passwords, API keys, SSO client secrets, database passwords, mail password | Each opens A1–A5; the data entry token opens all of them at once | C |
+| A7 | The audit trail and record history | Who changed what and when; the means to restore | I, A |
+| A8 | Organisations' domains and brands | A domain in printed codes; the name and logo a person sees | I |
+| A9 | The request log and access logs | Scans by place, time and code; personal data when combined | C |
+| A10 | Users' personal data (names, e-mail addresses, sign-in history) | LGPD | C |
+| A11 | Configuration, backups and the build pipeline | Hold or produce everything above | C, I |
+
+## 4. Actors
+
+| Actor | Starts with | Wants | Notes |
+|---|---|---|---|
+| Anonymous internet, including automated and AI-driven scanning at scale | The public routes | Any weakness; exhaustion; credentials | Assumed continuous and cheap |
+| A scanned code or malicious label | A crafted GS1 Digital Link or a look-alike domain | To make a trusted name lead somewhere else | The person trusts the name in the code |
+| A user of another organisation | A valid session or API key elsewhere | Another organisation's records, log, users | The main multi-organisation threat |
+| A malicious or careless editor | Editor role in their own organisation | Wrong targets; damage by import or deletion | Carelessness is more likely than malice |
+| A compromised organisation administrator | Users, API keys, SSO, domains, brands of one organisation | Persistence; reach outside the organisation | |
+| The server administrator and support access | Everything in the portal; the host | — | Trusted, but must be attributable |
+| A compromised identity provider | Tokens for an organisation's e-mail domains | Accounts of that organisation | The operator's own provider reaches server administrators |
+| A compromised target site or lapsed domain | The page behind a link; a domain once verified | Hostile content under a valid code | Outside the system, visible to it only by checks |
+| Supply chain | A dependency, base image, action or the syntax engine | Code execution in a service or in CI | |
+| The operator's host or a backup | `.env`, the Docker socket, archives | Everything | Out of scope beyond what the scripts set up |
+
+## 5. Entry points
+
+### 5.1 External
+
+| # | Entry point | Authentication | Handler |
+|---|---|---|---|
+| E1 | GS1 Digital Link paths, with `linkType`, `context`, `Accept`, `Accept-Language` | none | `web_server/src/web_namespace.py:163-227`, `:251-264`, `:425-539` |
+| E2 | Linkset and JSON-LD (`linkType=linkset`, `Accept`), the item's page, `/_click`, `/_brand/` | none | `web_namespace.py:487-508`; `web_server/src/landing.py:261-343` |
+| E3 | Compressed links and EPC binary forms (one segment); `?compress=` | none | `web_namespace.py:104-160`, `:267-296` |
+| E4 | `/.well-known/gs1resolver` | none | `web_namespace.py:306-351` |
+| E5 | Official data entry API and its Swagger UI | one bearer token | `data_entry_namespace.py:68-292` |
+| E6 | Portal pages and `/portal/api/*` | session cookie; role; prefixes | `portal/app.py:315-394` |
+| E7 | Tenant API `/portal/api/v1/*` | API key with scopes | `portal/api_v1.py:43-68` |
+| E8 | Sign-in, sign-out, password change | password; throttle | `portal/app.py:974-1070` |
+| E9 | Password recovery and invitation links | single-use token by e-mail | `portal/app.py:1096-1174`; `portal/tokens.py` |
+| E10 | Single sign-on start and callback | the provider's ID token | `portal/app.py:3196-3231`; `portal/sso.py:303-368` |
+| E11 | Uploads: logos and icons (base64 in JSON), spreadsheets (base64 in JSON), the GCP table (XML, gzip) | session; role | `portal/branding.py:89-112`; `portal/sheet.py:111-161`; `portal/gcp.py:83-140` |
+| E12 | Home page and its assets; public portal assets, appearance, privacy notice, OpenAPI description, `healthz` | none | `nginx.conf:58-75`; `portal/app.py:717-851`, `:1177-1190` |
+| E13 | The `Host` header: the installation's name, an organisation's domain with its path stem, any other name | none | `web_server/src/domains.py:87-157` |
+| E14 | The query string, passed whole to the target | none | `web_namespace.py:392-398`, `:511-521` |
+
+### 5.2 Internal
+
+| # | Entry point | Runs as | Handler |
+|---|---|---|---|
+| I1 | Worker jobs: imports, link checks, mail | the portal's user, the job owner's scope | `portal/app.py:1940-1984`, `:2071-2106` |
+| I2 | Link checker, domain check, SSO discovery, monitoring probes (outbound HTTP) | portal, worker | `portal/linkcheck.py`; `portal/domains.py:304-344`; `portal/sso.py:202-263` |
+| I3 | DNS proof of domains | worker, portal | `portal/domains.py:264-301` |
+| I4 | Forwarding rules and caches read by the resolver | resolver, root database user | `web_server/src/forwarding.py`; `domains.py:53-77` |
+| I5 | Backup, restore rehearsal, secret rotation, GeoIP update | root on the host, cron | `scripts/*.sh` |
+| I6 | Organisations' domains on the host: nginx sites and certificates from database content | root on the host, every 5 minutes | `scripts/custom-domains.sh:147-190` |
+| I7 | Installer and upgrade script | root on the host | `scripts/install.sh`, `scripts/upgrade-from-official.sh` |
+| I8 | Build: Dockerfiles, package registries, the syntax engine's source | Docker build | `*/Dockerfile`, `portal/tools/build-syntax-engine.sh` |
+| I9 | CI | GitHub Actions | `.github/workflows/*.yml` |
+
+## 6. Threats
+
+L = likelihood, I = impact (H, M, L); rating = the pair.
+
+### 6.1 Resolution (E1–E4, E13, E14)
+
+| ID | STRIDE | Threat | Controls in place | Residual gap | L × I |
+|---|---|---|---|---|---|
+| T-R1 | T | A request is crafted so that the redirect leads somewhere other than the registered target | Targets come from the record only; the click route looks the link up again and never takes an address from the request (`landing.py:302-329`); path values are checked by the GS1 Barcode Syntax Engine before any lookup (`web_logic.py:118-140`, `:322-332`) | Records with template qualifiers, which the official API accepts and the portal does not create, need a review of their own before any installation uses them (private register) | L × H |
+| T-R2 | T, S | A hostile `Host` makes the resolver describe itself under another name | The proxy sets `X-Forwarded-Host` from the request (`nginx.conf:86`); only syntactically valid names are used (`domains.py:96-107`); an organisation's domain answers for its own prefixes only (`domains.py:147-157`, `web_namespace.py:448-455`) | Any syntactically valid name is echoed in linkset anchors and the description file; no list of accepted names; matters behind a shared cache | L × M |
+| T-R3 | D | Automated requests exhaust the resolver | Syntax check in process (`web_server/src/gs1_syntax.py`); request log written in the background with a bounded queue (`request_log.py`); stateless replicas | No request limit at either proxy; the cost of some paths is not bounded (private register) | H × H |
+| T-R4 | I | Enumeration of registered codes | `/index` and `/summary` need the token (`data_entry_namespace.py:148-190`); the resolver answers per code only | Codes can be probed one at a time; no limit | M × L |
+| T-R5 | T | A page of the resolver executes content supplied in a record | Templates escape by default; non-web targets are listed without a link (`web_pages.py:268-273`); JSON-LD is escaped for `<` (`landing.py:296`); colours and logos validated (`landing.py:125-128`, `branding.py:89-112`) | No Content-Security-Policy, framing or sniffing headers on these pages; they share the portal's origin | L × H |
+| T-R6 | T | A stale answer served after a change | Changes take effect at once in the database; caches of domains, brands and forwarding last 30–60 s | No explicit `Cache-Control` on redirects (not cacheable by default; a proxy in front may differ); caches keep the last value while the database is unreachable | L × M |
+| T-R7 | I | The query string carries personal or session data to the target | Passed whole, as the standard requires (`web_namespace.py:511-521`); the request log keeps AI names of attributes only | Inherent to the standard; say so in the privacy notice | M × L |
+
+### 6.2 Data entry and integrity (E5, E6, E7, I1)
+
+| ID | STRIDE | Threat | Controls in place | Residual gap | L × I |
+|---|---|---|---|---|---|
+| T-D1 | S, T, R | Someone with the data entry token changes any record, outside every portal rule | Constant-time comparison (`data_entry_namespace.py:54-65`); the installer generates the token (`install.sh:649`); the guide advises restricting `/api` | The API is published by default; one static, unscoped, unexpiring token for everything; no trace of such changes in the audit trail; the API does not validate targets | M × H |
+| T-D2 | T | An editor registers a wrong or hostile target | HTTPS only, no control characters (`portal/gs1.py:756-772`); link check at each save; history with restore (`journal.py:115-121`) | No second approver; no allowlist of target domains; no notification of changes; some deceptive address forms accepted | M × H |
+| T-D3 | T | Concurrent writers overwrite each other | Users' and tenants' changes run under a shared lock (`store.py:196-218`) | Record writes are read-modify-write without a version check, in the portal and in the data entry API | M × M |
+| T-D4 | T, D | Deleting or rewriting one record damages the key's other records | Content validated before the rewrite, original restored when the write is refused (`app.py:1526-1554`) | The rewrite is two calls; a failure between them leaves the key without records | L × H |
+| T-D5 | T | A spreadsheet import overwrites many records wrongly | Preview with create/update/unchanged per record before anything is written (`app.py:1775-1932`); every editor rule applied per row; access checked again per record in the worker (`app.py:1969`); cancel; journal entry per record | No approval step for large or safety-critical changes; no one-step undo of an import | M × H |
+| T-D6 | D | A crafted spreadsheet exhausts the portal | 700 KB and 5 000 rows (`sheet.py:47-53`); 1 MB request limit (`app.py:150`, `nginx.conf:121`) | The row limit is applied after the whole sheet is read | L × M |
+| T-D7 | R | A change cannot be attributed, or the trail is altered | Journal entry with user, time, content for every record change, sign-in and administrative action (`journal.py:1-30`); API changes attributed to the key (`api_v1.py:67`); per-organisation trail; operator's actions on an organisation marked (`app.py:418-437`) | A failed journal write does not stop the change; no tamper evidence; no reason for change; changes through the official API unrecorded | M × H |
+
+### 6.3 Separation between organisations (E6, E7)
+
+| ID | STRIDE | Threat | Controls in place | Residual gap | L × I |
+|---|---|---|---|---|---|
+| T-T1 | E, I | A user reads or changes another organisation's records | Scope set from the account at every request (`app.py:294-335`); every record route calls `check_access` or `allowed` (`app.py:401-415`, e.g. `:1320`, `:1380`, `:1506`, `:1629`, `:2659`, `:3107`, `:3436`, `:3448`; `api_v1.py:93-97`); prefixes never overlap between organisations (`tenants.py:94-106`); verified by a run in this phase | The data entry API returns every organisation's records to the portal and each caller filters: one missed filter exposes everything; needs an exhaustive matrix test | L × H |
+| T-T2 | E | An organisation's administrator acts on another organisation's users, keys, domains, brands, SSO, limits | Each screen scopes by the account's organisation (`app.py:2196-2203`, `:2325-2364`, `:2918-2928`, `:3034-3040`, `:3238-3246`; `branding.py:71-86`; `users.py:181-196`) | One route's scope check is incomplete (low impact; private register); claims that are not proved can block or mislead another organisation (private register) | M × M |
+| T-T3 | I | The request log, audit trail or statistics of another organisation | Filters built from prefixes (`requestlog.py:364-382`); audit scope (`journal.py:123-130`); API calls by organisation (`requestlog.py:876-879`) | Existence of user names and e-mail addresses in other organisations can be inferred from refusals | L × M |
+| T-T4 | E, R | The operator reads an organisation's data without trace | Support access: read only, with a reason, recorded in the organisation's trail (`app.py:2620-2650`, `:294-312`) | The reason is free text; no time limit other than the session's; the organisation is not notified | L × M |
+
+### 6.4 Authentication and sessions (E8–E10, E7)
+
+| ID | STRIDE | Threat | Controls in place | Residual gap | L × I |
+|---|---|---|---|---|---|
+| T-A1 | S | Password guessing | 12-character minimum (`users.py:39`); salted slow hashes (`users.py:35`, `:215`); five failures lock a user name and an address for 15 minutes, shared by replicas (`app.py:209-241`); equal time for unknown users (`users.py:53`, `:102-109`); notification on lock | No second factor; no check against known-breached passwords; the per-address limit is weaker than intended (private register) | M × H |
+| T-A2 | D | Accounts locked by a third party | Recovery link clears the lock (`app.py:1164`); SSO unaffected | The lock can be turned against the account's owner (private register) | M × M |
+| T-A3 | S | Session theft or reuse | Signed cookie, `HttpOnly`, `Secure`, `SameSite=Lax`, path `/portal` (`app.py:148-159`); 30-minute idle and 12-hour absolute limits (`app.py:78-79`, `:254-290`); bound to the password's fingerprint, so a change or reset ends other sessions (`users.py:112-124`); role, prefixes and organisation read again at every request | No server-side session record: signing out does not revoke a copied cookie | L × M |
+| T-A4 | S | Cross-site request forgery | Writes must come from the portal's origin and be JSON (`app.py:445-454`); `SameSite=Lax` | — | L × M |
+| T-A5 | S | Recovery or invitation link abused | 256-bit token, only its hash stored, single use, 1 hour (recovery) or 72 hours (invitation), in the URL fragment (`tokens.py:45-79`); same answer and time whether or not an account matched (`app.py:1096-1121`); limits per name and address; security message afterwards | Depends on the mailbox; the per-address limit shares the weakness of T-A1 | L × H |
+| T-A6 | S, E | Single sign-on abused | Code flow with PKCE, state and nonce (`sso.py:303-320`); signature, issuer, audience, expiry, nonce checked, asymmetric algorithms only (`sso.py:276-296`); issuer must match discovery (`sso.py:229-245`); the account must exist, be enabled and belong to the configuration's organisation (`sso.py:363-367`); accounts never created by sign-in | How accounts are bound to the provider's identities, and how e-mail domains are claimed, needs hardening (private register) | M × H |
+| T-A7 | S | API key theft or guessing | 256-bit secret, hash stored, constant-time comparison (`apikeys.py:143-152`); scopes, optional prefixes, expiry of at most 365 days, revocation, last use (`apikeys.py:28-33`, `:101-129`); 120 requests a minute per key (`apikeys.py:155-168`); creation notified | No limit before authentication; no address restriction per key | L × H |
+| T-A8 | E | A user keeps rights after losing them | Scope read at each request; a disabled organisation ends its users' sessions and keys (`app.py:259-265`, `api_v1.py:55`) | A queued job is run with the account as found later, without checking the role again | L × L |
+
+### 6.5 Browser (E6, E12)
+
+| ID | STRIDE | Threat | Controls in place | Residual gap | L × I |
+|---|---|---|---|---|---|
+| T-B1 | T, E | Script injection in the portal | The front end builds the page with DOM nodes and text only (no HTML-string sinks in `portal/static/*.js`); `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `no-store` (`app.py:457-464`); label SVG escaped (`label.py:446`); logos re-read by an image library, SVG refused (`branding.py:89-112`) | No Content-Security-Policy on the portal; the portal, the resolver's pages and two Swagger UIs share one origin | L × H |
+| T-B2 | T | Formula injection through exports | Cells starting with a formula character are neutralised (`sheet.py:93-96`; `app.py:2698`, `:2807`) | — | L × L |
+| T-B3 | I | Clickjacking, downgrade | `X-Frame-Options: DENY` on the portal; `frame-ancestors 'none'` on the home page (`nginx.conf:64`); HTTP redirected to HTTPS by the host proxy | No HSTS; no framing header on the resolver's pages | L × M |
+
+### 6.6 Requests the server makes (I2, I3)
+
+| ID | STRIDE | Threat | Controls in place | Residual gap | L × I |
+|---|---|---|---|---|---|
+| T-S1 | I, E | A user makes the portal or worker reach internal addresses | Names resolving to any non-global address are refused, at every redirect hop (`linkcheck.py:40-48`, `:95-128`); redirects not followed for providers and domain checks (`sso.py:202-215`, `domains.py:304-310`); provider addresses must be HTTPS and public (`sso.py:88-99`); only status and final address are reported | The check can be strengthened (private register); the link checker accepts plain HTTP | L × M |
+| T-S2 | D | The link checker used to send traffic to third parties | 5 000 addresses per job (`app.py:2058`); results cached for 10 minutes; editors only | No limit per organisation on jobs | L × L |
+
+### 6.7 Infrastructure and supply chain (I5–I9)
+
+| ID | STRIDE | Threat | Controls in place | Residual gap | L × I |
+|---|---|---|---|---|---|
+| T-I1 | E | A flaw in an internet-facing service reaches all data | The portal has a database user limited to its own database and never receives the root credentials (`docker-compose.yml:105-111`, `portal/db_init.py:42`); the portal runs as an unprivileged user (`portal/Dockerfile:34`) | The resolver and the data entry API use the root database user and run as root in their containers | L × H |
+| T-I2 | I, E | Default or exposed secrets and ports | The installer generates every secret, writes `.env` with mode 600, binds the database and the proxy to loopback (`install.sh:262`, `:307`, `:333`, `:649`); rotation script | Started by hand without `.env`, the composition uses example credentials and publishes both ports on every interface; nothing refuses to start | M × H |
+| T-I3 | T | Host scripts act on database content as root | Domain names validated again before reaching a file or a command; values passed as environment variables, never through a shell (`custom-domains.sh:41-50`, `:77-79`); nginx configuration tested before reload (`:172-176`) | *Not verified* on a live host | L × H |
+| T-I4 | I | Backups or logs disclose data | Archives of mode 600; credentials stay inside the database container; off-server copy; restore rehearsal | Archives not encrypted; SSO client secrets stored in clear; access logs keep addresses and full request lines | M × M |
+| T-I5 | T | A dependency, image or action is replaced | Syntax engine release pinned in one place (`docker-compose.yml:6`) with a weekly check; resolver and data entry dependencies pinned; CI with read-only permissions (`dev-tests.yml:20-21`) | Portal dependencies as ranges; no hashes; images and actions by mutable tag; a piped installer script in two images; no vulnerability scanning, SBOM or disclosure policy | M × H |
+| T-I6 | S, I | TLS weaknesses | TLS 1.2 and 1.3 only (`nginx-site-https.conf:18`); certificates from Certbot with renewal; expiry monitored 21 days ahead (`monitor.py`); mail and provider connections verify certificates (`mail.py:122-123`) | No HSTS; traffic inside the Docker network and to MongoDB is in clear (one host assumed) | L × M |
+
+## 7. Patient-safety hazards that are not attacks
+
+In the manner of ISO 14971: situations in which the system behaves as designed, or fails without an adversary, and a
+person may still receive wrong or no information. Behaviours marked *observed* were run in this phase.
+
+| ID | Hazard | Cause | Possible consequence | Mitigation in place | Proposed mitigation |
+|---|---|---|---|---|---|
+| H-1 | A request for a batch that has no record of its own is answered with the product-level link of the same type | The walk-up of GS1-Conformant Resolver 2.5.9–2.5.10 (`web_logic.py:449-466`, `:794-805`). *Observed* for `gs1:recallStatus`: an unregistered batch, a batch differing only in letter case, and a serial number without its batch all received the product-level notice | A recall registered for one batch is missed; a batch-specific leaflet is replaced by the general one; nothing tells the person or the app which level answered | The record list flags keys without a record of their own; the request log keeps the answering level (`web_namespace.py:457-459`) | State the answering level in the response; a policy for safety-critical link types (no walk-up, or a visible notice); warn in the editor on conflicting levels and near-duplicate batch values; alert on walk-ups for `recallStatus` |
+| H-2 | A plain scan (no link type) opens the default link, which says nothing about a recall | The default link of the most specific record wins (`web_logic.py:601-618`) | A recalled product looks normal | The item's page lists every link, safety types with an alert icon (`landing.py:60-68`) | For records holding `recallStatus`/`safetyInfo`, offer or require the item's page as default, safety links first |
+| H-3 | A wrong target is registered | Typing or copy error; wrong spreadsheet column | Wrong leaflet | Link check at save; preview; history | Second approver and change notification for safety-critical types; target allowlist |
+| H-4 | A target stops working or changes content | Site reorganised; domain lapsed | Dead link or unrelated content | Link checker on demand, problems in the record list and overview (`app.py:2109-2182`); HTTPS→HTTP redirects reported | Scheduled checks for safety-critical links with alerts; optional content fingerprint to detect a changed document |
+| H-5 | The wrong key or qualifier is registered | A valid GTIN of another product; batch typed differently from the printed one | The right leaflet under the wrong code | Check digits, formats and qualifier rules by the GS1 engine (`portal/gs1.py`, `data_entry_logic.py:104-189`); prefix must belong to the organisation; GCP table comparison (`gcp.py`) | Product master data comparison where available; "try now" scan before publishing |
+| H-6 | A leaflet in a language the person did not ask for, or for another market | No link serves the requested language or context: the remaining links are used (`web_logic.py:540-565`). *Observed*: an English leaflet for a pt-BR request; an unknown `context` ignored | Information not understood, or not valid in the person's country | The item's page marks the language of each link | Signal the mismatch or offer the choice page for safety-critical types; warn about missing languages |
+| H-7 | The default link points somewhere generic | The key's default link type is shared by its records (`app.py:1432-1438`) | Marketing page instead of instructions | The editor shows the shared default | A recommended default per product category (healthcare: leaflet or item's page) |
+| H-8 | The item's page shows the wrong brand | The longest matching prefix wins; a prefix moved to another organisation takes its brand (`landing.py:95-102`, `branding.py:55-62`) | Confusion about who is responsible | Brands limited to the organisation's own prefixes | Show the change of prefix ownership to both organisations; confirm brands after a move |
+| H-9 | An import overwrites good records | A stale export imported again | Old leaflets restored | Preview, unchanged detection, journal | Refuse or warn when the file is older than the records it changes; one-step undo |
+| H-10 | Restoring an old version brings back an obsolete target | Restore loads the version into the editor; saved through the normal rules (`static/app.js:2388`) | Withdrawn leaflet published again | Nothing is saved until the user saves; link check | Mark versions older than a withdrawal; approval for safety-critical types |
+| H-11 | Deleting one record removes the key's others for a time | The rewrite in two calls (`app.py:1537-1554`) | No answer for the product | Validation before; restore on refusal | An atomic record-level delete |
+| H-12 | An organisation's domain lapses or is repointed | A verified domain stays verified (`domains.py:290-301`) | Printed codes lead elsewhere | Daily look at the DNS proof, last seen recorded | Alert when the proof or the address is missing; stop offering the domain for new labels |
+| H-13 | Forwarding sends an organisation's codes elsewhere | A rule by prefix overrides local records (`web_namespace.py:442-446`) | Leaflets bypassed | The screen shows overlapping organisations; rules can be switched off | Notify affected organisations; confirm with the number of records |
+| H-14 | Unknown codes go to another resolver | Resolver of last resort (`web_namespace.py:461-464`) | The person lands on a third party's answer | Off by default; counted in the overview | Explain on the organisation's page; exclude an organisation's own prefixes if wanted |
+| H-15 | A change does not take effect, or an old answer persists | Caches of 30–60 s that keep the last value when the database fails; an intermediary caching redirects | A recall published late | Short cache times | `Cache-Control: no-store` on redirects; alert when caches cannot refresh |
+| H-16 | Wrong clock | Tokens, sessions, retention and journal times use the server's clock | Early expiry; wrong audit times | — | Time synchronisation checked by monitoring |
+| H-17 | Resolution is unavailable | One host, one MongoDB; overload | No information at all | Replicas, monitoring with alerts by e-mail (`monitor.py:393-420`), backups with rehearsal | Rate limits; a second site or a static emergency answer for safety-critical keys; recovery time objective |
+| H-18 | The audit trail is incomplete when needed | Journal writes are best effort | A change cannot be explained | Failure logged | Journal first, change second |
+
+## 8. Security controls in place
+
+| Area | Control | Evidence |
+|---|---|---|
+| Authentication | Passwords of at least 12 characters, salted slow hash; first user from the environment only while there is none | `portal/users.py:39`, `:215`; `portal/app.py:165-181` |
+| | Temporary passwords must be changed; only four routes allowed until then | `portal/app.py:291`, `:330-333` |
+| | Lock after five failures per user and per address, shared by replicas; equal timing for unknown users | `portal/app.py:209-241`, `:974-996`; `portal/users.py:53` |
+| | Single sign-on per organisation with OpenID Connect; password sign-in can be switched off | `portal/sso.py:172-178`, `:276-368` |
+| Sessions | Signed cookie with `HttpOnly`, `Secure`, `SameSite=Lax`; idle and absolute limits; bound to the password | `portal/app.py:148-159`, `:254-290` |
+| Cross-site requests | Origin and JSON checks on every write | `portal/app.py:445-454` |
+| Roles and prefixes | reader < editor < administrator; prefixes per user; server administrator; read-only support access | `portal/app.py:294-394`; `portal/users.py:181-196` |
+| Organisations | Ownership derived from prefixes; non-overlapping prefixes; scope checks on every record route | `portal/tenants.py:69-106`; `portal/app.py:401-415` |
+| API keys | Hashed 256-bit secrets, scopes, prefixes, expiry, revocation, limit per minute, call log | `portal/apikeys.py:28-33`, `:101-168`; `portal/api_v1.py:43-91` |
+| Single-use links | Hashed, single use, short life, limits, neutral answers | `portal/tokens.py:45-79`; `portal/app.py:1096-1174` |
+| Target addresses | HTTPS only; no spaces, control or invisible characters; non-web targets not rendered as links | `portal/gs1.py:756-772`; `web_server/src/web_pages.py:268-273` |
+| GS1 data | Keys, qualifiers and values checked by the GS1 Barcode Syntax Engine in the portal, the data entry API and the resolver | `portal/gs1.py`; `data_entry_server/src/data_entry_logic.py:104-189`; `web_server/src/web_logic.py:118-140` |
+| Uploads | Logos: size, dimensions, re-read by an image library, PNG/JPEG/WebP only; spreadsheets: size and rows; GCP table: size, no DTD or entities | `portal/branding.py:32-34`, `:89-112`; `portal/sheet.py:47-53`; `portal/gcp.py:38`, `:116` |
+| Output encoding | DOM text nodes in the front end; escaping templates on the resolver; escaped SVG; neutralised CSV cells | `portal/static/*.js`; `web_server/src/landing.py:290-298`; `portal/label.py:446`; `portal/sheet.py:93` |
+| Headers | Portal: `nosniff`, `DENY`, `same-origin` referrer, `no-store`; home page: a strict Content-Security-Policy | `portal/app.py:457-464`; `frontend_proxy_server/nginx.conf:60-64` |
+| Outbound requests | Public addresses only, each redirect hop checked, time limits | `portal/linkcheck.py:40-48`, `:95-128`; `portal/sso.py:88-99` |
+| Domains | DNS TXT proof; an organisation's domain answers for its prefixes only; host names validated again on the host | `portal/domains.py:264-287`; `web_server/src/domains.py:147-157`; `scripts/custom-domains.sh:77-79` |
+| TLS | TLS 1.2/1.3 at the host proxy, automatic certificates, expiry alert | `scripts/templates/nginx-site-https.conf:18`; `portal/monitor.py` |
+| Secrets | Generated by the installer, `.env` of mode 600, rotation script; the portal without root database credentials; client secrets never sent to a browser | `scripts/install.sh:262`, `:333`; `scripts/rotate-secrets.sh`; `docker-compose.yml:105-111`; `portal/sso.py:67-76` |
+| Audit trail | Journal of sign-ins, administration and every record version, per organisation, with retention per category; text logs | `portal/journal.py:1-30`; `portal/app.py:418-437` |
+| Request log privacy | No client address, no user agent, no full referrer, no values of unit qualifiers or attributes; retention per organisation | `web_server/src/request_log.py:1-30`, `:230-290` |
+| Exports | Limits per role and organisation within an installation maximum; journal entries | `portal/app.py:366-384`; `portal/exportlimits.py` |
+| Backups | Daily dump, off-server copy, restore rehearsal, alert on failure | `scripts/resolver-backup.sh`; `scripts/restore-rehearsal.sh` |
+| Monitoring | Resolver, backup, certificate, log space, spikes of 404, with alerts by e-mail | `portal/monitor.py:393-420` |
+| CI | More than 4,700 checks in 68 programs on every change; read-only token | `.github/workflows/dev-tests.yml:20-21` |
+
+## 9. Gaps and recommended controls
+
+Phrased as controls. P1: before any use with medicines or devices; P2: before validation; P3: improvement.
+"Exists" means the control is already there and only its limits are noted.
+
+### P1
+
+| # | Control | Why (threats, hazards) | Today |
+|---|---|---|---|
+| G-1 | **Close the official data entry API to the internet by default**: reachable from the portal only, or from listed addresses; integrations use the tenant API | T-D1 | Published by the proxy; restriction is advice in the operator's guide |
+| G-2 | **Refuse to start with example secrets or open ports** outside development; loopback as the default bind | T-I2 | The installer does it; the composition alone does not |
+| G-3 | **Rate limiting at the proxy** per address: sign-in, recovery, tenant API, resolver paths that are not GS1 keys; bounded cost for every path | T-R3, T-A1, H-17 | None at the proxies; limits per user name and per API key exist in the portal |
+| G-4 | **Trusted-proxy handling of the client's address**, configured by the number of proxies in front | T-A1, T-D7 | Partial (private register) |
+| G-5 | **Second factor for editors and administrators** (TOTP or WebAuthn; mandatory for server administrators), or SSO enforced with the provider's second factor | T-A1, T-A2 | Absent; SSO per organisation exists |
+| G-6 | **Safety-critical link types as a class** (`epil`, `smpc`, `eifu`, `recallStatus`, `safetyInfo`): four-eyes approval before a change takes effect, notification of every change to the organisation's administrators, scheduled link checks with alerts | T-D2, H-3, H-4 | All link types are treated alike; link checks run on demand |
+| G-7 | **Make the answering level visible and controllable**: a response field naming the record that answered; a policy for safety-critical types when the batch or serial has no record; editor warnings on conflicting levels | H-1, H-2 | The level is kept in the request log only |
+| G-8 | **Atomic record operations with optimistic concurrency** in the data entry API: record-level delete, a revision checked on every write | T-D3, T-D4, H-11 | Whole-document replace; delete and re-create |
+| G-9 | **An audit trail that cannot be skipped or silently altered**: entry written before the change, changes through every interface recorded, hash chain with an anchor outside the database, insert-only access | T-D7, H-18 | Complete in content, best effort in writing, no tamper evidence |
+| G-10 | **Template records reviewed, or refused,** before any installation uses them | T-R1 | The portal does not create them; the official API accepts them |
+
+### P2
+
+| # | Control | Why | Today |
+|---|---|---|---|
+| G-11 | Least-privilege database users for the resolver and the data entry API; non-root containers; read-only file systems | T-I1 | The portal's user is limited (exists); the other two use root |
+| G-12 | Per-organisation allowlist of target domains, mandatory for safety-critical types; refusal of user information and address literals in targets | T-D2 | HTTPS-only rule exists |
+| G-13 | SSO hardening: how e-mail domains are claimed and how accounts are bound to the provider's identities (private register) | T-A6, T-T2 | Token validation exists and is sound |
+| G-14 | Server-side sessions with revocation at sign-out and "sign out everywhere"; shorter limits for administrators | T-A3 | Idle and absolute limits exist |
+| G-15 | A sign-in throttle that cannot be turned against the account's owner | T-A2 | Lock per user name and per address |
+| G-16 | Content-Security-Policy on the portal and the resolver's pages; HSTS; framing and sniffing headers everywhere; the portal on its own host name | T-B1, T-B3, T-R5 | Strict policy on the home page only |
+| G-17 | Outbound requests hardened further (private register); HTTPS only; limits per organisation | T-S1, T-S2 | Public-address check exists |
+| G-18 | Supply chain: locked dependencies with hashes, images by digest, actions by commit, dependency and image scanning and static analysis in CI, an SBOM per release, a vulnerability disclosure policy (`SECURITY.md`) | T-I5 | Engine release pinned and checked weekly (exists) |
+| G-19 | Signal a language or market mismatch for safety-critical types; warn about missing languages | H-6 | Silent fallback |
+| G-20 | Domains: uniqueness among verified domains, expiry of unverified ones, alert and withdrawal from labels when the proof disappears; resolver paths only on organisations' domains | H-12, T-T2 | DNS proof exists; verification is permanent |
+| G-21 | Notify organisations of forwarding rules that cover their prefixes and of support access to their data | H-13, T-T4 | Recorded for the operator; support access is in the organisation's trail |
+| G-22 | An authorisation matrix test and a fuzzing program in CI (section 10) | T-T1, T-R1 | Tests per feature exist |
+| G-23 | Encrypted backups; SSO secrets encrypted at rest; access logs without addresses or with stated retention | T-I4 | Mode 600, off-server copy, rehearsal (exist) |
+| G-24 | Accepted host names only (the installation's and verified domains) in what the resolver writes about itself | T-R2 | Any valid name is echoed |
+
+### P3
+
+| # | Control | Today |
+|---|---|---|
+| G-25 | Reason for change and an electronic signature on safety-critical changes | Absent |
+| G-26 | Password check against known-breached lists; address restrictions per API key | Absent |
+| G-27 | Type validation of every JSON body with a 422 answer | Some bodies answer 500 |
+| G-28 | Import: refuse files older than the records they change; one-step undo; parsing in the worker with early row limit | Preview and journal exist |
+| G-29 | `Cache-Control: no-store` on redirects; alert when the resolver's caches cannot refresh; clock check | Short caches |
+| G-30 | Neutral refusals that do not reveal user names or e-mail addresses of other organisations | Refusals name the cause |
+| G-31 | A second site or a static emergency answer for safety-critical keys; MongoDB replica set | One host |
+
+## 10. Plan for the code review
+
+The project's rule applies: **every finding is proved by a development test in `dev-tests/` that fails before the fix
+and passes after it**, with a mutation check that the test can fail.
+
+### 10.1 Areas
+
+| # | Area | Questions the review must answer | Files | Test that proves a finding |
+|---|---|---|---|---|
+| 1 | Separation of organisations and authorisation on every route | Does every route that takes a key, a user, a key id, a domain, a prefix, a job token or an organisation id check it against the caller's scope? Which role does each decorator read — the account's or the scope's — and is that right during support access? Does any list fed by `/summary` miss the filter? Can a prefix move leave data behind (history, metadata, last link check, brands, default domains)? | `portal/app.py`, `api_v1.py`, `tenants.py`, `users.py`, `journal.py`, `requestlog.py`, `meta.py`, `overview.py`, `branding.py`, `domains.py`, `exportlimits.py` | The authorisation matrix (10.2); a per-route check in `test_tenants.py` |
+| 2 | Authentication, sessions, SSO, recovery, API keys | Is every limit keyed on something the client cannot choose? Can a lock be forced? What survives sign-out, a role change, a disabled account, a removed organisation? Is the SSO account bound to the provider's subject? Are tokens single use under races? What do answers and timings reveal? | `portal/app.py:209-335`, `:964-1174`, `:3189-3298`; `sso.py`, `tokens.py`, `users.py`, `apikeys.py`, `notify.py`, `mail.py` | Flask test client programs with the stand-in provider (`fake_oidc.py`) and mail server; races with threads against mongomock, repeated on MongoDB in CI |
+| 3 | Routing and parsing in the resolver | For every path, header and query combination, is the answer a function of the stored record only? Which inputs reach code that interprets them or a database key? What does each `Host` produce? Is the level that answered right for every qualifier combination and order? What is cached, where, for how long? | `web_server/src/web_namespace.py`, `web_logic.py`, `domains.py`, `forwarding.py`, `landing.py`, `web_pages.py`, `epc_binary.py`, `gs1_syntax.py`; `frontend_proxy_server/nginx.conf` | `test_resolver.py` with the real syntax engine; the fuzzing program (10.3); nginx-level checks in `dev-tests/home` |
+| 4 | Data entry and integrity | Is the target rule applied on every write path (editor, tenant API, import, restore, key-level record, explicit defaults, serial fix) and what does the official API accept that the portal refuses? What happens when a call sequence stops half-way? Do concurrent writers lose changes? Is every change journalled before it is visible? | `portal/app.py:622-693`, `:1373-1644`, `:1775-2038`; `sheet.py`, `gs1.py`, `journal.py`; `data_entry_server/src/*` | `mock_data_entry.py` extended to fail or pause at a chosen call; `test_data_entry_api.py` for the API's own rules; parity checks in `test_mock_parity.py` |
+| 5 | Browser output | Is there any path from stored or request data to markup, a URL attribute, a style or a script, in the portal, the item's page, the error pages, the home page, the labels (SVG, PDF) and the e-mails (HTML part)? What would a Content-Security-Policy break? | `portal/static/*.js`, `*.html`; `web_server/src/web_pages.py`, `landing.py`; `frontend_proxy_server/home/*`; `portal/label.py`, `mailtexts.py`, `appearance.py`, `privacy.py` | Playwright programs (`*_e2e.py`) that register hostile values through the API and assert no script runs and no request leaves the origin; header checks |
+| 6 | Requests the server makes | Can any user-supplied address reach a non-public address through redirects, DNS changes, IPv6 forms, proxies or alternative encodings? What is reported back? Are time and size bounded? | `portal/linkcheck.py`, `sso.py:88-263`, `domains.py:264-344`, `monitor.py`, `mail.py` | A local listener and a stub resolver whose answers change between calls; assert no connection reaches the listener |
+| 7 | Infrastructure | Which headers do the proxies trust and forward? What is reachable on each host name? Which user does each container and script run as, with which database rights? What do the installer, backup, rotation and domain scripts do with hostile database content or a hostile `.env` value? TLS settings? | `frontend_proxy_server/nginx.conf`, `scripts/*`, `docker-compose.yml`, `*/Dockerfile`, `portal/db_init.py`, `.env.example` | `dev-tests/home` and `dev-tests/install` with the nginx binary and stubs; `test_store_mongodb.py` in CI for database rights |
+| 8 | Supply chain | Is every dependency, image, action and download pinned and verified? What runs at build time with network access? Which licences and known vulnerabilities are present? | `*/requirements.txt`, `*/Dockerfile`, `.github/`, `portal/tools/*.sh`, `.claude/hooks/session-start.sh`, `Documentation/third-party.md` | A CI job that fails on an unpinned reference or a known vulnerability; `dev-tests/docs` check that the inventory matches |
+
+### 10.2 An authorisation matrix test
+
+A program `dev-tests/portal/test_authz_matrix.py` that:
+
+1. reads every rule of the Flask application (`app.url_map`), so that a new route cannot be forgotten: the test
+   fails when a route has no row in its expectations table;
+2. sets up two organisations and the operator, each with reader, editor and administrator, a user limited to one
+   prefix, a server administrator inside and outside support access, a disabled user, a user with a temporary
+   password, and API keys of each scope with and without prefixes — plus the anonymous caller;
+3. calls every route × method as every actor against its **own** objects and against the **other** organisation's
+   (record, user, API key, domain, brand, SSO scope, job token, organisation id);
+4. asserts the status from the table (200/201, 401, 403, 404 or 422) **and** that no identifier, name or address of
+   the other organisation appears in any body, and that the other organisation's data is unchanged afterwards.
+
+### 10.3 Fuzzing the resolver's path parser
+
+A program `dev-tests/resolver/test_fuzz_paths.py` with a fixed seed (reproducible in CI) and a longer run on demand:
+
+- **inputs**: paths built from the grammar of GS1 Digital Link (keys, qualifiers in every order, percent-encoding of
+  every character of GS1's character sets 82 and 39, doubled and encoded slashes, empty segments, very long values),
+  compressed and EPC forms, query strings, `Host`, `Accept`, `Accept-Language`, against a fixed set of records
+  including template records and every qualifier level;
+- **properties**: never a 500; a redirect's target is always one of the registered targets of that key (plus the
+  request's own query string), on the registered host; the level that answers is the most specific registered level
+  that matches exactly; the same request always gives the same answer; the cost of a request is bounded; the answer
+  never contains another key's data;
+- the same generator feeds the portal's and the data entry API's validators to find inputs on which the three
+  disagree (a value one accepts and another refuses).
+
+## 11. Assumptions and open questions
+
+**Assumptions made.**
+
+- One host, installed by `scripts/install.sh`, with the host proxy as the only way in; the Docker network and the
+  host are trusted.
+- Target sites, identity providers and the mail relay are operated by others and can fail or be compromised.
+- Organisations are not trusted with one another's data; the operator's server administrators are trusted but must
+  be attributable.
+- Scans are anonymous; the resolver holds no patient data. The request log and access logs are the only places where
+  a scan leaves a trace.
+
+**Questions for the owner.**
+
+1. **Intended use.** Which statement of intended use will the validation carry — is the resolver "the route to" the
+   leaflet and the recall notice, or a convenience beside a regulated channel? The answer sets how far H-1, H-2 and
+   H-17 must be reduced.
+2. **Batch-level behaviour.** For a batch or serial without a record of its own, should a safety-critical link type
+   walk up to the product level (the standard's behaviour), answer "not found" with the available links, or walk up
+   with a visible notice? May this differ per organisation?
+3. **The official data entry API.** Does any integration need `/api` from the internet, or can it be closed by
+   default and integrations moved to the tenant API?
+4. **Template records.** Will any installation use records with template qualifiers (for example serial numbers
+   passed to a verification page)? If not, they can be refused.
+5. **Approval.** Is four-eyes approval acceptable to organisations for safety-critical link types, and who approves
+   in an organisation with a single administrator?
+6. **Second factor.** TOTP in the portal, WebAuthn, or SSO made mandatory with the provider's second factor?
+7. **Availability target.** What recovery time and recovery point are required, and is a second site in scope?
+8. **Audit trail.** Which retention and which evidence of integrity will the validation ask for (ALCOA+)? Is a
+   reason for change required?
+9. **Personal data.** Who is the controller of the request log per organisation; what do the access logs' retention
+   and the privacy notice say; are user names and addresses across organisations a concern?
+10. **Vulnerability handling.** Where are reports received, and how are weaknesses in the official project's code
+    passed on to its maintainers before they are described in public?
+11. **Hosting.** Is anything in front of the host proxy (a CDN, a web application firewall, a load balancer)? It
+    changes the trusted-proxy setting, the caching hazards and where rate limits belong.

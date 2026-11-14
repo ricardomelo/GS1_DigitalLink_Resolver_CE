@@ -60,6 +60,9 @@ between sessions and is not for the public. The README's *Open backlog* is the r
   *A feature, or a check*); `dev-tests/docs/test_docs.py` fails when they are out of step. A change to
   `portal/openapi.json` regenerates `Documentation/api-reference.md` (`portal/tools/gen_api_reference.py`).
 - An ADR (`Documentation/adr/`) records deviations in the same delivery; a large item starts with its ADR.
+- `Documentation/threat-model.md` changes with a route, role, service, stored collection, external party or security
+  control (ADR 0020). A live weakness is never described in a public document: it goes into the private findings
+  register in the maintainer's Drive folder until it is fixed.
 - The README's *Open backlog* loses an item when it is done or dropped; `Documentation/history.md` records each
   session.
 - A new e-mail message needs every language (`mailtexts.py`, `mail_languages.json`) and a category in

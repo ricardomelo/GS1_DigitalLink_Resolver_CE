@@ -44,6 +44,7 @@ development tests' checks that prove it; the whole list of checks is the [invent
 | [Developer guide](developer-guide.md) | services, source files, request flows, the portal's API, its data, the tests with their counts, how to extend |
 | [Development tests](../dev-tests/README.md) | every test program, how to set up and run them |
 | [Inventory of features](test-inventory.md) | every check of every test program, grouped by area |
+| [Threat model](threat-model.md) | the services and their trust boundaries, the assets ranked by their effect on patient safety, actors, entry points, threats with the controls that answer them, hazards that are not attacks, gaps and the plan of the security review |
 | [History](history.md) | how the project evolved session by session, decisions, lessons, open items |
 | [Translation guide](translation-glossary.md) | the rules and glossary for the texts of the twelve interface languages, and how to contribute corrections |
 | [Official README](upstream-README.md) | the README of the official GS1 Resolver CE, kept for reference |
@@ -71,6 +72,7 @@ development tests' checks that prove it; the whole list of checks is the [invent
 | [ADR 0018](adr/0018-forwarding.md) | forwarding: every code of a prefix sent to another resolver, and the codes this resolver does not know sent to a resolver of last resort (`https://id.gs1.org` by default), both switched on in the portal, with the overview's figures |
 | [ADR 0019](adr/0019-appearance.md) | the installation's appearance: the title in place of *GS1 Resolver Community Edition*, the logo and three colours, set by server administrators in the portal for every page (portal, home page, resolver's pages), with a button that restores the original |
 | [ADR 0017](adr/0017-privacy-notice.md) | the installation's privacy notice: written in the portal by server administrators, kept as versions, linked from every footer, a default text on the operator's responsibility |
+| [ADR 0020](adr/0020-security-assessment.md) | a security assessment for a healthcare information chain: a threat model first, then a review of the code by area; findings kept in a private register until fixed, each proved by a development test |
 
 The documentation is written in British English only; readers of other languages can use the translation built into
 their browser. The software itself — the portal, its e-mails, the resolver's pages, the item's page and the home page —

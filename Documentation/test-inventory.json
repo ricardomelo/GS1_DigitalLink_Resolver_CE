@@ -4662,6 +4662,15 @@
     "data attributes decoded from an EPC are checked by the engine (7258 without 8018 and 7259): 400",
     "EPCB example passes the engine",
     "DSGTIN+ with its date passes the engine",
+    "template record: the batch's value goes into the target",
+    "template record, a value with quotes that close the string and add an href: the registered host and path, the value encoded in one segment",
+    "template record, a value with a single quote, parentheses and a comma: the registered host and path, the value encoded in one segment",
+    "template record, a value with a slash and a question mark: the registered host and path, the value encoded in one segment",
+    "template record, a value with a colon, a semicolon and an equals sign: the registered host and path, the value encoded in one segment",
+    "template record, a value with a percent sign and an ampersand: the registered host and path, the value encoded in one segment",
+    "template record, injected value in the linkset: every link to the registered host, the title showing the value as text",
+    "serialised key template ({0}/{1}): the key's prefix and the rest go into the target",
+    "serialised key template, a rest with quotes: the registered host, the rest encoded in one segment",
     "the GS1 Barcode Syntax Engine loads in the resolver's process",
     "in-process answers equal Node.js's for 19 URIs, valid and invalid",
     "…and for element strings",
@@ -4671,9 +4680,9 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.004 ms; Node.js: tens of ms)"
    ],
-   "count": 207,
+   "count": 216,
    "ciOnly": false
   },
   "scan_search": {

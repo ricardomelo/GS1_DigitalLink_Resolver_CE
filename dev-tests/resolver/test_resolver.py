@@ -539,6 +539,51 @@ if ENGINE:
 else:
     print("SKIP real syntax engine checks (set GS1_SYNTAX_ENGINE, see dev-tests/portal/test_keys.py)")
 
+# ---------------------------------------------------------------- template records (official code; U-001)
+# A record whose qualifier is a template ({lot}) answers any value, which goes into its links. The value comes from the
+# request: it must stay data inside the address registered, percent-encoded, never able to change the linkset's
+# structure (the official code replaced it in the linkset's JSON text and parsed that again, so a value with quotes
+# could replace the target). The same holds for the {0}/{1} templates of a serialised key (GIAI, GRAI…).
+from urllib.parse import quote, unquote, urlsplit  # noqa: E402
+T = "/01/09506000777719"
+author({"anchor": T, "itemDescription": "Template", "defaultLinktype": "gs1:pip", "qualifiers": [{"10": "{lot}"}],
+        "links": [{"linktype": "gs1:pip", "href": "https://brand.example/lot/{lot}?ref=dl", "title": "Lot {lot}",
+                   "type": "text/html", "hreflang": ["en"]}]})
+r = get(T + "/10/ABC123")
+check("template record: the batch's value goes into the target", r.status_code == 307
+      and r.headers.get("Location", "").startswith("https://brand.example/lot/ABC123?ref=dl"), r.headers.get("Location"))
+# every value below is in GS1's character set 82, so the resolver accepts it as a batch number
+for label, value in (("quotes that close the string and add an href", '","href":"//ab.cd'),
+                     ("a single quote, parentheses and a comma", "A'(B),C"), ("a slash and a question mark", "A/B?x=1"),
+                     ("a colon, a semicolon and an equals sign", "x:1;y=2"), ("a percent sign and an ampersand", "5%&6")):
+    r = get(T + "/10/" + quote(value, safe=""))
+    location = r.headers.get("Location", "")
+    parts = urlsplit(location)
+    check(f"template record, a value with {label}: the registered host and path, the value encoded in one segment",
+          r.status_code == 307 and parts.hostname == "brand.example" and parts.path.startswith("/lot/")
+          and unquote(parts.path[len("/lot/"):]) == value and parts.query.startswith("ref=dl"), f"{r.status_code} {location}")
+r = get(T + "/10/" + quote('","href":"//ab.cd', safe="") + "?linkType=linkset", accept="application/linkset+json")
+links = [link for item in (r.get_json(silent=True) or {}).get("linkset", []) for key, value in item.items()
+         if key.startswith("https://ref.gs1.org/voc/") for link in value]
+check("template record, injected value in the linkset: every link to the registered host, the title showing the value as text",
+      r.status_code == 200 and links and all(urlsplit(link["href"]).hostname == "brand.example"
+                                             and link["title"] == 'Lot ","href":"//ab.cd' for link in links), links)
+GI = "/8004/0950600013430"
+author({"anchor": GI, "itemDescription": "Assets", "defaultLinktype": "gs1:pip",
+        "links": [{"linktype": "gs1:pip", "href": "https://brand.example/asset/{0}/{1}", "title": "Asset {1}",
+                   "type": "text/html", "hreflang": ["en"]}]})
+# the official search for the longest stored prefix is a binary search: with this anchor it finds it for a rest of
+# seven or eight characters
+r = get(GI + "7777777")
+check("serialised key template ({0}/{1}): the key's prefix and the rest go into the target", r.status_code == 307
+      and r.headers.get("Location", "").startswith("https://brand.example/asset/0950600013430/7777777"),
+      r.headers.get("Location"))
+r = get(GI + quote('7","x":"', safe=""))
+location = r.headers.get("Location", "")
+check("serialised key template, a rest with quotes: the registered host, the rest encoded in one segment",
+      r.status_code == 307 and urlsplit(location).hostname == "brand.example"
+      and unquote(urlsplit(location).path) == '/asset/0950600013430/7","x":"', f"{r.status_code} {location}")
+
 # ---------------------------------------------------------------- the engine in the resolver's process (gs1_syntax.py)
 ENGINE_DIR = os.environ.get("GS1_SYNTAX_ENGINE_DIR")
 if ENGINE_DIR:

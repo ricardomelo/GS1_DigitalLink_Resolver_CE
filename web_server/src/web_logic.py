@@ -109,6 +109,23 @@ def _encode(value: str) -> str:
     return quote(value, safe='')
 
 
+def _substituted(node: Any, replacements: list[tuple[str, str]], key: str | None = None) -> Any:
+    """A copy of a stored structure (a linkset, a document) with its template variables ({lotnumber}, {0}) replaced by the
+    request's values, string by string: in an address (an "href") the value goes in percent-encoded, every reserved
+    character included, so that it stays one piece of data inside the address registered; elsewhere (a title) as it
+    is. The official code replaced them in the structure dumped to JSON and parsed it again, so a value with quotes
+    could add or replace members — the target's host among them."""
+    if isinstance(node, dict):
+        return {k: _substituted(v, replacements, k) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_substituted(v, replacements, key) for v in node]
+    if isinstance(node, str):
+        for template, value in replacements:
+            if template in node:
+                node = node.replace(template, _encode(value) if key == 'href' else value)
+    return node
+
+
 def _encoded_identifier(identifier: str) -> str:
     """'/AI/value' with the value percent-encoded."""
     ai, _, value = identifier.strip('/').partition('/')
@@ -298,11 +315,9 @@ def _process_serialised_identifier(identifier: str) -> dict[str, Any] | None:
         ai_value = identifier[:i].split('/')[2]
         ai_partial_value = identifier.split('/')[2].replace(ai_value, '')
 
-        # Replace template variables with actual values
-        wanted_json = wanted_json.replace('{0}', ai_value)
-        wanted_json = wanted_json.replace('{1}', ai_partial_value)
-
-        wanted_db_document['data'] = json.loads(wanted_json)
+        # Replace template variables with actual values, in the structure (never in its JSON text)
+        wanted_db_document['data'] = _substituted(wanted_db_document['data'],
+                                                  [('{0}', ai_value), ('{1}', ai_partial_value)])
         return wanted_db_document
 
     return None
@@ -385,11 +400,7 @@ def _replace_linkset_template_variables(linkset: list[dict[str, Any]], template_
     """
     try:
         if len(template_variables_list) > 0:
-            linkset_json = json.dumps(linkset)
-            for template_variable in template_variables_list:
-                linkset_json = linkset_json.replace(template_variable['template_variable'],
-                                                    template_variable['value'])
-            linkset = json.loads(linkset_json)
+            linkset = _substituted(linkset, [(t['template_variable'], t['value']) for t in template_variables_list])
         return linkset
 
     except KeyError as e:

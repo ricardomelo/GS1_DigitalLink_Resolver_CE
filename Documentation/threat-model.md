@@ -208,7 +208,7 @@ L = likelihood, I = impact (H, M, L); rating = the pair.
 
 | ID | STRIDE | Threat | Controls in place | Residual gap | L × I |
 |---|---|---|---|---|---|
-| T-R1 | T | A request is crafted so that the redirect leads somewhere other than the registered target | Targets come from the record only; the click route looks the link up again and never takes an address from the request (`landing.py:302-329`); path values are checked by the GS1 Barcode Syntax Engine before any lookup (`web_logic.py:118-140`, `:322-332`) | Records with template qualifiers, which the official API accepts and the portal does not create, need a review of their own before any installation uses them (private register) | L × H |
+| T-R1 | T | A request is crafted so that the redirect leads somewhere other than the registered target | Targets come from the record only; the click route looks the link up again and never takes an address from the request (`landing.py:302-329`); path values are checked by the GS1 Barcode Syntax Engine before any lookup (`web_logic.py:118-140`, `:322-332`) | Records with template qualifiers, which the official API accepts and the portal does not create: the request's value is put into the stored links string by string, percent-encoded inside an address (`web_logic.py`, `_substituted()`; the official code built them as JSON text, where a value could change the target) | L × M |
 | T-R2 | T, S | A hostile `Host` makes the resolver describe itself under another name | The proxy sets `X-Forwarded-Host` from the request (`nginx.conf:86`); only syntactically valid names are used (`domains.py:96-107`); an organisation's domain answers for its own prefixes only (`domains.py:147-157`, `web_namespace.py:448-455`) | Any syntactically valid name is echoed in linkset anchors and the description file; no list of accepted names; matters behind a shared cache | L × M |
 | T-R3 | D | Automated requests exhaust the resolver | Syntax check in process (`web_server/src/gs1_syntax.py`); request log written in the background with a bounded queue (`request_log.py`); stateless replicas | No request limit at either proxy; the cost of some paths is not bounded (private register) | H × H |
 | T-R4 | I | Enumeration of registered codes | `/index` and `/summary` need the token (`data_entry_namespace.py:148-190`); the resolver answers per code only | Codes can be probed one at a time; no limit | M × L |
@@ -350,7 +350,7 @@ Phrased as controls. P1: before any use with medicines or devices; P2: before va
 | G-7 | **Make the answering level visible and controllable**: a response field naming the record that answered; a policy for safety-critical types when the batch or serial has no record; editor warnings on conflicting levels | H-1, H-2 | The level is kept in the request log only |
 | G-8 | **Atomic record operations with optimistic concurrency** in the data entry API: record-level delete, a revision checked on every write | T-D3, T-D4, H-11 | Whole-document replace; delete and re-create |
 | G-9 | **An audit trail that cannot be skipped or silently altered**: entry written before the change, changes through every interface recorded, hash chain with an anchor outside the database, insert-only access | T-D7, H-18 | Complete in content, best effort in writing, no tamper evidence |
-| G-10 | **Template records reviewed, or refused,** before any installation uses them | T-R1 | The portal does not create them; the official API accepts them |
+| G-10 | **Template records reviewed, or refused,** before any installation uses them | T-R1 | The portal does not create them; the official API accepts them; their values can no longer change a target (session 28) |
 
 ### P2
 
@@ -464,6 +464,8 @@ A program `dev-tests/resolver/test_fuzz_paths.py` with a fixed seed (reproducibl
 9. **Personal data.** Who is the controller of the request log per organisation; what do the access logs' retention
    and the privacy notice say; are user names and addresses across organisations a concern?
 10. **Vulnerability handling.** Where are reports received, and how are weaknesses in the official project's code
-    passed on to its maintainers before they are described in public?
+    passed on to its maintainers before they are described in public? *Answered 14 November 2026 for the official
+    code: fixed in the fork and published with the fix, without a private notice first
+    ([ADR 0020](adr/0020-security-assessment.md) §2.3).*
 11. **Hosting.** Is anything in front of the host proxy (a CDN, a web application firewall, a load balancer)? It
     changes the trusted-proxy setting, the caching hazards and where rate limits belong.

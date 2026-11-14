@@ -1097,6 +1097,27 @@ types), and the official data entry API is closed to the internet by default, op
 - A public repository changes how a review is written up: a gap can be named as a missing control, but where and how
   a live weakness fails belongs in a private place until the fix is released.
 
+## Session 28 — phase 1 of the security assessment: the data entry API closed
+
+Phase 1 (item 10.1) began with the most severe finding in the fork's own set-up: the official data entry API, whose
+one token changes every organisation's records outside the portal's rules and journal, was published by the proxy to
+everyone. Following the owner's answer of 14 November, the proxy now closes `/api` and `/swaggerui` to every address
+that `DATA_ENTRY_API_ALLOW` does not list ([ADR 0021](adr/0021-data-entry-api-closed.md), `8405225`). The address
+must be the client's, not the host nginx's: nginx's `geo` module takes the last `X-Forwarded-For` address from a
+trusted proxy only — the container's gateway when the port is bound to a loopback address, and any proxy listed in
+`PROXY_TRUSTED_PROXIES` — so a forged first address changes nothing. A script run by the nginx image's entrypoint
+writes the list when the container starts and leaves out entries nginx would refuse, so a typing error cannot stop
+resolution. The home page lost its links to the API's documentation. With `FQDN` naming a real host, the data entry
+API and the portal now refuse to start with `.env.example`'s token or the portal's example database password; MongoDB's
+example password is only warned about, because the installer keeps it for a database created with it and refusing it
+would have stopped an upgraded installation. 61 new checks (`home` 121, `deploy` 153; 12 mutations, all caught);
+4,648 checks passed in 67 programs.
+
+- `geo` with `proxy` does what `real_ip` would, and is always built into nginx: the development build of nginx has
+  no `real_ip` module, the image's has; choosing `geo` keeps the test and the image the same.
+- A check that refuses to start must not stop installations that cannot avoid the value: the installer's own code
+  showed which example secret it keeps.
+
 
 
 | Area | 1.0.0 (session 1) | Now |

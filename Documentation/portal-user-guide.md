@@ -790,7 +790,8 @@ lost, revoke it and create another. You receive an e-mail when a key is created 
 prefixes, who created it and when, its expiry, its last use and its state (*Active*, *Expired*, *Revoked by …*).
 **Revoke** stops a key at once. Changes made with a key appear in the history and the audit trail with the user
 `api:<id>`. The technical description of the API is linked under the list (`openapi.json`); the README describes
-its operations.
+its operations. This is the way for your systems to reach the records: the resolver's older data entry API (`/api`)
+is closed to the internet unless the server's operator opens it to listed addresses.
 
 ### Organisations (server administrators)
 

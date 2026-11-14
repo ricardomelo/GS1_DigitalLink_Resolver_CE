@@ -2,6 +2,24 @@
 
 ## Unreleased (branch gs1br/develop)
 
+Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
+address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
+
+### The official data entry API closed to the internet by default (session 28)
+- **Changed: `/api` and `/swaggerui` answer 403 unless `.env` lists the client in `DATA_ENTRY_API_ALLOW`** (addresses
+  or networks, or `all`; [ADR 0021](../adr/0021-data-entry-api-closed.md)). Its one token changes the records of every
+  organisation outside the portal's rules and journal, and the proxy published it to everyone; organisations' systems
+  use the tenant API (`/portal/api/v1`) with keys of their own. The portal is not affected. Behind the host's nginx
+  (`PROXY_BIND_ADDRESS=127.0.0.1`, as the installer sets it) the client is the address the host's nginx names; behind
+  another proxy, list it in `PROXY_TRUSTED_PROXIES`. A deliberate change to the official project, where `/api` is
+  public. **Before upgrading**: a system that calls `/api` from outside the server needs its address in
+  `DATA_ENTRY_API_ALLOW`, or a move to the tenant API.
+- **Changed: the home page no longer links to the data entry API's documentation** (menu and card).
+- **Changed: example secrets refused outside development.** With `FQDN` naming a real host, the data entry API and the
+  portal refuse to start with `.env.example`'s `SESSION_TOKEN`, and the portal with its example `PORTAL_DB_PASSWORD`,
+  naming the setting; MongoDB's example password is logged as a warning. The installer already replaces the first two.
+- The installer's summary says whether the data entry API is open, and to whom. Commit `8405225`.
+
 ### A security assessment, phase 0: the threat model (session 27)
 - **Added: [`Documentation/threat-model.md`](../threat-model.md)**, the first step of a security assessment with a view
   to medicines and medical devices ([ADR 0020](../adr/0020-security-assessment.md)): the services and their trust

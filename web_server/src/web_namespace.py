@@ -457,6 +457,8 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
     # private keys for the request log, never part of an answer (ADR 0006)
     outcome = response_data.pop('_outcome', None)
     request_log.note(level=response_data.pop('_level', None), outcome=outcome)
+    # the record that answered and whether the request walked up to it (ADR 0022, section 2.2)
+    resolution = _resolution_headers(response_data.pop('_anchor', None), response_data.pop('_match', None))
     # A key this resolver does not know: to the resolver of last resort when the operator switched it on (ADR 0018)
     if status == 404 and outcome == 'unknown':
         fallback = forwarding.FORWARDING.fallback()
@@ -518,6 +520,7 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
             location = _append_query(location, query_strings)
         response.headers['Location'] = location
         response.headers['Link'] = _latin1(link_header)
+        response.headers.update(resolution)
         return response
 
     if status == 300:
@@ -534,9 +537,19 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
             response = Response(json.dumps(linkset, ensure_ascii=False), status=300,
                                 content_type='application/linkset+json')
         response.headers['Link'] = _latin1(link_header)
+        response.headers.update(resolution)
         return response
 
     return response_data, status
+
+
+def _resolution_headers(anchor: str | None, match: str | None) -> dict[str, str]:
+    """Resolution-Anchor (the GS1 Digital Link URI of the record whose links answered, on the name the request was
+    made on, like the linkset's anchors) and Resolution-Match (exact or walk-up): ADR 0022, section 2.2. Not part of
+    the GS1 standards; nothing when no record answered."""
+    if not anchor or not match:
+        return {}
+    return {'Resolution-Anchor': _latin1(web_logic.public_root() + anchor), 'Resolution-Match': match}
 
 
 def _forward(location: str, outcome: str) -> Response:

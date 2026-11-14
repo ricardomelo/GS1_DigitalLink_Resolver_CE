@@ -74,6 +74,7 @@ development tests' checks that prove it; the whole list of checks is the [invent
 | [ADR 0017](adr/0017-privacy-notice.md) | the installation's privacy notice: written in the portal by server administrators, kept as versions, linked from every footer, a default text on the operator's responsibility |
 | [ADR 0020](adr/0020-security-assessment.md) | a security assessment for a healthcare information chain: a threat model first, then a review of the code by area; findings kept in a private register until fixed, each proved by a development test |
 | [ADR 0021](adr/0021-data-entry-api-closed.md) | the official data entry API (`/api`, `/swaggerui`) closed at the proxy by default, opened to the addresses of `DATA_ENTRY_API_ALLOW`; the client read from `X-Forwarded-For` of trusted proxies only; organisations' systems on the tenant API |
+| [ADR 0022](adr/0022-answering-level.md) | the level that answered: `Resolution-Anchor` and `Resolution-Match` on every redirect and choice, a notice on the resolver's pages when the links come from a less specific level, an optional strict mode per organisation for five safety-critical link types (a batch or serial without its own record answers 404), warnings in the portal |
 
 The documentation is written in British English only; readers of other languages can use the translation built into
 their browser. The software itself — the portal, its e-mails, the resolver's pages, the item's page and the home page —

@@ -432,6 +432,45 @@ r = client.get("/api" + X + "?linkType=gs1:pip", headers={"Accept": "text/html",
 html300 = r.get_data(as_text=True)
 check("300 for a browser: an HTML page listing both links", r.status_code == 300 and "text/html" in r.content_type
       and "example.com/en/defaultPage" in html300 and "example.com/fr/defaultPage" in html300)
+
+# ---------------------------------------------------------------- the level that answered (ADR 0022, section 2.2)
+ROOT = "https://" + os.environ["FQDN"]
+
+
+def resolution(path, accept="*/*", language="en"):
+    r = client.get("/api" + path, headers={"Accept": accept, "Accept-Language": language})
+    return r.status_code, r.headers.get("Resolution-Anchor"), r.headers.get("Resolution-Match")
+
+
+for path, level, match in [
+        (Q, Q, "exact"),                                                   # the product, asked as the product
+        (Q + "/22/V1", Q + "/22/V1", "exact"),
+        (Q + "/22/V1/10/L1", Q + "/22/V1/10/L1", "exact"),
+        (Q + "/22/V1/10/L2", Q + "/22/V1", "walk-up"),                      # a batch with no record of its own
+        (Q + "/10/L1", Q, "walk-up"),                                       # the batch's record needs its variant
+        (Q + "/22/V1/10/L1/21/S1", Q + "/22/V1/10/L1", "walk-up"),          # a serial within a registered batch
+        (U + "/22/V1/10/B42/21/S1", U + "/21/S1", "exact"),                 # a unit's record covers batch and variant
+        (U + "/10/OTHER/21/S1", U + "/21/S1", "exact"),
+        (U + "/10/B42/21/S2", U + "/10/B42", "walk-up"),
+        (U + "/21/S9", U, "walk-up"),                                       # a serial nobody registered
+        (G + "/10/123?linkType=pip", G, "walk-up"),                        # the batch's record has no gs1:pip
+        (G + "/10/123?linkType=gs1:instructions", G + "/10/123", "exact")]:
+    got = resolution(path)
+    check(f"Resolution-Anchor and -Match of {path}: {level} ({match})", got == (307, ROOT + level, match), got)
+got = resolution(X + "?linkType=gs1:pip", language="vi")
+check("300: Resolution-Anchor names the level whose links are offered", got == (300, ROOT + X, "exact"), got)
+got = resolution(X + "?linkType=gs1:pip", "text/html", "vi")
+check("300 for a browser: the same headers", got == (300, ROOT + X, "exact"), got)
+check("no Resolution headers on a linkset (its anchors name the levels)",
+      resolution(Q + "/22/V1/10/L2?linkType=linkset", "application/linkset+json") == (200, None, None))
+check("no Resolution headers on a 404", resolution(Q + "?linkType=gs1:epil") == (404, None, None))
+check("no Resolution headers on an unknown key", resolution("/01/09506000999906") == (404, None, None))
+r = client.get("/api" + Q + "/10/L1", headers={"Accept": "*/*", "X-Forwarded-Host": "id.brand.example"})
+check("Resolution-Anchor on the name the request was made on, like the linkset's anchors",
+      r.headers.get("Resolution-Anchor") == "https://id.brand.example" + Q, r.headers.get("Resolution-Anchor"))
+expose = get(Q).headers.get("Access-Control-Expose-Headers") or ""
+check("CORS exposes Resolution-Anchor and Resolution-Match",
+      "Resolution-Anchor" in expose and "Resolution-Match" in expose, expose)
 body = client.get("/api" + X + "?linkType=linkset", headers={"Accept": "application/linkset+json"}).get_json(force=True)
 item = body["linkset"][0]
 check("linkset: gs1:defaultLink is the first default-type link; gs1:defaultLinkMulti lists both (2.5.8)",

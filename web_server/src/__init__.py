@@ -107,7 +107,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     @app.after_request
     def add_headers(response: Response) -> Response:
         response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
-        response.headers['Access-Control-Expose-Headers'] = 'Link, Location'
+        # Resolution-Anchor and Resolution-Match: the level that answered (ADR 0022)
+        response.headers['Access-Control-Expose-Headers'] = 'Link, Location, Resolution-Anchor, Resolution-Match'
         return response
 
     return app

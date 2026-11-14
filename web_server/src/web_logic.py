@@ -477,6 +477,20 @@ def _entry_applies(path_qualifiers: list[dict[str, str]], doc_qualifiers: list[d
     return True, template_variables
 
 
+def answering_match(path_qualifiers: list[dict[str, str]], doc_qualifiers: list[dict[str, str]]) -> str:
+    """
+    'exact' when the record that answers names every key qualifier of the request, or names the request's serial
+    number (a unit's record covers its batch and variant: GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2);
+    'walk-up' when a less specific record answers (sections 2.5.9 and 2.5.10). The record applies to the request
+    (_entry_applies), so comparing the qualifiers' names is enough. ADR 0022, section 2.2.
+    """
+    asked = {k for q in path_qualifiers for k in q}
+    named = {k for q in doc_qualifiers for k in q}
+    if asked <= named or asked & named & _UNIT_QUALIFIERS:
+        return 'exact'
+    return 'walk-up'
+
+
 def _qualifier_path_from(doc_qualifiers: list[dict[str, str]], template_variables: list[dict[str, str]]) -> str:
     values = {t['template_variable']: t['value'] for t in template_variables}
     pairs = []
@@ -808,8 +822,11 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
             if result['response_status'] == 300:
                 result['anchor'] = identifier + entry['_qualifier_path']   # the level whose links are offered
             if result['response_status'] in (300, 307):
-                # the level that answered, for the request log only (removed before answering; ADR 0006)
+                # the level that answered, for the request log (ADR 0006) and the Resolution-* headers (ADR 0022);
+                # web_namespace removes these keys before answering
                 result['_level'] = entry['_qualifier_path']
+                result['_anchor'] = identifier + entry['_qualifier_path']
+                result['_match'] = answering_match(path_qualifiers, entry.get('qualifiers') or [])
                 return result, pointer
             if result['response_status'] >= 500:
                 return result, None

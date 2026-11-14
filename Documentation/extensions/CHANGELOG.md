@@ -5,6 +5,16 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
 
+### The level that answered a request (session 29)
+- **Added: `Resolution-Anchor` and `Resolution-Match` on every redirect (307) and choice (300)**
+  ([ADR 0022](../adr/0022-answering-level.md)): the GS1 Digital Link URI of the record whose links answered, and
+  `exact` or `walk-up`. A request for a batch with no record of its own is answered, as the standard requires, by the
+  product's record (*walk-up*); an app can now tell, for example, that a `gs1:recallStatus` answer came from the
+  product and not from the batch it asked about. Both headers are readable by web apps on other origins
+  (`Access-Control-Expose-Headers`). They are not part of the GS1 standards and change no answer the standard defines.
+  The notice on the resolver's pages, an optional strict mode per organisation for five safety-critical link types and
+  warnings in the portal follow (ADR 0022 §5). Commit `826a047`.
+
 ### The official data entry API closed to the internet by default (session 28)
 - **Changed: `/api` and `/swaggerui` answer 403 unless `.env` lists the client in `DATA_ENTRY_API_ALLOW`** (addresses
   or networks, or `all`; [ADR 0021](../adr/0021-data-entry-api-closed.md)). Its one token changes the records of every

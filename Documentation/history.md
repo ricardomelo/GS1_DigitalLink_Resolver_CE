@@ -1125,6 +1125,23 @@ like the fork's own, since the notice of 29 October was never answered (ADR 0020
   showed which example secret it keeps.
 
 
+## Session 29 — the level that answered a request
+
+The owner postponed the staging test of the closed data entry API and asked to go on with F-003, the walk-up that
+answers a batch-specific safety request with the product's link (hazard H-1 of the threat model). Four details were
+decided, the recommended option each time: a strict mode answers 404 to apps and, in a browser, lists the product's
+links with a notice; the safety-critical link types are the five of the threat model (`recallStatus`, `safetyInfo`,
+`epil`, `smpc`, `eifu`); the strict mode stops the walk-up at the batch or serial the request names; and the
+resolver's pages show a notice whenever their links come from a less specific level, in every organisation
+([ADR 0022](adr/0022-answering-level.md)). The first step adds `Resolution-Anchor` and `Resolution-Match` to every
+redirect and choice (`826a047`). Mock-ups of the notice, the strict mode's page and setting, and the editor's
+warnings were drawn for the owner before any of them is built. 19 new checks (`resolver` 235; 6 mutations, all
+caught); 4,676 checks passed in 67 programs.
+
+- A unit's record answers for its batch and variant (rule 2 of section 2.5.9), so "exact" cannot mean "names every
+  qualifier of the request": a request with variant, batch and serial answered by the serial's record is exact.
+
+
 
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|

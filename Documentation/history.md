@@ -1087,7 +1087,10 @@ and 31 gaps phrased as controls, with the plan of phase 1. The concrete findings
 that came from the official project) are kept in a private register outside the repository until they are fixed; the
 open questions of the model's section 11 (intended use, the behaviour for a batch without a record, the official data
 entry API on the internet, template records, approval, a second factor, availability) decide the order of the fixes.
-Items 10.1 to 10.5 join the open backlog. No change to the software (`450d40e`).
+Items 10.1 to 10.5 join the open backlog. No change to the software (`450d40e`). On 14 November the owner
+chose the recommended answers to the first questions: the standard's walk-up is kept, with the level that answered
+stated in the response and warnings in the portal (a strict mode per organisation optional for safety-critical link
+types), and the official data entry API is closed to the internet by default, open only to listed addresses.
 
 - A long review that can be stopped by a usage limit should write its results to disk as it goes: the first run
   stopped half-way with nothing written, the second finished from the same point.

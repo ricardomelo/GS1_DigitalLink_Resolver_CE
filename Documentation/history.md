@@ -1071,6 +1071,29 @@ request, was brought up to 3.1.1 and given one commit of its own (`d8cc51f`): wi
 this diary and the links to it, with the official repository's addresses, and with `master` as its only branch; every
 test passes on it. One branch without a version (first `upstream/3.1.0`, then `upstream/3.1.1`), updated by merging each release into it, keeps the same pull request up to date.
 
+## Session 27 — a security assessment, phase 0: the threat model
+
+The owner asked for a deep assessment of the resolver's security, with a view to validating it, in future, for the
+codes on medicines and medical devices — leaflets, product information, safety and recall notices — against attacks
+by people and by automated tools, one organisation against another, wrong data and wrong routing. Of three ways
+offered, the owner chose to start with a threat model and review the code by area afterwards
+([ADR 0020](adr/0020-security-assessment.md)). An AI reviewer read the code and the documents and wrote the model;
+its claims were checked against the code, the most serious by running the portal and the resolver in process with the
+real GS1 Barcode Syntax Engine. [`threat-model.md`](threat-model.md) describes the services and trust boundaries,
+ranks the assets by their effect on patient safety, lists the entry points, the threats with the controls in place
+(each with its place in the code), eighteen patient-safety hazards that are not attacks — among them the qualifier
+walk-up of the standard, which answers a batch without a record of its own with the product's link of the same type —
+and 31 gaps phrased as controls, with the plan of phase 1. The concrete findings (29 in the fork's code, 6 in code
+that came from the official project) are kept in a private register outside the repository until they are fixed; the
+open questions of the model's section 11 (intended use, the behaviour for a batch without a record, the official data
+entry API on the internet, template records, approval, a second factor, availability) decide the order of the fixes.
+Items 10.1 to 10.5 join the open backlog. No change to the software (`450d40e`).
+
+- A long review that can be stopped by a usage limit should write its results to disk as it goes: the first run
+  stopped half-way with nothing written, the second finished from the same point.
+- A public repository changes how a review is written up: a gap can be named as a missing control, but where and how
+  a live weakness fails belongs in a private place until the fix is released.
+
 
 
 | Area | 1.0.0 (session 1) | Now |

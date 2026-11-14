@@ -2,7 +2,13 @@
 
 ## Unreleased (branch gs1br/develop)
 
-Nothing yet.
+### A security assessment, phase 0: the threat model (session 27)
+- **Added: [`Documentation/threat-model.md`](../threat-model.md)**, the first step of a security assessment with a view
+  to medicines and medical devices ([ADR 0020](../adr/0020-security-assessment.md)): the services and their trust
+  boundaries, the assets ranked by their effect on patient safety, the actors, every entry point, the threats with
+  the controls that answer them (each with the code that implements it), the hazards that are not attacks, the gaps
+  phrased as controls with a priority, and the plan of the review of the code. Weaknesses not yet fixed are kept out
+  of the public documents until they are. No change to the software. Commit `450d40e`.
 
 ## 3.1.1 — 29 October 2026
 

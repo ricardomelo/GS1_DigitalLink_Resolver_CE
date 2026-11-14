@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Any
 import domains
+import example_secrets
 import forwarding
 import gs1_syntax
 import landing
@@ -33,6 +34,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     server_description = f"The web server is running at https://{os.getenv('FQDN', 'set-domain-name-in-env-variable-FQDN.com')}"
     logger.info(server_description)
+
+    # the example database password of .env.example warned about outside development (ADR 0021)
+    example_secrets.warn(['MONGO_URI'], logger)
 
     mongo_url = os.getenv('MONGO_URI')
     if not mongo_url:

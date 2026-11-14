@@ -14,6 +14,10 @@ Checks, without Docker:
     and stops cleanly on SIGTERM within Docker's stop period;
   * the portal's fallback session key (secret.key, when PORTAL_SECRET_KEY is not set): processes starting
     at the same moment all end up with the same, complete key;
+  * the example secrets of .env.example (ADR 0021): the data entry API and the portal refuse to start with the example
+    token or the portal's example database password while FQDN names a real host, naming the setting; the data entry
+    API and the resolver warn about MongoDB's example password and start; they start with the examples on localhost
+    and with values of their own; the three copies of example_secrets.py are the same file;
   * one GS1 Barcode Syntax Engine release (ADR 0003): written once in docker-compose.yml, given to every image
     that checks GS1 data as a build argument, used by their Dockerfiles, the portal's build script and the
     CI set-up action without a release of their own, and the one portal/gs1_dictionary.json was made from;
@@ -948,6 +952,72 @@ def secret_key_checks() -> None:
     shutil.rmtree(config, ignore_errors=True)
 
 
+def example_secrets_checks() -> None:
+    """The example secrets of .env.example refused outside development (ADR 0021)."""
+    copies = {path: path.read_bytes() for path in (REPO / "portal" / "example_secrets.py",
+                                                   REPO / "web_server" / "src" / "example_secrets.py",
+                                                   REPO / "data_entry_server" / "src" / "example_secrets.py")}
+    check(len(set(copies.values())) == 1, "example_secrets.py: the same file in the portal, the resolver and the data entry API")
+    example_uri = "mongodb://gs1resolver:gs1resolver@127.0.0.1:9/?serverSelectionTimeoutMS=300"
+    own_uri = "mongodb://resolveradmin:9f8e7d6c5b4a@127.0.0.1:9/?serverSelectionTimeoutMS=300"
+    factory = "from __init__ import create_app; create_app(); print('STARTED')"
+    portal_env = {"PORTAL_CONFIG_DIR": tempfile.mkdtemp(prefix="deploy-examples-"), "PORTAL_SECRET_KEY": "k",
+                  "PORTAL_DB_NAME": f"devtest_examples_{os.getpid()}", "DATA_ENTRY_URL": "http://127.0.0.1:9/api",
+                  "RESOLVER_PUBLIC_URL": "https://id.example.org"}
+    services = {
+        "data entry API": (REPO / "data_entry_server" / "src", factory,
+                           {"SESSION_TOKEN": "tok-of-its-own", "MONGO_URI": own_uri},
+                           [("SESSION_TOKEN", "secret")]),
+        "portal": (REPO / "portal", "import app; print('STARTED')",
+                   {**portal_env, "SESSION_TOKEN": "tok-of-its-own", "PORTAL_DB_URI": "mongomock://"},
+                   [("SESSION_TOKEN", "secret")]),
+        # no database answers: the portal stops at its connection, after the check (PASSED_CHECK below)
+        "portal (its database by password)": (REPO / "portal", "import app; print('STARTED')",
+                   {**portal_env, "SESSION_TOKEN": "tok-of-its-own", "PORTAL_DB_PASSWORD": "pw-of-its-own",
+                    "PORTAL_DB_HOST": "127.0.0.1:9", "PORTAL_DB_TIMEOUT_MS": "300"},
+                   [("PORTAL_DB_PASSWORD", "resolver_portal")]),
+    }
+
+    def passed_check(label: str, run: subprocess.CompletedProcess) -> bool:
+        if "STARTED" in run.stdout:
+            return True
+        return label.endswith("by password)") and "Refusing to start" not in run.stderr and "127.0.0.1:9" in run.stderr
+
+    def start(folder: Path, code: str, settings: dict[str, str]) -> subprocess.CompletedProcess:
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith(("PORTAL_", "RESOLVER_", "MONGO_", "SESSION_TOKEN", "FQDN"))}
+        env.update(settings)
+        return subprocess.run([sys.executable, "-c", code], cwd=folder, env=env, capture_output=True, text=True,
+                              timeout=120)
+
+    for label, (folder, code, own, examples) in services.items():
+        run = start(folder, code, {**own, "FQDN": "id.example.org"})
+        check(passed_check(label, run), f"{label}: starts with values of its own on id.example.org", run.stderr[-300:])
+        for name, value in examples:
+            run = start(folder, code, {**own, name: value, "FQDN": "id.example.org"})
+            check(run.returncode != 0 and "STARTED" not in run.stdout and "Refusing to start" in run.stderr
+                  and name in run.stderr and "id.example.org" in run.stderr,
+                  f"{label}: refuses to start with the example {name} on id.example.org, naming it", run.stderr[-300:])
+            for host in ("localhost", ""):
+                run = start(folder, code, {**own, name: value, "FQDN": host})
+                check(passed_check(label, run), f"{label}: starts with the example {name} when FQDN is "
+                      f"{host or 'not set'} (development)", run.stderr[-300:])
+    # MongoDB's example root password: the installer keeps it for a database created with it, so it is warned about
+    for label, folder in (("data entry API", REPO / "data_entry_server" / "src"), ("resolver", REPO / "web_server" / "src")):
+        own = {"SESSION_TOKEN": "tok-of-its-own"} if label == "data entry API" else {}
+        run = start(folder, factory, {**own, "MONGO_URI": example_uri, "FQDN": "id.example.org"})
+        check("STARTED" in run.stdout and "MONGO_URI holds the example password" in run.stderr
+              and "gs1resolver:gs1resolver" not in run.stderr,
+              f"{label}: starts with MongoDB's example password on id.example.org, with a warning that names the setting "
+              "and not the password", run.stderr[-300:])
+        for settings in ({"MONGO_URI": example_uri, "FQDN": "localhost"}, {"MONGO_URI": own_uri, "FQDN": "id.example.org"}):
+            run = start(folder, factory, {**own, **settings})
+            check("STARTED" in run.stdout and "example password" not in run.stderr,
+                  f"{label}: no warning with {'its own password' if settings['MONGO_URI'] == own_uri else 'the example on localhost'}",
+                  run.stderr[-300:])
+    shutil.rmtree(portal_env["PORTAL_CONFIG_DIR"], ignore_errors=True)
+
+
 def main() -> int:
     if not COMPOSE or not Path(COMPOSE).exists():
         print("FAIL COMPOSE_BIN is not set to a Docker Compose v2 binary")
@@ -982,6 +1052,7 @@ def main() -> int:
     shutil.rmtree(config, ignore_errors=True)
     shutil.rmtree(portal_tree, ignore_errors=True)
     secret_key_checks()
+    example_secrets_checks()
     failed = [label for ok, label in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} checks passed")
     return 1 if failed else 0

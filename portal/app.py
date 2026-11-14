@@ -36,6 +36,7 @@ import apikeys
 import branding
 import domains
 import epc
+import example_secrets
 import exportlimits
 import gcp
 import linkcheck
@@ -62,6 +63,9 @@ from gs1 import ValidationError
 # --------------------------------------------------------------------------- configuration
 DATA_ENTRY_URL = os.environ.get("DATA_ENTRY_URL", "http://data-entry-service:3000/api").rstrip("/")
 SESSION_TOKEN = os.environ.get("SESSION_TOKEN", "")
+# The example token and database password of .env.example refused outside development (ADR 0021); the password only
+# when the portal builds its connection from it (no PORTAL_DB_URI)
+example_secrets.refuse(["SESSION_TOKEN"] + ([] if os.environ.get("PORTAL_DB_URI", "").strip() else ["PORTAL_DB_PASSWORD"]))
 # Public address of the resolver (used in the Digital Links the portal prints and for the Origin
 # check). RESOLVER_PUBLIC_URL if set, otherwise https://FQDN, the resolver root used by the web server.
 _FQDN = os.environ.get("FQDN", "").strip()

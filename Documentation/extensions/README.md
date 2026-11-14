@@ -1048,12 +1048,12 @@ docker compose exec database-service sh -c 'mongosh -u "$MONGO_INITDB_ROOT_USERN
 | Menu entry | Target |
 |---|---|
 | Manage links / Cadastro de links | `/portal/` |
-| Resolver API / API do Resolver | `/api/docs` (Swagger UI, the page previously shown at `/`) |
 | GS1 Digital Link standard | https://ref.gs1.org/standards/digital-link/ |
 | GS1 Global | https://www.gs1.org/ |
 | Source code (GitHub) | https://github.com/gs1/GS1_DigitalLink_Resolver_CE |
 
-Below the menu: cards for the portal and the resolver API, and GS1 references. The footer names the
+Below the menu: a card for the portal, and GS1 references (the menu entry and the card for the data entry API's
+documentation were removed when `/api` was closed by default, ADR 0021). The footer names the
 operator and carries the community notice (the software is maintained by its community, not by GS1 or any
 GS1 Member Organisation; whoever operates the installation is responsible for its use). The box that
 showed the shape of a GS1 Digital Link was removed in session 8.
@@ -1061,7 +1061,7 @@ showed the shape of a GS1 Digital Link was removed in session 8.
 **Way back.** The GS1 logo on the portal and on the resolver's pages, and the portal's user menu ("Home
 page"), lead back to `/`.
 
-**Domain independent.** Links to this installation are root-relative (`/portal/`, `/api/docs`,
+**Domain independent.** Links to this installation are root-relative (`/portal/`,
 `/.well-known/gs1resolver`), and the operator's name in the footer comes from `contact.fn` in the
 resolver description file, linked to `contact.hasURL` (`RESOLVER_ORG_URL`) when that is an `http(s)`
 address, as in the footer of the resolver's pages; any other address leaves the name as plain text. Nothing
@@ -1070,8 +1070,7 @@ in the page names a domain or an organisation, so another installation needs no 
 **What `/` showed before.** Upstream, the proxy sends `/` to the web server's API root, which is
 flask-restx's Swagger UI; that page loads `/api/swagger.json`, which the proxy routes to the data entry
 service, so it displayed exactly the data entry API documentation that `/api/docs` serves. The menu
-therefore links to `/api/docs`. If `/api` is later restricted at the edge (see "Hardening"), that menu
-entry will need the same exception or removal.
+linked to `/api/docs` until `/api` was closed by default (ADR 0021, "Hardening").
 
 **How it is served.** The front-end proxy (nginx) answers `location = /` and `location ^~ /home/` from
 `frontend_proxy_server/home`, copied into the proxy image; `/home` and `/home/` redirect to `/`.
@@ -1557,8 +1556,13 @@ runs imports with the same rules).
 - Behind a TLS reverse proxy on the same host set `PROXY_BIND_ADDRESS=127.0.0.1` and
   `DATABASE_BIND_ADDRESS=127.0.0.1` in `.env`: plain HTTP (port 8080) and MongoDB (27017) then stay off the
   network. Docker publishes ports past the host firewall (ufw/iptables), so this setting matters.
-- With the portal live, restrict `/api` and `/swaggerui` at the edge proxy to the integrations that
-  genuinely need them.
+- `/api` and `/swaggerui`, the official data entry API, are closed at the front-end proxy to every address
+  (403) unless `DATA_ENTRY_API_ALLOW` in `.env` lists it: addresses or networks separated by spaces or commas, or
+  `all` ([ADR 0021](../adr/0021-data-entry-api-closed.md)). The portal is not affected. Organisations' systems use
+  the tenant API with their own keys instead. Behind the host's nginx (`PROXY_BIND_ADDRESS=127.0.0.1`) the client's
+  address is the one it names; behind another proxy (an external load balancer) list that proxy in
+  `PROXY_TRUSTED_PROXIES`. After a change: `docker compose up -d frontend-proxy-service`; the proxy's log says to whom
+  the API is open (`docker compose logs frontend-proxy-service | grep api-access`).
 - The portal is given no root database credentials: its MongoDB user may read and write the portal's own
   database only (`readWrite` on `PORTAL_DB_NAME`); only the one-shot `portal-db-init` service receives
   `MONGO_URI`.

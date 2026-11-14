@@ -10,6 +10,7 @@ import os
 from dotenv import load_dotenv
 from data_entry_namespace import data_entry_namespace
 from mongo_db_init import mongo, init_mongo
+import example_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     # create and configure the app
     app = Flask(__name__, instance_relative_config=True, static_folder='public')
     CORS(app)  # enable CORS
+
+    # the example token of .env.example refused outside development, its database password warned about (ADR 0021)
+    example_secrets.refuse(['SESSION_TOKEN'])
+    example_secrets.warn(['MONGO_URI'], logger)
 
     mongo_url = os.getenv('MONGO_URI')
     if not mongo_url:

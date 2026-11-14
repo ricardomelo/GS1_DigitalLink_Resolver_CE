@@ -168,6 +168,12 @@ services:
       - data-entry-service
       - portal-service
     restart: always
+    # Who may use the official data entry API through the proxy (/api, /swaggerui; ADR 0021): read from .env by
+    # Compose; empty, closed to every address. The proxy is given these settings only, none of the secrets.
+    environment:
+      DATA_ENTRY_API_ALLOW: ${DATA_ENTRY_API_ALLOW:-}
+      PROXY_TRUSTED_PROXIES: ${PROXY_TRUSTED_PROXIES:-}
+      PROXY_BIND_ADDRESS: ${PROXY_BIND_ADDRESS:-0.0.0.0}
     ports:
       - "${PROXY_BIND_ADDRESS:-0.0.0.0}:8080:80"
     networks:

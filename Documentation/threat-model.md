@@ -80,7 +80,7 @@ flowchart LR
     sys -->|"HTTPS, API key or token"| edge
     edge --> proxy
     proxy -->|"/AI/value…, /.well-known"| web
-    proxy -->|"/api, /swaggerui"| de
+    proxy -->|"/api, /swaggerui (listed addresses)"| de
     proxy -->|"/portal/"| portal
     portal -->|"bearer token"| de
     web -->|"root user"| db
@@ -102,7 +102,7 @@ flowchart LR
 | Service | Reachable from the internet | Internal only | Evidence |
 |---|---|---|---|
 | Host nginx | 80, 443 for the installation's name and each organisation's verified domain; passes every path on | — | `scripts/templates/nginx-site-https.conf:1-32`, `scripts/custom-domains.sh:104-113` |
-| `frontend-proxy-service` | through the host proxy: `/` and `/home/` (static), `/portal/`, `/api`, `/swaggerui`, everything else to the resolver | port 8080 on the host, bound as `PROXY_BIND_ADDRESS` | `frontend_proxy_server/nginx.conf:58-122`, `docker-compose.yml:172` |
+| `frontend-proxy-service` | through the host proxy: `/` and `/home/` (static), `/portal/`, `/api` and `/swaggerui` (to the addresses of `DATA_ENTRY_API_ALLOW` only; empty by default), everything else to the resolver | port 8080 on the host, bound as `PROXY_BIND_ADDRESS` | `frontend_proxy_server/nginx.conf:58-122`, `docker-compose.yml:172` |
 | `web-service` (resolver) | `/{AI}/{value}[/{qualifier}/{value}…]`, compressed links and EPC forms (one segment), `/.well-known/gs1resolver`, `/_click`, `/_brand/{prefix}`, `/favicon.ico`, `/robots.txt`, `/heartbeat`; GET, HEAD, OPTIONS; no authentication | port 4000 | `web_server/src/web_namespace.py:24-227` |
 | `data-entry-service` | `/api/new`, `/api/validate`, `/api/summary`, `/api/index`, `/api/{AI}/{value}` (GET, PUT, DELETE), `/api/docs`; bearer token; `/api/heartbeat` open | port 3000 | `data_entry_server/src/data_entry_namespace.py:54-65`, `:68-292` |
 | `portal-service` | pages, `/portal/api/*` (session), `/portal/api/v1/*` (API key), sign-in, recovery and SSO routes, `/portal/healthz` | port 8000 | `portal/app.py:696-3576`, `portal/api_v1.py:109-249` |
@@ -220,7 +220,7 @@ L = likelihood, I = impact (H, M, L); rating = the pair.
 
 | ID | STRIDE | Threat | Controls in place | Residual gap | L × I |
 |---|---|---|---|---|---|
-| T-D1 | S, T, R | Someone with the data entry token changes any record, outside every portal rule | Constant-time comparison (`data_entry_namespace.py:54-65`); the installer generates the token (`install.sh:649`); the guide advises restricting `/api` | The API is published by default; one static, unscoped, unexpiring token for everything; no trace of such changes in the audit trail; the API does not validate targets | M × H |
+| T-D1 | S, T, R | Someone with the data entry token changes any record, outside every portal rule | Constant-time comparison (`data_entry_namespace.py:54-65`); the installer generates the token (`install.sh:649`); `/api` and `/swaggerui` closed at the proxy to every address not in `DATA_ENTRY_API_ALLOW`, the client read from `X-Forwarded-For` of trusted proxies only (`frontend_proxy_server/nginx.conf`, `api-access.sh`; ADR 0021) | One static, unscoped, unexpiring token for everything; no trace of such changes in the audit trail; the API does not validate targets | M × H |
 | T-D2 | T | An editor registers a wrong or hostile target | HTTPS only, no control characters (`portal/gs1.py:756-772`); link check at each save; history with restore (`journal.py:115-121`) | No second approver; no allowlist of target domains; no notification of changes; some deceptive address forms accepted | M × H |
 | T-D3 | T | Concurrent writers overwrite each other | Users' and tenants' changes run under a shared lock (`store.py:196-218`) | Record writes are read-modify-write without a version check, in the portal and in the data entry API | M × M |
 | T-D4 | T, D | Deleting or rewriting one record damages the key's other records | Content validated before the rewrite, original restored when the write is refused (`app.py:1526-1554`) | The rewrite is two calls; a failure between them leaves the key without records | L × H |
@@ -341,8 +341,8 @@ Phrased as controls. P1: before any use with medicines or devices; P2: before va
 
 | # | Control | Why (threats, hazards) | Today |
 |---|---|---|---|
-| G-1 | **Close the official data entry API to the internet by default**: reachable from the portal only, or from listed addresses; integrations use the tenant API | T-D1 | Published by the proxy; restriction is advice in the operator's guide |
-| G-2 | **Refuse to start with example secrets or open ports** outside development; loopback as the default bind | T-I2 | The installer does it; the composition alone does not |
+| G-1 | **Close the official data entry API to the internet by default**: reachable from the portal only, or from listed addresses; integrations use the tenant API | T-D1 | Done: closed at the proxy unless `DATA_ENTRY_API_ALLOW` lists the address ([ADR 0021](adr/0021-data-entry-api-closed.md)); the token's own weaknesses remain |
+| G-2 | **Refuse to start with example secrets or open ports** outside development; loopback as the default bind | T-I2 | Partial: the example data entry token and the portal's example database password refused when `FQDN` names a real host, MongoDB's example password warned about ([ADR 0021](adr/0021-data-entry-api-closed.md) §2.7); the default bind is still every interface |
 | G-3 | **Rate limiting at the proxy** per address: sign-in, recovery, tenant API, resolver paths that are not GS1 keys; bounded cost for every path | T-R3, T-A1, H-17 | None at the proxies; limits per user name and per API key exist in the portal |
 | G-4 | **Trusted-proxy handling of the client's address**, configured by the number of proxies in front | T-A1, T-D7 | Partial (private register) |
 | G-5 | **Second factor for editors and administrators** (TOTP or WebAuthn; mandatory for server administrators), or SSO enforced with the provider's second factor | T-A1, T-A2 | Absent; SSO per organisation exists |
@@ -451,7 +451,8 @@ A program `dev-tests/resolver/test_fuzz_paths.py` with a fixed seed (reproducibl
    walk up to the product level (the standard's behaviour), answer "not found" with the available links, or walk up
    with a visible notice? May this differ per organisation?
 3. **The official data entry API.** Does any integration need `/api` from the internet, or can it be closed by
-   default and integrations moved to the tenant API?
+   default and integrations moved to the tenant API? *Answered 14 November 2026: closed by default, opened to listed
+   addresses ([ADR 0021](adr/0021-data-entry-api-closed.md)).*
 4. **Template records.** Will any installation use records with template qualifiers (for example serial numbers
    passed to a verification page)? If not, they can be refused.
 5. **Approval.** Is four-eyes approval acceptable to organisations for safety-critical link types, and who approves

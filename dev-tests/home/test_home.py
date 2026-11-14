@@ -7,6 +7,10 @@ server of the test that answers the service names with mock upstreams on 127.0.0
 replaced by frontend_proxy_server/home) and checks:
   * routing: "/" and its assets are served by nginx; every other path still reaches the resolver,
     the data entry API and the portal exactly as before;
+  * the official data entry API (/api, /swaggerui; ADR 0021): closed to every address by default, open to the
+    addresses and networks of DATA_ENTRY_API_ALLOW, the client read from X-Forwarded-For only when the peer is a
+    trusted proxy (PROXY_TRUSTED_PROXIES, or the container's gateway behind a loopback PROXY_BIND_ADDRESS); entries
+    that are not addresses are left out without stopping nginx (frontend_proxy_server/api-access.sh writes the file);
   * replicas (item 2.3, step 4): nginx starts while a service is missing and finds it later, shares
     the requests among every address a service name has, follows replicas added and removed without a
     restart, and skips a replica that has gone away;
@@ -40,6 +44,8 @@ from playwright.sync_api import sync_playwright
 
 PACKAGE = Path(__file__).resolve().parents[2]
 NGINX_CONF = PACKAGE / "frontend_proxy_server" / "nginx.conf"
+API_ACCESS_SCRIPT = PACKAGE / "frontend_proxy_server" / "api-access.sh"
+API_ACCESS_PATH = "/etc/nginx/api-access.conf"   # where the proxy image keeps the file the script writes
 HOME_DIR = PACKAGE / "frontend_proxy_server" / "home"
 MOUNT_PATH = "/usr/share/nginx/home"   # where the proxy image keeps the files
 
@@ -62,6 +68,7 @@ LOGO_PNG = bytes.fromhex("89504e470d0a1a0a0000000d494844520000000100000001080600
                          "c0f01f0005000201a1c5ab8a0000000049454e44ae426082")
 
 results: list[tuple[bool, str]] = []
+hits: list[tuple[str, str, str]] = []   # (upstream, method, path) of every request a replica received
 
 
 def check(condition: bool, label: str) -> None:
@@ -136,6 +143,7 @@ class Replica:
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
+                hits.append((name, self.command, self.path))
                 kind = "application/json"
                 if name == "resolver" and self.path.startswith("/api/.well-known/gs1resolver"):
                     body = json.dumps(DESCRIPTION).encode()
@@ -153,6 +161,8 @@ class Replica:
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+
+            do_POST = do_GET
 
             def log_message(self, *args):
                 pass
@@ -197,6 +207,8 @@ def start_nginx(workdir: Path, dns: StubDNS, ports: dict[str, int]) -> tuple[sub
     conf = conf.replace("/var/run/nginx.pid", str(workdir / "nginx.pid"))
     conf = conf.replace("listen 80;", f"listen 127.0.0.1:{listen};")
     conf = conf.replace(MOUNT_PATH, str(HOME_DIR))
+    conf = conf.replace(API_ACCESS_PATH, str(workdir / "api-access.conf"))
+    write_api_access(workdir, {})                      # as the container starts without the settings: closed
     for service, port in ports.items():
         conf = conf.replace(f"{service}:{PORTS[service]}", f"{service}:{port}")
     conf = conf.replace("resolver 127.0.0.11 valid=10s", f"resolver 127.0.0.1:{dns.port} valid=1s")
@@ -222,14 +234,38 @@ def start_nginx(workdir: Path, dns: StubDNS, ports: dict[str, int]) -> tuple[sub
     return proc, listen
 
 
+def write_api_access(workdir: Path, settings: dict[str, str]) -> str:
+    """Runs api-access.sh as the container's entrypoint does, with these settings and a routing table whose default
+    gateway is 127.0.0.1 (the address the test's requests come from); returns what it printed."""
+    (workdir / "route").write_text("Iface\tDestination\tGateway\tFlags\neth0\t00000000\t0100007F\t0003\n"
+                                   "eth0\t000011AC\t00000000\t0001\n")
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "API_ACCESS_FILE": str(workdir / "api-access.conf"),
+           "API_ACCESS_ROUTES": str(workdir / "route"), **settings}
+    run = subprocess.run(["sh", str(API_ACCESS_SCRIPT)], env=env, capture_output=True, text=True)
+    check(run.returncode == 0, f"api-access.sh runs with {settings or 'no settings'}" + (f" ({run.stderr.strip()})" if run.returncode else ""))
+    return run.stderr
+
+
+def reload_nginx(workdir: Path) -> None:
+    """nginx reads its configuration again (a container restarted with other settings), and its new workers answer."""
+    before = (workdir / "error.log").read_text() if (workdir / "error.log").exists() else ""
+    run = subprocess.run([NGINX, "-c", str(workdir / "nginx.conf"), "-p", str(workdir), "-s", "reload"],
+                         capture_output=True, text=True)
+    check(run.returncode == 0, "nginx reloads with the file api-access.sh wrote" + (f" ({run.stderr.strip()})" if run.returncode else ""))
+    time.sleep(0.6)                                    # the old workers finish, the new ones take the requests
+    new = ((workdir / "error.log").read_text() if (workdir / "error.log").exists() else "")[len(before):]
+    check("[emerg]" not in new, "…and accepts it" + (f" ({new.strip()[-300:]})" if "[emerg]" in new else ""))
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         return None
 
 
-def fetch(url: str, accept: str = "*/*"):
+def fetch(url: str, accept: str = "*/*", headers: dict[str, str] | None = None, method: str = "GET",
+          data: bytes | None = None):
     opener = urllib.request.build_opener(NoRedirect)
-    request = urllib.request.Request(url, headers={"Accept": accept})
+    request = urllib.request.Request(url, headers={"Accept": accept, **(headers or {})}, method=method, data=data)
     try:
         with opener.open(request) as response:
             return response.status, dict(response.headers), response.read().decode("utf-8", "replace")
@@ -273,8 +309,6 @@ def routing_checks(base: str) -> None:
         ("/homepage", "resolver", "/api/homepage"),
         # a value with "/" (%2F) and the ';' delimiter reach the resolver exactly as sent (URI Syntax 4.2, 4.11)
         ("/01/09506000134352/10/A%2FB?17=261231;3103=000189", "resolver", "/api/01/09506000134352/10/A%2FB?17=261231;3103=000189"),
-        ("/api/docs", "data-entry", "/api/docs"),
-        ("/swaggerui/swagger-ui.css", "data-entry", "/swaggerui/swagger-ui.css"),
         ("/portal/", "portal", "/portal/"),
         # an EPC binary string (item 1.6) is a single segment for the resolver
         ("/eh30164596f40c0e5cbe991a83", "resolver", "/api/eh30164596f40c0e5cbe991a83"),
@@ -295,6 +329,83 @@ def routing_checks(base: str) -> None:
     status, _, body = fetch(base + "/.well-known/gs1resolver")
     check(status == 200 and json.loads(body).get("contact", {}).get("fn") == "Example Org",
           "GET /.well-known/gs1resolver → resolver description file, unchanged")
+
+
+def api_reached(base: str, path: str = "/api/docs", forwarded: str | None = None, method: str = "GET") -> tuple[int, bool]:
+    """The status of a request for the data entry API through the proxy and whether data-entry-service received it."""
+    before = len(hits)
+    status, _, _ = fetch(base + path, headers={"X-Forwarded-For": forwarded} if forwarded else None, method=method,
+                         data=b"{}" if method == "POST" else None)
+    return status, any(h[0] == "data-entry" for h in hits[before:])
+
+
+def api_access_checks(base: str, workdir: Path) -> None:
+    """The official data entry API through the proxy (ADR 0021). Starts with the file of a container started without
+    the settings; ends open to 127.0.0.1, for the replica checks."""
+    for path, method in (("/api/docs", "GET"), ("/api/new", "POST"), ("/api/01/09506000134352", "GET"),
+                         ("/swaggerui/swagger-ui.css", "GET")):
+        status, reached = api_reached(base, path, method=method)
+        check(status == 403 and not reached, f"without DATA_ENTRY_API_ALLOW: {method} {path} → 403 from the proxy, "
+              f"data-entry-service never reached ({status})")
+    status, reached = api_reached(base, forwarded="127.0.0.1")
+    check(status == 403 and not reached, "…and an X-Forwarded-For naming an address changes nothing")
+    status, _, body = fetch(base + "/portal/")
+    check(status == 200 and json.loads(body).get("upstream") == "portal", "…while the portal is still reached")
+    status, _, body = fetch(base + "/01/09506000134352")
+    check(status == 200 and json.loads(body).get("upstream") == "resolver", "…and the resolver too")
+
+    printed = write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "127.0.0.1"})
+    reload_nginx(workdir)
+    check("open to: 127.0.0.1" in printed, "api-access.sh says to whom /api is open")
+    for path, received in (("/api/docs", "/api/docs"), ("/swaggerui/swagger-ui.css", "/swaggerui/swagger-ui.css")):
+        status, _, body = fetch(base + path)
+        data = json.loads(body) if status == 200 else {}
+        check(status == 200 and data.get("upstream") == "data-entry" and data.get("path") == received
+              and host_accepted(data.get("host")), f"DATA_ENTRY_API_ALLOW=127.0.0.1: GET {path} → data-entry ({received}), unchanged")
+    status, reached = api_reached(base, "/api/new", method="POST")
+    check(status == 200 and reached, "…POST /api/new too")
+
+    write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "10.0.0.0/8, 203.0.113.0/24"})
+    reload_nginx(workdir)
+    status, reached = api_reached(base)
+    check(status == 403 and not reached, "allowed networks without the test's address: 403")
+    status, reached = api_reached(base, forwarded="203.0.113.9")
+    check(status == 403 and not reached, "…and X-Forwarded-For is not believed from a peer that is not a trusted proxy")
+
+    write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "203.0.113.0/24", "PROXY_TRUSTED_PROXIES": "127.0.0.1"})
+    reload_nginx(workdir)
+    status, reached = api_reached(base, forwarded="203.0.113.9")
+    check(status == 200 and reached, "behind a trusted proxy (PROXY_TRUSTED_PROXIES): the client it names is allowed")
+    status, reached = api_reached(base, forwarded="203.0.113.9, 198.51.100.7")
+    check(status == 403 and not reached, "…the address the proxy appended counts, not one the client wrote before it")
+    status, reached = api_reached(base)
+    check(status == 403 and not reached, "…and the proxy's own address is not allowed by being trusted")
+
+    write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "203.0.113.0/24", "PROXY_BIND_ADDRESS": "127.0.0.1"})
+    reload_nginx(workdir)
+    status, reached = api_reached(base, forwarded="203.0.113.9")
+    check(status == 200 and reached, "PROXY_BIND_ADDRESS=127.0.0.1: the host's proxy, at the container's gateway, is trusted")
+    write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "203.0.113.0/24", "PROXY_BIND_ADDRESS": "0.0.0.0"})
+    reload_nginx(workdir)
+    status, reached = api_reached(base, forwarded="203.0.113.9")
+    check(status == 403 and not reached, "PROXY_BIND_ADDRESS=0.0.0.0: the gateway is not trusted (clients may arrive from it)")
+
+    printed = write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "999.1.1.1 127.0.0.1/33 1::2::3 alll 127.0.0.1/",
+                                         "PROXY_TRUSTED_PROXIES": "proxy.example"})
+    reload_nginx(workdir)
+    check(all(f"'{bad}' left out" in printed for bad in ("999.1.1.1", "127.0.0.1/33", "1::2::3", "alll", "127.0.0.1/",
+                                                         "proxy.example")),
+          "entries that are not addresses or networks are left out, each with a warning")
+    status, reached = api_reached(base)
+    check(status == 403 and not reached, "…nginx still starts, and they open nothing")
+
+    write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "all"})
+    reload_nginx(workdir)
+    status, reached = api_reached(base)
+    check(status == 200 and reached, "DATA_ENTRY_API_ALLOW=all: open to every address")
+
+    write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "127.0.0.1"})
+    reload_nginx(workdir)
 
 
 class Cluster:
@@ -394,7 +505,7 @@ def replica_checks(base: str, cluster: Cluster) -> None:
 
 def browser_checks(base: str, port: int, shots: Path) -> None:
     expected_links = {
-        "/portal/", "/api/docs",
+        "/portal/",
         "https://ref.gs1.org/standards/digital-link/",
         "https://www.gs1.org/",
         "https://github.com/gs1/GS1_DigitalLink_Resolver_CE",
@@ -414,7 +525,7 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
         page.wait_for_function("document.querySelector('#operator') && !document.querySelector('#operator').hidden")
 
         hrefs = page.eval_on_selector_all("#site-nav a", "els => els.map(a => a.getAttribute('href'))")
-        check(set(hrefs) == expected_links and len(hrefs) == 5, "menu has exactly the five requested links")
+        check(set(hrefs) == expected_links and len(hrefs) == 4, "menu has exactly the four requested links (the data entry API, closed by default, is not offered: ADR 0021)")
         internal = [h for h in hrefs if not h.startswith("https://")]
         check(all(h.startswith("/") and "//" not in h for h in internal),
               "links to this installation are root-relative (no domain in the page)")
@@ -595,6 +706,7 @@ def main() -> int:
         base = f"http://127.0.0.1:{port}"
         startup_checks(base, cluster)
         routing_checks(base)
+        api_access_checks(base, workdir)
         replica_checks(base, cluster)
         browser_checks(base, port, shots)
     finally:

@@ -280,7 +280,7 @@ The architecture is designed to **scale out** from the first install:
 | Everyone | [Features](Documentation/features.md): every feature, what it does, when it was added and the checks that prove it |
 | Server administrators and operators | [Operator's guide](Documentation/extensions/README.md) (installation, configuration, operation, production) · [Changelog](Documentation/extensions/CHANGELOG.md) |
 | Integrators | [Tenant API reference](Documentation/api-reference.md), generated from the API's OpenAPI description |
-| Developers and maintainers | [Developer guide](Documentation/developer-guide.md) · [Inventory of features](Documentation/test-inventory.md) (every check of every test) · [History](Documentation/history.md) · [Conformance review](Documentation/conformance-review.md) · [Architecture decisions](Documentation/README.md#architecture-decision-records) (ADR 0001 to 0019) |
+| Developers and maintainers | [Developer guide](Documentation/developer-guide.md) · [Inventory of features](Documentation/test-inventory.md) (every check of every test) · [History](Documentation/history.md) · [Conformance review](Documentation/conformance-review.md) · [Architecture decisions](Documentation/README.md#architecture-decision-records) (ADR 0001 to 0021) |
 
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).
@@ -573,8 +573,11 @@ The query string of the scan is passed on to the target exactly as it was sent (
 
 ### Data entry API (`/api`, bearer token)
 
-Every operation except `/api/heartbeat` requires `Authorization: Bearer <SESSION_TOKEN>`. Interactive
-documentation: `https://<FQDN>/api/docs` (**Authorize** with `Bearer <token>`).
+Every operation except `/api/heartbeat` requires `Authorization: Bearer <SESSION_TOKEN>`. The proxy keeps `/api`
+and `/swaggerui` closed to every address unless `DATA_ENTRY_API_ALLOW` in `.env` lists it
+([ADR 0021](Documentation/adr/0021-data-entry-api-closed.md)); the portal is not affected, and organisations' systems
+use the tenant API (`/portal/api/v1`) with their keys. From an allowed address, interactive documentation:
+`https://<FQDN>/api/docs` (**Authorize** with `Bearer <token>`).
 
 | Operation | Origin | Purpose |
 |---|---|---|

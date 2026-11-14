@@ -870,7 +870,12 @@ summary_after() {
   step "Done"
   printf '      Home page        https://%s/\n' "$FQDN"
   printf '      Portal           https://%s/portal/\n' "$FQDN"
-  printf '      API docs         https://%s/api/docs  (token: SESSION_TOKEN in %s)\n' "$FQDN" "$ENV_FILE"
+  printf '      Tenant API       https://%s/portal/api/v1  (API keys: created in the portal)\n' "$FQDN"
+  if grep -q '^DATA_ENTRY_API_ALLOW=..*' "$ENV_FILE" 2>/dev/null; then
+    printf '      Data entry API   https://%s/api/docs  (token: SESSION_TOKEN; open to DATA_ENTRY_API_ALLOW in %s)\n' "$FQDN" "$ENV_FILE"
+  else
+    printf '      Data entry API   closed to the internet (DATA_ENTRY_API_ALLOW in %s opens it to listed addresses)\n' "$ENV_FILE"
+  fi
   if [[ -n $GENERATED_ADMIN_PASSWORD ]]; then
     printf '\n      %sFirst portal user:  %s  /  %s%s\n' "$C_BOLD" "$PORTAL_ADMIN_USERNAME" "$GENERATED_ADMIN_PASSWORD" "$C_OFF"
     printf '      This password is shown only now. Sign in and change it under Options.\n'

@@ -468,6 +468,41 @@ check("no Resolution headers on an unknown key", resolution("/01/09506000999906"
 r = client.get("/api" + Q + "/10/L1", headers={"Accept": "*/*", "X-Forwarded-Host": "id.brand.example"})
 check("Resolution-Anchor on the name the request was made on, like the linkset's anchors",
       r.headers.get("Resolution-Anchor") == "https://id.brand.example" + Q, r.headers.get("Resolution-Anchor"))
+# ---------------------------------------------------------------- the notice on the pages (ADR 0022, section 2.3)
+def page_of(path, language="en-GB,en;q=0.9"):
+    r = client.get("/api" + path, headers={"Accept": "text/html", "Accept-Language": language})
+    return r.status_code, r.get_data(as_text=True)
+
+
+status, html = page_of(Q + "/22/V1/10/L2?linkType=linkset")
+check("item's page of a batch without a record: a notice naming the batch and the level whose links are shown",
+      status == 200 and 'class="level-notice"' in html and "Batch/lot L2 has no information of its own" in html
+      and "The links below belong to this level: Variant V1." in html, html[html.find("<main"):][:600])
+check("…above the links", html.find('class="level-notice"') < html.find("example.org/variant"))
+status, html = page_of(Q + "/22/V1/10/L2?linkType=linkset", "pt-BR,pt;q=0.9")
+check("…in the visitor's language (pt-BR)", "Lote L2 não tem informações próprias" in html
+      and "Os links abaixo são deste nível: Variante V1." in html, html[html.find("<main"):][:600])
+status, html = page_of(U + "/21/S9?linkType=linkset")
+check("…a serial nobody registered: its unit named, the product's level shown",
+      "Item (serial S9) has no information of its own" in html and "this level: Product (every unit)." in html)
+for path in (Q + "/22/V1/10/L1?linkType=linkset", Q + "?linkType=linkset", U + "/22/V1/10/B42/21/S1?linkType=linkset"):
+    status, html = page_of(path)
+    check(f"no notice when the request's own level answers: {path}", status == 200 and "level-notice" not in html,
+          html[html.find("<main"):][:300])
+status, html = page_of(X + "/10/ZZ9?linkType=gs1:pip", "vi")
+check("choice page (300) of a batch without a record: the notice too",
+      status == 300 and "Batch/lot ZZ9 has no information of its own" in html, (status, html[html.find("<main"):][:400]))
+status, html = page_of(X + "?linkType=gs1:pip", "vi")
+check("…not when the choice is the request's own level", status == 300 and "level-notice" not in html)
+status, html = page_of(Q + "/10/" + "%3Ci%3EX" + "?linkType=linkset")
+notice = html[html.find('class="level-notice"'):][:900]
+check("a batch value with markup is shown as text in the notice, decoded",
+      status == 200 and "Batch/lot &lt;i&gt;X has no information" in notice and "<i>X" not in html,
+      html[html.find("<main"):][:400])
+r = client.get("/api" + Q + "/22/V1/10/L2?linkType=linkset", headers={"Accept": "application/linkset+json"})
+check("the linkset itself is unchanged: no private key of the notice in it",
+      r.status_code == 200 and "_match" not in r.get_data(as_text=True) and "_anchor" not in r.get_data(as_text=True))
+
 expose = get(Q).headers.get("Access-Control-Expose-Headers") or ""
 check("CORS exposes Resolution-Anchor and Resolution-Match",
       "Resolution-Anchor" in expose and "Resolution-Match" in expose, expose)

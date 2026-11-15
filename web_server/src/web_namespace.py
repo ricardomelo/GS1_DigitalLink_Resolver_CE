@@ -458,7 +458,11 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
     outcome = response_data.pop('_outcome', None)
     request_log.note(level=response_data.pop('_level', None), outcome=outcome)
     # the record that answered and whether the request walked up to it (ADR 0022, section 2.2)
-    resolution = _resolution_headers(response_data.pop('_anchor', None), response_data.pop('_match', None))
+    answered, match = response_data.pop('_anchor', None), response_data.pop('_match', None)
+    resolution = _resolution_headers(answered, match) if status in (300, 307) else {}
+    # the request's path and the level that answered, for the notice on the pages (ADR 0022, section 2.3)
+    walked = (web_logic._encoded_identifier(identifiers) + (qualifier_path or '').rstrip('/'), answered) \
+        if match == 'walk-up' else None
     # A key this resolver does not know: to the resolver of last resort when the operator switched it on (ADR 0018)
     if status == 404 and outcome == 'unknown':
         fallback = forwarding.FORWARDING.fallback()
@@ -494,7 +498,7 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
             json_ld = web_logic.format_linkset_for_external_use(response_data, identifiers, as_json_ld=True)
             if request.args.get('view') == 'page':        # reached as a record's default target: a follow-up
                 request_log.note(form='landing', outcome='page')
-            response = Response(landing.render_page(identifiers, qualifier_path, linkset, json_ld),
+            response = Response(landing.render_page(identifiers, qualifier_path, linkset, json_ld, walked),
                                 status=200, mimetype='text/html')
         else:
             as_json_ld = 'application/ld+json' in accept
@@ -532,7 +536,7 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
         if _wants_html():
             json_ld = web_logic.format_linkset_for_external_use(choice, identifiers, as_json_ld=True)
             response = Response(web_pages.render_linkset(identifiers, qualifier_path, linkset['linkset'], json_ld,
-                                                         choice=True), status=300, mimetype='text/html')
+                                                         choice=True, walked=walked), status=300, mimetype='text/html')
         else:
             response = Response(json.dumps(linkset, ensure_ascii=False), status=300,
                                 content_type='application/linkset+json')

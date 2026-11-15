@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-14",
+ "generated": "2026-11-15",
  "programs": {
   "admin_nav": {
    "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
@@ -142,7 +142,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_db77eae4586…)",
+    "a wrong key is refused (rk_d381e190275…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -841,10 +841,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (222 features)",
+    "features.md: every table has a Checks column (224 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (354 references)",
-    "…and words found in one of its checks",
+    "…each reference names a program of the inventory (361 references)",
     "every test program is in the inventory (68)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
@@ -857,7 +856,7 @@
     "…and every decision record (22)",
     "every relative link of the documents leads to a file (38 documents)"
    ],
-   "count": 15,
+   "count": 14,
    "ciOnly": false
   },
   "domains": {
@@ -2048,7 +2047,7 @@
     "nginx starts while a service name has no address yet",
     "…and answers that service's paths with an error meanwhile (502)",
     "…while the other services answer",
-    "the service is found once its name has an address, without restarting nginx (2.1 s)",
+    "the service is found once its name has an address, without restarting nginx (1.9 s)",
     "GET / → 200 text/html",
     "GET / serves the home page, not the resolver",
     "GET / carries the Content Security Policy",
@@ -3039,7 +3038,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:37177/ok",
+    "internal address refused: http://127.0.0.1:41363/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -3176,7 +3175,7 @@
     "a link of a disabled account is refused",
     "…and cannot set its password",
     "ten invalid links per browser address, then a pause",
-    "reset of a user with an address: a link by e-mail, no password shown2026-11-14 22:04:07,341 INFO portal.worker Job 65f37d8325a04e1b934dff823e2c1fbd (mail of maria) started, attempt 1, from item 0 of 1.",
+    "reset of a user with an address: a link by e-mail, no password shown",
     "…the password stops working at once, the user's sessions end",
     "…the message says an administrator reset it",
     "…and the link sets a new password",
@@ -4644,6 +4643,17 @@
     "no Resolution headers on a 404",
     "no Resolution headers on an unknown key",
     "Resolution-Anchor on the name the request was made on, like the linkset's anchors",
+    "item's page of a batch without a record: a notice naming the batch and the level whose links are shown",
+    "…above the links",
+    "…in the visitor's language (pt-BR)",
+    "…a serial nobody registered: its unit named, the product's level shown",
+    "no notice when the request's own level answers: /01/09506000999982/22/V1/10/L1?linkType=linkset",
+    "no notice when the request's own level answers: /01/09506000999982?linkType=linkset",
+    "no notice when the request's own level answers: /01/09506000999975/22/V1/10/B42/21/S1?linkType=linkset",
+    "choice page (300) of a batch without a record: the notice too",
+    "…not when the choice is the request's own level",
+    "a batch value with markup is shown as text in the notice, decoded",
+    "the linkset itself is unchanged: no private key of the notice in it",
     "CORS exposes Resolution-Anchor and Resolution-Match",
     "linkset: gs1:defaultLink is the first default-type link; gs1:defaultLinkMulti lists both (2.5.8)",
     "links without a media type: no 400 (was a TypeError)",
@@ -4699,9 +4709,9 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.003 ms; Node.js: tens of ms)"
    ],
-   "count": 235,
+   "count": 246,
    "ciOnly": false
   },
   "scan_search": {

@@ -242,6 +242,7 @@ margin-top:1.25rem;text-decoration:none;color:var(--ink)}
 {% if brand_name or logo %}<div class="item-brand">{% if logo %}<img src="{{ logo }}" alt="{{ brand_name or '' }}">{% endif %}
 {% if brand_name %}<strong>{{ brand_name }}</strong>{% endif %}</div>{% endif %}
 <p class="item-code">{{ code_label }}: {{ hri }}</p>
+{{ notice|safe }}
 {% for level in levels %}
   {% if levels|length > 1 %}<h2>{{ level.label }}</h2>{% endif %}
   {% if level.description and loop.index > 1 %}<p>{{ level.description }}</p>{% endif %}
@@ -258,8 +259,10 @@ _BUTTON = """{% macro button(l) %}{% if l.click %}<a href="{{ l.click }}" rel="n
 {% if l.click %}</a>{% else %}</span>{% endif %}{% endmacro %}"""
 
 
-def render_page(identifiers: str, qualifier_path: str | None, linkset: list[dict], json_ld: dict | None) -> str:
-    """The item's page for a linkset (ADR 0011)."""
+def render_page(identifiers: str, qualifier_path: str | None, linkset: list[dict], json_ld: dict | None,
+                walked: tuple[str, str] | None = None) -> str:
+    """The item's page for a linkset (ADR 0011); walked: the request's path and the level that answered, when the
+    links come from a less specific level (a notice above them: ADR 0022, section 2.3)."""
     locale = web_pages._request_locale()
     path = identifiers + (qualifier_path or '')
     # On an organisation's domain with a path stem, the page's own addresses keep the stem (its server may pass on
@@ -291,7 +294,8 @@ def render_page(identifiers: str, qualifier_path: str | None, linkset: list[dict
         _BUTTON + _PAGE, levels=levels, hri=web_pages._hri(identifiers, qualifier_path), colour=colour, accent=accent,
         ink=_text_colour(colour), brand_name=(brand or {}).get('name'), logo=logo, code_label=TEXT[locale]['code'],
         other_label=TEXT[locale]['other'], none_label=TEXT[locale]['none'], verified=verified_url(identifiers, brand),
-        verified_label=TEXT[locale]['verified'], verified_note=TEXT[locale]['verifiedNote'], check_icon=_I['check'])
+        verified_label=TEXT[locale]['verified'], verified_note=TEXT[locale]['verifiedNote'], check_icon=_I['check'],
+        notice=web_pages.notice_html(locale, walked))
     if json_ld is not None:
         data = web_pages.json.dumps(json_ld, ensure_ascii=False).replace('<', '\\u003c')
         body += f'<script type="application/ld+json">{data}</script>'

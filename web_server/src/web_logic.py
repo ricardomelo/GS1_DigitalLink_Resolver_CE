@@ -813,7 +813,10 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
                     item = dict(item)
                     item['anchor'] = identifier + entry['_qualifier_path']
                     merged.append(item)
-            return {"response_status": 200, "data": merged}, pointer
+            # the most specific level that applies, for the notice on the item's page (ADR 0022, section 2.3)
+            return {"response_status": 200, "data": merged,
+                    "_anchor": identifier + applicable[0]['_qualifier_path'],
+                    "_match": answering_match(path_qualifiers, applicable[0].get('qualifiers') or [])}, pointer
 
         last_result = None
         for entry in applicable:

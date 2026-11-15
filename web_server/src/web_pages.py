@@ -253,7 +253,8 @@ def _level_label(locale: str, anchor: str) -> str:
     # are absolute URIs (https://id.example.org/01/…), so only the path is read.
     parts = urlparse(anchor).path.strip('/').split('/')
     ai = parts[0] if parts else ''
-    pairs = dict(zip(parts[2::2], parts[3::2]))
+    # values are percent-encoded in paths and anchors (a batch may hold '/'): shown as they are printed
+    pairs = {k: unquote(v) for k, v in zip(parts[2::2], parts[3::2])}
     if '21' in pairs:
         return _t(locale, 'level.serial', value=pairs['21'])
     if '10' in pairs:
@@ -324,16 +325,48 @@ def _page(locale: str, title: str, body: str, fonts: bool = True, icon: str | No
                                   cookie=LOCALE_COOKIE, body=body)
 
 
+# The notice of a page whose links come from a less specific level than the request named (ADR 0022, section 2.3)
+_NOTICE = """<style>
+.level-notice{display:flex;gap:.7rem;align-items:flex-start;background:#FFF4E0;border:1px solid #F0D09A;
+border-inline-start:4px solid #E08A00;border-radius:.6rem;padding:.8rem 1rem;margin:0 0 1rem;color:#4A3000;line-height:1.45}
+.level-notice strong{display:block;margin-bottom:.15rem}
+.level-notice svg{flex:none;width:1.4rem;height:1.4rem;fill:#B36B00;margin-top:.1rem}
+</style>
+<div class="level-notice" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+<div><strong>{{ notice.title }}</strong>{{ notice.text }}</div></div>
+"""
+
+
+def level_notice(locale: str, walked: tuple[str, str] | None) -> dict | None:
+    """The notice's texts for walked = (the request's path, the path of the level that answered), or None when the
+    request was answered by its own level: which level has no record of its own, and whose links are shown."""
+    if not walked:
+        return None
+    asked, answered = walked
+    return {'title': _t(locale, 'notice.title', level=_level_label(locale, asked)),
+            'text': _t(locale, 'notice.text', level=_level_label(locale, answered))}
+
+
+def notice_html(locale: str, walked: tuple[str, str] | None) -> str:
+    """The notice as HTML (escaped by the template), or nothing."""
+    notice = level_notice(locale, walked)
+    return render_template_string(_NOTICE, notice=notice) if notice else ''
+
+
 def render_linkset(identifiers: str, qualifier_path: str | None, linkset: list[dict],
-                   json_ld: dict | None = None, choice: bool = False) -> str:
+                   json_ld: dict | None = None, choice: bool = False,
+                   walked: tuple[str, str] | None = None) -> str:
     """HTML page listing every link of a linkset, for people who open ?linkType=linkset in a browser, or the
     links among which the resolver could not choose (choice: 300 Multiple Choices). With json_ld the linkset
-    is embedded as JSON-LD too (GS1-Conformant Resolver 1.2.1, section 2.10)."""
+    is embedded as JSON-LD too (GS1-Conformant Resolver 1.2.1, section 2.10). walked: the request's path and the
+    level that answered, when the links come from a less specific level (the notice of ADR 0022, section 2.3)."""
     locale = _request_locale()
     title = _t(locale, 'choice.title' if choice else 'linkset.title')
-    body = render_template_string("{% if text %}<p>{{ text }}</p>{% endif %}<p class='code'>{{ hri }}</p>" + _LINKS,
+    body = render_template_string("{% if text %}<p>{{ text }}</p>{% endif %}<p class='code'>{{ hri }}</p>"
+                                  "{{ notice|safe }}" + _LINKS,
                                   text=_t(locale, 'choice.text') if choice else '',
-                                  hri=_hri(identifiers, qualifier_path), levels=_levels(locale, linkset))
+                                  hri=_hri(identifiers, qualifier_path), levels=_levels(locale, linkset),
+                                  notice=notice_html(locale, walked))
     if json_ld is not None:
         # '<' escaped so that no value can close the script element
         data = json.dumps(json_ld, ensure_ascii=False).replace('<', '\\u003c')

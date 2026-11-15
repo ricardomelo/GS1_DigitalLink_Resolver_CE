@@ -50,6 +50,7 @@ import forwarding
 import overview
 import privacy
 import requestlog
+import resolution
 import sheet
 import sso
 import store
@@ -2496,6 +2497,7 @@ def organisation_page():
         "apikeys": [apikeys.public(d) for d in apikeys.load(chosen)],
         "alerts": monitor.history(chosen, False, limit=20) if chosen else monitor.history(None, True, "-", limit=20),
         "exports": {**exportlimits.describe(tenant), "editable": not g.support},
+        "resolution": {**resolution.strict(chosen), "editable": not g.support},
         "prefixChecks": prefix_checks(tenant["prefixes"] if tenant else []),
         "gcpTable": gcp_summary(),
         "canEditPrefixes": bool(g.server_admin and not g.support and tenant),
@@ -2547,6 +2549,37 @@ def set_export_maximum():
     log_event("export-maximum", tenant=None, detail=f"maximum={'-' if n is None else n}")
     return message("exports.maximumSaved" if n is not None else "exports.maximumCleared", 200,
                    params={"max": n} if n is not None else {}, maximum=n)
+
+
+@app.errorhandler(resolution.ResolutionError)
+def on_resolution_error(err):
+    """A strict mode setting refused: 422 with the message code."""
+    return message(err.code, 422, params=err.params)
+
+
+@app.put("/portal/api/resolution/strict")
+@require_login
+@admin_required
+def set_resolution_strict():
+    """{"tenant": id or "operator", "enabled": bool}: the strict mode for safety-critical link types
+    (Documentation/adr/0022-answering-level.md, section 2.4). An organisation's administrators set their own; a server
+    administrator any, and the operator's scope, outside support access. Journalled."""
+    data = request.get_json(silent=True) or {}
+    if g.support:
+        return message("resolution.readOnly", 403)
+    chosen = str(data.get("tenant") or "").strip()
+    if not g.server_admin:
+        if chosen != g.account_tenant:                 # another organisation's: as if it did not exist
+            return message("tenants.unknown", 404)
+    elif chosen != "operator" and not any(t["id"] == chosen for t in g.tenants):
+        return message("tenants.unknown", 404)
+    tenant_id = None if chosen == "operator" else chosen
+    kept, changed = resolution.set_strict(tenant_id, data.get("enabled"), g.user)
+    if changed:
+        detail = f"strict={'on' if kept['strict'] else 'off'}"
+        audit.info("user=%s action=resolution-strict tenant=%s %s", g.user, tenant_id or "-", detail)
+        log_event("resolution-strict", tenant=tenant_id, detail=detail)
+    return message("resolution.strictOn" if kept["strict"] else "resolution.strictOff", 200, resolution=kept)
 
 
 @app.errorhandler(gcp.GcpError)

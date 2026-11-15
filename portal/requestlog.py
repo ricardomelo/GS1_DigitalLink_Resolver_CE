@@ -50,7 +50,8 @@ DAILY = "request_daily"
 API_CALLS = "api_requests"
 # page and click: the item's page and its buttons, people following a scan (Documentation/adr/0011-item-page.md)
 OUTCOMES = ("redirect", "choice", "linkset", "unknown", "noLink", "invalid", "error", "compressed", "page", "click",
-            "forwarded", "fallback")           # sent to another resolver (ADR 0018)
+            "forwarded", "fallback",           # sent to another resolver (ADR 0018)
+            "withheld")                        # kept back by the strict mode (ADR 0022, section 2.4)
 DEVICES = ("mobile", "tablet", "desktop", "automated", "unknown")
 BROWSERS = ("chrome", "safari", "firefox", "edge", "samsung", "opera", "app", "other")
 FORMS = ("uri", "compressed", "epc", "landing")
@@ -443,7 +444,7 @@ def event_query(args, scope: dict) -> dict:
     outcome = (args.get("outcome") or "").strip()
     if outcome:
         if outcome == "notFound":
-            parts.append({"o": {"$in": ["unknown", "noLink"]}})
+            parts.append({"o": {"$in": ["unknown", "noLink", "withheld"]}})
         elif outcome in OUTCOMES:
             parts.append({"o": outcome})
         else:

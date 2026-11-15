@@ -129,6 +129,10 @@ In four steps, each with its checks and documents:
 1. The headers of 2.2 (`web_server/src/web_logic.py`, `web_namespace.py`, `__init__.py`); checks in
    `dev-tests/resolver/test_resolver.py`.
 2. The notice of 2.3 on the item's page and the page of a choice (`landing.py`, `web_pages.py`, `page_texts.json`).
-3. The strict mode of 2.4: the setting (portal, tenant API, journal), the resolver's cache and answer, the outcome
-   `withheld` in the request log and on the Requests screen.
+3. The strict mode of 2.4: the setting (portal, journal), the resolver's cache and answer, the outcome
+   `withheld` in the request log, on the Requests screen and in the overview's quality figures. The tenant API
+   (ADR 0005) manages records, not an organisation's settings, so the setting is changed on the organisation's page
+   only (its *Resolution* tab; the operator's page for the keys no organisation holds).
 4. The warnings of 2.5 in the editor, the tenant API and the import preview.
+
+Steps 1 and 2 were delivered on 14 and 15 November 2026, step 3 on 15 November 2026.

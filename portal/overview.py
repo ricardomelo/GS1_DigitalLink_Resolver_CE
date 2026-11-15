@@ -85,7 +85,9 @@ def _quality_counts(entry: dict) -> dict:
     return {"requests": entry["total"] - _follow_ups(entry), "answered": sum(outcome.get(o, 0) for o in ANSWERED),
             "unknown": outcome.get("unknown", 0), "noLink": outcome.get("noLink", 0),
             "invalid": outcome.get("invalid", 0), "error": outcome.get("error", 0),
-            "forwarded": outcome.get("forwarded", 0), "fallback": outcome.get("fallback", 0)}
+            "forwarded": outcome.get("forwarded", 0), "fallback": outcome.get("fallback", 0),
+            # withheld: a safety-critical link kept back by the strict mode (ADR 0022, section 2.4)
+            "withheld": outcome.get("withheld", 0)}
 
 
 def usage_and_quality(scope: dict, whole: bool, per: dict, top: int,
@@ -257,7 +259,7 @@ def summary_rows(data: dict, labels: dict) -> list[list]:
         add("usage", "overview.country", f"{name}: {n}")
     for name, n in u.get("place", []):
         add("usage", "overview.place", f"{place_text(name)}: {n}")
-    for name in ("requests", "answered", "unknown", "noLink", "invalid", "error", "forwarded", "fallback"):
+    for name in ("requests", "answered", "unknown", "noLink", "withheld", "invalid", "error", "forwarded", "fallback"):
         add("quality", "overview.q." + name, q[name], q["previous"][name])
     add("quality", "overview.avgMs", q["avgMs"])
     if q.get("p95Max") is not None:

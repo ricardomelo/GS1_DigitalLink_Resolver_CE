@@ -12,6 +12,7 @@ import epc_binary
 import forwarding
 import landing
 import request_log
+import resolution
 import web_logic
 import web_pages
 
@@ -113,8 +114,7 @@ class DocOperationsNonGS1DigitalLinkRequest(Resource):
 
         # If the response from GET is a tuple, unpack it
         if isinstance(response_tuple, tuple):
-            response_data, status_code = response_tuple
-            response = make_response(response_data, status_code)
+            response = make_response(*response_tuple)     # (body, status) or (body, status, headers)
         else:
             response = make_response(response_tuple)
         return response
@@ -181,8 +181,7 @@ class DocOperationsIdentifiersOnly(Resource):
 
         # If the response from GET is a tuple, unpack it
         if isinstance(response_tuple, tuple):
-            response_data, status_code = response_tuple
-            response = make_response(response_data, status_code)
+            response = make_response(*response_tuple)     # (body, status) or (body, status, headers)
         else:
             response = make_response(response_tuple)
 
@@ -211,8 +210,7 @@ class DocOperationsResource(Resource):
     def head(self, anchor_ai_code: str, anchor_ai: str, extra_segments: str | None = None) -> Response:
         response_tuple = self.get(anchor_ai_code, anchor_ai, extra_segments)
         if isinstance(response_tuple, tuple):
-            response_data, status_code = response_tuple
-            response = make_response(response_data, status_code)
+            response = make_response(*response_tuple)     # (body, status) or (body, status, headers)
         else:
             response = make_response(response_tuple)
 
@@ -446,9 +444,12 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
         return _forward(target if mode == 'fixed' else forwarding.join(target, path, query_strings), 'forwarded')
 
     if domains.allows(request.environ, *identifiers.strip('/').split('/', 1)):
+        # the strict mode for safety-critical link types, when the key's organisation switched it on (ADR 0022, 2.4)
+        strict = not linkset_requested and resolution.applies(asked, web_logic._parse_qualifier_path(qualifier_path)) \
+            and resolution.STRICT.on_for(*identifiers.strip('/').split('/', 1))
         response_data, link_header = web_logic.read_document(identifiers, doc_id, qualifier_path, linktype,
                                                              accept_language_list, context, media_types_list,
-                                                             linkset_requested)
+                                                             linkset_requested, strict=strict)
     else:
         # a registered domain answers only for its organisation's keys (ADR 0009): as a code nobody registered
         response_data, link_header = {'response_status': 404, 'error': f'No document found for anchor: {doc_id}',
@@ -459,10 +460,14 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
     request_log.note(level=response_data.pop('_level', None), outcome=outcome)
     # the record that answered and whether the request walked up to it (ADR 0022, section 2.2)
     answered, match = response_data.pop('_anchor', None), response_data.pop('_match', None)
-    resolution = _resolution_headers(answered, match) if status in (300, 307) else {}
-    # the request's path and the level that answered, for the notice on the pages (ADR 0022, section 2.3)
+    headers = _resolution_headers(answered, match) if status in (300, 307) else {}
+    if match == 'withheld':
+        # withheld by the strict mode: an app tells "nothing for this batch" from "nothing at all" (ADR 0022, 2.4)
+        headers = {'Resolution-Match': 'withheld'}
+    # the request's path and the level that answered (or holds the withheld link), for the notice on the pages
+    # (ADR 0022, sections 2.3 and 2.4)
     walked = (web_logic._encoded_identifier(identifiers) + (qualifier_path or '').rstrip('/'), answered) \
-        if match == 'walk-up' else None
+        if match in ('walk-up', 'withheld') else None
     # A key this resolver does not know: to the resolver of last resort when the operator switched it on (ADR 0018)
     if status == 404 and outcome == 'unknown':
         fallback = forwarding.FORWARDING.fallback()
@@ -479,9 +484,12 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
                                                      accept_language_list, context, None, True)
                 if ls_data['response_status'] == 200:
                     available = web_logic.format_linkset_for_external_use(ls_data, identifiers)['linkset']
-            html = web_pages.render_error(status, identifiers, qualifier_path, linktype, available)
-            return Response(html, status=status, mimetype='text/html')
-        return response_data, status
+            html = web_pages.render_error(status, identifiers, qualifier_path, linktype, available,
+                                          walked=walked if match == 'withheld' else None)
+            response = Response(html, status=status, mimetype='text/html')
+            response.headers.update(headers)
+            return response
+        return (response_data, status, headers) if headers else (response_data, status)
 
     link_values = []
     if link_header:
@@ -524,7 +532,7 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
             location = _append_query(location, query_strings)
         response.headers['Location'] = location
         response.headers['Link'] = _latin1(link_header)
-        response.headers.update(resolution)
+        response.headers.update(headers)
         return response
 
     if status == 300:
@@ -541,7 +549,7 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
             response = Response(json.dumps(linkset, ensure_ascii=False), status=300,
                                 content_type='application/linkset+json')
         response.headers['Link'] = _latin1(link_header)
-        response.headers.update(resolution)
+        response.headers.update(headers)
         return response
 
     return response_data, status

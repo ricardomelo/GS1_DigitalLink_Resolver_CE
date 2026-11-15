@@ -289,9 +289,10 @@ def event(noted: dict[str, Any], response: Response) -> dict[str, Any]:
 
 
 def outcome(status: int, noted: dict[str, Any]) -> str:
-    """redirect, choice, linkset, compressed, unknown, noLink, invalid or error; page and click for the item's page
+    """redirect, choice, linkset, compressed, unknown, noLink, withheld, invalid or error; page and click for the item's page
     (Documentation/adr/0011-item-page.md); forwarded (a prefix rule) and fallback (the resolver of last resort) for a
-    request sent to another resolver (Documentation/adr/0018-forwarding.md)."""
+    request sent to another resolver (Documentation/adr/0018-forwarding.md); withheld for a link held only by a less
+    specific level, kept back by the strict mode (Documentation/adr/0022-answering-level.md, section 2.4)."""
     if noted.get("outcome") in ("page", "click") and status < 400:
         return noted["outcome"]
     if noted.get("outcome") in ("forwarded", "fallback") and status == 307:
@@ -305,7 +306,9 @@ def outcome(status: int, noted: dict[str, Any]) -> str:
     if status < 300:
         return "linkset"
     if status == 404:
-        return "noLink" if noted.get("outcome") == "noLink" else "unknown"
+        if noted.get("outcome") in ("noLink", "withheld"):
+            return noted["outcome"]
+        return "unknown"
     if status < 500:
         return "invalid"
     return "error"

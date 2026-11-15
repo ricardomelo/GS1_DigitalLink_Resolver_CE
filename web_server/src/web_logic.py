@@ -11,6 +11,7 @@ from flask import has_request_context, request
 import domains
 
 import gs1_syntax
+import resolution
 import web_db
 
 logger = logging.getLogger(__name__)
@@ -762,12 +763,16 @@ def format_linkset_for_external_use(response_data: dict[str, Any], identifiers: 
 
 
 def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None = '/', linktype: str | None = None, accept_language_list: list[str] | None = None, context: str | None = None,
-                  media_types_list: list[str] | None = None, linkset_requested: bool = False) -> tuple[dict[str, Any], str | None]:
+                  media_types_list: list[str] | None = None, linkset_requested: bool = False,
+                  strict: bool = False) -> tuple[dict[str, Any], str | None]:
     """
     Resolves the request by walking the GTIN hierarchy (GS1-Conformant Resolver Standard 2.5.9/2.5.10):
     entries that apply to the requested path are evaluated from the most specific (e.g. batch/lot) to the
     least specific (GTIN). Redirection: the first level holding the requested link wins; if none does,
     404 (section 2.6.2). Linkset: gathers the links of every applicable level, each with its own anchor.
+    strict: the strict mode is on for the key's organisation (ADR 0022, section 2.4): a safety-critical link type
+    asked with a batch or serial number is answered only by a record naming it; a link held only by a less specific
+    level is withheld (404, _outcome and _match "withheld", _anchor the level that holds it).
     Always returns the tuple (response, Link header).
     """
     try:
@@ -819,9 +824,16 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
                     "_match": answering_match(path_qualifiers, applicable[0].get('qualifiers') or [])}, pointer
 
         last_result = None
+        stops = strict and resolution.applies(normalise_linktype(linktype), path_qualifiers)
         for entry in applicable:
             result = _handle_link_type(linktype, default_linktype, entry['linkset'],
                                        accept_language_list, context, media_types_list)
+            if stops and result['response_status'] in (300, 307) \
+                    and not resolution.may_answer(path_qualifiers, entry.get('qualifiers') or []):
+                # the strict mode: a less specific level holds the link; nobody receives it as the batch's
+                return {"response_status": 404, "error": f"No link registered at this level for linktype: {linktype}",
+                        "_outcome": "withheld", "_match": "withheld",
+                        "_anchor": identifier + entry['_qualifier_path']}, None
             if result['response_status'] == 300:
                 result['anchor'] = identifier + entry['_qualifier_path']   # the level whose links are offered
             if result['response_status'] in (300, 307):

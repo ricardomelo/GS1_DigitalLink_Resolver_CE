@@ -182,7 +182,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(900)
     check("an organisation opened from the list: its page", page.is_visible("#organisation-view")
           and page.inner_text("#org-name") == "Beta Drinks" and page.url.endswith("#organisation?id=" + beta["id"]))
-    check("…its tabs, prefixes first", page.locator("#org-tabs [role=tab]").count() == 8
+    check("…its tabs, prefixes first", page.locator("#org-tabs [role=tab]").count() == 9
           and page.get_attribute("#org-tab-prefixes", "aria-selected") == "true")
     org_rows = page.locator("#org-panel .prefix-row")
     page.click("#org-panel .prefix-add"); org_rows.nth(1).locator("input").fill("78912345")
@@ -285,6 +285,24 @@ with sync_playwright() as p:
     check("…a limit above the maximum refused in the page", tenants.get(acme["id"])["exportLimits"]["editor"] == 5000
           and "20.000" in ana.inner_text("#org-status"), ana.inner_text("#org-status"))
     shot(ana, "organisation-exports-pt")
+
+    # ------------------------------------------------------------ the strict mode (ADR 0022, section 2.4)
+    ana.click("#org-tab-resolution"); ana.wait_for_timeout(400)
+    check("the Resolution tab: the five safety-critical types, the example and the strict mode off",
+          "Resolução" in ana.inner_text("#org-tabs") and ana.locator("#org-resolution-types li").count() == 5
+          and "gs1:recallStatus" in ana.inner_text("#org-resolution-types")
+          and "Desligado (padrão GS1)" in ana.inner_text("#org-panel")
+          and not ana.is_checked("#org-resolution-strict"), ana.inner_text("#org-panel"))
+    ana.check("#org-resolution-strict"); ana.click("#org-save-resolution"); ana.wait_for_timeout(300)
+    ana.click("#ask-ok"); ana.wait_for_timeout(600)
+    check("…switched on after the confirmation, the state and who changed it shown",
+          store.col("tenants").find_one({"_id": acme["id"]}).get("strictSafety") is True
+          and "Modo estrito ligado" in ana.inner_text("#org-status")
+          and "ana" in ana.inner_text("#org-resolution-state"), ana.inner_text("#org-panel"))
+    shot(ana, "organisation-resolution-pt")
+    ana.uncheck("#org-resolution-strict"); ana.click("#org-save-resolution"); ana.wait_for_timeout(600)
+    check("…switched off without a confirmation", store.col("tenants").find_one({"_id": acme["id"]}).get("strictSafety")
+          is False and "desligado" in ana.inner_text("#org-status"), ana.inner_text("#org-status"))
 
     # ------------------------------------------------------------ phone width
     phone = browser.new_context(locale="en-GB", viewport={"width": 390, "height": 800}, is_mobile=True,

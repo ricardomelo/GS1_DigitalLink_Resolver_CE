@@ -2168,6 +2168,7 @@ function orgPanel(d, tab) {
       : empty("org.noKeys"), orgManage("#apikeys", false)];
   }
   if (tab === "exports") return orgExports(d);
+  if (tab === "resolution") return orgResolution(d);
   const link = el("p", "org-manage");
   const a = el("a", "", t("org.allAlerts"));
   a.href = "#alerts" + (CONFIG.serverAdmin && !CONFIG.support ? "?tenant=" + encodeURIComponent(d.operator ? "-" : d.id) : "");
@@ -2230,6 +2231,58 @@ function orgExports(d) {
   }
   out.push(el("p", "field-msg", t("exports.journalNote")));
   return out;
+}
+
+/* The strict mode for safety-critical link types (ADR 0022, section 2.4): set by the organisation's administrators and
+   the server administrators (the operator's for the keys no organisation holds); off by default, read only in support
+   access. The table shows what a request receives with the mode off and on. */
+function orgResolution(d) {
+  const r = d.resolution;
+  const out = [el("h3", "", t("resolution.title")), el("p", "field-msg", t("resolution.intro"))];
+  const types = el("ul", "resolution-types");
+  types.id = "org-resolution-types";
+  r.types.forEach(code => {
+    const li = el("li", "", I18N.linkType("gs1:" + code)[0]);
+    li.append(" ", el("code", "muted", "gs1:" + code));
+    types.append(li);
+  });
+  out.push(types);
+  const rows = ["withheld", "batch", "serial", "other"].map(row =>
+    [t("resolution.example." + row), t("resolution.example." + row + ".off"), t("resolution.example." + row + ".on")]);
+  out.push(orgTable(["resolution.example.request", "resolution.example.off", "resolution.example.on"], rows));
+  const label = el("label", "choice resolution-switch");
+  const box = el("input");
+  Object.assign(box, { type: "checkbox", id: "org-resolution-strict", checked: r.strict, disabled: !r.editable });
+  label.append(box, el("span", "", t(d.operator ? "resolution.enableOperator" : "resolution.enable")));
+  out.push(label);
+  const state = el("p", "field-msg", t(r.strict ? "resolution.stateOn" : "resolution.stateOff")
+    + (r.updated ? " · " + t("resolution.updated", { when: formatWhen(r.updated), user: r.updatedBy || "—" }) : ""));
+  state.id = "org-resolution-state";
+  out.push(state);
+  if (r.editable) {
+    const save = el("button", "btn btn-primary", t("resolution.save"));
+    save.type = "button";
+    save.id = "org-save-resolution";
+    save.addEventListener("click", saveOrgResolution);
+    out.push(save);
+  } else {
+    out.push(el("p", "field-msg", t("resolution.readOnly")));
+  }
+  out.push(el("p", "field-msg", t("resolution.journalNote")));
+  return out;
+}
+
+async function saveOrgResolution() {
+  const d = orgState.data, enabled = $("#org-resolution-strict").checked;
+  if (enabled && !d.resolution.strict && !await ask(t("resolution.confirmOn"))) return;
+  try {
+    const result = await api("PUT", "resolution/strict", { tenant: d.id, enabled });
+    d.resolution = { ...d.resolution, ...result.resolution };
+    renderOrganisation();
+    orgStatus("ok", result.code, result.params);
+  } catch (e) {
+    orgStatus("error", e.code, e.params);
+  }
 }
 
 async function saveOrgExports() {
@@ -3021,7 +3074,7 @@ function downloadAudit() {
    last 30 days as bars, the latest requests with filters and pages, a CSV export, and for administrators the calls
    of the tenant API, and how long requests are kept (section 8). Nothing here identifies the people who scan: the
    server never stores it; the browser family and the approximate location (city) are derived when a scan arrives. */
-const REQUEST_OUTCOMES = ["redirect", "notFound", "unknown", "noLink", "choice", "linkset", "invalid", "error", "compressed",
+const REQUEST_OUTCOMES = ["redirect", "notFound", "unknown", "noLink", "withheld", "choice", "linkset", "invalid", "error", "compressed",
                           "page", "click", "forwarded", "fallback"];
 const REQUEST_DEVICES = ["mobile", "tablet", "desktop", "automated", "unknown"];
 const REQUEST_BROWSERS = ["chrome", "safari", "firefox", "edge", "samsung", "opera", "app", "other"];
@@ -3986,6 +4039,8 @@ function renderOverview() {
     tile("overview.q.invalid", q.invalid, { previous: q.previous.invalid, better: "down" }),
     tile("overview.q.error", q.error, { previous: q.previous.error, better: "down", warn: q.error > 0 }),
     // sent to another resolver (ADR 0018): shown when there were any
+    ...(q.withheld || q.previous.withheld ? [tile("overview.q.withheld", q.withheld, { previous: q.previous.withheld,
+                                                                                    better: "down" })] : []),
     ...(q.forwarded || q.previous.forwarded ? [tile("overview.q.forwarded", q.forwarded, { previous: q.previous.forwarded })] : []),
     ...(q.fallback || q.previous.fallback ? [tile("overview.q.fallback", q.fallback, { previous: q.previous.fallback })] : []),
     tile("overview.avgMs", q.avgMs, { unit: "ms", note: q.p95Max !== null && q.p95Max !== undefined

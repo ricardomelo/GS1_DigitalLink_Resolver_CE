@@ -25,7 +25,7 @@ JSON = os.path.join(REPO, "Documentation", "test-inventory.json")
 AREAS = [
     ("Resolution: the resolver, its pages and its log", ["resolver", "gs1_suite", "epc_binary", "data_entry_api",
                                                          "mock_parity", "request_log", "domains_resolver",
-                                                         "forwarding_resolver", "landing", "load"]),
+                                                         "forwarding_resolver", "strict_resolver", "landing", "load"]),
     ("Records: keys, qualifiers, links and the editor", ["keys", "registration", "data_attributes", "special_chars",
                                                          "dictionary", "engine_messages", "link_types", "governance",
                                                          "fix_serials", "portal_e2e", "portal_e2e_without_engine",
@@ -37,7 +37,7 @@ AREAS = [
     ("Requests and the overview", ["requestlog", "requests_e2e", "overview", "overview_e2e"]),
     ("Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
      ["tenants", "admin_nav", "admin_nav_e2e", "exports", "sso", "sso_e2e", "session", "api", "api_e2e", "domains",
-      "domains_e2e", "monitor", "mail", "mail_e2e", "privacy", "privacy_e2e", "forwarding", "forwarding_e2e",
+      "domains_e2e", "monitor", "mail", "mail_e2e", "privacy", "privacy_e2e", "forwarding", "forwarding_e2e", "strict_mode",
       "appearance", "appearance_e2e"]),
     ("Interface and languages", ["portal_config", "i18n", "languages_e2e"]),
     ("The documents", ["docs"]),

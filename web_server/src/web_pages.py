@@ -375,13 +375,21 @@ def render_linkset(identifiers: str, qualifier_path: str | None, linkset: list[d
 
 
 def render_error(status: int, identifiers: str, qualifier_path: str | None, linktype: str | None,
-                 available: list[dict] | None) -> str:
+                 available: list[dict] | None, walked: tuple[str, str] | None = None) -> str:
     """HTML page for 400 (not a valid Digital Link) and 404 (unknown identifier, or a link type the
-    identifier does not have, with the types it has).
+    identifier does not have, with the types it has). walked: a link withheld by the strict mode (ADR 0022, section
+    2.4), as (the request's path, the level that holds it): the page names the level asked and shows the notice of
+    section 2.3 above the links that are available.
     """
     locale = _request_locale()
+    notice = ''
     if status == 400:
         title, text = _t(locale, 'error.400.title'), _t(locale, 'error.400.text')
+    elif status == 404 and linktype and walked:
+        term = linktype.split(':')[-1].rsplit('/', 1)[-1]
+        title = _t(locale, 'error.404withheld.title')
+        text = _t(locale, 'error.404withheld.text', label=_label(locale, term), level=_level_label(locale, walked[0]))
+        notice = notice_html(locale, walked) if available else ''
     elif status == 404 and linktype and available:
         term = linktype.split(':')[-1].rsplit('/', 1)[-1]
         title = _t(locale, 'error.404type.title')
@@ -393,7 +401,7 @@ def render_error(status: int, identifiers: str, qualifier_path: str | None, link
 
     body = render_template_string(
         "<p>{{ text }}</p><p class='code'>{{ hri }}</p>"
-        "<p class='muted'>{{ status_text }}</p>" + (_LINKS if available else ''),
-        text=text, hri=_hri(identifiers, qualifier_path),
+        "<p class='muted'>{{ status_text }}</p>{{ notice|safe }}" + (_LINKS if available else ''),
+        text=text, hri=_hri(identifiers, qualifier_path), notice=notice,
         status_text=_t(locale, 'status', status=status), levels=_levels(locale, available or []))
     return _page(locale, title, body)

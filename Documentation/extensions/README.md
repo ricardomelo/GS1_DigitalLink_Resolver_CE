@@ -798,7 +798,8 @@ operator's own notice before going to production.
 ## The installation's appearance
 
 [ADR 0019](../adr/0019-appearance.md). Server administrators set, on *Appearance* in the portal, the title shown in place
-of *GS1 Resolver Community Edition*, a logo and an icon for the browsers' tabs (PNG, JPEG or WebP, at most 200 KB
+of *GS1 Digital Link Resolver Suite* (ADR 0024; before it, *GS1 Resolver Community Edition*, which a stored
+appearance from then still names is read as the new name), a logo and an icon for the browsers' tabs (PNG, JPEG or WebP, at most 200 KB
 each) and three colours (main, action,
 highlight; white text must keep a contrast of 4.5:1 on the first two). Nothing is set in `.env`: the setting
 `appearance` in the portal's database (`settings`, part of the backup) holds them, and **Restore the original** removes
@@ -1091,7 +1092,7 @@ in `index.html` is shown when JavaScript is off.
 ## Look and feel
 
 Both the portal and the resolver's own pages follow gs1.org: white header with the project's logo and the
-product name "GS1 Resolver Community Edition", a GS1 blue band with the page title, white panels on a pale
+product name "GS1 Digital Link Resolver Suite" (ADR 0024), a GS1 blue band with the page title, white panels on a pale
 blue-grey page, GS1 orange for the main action and teal links. gs1.org uses the licensed Gotham SSm
 typeface; these pages use Montserrat, the closest free match, with Verdana as the same fallback. The logo
 is the project's own (`logo.svg`), not GS1's. The operator can replace the title, the logo and the three main colours
@@ -1652,7 +1653,7 @@ curl -s http://127.0.0.1:8080/portal/healthz       # {"portal":"ok","resolver":"
 
 An installation of the official GS1 Resolver CE v3 (the four services of its `docker-compose.yml`, the records in the
 database `resolver_ce` of the volume `resolver-database-volume`) is upgraded in its own folder by
-`scripts/upgrade-from-official.sh`; the Expansion Pack keeps the same database image (MongoDB 7), the same database and
+`scripts/upgrade-from-official.sh`; the GS1 Digital Link Resolver Suite keeps the same database image (MongoDB 7), the same database and
 the same document format, so the records need no conversion. The folder matters: Docker Compose names the volume after
 it, and a clone elsewhere would start with an empty database.
 
@@ -1671,7 +1672,7 @@ The log is `/var/log/gs1-resolver-upgrade.log`. The way back, printed at the end
 were — `mongorestore --archive --gzip --drop` of the backup. After an upgrade with the official default password,
 rotate it (`sudo scripts/rotate-secrets.sh mongo`); a data entry token that was the default `secret` is replaced by the
 installer, so systems that call `/api` need the new one (`SESSION_TOKEN` in `.env`). The official installation published
-the database's port 27017 and the proxy's 8080 on every interface; the Expansion Pack binds both to `127.0.0.1` and puts
+the database's port 27017 and the proxy's 8080 on every interface; the GS1 Digital Link Resolver Suite binds both to `127.0.0.1` and puts
 nginx with HTTPS in front (or your own proxy: the installer's HTTPS mode `external`).
 
 ## Going to production

@@ -1,8 +1,8 @@
 """
-The installation's appearance (Documentation/adr/0019-appearance.md): the title in place of "GS1 Resolver Community
-Edition", the logo, the icon of the browsers' tabs (favicon) and three colours, set by server administrators and shown on
-every page of the installation — the portal, the home page, the resolver's pages. One setting, "appearance", in the
-portal's database (the resolver reads it too, web_server/src/web_pages.py):
+The installation's appearance (Documentation/adr/0019-appearance.md): the title in place of "GS1 Digital Link
+Resolver Suite" (ADR 0024), the logo, the icon of the browsers' tabs (favicon) and three colours, set by server
+administrators and shown on every page of the installation — the portal, the home page, the resolver's pages. One
+setting, "appearance", in the portal's database (the resolver reads it too, web_server/src/web_pages.py):
 
     {"title", "colour", "action", "accent", "logo": {"type", "data", "etag", "width", "height"} | None,
      "icon": (the same) | None, "updated", "updatedBy"}
@@ -17,7 +17,10 @@ import store
 from users import UserError
 
 SETTING = "appearance"
-ORIGINAL = {"title": "GS1 Resolver Community Edition", "colour": "#002C6C", "action": "#CE3D0D", "accent": "#F26334"}
+ORIGINAL = {"title": "GS1 Digital Link Resolver Suite", "colour": "#002C6C", "action": "#CE3D0D", "accent": "#F26334"}
+# Former default titles: save() stored the default when the operator left the title empty, so a stored former default
+# is read as the default of today (ADR 0024 §2.1), not as the operator's choice. web_server/src/web_pages.py has the same.
+FORMER_TITLES = ("GS1 Resolver Community Edition",)
 COLOURS = ("colour", "action", "accent")
 IMAGES = ("logo", "icon")      # the header's logo and the tabs' icon (favicon), both checked as the brands' logos
 COLOUR = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -47,12 +50,18 @@ def current() -> dict:
     return store.get_setting(SETTING) or {}
 
 
+def title_of(doc: dict) -> str:
+    """The stored title, or the default when none is stored or it is a former default."""
+    title = doc.get("title") or ""
+    return ORIGINAL["title"] if not title or title in FORMER_TITLES else title
+
+
 def public(doc: dict | None = None) -> dict:
     """What every page needs: the title, the colours, the logo's and the icon's addresses and whether this is the
     original."""
     doc = current() if doc is None else doc
     logo, icon = doc.get("logo") or None, doc.get("icon") or None
-    return {**{k: doc.get(k) or v for k, v in ORIGINAL.items()},
+    return {**{k: doc.get(k) or v for k, v in ORIGINAL.items()}, "title": title_of(doc),
             "logo": f"appearance/logo?v={logo['etag']}" if logo else "logo.svg",
             "icon": f"appearance/icon?v={icon['etag']}" if icon else "favicon.png",
             "customLogo": bool(logo), "customIcon": bool(icon), "original": not doc, "defaults": ORIGINAL,
@@ -62,7 +71,7 @@ def public(doc: dict | None = None) -> dict:
 def save(data: dict, user: str) -> dict:
     """Title, colours, logo and icon ("logo", "icon": base64 to replace it, "" for the original, absent to keep it)."""
     doc = current()
-    title = " ".join(str(data.get("title", doc.get("title")) or ORIGINAL["title"]).split())
+    title = " ".join(str(data.get("title", title_of(doc)) or ORIGINAL["title"]).split())
     if not title or len(title) > TITLE_MAX or not title.isprintable():
         raise UserError("appearance.titleInvalid", max=TITLE_MAX)
     change = {"title": title}
@@ -110,10 +119,10 @@ def page(text: str, doc: dict | None = None) -> str:
     found = public(doc)
     title = html.escape(found["title"], quote=False)
     return (text.replace('<html lang="en-GB">', f'<html lang="en-GB" data-product="{html.escape(found["title"])}">', 1)
-            .replace("<title>GS1 Resolver Community Edition</title>", f"<title>{title}</title>", 1)
+            .replace(f"<title>{ORIGINAL['title']}</title>", f"<title>{title}</title>", 1)
             .replace('<link rel="icon" type="image/png" href="favicon.png">',
                      f'<link rel="icon" href="{html.escape(found["icon"])}">', 1)
             .replace('<img src="logo.svg" alt="" width="44" height="44">',
                      f'<img src="{html.escape(found["logo"])}" alt="" width="44" height="44">', 1)
-            .replace('<span class="product">GS1 Resolver Community Edition</span>',
+            .replace(f'<span class="product">{ORIGINAL["title"]}</span>',
                      f'<span class="product">{title}</span>', 1))

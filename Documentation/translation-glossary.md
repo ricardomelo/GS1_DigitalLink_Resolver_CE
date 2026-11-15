@@ -25,7 +25,7 @@ changes only the values, keeps the keys and placeholders, and passes `python por
    where your grammar needs them. Do not translate inside the braces.
 3. **Keep unchanged**: link type codes (`gs1:pip`), GS1 key abbreviations (GTIN, GLN, SSCC, GRAI, GIAI, GSRN, GDTI,
    GINC, GSIN, CPID, GMN, GCN, ITIP, UPUI, PGLN…), AI numbers like `(01)` `(10)` `(21)`, `GS1 Digital Link`,
-   `GS1 Resolver Community Edition`, `Verified by GS1`, `EPC`, `EPCIS`, `RFID`, `NFC`, `QR code` may be localised if
+   `GS1 Digital Link Resolver Suite`, `GS1 Resolver Community Edition`, `Verified by GS1`, `EPC`, `EPCIS`, `RFID`, `NFC`, `QR code` may be localised if
    your language has a usual form (e.g. Japanese QRコード), `Data Matrix`, `GS1 DataMatrix`, `EAN-13`, `UPC-A`, `HRI`,
    `JSON`, `CSV`, `XLSX`, `PDF`, `SVG`, `PNG`, `ZIP`, `HTTP`, `HTTPS`, `DNS`, `TXT`, `CNAME`, `OpenID Connect`,
    `OIDC`, `SSO` (you may add the local term), `API`, `Swagger UI`, `GitHub`, `Let's Encrypt`, `nginx`, `Certbot`,

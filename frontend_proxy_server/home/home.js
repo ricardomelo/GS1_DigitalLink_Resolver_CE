@@ -28,7 +28,7 @@
   const CATALOGUE = {
     "pt-BR": {
       "locale.name": "Português (Brasil)",
-      "page.title": "GS1 Resolver Community Edition",
+      "page.title": "GS1 Digital Link Resolver Suite",
       "page.skip": "Pular para o conteúdo",
       "header.language": "Idioma",
       "nav.label": "Menu principal",
@@ -56,7 +56,7 @@
     },
     "en-GB": {
       "locale.name": "English (UK)",
-      "page.title": "GS1 Resolver Community Edition",
+      "page.title": "GS1 Digital Link Resolver Suite",
       "page.skip": "Skip to content",
       "header.language": "Language",
       "nav.label": "Main menu",
@@ -84,7 +84,7 @@
     },
     "es": {
       "locale.name": "Español",
-      "page.title": "GS1 Resolver Community Edition",
+      "page.title": "GS1 Digital Link Resolver Suite",
       "page.skip": "Ir al contenido",
       "header.language": "Idioma",
       "nav.label": "Menú principal",
@@ -112,7 +112,7 @@
     },
     "fr": {
       "locale.name": "Français",
-      "page.title": "GS1 Resolver Community Edition",
+      "page.title": "GS1 Digital Link Resolver Suite",
       "page.skip": "Aller au contenu",
       "header.language": "Langue",
       "nav.label": "Menu principal",
@@ -140,7 +140,7 @@
     },
     "de": {
       "locale.name": "Deutsch",
-      "page.title": "GS1 Resolver Community Edition",
+      "page.title": "GS1 Digital Link Resolver Suite",
       "page.skip": "Zum Inhalt springen",
       "header.language": "Sprache",
       "nav.label": "Hauptmenü",
@@ -168,7 +168,7 @@
     },
     "it": {
       "locale.name": "Italiano",
-      "page.title": "GS1 Resolver Community Edition",
+      "page.title": "GS1 Digital Link Resolver Suite",
       "page.skip": "Vai al contenuto",
       "header.language": "Lingua",
       "nav.label": "Menu principale",
@@ -196,7 +196,7 @@
     },
     "tr": {
       "locale.name": "Türkçe",
-      "page.title": "GS1 Resolver Community Edition",
+      "page.title": "GS1 Digital Link Resolver Suite",
       "page.skip": "İçeriğe geç",
       "header.language": "Dil",
       "nav.label": "Ana menü",
@@ -224,7 +224,7 @@
     },
     "zh-Hans": {
       "locale.name": "中文（简体）",
-      "page.title": "GS1 Resolver Community Edition",
+      "page.title": "GS1 Digital Link Resolver Suite",
       "page.skip": "跳至内容",
       "header.language": "语言",
       "nav.label": "主菜单",
@@ -252,7 +252,7 @@
     },
     "ja": {
       "locale.name": "日本語",
-      "page.title": "GS1 Resolver Community Edition",
+      "page.title": "GS1 Digital Link Resolver Suite",
       "page.skip": "本文へスキップ",
       "header.language": "言語",
       "nav.label": "メインメニュー",
@@ -280,7 +280,7 @@
     },
     "ko": {
       "locale.name": "한국어",
-      "page.title": "GS1 Resolver Community Edition",
+      "page.title": "GS1 Digital Link Resolver Suite",
       "page.skip": "본문으로 건너뛰기",
       "header.language": "언어",
       "nav.label": "주 메뉴",
@@ -308,7 +308,7 @@
     },
     "hi": {
       "locale.name": "हिन्दी",
-      "page.title": "GS1 Resolver Community Edition",
+      "page.title": "GS1 Digital Link Resolver Suite",
       "page.skip": "सामग्री पर जाएँ",
       "header.language": "भाषा",
       "nav.label": "मुख्य मेनू",
@@ -336,7 +336,7 @@
     },
     "ar": {
       "locale.name": "العربية",
-      "page.title": "GS1 Resolver Community Edition",
+      "page.title": "GS1 Digital Link Resolver Suite",
       "page.skip": "انتقل إلى المحتوى",
       "header.language": "اللغة",
       "nav.label": "القائمة الرئيسية",
@@ -392,7 +392,7 @@
 
   /* The installation's appearance (Documentation/adr/0019-appearance.md), from the portal: its title in place of the
      product's name, its logo, its icon, its colours (/portal/appearance.css) */
-  const PRODUCT = "GS1 Resolver Community Edition";
+  const PRODUCT = "GS1 Digital Link Resolver Suite";
   let product = null;
 
   function t(key) {

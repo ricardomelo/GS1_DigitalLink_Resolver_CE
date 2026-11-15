@@ -386,7 +386,7 @@ landing.BRANDS.database = lambda: PORTAL
 # ---------------------------------------------------------------- the installation's appearance (ADR 0019)
 r, _ = ask(ACME2 + PAGE)
 html = r.get_data(as_text=True)
-check("the original appearance: the project's title and logo, GS1's colours", "<span>GS1 Resolver Community Edition</span>"
+check("the original appearance: the project's title and logo, GS1's colours", "<span>GS1 Digital Link Resolver Suite</span>"
       in html and web_pages.LOGO_DATA_URI in html and "--blue:#002C6C" in html and ":root{--blue:#1A3D2B" not in html)
 LOGO = png((26, 61, 43), (120, 44))
 ICON = png((232, 177, 0), (32, 32))
@@ -401,7 +401,7 @@ html = r.get_data(as_text=True)
 logo_uri = "data:image/png;base64," + base64.b64encode(LOGO).decode()
 check("the operator's appearance on the item's page: title (header and tab), logo, colours after GS1's",
       r.status_code == 200 and "<span>Acme Resolver</span>" in html and "Acme Resolver</title>" in html
-      and "GS1 Resolver Community Edition" not in html and logo_uri in html
+      and "GS1 Digital Link Resolver Suite" not in html and logo_uri in html
       and html.index(":root{--blue:#1A3D2B;--orange:#E8B100;--action:#8A1538;}") > html.index("--blue:#002C6C"),
       re.findall(r"<title>.*?</title>", html))
 r, _ = ask("/01/07891234999992")
@@ -432,7 +432,7 @@ check("…a title is text (escaped), a value that is not a colour is ignored",
 PORTAL["settings"].delete_one({"_id": "appearance"})
 web_pages.APPEARANCE.forget()
 html = ask(ACME2 + PAGE)[0].get_data(as_text=True)
-check("…removed (Restore the original): the original again", "<span>GS1 Resolver Community Edition</span>" in html
+check("…removed (Restore the original): the original again", "<span>GS1 Digital Link Resolver Suite</span>" in html
       and web_pages.LOGO_DATA_URI in html and "Acme Resolver" not in html)
 r = client.get("/api/favicon.ico")
 check("…and the project's favicon.ico", len(FAVICON) > 0 and r.data == FAVICON

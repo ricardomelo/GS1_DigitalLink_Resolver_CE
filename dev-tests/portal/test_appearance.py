@@ -95,7 +95,7 @@ def resolver():
     return web_pages.appearance()
 
 
-ORIGINAL = {"title": "GS1 Resolver Community Edition", "colour": "#002C6C", "action": "#CE3D0D", "accent": "#F26334"}
+ORIGINAL = {"title": "GS1 Digital Link Resolver Suite", "colour": "#002C6C", "action": "#CE3D0D", "accent": "#F26334"}
 
 # ================================================================== the original
 data = anyone.get("/portal/api/appearance").get_json()
@@ -283,6 +283,26 @@ check("…the pages served as they are in the files again", anyone.get("/portal/
 entry = store.col("journal").find_one({"action": "appearance-reset"}) or {}
 check("…in the journal", entry.get("user") == "root" and entry.get("tenant") is None, entry)
 check("restoring the original twice is harmless", root.delete("/portal/api/appearance", headers=ORIGIN).status_code == 200)
+
+# ================================================================== a former default title stored (ADR 0024 §2.1)
+# Before the new name, saving the colours with the title left empty stored "GS1 Resolver Community Edition": after the
+# update it is the default of today, not the operator's choice; the colours stay.
+store.set_setting("appearance", {"title": "GS1 Resolver Community Edition", "colour": "#1A3D2B",
+                                 "action": "#8A1538", "accent": "#E8B100"})
+found = anyone.get("/portal/api/appearance").get_json()
+check("a former default title stored: the new name, the colours kept", found["title"] == ORIGINAL["title"]
+      and found["colour"] == "#1A3D2B" and found["original"] is False, found)
+text = anyone.get("/portal/login").get_data(as_text=True)
+check("…the sign-in page served with the new name", f"<title>{ORIGINAL['title']}</title>" in text
+      and "Community Edition" not in text, text[:400])
+check("…the resolver's pages too", resolver()[0] == ORIGINAL["title"])
+r = root.put("/portal/api/appearance", json={"colour": "#1A3D2C"}, headers=ORIGIN)
+check("…saving the colours alone stores the new name, not the former one", r.status_code == 200
+      and store.get_setting("appearance")["title"] == ORIGINAL["title"], store.get_setting("appearance"))
+store.set_setting("appearance", {"title": "GS1 Resolver Community Edition (Acme)"})
+check("…a title that only contains it is the operator's", anyone.get("/portal/api/appearance").get_json()["title"]
+      == "GS1 Resolver Community Edition (Acme)" and resolver()[0] == "GS1 Resolver Community Edition (Acme)")
+store.col("settings").delete_one({"_id": "appearance"})
 
 # ================================================================== the resolver's reader
 store.set_setting("appearance", {"title": "Direct", "colour": "red", "action": "#123456"})

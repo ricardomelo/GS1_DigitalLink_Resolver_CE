@@ -37,7 +37,7 @@ const I18N = (() => {
   const CATALOGUE = {
     "pt-BR": {
       "locale.name": "Português (Brasil)",
-      "app.title": "Links do produto | GS1 Resolver Community Edition",
+      "app.title": "Links do produto | GS1 Digital Link Resolver Suite",
       "header.language": "Idioma",
       "header.home": "Página inicial do Resolver",
       "menu.home": "Página inicial",
@@ -850,7 +850,7 @@ const I18N = (() => {
       "appearance.colourContrast": "Texto branco fica difícil de ler na cor principal ({ratio}:1; o mínimo é {min}:1): escolha uma cor mais escura.",
       "appearance.actionContrast": "Texto branco fica difícil de ler na cor de ação ({ratio}:1; o mínimo é {min}:1): escolha uma cor mais escura.",
       "appearance.readOnly": "Acesso de suporte: somente leitura.",
-      "privacy.default": "# Aviso de privacidade\n\nEste resolver GS1 Digital Link é operado por {operator}. Ele responde às leituras de QR Codes GS1 Digital Link e de outros códigos levando cada pessoa às informações que o dono da marca do produto cadastrou.\n\n# O que é registrado quando um código é lido\n\nPara cada requisição, o resolver registra o código e o que respondeu, quando, quanto tempo levou, o tipo de aparelho (celular, tablet, computador), a família do navegador, o idioma pedido pelo aparelho e uma localização aproximada (país, região e cidade) deduzida do endereço da conexão naquele momento. O endereço em si não é guardado, nem a identificação completa do navegador, nem qualquer dado que identifique a pessoa. Cada requisição é guardada por {days} dias; as contagens diárias por código são guardadas por mais tempo.\n\n# O portal de gestão de links\n\nAs pessoas que gerenciam os links entram no portal com uma conta. O portal guarda o nome de usuário, o e-mail e o papel de cada uma, e uma trilha de auditoria do que alteram, conforme a política do operador.\n\n# Responsabilidade\n\nEsta instalação usa software livre e de código aberto (GS1 Digital Link Resolver CE e seu Expansion Pack, sob a Licença Apache 2.0). O seu uso é de estrita responsabilidade de quem opera esta instância do resolver. Nem a GS1, nem qualquer Organização-Membro GS1, nem ninguém que tenha contribuído para o desenvolvimento do software se responsabiliza por esta instalação, pela sua operação ou pelo seu conteúdo. O software é disponibilizado \"no estado em que se encontra\" (\"as is\"), sem garantia de qualquer tipo.\n\n# Contato\n\nDúvidas sobre este aviso ou sobre os dados desta instalação devem ser enviadas ao seu operador, {operator}.",
+      "privacy.default": "# Aviso de privacidade\n\nEste resolver GS1 Digital Link é operado por {operator}. Ele responde às leituras de QR Codes GS1 Digital Link e de outros códigos levando cada pessoa às informações que o dono da marca do produto cadastrou.\n\n# O que é registrado quando um código é lido\n\nPara cada requisição, o resolver registra o código e o que respondeu, quando, quanto tempo levou, o tipo de aparelho (celular, tablet, computador), a família do navegador, o idioma pedido pelo aparelho e uma localização aproximada (país, região e cidade) deduzida do endereço da conexão naquele momento. O endereço em si não é guardado, nem a identificação completa do navegador, nem qualquer dado que identifique a pessoa. Cada requisição é guardada por {days} dias; as contagens diárias por código são guardadas por mais tempo.\n\n# O portal de gestão de links\n\nAs pessoas que gerenciam os links entram no portal com uma conta. O portal guarda o nome de usuário, o e-mail e o papel de cada uma, e uma trilha de auditoria do que alteram, conforme a política do operador.\n\n# Responsabilidade\n\nEsta instalação usa software livre e de código aberto (GS1 Digital Link Resolver Suite, baseado no GS1 Digital Link Resolver CE, sob a Licença Apache 2.0). O seu uso é de estrita responsabilidade de quem opera esta instância do resolver. Nem a GS1, nem qualquer Organização-Membro GS1, nem ninguém que tenha contribuído para o desenvolvimento do software se responsabiliza por esta instalação, pela sua operação ou pelo seu conteúdo. O software é disponibilizado \"no estado em que se encontra\" (\"as is\"), sem garantia de qualquer tipo.\n\n# Contato\n\nDúvidas sobre este aviso ou sobre os dados desta instalação devem ser enviadas ao seu operador, {operator}.",
       "landing.switches": "Ao salvar, os outros cadastros deste identificador continuam indo para o próprio destino principal (cada um ganha um link padrão explícito, gs1:defaultLink).",
       "domains.checkOk": "{domain} chega ao Resolver.",
       "domains.checkPrivate": "{domain} aponta para um endereço privado; o teste não foi feito.",
@@ -1296,8 +1296,8 @@ const I18N = (() => {
       "password.currentWrong": "A senha atual está incorreta.",
       "password.storeReadOnly": "O servidor não conseguiu gravar a nova senha. Avise o administrador.",
       "password.changed": "Senha alterada. As outras sessões desta conta foram encerradas.",
-      "login.pageTitle": "Entrar | GS1 Resolver Community Edition",
-      "login.heroTitle": "GS1 Resolver Community Edition",
+      "login.pageTitle": "Entrar | GS1 Digital Link Resolver Suite",
+      "login.heroTitle": "GS1 Digital Link Resolver Suite",
       "login.heroLede": "Gerencie para onde levam os QR Codes GS1 Digital Link dos seus produtos.",
       "login.title": "Entrar",
       "login.username": "Usuário",
@@ -2305,7 +2305,7 @@ const I18N = (() => {
 
     "en-GB": {
       "locale.name": "English (UK)",
-      "app.title": "Product links | GS1 Resolver Community Edition",
+      "app.title": "Product links | GS1 Digital Link Resolver Suite",
       "header.language": "Language",
       "header.home": "Resolver home page",
       "menu.home": "Home page",
@@ -3118,7 +3118,7 @@ const I18N = (() => {
       "appearance.colourContrast": "White text is hard to read on the main colour ({ratio}:1; at least {min}:1): choose a darker colour.",
       "appearance.actionContrast": "White text is hard to read on the action colour ({ratio}:1; at least {min}:1): choose a darker colour.",
       "appearance.readOnly": "Support access: read only.",
-      "privacy.default": "# Privacy notice\n\nThis GS1 Digital Link resolver is operated by {operator}. It answers the scans of GS1 Digital Link QR codes and other codes by sending each person to the information that the owner of the product's brand has registered.\n\n# What is recorded when a code is scanned\n\nFor each request the resolver records the code and what it answered, when, how long it took, the kind of device (phone, tablet, computer), the browser family, the language the device asks for and an approximate location (country, region and city) worked out from the connection's address at that moment. The address itself is not kept, nor the browser's full identification, nor any data that identifies the person. Each request is kept {days} days; daily counts per code are kept longer.\n\n# The link management portal\n\nThe people who manage the links sign in to the portal with an account. The portal keeps their user name, e-mail address and role, and an audit trail of what they change, as the operator's policy requires.\n\n# Responsibility\n\nThis installation runs free and open-source software (GS1 Digital Link Resolver CE and its Expansion Pack, under the Apache License 2.0). Its use is the sole responsibility of whoever operates this instance of the resolver. Neither GS1, nor any GS1 Member Organisation, nor anyone who contributed to the development of the software is responsible for this installation, its operation or its content. The software is provided \"as is\", without warranty of any kind.\n\n# Contact\n\nQuestions about this notice or about the data of this installation go to its operator, {operator}.",
+      "privacy.default": "# Privacy notice\n\nThis GS1 Digital Link resolver is operated by {operator}. It answers the scans of GS1 Digital Link QR codes and other codes by sending each person to the information that the owner of the product's brand has registered.\n\n# What is recorded when a code is scanned\n\nFor each request the resolver records the code and what it answered, when, how long it took, the kind of device (phone, tablet, computer), the browser family, the language the device asks for and an approximate location (country, region and city) worked out from the connection's address at that moment. The address itself is not kept, nor the browser's full identification, nor any data that identifies the person. Each request is kept {days} days; daily counts per code are kept longer.\n\n# The link management portal\n\nThe people who manage the links sign in to the portal with an account. The portal keeps their user name, e-mail address and role, and an audit trail of what they change, as the operator's policy requires.\n\n# Responsibility\n\nThis installation runs free and open-source software (GS1 Digital Link Resolver Suite, built on the GS1 Digital Link Resolver CE, under the Apache License 2.0). Its use is the sole responsibility of whoever operates this instance of the resolver. Neither GS1, nor any GS1 Member Organisation, nor anyone who contributed to the development of the software is responsible for this installation, its operation or its content. The software is provided \"as is\", without warranty of any kind.\n\n# Contact\n\nQuestions about this notice or about the data of this installation go to its operator, {operator}.",
       "landing.switches": "On saving, the other records of this identifier keep going to their own default target (each gets an explicit default link, gs1:defaultLink).",
       "domains.checkOk": "{domain} reaches the resolver.",
       "domains.checkPrivate": "{domain} points at a private address; it was not tested.",
@@ -3564,8 +3564,8 @@ const I18N = (() => {
       "password.currentWrong": "The current password is incorrect.",
       "password.storeReadOnly": "The server could not store the new password. Please tell the administrator.",
       "password.changed": "Password changed. Other sessions for this account have been signed out.",
-      "login.pageTitle": "Sign in | GS1 Resolver Community Edition",
-      "login.heroTitle": "GS1 Resolver Community Edition",
+      "login.pageTitle": "Sign in | GS1 Digital Link Resolver Suite",
+      "login.heroTitle": "GS1 Digital Link Resolver Suite",
       "login.heroLede": "Manage where your products' GS1 Digital Link QR codes lead.",
       "login.title": "Sign in",
       "login.username": "Username",
@@ -4385,7 +4385,7 @@ const I18N = (() => {
   }
 
   /* The installation's title in place of the product's name, in every text (ADR 0019; appearance.js sets it) */
-  const PRODUCT = "GS1 Resolver Community Edition";
+  const PRODUCT = "GS1 Digital Link Resolver Suite";
   let product = document.documentElement.dataset.product || null;      // already in the page the portal served
 
   function t(key, params = {}) {

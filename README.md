@@ -1,4 +1,4 @@
-# GS1 Digital Link Resolver CE — Expansion Pack
+# GS1 Digital Link Resolver Suite
 
 [![Development tests](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml/badge.svg?branch=master)](https://github.com/ricardomelo/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml)
 ![GS1-Conformant Resolver 1.2.1](https://img.shields.io/badge/GS1--Conformant%20Resolver-1.2.1-002c6c)
@@ -8,7 +8,7 @@
 ![Licence: Apache 2.0](https://img.shields.io/badge/licence-Apache%202.0-blue)
 
 **Run your own GS1 Digital Link resolver — and everything around it.** The official GS1 Resolver Community Edition
-resolves QR codes; this edition turns it into a complete platform that any organisation can put in front of its
+resolves QR codes; this suite, built on it under the Apache License 2.0, turns it into a complete platform that any organisation can put in front of its
 members, its brands and its partners: a portal where people register links without writing a line of JSON, labels
 ready for print, a branded page that shows every link of a product, live figures on how codes are scanned, an
 organisation's own domain in every QR code, forwarding to other resolvers — every code of a prefix, or GS1's global
@@ -751,7 +751,7 @@ to `.env` to use the portal over plain HTTP, then open http://localhost:8080/.
 ### Upgrading an installation of the official GS1 Resolver CE v3
 
 An installation of the official project (`github.com/gs1/GS1_DigitalLink_Resolver_CE`, v3, run with
-`docker compose up`) becomes the Expansion Pack **in place**, in its own folder, so that its database volume and its
+`docker compose up`) becomes the GS1 Digital Link Resolver Suite **in place**, in its own folder, so that its database volume and its
 records stay: `scripts/upgrade-from-official.sh` checks the installation, backs up the database, stops the official
 containers (the volume is kept), checks out this branch beside the official one, keeps the database's credentials and
 the data entry API's token in `.env`, runs the installer and compares the number of records before and after.

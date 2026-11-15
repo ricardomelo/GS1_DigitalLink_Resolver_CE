@@ -1,6 +1,6 @@
 # Working on this repository with Claude Code
 
-Instructions for Claude Code sessions on the **GS1 Digital Link Resolver CE — Expansion Pack** (development on
+Instructions for Claude Code sessions on the **GS1 Digital Link Resolver Suite** (until ADR 0024, *GS1 Digital Link Resolver CE — Expansion Pack*) (development on
 branch `gs1br/develop`; the default branch, `master`, holds the releases). The state of the work, the next item and
 anything not meant for a public document are in the handover, *Handover — GS1_Digital_Link_CE*, in the maintainer's
 Google Drive folder `ClaudeAI/GS1_Digital_Link_CE` (Google Drive connector): read it first, and at the end of each

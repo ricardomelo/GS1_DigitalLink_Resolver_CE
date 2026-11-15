@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Upgrade of an installation of the official GS1 Resolver CE v3 (github.com/gs1/GS1_DigitalLink_Resolver_CE) to the
-# Expansion Pack, in place: the same folder, the same database volume, the records kept.
+# GS1 Digital Link Resolver Suite, in place: the same folder, the same database volume, the records kept.
 #
 # Run it in the folder of the official installation (the git clone where "docker compose up" was run):
 #
@@ -17,12 +17,12 @@
 # Steps: (1) checks — an official installation, no uncommitted changes to the official files, the database answers
 # with the credentials it was created with; (2) a full backup of the database (mongodump, gzip) in BACKUP_DIR, and the
 # number of records per collection; (3) the official containers stopped (the database volume is kept); (4) the
-# Expansion Pack's branch fetched and checked out in the same folder (the official branch stays, for a rollback);
+# GS1 Digital Link Resolver Suite's branch fetched and checked out in the same folder (the official branch stays, for a rollback);
 # (5) the database credentials and the data entry API token written into .env so that the installer keeps them;
 # (6) scripts/install.sh, which builds and starts every service, the portal included; (7) the records counted again
 # and compared. Rollback instructions are printed at the end and kept in the log.
 #
-# Settings (environment): UPGRADE_REPOSITORY (the Expansion Pack's git address), UPGRADE_BRANCH (gs1br/develop),
+# Settings (environment): UPGRADE_REPOSITORY (the GS1 Digital Link Resolver Suite's git address), UPGRADE_BRANCH (gs1br/develop),
 # UPGRADE_REMOTE (expansion), BACKUP_DIR (/var/backups/resolver), INSTALL_ARGS (passed to scripts/install.sh).
 set -euo pipefail
 
@@ -58,7 +58,7 @@ confirm() {
 # The whole run is one compound command, read before it starts: "git switch" may replace this file while it runs.
 {
 touch "$LOG_FILE" 2>/dev/null || LOG_FILE="./upgrade-from-official.log"
-say "Upgrade to the Expansion Pack — $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+say "Upgrade to the GS1 Digital Link Resolver Suite — $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 
 # ------------------------------------------------------------------------------------------------ 1. checks
 step "1. Checks"
@@ -67,7 +67,7 @@ command -v docker >/dev/null 2>&1 || die "docker is not installed."
 command -v git >/dev/null 2>&1 || die "git is not installed."
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "this folder is not a git clone."
 if grep -q 'portal-service' docker-compose.yml; then
-  die "this folder already runs the Expansion Pack: update it with 'git pull' and 'sudo scripts/install.sh'."
+  die "this folder already runs the GS1 Digital Link Resolver Suite: update it with 'git pull' and 'sudo scripts/install.sh'."
 fi
 grep -q 'database-service' docker-compose.yml && grep -q 'resolver-database-volume' docker-compose.yml \
   || die "docker-compose.yml is not the official GS1 Resolver CE v3's (database-service, resolver-database-volume)."
@@ -114,7 +114,7 @@ if (( CHECK_ONLY )); then
   say "Checks passed. Nothing was changed (--check)."
   exit 0
 fi
-confirm "Back up the database and upgrade this installation to the Expansion Pack?" || die "cancelled; nothing was changed."
+confirm "Back up the database and upgrade this installation to the GS1 Digital Link Resolver Suite?" || die "cancelled; nothing was changed."
 
 # ------------------------------------------------------------------------------------------------ 2. backup
 step "2. Backup"
@@ -143,7 +143,7 @@ rollback() {
 trap 'say "The upgrade stopped before the end."; rollback' ERR
 
 # ------------------------------------------------------------------------------------------------ 4. code
-step "4. The Expansion Pack's code ($UPGRADE_BRANCH)"
+step "4. The GS1 Digital Link Resolver Suite's code ($UPGRADE_BRANCH)"
 if git remote | grep -qx "$UPGRADE_REMOTE"; then
   git remote set-url "$UPGRADE_REMOTE" "$UPGRADE_REPOSITORY"
 else
@@ -156,7 +156,7 @@ if git show-ref --verify --quiet "refs/heads/$UPGRADE_BRANCH"; then
 else
   git switch -c "$UPGRADE_BRANCH" --track "$UPGRADE_REMOTE/$UPGRADE_BRANCH" 2>&1 | tee -a "$LOG_FILE" >/dev/null
 fi
-grep -q 'portal-service' docker-compose.yml || die "the branch checked out is not the Expansion Pack's."
+grep -q 'portal-service' docker-compose.yml || die "the branch checked out is not the GS1 Digital Link Resolver Suite's."
 say "Checked out: $(git rev-parse --abbrev-ref HEAD) at $(git rev-parse --short HEAD)"
 
 # ------------------------------------------------------------------------------------------------ 5. .env

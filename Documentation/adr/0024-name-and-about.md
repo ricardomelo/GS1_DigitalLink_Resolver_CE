@@ -27,7 +27,9 @@ like an editor only.
    tests. `Documentation/history.md` and the CHANGELOG's earlier entries keep the old name as history.
 2. **The pages' default title becomes the new name**: the portal (its screens, sign-in, privacy notice, About), the
    home page and the resolver's pages (`RESOLVER_PRODUCT_NAME`'s default). An operator's own title (ADR 0019) still
-   replaces it. It is a product name and is not translated, like *GS1 Resolver Community Edition* before it.
+   replaces it. It is a product name and is not translated, like *GS1 Resolver Community Edition* before it. An
+   appearance stored before the change whose title is exactly *GS1 Resolver Community Edition* was saved with the title
+   left empty: it is read as the new default, its colours and images kept (ADR 0019 §7).
 3. **What the official project's integrations read keeps its name**: the resolver's description
    (`/.well-known/gs1resolver.json`, `"name"`) and the titles of the resolver's and the data entry API's OpenAPI
    descriptions stay *GS1 Resolver Community Edition*: they describe the official services, which the suite keeps

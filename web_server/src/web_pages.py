@@ -24,7 +24,9 @@ from urllib.parse import unquote, urlparse
 
 from flask import render_template_string, request
 
-PRODUCT_NAME = os.getenv('RESOLVER_PRODUCT_NAME', 'GS1 Resolver Community Edition')
+PRODUCT_NAME = os.getenv('RESOLVER_PRODUCT_NAME', 'GS1 Digital Link Resolver Suite')       # ADR 0024
+# A stored title equal to a former default is not the operator's choice (portal/appearance.py, FORMER_TITLES).
+FORMER_TITLES = ('GS1 Resolver Community Edition',)
 # Operator shown in the footer (see .env.example), beside the link to the installation's privacy notice (ADR 0017).
 ORG_NAME = os.getenv('RESOLVER_ORG_NAME', '').strip()
 ORG_URL = os.getenv('RESOLVER_ORG_URL', '').strip()
@@ -99,7 +101,8 @@ def _hex(value) -> str | None:
 def appearance() -> tuple[str, str, str]:
     """(title, logo address, extra style) of the installation's pages: the operator's, else the original."""
     doc = APPEARANCE.current()
-    title = str(doc.get('title') or '').strip() or PRODUCT_NAME
+    title = str(doc.get('title') or '').strip()
+    title = PRODUCT_NAME if not title or title in FORMER_TITLES else title
     logo = doc.get('logo') or {}
     address = (f"data:{logo.get('type', 'image/png')};base64," + base64.b64encode(bytes(logo['data'])).decode('ascii')
                if logo.get('data') else LOGO_DATA_URI)

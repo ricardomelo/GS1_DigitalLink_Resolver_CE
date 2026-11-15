@@ -326,7 +326,7 @@ esac
 
 
 def upgrade_checks() -> None:
-    """scripts/upgrade-from-official.sh with a stand-in docker, an official clone and the Expansion Pack's branch in a
+    """scripts/upgrade-from-official.sh with a stand-in docker, an official clone and the GS1 Digital Link Resolver Suite's branch in a
     local repository: checks first, the backup before anything changes, the containers stopped, the branch switched in
     the same folder (the official one kept), the credentials and token kept in .env for the installer, the records
     counted before and after; refusals that change nothing."""
@@ -353,7 +353,7 @@ def upgrade_checks() -> None:
         calls, backups = work / "calls", work / "backups"
         for folder in (official, expansion, bin_dir):
             folder.mkdir()
-        # the Expansion Pack's branch, with a stand-in installer that records its call
+        # the GS1 Digital Link Resolver Suite's branch, with a stand-in installer that records its call
         (expansion / "docker-compose.yml").write_text(official_compose + "  portal-service: {}\n")
         (expansion / "scripts").mkdir()
         (expansion / "scripts" / "install.sh").write_text(f"echo \"install $*\" >> {calls}; touch {work / 'installed'}\n")
@@ -407,7 +407,7 @@ esac
     check(order[0] >= 0 and order == sorted(order) and "compose down --remove-orphans" in calls and " -v" not in calls,
           "upgrade: backup, then the official containers stopped (volume kept), then the installer", lines)
     check(branch == "gs1br/develop" and "main" in git(official, "branch").stdout,
-          "upgrade: the Expansion Pack's branch in the same folder, the official branch kept", branch)
+          "upgrade: the GS1 Digital Link Resolver Suite's branch in the same folder, the official branch kept", branch)
     env = (official / ".env").read_text()
     check("MONGO_INITDB_ROOT_PASSWORD='gs1resolver'" in env and "SESSION_TOKEN='secret'" in env
           and "MONGO_URI='mongodb://gs1resolver:gs1resolver@database-service:27017'" in env
@@ -431,7 +431,7 @@ esac
           "upgrade: an .env of its own kept as it is (a copy aside), no rotation advised", (env, run.stdout[-300:]))
     shutil.rmtree(work, ignore_errors=True)
 
-    for case, message in (("already", "already runs the Expansion Pack"), ("changed", "commit or put them aside"),
+    for case, message in (("already", "already runs the GS1 Digital Link Resolver Suite"), ("changed", "commit or put them aside"),
                           ("stopped", "database service is not running"), ("refused", "did not accept the credentials"),
                           ("dump fails", "mongodump failed")):
         run, work, official, branch, calls, backups = upgrade(case)

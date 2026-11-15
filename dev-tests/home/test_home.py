@@ -60,7 +60,7 @@ DESCRIPTION = {"name": "Test resolver", "resolverRoot": "https://id.example.org"
 
 # The portal's answers about the installation's appearance (Documentation/adr/0019-appearance.md): the original until a
 # check sets the operator's
-ORIGINAL_APPEARANCE = {"original": True, "title": "GS1 Resolver Community Edition", "customLogo": False, "logo": "logo.svg",
+ORIGINAL_APPEARANCE = {"original": True, "title": "GS1 Digital Link Resolver Suite", "customLogo": False, "logo": "logo.svg",
                        "customIcon": False, "icon": "favicon.png"}
 APPEARANCE = dict(ORIGINAL_APPEARANCE)
 APPEARANCE_CSS = ":root { --gs1-blue: #1A3D2B; --gs1-blue-dark: #11291D; --gs1-orange: #E8B100; --action: #8A1538; }\n"
@@ -623,7 +623,7 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
         stored = page.evaluate("localStorage.getItem('gs1resolver.portal.locale')")
         check(cookies.get("gs1resolver_lang") == "en-GB" and stored == "en-GB",
               "choice written to the shared cookie and the portal's storage key")
-        check(page.title() == "GS1 Resolver Community Edition", "page title")
+        check(page.title() == "GS1 Digital Link Resolver Suite", "page title")
         page.screenshot(path=str(shots / "home-desktop-en.png"), full_page=True)
 
         page.locator(".card-main h3 a").click()
@@ -677,7 +677,7 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
                    lambda route: route.fulfill(status=200, body="", content_type="text/css"))
         page.goto(base + "/")
         page.locator("#operator").wait_for(state="visible")
-        check(page.locator(".site-header .product").inner_text() == "GS1 Resolver Community Edition"
+        check(page.locator(".site-header .product").inner_text() == "GS1 Digital Link Resolver Suite"
               and page.locator(".site-header .brand img").get_attribute("src") == "/home/logo.svg"
               and page.locator("link[href='/portal/appearance.css']").count() == 0
               and page.locator("link[rel='icon']").get_attribute("href") == "/home/favicon.png",

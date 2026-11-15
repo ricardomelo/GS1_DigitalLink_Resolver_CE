@@ -186,7 +186,7 @@ for language, cookie, expected in cases:
     r = get(G + "?linkType=gs1:recallStatus", "text/html", language, cookie)
     html = r.get_data(as_text=True)
     check(f"HTML 404 lang={language} cookie={cookie}", r.status_code == 404 and f'<html lang="{expected}"' in html
-          and "GS1 Resolver Community Edition" in html and 'id="lang"' in html, r.status_code)
+          and "GS1 Digital Link Resolver Suite" in html and 'id="lang"' in html, r.status_code)
 r = get(G + "?linkType=linkset", "text/html")
 check("HTML linkset page", r.status_code == 200 and r.content_type.startswith("text/html"))
 html = r.get_data(as_text=True)

@@ -5,6 +5,18 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
 
+### The name GS1 Digital Link Resolver Suite (session 36)
+- **Changed, deliberately: the project is called GS1 Digital Link Resolver Suite**
+  ([ADR 0024](../adr/0024-name-and-about.md)), in place of *GS1 Digital Link Resolver CE — Expansion Pack*, in the
+  README, the documents, the upgrade script's messages and the default privacy notice of the twelve languages. **The
+  pages' default title changes** from the official project's *GS1 Resolver Community Edition* to the new name: the
+  portal (its screens, sign-in page, privacy notice and About page), the home page and the resolver's pages and item's
+  page (`RESOLVER_PRODUCT_NAME`'s default). An operator's own title (*Appearance*, ADR 0019) still replaces it; an
+  appearance saved earlier with the title left empty stored *GS1 Resolver Community Edition* and now shows the new
+  name, its colours, logo and icon kept. What the official project's integrations read keeps the official name: the
+  resolver's description file (`/.well-known/gs1resolver`) and the titles of the resolver's and the data entry API's
+  OpenAPI descriptions. Commit `71ef8d2`.
+
 ### An About page (session 35)
 - **Added: an About page** ([ADR 0024](../adr/0024-name-and-about.md)), `/portal/about`, open to anyone and linked
   from the portal's user menu and side menu, the sign-in page and the home page: what the software is, the version

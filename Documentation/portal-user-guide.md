@@ -1,7 +1,7 @@
 # Link management portal — user guide
 
-This guide explains how to use the link management portal of the GS1 Digital Link Resolver CE —
-Expansion Pack, task by task. It is written for the people who register products, places, documents and
+This guide explains how to use the link management portal of the GS1 Digital Link Resolver Suite,
+task by task. It is written for the people who register products, places, documents and
 other identified items, and for the administrators who manage their accounts. No technical knowledge is
 needed. The portal is available in Brazilian Portuguese and British English; the screenshots show the
 English version.
@@ -911,7 +911,7 @@ organisation's spikes. Alerts are listed from this version on (kept 400 days); e
 ### About
 
 **About** in the user menu (also a link at the foot of the sign-in page and of the resolver's home page) opens a page
-anyone can read, signed in or not: what the software is and who operates this installation, the **version** running
+anyone can read, signed in or not: what the software is (the *GS1 Digital Link Resolver Suite*) and who operates this installation, the **version** running
 (its commit, linked to the code, and the date), where the source code is and its licence (Apache 2.0), the manuals
 for exactly that version, where the software comes from (the official GS1 Digital Link Resolver CE), every component
 and data source it is made of with its licence, and the trademark notice. *Version unknown* means the installation
@@ -1007,7 +1007,7 @@ minute. During support access the list is read only.
 ![Appearance](images/guide/appearance.png)
 
 **Appearance** (user menu, server administrators) gives the whole installation its operator's look
-([ADR 0019](adr/0019-appearance.md)): a **title** in place of *GS1 Resolver Community Edition* (up to 60 characters; it
+([ADR 0019](adr/0019-appearance.md)): a **title** in place of *GS1 Digital Link Resolver Suite* (up to 60 characters; it
 also replaces the product's name in the browsers' tab titles), a **logo** (PNG, JPEG or WebP, up to 200 KB; SVG is not
 accepted), an **icon for the browsers' tabs** (the favicon, also in bookmarks: a square image, preferably 32 × 32 or
 64 × 64 pixels, in the same formats) and three colours: the **main colour** of the header's title, the coloured band under it, the headings and
@@ -1018,6 +1018,9 @@ sign-in page and privacy notice too) and the home page, and within 30 seconds to
 page (each brand keeps its own colours in the item's page content, and its logo as the item's page icon). *Use the
 original logo* and *Use the original icon* go back to the project's and keep the rest. **Restore the original** asks for
 confirmation and brings back the original title, logo, icon and colours everywhere. Every change is in the audit trail; during support access the screen is read only.
+The original title was *GS1 Resolver Community Edition* until the project took its own name
+([ADR 0024](adr/0024-name-and-about.md)): an appearance saved before then with the title left empty shows the new name,
+with its colours, logo and icon kept; a title of your own is never changed.
 
 ### Support access
 

@@ -1238,6 +1238,17 @@ step.
 - An address taken from a checkout's configuration can carry a token (a CI or a proxy writes one into `origin`):
   anything the software shows from it is rebuilt from its host and path, never passed on.
 
+## Session 36 — the name GS1 Digital Link Resolver Suite
+
+ADR 0024's rename (`71ef8d2`): the README, the documents, the upgrade script and the default privacy notice say
+*GS1 Digital Link Resolver Suite*, and so do the pages' default titles (portal, home page, resolver); the resolver's
+description file and the official services' OpenAPI titles keep *GS1 Resolver Community Edition*. Earlier entries of
+this history and of the changelog keep the old names. 5 new checks in `appearance`; 2 mutations, both caught.
+
+- Saving the appearance with an empty title stored the default of the time, so renaming the default would have left
+  every such installation on the old name, now looking like the operator's choice. A stored former default is read as
+  today's (`FORMER_TITLES`, in the portal and in the resolver), and saving again stores the new one.
+
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|
 | Identification | GTIN + optional batch | 16 primary keys and 9 qualifiers, with the combinations of the standard |

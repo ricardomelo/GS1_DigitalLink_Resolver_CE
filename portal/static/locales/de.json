@@ -1935,7 +1935,6 @@
  "upstream.updateRejected": "Der Resolver hat die Aktualisierung abgelehnt.",
  "upstream.partialUpdate": "Die neuen Ziele wurden gespeichert, aber {count} alte(s) Ziel(e) konnte(n) nicht entfernt werden. Bitte speichern Sie erneut.",
  "upstream.deleteFailed": "Der Resolver konnte den Eintrag nicht löschen.",
- "upstream.deleteRestored": "Das Löschen ist fehlgeschlagen, und der ursprüngliche Eintrag wurde wiederhergestellt.",
  "save.created": "Eintrag angelegt. Der Code führt jetzt zu den eingegebenen Zielen.",
  "save.updated": "Änderungen gespeichert. Der Code führt jetzt zu den neuen Zielen.",
  "delete.done": "Eintrag gelöscht. Der Code führt nicht mehr zu diesen Zielen.",

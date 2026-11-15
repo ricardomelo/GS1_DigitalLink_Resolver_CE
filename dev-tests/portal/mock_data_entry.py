@@ -1,6 +1,6 @@
 """
 In-memory stand-in for the Resolver CE data-entry API, used by the portal end-to-end test.
-It reproduces the behaviours the portal must cope with: POST /new on an existing entry and PUT both merge by (linktype, hreflang, context), DELETE removes links or the whole document;
+It reproduces the behaviours the portal must cope with: POST /new on an existing entry and PUT both merge by (linktype, hreflang, context), DELETE removes links, one record (removeRecord, ADR 0023) or the whole document;
 PUT and a DELETE of links with qualifiers no record of the key has answer 404;
 informativeQualifiers are kept like the real API does, and a registration with AI 21 plus AI 22 or
 AI 10 is refused (GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2).
@@ -60,14 +60,18 @@ def doc(c,v):
     if not auth(): return "no",403
     did=f"{c}_{v}"
     d=request.get_json(silent=True)
-    if request.method=="DELETE" and isinstance(d,dict) and request.content_length and not (
+    remove=request.method=="DELETE" and isinstance(d,dict) and "removeRecord" in d
+    if remove and not (d["removeRecord"] is True and "links" not in d and isinstance(d.get("qualifiers",[]),list)
+            and all(isinstance(q,dict) and len(q)==1 and all(isinstance(v,str) for v in q.values()) for q in d.get("qualifiers",[]))):
+        return jsonify(response_status=400,error="removeRecord: true, qualifiers, no links"),400
+    if request.method=="DELETE" and isinstance(d,dict) and request.content_length and not remove and not (
             isinstance(d.get("links"),list) and d["links"] and all(isinstance(l,dict) for l in d["links"])):
         return jsonify(response_status=400,error="a DELETE body must name links"),400
     if did not in DB: return jsonify(response_status=404,error="nf"),404
     if request.method=="GET": return jsonify(data=v3(did),response_status=200)
     ents=DB[did]["entries"]
     idx=next((i for i,e in enumerate(ents) if qm(e["qualifiers"],(d or {}).get("qualifiers",[]))),None)
-    if idx is None and (request.method=="PUT" or (d and d.get("links"))):
+    if idx is None and (request.method=="PUT" or remove or (d and d.get("links"))):
         return jsonify(response_status=404,error="Record not found"),404
     if request.method=="PUT":
         e=ents[idx]
@@ -79,6 +83,10 @@ def doc(c,v):
             if m: e["links"][m[0]].update(nl)
             else: e["links"].append(nl)
         return jsonify(response_status=200)
+    if remove:                     # one record removed, the key's others kept; the document goes with its last
+        ents.pop(idx)
+        if not ents: del DB[did]
+        return jsonify(response_status=200,removed=1,remaining=len(ents))
     if d and d.get("links"):
         e=ents[idx]; n=0
         for rl in d["links"]:

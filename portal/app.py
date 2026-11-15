@@ -1548,9 +1548,7 @@ def turn_to_explicit_defaults(anchor: str, entries: list[dict], key_default: str
 @require_login
 @role_required("editor")
 def delete_record():
-    """Deletes one record. The API deletes whole documents only, so the other records of the key are
-    written back, and the original is restored if that fails.
-    """
+    """Deletes one record; the key's other records are not touched (ADR 0023)."""
     anchor = request_key(request.args)
     check_access(anchor)
     pairs, _ = request_record(request.args, anchor)
@@ -1559,48 +1557,39 @@ def delete_record():
 
 
 def remove_record(anchor: str, pairs: list) -> None:
-    """Deletes one record of a key, keeping the others (the editor and the tenant API). ValidationError
-    record.notFound when the key has no record with those qualifiers."""
+    """Deletes one record of a key, keeping the others (the editor and the tenant API), with the data entry API's
+    record-level delete: one atomic write of the key's document, so the key's other records answer throughout (ADR
+    0023; before it the portal deleted the whole key and wrote the others back). ValidationError record.notFound
+    when the key has no record with those qualifiers."""
     entries, _ = read_entries(anchor)
     target = find_entry(entries, gs1.qualifier_list(pairs))
     if target is None:
         raise ValidationError("record.notFound")
-    others = [e for e in entries if e is not target]
-    rewrite_document(anchor, entries, others)
+    delete_one_record(anchor, target.get("qualifiers") or [])
 
     audit.info("user=%s action=delete anchor=%s%s", g.user, anchor, gs1.qualifier_path(pairs))
     record_change(anchor, pairs, target, "delete")
 
 
+def delete_one_record(anchor: str, qualifiers: list) -> None:
+    """One record removed by the data entry API (DELETE with removeRecord, ADR 0023), the others kept.
+    ValidationError record.notFound when it is already gone; UpstreamError upstream.deleteFailed otherwise."""
+    status, body = resolver("DELETE", anchor, {"removeRecord": True, "qualifiers": qualifiers})
+    if status == 404:
+        raise ValidationError("record.notFound")
+    if not is_success(status, body):
+        raise UpstreamError("upstream.deleteFailed", 502, body)
+
+
 def rewrite_refusals(entries: list[dict]) -> list[dict]:
-    """What the data entry API would refuse in entries about to be written back ([{"item", "error"}]), asked before
-    anything is deleted; [] from an API older than POST /validate (as before)."""
+    """What the data entry API would refuse in entries about to be written ([{"item", "error"}]), asked before
+    anything is changed; [] from an API older than POST /validate (as before)."""
     if not entries:
         return []
     status, body = resolver("POST", "/validate", entries)
     if status != 200 or not isinstance(body, dict):
         return []
     return body.get("problems") or []
-
-
-def rewrite_document(anchor: str, entries: list[dict], new_entries: list[dict]) -> None:
-    """Writes a key's document again with new_entries (the API deletes whole documents only): checked first, so
-    that nothing is deleted that could not be written back — records made before a rule or by other tools that the
-    API now refuses — and the original restored if writing fails."""
-    problems = rewrite_refusals(new_entries)
-    if problems:
-        first = problems[0]
-        entry = new_entries[first.get("item", 1) - 1] if 0 < first.get("item", 1) <= len(new_entries) else {}
-        raise ValidationError("record.rewriteRefused", record=describe_entry(entry).get("path") or anchor,
-                              detail=str(first.get("error", ""))[:200])
-    status, body = resolver("DELETE", anchor)
-    if not is_success(status, body):
-        raise UpstreamError("upstream.deleteFailed", 502, body)
-    if new_entries:
-        status, body = resolver("POST", "/new", new_entries)
-        if not is_success(status, body):
-            resolver("POST", "/new", entries)
-            raise UpstreamError("upstream.deleteRestored", 502, body)
 
 
 def fixed_serial_entry(entry: dict) -> dict | None:
@@ -1619,13 +1608,16 @@ def fixed_serial_entry(entry: dict) -> dict | None:
 
 
 def fix_serial_records(anchor: str) -> tuple[int, list[str]]:
-    """Fixes every rule-2 record of a key in one rewrite of its document (written back whole, it must be valid as a
-    whole): (records fixed, paths of the records left because their serial number already has a record of its own
-    with other targets — the key is then left unchanged). A rule-2 record that only repeats the serial number's own
-    record (same description and targets) is removed."""
+    """Fixes every rule-2 record of a key: (records fixed, paths of the records left because their serial number
+    already has a record of its own with other targets — the key is then left unchanged). A rule-2 record that only
+    repeats the serial number's own record (same description and targets) is removed. Each record fixed is written
+    as the serial number alone first, then the old record is removed with the record-level delete (ADR 0023), so the
+    serial number answers at every step; the new records are checked first, and nothing is written when the data
+    entry API would refuse one. Should a step fail, what was done is journalled and a second run finishes the key (an
+    old record then repeats the new one and is removed)."""
     entries, _ = read_entries(anchor)
     singles = {tuple(sorted(gs1.pairs_from(e.get("qualifiers")))): e for e in entries}
-    new_entries, fixed, dropped, conflicts = [], [], [], []
+    fixed, dropped, conflicts = [], [], []
 
     def same(a, b):
         links = lambda e: sorted((l.get("linktype"), l.get("href"), tuple(l.get("hreflang") or [])) for l in e.get("links") or [])
@@ -1634,7 +1626,6 @@ def fix_serial_records(anchor: str) -> tuple[int, list[str]]:
     for entry in entries:
         change = fixed_serial_entry(entry)
         if not change:
-            new_entries.append(entry)
             continue
         own = tuple(sorted(gs1.pairs_from(change["qualifiers"])))
         if own in singles:
@@ -1644,19 +1635,36 @@ def fix_serial_records(anchor: str) -> tuple[int, list[str]]:
                 conflicts.append(describe_entry(entry).get("path") or "")
             continue
         singles[own] = change
-        new_entries.append(change)
         fixed.append((entry, change))
     if conflicts:
         return 0, conflicts
-    if fixed or dropped:
-        rewrite_document(anchor, entries, new_entries)
+    problems = rewrite_refusals([change for _, change in fixed])
+    if problems:
+        first = problems[0]
+        item = first.get("item", 1)
+        entry = fixed[item - 1][1] if 0 < item <= len(fixed) else {}
+        raise ValidationError("record.rewriteRefused", record=describe_entry(entry).get("path") or anchor,
+                              detail=str(first.get("error", ""))[:200])
+    done = 0
+    try:
         for old, new in fixed:
-            record_change(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete")
+            status, body = resolver("POST", "/new", new)
+            if not is_success(status, body):
+                raise UpstreamError("upstream.updateRejected", 502, body)
             record_change(anchor, gs1.pairs_from(new["qualifiers"]), new, "create")
-        for old in dropped:
+            delete_one_record(anchor, old.get("qualifiers") or [])
             record_change(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete")
-        audit.info("user=%s action=fix-serials anchor=%s fixed=%d duplicates=%d", g.user, anchor, len(fixed), len(dropped))
-    return len(fixed) + len(dropped), []
+            done += 1
+        for old in dropped:
+            delete_one_record(anchor, old.get("qualifiers") or [])
+            record_change(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete")
+            done += 1
+    finally:
+        if done:
+            audit.info("user=%s action=fix-serials anchor=%s fixed=%d duplicates=%d%s", g.user, anchor,
+                       min(done, len(fixed)), max(done - len(fixed), 0),
+                       "" if done == len(fixed) + len(dropped) else " incomplete")
+    return done, []
 
 
 @app.post("/portal/api/records/fix-serials")

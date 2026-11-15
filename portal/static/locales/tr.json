@@ -1935,7 +1935,6 @@
  "upstream.updateRejected": "Çözümleyici güncellemeyi reddetti.",
  "upstream.partialUpdate": "Yeni hedefler kaydedildi, ancak {count} eski hedef kaldırılamadı. Lütfen yeniden kaydedin.",
  "upstream.deleteFailed": "Çözümleyici kaydı silemedi.",
- "upstream.deleteRestored": "Silme başarısız oldu ve özgün kayıt geri yüklendi.",
  "save.created": "Kayıt oluşturuldu. Kod artık girdiğiniz hedeflere götürüyor.",
  "save.updated": "Değişiklikler kaydedildi. Kod artık yeni hedeflere götürüyor.",
  "delete.done": "Kayıt silindi. Kod artık bu hedeflere götürmüyor.",

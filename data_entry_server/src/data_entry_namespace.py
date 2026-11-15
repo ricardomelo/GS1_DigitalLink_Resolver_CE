@@ -49,6 +49,17 @@ def _names_links(data: dict[str, Any]) -> bool:
     return isinstance(links, list) and bool(links) and all(isinstance(link, dict) for link in links)
 
 
+def _record_qualifiers(data: dict[str, Any]) -> list[dict[str, str]] | None:
+    """The qualifiers of a DELETE that removes one record ({"removeRecord": true, "qualifiers": [...]}, ADR 0023): a
+    list of objects of one AI and its value each, [] (or absent) for the key's own record; None when malformed."""
+    qualifiers = data.get('qualifiers', [])
+    if not isinstance(qualifiers, list) or not all(
+            isinstance(q, dict) and len(q) == 1 and all(isinstance(k, str) and isinstance(v, str) for k, v in q.items())
+            for q in qualifiers):
+        return None
+    return qualifiers
+
+
 class TokenResource(Resource):
     @staticmethod
     def is_auth_token_ok() -> dict[str, bool | str]:
@@ -237,8 +248,11 @@ class DocOperations(TokenResource):
     @data_entry_namespace.doc(description="Delete a document or remove specific links from it using its anchor. "
                          "If a JSON body with a 'links' list is provided, only the matching links "
                          "are removed (matched by linktype, hreflang and context). "
+                         "A body {\"removeRecord\": true, \"qualifiers\": [...]} removes one record (the one "
+                         "with those qualifiers; none for the key's own record) and keeps the others, in one atomic "
+                         "write; the document goes with its last record (404 when there is no such record). "
                          "If no body is provided, the entire document is deleted; a body that names no link "
-                         "(no 'links', an empty list) is refused with 400.",
+                         "(no 'links', an empty list) and does not remove a record is refused with 400.",
              params={'anchor': 'The anchor of the document to delete or modify'})
     def delete(self, anchor_ai_code: str, anchor_ai: str) -> tuple[Any, int] | Response:
         try:
@@ -256,6 +270,15 @@ class DocOperations(TokenResource):
                 data, refusal = _json_body(object_only=True)
                 if refusal:
                     return refusal
+                if 'removeRecord' in data:
+                    qualifiers = _record_qualifiers(data)
+                    if data['removeRecord'] is not True or 'links' in data or qualifiers is None:
+                        return {"response_status": 400,
+                                "error": "A DELETE that removes a record has 'removeRecord': true, the record's "
+                                         "'qualifiers' (a list of {AI: value}; none for the key's own record) and "
+                                         "no 'links'"}, 400
+                    response_data, http_response_status = data_entry_logic.delete_record(document_id, qualifiers)
+                    return response_data, http_response_status
                 if not _names_links(data):
                     return {"response_status": 400,
                             "error": "A DELETE with a body removes the links it names: 'links' must be a non-empty "

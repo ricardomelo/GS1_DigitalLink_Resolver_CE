@@ -1935,7 +1935,6 @@
  "upstream.updateRejected": "Il resolver ha rifiutato l'aggiornamento.",
  "upstream.partialUpdate": "Le nuove destinazioni sono state salvate, ma non è stato possibile rimuovere {count} vecchia/e destinazione/i. Salvi di nuovo.",
  "upstream.deleteFailed": "Il resolver non è riuscito a eliminare il record.",
- "upstream.deleteRestored": "L'eliminazione non è riuscita e il record originale è stato ripristinato.",
  "save.created": "Record creato. Il codice ora porta alle destinazioni inserite.",
  "save.updated": "Modifiche salvate. Il codice ora porta alle nuove destinazioni.",
  "delete.done": "Record eliminato. Il codice non porta più a queste destinazioni.",

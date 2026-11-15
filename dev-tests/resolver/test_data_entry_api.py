@@ -13,6 +13,9 @@ checks, through Flask's test client:
   * POST /new on a record that exists merges its links as PUT does, and a list writes every record of a key (a
     record sent twice merged); PUT and a DELETE of links with qualifiers no record of the key has answer 404 and
     change nothing;
+  * a DELETE with {"removeRecord": true, "qualifiers": [...]} removes one record and keeps the key's others in one
+    conditional write of the document (ADR 0023), read again when another writer changed it; the database layer's
+    conditional write on mongomock;
   * a body that is not JSON (or, for PUT and DELETE, not an object) and a record without a link of its default link
     type answer 400 and change nothing.
 
@@ -288,6 +291,113 @@ check("…and stores nothing", STORE == before)
 r = client.post("/api/validate", json=entry(), headers=AUTH)
 check("…one entry, valid: no problem", r.status_code == 200 and r.get_json()["problems"] == [], r.get_json())
 check("…needs the token", client.post("/api/validate", json=entry()).status_code == 401)
+
+# ---------------------------------------------------------------- one record removed, the key's others kept (ADR 0023)
+# The official API deleted whole documents only, so its callers deleted the key and wrote the other records back: a
+# window in which every code of the key answered 404, for good when the second call failed. DELETE with
+# {"removeRecord": true, "qualifiers": [...]} removes one record in one write of the document, provided the document is
+# still the one read (write_document_if_unchanged); a document changed in between is read again.
+WRITES = []
+
+
+def write_if_unchanged(doc, expected):
+    WRITES.append(doc["_id"])
+    if doc["_id"] not in STORE or STORE[doc["_id"]]["data"] != expected:
+        return {"response_status": 409, "error": "changed"}
+    if doc["data"]:
+        STORE[doc["_id"]] = copy.deepcopy(doc)
+    else:
+        STORE.pop(doc["_id"])
+    return {"response_status": 200}
+
+
+db.write_document_if_unchanged = write_if_unchanged
+WHOLE = []
+db.delete_document = lambda document_id: (WHOLE.append(document_id), STORE.pop(document_id, None),
+                                          {"response_status": 200})[2]
+STORE.clear()
+post([entry(), entry(qualifiers=[{"10": "R1"}]), entry(qualifiers=[{"10": "R2"}]),
+      entry(qualifiers=[{"21": "S1"}], informativeQualifiers=[{"10": "R1"}])])
+KEY = "01_09506000134352"
+quals = lambda: [e["qualifiers"] for e in STORE[KEY]["data"]]
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": [{"10": "R1"}]}, headers=AUTH)
+check("DELETE with removeRecord removes the batch's record → 200, removed 1, 3 remaining", r.status_code == 200
+      and r.get_json().get("removed") == 1 and r.get_json().get("remaining") == 3, r.get_data(as_text=True))
+check("…in one conditional write of the document, never a whole delete", WRITES == [KEY] and not WHOLE, (WRITES, WHOLE))
+check("…the key's other records kept, the serial number's informative batch too",
+      quals() == [[], [{"10": "R2"}], [{"21": "S1"}]]
+      and STORE[KEY]["data"][2].get("informativeQualifiers") == [{"10": "R1"}], STORE[KEY]["data"])
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": [{"10": "R9"}]}, headers=AUTH)
+check("…a record the key does not have → 404 naming it, nothing changed", r.status_code == 404
+      and "/10/R9" in r.get_json().get("error", "") and len(quals()) == 3, r.get_data(as_text=True))
+r = client.delete("/api/01/09506000134999", json={"removeRecord": True, "qualifiers": []}, headers=AUTH)
+check("…a key without a document → 404", r.status_code == 404, r.status_code)
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True}, headers=AUTH)
+check("…no qualifiers: the key's own record removed, its batch and serial kept", r.status_code == 200
+      and quals() == [[{"10": "R2"}], [{"21": "S1"}]], quals())
+for body in ({"removeRecord": False, "qualifiers": [{"10": "R2"}]}, {"removeRecord": "yes", "qualifiers": [{"10": "R2"}]},
+             {"removeRecord": True, "qualifiers": [{"10": "R2"}], "links": PIP},
+             {"removeRecord": True, "qualifiers": {"10": "R2"}}, {"removeRecord": True, "qualifiers": [{"10": 2}]},
+             {"removeRecord": True, "qualifiers": [{"10": "R2", "21": "S1"}]}):
+    r = client.delete("/api/01/09506000134352", json=body, headers=AUTH)
+    check(f"…a malformed record delete ({json.dumps(body)[:48]}) → 400, nothing removed", r.status_code == 400
+          and "removeRecord" in r.get_json().get("error", "") and len(quals()) == 2, (r.status_code, quals()))
+# another writer changes the document between the read and the write: read again, its change kept
+real_read, raced = db.read_document, []
+
+
+def racing_read(document_id):
+    answer = real_read(document_id)
+    if not raced:
+        raced.append(1)
+        STORE[KEY]["data"].append(copy.deepcopy(STORE[KEY]["data"][0]) | {"qualifiers": [{"10": "R3"}]})
+    return answer
+
+
+db.read_document = racing_read
+WRITES.clear()
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": [{"10": "R2"}]}, headers=AUTH)
+db.read_document = real_read
+check("…a document changed by another writer in between: read again, removed, the other writer's record kept",
+      r.status_code == 200 and len(WRITES) == 2 and quals() == [[{"21": "S1"}], [{"10": "R3"}]], (WRITES, quals()))
+db.write_document_if_unchanged = lambda doc, expected: {"response_status": 409, "error": "changed"}
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": [{"10": "R3"}]}, headers=AUTH)
+check("…a document that keeps changing → 409 after three attempts, nothing removed", r.status_code == 409
+      and len(quals()) == 2, (r.status_code, quals()))
+db.write_document_if_unchanged = write_if_unchanged
+for q in ([{"21": "S1"}], [{"10": "R3"}]):
+    r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": q}, headers=AUTH)
+check("…the last record removed: the document goes with it", r.status_code == 200 and KEY not in STORE
+      and not WHOLE, (r.status_code, STORE.get(KEY)))
+
+# the database layer itself (data_entry_db.write_document_if_unchanged) on mongomock: one conditional operation
+import importlib.util  # noqa: E402
+try:
+    import mongomock  # noqa: E402
+except ImportError:
+    mongomock = None
+if mongomock:
+    spec = importlib.util.spec_from_file_location("real_data_entry_db",
+                                                  os.path.join(REPO, "data_entry_server", "src", "data_entry_db.py"))
+    real_db = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(real_db)
+    coll = mongomock.MongoClient()["resolver_ce"]["gs1resolver"]
+    real_db._resolver_collection = coll
+    one, two = {"qualifiers": [], "linkset": {"a": 1}}, {"qualifiers": [{"10": "B"}], "linkset": {"a": 2}}
+    coll.insert_one({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one, two]})
+    stale = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one]}, [two])
+    check("database layer: records no longer the ones read → 409, the document untouched",
+          stale["response_status"] == 409 and coll.find_one({"_id": "01_1"})["data"] == [one, two], stale)
+    done = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one]}, [one, two])
+    check("database layer: the records still the ones read → replaced without the record", done["response_status"] == 200
+          and coll.find_one({"_id": "01_1"})["data"] == [one], done)
+    done = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": []}, [one])
+    check("database layer: no record left → the document deleted", done["response_status"] == 200
+          and coll.find_one({"_id": "01_1"}) is None, done)
+    gone = real_db.write_document_if_unchanged({"_id": "01_1", "data": []}, [one])
+    check("database layer: a document already gone → 409", gone["response_status"] == 409, gone)
+else:
+    print("SKIP the database layer on mongomock (pip install mongomock)")
 
 # ---------------------------------------------------------------- values checked by the GS1 Barcode Syntax Engine (F11)
 ENGINE = os.environ.get("GS1_SYNTAX_ENGINE")

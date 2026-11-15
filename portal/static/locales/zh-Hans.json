@@ -1935,7 +1935,6 @@
  "upstream.updateRejected": "解析器拒绝了此次更新。",
  "upstream.partialUpdate": "新的目标地址已保存，但有{count}个旧目标地址无法删除。请再次保存。",
  "upstream.deleteFailed": "解析器无法删除该记录。",
- "upstream.deleteRestored": "删除失败，原记录已恢复。",
  "save.created": "已创建记录。现在扫描该代码将跳转到您输入的目标地址。",
  "save.updated": "更改已保存。现在扫描该代码将跳转到新的目标地址。",
  "delete.done": "记录已删除。扫描该代码将不再跳转到这些目标地址。",

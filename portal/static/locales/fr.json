@@ -1935,7 +1935,6 @@
  "upstream.updateRejected": "Le résolveur a rejeté la mise à jour.",
  "upstream.partialUpdate": "Les nouvelles cibles ont été enregistrées, mais {count} ancienne(s) cible(s) n’ont pas pu être supprimées. Veuillez enregistrer de nouveau.",
  "upstream.deleteFailed": "Le résolveur n’a pas pu supprimer l’enregistrement.",
- "upstream.deleteRestored": "La suppression a échoué et l’enregistrement d’origine a été restauré.",
  "save.created": "Enregistrement créé. Le code mène désormais aux cibles que vous avez saisies.",
  "save.updated": "Modifications enregistrées. Le code mène désormais aux nouvelles cibles.",
  "delete.done": "Enregistrement supprimé. Le code ne mène plus à ces cibles.",

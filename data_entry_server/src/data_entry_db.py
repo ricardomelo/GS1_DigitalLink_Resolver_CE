@@ -151,6 +151,28 @@ def update_document(data: dict[str, Any]) -> dict[str, Any]:
         return {"response_status": 500, "error": "Internal Server Error - " + str(e)}
 
 
+# Replace or delete a document only while its records are still the ones read (ADR 0023): one atomic operation on the
+# document, so removing one record never leaves the key without its others, and a write made in between is not lost
+def write_document_if_unchanged(document: dict[str, Any], expected_data: list[Any]) -> dict[str, Any]:
+    """Writes document (its 'data' without one record) over the stored one, or deletes the stored one when document
+    has no records left, provided the stored records are still expected_data. 200 when written, 409 when the stored
+    document changed or went in the meantime (the caller reads it again)."""
+    try:
+        resolver_coll = _get_collection()
+        match = {"_id": document["_id"], "data": expected_data}
+        if document.get("data"):
+            changed = resolver_coll.replace_one(match, document).matched_count
+        else:
+            changed = resolver_coll.delete_one(match).deleted_count
+        if not changed:
+            return {"response_status": 409, "error": f"Document {document['_id']} changed while it was being written"}
+        return {"response_status": 200, "data": f"Document with anchor {document['_id']} written"}
+
+    except errors.PyMongoError as e:
+        logger.error("write_document_if_unchanged: Database error: %s", e)
+        return {"response_status": 500, "error": "Database error: " + str(e)}
+
+
 # Delete a document from the 'gs1resolver' collection
 def delete_document(document_id: str) -> dict[str, Any]:
     try:

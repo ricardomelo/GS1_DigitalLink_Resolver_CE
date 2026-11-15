@@ -890,6 +890,45 @@ def delete_links(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any]
         return {"response_status": 500, "error": f"Internal Server Error - {str(e)}"}, 500
 
 
+RECORD_DELETE_ATTEMPTS = 3
+
+
+def delete_record(document_id: str, qualifiers: list[dict[str, str]]) -> tuple[dict[str, Any], int]:
+    """
+    Removes one record (the data entry with these qualifiers; none is the key's own record) from a document, keeping
+    the document's other records, in one atomic write of the document (ADR 0023): the document is replaced without the
+    record, or deleted when it was the last one. The official API deleted whole documents only, so its callers deleted
+    the key and wrote the other records back, leaving the key without any record between the two calls, or for good
+    when the second one failed. A document changed by another writer between the read and the write is read again.
+    Returns 404 when the document, or a record with these qualifiers, does not exist.
+    """
+    try:
+        for _ in range(RECORD_DELETE_ATTEMPTS):
+            read_result = data_entry_db.read_document(document_id)
+            if read_result['response_status'] == 404:
+                return {"response_status": 404, "error": f"Document not found: {document_id}"}, 404
+            if read_result['response_status'] != 200:
+                return read_result, read_result['response_status']
+            document = read_result['data']
+            entries = document.get('data') or []
+            matched_idx = next((i for i, entry in enumerate(entries)
+                                if _do_qualifiers_match(entry.get('qualifiers') or [], qualifiers)), None)
+            if matched_idx is None:
+                return _record_not_found(document_id, qualifiers), 404
+            remaining = {**document, 'data': entries[:matched_idx] + entries[matched_idx + 1:]}
+            write_result = data_entry_db.write_document_if_unchanged(remaining, entries)
+            if write_result['response_status'] == 200:
+                return {"entry": document_id, "removed": 1, "remaining": len(remaining['data']),
+                        "result": write_result}, 200
+            if write_result['response_status'] != 409:
+                return write_result, write_result['response_status']
+        return {"response_status": 409, "error": f"Document {document_id} kept changing; nothing was removed"}, 409
+
+    except Exception as e:
+        logger.error('delete_record: Error: %s', e, exc_info=True)
+        return {"response_status": 500, "error": f"Internal Server Error - {str(e)}"}, 500
+
+
 def delete_document(anchor: str) -> dict[str, Any]:
     try:
         result = data_entry_db.delete_document(anchor)

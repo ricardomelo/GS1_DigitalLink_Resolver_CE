@@ -309,7 +309,10 @@ batch's and the product's targets when a batch is scanned, and the brand of your
 page's icon in the browser's tab — and colours, set by an administrator under **Item page**, section 14). With the
 option no target is marked as the default. **Each record chooses for itself**: the product can open its page while a
 batch or serial number goes to its own first target, or the other way round. A scan of the GTIN alone, or of a batch
-that has no record, follows the product's choice. Above the targets the editor lists how the identifier's other
+that has no record, follows the product's choice. When a batch or serial number that has no record of its own is
+scanned, the page says so above the buttons — *Batch/lot L2 has no information of its own*, and whose targets it shows
+instead — so that nobody takes the product's recall notice or leaflet for the batch's
+([ADR 0022](adr/0022-answering-level.md)); register the batch, or at least the targets that differ, to answer for it. Above the targets the editor lists how the identifier's other
 records do it (*Using the item's page: …*, *Going to their own default target: …*), and a new batch starts with the
 product's choice. Behind the scenes each record then carries its own default link (`gs1:defaultLink`); the portal
 writes it and does not show it, and nothing changes for the other records' targets. The page counts its **views** and the **clicks** on its buttons (section 16);

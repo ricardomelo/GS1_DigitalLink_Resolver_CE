@@ -1138,8 +1138,16 @@ redirect and choice (`826a047`). Mock-ups of the notice, the strict mode's page 
 warnings were drawn for the owner before any of them is built. 19 new checks (`resolver` 235; 6 mutations, all
 caught); 4,676 checks passed in 67 programs.
 
+The CI run of those commits failed in the home page's program, which neither changed: a wait written as a JavaScript
+string is evaluated inside the page when its condition is not yet true, and the page's Content Security Policy refuses
+it (`39ae563`). Step 2 followed, with the mock-ups taken as approved by the owner's standing instruction: the item's
+page and the 300 page say, above the links, which level of the request has no record of its own and whose links are
+shown (`1bbdb27`); the level headings now show values as printed. 11 new checks (`resolver` 246; 6 mutations, all caught); 3,778 checks passed in 49 programs and 908 in the browser ones (the documents check, run before the inventory was rebuilt, passed after it).
+
 - A unit's record answers for its batch and variant (rule 2 of section 2.5.9), so "exact" cannot mean "names every
   qualifier of the request": a request with variant, batch and serial answered by the serial's record is exact.
+- A mutation that survived is worth reading: removing the escaping of the notice's title changed nothing because the
+  batch never reached the page as typed — the level labels printed the percent-encoded path (`%3Ci%3E`, `A%2FB`).
 
 
 

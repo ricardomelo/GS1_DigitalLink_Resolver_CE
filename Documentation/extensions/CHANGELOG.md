@@ -14,6 +14,11 @@ address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use th
   (`Access-Control-Expose-Headers`). They are not part of the GS1 standards and change no answer the standard defines.
   The notice on the resolver's pages, an optional strict mode per organisation for five safety-critical link types and
   warnings in the portal follow (ADR 0022 §5). Commit `826a047`.
+- **Added: a notice on the item's page and the choice page when their links come from a less specific level** — for
+  example *Batch/lot L2 has no information of its own. The links below belong to this level: Product (every unit)…* —
+  in the visitor's language (ADR 0022 §2.3). A person who scans a batch nobody registered no longer takes the
+  product's recall notice or leaflet for the batch's without being told. The level headings of these pages now show
+  batch and serial values as printed (`A/B`, not `A%2FB`). Commit `1bbdb27`.
 
 ### The official data entry API closed to the internet by default (session 28)
 - **Changed: `/api` and `/swaggerui` answer 403 unless `.env` lists the client in `DATA_ENTRY_API_ALLOW`** (addresses

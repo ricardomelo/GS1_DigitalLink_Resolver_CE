@@ -416,11 +416,13 @@ check("CSV: browser, region, city and the city's position after the country",
       head[head.index("country"):head.index("country") + 6] == ["country", "browser", "region", "city", "latitude",
                                                                  "longitude"]
       and any(r[head.index("city")] == "Campinas" and r[head.index("latitude")] == "-22.9" for r in table[1:]), head)
-requestlog.count_day(requestlog.today())
-doc = requestlog.daily().find_one({"_id": f"{requestlog.today().isoformat()}|01|0{ACME_IN}"}) or {}
+# the local day of the events (NOW), not today(): a run that starts just before midnight local time ends on the next day
+NOW_DAY = NOW.replace(tzinfo=UTC).astimezone(requestlog.zone()).date()
+requestlog.count_day(NOW_DAY)
+doc = requestlog.daily().find_one({"_id": f"{NOW_DAY.isoformat()}|01|0{ACME_IN}"}) or {}
 check("aggregates: browsers, countries and places per key", doc.get("browser") == {"chrome": 1, "safari": 1}
       and doc.get("country") == {"BR": 2} and doc.get("place") == [["BR|Sao Paulo|Campinas", 2]], doc)
-whole = requestlog.daily().find_one({"_id": f"{requestlog.today().isoformat()}|*"}) or {}
+whole = requestlog.daily().find_one({"_id": f"{NOW_DAY.isoformat()}|*"}) or {}
 check("…and for the installation", whole.get("browser") == {"chrome": 2, "safari": 1, "app": 1}
       and whole.get("country") == {"BR": 2, "PT": 1, "ZA": 1}
       and sorted(whole.get("place") or []) == [["BR|Sao Paulo|Campinas", 2], ["PT|Lisbon|Lisbon", 1]], whole)

@@ -5,6 +5,16 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
 
+### The client's address behind proxies (session 33)
+- **Fixed: the portal's limits per address and its audit trail now use the client's real address.** The portal took
+  the first address of `X-Forwarded-For`, which the client writes: changing it at every attempt escaped the sign-in,
+  recovery and link limits per address, and writing someone else's address first had failures counted, and recorded in
+  the audit trail, against them. The proxy now finds the client with nginx's `real_ip` through the proxies it trusts
+  (the host's nginx behind a loopback `PROXY_BIND_ADDRESS`, and `PROXY_TRUSTED_PROXIES`, which now also takes networks
+  and follows a chain of proxies) and sets that address alone in `X-Real-IP` and `X-Forwarded-For` for the resolver,
+  the data entry API and the portal. **Operators with a load balancer or CDN in front** must list it in
+  `PROXY_TRUSTED_PROXIES`; otherwise every client shares its address (and its limits). Commit `4d96de1`.
+
 ### Deleting one record without rewriting the key (session 32)
 - **Changed: deleting one record no longer rewrites the identifier's other records**
   ([ADR 0023](../adr/0023-record-level-delete.md)). The data entry API gains a record-level delete: `DELETE

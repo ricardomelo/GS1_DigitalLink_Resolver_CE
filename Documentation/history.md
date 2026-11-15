@@ -1202,6 +1202,20 @@ removing the old record (`f5642c5`). 27 checks in a new program (`record_delete`
 - Nothing is written back any more, so the guard that refused a deletion when the key held a record the API now
   refuses had nothing left to guard; the check that proved it now proves the deletion goes through.
 
+## Session 33 — the client's address behind proxies
+
+F-004 of the security assessment, with the owner's standing instruction (the recommended option: the same trusted
+proxies as [ADR 0021](adr/0021-data-entry-api-closed.md), rather than a number of proxies to skip). The portal took the
+first `X-Forwarded-For` address, which the client writes, for its limits per address and its audit trail, and both
+proxies appended to the header. The front-end proxy now resolves the client once with nginx's `real_ip` through its
+trusted proxies, walking the header from its end, and sets that address alone for every service; the portal reads the
+last address (`4d96de1`, ADR 0021 §3 amended). 13 checks in `home`, 3 in `session`; 4 mutations, all caught.
+
+- The development nginx was built without `real_ip` while the image's and the CI's have it: a module the
+  configuration starts to use must be added to the test build too, or the local test fails where production would not.
+- "Set, not append" belongs to the proxy nearest the services: the host's nginx still appends, so a load balancer in
+  front keeps its chain, and the trusted list decides how far back the header is believed.
+
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|
 | Identification | GTIN + optional batch | 16 primary keys and 9 qualifiers, with the combinations of the standard |

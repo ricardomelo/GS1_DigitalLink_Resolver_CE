@@ -49,6 +49,7 @@ import appearance
 import forwarding
 import overview
 import privacy
+import about
 import requestlog
 import resolution
 import safety
@@ -108,9 +109,9 @@ if os.environ.get("PORTAL_SESSION_HOURS", "").strip():
                 "PORTAL_SESSION_MAX_HOURS (default 12).")
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-# Needed by the sign-in page and the privacy notice (ADR 0017), which anyone opens
+# Needed by the sign-in page, the privacy notice (ADR 0017) and the About page (ADR 0024), which anyone opens
 PUBLIC_ASSETS = {"app.css", "i18n.js", "login.js", "password.js", "gs1-logo.png", "logo.svg", "favicon.png",
-                 "privacy.js", "appearance.js"}
+                 "privacy.js", "appearance.js", "about.js"}
 # The map of requests (ADR 0006, section 10): its script, d3, topojson-client and the countries, after sign-in
 PRIVATE_ASSETS = {"app.js", "requests-map.js", "d3.min.js", "topojson-client.min.js", "world-countries.json",
                   "iso3166.json"}
@@ -825,6 +826,19 @@ def delete_appearance():
 def privacy_page():
     """The installation's privacy notice, for anyone (Documentation/adr/0017-privacy-notice.md)."""
     return static_page("privacy.html")
+
+
+@app.get("/portal/about")
+def about_page():
+    """What the software is, its version, source, licence and components, for anyone (ADR 0024)."""
+    return static_page("about.html")
+
+
+@app.get("/portal/api/about")
+def about_facts():
+    """The running version (written at the image's build), the repository, the operator's name and the third-party
+    components — for anyone, signed in or not; no secret, setting or host (ADR 0024, section 2.4)."""
+    return jsonify(about.facts(notify.operator_name()))
 
 
 @app.get("/portal/api/privacy")

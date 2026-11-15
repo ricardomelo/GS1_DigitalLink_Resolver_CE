@@ -866,6 +866,18 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .forwarding-row-actions { white-space: nowrap; }
 #forwarding-view h2 + .hint, #fallback-state { margin-top: 0; }
 
+/* ---------------------------------------------------------------- the About page (ADR 0024) */
+.about-sheet { max-width: 60rem; line-height: 1.6; }
+.about-sheet h2 { margin: 1.75rem 0 .5rem; font-size: 1.125rem; color: var(--gs1-blue); }
+.about-sheet h2:first-of-type { margin-top: 0; }
+.about-sheet a { color: var(--link); overflow-wrap: anywhere; }
+.about-docs { padding-inline-start: 1.25rem; margin: 0; }
+.about-components { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: .5rem 2rem; }
+.about-group h3 { margin: .5rem 0 .25rem; font-size: 1rem; }
+.about-group ul { list-style: none; padding: 0; margin: 0; }
+.about-group li { padding: .1rem 0; }
+.about-licence { color: var(--muted, #555); font-size: .875rem; }
+
 /* ---------------------------------------------------------------- the privacy notice (ADR 0017) */
 .footer-links { margin: 0 0 .5rem; }
 .footer-links a { color: var(--link); }

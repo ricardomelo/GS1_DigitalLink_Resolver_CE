@@ -1,8 +1,72 @@
 {
  "generated": "2026-11-15",
  "programs": {
+  "about": {
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
+   "checks": [
+    "public address: ssh and scp-like rewritten, .git dropped, https, credentials removed (9 cases)",
+    "…no user name, password or token survives",
+    "…local paths, localhost, IP addresses, single names, odd schemes and characters refused (18)",
+    "version.json read back: four fields, the commit in lower case, the address made public, nothing else",
+    "…values of another shape dropped (markup, a non-hash, a free date, a local address)",
+    "…something that is not an object gives nothing",
+    "from git: the tag as the version, the full commit, its date and the origin without its token",
+    "the build stage's step writes version.json from the checkout",
+    "build(): version.json written at the image's build is what the portal shows",
+    "…a broken file: git in the portal's folder instead, the portal starts",
+    "…a file without a commit: git instead",
+    "…no file and no git: version unknown, the official repository linked, no operator",
+    "from git: a folder outside any checkout gives nothing",
+    "…and the build stage then writes {} (the build never fails for it)",
+    "…no git installed: nothing, no error",
+    "GET /portal/api/about for anyone: 200 with exactly version, commit, date, repository, operator, components",
+    "…the operator's name (RESOLVER_ORG_NAME)",
+    "…the development checkout's commit, found by git in the portal's folder",
+    "…a public https:// repository address",
+    "…no secret or setting in the answer",
+    "…read once, not asked of git at every request",
+    "the page /portal/about for anyone, with its own script, the footer's notice and the link to the privacy notice",
+    "…its script without signing in",
+    "…the software's own name in the heading, not replaced by an operator's title (no class product there)",
+    "…the documents linked at the running commit, else the default branch",
+    "…values written as text and only https addresses as links (no innerHTML)",
+    "user menu: About for every role (a nav-item, so the sidebar copies it), before Options",
+    "sign-in page: About beside the privacy notice in the footer",
+    "home page: About beside the privacy notice in the footer",
+    "the resolver's pages do not link it (they belong to the brand owner's product)",
+    "third_party.json: name, group, licence and an https address for each, four groups, no duplicates",
+    "…served whole by the API",
+    "…every component named in Documentation/third-party.md",
+    "…and every row of its tables of components and data in the file (25 rows)",
+    "every text of the page and its links in the twelve languages (29 keys)",
+    "…the home page's link in its twelve languages"
+   ],
+   "count": 36,
+   "ciOnly": false
+  },
+  "about_e2e": {
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
+   "checks": [
+    "the sign-in page: a footer link Sobre beside the privacy notice",
+    "…which opens without signing in, in the reader's language",
+    "…operated by the operator",
+    "…the version, with the commit linked to the repository",
+    "…five documents linked at the running commit",
+    "…the licence at that commit",
+    "…the components in their four groups, each with its licence",
+    "…the trademarks and the operator's responsibility",
+    "…in Arabic, right to left, when the reader chooses it",
+    "an editor of an organisation: About in the sidebar",
+    "…and in the user menu, just before Options",
+    "…which opens the page",
+    "a phone's width: no sideways scrolling",
+    "no script error on any page"
+   ],
+   "count": 14,
+   "ciOnly": false
+  },
   "admin_nav": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "an organisation's administrator opens their organisation's page",
     "…its users with their prefixes",
@@ -51,7 +115,7 @@
    "ciOnly": false
   },
   "admin_nav_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "the sign-in page: no room kept for a sidebar it does not have, the form under the title",
     "…the project's logo in the header, not GS1's",
@@ -114,7 +178,7 @@
    "ciOnly": false
   },
   "api": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "an editor cannot list or create keys",
     "a tenant administrator creates a key: 201, the full key once",
@@ -125,7 +189,7 @@
     "refused: apikeys.nameInvalid (ab)",
     "refused: apikeys.scopesInvalid (No scope)",
     "refused: apikeys.scopesInvalid (Bad scope)",
-    "refused: apikeys.daysInvalid (Zero)",
+    "refused: apikeys.daysInvalid (Zero)2026-11-15 17:16:20,393 INFO portal.worker Job 6c1fccd0f30342c98385a47de2831083 (mail of ana) started, attempt 1, from item 0 of 1.",
     "refused: apikeys.daysInvalid (Too long)",
     "refused: apikeys.nameExists (erp INTEGRATION)",
     "refused: users.prefixOutsideTenant (Outside)",
@@ -145,7 +209,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_6c24764e61a…)",
+    "a wrong key is refused (rk_8ca83964a3c…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -213,7 +277,7 @@
    "ciOnly": false
   },
   "api_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "an organisation's administrator has API keys in the menu",
     "choosing a menu item closes the menu, though the pointer is still over it",
@@ -241,7 +305,7 @@
    "ciOnly": false
   },
   "appearance": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "nothing set: the original, for anyone (no sign-in)",
     "…the icon address gives the project's icon",
@@ -315,7 +379,7 @@
    "ciOnly": false
   },
   "appearance_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "a server administrator has the screen in the menu, after the item's page",
     "the screen: its title and the original",
@@ -765,6 +829,8 @@
     "engine release: data_entry_server/Dockerfile installs gs1encoder at the build argument's release",
     "engine release: portal/Dockerfile builds the engine at the build argument's release",
     "engine release: web_server/Dockerfile builds the engine for the resolver's process with the portal's script",
+    "version: the portal's three builds receive the checkout's .git as the context git-dir",
+    "version: a separate stage runs git and writes version.json; the final image copies that file alone",
     "engine release: neither the build script nor the CI set-up action holds a release of its own",
     "engine release: portal/gs1_dictionary.json made from 1.4.1",
     "proxy image nginx 1.30.0 supports \"resolve\" in upstream blocks (1.27.3 or later)",
@@ -785,11 +851,12 @@
     "data-entry-service: stops cleanly on SIGTERM within Docker's 10-second stop period",
     "data-entry-service: requests are logged (docker compose logs)",
     "data-entry-service: no gunicorn control socket",
-    "portal image: every module and data file of portal/ is copied (46)",
+    "portal image: every module and data file of portal/ is copied (48)",
     "portal image: static files and assets are copied",
     "portal-service: the image runs gunicorn, with the process count left to WEB_CONCURRENCY",
     "portal-service: the image's default is two processes",
     "portal-service: answers GET /portal/healthz under gunicorn",
+    "portal-service: starts without version.json or Git data: the About page's version is unknown, the official repository is linked (ADR 0024)",
     "portal-service: WEB_CONCURRENCY=3 → three server processes",
     "portal-service: stops cleanly on SIGTERM within Docker's 10-second stop period",
     "portal-service: requests are logged (docker compose logs)",
@@ -820,7 +887,7 @@
     "resolver: no warning with the example on localhost",
     "resolver: no warning with its own password"
    ],
-   "count": 153,
+   "count": 156,
    "ciOnly": false
   },
   "dictionary": {
@@ -866,7 +933,8 @@
     "features.md: every table has a Checks column (228 features)",
     "…every feature cites at least one check",
     "…each reference names a program of the inventory (385 references)",
-    "every test program is in the inventory (73)",
+    "…and words found in one of its checks",
+    "every test program is in the inventory (75)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
     "…and gathers every search and filter, the search by EPC included",
@@ -875,14 +943,14 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (23)",
-    "every relative link of the documents leads to a file (39 documents)"
+    "…and every decision record (24)",
+    "every relative link of the documents leads to a file (40 documents)"
    ],
-   "count": 14,
+   "count": 15,
    "ciOnly": false
   },
   "domains": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "an organisation's administrator adds a domain (name tidied, stem with its slash)",
     "…with the TXT record to add",
@@ -960,7 +1028,7 @@
    "ciOnly": false
   },
   "domains_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "administrators have Domains in the menu",
     "the screen opens with its title, no domain yet",
@@ -1341,7 +1409,7 @@
    "ciOnly": false
   },
   "exports": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "PORTAL_EXPORT_LIMITS read once: reader and editor kept, malformed entries and the administrators' ignored",
     "…they became the operator's limits and those of the organisation that existed",
@@ -1440,7 +1508,7 @@
    "ciOnly": false
   },
   "forwarding": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "nothing set: the resolver of last resort off, GS1's address offered, no rule",
     "…the resolver sees it off",
@@ -1501,7 +1569,7 @@
    "ciOnly": false
   },
   "forwarding_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "a server administrator: Forwarding in the menu",
     "…the screen: the resolver of last resort off, GS1's address offered",
@@ -3091,7 +3159,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:44861/ok",
+    "internal address refused: http://127.0.0.1:42029/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -3123,7 +3191,7 @@
    "ciOnly": false
   },
   "mail": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "mail off without PORTAL_MAIL_HOST",
     "a relay without a sender is refused",
@@ -3228,7 +3296,7 @@
     "a link of a disabled account is refused",
     "…and cannot set its password",
     "ten invalid links per browser address, then a pause",
-    "reset of a user with an address: a link by e-mail, no password shown",
+    "reset of a user with an address: a link by e-mail, no password shown2026-11-15 17:15:56,295 INFO portal.worker Job 8703a73fdc5e4178a5cedbab09dd95f9 (mail of maria) started, attempt 1, from item 0 of 1.",
     "…the password stops working at once, the user's sessions end",
     "…the message says an administrator reset it",
     "…and the link sets a new password",
@@ -3268,7 +3336,7 @@
    "ciOnly": false
   },
   "mail_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "sign-in page: recovery offered",
     "users: the invitation box, ticked, and its hint",
@@ -3370,7 +3438,7 @@
    "ciOnly": false
   },
   "monitor": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "defaults: every 5 minutes, the description file through the proxy, 26 hours, 21 days, 90 days, 20 and 3 times",
     "a setting that is not a number: the default",
@@ -3861,7 +3929,7 @@
     "record created",
     "default link type = first target",
     "no query-string option: nothing about fwqs stored (always passed on, Resolver 2.12)",
-    "live language switch2026-11-15 16:23:53,178 INFO werkzeug 127.0.0.1 - - [15/Nov/2026 16:23:53] \"GET /portal/api/qrcode?key=01&value=07898357410015&hri=full&version=auto&ecl=m&env=retail HTTP/1.1\" 200 -",
+    "live language switch2026-11-15 17:20:54,788 INFO werkzeug 127.0.0.1 - - [15/Nov/2026 17:20:54] \"GET /portal/api/qrcode?key=01&value=07898357410015&hri=full&version=auto&ecl=m&env=retail HTTP/1.1\" 200 -",
     "English wording",
     "no GS1 branding option",
     "png download",
@@ -3886,7 +3954,7 @@
     "export: languages outside the menu kept",
     "export: CSV file",
     "import dialog shows the limits of every format",
-    "limits follow the language",
+    "limits follow the language2026-11-15 17:21:00,004 INFO werkzeug 127.0.0.1 - - [15/Nov/2026 17:21:00] \"GET /portal/api/qrcode?key=01&value=07898357410015&hri=full&version=auto&ecl=m&env=retail HTTP/1.1\" 200 -",
     "file picker offers .txt",
     "CSV above its size limit refused in the browser",
     "import preview counts",
@@ -4034,7 +4102,7 @@
    "ciOnly": false
   },
   "privacy": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "anyone, signed in or not: no version yet, the operator's name and the days requests are kept",
     "…the page itself, with the footer's notice and its own script",
@@ -4071,7 +4139,7 @@
    "ciOnly": false
   },
   "privacy_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "the sign-in page: a footer link to the privacy notice",
     "…which opens without signing in: the default notice in the reader's language",
@@ -4804,13 +4872,13 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.004 ms; Node.js: tens of ms)"
    ],
    "count": 246,
    "ciOnly": false
   },
   "safety_warnings": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "fold: case, spaces, - . / removed, O and I read as 0 and 1",
     "…different values stay different",
@@ -4860,7 +4928,7 @@
    "ciOnly": false
   },
   "safety_warnings_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "a batch lacking the product's safety-critical links: the box under the targets, both types named",
     "…what the strict mode would do (off)",
@@ -4901,7 +4969,7 @@
    "ciOnly": false
   },
   "session": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "configuration carries the session limits",
     "keep-alive answers the same limits",
@@ -5056,7 +5124,7 @@
    "ciOnly": false
   },
   "sso": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "an organisation's administrator: its configuration (none yet), the address to register",
     "an editor may not",
@@ -5125,7 +5193,7 @@
    "ciOnly": false
   },
   "sso_e2e": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "no organisation sign-in offered before one is on",
     "administrators have Organisation sign-in in the menu",
@@ -5214,7 +5282,7 @@
    "ciOnly": false
   },
   "strict_mode": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "off by default, on the organisation's page with the five safety-critical types",
     "…the operator's scope off by default too",
@@ -5292,7 +5360,7 @@
    "ciOnly": false
   },
   "tenants": {
-   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
+   "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "server administrator signs in",
     "before any tenant: an operator editor writes every record (behaviour unchanged)",

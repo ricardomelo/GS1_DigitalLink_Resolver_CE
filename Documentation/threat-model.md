@@ -182,7 +182,7 @@ Ranked by the harm their loss causes; I = integrity, A = availability, C = confi
 | E9 | Password recovery and invitation links | single-use token by e-mail | `portal/app.py:1096-1174`; `portal/tokens.py` |
 | E10 | Single sign-on start and callback | the provider's ID token | `portal/app.py:3196-3231`; `portal/sso.py:303-368` |
 | E11 | Uploads: logos and icons (base64 in JSON), spreadsheets (base64 in JSON), the GCP table (XML, gzip) | session; role | `portal/branding.py:89-112`; `portal/sheet.py:111-161`; `portal/gcp.py:83-140` |
-| E12 | Home page and its assets; public portal assets, appearance, privacy notice, OpenAPI description, `healthz` | none | `nginx.conf:58-75`; `portal/app.py:717-851`, `:1177-1190` |
+| E12 | Home page and its assets; public portal assets, appearance, privacy notice, About page and `GET /portal/api/about` (ADR 0024), OpenAPI description, `healthz` | none | `nginx.conf:58-75`; `portal/app.py:717-851`, `:1177-1190` |
 | E13 | The `Host` header: the installation's name, an organisation's domain with its path stem, any other name | none | `web_server/src/domains.py:87-157` |
 | E14 | The query string, passed whole to the target | none | `web_namespace.py:392-398`, `:511-521` |
 
@@ -257,6 +257,7 @@ L = likelihood, I = impact (H, M, L); rating = the pair.
 | T-B1 | T, E | Script injection in the portal | The front end builds the page with DOM nodes and text only (no HTML-string sinks in `portal/static/*.js`); `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `no-store` (`app.py:457-464`); label SVG escaped (`label.py:446`); logos re-read by an image library, SVG refused (`branding.py:89-112`) | No Content-Security-Policy on the portal; the portal, the resolver's pages and two Swagger UIs share one origin | L × H |
 | T-B2 | T | Formula injection through exports | Cells starting with a formula character are neutralised (`sheet.py:93-96`; `app.py:2698`, `:2807`) | — | L × L |
 | T-B3 | I | Clickjacking, downgrade | `X-Frame-Options: DENY` on the portal; `frame-ancestors 'none'` on the home page (`nginx.conf:64`); HTTP redirected to HTTPS by the host proxy | No HSTS; no framing header on the resolver's pages | L × M |
+| T-B4 | I | The About page tells anyone the running commit, which shows which published fixes an installation lacks; the build's Git data could carry credentials (a token in `origin`) | Only version, commit, date, the repository's public address, the operator's name and the components are answered (`about.facts()`); the origin's user names, passwords and tokens are removed and local or private addresses replaced by the official repository (`about.public_address()`); `version.json` read back only in its expected shape; the final image receives that file alone, not `.git` (`portal/Dockerfile`) | The version is public by design (ADR 0024 §2.4): an operator keeps up to date rather than hiding it; the code is public anyway | M × L |
 
 ### 6.6 Requests the server makes (I2, I3)
 

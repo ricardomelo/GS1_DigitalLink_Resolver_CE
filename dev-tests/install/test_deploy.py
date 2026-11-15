@@ -710,6 +710,19 @@ def release_checks() -> None:
           and Path(contexts.get("engine-tools", "/nonexistent")).resolve() == (REPO / "portal" / "tools").resolve(),
           "engine release: web_server/Dockerfile builds the engine for the resolver's process with the portal's script",
           contexts)
+    # the About page's version (ADR 0024, section 2.4): every build of the portal's image receives the checkout's .git
+    # as the context git-dir, a separate stage writes version.json from it, the final image takes that file alone
+    git_dirs = {name: (((config or {}).get("services", {}).get(name, {}).get("build") or {})
+                       .get("additional_contexts") or {}).get("git-dir")
+                for name in ("portal-db-init", "portal-service", "portal-worker")}
+    check(all(d and Path(d).resolve() == (REPO / ".git").resolve() for d in git_dirs.values()),
+          "version: the portal's three builds receive the checkout's .git as the context git-dir", git_dirs)
+    stage = portal.split("FROM python:3.12-slim-bookworm AS version", 1)[-1].split("\nFROM ", 1)[0]
+    final = portal.rsplit("\nFROM ", 1)[-1]
+    check("COPY --from=git-dir . /src/.git" in stage and "about.py write /version.json" in stage
+          and "COPY --from=version /version.json ./version.json" in final
+          and "git-dir" not in final and not re.search(r"apt-get install[^\n]* git\b", final),
+          "version: a separate stage runs git and writes version.json; the final image copies that file alone")
     script = (REPO / "portal" / "tools" / "build-syntax-engine.sh").read_text()
     action = (REPO / ".github" / "actions" / "dev-tests-setup" / "action.yml").read_text()
     pinned = re.compile(r"(RELEASE=\$\{2:-\d|GS1ENCODER_VERSION=\d)")
@@ -792,6 +805,8 @@ def image_tree(dockerfile: Path, context: Path) -> Path:
     text = re.sub(r"\\\n\s*", " ", dockerfile.read_text())
     tree = Path(tempfile.mkdtemp(prefix="deploy-image-"))
     for line in text.splitlines():
+        if not line.strip().startswith("COPY "):
+            continue
         parts = shlex.split(line.strip())
         if not parts or parts[0] != "COPY" or any(p.startswith("--from") for p in parts):
             continue
@@ -852,7 +867,9 @@ def children(pid: int) -> list[int]:
     return [int(x) for x in run.stdout.split()]
 
 
-def server_checks(label: str, dockerfile: Path, workdir: Path, path: str, expect, env_extra: dict[str, str]) -> None:
+def server_checks(label: str, dockerfile: Path, workdir: Path, path: str, expect, env_extra: dict[str, str],
+                  more: tuple = ()) -> None:
+    """more: (path, expect, label) of further GET requests checked while the server runs."""
     cmd, image_env = image_command(dockerfile)
     check(cmd[:1] == ["gunicorn"] and "--threads" in cmd and "--workers" not in cmd,
           f"{label}: the image runs gunicorn, with the process count left to WEB_CONCURRENCY")
@@ -875,6 +892,13 @@ def server_checks(label: str, dockerfile: Path, workdir: Path, path: str, expect
                 break
             time.sleep(0.3)
         check(status == 200 and expect(body), f"{label}: answers GET {path} under gunicorn", (status, body[:200]))
+        for other, expect_other, what in more:
+            status, body = get(f"http://127.0.0.1:{port}{other}")
+            try:
+                ok = status == 200 and expect_other(body)
+            except (ValueError, KeyError, TypeError):
+                ok = False
+            check(ok, f"{label}: {what}", (status, body[:200]))
         time.sleep(0.5)
         workers = children(proc.pid)
         check(len(workers) == 3, f"{label}: WEB_CONCURRENCY=3 → three server processes", workers)
@@ -1048,7 +1072,13 @@ def main() -> int:
                   {"SESSION_TOKEN": "tok", "FQDN": "id.example.org", "PORTAL_CONFIG_DIR": config,
                    "PORTAL_DB_URI": os.environ.get("PORTAL_DB_URI") or "mongomock://",
                    "PORTAL_DB_NAME": f"devtest_deploy_portal_{os.getpid()}",
-                   "PORTAL_SECRET_KEY": "deploy-test-key", "DATA_ENTRY_URL": "http://127.0.0.1:9/api"})
+                   "PORTAL_SECRET_KEY": "deploy-test-key", "DATA_ENTRY_URL": "http://127.0.0.1:9/api"},
+                  more=(("/portal/api/about", lambda body: json.loads(body)["commit"] is None
+                         and json.loads(body)["version"] is None
+                         and json.loads(body)["repository"] == "https://github.com/gs1/GS1_DigitalLink_Resolver_CE"
+                         and len(json.loads(body)["components"]) > 30,
+                         "starts without version.json or Git data: the About page's version is unknown, the "
+                         "official repository is linked (ADR 0024)"),))
     shutil.rmtree(config, ignore_errors=True)
     shutil.rmtree(portal_tree, ignore_errors=True)
     secret_key_checks()

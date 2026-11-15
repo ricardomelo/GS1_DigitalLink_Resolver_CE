@@ -242,8 +242,8 @@ check("no confirmation through the browser's dialog left", "confirm(" not in cod
                                                                             # the original appearance (ADR 0019)
                                                                             # and the strict mode switched on (ADR 0022)
 check("the sidebar is built from the user menu's screens (one list)", script.count('".menu-panel a.nav-item"') == 1
-      and index.count("nav-item") == 17, index.count("nav-item"))     # with the privacy notice, forwarding and
-                                                                        # the appearance
+      and index.count("nav-item") == 18, index.count("nav-item"))     # with the privacy notice, forwarding,
+                                                                        # the appearance and About (ADR 0024)
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

@@ -8,6 +8,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 COPY tools/build-syntax-engine.sh /tmp/
 RUN bash /tmp/build-syntax-engine.sh /opt/gs1-syntax-engine "$GS1_SYNTAX_ENGINE_RELEASE"
 
+# The version the About page shows (ADR 0024, section 2.4): git runs here, on the checkout's .git that
+# docker-compose.yml gives as the additional context git-dir, and writes version.json; the final image receives
+# that file alone, neither git nor the history. A build without Git data writes {} and the page says "unknown".
+FROM python:3.12-slim-bookworm AS version
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+ && rm -rf /var/lib/apt/lists/* && git config --system --add safe.directory '*'
+COPY --from=git-dir . /src/.git
+COPY about.py /tmp/about.py
+WORKDIR /src
+RUN python /tmp/about.py write /version.json || echo '{}' > /version.json
+
 FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 GS1_SYNTAX_ENGINE_DIR=/opt/gs1-syntax-engine
@@ -23,6 +34,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py *.json ./
 COPY assets ./assets
 COPY static ./static
+COPY --from=version /version.json ./version.json
 
 RUN useradd --system --uid 10001 portal \
  && mkdir -p /app/config && chown portal /app/config && chmod 700 /app/config

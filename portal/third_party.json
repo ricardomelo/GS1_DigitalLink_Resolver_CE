@@ -1,0 +1,242 @@
+[
+ {
+  "name": "GS1 Barcode Syntax Engine",
+  "group": "gs1",
+  "licence": "Apache-2.0",
+  "url": "https://github.com/gs1/gs1-syntax-engine"
+ },
+ {
+  "name": "GS1 Digital Link toolkit",
+  "group": "gs1",
+  "licence": "Apache-2.0",
+  "url": "https://github.com/gs1/GS1DigitalLinkCompressionPrototype"
+ },
+ {
+  "name": "EPC Tag Data Translation",
+  "group": "gs1",
+  "licence": "Apache-2.0",
+  "url": "https://www.gs1.org/standards/epc-rfid/tdt"
+ },
+ {
+  "name": "GS1 Web Vocabulary",
+  "group": "gs1",
+  "licence": "Apache-2.0",
+  "url": "https://github.com/gs1/WebVoc"
+ },
+ {
+  "name": "GS1 standards",
+  "group": "gs1",
+  "licence": "GS1 IP Policy",
+  "url": "https://www.gs1.org/standards"
+ },
+ {
+  "name": "GCP length table",
+  "group": "gs1",
+  "licence": "GS1 terms",
+  "url": "https://www.gs1.org/standards/id-keys/company-prefix"
+ },
+ {
+  "name": "Python 3.12",
+  "group": "platform",
+  "licence": "PSF-2.0",
+  "url": "https://www.python.org"
+ },
+ {
+  "name": "Debian",
+  "group": "platform",
+  "licence": "DFSG",
+  "url": "https://www.debian.org"
+ },
+ {
+  "name": "Node.js 24",
+  "group": "platform",
+  "licence": "MIT",
+  "url": "https://nodejs.org"
+ },
+ {
+  "name": "MongoDB Community Server 7",
+  "group": "platform",
+  "licence": "SSPL-1.0",
+  "url": "https://www.mongodb.com"
+ },
+ {
+  "name": "nginx",
+  "group": "platform",
+  "licence": "BSD-2-Clause",
+  "url": "https://nginx.org"
+ },
+ {
+  "name": "Certbot",
+  "group": "platform",
+  "licence": "Apache-2.0",
+  "url": "https://certbot.eff.org"
+ },
+ {
+  "name": "Let's Encrypt",
+  "group": "platform",
+  "licence": "Subscriber Agreement",
+  "url": "https://letsencrypt.org"
+ },
+ {
+  "name": "Flask",
+  "group": "libraries",
+  "licence": "BSD-3-Clause",
+  "url": "https://flask.palletsprojects.com"
+ },
+ {
+  "name": "Werkzeug",
+  "group": "libraries",
+  "licence": "BSD-3-Clause",
+  "url": "https://werkzeug.palletsprojects.com"
+ },
+ {
+  "name": "flask-restx",
+  "group": "libraries",
+  "licence": "BSD-3-Clause",
+  "url": "https://github.com/python-restx/flask-restx"
+ },
+ {
+  "name": "Flask-Cors",
+  "group": "libraries",
+  "licence": "MIT",
+  "url": "https://github.com/corydolphin/flask-cors"
+ },
+ {
+  "name": "Flask-PyMongo",
+  "group": "libraries",
+  "licence": "BSD-2-Clause",
+  "url": "https://github.com/mongodb-labs/flask-pymongo"
+ },
+ {
+  "name": "python-dotenv",
+  "group": "libraries",
+  "licence": "BSD-3-Clause",
+  "url": "https://github.com/theskumar/python-dotenv"
+ },
+ {
+  "name": "gunicorn",
+  "group": "libraries",
+  "licence": "MIT",
+  "url": "https://gunicorn.org"
+ },
+ {
+  "name": "pymongo",
+  "group": "libraries",
+  "licence": "Apache-2.0",
+  "url": "https://github.com/mongodb/mongo-python-driver"
+ },
+ {
+  "name": "requests",
+  "group": "libraries",
+  "licence": "Apache-2.0",
+  "url": "https://requests.readthedocs.io"
+ },
+ {
+  "name": "bcrypt",
+  "group": "libraries",
+  "licence": "Apache-2.0",
+  "url": "https://github.com/pyca/bcrypt"
+ },
+ {
+  "name": "maxminddb",
+  "group": "libraries",
+  "licence": "Apache-2.0",
+  "url": "https://github.com/maxmind/MaxMind-DB-Reader-python"
+ },
+ {
+  "name": "tzdata",
+  "group": "libraries",
+  "licence": "Apache-2.0",
+  "url": "https://github.com/python/tzdata"
+ },
+ {
+  "name": "segno",
+  "group": "libraries",
+  "licence": "BSD-3-Clause",
+  "url": "https://github.com/heuer/segno"
+ },
+ {
+  "name": "zint-bindings",
+  "group": "libraries",
+  "licence": "Apache-2.0",
+  "url": "https://github.com/bindings-zint/zint-bindings"
+ },
+ {
+  "name": "libzint",
+  "group": "libraries",
+  "licence": "BSD-3-Clause",
+  "url": "https://zint.org.uk"
+ },
+ {
+  "name": "fonttools",
+  "group": "libraries",
+  "licence": "MIT",
+  "url": "https://github.com/fonttools/fonttools"
+ },
+ {
+  "name": "openpyxl",
+  "group": "libraries",
+  "licence": "MIT",
+  "url": "https://openpyxl.readthedocs.io"
+ },
+ {
+  "name": "PyJWT",
+  "group": "libraries",
+  "licence": "MIT",
+  "url": "https://github.com/jpadilla/pyjwt"
+ },
+ {
+  "name": "Pillow",
+  "group": "libraries",
+  "licence": "MIT-CMU",
+  "url": "https://python-pillow.org"
+ },
+ {
+  "name": "cryptography",
+  "group": "libraries",
+  "licence": "Apache-2.0 or BSD-3-Clause",
+  "url": "https://cryptography.io"
+ },
+ {
+  "name": "dnspython",
+  "group": "libraries",
+  "licence": "ISC",
+  "url": "https://www.dnspython.org"
+ },
+ {
+  "name": "d3 7.9.0",
+  "group": "libraries",
+  "licence": "ISC",
+  "url": "https://d3js.org"
+ },
+ {
+  "name": "topojson-client 3.1.0",
+  "group": "libraries",
+  "licence": "ISC",
+  "url": "https://github.com/topojson/topojson-client"
+ },
+ {
+  "name": "world-atlas 2.0.2",
+  "group": "data",
+  "licence": "ISC",
+  "url": "https://github.com/topojson/world-atlas"
+ },
+ {
+  "name": "Natural Earth",
+  "group": "data",
+  "licence": "Public domain",
+  "url": "https://www.naturalearthdata.com"
+ },
+ {
+  "name": "Liberation Sans",
+  "group": "data",
+  "licence": "OFL-1.1",
+  "url": "https://github.com/liberationfonts/liberation-fonts"
+ },
+ {
+  "name": "DB-IP IP to City Lite",
+  "group": "data",
+  "licence": "CC-BY-4.0",
+  "url": "https://db-ip.com"
+ }
+]

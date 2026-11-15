@@ -522,7 +522,7 @@ def browser_checks(base: str, port: int, shots: Path) -> None:
         page.route(re.compile(r"https://fonts\.(googleapis|gstatic)\.com/.*"),
                    lambda route: route.fulfill(status=200, body="", content_type="text/css"))
         page.goto(base + "/")
-        page.wait_for_function("document.querySelector('#operator') && !document.querySelector('#operator').hidden")
+        page.locator("#operator").wait_for(state="visible")    # no wait_for_function: the page's CSP forbids eval
 
         hrefs = page.eval_on_selector_all("#site-nav a", "els => els.map(a => a.getAttribute('href'))")
         check(set(hrefs) == expected_links and len(hrefs) == 4, "menu has exactly the four requested links (the data entry API, closed by default, is not offered: ADR 0021)")

@@ -5,6 +5,24 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
 
+### The strict mode for safety-critical link types (session 30)
+- **Added: a strict mode per organisation for five safety-critical link types** (`gs1:recallStatus`,
+  `gs1:safetyInfo`, `gs1:epil`, `gs1:smpc`, `gs1:eifu`; [ADR 0022](../adr/0022-answering-level.md) §2.4). Off by
+  default, so nothing changes until an organisation chooses it. With it on, a request for one of these types that names
+  a batch or serial number is answered only by a record naming that batch or serial number (a serial within a batch may
+  use the batch's record); a link held only by the product, or by a variant, is withheld: **404 with
+  `Resolution-Match: withheld`**, so that an app can tell "nothing for this batch" from "nothing at all", and in a
+  browser a page saying that the information is not available for that batch, with the product's links under the
+  notice that they may not apply to it. A batch nobody registered, or registered with its value typed in another letter
+  case, no longer receives the product's *not recalled* page as if it were its own. Other link types, a plain scan, the
+  linkset and requests without a batch or serial are not affected.
+- The organisation's administrators switch it on in the portal (organisation's page, new tab **Resolution**, with the
+  five types and an example of what changes); the server administrator for any organisation and, on the operator's
+  page, for the codes no organisation holds. Journalled (*Strict mode changed*); the resolver applies it within a
+  minute. Requests kept back appear on the Requests screen as *Withheld by the strict mode* (also under *Not found
+  (404)*), in the request log as the outcome `withheld` and in the overview's resolution quality. Texts in the twelve
+  languages. Commit `6879817`.
+
 ### The level that answered a request (session 29)
 - **Added: `Resolution-Anchor` and `Resolution-Match` on every redirect (307) and choice (300)**
   ([ADR 0022](../adr/0022-answering-level.md)): the GS1 Digital Link URI of the record whose links answered, and
@@ -12,8 +30,8 @@ address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use th
   product's record (*walk-up*); an app can now tell, for example, that a `gs1:recallStatus` answer came from the
   product and not from the batch it asked about. Both headers are readable by web apps on other origins
   (`Access-Control-Expose-Headers`). They are not part of the GS1 standards and change no answer the standard defines.
-  The notice on the resolver's pages, an optional strict mode per organisation for five safety-critical link types and
-  warnings in the portal follow (ADR 0022 §5). Commit `826a047`.
+  The notice on the resolver's pages, an optional strict mode per organisation for five safety-critical link types
+  (session 30, above) and warnings in the portal follow (ADR 0022 §5). Commit `826a047`.
 - **Added: a notice on the item's page and the choice page when their links come from a less specific level** — for
   example *Batch/lot L2 has no information of its own. The links below belong to this level: Product (every unit)…* —
   in the visitor's language (ADR 0022 §2.3). A person who scans a batch nobody registered no longer takes the

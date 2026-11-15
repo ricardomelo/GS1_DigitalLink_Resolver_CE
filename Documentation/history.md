@@ -1150,6 +1150,24 @@ shown (`1bbdb27`); the level headings now show values as printed. 11 new checks 
   batch never reached the page as typed — the level labels printed the percent-encoded path (`%3Ci%3E`, `A%2FB`).
 
 
+## Session 30 — the strict mode for safety-critical link types
+
+Step 3 of [ADR 0022](adr/0022-answering-level.md), with the owner's standing instruction to take the recommended
+option and carry on (the mock-ups of the strict mode's page and setting, drawn in session 29, taken as approved). An
+organisation's administrators, and the server administrator for any organisation and for the codes no organisation
+holds, switch on the strict mode on a new tab of the organisation's page, *Resolution* (`6879817`). With it on, a
+request for `recallStatus`, `safetyInfo`, `epil`, `smpc` or `eifu` that names a batch or serial number is answered only
+by a record naming it; otherwise 404 with `Resolution-Match: withheld`, and in a browser the page of a missing type
+with its own title and the notice of step 2. The resolver reads the setting like the forwarding rules (at most once a
+minute, the last value kept); the request log's new outcome `withheld` reaches the Requests screen and the overview.
+The tenant API manages records, not an organisation's settings, so the setting stays on the portal (ADR 0022 §5
+amended). 64 new checks in two new programs (`strict_resolver` 37, `strict_mode` 27) and 3 in `admin_nav_e2e`; 13
+mutations, all caught.
+
+- `HEAD` unpacked the GET's answer as two values, so a 404 carrying a header (the first one) failed with a 500: the
+  three `head()` methods now pass the answer to `make_response()` whole.
+- The safety-critical list lives in two images (resolver and portal) that share no code: a check of `strict_mode`
+  reads the resolver's source and compares, so the two cannot drift apart unnoticed.
 
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|

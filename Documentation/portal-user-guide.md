@@ -312,7 +312,10 @@ batch or serial number goes to its own first target, or the other way round. A s
 that has no record, follows the product's choice. When a batch or serial number that has no record of its own is
 scanned, the page says so above the buttons — *Batch/lot L2 has no information of its own*, and whose targets it shows
 instead — so that nobody takes the product's recall notice or leaflet for the batch's
-([ADR 0022](adr/0022-answering-level.md)); register the batch, or at least the targets that differ, to answer for it. Above the targets the editor lists how the identifier's other
+([ADR 0022](adr/0022-answering-level.md)); register the batch, or at least the targets that differ, to answer for it.
+With the organisation's strict mode on (section 14, *Resolution*), such a batch receives no recall status, safety
+information, leaflet or instructions for use of the product at all: the page says the information is not available
+for it and lists the product's links under the same notice. Above the targets the editor lists how the identifier's other
 records do it (*Using the item's page: …*, *Going to their own default target: …*), and a new batch starts with the
 product's choice. Behind the scenes each record then carries its own default link (`gs1:defaultLink`); the portal
 writes it and does not show it, and nothing changes for the other records' targets. The page counts its **views** and the **clicks** on its buttons (section 16);
@@ -702,6 +705,7 @@ task is:
 | Create, change, disable, remove users; their roles and prefixes; invitations | their organisation's users | every user | *Users*, below |
 | See everything about one organisation in one place | their own | any organisation, and the operator's | [An organisation's page](#an-organisations-page-administrators) |
 | Limit exports per role (readers, editors, API keys) | their own | any organisation, and the operator's users | the organisation's page, *Exports* |
+| The strict mode for safety-critical link types | their own | any organisation, and the codes no organisation holds | the organisation's page, *Resolution* |
 | The most rows per export in every organisation | — | yes | [Organisations](#organisations-server-administrators) |
 | Create, rename, disable, remove organisations; their GS1 Company Prefixes | — | yes | [Organisations](#organisations-server-administrators) and the organisation's page |
 | Upload GS1's GCP length table | — | yes | [Organisations](#organisations-server-administrators) |
@@ -840,7 +844,7 @@ without changing them, only through support access.
 **Organisation management** (user menu; the page is titled with the organisation's name) gathers an organisation's
 settings in one place, each in a tab: its **Prefixes**, its
 **Users** with their prefixes, its **Domains**, its **Item page** brands, its **Organisation sign-in**, its **API
-keys**, its **Exports** and its **Alerts**. Each tab links to the screen that changes it. An organisation's
+keys**, its **Exports**, its **Alerts** and its **Resolution**. Each tab links to the screen that changes it. An organisation's
 administrators see their own; the server administrator opens any organisation from **Organisations** (**Open**),
 changes its prefixes on the **Prefixes** tab, and reaches another organisation's brands and API keys through support
 access; without choosing an organisation, the page shows the operator's own settings.
@@ -852,6 +856,22 @@ organisation's **Administrators** have the maximum. *Applies now* shows what eac
 a maximum lowered later says that the maximum applies. **Save limits** records the change in the audit trail; refused
 exports are there too (*Export refused*). On the operator's page the same tab limits the operator's users, without a
 maximum above them; server administrators have no limit. In support access the tab is read only.
+
+**Resolution** holds the **strict mode for safety-critical link types**, also changed on the tab itself
+([ADR 0022](adr/0022-answering-level.md)). Five link types are safety-critical: *Recall status*, *Safety information*,
+the patient leaflet (`gs1:epil`), the summary of product characteristics (`gs1:smpc`) and the electronic instructions
+for use (`gs1:eifu`). When a scan asks for one of them for a batch or serial number that has no such link of its own,
+the GS1 standard answers with the product's link (it cannot know which batches exist), so a batch nobody registered —
+or registered with its value typed differently — can receive the product's *not recalled* page. With the strict mode
+on, the batch or serial number must hold its own link of that type (a serial within a batch may use the batch's);
+otherwise the resolver answers that the information is not available for that batch (404) and, in a browser, shows
+the product's links under a notice that they may not apply to it. Other link types, a plain scan without a link type
+and the item's page are not affected. The table on the tab shows four requests with the mode off and on. Tick
+**Switch on the strict mode for this organisation**, confirm, and **Save**; the resolver applies the change within a
+minute, and the audit trail records it (*Strict mode changed*). Before switching it on, register a record (or at least
+these links) for every batch that should answer; *Requests* then shows the requests kept back as *Withheld by the
+strict mode*. On the operator's page the same tab sets it for the codes no organisation holds. Off by default; read
+only in support access.
 
 ### Alerts (administrators)
 
@@ -1009,7 +1029,7 @@ of the bars.
 **Latest requests.** The newest first, 200 at a time (**Show more** for the next ones). Each row shows when, the
 **Code** (the identifier and the qualifiers in the scan: a serial number appears only as `/21/*`; `?17` means the QR
 code carried an expiry date, whose value is not kept), the **Outcome** (*Redirected*, *Code not registered*, *No link
-of that type*, *Choice of links*, *Linkset*, *Invalid request*, *Item page* — a view of the item's page reached by a
+of that type*, *Withheld by the strict mode* (section 14, *Resolution*), *Choice of links*, *Linkset*, *Invalid request*, *Item page* — a view of the item's page reached by a
 scan —, *Click on the item page*…), the **Answer** (the link type asked, the level of the
 record that answered — the key's or a batch's — and the site the person was sent to), the **Device** class (phone,
 tablet, computer, automated) with the **browser** (Chrome, Safari, Firefox, Edge, Samsung Internet, Opera, *App* for
@@ -1017,7 +1037,7 @@ scanner apps and the browsers inside apps such as Instagram's) and the site the 
 the phone, the **Approximate location** (city, region — a state or province — and country; the city opens Google Maps
 on that city) and the time
 the resolver took, in milliseconds. Filter by date (**From**, **To**), **Code** (a GTIN, a GS1 Company Prefix or a
-Digital Link path such as `/01/…`), **Outcome** (*Not found (404)* gathers both kinds of 404), **Device**,
+Digital Link path such as `/01/…`), **Outcome** (*Not found (404)* gathers every kind of 404), **Device**,
 **Browser** and **Country** (two letters, such as `BR`). **Export CSV** downloads what the filters show, up to 50,000
 requests, for Excel. The list holds people's requests with a GS1 code, valid or not: requests from automated clients
 (crawlers, scripts, command-line tools) and requests without a GS1 code (probes such as `/wp-login.php`) are counted —
@@ -1093,7 +1113,8 @@ administrator chose.
 registered them — the codes **without a link of the type asked**, invalid requests, the resolver's errors and the
 average answer time (for the server administrator also the 95th percentile of the slowest day); when the server
 administrator turned forwarding on (section 14, *Forwarding*), the requests **forwarded by prefix rules** and those
-**sent to the resolver of last resort**, each apart. These count every request with a GS1 code, automated ones
+**sent to the resolver of last resort**, each apart; when a strict mode is on (section 14, *Resolution*) and kept
+requests back, the requests **withheld by the strict mode (404)**. These count every request with a GS1 code, automated ones
 included. **Scanned codes nobody registered** lists them, most scanned first: **Register**
 opens the editor on the code so that the next scan leads somewhere; *the key has other records* means the code's key
 is registered but not for the batch or serial scanned.

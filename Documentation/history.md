@@ -1216,6 +1216,28 @@ last address (`4d96de1`, ADR 0021 §3 amended). 13 checks in `home`, 3 in `sessi
 - "Set, not append" belongs to the proxy nearest the services: the host's nginx still appends, so a load balancer in
   front keeps its chain, and the trusted list decides how far back the header is believed.
 
+## Session 34 — the name GS1 Digital Link Resolver Suite and an About page (the decision)
+
+The owner asked for an About section like the one of their other tool, gs1-label-studio, and for a new name: the work
+had outgrown an *Expansion Pack*. Owner's decisions: *GS1 Digital Link Resolver Suite* (it must keep *GS1*, *Digital
+Link* and *Resolver* for search; *Studio* sounded like an editor only); the About in the portal's menu, its sign-in page
+and the home page's footer, in twelve languages, naming the origin and every third-party component with its licence.
+The details were taken as recommended under the standing instruction and recorded in
+[ADR 0024](adr/0024-name-and-about.md) (`252c44b`); mock-ups of the menu, the page and both footers were shown first.
+
+## Session 35 — the About page
+
+ADR 0024's About page (`b4972fb`): `/portal/about` for anyone, drawn from `GET /portal/api/about`, with the version
+written when the portal's image is built — a separate stage of `portal/Dockerfile` runs git on the checkout's `.git`,
+which Compose hands over as the build context `git-dir`, and the final image receives `version.json` alone. 36 checks
+in the new program `about`, 14 in `about_e2e`, 3 in `deploy`; 7 mutations, all caught. The rename itself is the next
+step.
+
+- The deploy test parsed every line of a Dockerfile with `shlex`, comments included: an apostrophe in a comment
+  ("the checkout's .git") stopped it. Parse only the instructions a check reads.
+- An address taken from a checkout's configuration can carry a token (a CI or a proxy writes one into `origin`):
+  anything the software shows from it is rebuilt from its host and path, never passed on.
+
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|
 | Identification | GTIN + optional batch | 16 primary keys and 9 qualifiers, with the combinations of the standard |

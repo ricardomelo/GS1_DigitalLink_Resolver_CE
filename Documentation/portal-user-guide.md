@@ -147,7 +147,7 @@ home page), **Overview** (section 17), **Link editor** (sections 4 to 10), **Reg
 **Requests** (section 16), **Users**, **API keys** and **Audit
 trail**, **Organisation management** and **Alerts** (administrators only; **Organisations**, **Forwarding**,
 **Appearance** and **Privacy notice** for server administrators),
-**Options** and **Sign out**. On a wide screen (1,100 pixels or more) the same screens are also in a **side menu** on
+**About**, **Options** and **Sign out**. On a wide screen (1,100 pixels or more) the same screens are also in a **side menu** on
 the left, the current one marked; the button at its top folds it to its icons and opens it again (the browser
 remembers the choice). The screens use up to 1,536 pixels of a wide monitor (96rem); the list of requests fits a
 1,280-pixel screen with the side menu open. On a phone every screen fits the width; wide tables scroll sideways inside
@@ -907,6 +907,15 @@ requests the strict mode would withhold, and the records to open in the editor b
 codes) and its detail, filtered by
 kind and dates and, for the server administrator, by organisation. An organisation's administrators see their
 organisation's spikes. Alerts are listed from this version on (kept 400 days); earlier ones were not recorded.
+
+### About
+
+**About** in the user menu (also a link at the foot of the sign-in page and of the resolver's home page) opens a page
+anyone can read, signed in or not: what the software is and who operates this installation, the **version** running
+(its commit, linked to the code, and the date), where the source code is and its licence (Apache 2.0), the manuals
+for exactly that version, where the software comes from (the official GS1 Digital Link Resolver CE), every component
+and data source it is made of with its licence, and the trademark notice. *Version unknown* means the installation
+was built without its Git data: the operator updates it with `git pull` and `docker compose up -d --build`.
 
 ### Privacy notice (server administrators)
 

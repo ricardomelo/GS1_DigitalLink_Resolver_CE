@@ -5,6 +5,16 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
 
+### An About page (session 35)
+- **Added: an About page** ([ADR 0024](../adr/0024-name-and-about.md)), `/portal/about`, open to anyone and linked
+  from the portal's user menu and side menu, the sign-in page and the home page: what the software is, the version
+  running (`git describe --tags`, the commit linked and its date), the source code and the Apache License 2.0, the
+  manuals linked at that commit, the origin (the official GS1 Digital Link Resolver CE), every third-party component
+  and data source with its licence, and the trademark and responsibility notices; twelve languages. The version is
+  written when the portal's image is built: `docker-compose.yml` now gives the portal's builds the checkout's `.git`
+  (`git pull && docker compose up -d --build` keeps it current; a copy without `.git` shows *version unknown*). The
+  repository's address comes from the checkout's `origin`, with any user name or token removed. Commit `b4972fb`.
+
 ### The client's address behind proxies (session 33)
 - **Fixed: the portal's limits per address and its audit trail now use the client's real address.** The portal took
   the first address of `X-Forwarded-For`, which the client writes: changing it at every attempt escaped the sign-in,

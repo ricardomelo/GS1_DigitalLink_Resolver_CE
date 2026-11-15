@@ -170,6 +170,8 @@
           <p class="scope-title"><span data-i18n="scope.title"></span> <strong id="scope-what"></strong></p>
           <ul id="scope-notes"></ul>
         </div>
+        <!-- A batch or serial value close to another of the key's (ADR 0022, section 2.5) -->
+        <div class="safety-warn" id="dup-warnings" role="status" aria-live="polite" hidden></div>
 
         <button type="button" id="open" class="btn btn-secondary" disabled data-i18n="open.button"></button>
         <p class="field-msg" id="open-msg" aria-live="polite"></p>
@@ -222,6 +224,8 @@
                     aria-controls="copy-pop" aria-expanded="false" data-i18n="copy.button"></button>
             <button type="button" id="check-links" class="btn btn-ghost needs-editor" data-i18n="links.check"></button>
           </div>
+          <!-- Safety-critical links a request for this record would receive from another level (ADR 0022, section 2.5) -->
+          <div class="safety-warn" id="safety-warnings" role="status" aria-live="polite" hidden></div>
           <!-- Copy the targets of another record into the form (nothing is saved until "Save links") -->
           <div class="copy-pop" id="copy-pop" role="dialog" aria-labelledby="copy-title" hidden>
             <h3 id="copy-title" data-i18n="copy.title"></h3>
@@ -1521,6 +1525,7 @@
       <div id="import-status" class="status" role="status" aria-live="polite" hidden></div>
       <div id="import-report" hidden>
         <p class="import-summary" id="import-summary"></p>
+        <p class="field-msg is-warn" id="import-safety" aria-live="polite" hidden></p>
         <ul class="import-errors" id="import-errors"></ul>
         <div class="import-links-line">
           <p class="field-msg" id="import-links-msg" aria-live="polite"></p>

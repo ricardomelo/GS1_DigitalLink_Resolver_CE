@@ -212,7 +212,7 @@ def v1_put_record(key, value):
     uri = gs1.digital_link(portal.link_base(anchor), anchor,
                            gs1.join_informative(pairs, gs1.pairs_from(doc.get("informativeQualifiers"))))
     return portal.message("save.created" if created else "save.updated", 201 if created else 200,
-                          created=created, digitalLink=uri)
+                          created=created, digitalLink=uri, warnings=portal.saved_warnings(anchor, pairs, doc))
 
 
 @portal.app.delete(PREFIX + "/records/<key>/<path:value>")

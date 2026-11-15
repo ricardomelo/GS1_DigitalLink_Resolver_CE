@@ -38,7 +38,7 @@ AREAS = [
     ("Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, forwarding, appearance",
      ["tenants", "admin_nav", "admin_nav_e2e", "exports", "sso", "sso_e2e", "session", "api", "api_e2e", "domains",
       "domains_e2e", "monitor", "mail", "mail_e2e", "privacy", "privacy_e2e", "forwarding", "forwarding_e2e", "strict_mode",
-      "appearance", "appearance_e2e"]),
+      "safety_warnings", "safety_warnings_e2e", "appearance", "appearance_e2e"]),
     ("Interface and languages", ["portal_config", "i18n", "languages_e2e"]),
     ("The documents", ["docs"]),
     ("Data store, installation and operation", ["store", "store_mongodb", "home", "install", "deploy"]),

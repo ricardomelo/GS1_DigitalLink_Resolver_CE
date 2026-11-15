@@ -135,4 +135,9 @@ In four steps, each with its checks and documents:
    only (its *Resolution* tab; the operator's page for the keys no organisation holds).
 4. The warnings of 2.5 in the editor, the tenant API and the import preview.
 
-Steps 1 and 2 were delivered on 14 and 15 November 2026, step 3 on 15 November 2026.
+Steps 1 and 2 were delivered on 14 and 15 November 2026, step 3 on 15 November 2026, step 4 on 15 November 2026:
+`portal/safety.py` computes the warnings of 2.5 for the editor (`POST /portal/api/record/warnings` while the record is
+edited, and with the saved record), the tenant API (`warnings` in the answer of a saved record) and the import's
+preview (per record, on the key's records as they will be after the import); a near duplicate compares batch, serial
+and TPX values (AI 10, 21, 235). The organisation's *Resolution* tab also counts the batch and serial records that
+lack a safety-critical type a broader record holds.

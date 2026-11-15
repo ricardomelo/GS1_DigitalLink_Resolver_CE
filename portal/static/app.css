@@ -507,6 +507,14 @@ dialog::backdrop { background: rgba(0, 30, 74, .45); }
 .scope-card ul { margin: .4rem 0 0; padding-inline-start: 1.1rem; }
 .scope-card li { margin-top: .2rem; }
 .field-msg.is-warn { color: #9A5B00; }
+/* Warnings on safety-critical links and near-duplicate values (ADR 0022, section 2.5): never block a save */
+.safety-warn { max-width: 52rem; margin: 1rem 0; padding: .8rem 1rem; border: 1px solid #F0D09A;
+  border-inline-start: 4px solid var(--gs1-orange); border-radius: 6px; background: #FFF8EC; color: var(--ink); }
+.safety-warn .safety-item + .safety-item { margin-top: .9rem; padding-top: .9rem; border-top: 1px solid #F0D09A; }
+.safety-warn .safety-title { margin: 0 0 .3rem; color: #7A4800; font-weight: 600; }
+.safety-warn p { margin: .3rem 0 0; font-size: .9375rem; }
+.safety-warn ul { margin: .3rem 0 0; padding-inline-start: 1.1rem; }
+.import-warning { display: block; margin-top: .2rem; color: #9A5B00; font-size: .875rem; }
 
 /* ---------------------------------------------------------------- roles and governance */
 body[data-role="reader"] .needs-editor { display: none !important; }

@@ -86,7 +86,7 @@
    "put": {
     "operationId": "putRecord",
     "summary": "Creates or replaces one record",
-    "description": "Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed.",
+    "description": "Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed. The answer lists `warnings` about safety-critical link types and near-duplicate batch or serial values (ADR 0022, section 2.5); they never refuse the save.",
     "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RecordInput"}}}},
     "responses": {
      "200": {"description": "Replaced", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Saved"}}}},
@@ -223,8 +223,18 @@
     }
    },
    "Saved": {
-    "type": "object", "required": ["code", "created", "digitalLink"],
-    "properties": {"code": {"type": "string", "enum": ["save.created", "save.updated"]}, "created": {"type": "boolean"}, "digitalLink": {"type": "string"}}
+    "type": "object", "required": ["code", "created", "digitalLink", "warnings"],
+    "properties": {"code": {"type": "string", "enum": ["save.created", "save.updated"]}, "created": {"type": "boolean"}, "digitalLink": {"type": "string"},
+     "warnings": {"type": "array", "items": {"$ref": "#/components/schemas/Warning"}, "description": "What a request for the saved record would receive from another record of its key, and batch or serial values close to another of the key's. Never a refusal: the record is saved."}}
+   },
+   "Warning": {
+    "type": "object", "required": ["code", "params"],
+    "description": "A warning on safety-critical link types (gs1:recallStatus, gs1:safetyInfo, gs1:epil, gs1:smpc, gs1:eifu) or a near-duplicate value. `warning.walkUp`: the record lacks `types` that the record of qualifiers `level` holds (`[]`: the key's own record); a request for this record receives that record's links or, when `strict` is true (the organisation's strict mode), a 404. `warning.productLevel`: the key's own record holds `types` while the key has `count` batch or serial records (`values`: the qualifiers of the first five); those without their own link of a type receive this one. `warning.nearDuplicate`: the value `value` of AI `ai` differs from the key's existing `existing` only in letter case, spaces, `-` `.` `/` or O/0 and I/1.",
+    "properties": {"code": {"type": "string", "enum": ["warning.walkUp", "warning.productLevel", "warning.nearDuplicate"]},
+     "params": {"type": "object", "properties": {"types": {"type": "array", "items": {"type": "string"}},
+      "level": {"type": "array", "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2}}, "strict": {"type": "boolean"}, "count": {"type": "integer"},
+      "values": {"type": "array", "items": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}}},
+      "ai": {"type": "string"}, "value": {"type": "string"}, "existing": {"type": "string"}}}}
    },
    "Stats": {
     "type": "object", "required": ["period", "usage", "quality", "records"],

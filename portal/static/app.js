@@ -1246,6 +1246,7 @@ function onIdentityChange() {
   refreshGcpHint(g);
   markInformative(g, l);
   renderScope(g, l);
+  scheduleWarnings();
   // The batch or variant of a serial number is informative: changing it keeps the record open
   const key = g.ok && l.ok ? recordKey(g, l) : null;
   if (state.openKey && key !== state.openKey) {
@@ -2250,6 +2251,24 @@ function orgResolution(d) {
   const rows = ["withheld", "batch", "serial", "other"].map(row =>
     [t("resolution.example." + row), t("resolution.example." + row + ".off"), t("resolution.example." + row + ".on")]);
   out.push(orgTable(["resolution.example.request", "resolution.example.off", "resolution.example.on"], rows));
+  // batch and serial records that lack a safety-critical link of a broader record (ADR 0022, section 2.5)
+  if (r.lacking) {
+    const lack = el("div", r.lacking.count ? "safety-warn" : "field-msg");
+    lack.id = "org-resolution-lacking";
+    if (!r.lacking.count) lack.textContent = t("resolution.lackingNone");
+    else {
+      const ul = document.createElement("ul");
+      r.lacking.records.forEach(x => {
+        const [ai, value] = x.anchor.split("/").slice(1);
+        ul.append(el("li", "", `${keyText(ai, value)} · ${qualText(x.qualifiers)} — `
+                                + x.types.map(c => I18N.linkType(c)[0]).join(", ")));
+      });
+      lack.append(el("p", "safety-title", t(r.lacking.count === 1 ? "resolution.lackingOne" : "resolution.lackingMany",
+                                            { count: r.lacking.count })), ul,
+                  el("p", "", t(r.lacking.count > r.lacking.records.length ? "resolution.lackingMore" : "resolution.lackingHint")));
+    }
+    out.push(lack);
+  }
   const label = el("label", "choice resolution-switch");
   const box = el("input");
   Object.assign(box, { type: "checkbox", id: "org-resolution-strict", checked: r.strict, disabled: !r.editable });
@@ -4952,7 +4971,12 @@ function renderImportReport(report) {
     return li;
   }));
   $("#import-body").replaceChildren(...report.records.map(item => importRow(item.rows, keyText(item.key || "01", item.value),
-    scopeOf(item) + (item.noKeyRecord ? " — " + t("import.noKeyRecord") : ""), item.description, item.action)));
+    scopeOf(item) + (item.noKeyRecord ? " — " + t("import.noKeyRecord") : ""), item.description, item.action,
+    item.action === "error" ? [] : item.warnings || [])));
+  const warned = $("#import-safety");
+  const n = report.warningCount || 0;
+  I18N.set(warned, n ? (n === 1 ? "import.warningsOne" : "import.warningsMany") : null, { count: n });
+  warned.hidden = !n;
   $("#import-report").hidden = false;
   // section 2.5.9: keys the import would leave without a record of their own
   const keys = report.keysWithoutRecord || [];
@@ -4969,7 +4993,7 @@ function renderImportReport(report) {
   apply.disabled = count === 0;
 }
 
-function importRow(rows, gtin, scope, description, action) {
+function importRow(rows, gtin, scope, description, action, warnings = []) {
   const tr = document.createElement("tr");
   const badge = document.createElement("span");
   badge.className = "badge badge-" + action;
@@ -4979,6 +5003,7 @@ function importRow(rows, gtin, scope, description, action) {
       const td = document.createElement("td");
       if (i === 1) td.className = "code";
       if (content instanceof Node) td.append(content); else td.textContent = content;
+      if (i === 2) warnings.forEach(w => td.append(el("span", "import-warning", "⚠ " + warningShort(w))));
       tr.append(td);
     });
   return tr;
@@ -5280,6 +5305,7 @@ function currentDefaultType() {
 }
 
 function refreshDefault() {
+  scheduleWarnings();
   const msg = $("#default-msg");
   const landing = $("#landing-page").checked;
   $("#links").classList.toggle("landing", landing);
@@ -5328,6 +5354,92 @@ function collect() {
   };
 }
 
+/* ------------------------------------------------------------------ warnings (ADR 0022, section 2.5) */
+/* The portal asks the server, while the record is edited, what a request for it would receive from a less specific
+   record of the key (safety-critical link types) and whether a batch or serial value is close to another of the key's;
+   the same list comes with the saved record. Warnings never block the save. */
+let warningTimer = null, warningCall = 0;
+
+function scheduleWarnings() {
+  clearTimeout(warningTimer);
+  warningTimer = setTimeout(refreshWarnings, 400);
+}
+
+async function refreshWarnings() {
+  const g = readKey(), l = readQualifiers();
+  if (!CONFIG || isReader() || !g.ok || !l.ok || !(l.pairs || []).length && !state.openKey) {
+    renderWarnings([], !!state.openKey);
+    return;
+  }
+  const call = ++warningCall, open = !!state.openKey && !!$("#links .link-row");
+  // with no record open the targets are not read (there may be none): only the value is compared
+  const body = open ? collect() : { key: g.ai, value: g.value, qualifiers: Object.fromEntries(l.pairs || []), links: [] };
+  try {
+    const answer = await api("POST", "record/warnings", body);
+    if (call === warningCall) renderWarnings(answer.warnings || [], open);
+  } catch (e) {
+    if (call === warningCall) renderWarnings([], open);
+  }
+}
+
+function levelText(pairs) {
+  return pairs && pairs.length ? qualText(pairs) : t("warning.levelKey", { name: t(`key.${readKey().ai}.short`) });
+}
+
+function typeList(types) {
+  const ul = document.createElement("ul");
+  types.forEach(code => {
+    const li = document.createElement("li");
+    li.textContent = I18N.linkType(code)[0];
+    ul.append(li);
+  });
+  return ul;
+}
+
+function warningItem(title, ...parts) {
+  const item = el("div", "safety-item");
+  item.append(el("p", "safety-title", title), ...parts.map(p => typeof p === "string" ? el("p", "", p) : p));
+  return item;
+}
+
+/* Draws the warnings: near-duplicate values under the qualifiers, the others under the targets (only while a record
+   is open: they depend on its links). */
+function renderWarnings(warnings, open) {
+  const record = qualText(splitInformative(readKey().ai, readQualifiers().pairs || []).pairs);
+  const dup = [], safety = [];
+  warnings.forEach(w => {
+    const p = w.params || {};
+    if (w.code === "warning.nearDuplicate") {
+      const name = t(`qual.${p.ai}.item`, { value: p.existing });
+      dup.push(warningItem(t("warning.nearDuplicate.title", { name }),
+                           t("warning.nearDuplicate.text", { value: p.value, existing: p.existing })));
+    } else if (w.code === "warning.walkUp" && open) {
+      safety.push(warningItem(t("warning.walkUp.title"),
+                              t("warning.walkUp.text", { record, level: levelText(p.level) }), typeList(p.types),
+                              t("warning.walkUp.advice"), t(p.strict ? "warning.walkUp.strict" : "warning.walkUp.strictHint")));
+    } else if (w.code === "warning.productLevel" && open) {
+      const list = p.values.map(qualText).join("; ") + (p.count > p.values.length ? " …" : "");
+      safety.push(warningItem(t("warning.productLevel.title"),
+                              t("warning.productLevel.text", { count: p.count, list }), typeList(p.types),
+                              t(p.strict ? "warning.strictOn" : "warning.strictOff")));
+    }
+  });
+  $("#dup-warnings").replaceChildren(...dup);
+  $("#dup-warnings").hidden = !dup.length;
+  $("#safety-warnings").replaceChildren(...safety);
+  $("#safety-warnings").hidden = !safety.length;
+}
+
+/* One line of a warning for the import's preview. */
+function warningShort(w) {
+  const p = w.params || {};
+  if (w.code === "warning.walkUp") {
+    return t("warning.walkUp.short", { types: p.types.map(c => I18N.linkType(c)[0]).join(", "), level: levelText(p.level) });
+  }
+  if (w.code === "warning.productLevel") return t("warning.productLevel.short", { count: p.count });
+  return t("warning.nearDuplicate.short", { value: p.value, existing: p.existing });
+}
+
 /* ------------------------------------------------------------------ save / delete */
 async function save(event) {
   event.preventDefault();
@@ -5359,6 +5471,7 @@ async function save(event) {
     $("#delete").hidden = false;
     setPublished(true);
     showStatus("ok", result.code);
+    renderWarnings(result.warnings || [], true);
     checkLinks();                       // warns about targets that do not answer; never blocks the save
   } catch (e) {
     showStatus("error", e.code, e.params);

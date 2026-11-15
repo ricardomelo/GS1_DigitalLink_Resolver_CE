@@ -102,7 +102,7 @@ Scope `records:read`.
 
 `PUT /portal/api/v1/records/{key}/{value}` — Creates or replaces one record
 
-Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed.
+Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed. The answer lists `warnings` about safety-critical link types and near-duplicate batch or serial values (ADR 0022, section 2.5); they never refuse the save.
 
 | Parameter | In | Required | Type | Meaning |
 |---|---|---|---|---|
@@ -253,6 +253,16 @@ Scope `labels:read`. X-Symbol names the 2D symbol and X-Dimension its X-dimensio
 | `code` | yes | string (one of `save.created`, `save.updated`) |  |
 | `created` | yes | boolean |  |
 | `digitalLink` | yes | string |  |
+| `warnings` | yes | array of [Warning](#schema-warning) | What a request for the saved record would receive from another record of its key, and batch or serial values close to another of the key's. Never a refusal: the record is saved. |
+
+### Schema: Warning
+
+A warning on safety-critical link types (gs1:recallStatus, gs1:safetyInfo, gs1:epil, gs1:smpc, gs1:eifu) or a near-duplicate value. `warning.walkUp`: the record lacks `types` that the record of qualifiers `level` holds (`[]`: the key's own record); a request for this record receives that record's links or, when `strict` is true (the organisation's strict mode), a 404. `warning.productLevel`: the key's own record holds `types` while the key has `count` batch or serial records (`values`: the qualifiers of the first five); those without their own link of a type receive this one. `warning.nearDuplicate`: the value `value` of AI `ai` differs from the key's existing `existing` only in letter case, spaces, `-` `.` `/` or O/0 and I/1.
+
+| Field | Required | Type | Meaning |
+|---|---|---|---|
+| `code` | yes | string (one of `warning.walkUp`, `warning.productLevel`, `warning.nearDuplicate`) |  |
+| `params` | yes | object |  |
 
 ### Schema: Stats
 

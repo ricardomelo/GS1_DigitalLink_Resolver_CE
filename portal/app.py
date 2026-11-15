@@ -51,6 +51,7 @@ import overview
 import privacy
 import requestlog
 import resolution
+import safety
 import sheet
 import sso
 import store
@@ -1390,7 +1391,50 @@ def save_record():
         store_record(anchor, [], key_doc)        # first, so the qualified record is never without a default above it
     created = store_record(anchor, pairs, doc)
     code = ("save.createdWithKey" if key_doc else "save.created") if created else ("save.updatedWithKey" if key_doc else "save.updated")
-    return message(code, 201 if created else 200, digitalLink=uri, created=created, keyRecordCreated=bool(key_doc))
+    return message(code, 201 if created else 200, digitalLink=uri, created=created, keyRecordCreated=bool(key_doc),
+                   warnings=saved_warnings(anchor, pairs, doc))
+
+
+def strict_for(anchor: str) -> bool:
+    """Whether the strict mode for safety-critical link types is on for the organisation that owns the key (ADR 0022,
+    section 2.4); off when the portal's database cannot say."""
+    try:
+        return resolution.strict(tenants.owner(anchor, getattr(g, "tenants", None) or []))["strict"]
+    except PyMongoError as exc:
+        log.warning("Strict mode not read for %s: %s", anchor, exc)
+        return False
+
+
+def saved_warnings(anchor: str, pairs: list, doc: dict) -> list[dict]:
+    """The warnings of ADR 0022, section 2.5, for a record just saved (the editor and the tenant API); an empty list
+    when the key's records cannot be read again, never a failed save."""
+    try:
+        entries, _ = read_entries(anchor)
+    except UpstreamError as exc:
+        log.warning("Warnings not computed for %s: %s", anchor, exc)
+        return []
+    return safety.check(pairs, gs1.pairs_from(doc.get("informativeQualifiers")), doc.get("links"), entries,
+                        strict_for(anchor))
+
+
+@app.post("/portal/api/record/warnings")
+@require_login
+@role_required("editor")
+def record_warnings():
+    """The warnings of ADR 0022, section 2.5, for the record the editor holds, before it is saved: the same body as
+    POST /portal/api/record (key, value, qualifiers, links); nothing is written. A record the editor cannot yet
+    describe (an invalid key or qualifier) has no warnings."""
+    data = request.get_json(silent=True) or {}
+    try:
+        anchor = request_key(data)
+        pairs, informative = request_record(data, anchor)
+    except (ValidationError, ValueError, TypeError, AttributeError):
+        return jsonify({"warnings": []})
+    if not gs1.split_anchor(anchor) or not allowed(anchor):
+        return jsonify({"warnings": []})
+    entries, _ = read_entries(anchor)
+    rows = [row for row in data.get("links") or [] if isinstance(row, dict)]
+    return jsonify({"warnings": safety.check(pairs, informative, rows, entries, strict_for(anchor))})
 
 
 def key_record_document(anchor: str, pairs: list, doc: dict, request_data) -> dict | None:
@@ -1874,7 +1918,21 @@ def import_preview():
     # records each keep their own default target: no shared default to agree on; compared in the form they are stored.
     explicit = {anchor for anchor, lines in existing.items() if lines and lines[0].get("defaultLinktype") == gs1.LANDING_TYPE}
     explicit |= {c[2] for c in candidates if c[4]["defaultLinktype"] == gs1.LANDING_TYPE}
+    # The key's records as they will be after the import (the file's records over the stored ones), for the warnings
+    # of ADR 0022, section 2.5
+    after: dict[str, list[dict]] = {}
+    for anchor, lines in existing.items():
+        after[anchor] = list(lines)
+    for _, _, anchor, _, doc, _ in candidates:
+        lines = after.setdefault(anchor, [])
+        lines[:] = [e for e in lines if not gs1.qualifiers_match(e.get("qualifiers"), doc.get("qualifiers", []))] + [doc]
+    strict_keys = {}
     for item, record, anchor, pairs, doc, informative in candidates:
+        if anchor not in strict_keys:
+            strict_keys[anchor] = strict_for(anchor)
+        found = safety.check(pairs, informative, doc["links"], after.get(anchor, []), strict_keys[anchor])
+        if found:
+            item["warnings"] = found
         entries = existing.get(anchor, [])
         target = find_entry(entries, doc.get("qualifiers", []))
         others = [e for e in entries if e is not target]
@@ -1931,7 +1989,9 @@ def import_preview():
     counts = {action: sum(1 for i in report if i["action"] == action)
               for action in ("create", "update", "unchanged", "error")}
     errors.sort(key=lambda e: e["row"])
-    return jsonify({"token": token, "records": report, "errors": errors, "counts": counts, "links": to_check,
+    warned = sum(1 for i in report if i.get("warnings") and i["action"] != "error")
+    return jsonify({"token": token, "records": report, "errors": errors, "counts": counts, "warningCount": warned,
+                    "links": to_check,
                     "keysWithoutRecord": [{"key": gs1.split_anchor(k["anchor"])[0], "value": gs1.split_anchor(k["anchor"])[1],
                                            "rows": k["rows"], "description": k["doc"]["itemDescription"]}
                                           for k in key_records.values()]})
@@ -2386,6 +2446,18 @@ def notify_expiring_keys() -> int:
 
 
 # --------------------------------------------------------------------------- tenants (server administrators)
+def lacking_safety(tenant_id: str | None) -> dict | None:
+    """The batch and serial records of an organisation (None: the operator's keys) that lack a safety-critical link
+    type a less specific record of their key holds (ADR 0022, section 2.5): {"count", "records": the first ten}; None
+    when the resolver cannot be read."""
+    try:
+        lines = summary_with_links()
+    except UpstreamError:
+        return None
+    found = safety.lacking([line for line in lines if tenants.owner(line["anchor"], g.tenants) == tenant_id])
+    return {"count": len(found), "records": found[:10]}
+
+
 def record_owners() -> dict | None:
     """How many records each tenant holds ({tenant id or None: count}), from the resolver's summary; None when
     the resolver cannot be read (the tenants screen still works)."""
@@ -2497,7 +2569,7 @@ def organisation_page():
         "apikeys": [apikeys.public(d) for d in apikeys.load(chosen)],
         "alerts": monitor.history(chosen, False, limit=20) if chosen else monitor.history(None, True, "-", limit=20),
         "exports": {**exportlimits.describe(tenant), "editable": not g.support},
-        "resolution": {**resolution.strict(chosen), "editable": not g.support},
+        "resolution": {**resolution.strict(chosen), "editable": not g.support, "lacking": lacking_safety(chosen)},
         "prefixChecks": prefix_checks(tenant["prefixes"] if tenant else []),
         "gcpTable": gcp_summary(),
         "canEditPrefixes": bool(g.server_admin and not g.support and tenant),

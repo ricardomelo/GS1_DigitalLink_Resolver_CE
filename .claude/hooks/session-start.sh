@@ -115,16 +115,18 @@ if [[ ! -x "$DEV_TOOLS/bin/docker-compose" ]]; then
 fi
 
 # Ubuntu's nginx for the installer test (service stopped) and nginx 1.30 built from source for the proxy
-# test ("resolve" in upstream blocks needs 1.27.3 or later; Ubuntu 24.04 ships 1.24)
+# test ("resolve" in upstream blocks needs 1.27.3 or later; Ubuntu 24.04 ships 1.24), with the modules of the proxy
+# image's nginx that nginx.conf uses (real_ip)
 if ! command -v nginx >/dev/null; then
   apt-get update -q >/dev/null
   DEBIAN_FRONTEND=noninteractive apt-get install -y -q nginx libpcre2-dev zlib1g-dev libssl-dev >/dev/null
   service nginx stop >/dev/null 2>&1 || true
 fi
-if ! "$DEV_TOOLS/nginx/sbin/nginx" -v 2>&1 | grep -q "nginx/$NGINX_VERSION"; then
+if ! "$DEV_TOOLS/nginx/sbin/nginx" -V 2>&1 | grep -q "nginx/$NGINX_VERSION" \
+    || ! "$DEV_TOOLS/nginx/sbin/nginx" -V 2>&1 | grep -q -- "--with-http_realip_module"; then
   src=$(mktemp -d)
   git clone -q --depth 1 --branch "release-$NGINX_VERSION" https://github.com/nginx/nginx.git "$src"
-  (cd "$src" && ./auto/configure --prefix="$DEV_TOOLS/nginx" --with-http_ssl_module >/dev/null \
+  (cd "$src" && ./auto/configure --prefix="$DEV_TOOLS/nginx" --with-http_ssl_module --with-http_realip_module >/dev/null \
     && make -j"$(nproc)" >/dev/null && make install >/dev/null)
   rm -rf "$src"
 fi

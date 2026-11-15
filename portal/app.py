@@ -253,8 +253,11 @@ throttle = LoginThrottle()
 
 
 def client_address() -> str:
-    """Address of the browser as seen through the proxies (X-Forwarded-For), for the sign-in throttle."""
-    return request.access_route[0] if request.access_route else (request.remote_addr or "?")
+    """Address of the browser, for the sign-in throttle and the audit trail: the last X-Forwarded-For address, which
+    the installation's proxy sets (not appends) to the client it resolved through its trusted proxies
+    (frontend_proxy_server/nginx.conf, real_ip). The first address is whatever the client wrote: trusting it let
+    anyone rotate it past the throttle per address, or charge their failures to another address."""
+    return request.access_route[-1] if request.access_route else (request.remote_addr or "?")
 
 
 def session_ends_in() -> float:

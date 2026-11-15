@@ -1,23 +1,27 @@
 #!/bin/sh
 # Who may reach the official data entry API through the proxy (/api and /swaggerui;
-# Documentation/adr/0021-data-entry-api-closed.md). The nginx image runs this script from /docker-entrypoint.d before
-# nginx starts; it writes the body of the "geo $data_entry_api_allowed" block of nginx.conf:
+# Documentation/adr/0021-data-entry-api-closed.md) and which proxies in front name the client. The nginx image runs
+# this script from /docker-entrypoint.d before nginx starts; it writes the body of the "geo $data_entry_api_allowed"
+# block of nginx.conf (/etc/nginx/api-access.conf) and the trusted proxies of its real_ip settings
+# (/etc/nginx/real-ip.conf: the client's address for the allowed list, the portal's sign-in throttle and its audit
+# trail, and the resolver's location lookup):
 #
 #   DATA_ENTRY_API_ALLOW    addresses or networks (CIDR) that may use /api and /swaggerui, separated by spaces or
 #                           commas; "all" opens both to everyone. Empty (the default): closed to every address, and
 #                           the portal, which calls the service inside Docker's network, is not affected.
-#   PROXY_TRUSTED_PROXIES   addresses of proxies in front of this one whose X-Forwarded-For names the client (an
-#                           external load balancer). The host's nginx is trusted without being listed when
+#   PROXY_TRUSTED_PROXIES   addresses or networks of proxies in front of this one whose X-Forwarded-For names the
+#                           client (an external load balancer); a chain of them is walked from its end. The host's nginx is trusted without being listed when
 #                           PROXY_BIND_ADDRESS is a loopback address: only processes on the server reach the port then,
 #                           and they arrive from the address of the container's gateway.
 #   PROXY_BIND_ADDRESS      the address Docker publishes the proxy on (docker-compose.yml).
 #
 # An entry that is not an address or a network is left out with a warning (it opens nothing); the proxy still
-# starts, so a typing error never takes the resolver down. For the tests: API_ACCESS_FILE (the file written) and
-# API_ACCESS_ROUTES (the kernel's routing table, read for the gateway).
+# starts, so a typing error never takes the resolver down. For the tests: API_ACCESS_FILE and REAL_IP_FILE (the files
+# written) and API_ACCESS_ROUTES (the kernel's routing table, read for the gateway).
 set -eu
 
 OUT="${API_ACCESS_FILE:-/etc/nginx/api-access.conf}"
+REAL_IP="${REAL_IP_FILE:-/etc/nginx/real-ip.conf}"
 ROUTES="${API_ACCESS_ROUTES:-/proc/net/route}"
 
 say() { echo "api-access: $*" >&2; }
@@ -59,17 +63,23 @@ gateway() {
 
 entries() { printf '%s\n' "$1" | tr ',' ' '; }
 
-tmp="$OUT.tmp.$$"
+tmp="$REAL_IP.tmp.$$"
 {
   echo "# Written by api-access.sh when the proxy starts; changes here are lost. See nginx.conf."
   case "${PROXY_BIND_ADDRESS:-}" in
     127.*|::1|localhost)
       gw=$(gateway)
-      [ -n "$gw" ] && echo "proxy $gw;   # the host's own proxy (PROXY_BIND_ADDRESS is a loopback address)" ;;
+      [ -n "$gw" ] && echo "set_real_ip_from $gw;   # the host's own proxy (PROXY_BIND_ADDRESS is a loopback address)" ;;
   esac
   for entry in $(entries "${PROXY_TRUSTED_PROXIES:-}"); do
-    if is_address "$entry"; then echo "proxy $entry;"; else say "PROXY_TRUSTED_PROXIES: '$entry' left out (not an address)"; fi
+    if is_address "$entry"; then echo "set_real_ip_from $entry;"; else say "PROXY_TRUSTED_PROXIES: '$entry' left out (not an address)"; fi
   done
+} > "$tmp"
+mv "$tmp" "$REAL_IP"
+
+tmp="$OUT.tmp.$$"
+{
+  echo "# Written by api-access.sh when the proxy starts; changes here are lost. See nginx.conf."
   for entry in $(entries "${DATA_ENTRY_API_ALLOW:-}"); do
     if [ "$entry" = all ]; then
       echo "0.0.0.0/0 1;"; echo "::/0 1;"

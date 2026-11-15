@@ -1560,8 +1560,10 @@ runs imports with the same rules).
   (403) unless `DATA_ENTRY_API_ALLOW` in `.env` lists it: addresses or networks separated by spaces or commas, or
   `all` ([ADR 0021](../adr/0021-data-entry-api-closed.md)). The portal is not affected. Organisations' systems use
   the tenant API with their own keys instead. Behind the host's nginx (`PROXY_BIND_ADDRESS=127.0.0.1`) the client's
-  address is the one it names; behind another proxy (an external load balancer) list that proxy in
-  `PROXY_TRUSTED_PROXIES`. After a change: `docker compose up -d frontend-proxy-service`; the proxy's log says to whom
+  address is the one it names; behind another proxy (an external load balancer, a CDN) list that proxy's addresses or
+  networks in `PROXY_TRUSTED_PROXIES`. The same address serves the portal's sign-in limits per address, its audit
+  trail and the resolver's approximate location: behind a proxy not listed, every client shares its address. After a
+  change: `docker compose up -d frontend-proxy-service`; the proxy's log says to whom
   the API is open (`docker compose logs frontend-proxy-service | grep api-access`).
 - The portal is given no root database credentials: its MongoDB user may read and write the portal's own
   database only (`readWrite` on `PORTAL_DB_NAME`); only the one-shot `portal-db-init` service receives

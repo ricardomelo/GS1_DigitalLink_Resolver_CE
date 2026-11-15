@@ -45,7 +45,8 @@ from playwright.sync_api import sync_playwright
 PACKAGE = Path(__file__).resolve().parents[2]
 NGINX_CONF = PACKAGE / "frontend_proxy_server" / "nginx.conf"
 API_ACCESS_SCRIPT = PACKAGE / "frontend_proxy_server" / "api-access.sh"
-API_ACCESS_PATH = "/etc/nginx/api-access.conf"   # where the proxy image keeps the file the script writes
+API_ACCESS_PATH = "/etc/nginx/api-access.conf"   # where the proxy image keeps the files the script writes
+REAL_IP_PATH = "/etc/nginx/real-ip.conf"
 HOME_DIR = PACKAGE / "frontend_proxy_server" / "home"
 MOUNT_PATH = "/usr/share/nginx/home"   # where the proxy image keeps the files
 
@@ -155,7 +156,9 @@ class Replica:
                     body, kind = LOGO_PNG, "image/png"
                 else:
                     body = json.dumps({"upstream": name, "replica": address, "path": self.path,
-                                       "host": self.headers.get("Host")}).encode()
+                                       "host": self.headers.get("Host"),
+                                       "realIp": self.headers.get("X-Real-IP"),
+                                       "forwardedFor": self.headers.get("X-Forwarded-For")}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", kind)
                 self.send_header("Content-Length", str(len(body)))
@@ -208,6 +211,7 @@ def start_nginx(workdir: Path, dns: StubDNS, ports: dict[str, int]) -> tuple[sub
     conf = conf.replace("listen 80;", f"listen 127.0.0.1:{listen};")
     conf = conf.replace(MOUNT_PATH, str(HOME_DIR))
     conf = conf.replace(API_ACCESS_PATH, str(workdir / "api-access.conf"))
+    conf = conf.replace(REAL_IP_PATH, str(workdir / "real-ip.conf"))
     write_api_access(workdir, {})                      # as the container starts without the settings: closed
     for service, port in ports.items():
         conf = conf.replace(f"{service}:{PORTS[service]}", f"{service}:{port}")
@@ -240,7 +244,7 @@ def write_api_access(workdir: Path, settings: dict[str, str]) -> str:
     (workdir / "route").write_text("Iface\tDestination\tGateway\tFlags\neth0\t00000000\t0100007F\t0003\n"
                                    "eth0\t000011AC\t00000000\t0001\n")
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "API_ACCESS_FILE": str(workdir / "api-access.conf"),
-           "API_ACCESS_ROUTES": str(workdir / "route"), **settings}
+           "REAL_IP_FILE": str(workdir / "real-ip.conf"), "API_ACCESS_ROUTES": str(workdir / "route"), **settings}
     run = subprocess.run(["sh", str(API_ACCESS_SCRIPT)], env=env, capture_output=True, text=True)
     check(run.returncode == 0, f"api-access.sh runs with {settings or 'no settings'}" + (f" ({run.stderr.strip()})" if run.returncode else ""))
     return run.stderr
@@ -403,6 +407,55 @@ def api_access_checks(base: str, workdir: Path) -> None:
     reload_nginx(workdir)
     status, reached = api_reached(base)
     check(status == 200 and reached, "DATA_ENTRY_API_ALLOW=all: open to every address")
+
+    write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "127.0.0.1"})
+    reload_nginx(workdir)
+
+
+def seen_address(base: str, path: str, forwarded: str | None = None) -> tuple[str | None, str | None]:
+    """X-Real-IP and X-Forwarded-For as the service behind the proxy received them."""
+    status, _, body = fetch(base + path, headers={"X-Forwarded-For": forwarded} if forwarded else None)
+    data = json.loads(body) if status == 200 else {}
+    return data.get("realIp"), data.get("forwardedFor")
+
+
+def client_address_checks(base: str, workdir: Path) -> None:
+    """The client's address the services receive (finding F-004: the portal trusted the first X-Forwarded-For
+    address, which the client writes). Ends with the file of a container started without trusted proxies."""
+    write_api_access(workdir, {})
+    reload_nginx(workdir)
+    for path in ("/portal/", "/01/09506000134352", "/api/docs"):
+        if path == "/api/docs":
+            write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "127.0.0.1"})
+            reload_nginx(workdir)
+        seen = seen_address(base, path, forwarded="198.51.100.66, 203.0.113.9")
+        check(seen == ("127.0.0.1", "127.0.0.1"), f"no trusted proxy: {path} receives the connection's address alone in "
+              f"X-Real-IP and X-Forwarded-For, whatever the client wrote ({seen})")
+    seen = seen_address(base, "/portal/")
+    check(seen == ("127.0.0.1", "127.0.0.1"), f"…and without X-Forwarded-For too ({seen})")
+
+    write_api_access(workdir, {"PROXY_TRUSTED_PROXIES": "127.0.0.1"})
+    reload_nginx(workdir)
+    for path in ("/portal/", "/01/09506000134352"):
+        seen = seen_address(base, path, forwarded="203.0.113.9")
+        check(seen == ("203.0.113.9", "203.0.113.9"), f"behind a trusted proxy: {path} receives the client it named ({seen})")
+    for first in ("198.51.100.1", "198.51.100.2", "10.0.0.1"):
+        seen = seen_address(base, "/portal/", forwarded=f"{first}, 203.0.113.9")
+        check(seen == ("203.0.113.9", "203.0.113.9"), f"…an address the client wrote before it ({first}) is dropped ({seen})")
+    seen = seen_address(base, "/portal/", forwarded="garbage, 203.0.113.9")
+    check(seen == ("203.0.113.9", "203.0.113.9"), f"…a malformed one too ({seen})")
+
+    write_api_access(workdir, {"PROXY_TRUSTED_PROXIES": "127.0.0.1, 192.0.2.0/24"})
+    reload_nginx(workdir)
+    seen = seen_address(base, "/portal/", forwarded="198.51.100.1, 203.0.113.9, 192.0.2.10")
+    check(seen == ("203.0.113.9", "203.0.113.9"), f"a chain of trusted proxies (a network included) is walked from its end ({seen})")
+
+    write_api_access(workdir, {"PROXY_BIND_ADDRESS": "127.0.0.1"})
+    reload_nginx(workdir)
+    seen = seen_address(base, "/portal/", forwarded="198.51.100.1, 203.0.113.9")
+    check(seen == ("203.0.113.9", "203.0.113.9"), f"PROXY_BIND_ADDRESS=127.0.0.1: the host's proxy names the client ({seen})")
+    text = (workdir / "real-ip.conf").read_text()
+    check("set_real_ip_from 127.0.0.1;" in text, "api-access.sh writes the gateway as a trusted proxy in real-ip.conf")
 
     write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "127.0.0.1"})
     reload_nginx(workdir)
@@ -707,6 +760,7 @@ def main() -> int:
         startup_checks(base, cluster)
         routing_checks(base)
         api_access_checks(base, workdir)
+        client_address_checks(base, workdir)
         replica_checks(base, cluster)
         browser_checks(base, port, shots)
     finally:

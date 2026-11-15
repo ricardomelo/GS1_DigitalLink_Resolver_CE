@@ -35,6 +35,15 @@ leaflet and recall notice at once should not be one guess or one leak away from 
    server reach the port then); with any other bind address it is not, because clients may arrive from it (Docker's
    own proxy for IPv6, for example). `PROXY_TRUSTED_PROXIES` lists other proxies in front (an external load balancer,
    `TLS_MODE=external`).
+
+   *Amended on 15 November 2026 (finding F-004):* the client's address is now resolved once for every service, with
+   `real_ip` (`set_real_ip_from` for the same trusted proxies, `real_ip_header X-Forwarded-For`, `real_ip_recursive
+   on`): the first address from the end of `X-Forwarded-For` that is not a trusted proxy, so a chain of proxies (a load
+   balancer, then the host's nginx) is followed. `geo` matches that address without its own `proxy` entries, and the
+   proxy sets it alone in `X-Real-IP` and `X-Forwarded-For` for the resolver, the data entry service and the portal,
+   instead of appending to what the client wrote: the portal read the first address, so anyone could rotate it past the
+   sign-in throttle per address or have failures counted, and journalled, against someone else's. The module is in
+   the nginx image and in nginx.org's packages; the development build adds it.
 4. **The file is written when the container starts** (`frontend_proxy_server/api-access.sh`, run by the nginx image's
    entrypoint from `/docker-entrypoint.d`). An entry that is not an address or a network is left out with a warning in
    the container's log and opens nothing; nginx still starts, so a typing error in the list never takes resolution
@@ -60,7 +69,7 @@ leaflet and recall notice at once should not be one guess or one leak away from 
 |---|---|---|
 | Default | closed, opened by a list | left open and documented (the token stays one leak away from every record); removed from the proxy entirely (no way left for an integration that cannot move at once) |
 | Where | the front-end proxy, in every installation | the host's nginx only (absent with `TLS_MODE=external`, and edited by hand) |
-| Client address | `geo` with trusted proxies, last address of `X-Forwarded-For` | `real_ip` (the same rule, but a module nginx builds may lack; `geo` is always built); the connection's address only (the gateway's, for everyone behind the host's nginx) |
+| Client address | `geo` with trusted proxies, last address of `X-Forwarded-For`; since F-004 `real_ip` with the same trusted proxies, for every service (§3) | `real_ip` at first (a module nginx builds may lack; it is in the image); the connection's address only (the gateway's, for everyone behind the host's nginx); a number of proxies to skip (wrong as soon as the chain changes) |
 | A wrong entry | left out with a warning, nginx starts | the proxy refuses to start (an allowlist typo would stop every scan) |
 | Home page | links removed | kept (a 403 for the public) |
 | Example secrets | refused (token, the portal's password), warned about (MongoDB's root password) | refused all (an installation upgraded from the official project with its database's example password would stop); a warning only (a public token keeps working) |
@@ -74,8 +83,8 @@ leaflet and recall notice at once should not be one guess or one leak away from 
   removal in favour of the tenant API remain steps of item 10.1.
 - An installation started by hand with `.env.example`'s token and a real `FQDN` stops at the upgrade, with a message
   that says which setting to change; MongoDB's example password stays possible until rotated (item 7.2).
-- The fix of the client's address for the portal's own limits ([threat model](../threat-model.md), section 9) is a
-  separate step; this record trusts the same proxies the portal will.
+- The client's address for the portal's own limits ([threat model](../threat-model.md), section 9) follows the same
+  trusted proxies since the amendment of §3 (F-004).
 
 ## 5. Delivery
 

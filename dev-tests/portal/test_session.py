@@ -97,6 +97,36 @@ check("idle limit counts from the last call: renewed session still open",
 check("idle limit: a session without calls for longer is refused", idle.get("/portal/api/config").status_code == 401)
 
 
+# ---------------------------------------------------------------- the client's address (finding F-004)
+# The installation's proxy sets X-Forwarded-For to the one client address it resolved through its trusted proxies
+# (frontend_proxy_server/nginx.conf); what a client wrote before it reaches the portal only when nginx is bypassed or
+# misconfigured, and must never be the address the throttle counts or the audit trail records.
+import store  # noqa: E402
+
+anonymous = portal.app.test_client()
+for n in range(portal.MAX_LOGIN_FAILURES):              # a first address rotated at every attempt, as a forger would
+    anonymous.post("/portal/api/login", json={"username": f"nobody{n}", "password": "wrong"},
+                   headers={**ORIGIN, "X-Forwarded-For": f"10.9.8.{n}, 198.51.100.7"})
+answer = anonymous.post("/portal/api/login", json={"username": "tester", "password": "a-long-test-password"},
+                        headers={**ORIGIN, "X-Forwarded-For": "10.9.8.250, 198.51.100.7"})
+check("throttle per address: a forged first X-Forwarded-For address rotated at every attempt does not escape it",
+      answer.status_code == 429 and answer.get_json().get("code") == "auth.locked", answer.status_code)
+for n in range(portal.MAX_LOGIN_FAILURES):              # failures from 198.51.100.8 naming a victim's address first
+    anonymous.post("/portal/api/login", json={"username": f"nobody{n}", "password": "wrong"},
+                   headers={**ORIGIN, "X-Forwarded-For": "203.0.113.20, 198.51.100.8"})
+answer = portal.app.test_client().post("/portal/api/login", json={"username": "tester", "password": "a-long-test-password"},
+                                       headers={**ORIGIN, "X-Forwarded-For": "203.0.113.20"})
+check("…and failures cannot be charged to another address by writing it first", answer.status_code == 200,
+      answer.status_code)
+store.col("login_failures").delete_many({})
+anonymous.post("/portal/api/login", json={"username": "nobody-traced", "password": "wrong"},
+               headers={**ORIGIN, "X-Forwarded-For": "10.9.8.7, 203.0.113.21"})
+traced = store.col("journal").find_one({"action": "login-failed", "user": "nobody-traced"}) or {}
+check("the audit trail records the address the proxy set, not the one the client wrote",
+      traced.get("detail") == "203.0.113.21", traced.get("detail"))
+store.col("login_failures").delete_many({})
+
+
 # ---------------------------------------------------------------- the page (Chromium)
 def sign_in(page):
     page.goto(BASE)

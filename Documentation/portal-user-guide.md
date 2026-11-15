@@ -301,6 +301,26 @@ the ones in the form) or **Replace the targets**. Nothing is saved until you sel
 
 **Check targets** asks each address whether it answers (section 13); it never stops you from saving.
 
+**Warnings on safety-critical links** ([ADR 0022](adr/0022-answering-level.md) §2.5). Five link types are
+safety-critical: *Recall status*, *Safety information*, the patient leaflet, the summary of product characteristics and
+the electronic instructions for use. While you edit, the portal warns, in an orange box, where a scan could receive a
+link that was not meant for it; a warning never stops you from saving:
+
+- **This record lacks safety-critical links that a broader record holds**, under the targets of a batch or serial
+  number: a request for one of the listed types for this batch receives the link of the product (or of the batch,
+  for a serial number), which may say *not recalled* or be the general leaflet. If that information applies to the
+  batch, nothing to do; if not, add the batch's own links. The box says what happens with the organisation's strict
+  mode on (section 14, *Resolution*): the request receives *not available for this batch* instead. The box follows the
+  form: add a recall link and the recall leaves the list, before you save.
+- **Batches without a record of their own receive these links**, under the targets of the product, when it holds
+  safety-critical links and the identifier has batch or serial records: the box names them and the types, and whether
+  the strict mode is on.
+- **Batch LOTA already exists for this key**, under the qualifiers, when the batch or serial number typed differs from
+  an existing one only in capitals, spaces, hyphens, dots, slashes, or O and I for 0 and 1 (*lota*, *L0TA*,
+  *LOT-A*): GS1 values are exact, so a code printed with one does not find the other. Check the value on the pack.
+
+The same warnings come with each record saved through the tenant API (`warnings`) and in the import's preview.
+
 **Default target: the item's page.** Tick this option (above the targets) when the code should open a page with
 **all** the targets instead of only the first one: the resolver makes that page — mobile first, one large button with an
 icon for each type of target, in the language of the phone when the target exists in it, otherwise in the best
@@ -646,8 +666,10 @@ record; the **Default** column marks the target that opens first.
 2. Optionally tick **Also check that the addresses answer** (section 13).
 3. The portal checks every row with the editor's rules and shows a **preview** — *New*, *Changed*,
    *Unchanged*, *With errors* — and, for every wrong row, the row number and the reason (an invalid
-   identifier, an address without `https://`, an unknown language, two default targets…). Nothing has
-   been written yet.
+   identifier, an address without `https://`, an unknown language, two default targets…). A record with a
+   **warning** on safety-critical links or a near-duplicate batch value (section 4, *Warnings on safety-critical
+   links*) is marked ⚠ in its row with the reason, and the number of such records is shown above the table; it is
+   imported all the same. Nothing has been written yet.
 4. **Import records (n)** writes the valid records; records with errors are skipped. Correct the
    spreadsheet and import it again to include them.
 
@@ -871,7 +893,9 @@ and the item's page are not affected. The table on the tab shows four requests w
 minute, and the audit trail records it (*Strict mode changed*). Before switching it on, register a record (or at least
 these links) for every batch that should answer; *Requests* then shows the requests kept back as *Withheld by the
 strict mode*. On the operator's page the same tab sets it for the codes no organisation holds. Off by default; read
-only in support access.
+only in support access. Under the table the tab counts the **batch or serial records that lack a safety-critical
+link** a broader record of their identifier holds, and lists the first ten with the types each lacks: those are the
+requests the strict mode would withhold, and the records to open in the editor before switching it on.
 
 ### Alerts (administrators)
 

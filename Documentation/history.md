@@ -1169,6 +1169,22 @@ mutations, all caught.
 - The safety-critical list lives in two images (resolver and portal) that share no code: a check of `strict_mode`
   reads the resolver's source and compares, so the two cannot drift apart unnoticed.
 
+## Session 31 — warnings on safety-critical links and near-duplicate batches
+
+Step 4 of [ADR 0022](adr/0022-answering-level.md), the last, with the owner's standing instruction (the mock-ups 4, 5
+and 6 of session 29 taken as approved). `portal/safety.py` works out, for a record about to be saved and the other
+records of its key, which safety-critical types a request for it would receive from a broader record (and whether the
+strict mode withholds them), whether a product's safety links also answer for its batches, and which batch or serial
+values are close to an existing one (`9114e49`). The editor asks while the record is edited and shows the boxes of the
+mock-ups; the tenant API answers `warnings`; the import's preview marks the rows; the *Resolution* tab counts the
+batch and serial records lacking such a link. 54 new checks in two new programs (`safety_warnings` 43,
+`safety_warnings_e2e` 11); 13 mutations, all caught.
+
+- The import's preview warns on the key's records as they will be after the import, so a file that adds a batch and
+  the product's recall link together is warned about once, as the editor would have done.
+- An identifier that already existed in the import dialog (`import-warnings`, the list of links that did not answer)
+  made the first version of the count invisible; the end-to-end check caught it.
+
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|
 | Identification | GTIN + optional batch | 16 primary keys and 9 qualifiers, with the combinations of the standard |

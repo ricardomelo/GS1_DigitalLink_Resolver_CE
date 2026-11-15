@@ -5,6 +5,21 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
 
+### Warnings on safety-critical links and near-duplicate batches (session 31)
+- **Added: the portal warns where a scan could receive a link not meant for it** ([ADR 0022](../adr/0022-answering-level.md)
+  §2.5), for the five safety-critical link types. In the editor, an orange box under the targets of a batch or serial
+  record that lacks a type a broader record holds (*This record lacks safety-critical links that a broader record
+  holds*: the types, whose link the request receives, and what the strict mode would do), updated as the form changes;
+  under the targets of a product holding such links while the identifier has batch or serial records (*Batches without
+  a record of their own receive these links*); and under the qualifiers when a batch or serial value differs from an
+  existing one only in capitals, spaces, hyphens, dots, slashes, or O/0 and I/1 (*Batch LOTA already exists for this
+  key*). A warning never stops a save.
+- The **tenant API** answers each saved record with `warnings` (`warning.walkUp`, `warning.productLevel`,
+  `warning.nearDuplicate`, with their parameters; described in `openapi.json`). The **import's preview** marks each
+  record with a warning (⚠ and the reason) and counts them; they are imported all the same. The organisation's
+  **Resolution** tab counts the batch and serial records lacking such a link and lists the first ten. Texts in the
+  twelve languages. Commit `9114e49`.
+
 ### The strict mode for safety-critical link types (session 30)
 - **Added: a strict mode per organisation for five safety-critical link types** (`gs1:recallStatus`,
   `gs1:safetyInfo`, `gs1:epil`, `gs1:smpc`, `gs1:eifu`; [ADR 0022](../adr/0022-answering-level.md) §2.4). Off by

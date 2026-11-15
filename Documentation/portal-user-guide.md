@@ -396,6 +396,9 @@ deleting the record without qualifiers keeps the batches and serial numbers. Aft
 no longer leads to those targets — a scan of a batch then uses the product's targets, if the product has
 a record.
 
+The deletion removes that record in one step: the identifier's other records keep answering throughout, and if the
+resolver cannot delete it (*The resolver could not delete the record.*) nothing is removed, so you can simply try
+again. An identifier holding an old record that today's rules would refuse does not stop you deleting another one.
 The deletion is kept in the history and in the audit trail, so the record can be recreated from there.
 
 ## 8. History of a record

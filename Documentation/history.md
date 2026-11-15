@@ -1185,6 +1185,23 @@ batch and serial records lacking such a link. 54 new checks in two new programs 
 - An identifier that already existed in the import dialog (`import-warnings`, the list of links that did not answer)
   made the first version of the count invisible; the end-to-end check caught it.
 
+## Session 32 — deleting one record without rewriting the key
+
+F-002 of the security assessment ([ADR 0020](adr/0020-security-assessment.md)), with the owner's standing
+instruction (the recommended option: a record-level delete in the data entry API rather than journalling the key
+before rewriting it). The official API deletes whole documents only, so deleting a batch meant deleting the product's
+document and writing its other records back: a window in which every code of the product answered 404, and no record
+at all if the second call failed. [ADR 0023](adr/0023-record-level-delete.md) gives the data entry API a
+`DELETE` with `removeRecord` that removes one record in one conditional write of the document, and the portal uses it
+for the editor's delete, the tenant API's and *Fix serial numbers*, which now writes each serial number alone before
+removing the old record (`f5642c5`). 27 checks in a new program (`record_delete`), 19 in `data_entry_api` and 9 in
+`mock_parity`; 12 mutations, all caught.
+
+- The write is conditional on the records read, so a change made by another writer in between is not lost: the
+  operation reads again. The general lost update of a key's document (a revision on every write) stays open.
+- Nothing is written back any more, so the guard that refused a deletion when the key held a record the API now
+  refuses had nothing left to guard; the check that proved it now proves the deletion goes through.
+
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|
 | Identification | GTIN + optional batch | 16 primary keys and 9 qualifiers, with the combinations of the standard |

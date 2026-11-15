@@ -5,6 +5,19 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
 
+### Deleting one record without rewriting the key (session 32)
+- **Changed: deleting one record no longer rewrites the identifier's other records**
+  ([ADR 0023](../adr/0023-record-level-delete.md)). The data entry API gains a record-level delete: `DELETE
+  /api/{ai}/{value}` with `{"removeRecord": true, "qualifiers": [...]}` removes the record with those qualifiers and
+  keeps the others, in one conditional write of the key's document (read again when another writer changed it in
+  between; 409 after three attempts; the document goes with its last record). A body without `removeRecord`, or no
+  body, behaves as before. The portal uses it for *Delete this record*, the tenant API's `DELETE /records/…` and *Fix
+  serial numbers* (each serial number written alone first, then the old record removed). Before, the portal deleted
+  the identifier's whole document and wrote the other records back, so its codes answered 404 between the two calls,
+  and for good when the second one failed; a failed delete now leaves every record in place. An identifier holding a
+  record the data entry API would now refuse no longer blocks the deletion of another record. The message *The
+  deletion failed and the original record was restored* is gone. Commit `f5642c5`.
+
 ### Warnings on safety-critical links and near-duplicate batches (session 31)
 - **Added: the portal warns where a scan could receive a link not meant for it** ([ADR 0022](../adr/0022-answering-level.md)
   §2.5), for the five safety-critical link types. In the editor, an orange box under the targets of a batch or serial

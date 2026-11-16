@@ -4,7 +4,8 @@ Portal user store: the "users" collection of the portal's database (store.py), o
     {"_id": "maria", "hash": "<werkzeug hash>", "role": "editor", "prefixes": ["7891234"],
      "tenant": "t-3f9a1c0b2e7d", "email": "maria@example.org",
      "disabled": false, "mustChange": false, "created": "…", "lastLogin": "…",
-     "invited": "…", "language": "pt-BR", "languageChosen": true, "notify": {"jobs": true}}
+     "invited": "…", "language": "pt-BR", "languageChosen": true, "notify": {"jobs": true},
+     "sso": {"iss": "https://login.example.com", "sub": "…", "at": "…"}}
 
 Roles, from least to most: reader (consults and exports), editor (also changes records), admin (also
 manages users and sees the audit trail). "tenant" is the organisation the user belongs to (tenants.py,
@@ -19,6 +20,10 @@ E-mail (Documentation/adr/0004-e-mail.md, section 3.4): "invited" is the date of
 has no password of its own (an empty hash: no password signs in); "language" is the language of the user's
 messages (taken from the page at each sign-in until "languageChosen"); "notify" holds the optional categories of
 messages the user switched on (notify.py).
+
+Single sign-on (Documentation/adr/0025-sso-domain-proof-and-subject.md): "sso" is the provider's issuer and subject the
+account was bound to at its first sign-in through single sign-on (bind_sso()); an administrator forgets it, and a new
+e-mail address drops it.
 
 Writes run under a lock shared by every replica (store.lock), so two administrators acting at the same
 moment cannot both remove the last enabled server administrator. Every lookup reads the database, so changes
@@ -44,8 +49,8 @@ EMAIL = re.compile(r"^[^@\s\x00-\x1f\x7f]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}
                    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$")
 EMAIL_MAX = 254
 FIELDS = ("hash", "role", "prefixes", "tenant", "email", "disabled", "mustChange", "created", "lastLogin",
-          "invited", "language", "languageChosen", "notify")
-OPTIONAL_FIELDS = ("tenant", "email", "invited", "language", "languageChosen", "notify")   # absent when empty
+          "invited", "language", "languageChosen", "notify", "sso")
+OPTIONAL_FIELDS = ("tenant", "email", "invited", "language", "languageChosen", "notify", "sso")   # absent when empty
 # The languages of the interface and the e-mails (Documentation/adr/0014-interface-languages.md)
 LANGUAGES = ("en-GB", "pt-BR", "es", "fr", "de", "it", "tr", "zh-Hans", "ja", "ko", "hi", "ar")
 # Hash of a random password, checked when the username does not exist so that response
@@ -77,7 +82,7 @@ def _account(value) -> dict:
         value = {"hash": value, "role": "admin"}
     account = {"hash": "", "role": "admin", "prefixes": [], "tenant": None, "email": None, "disabled": False,
                "mustChange": False, "created": None, "lastLogin": None, "invited": None, "language": None,
-               "languageChosen": False, "notify": {}}
+               "languageChosen": False, "notify": {}, "sso": None}
     account.update({k: v for k, v in value.items() if k in FIELDS})
     if account["role"] not in ROLES:
         account["role"] = "reader"
@@ -204,6 +209,15 @@ def clean_prefixes(values) -> list[str]:
     return prefixes
 
 
+def _set_email(username: str, account: dict, email) -> None:
+    """A new e-mail address (checked: valid, unique); a changed one forgets the single sign-on binding."""
+    new_email = clean_email(email)
+    _check_email(username, new_email)
+    if new_email != account["email"]:
+        account["sso"] = None
+    account["email"] = new_email
+
+
 def set_password(username: str, password: str, must_change: bool = False, role: str | None = None,
                  prefixes=None, tenant: str | None = None, email=None) -> None:
     """Sets the password, creating the account when needed (role admin unless given; the tenant only when
@@ -220,8 +234,7 @@ def set_password(username: str, password: str, must_change: bool = False, role: 
         if prefixes is not None:
             account["prefixes"] = clean_prefixes(prefixes)
         if email is not None:
-            account["email"] = clean_email(email)
-            _check_email(username, account["email"])
+            _set_email(username, account, email)
         _check_scope(account["tenant"], account["prefixes"])
         _save(username, account)
 
@@ -255,9 +268,9 @@ def create(username: str, password: str | None, role: str, prefixes=(), must_cha
 
 
 def update(username: str, role: str | None = None, prefixes=None, disabled: bool | None = None,
-           email=None) -> dict:
-    """Changes role, prefixes, e-mail ("" removes it) or state; the last active server administrator cannot
-    lose that status. The tenant never changes."""
+           email=None, sso_forget: bool = False) -> dict:
+    """Changes role, prefixes, e-mail ("" removes it) or state, or forgets the single sign-on binding (a new e-mail
+    forgets it too); the last active server administrator cannot lose that status. The tenant never changes."""
     with locked():
         accounts = load()
         account = accounts.get(username)
@@ -272,8 +285,9 @@ def update(username: str, role: str | None = None, prefixes=None, disabled: bool
         if disabled is not None:
             account["disabled"] = bool(disabled)
         if email is not None:
-            account["email"] = clean_email(email)
-            _check_email(username, account["email"])
+            _set_email(username, account, email)
+        if sso_forget:
+            account["sso"] = None
         _check_scope(account["tenant"], account["prefixes"])
         if not _active_admins(accounts):
             raise UserError("users.lastAdmin")
@@ -369,8 +383,25 @@ def touch_login(username: str) -> None:
         pass
 
 
+def bind_sso(username: str, issuer: str, subject: str) -> str:
+    """Binds the account to a provider's subject at its first sign-in through single sign-on, or checks it later:
+    "bound" (just now), "same", "mismatch" (bound to another subject of this issuer) or "taken" (the subject is bound
+    to another account). A binding to another issuer is replaced (the configuration's issuer changed)."""
+    with locked():
+        if _users().find_one({"sso.iss": issuer, "sso.sub": subject, "_id": {"$ne": username}}, {"_id": 1}):
+            return "taken"
+        account = get(username)
+        bound = (account or {}).get("sso") or {}
+        if bound.get("iss") == issuer:
+            return "same" if bound.get("sub") == subject else "mismatch"
+        _users().update_one({"_id": username}, {"$set": {"sso": {"iss": issuer, "sub": subject, "at": _now()}}})
+        return "bound"
+
+
 def public(username: str, account: dict) -> dict:
-    """What the administration screen shows (never the hash)."""
+    """What the administration screen shows (never the hash); the single sign-on binding, if any."""
+    bound = account.get("sso") or None
     return {"username": username, **{k: account[k] for k in
                                      ("role", "prefixes", "tenant", "email", "disabled", "mustChange", "created",
-                                      "lastLogin", "invited")}}
+                                      "lastLogin", "invited")},
+            "sso": {"issuer": bound.get("iss"), "subject": bound.get("sub"), "at": bound.get("at")} if bound else None}

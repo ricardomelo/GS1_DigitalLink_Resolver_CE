@@ -768,6 +768,10 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .domain-field { display: flex; flex-direction: column; gap: .2rem; font-weight: 500; font-size: .875rem; }
 .domain-field input, .domain-field select { width: auto; min-width: 12rem; }
 .domains-help { margin-top: 1.5rem; }
+.sso-proofs { margin-top: .8rem; display: grid; gap: .6rem; }
+.sso-proof { border-inline-start: 3px solid var(--gs1-orange); padding: .3rem 0 .3rem .8rem; }
+.sso-proof.is-proved { border-inline-start-color: var(--ok); }
+.sso-proof strong.code { font-family: var(--mono); color: var(--gs1-blue); overflow-wrap: anywhere; }
 .domains-help summary { cursor: pointer; color: var(--gs1-blue); font-weight: 600; }
 .opt-domain select { max-width: 100%; }
 .domain-card .user-actions { display: flex; flex-wrap: wrap; gap: .5rem; }

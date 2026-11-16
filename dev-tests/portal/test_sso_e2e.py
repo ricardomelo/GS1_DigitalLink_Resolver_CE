@@ -39,6 +39,7 @@ import tenants  # noqa: E402
 acme = tenants.create("Acme Foods", ["7891234"], "root")
 import app as portal  # noqa: E402
 
+users.create("root", "root-password-long", "admin", must_change=False)     # a server administrator, as every portal has
 users.create("ana", "ana-password-long", "admin", tenant=acme["id"], must_change=False, email="ana@acme.example")
 users.create("edu", "edu-password-long", "editor", tenant=acme["id"], must_change=False, email="edu@acme.example")
 users.create("rui", "rui-password-long", "reader", tenant=acme["id"], must_change=False, email="rui@acme.example")
@@ -100,6 +101,19 @@ with sync_playwright() as p:
     card.locator("button", has_text="Test the provider").click(); page.wait_for_timeout(900)
     check("the provider tested from the screen", "discovery document and keys read" in page.inner_text("#sso-status"),
           page.inner_text("#sso-status"))
+    proof = card.locator(".sso-proof[data-domain='acme.example']")
+    check("the domain waits for its proof, with the TXT record to publish (no approval for an organisation)",
+          "waiting for proof" in proof.inner_text() and "_gs1resolver.acme.example" in proof.inner_text()
+          and "gs1resolver-sso=" in proof.inner_text()
+          and proof.locator("button", has_text="Approve without DNS").count() == 0, proof.inner_text())
+    token = portal.sso.get(acme["id"])["token"]
+    portal.domains.txt_records = lambda name: [f"gs1resolver-sso={token}"] if name == "_gs1resolver.acme.example" else []
+    proof.locator("button", has_text="Verify").click(); page.wait_for_timeout(900)
+    proof = page.locator(f".domain-card[data-scope='{acme['id']}'] .sso-proof[data-domain='acme.example']")
+    check("Verify: the domain proved by DNS, the record no longer asked for",
+          "Domain acme.example proved by DNS." in page.inner_text("#sso-status") and "proved by DNS" in proof.inner_text()
+          and proof.locator("button").count() == 0 and "_gs1resolver" not in proof.inner_text(),
+          (page.inner_text("#sso-status"), proof.inner_text()))
     shot(page, "sso-screen")
     page.click("#user-button"); page.click("#menu-logout"); page.wait_for_timeout(800)
 
@@ -163,6 +177,23 @@ with sync_playwright() as p:
     hidden.append(reader.is_hidden("#requests-csv"))
     check("a role that may not export sees no export button", all(hidden), hidden)
     reader_ctx.close()
+
+    # The account bound at its first sign-in, forgotten by an administrator
+    admin_ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900})
+    admin = admin_ctx.new_page()
+    admin.on("pageerror", lambda e: errors.append(str(e)))
+    sign_in(admin, "ana", "ana-password-long")
+    admin.goto(BASE + "#users"); admin.wait_for_timeout(1200)
+    row = admin.locator(".users-table tbody tr:has(td:text-is('edu'))")
+    check("Users: the account bound to the organisation's account, with the provider's subject on hover",
+          "bound to the organisation's account" in row.inner_text()
+          and "sub-edu@acme.example" in (row.locator(".user-sso").get_attribute("title") or ""), row.inner_text())
+    row.locator("button", has_text="Forget organisation account").click(); admin.wait_for_timeout(300)
+    admin.click("#ask-ok"); admin.wait_for_timeout(1000)
+    row = admin.locator(".users-table tbody tr:has(td:text-is('edu'))")
+    check("…forgotten after the question", users.get("edu")["sso"] is None
+          and row.locator(".user-sso").count() == 0, (users.get("edu")["sso"], admin.inner_text("#users-status")))
+    admin_ctx.close()
 
     # A phone
     phone_ctx = browser.new_context(locale="en-GB", viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)

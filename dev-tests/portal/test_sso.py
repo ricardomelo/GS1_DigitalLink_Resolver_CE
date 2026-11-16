@@ -126,9 +126,58 @@ check("an empty secret field (as the screen sends it) keeps the secret",
       store.col("sso").find_one({"_id": acme["id"]})["clientSecret"] == provider.client_secret)
 r = bia.put(f"/portal/api/sso/{acme['id']}", json=CONFIG, headers=ORIGIN)
 check("another organisation's administrator may not touch it", r.status_code == 403 and code(r) == "sso.scopeOutside")
+
+# ------------------------------------------------------------------ e-mail domains proved (ADR 0025)
+TXT = {}                                           # the stand-in DNS: name -> TXT strings
+portal.domains.txt_records = lambda name: TXT.get(name, [])
+states = {s["domain"]: s for s in item["domainStates"]}
+token = store.col("sso").find_one({"_id": acme["id"]})["token"]
+check("a listed domain waits for its proof; the screen shows the TXT record to publish",
+      states["acme.example"]["proof"] is None and states["acme.example"]["txtName"] == "_gs1resolver.acme.example"
+      and states["acme.example"]["txtValue"] == f"gs1resolver-sso={token}" and len(token) == 32, states)
+r = portal.app.test_client().post("/portal/api/sso/start", json={"email": "edu@acme.example"}, headers=ORIGIN)
+check("…and signs nobody in until then", code(r) == "sso.noProvider", r.get_json())
 r = bia.put(f"/portal/api/sso/{beta['id']}", json={**CONFIG, "domains": ["beta.example", "acme.example"]}, headers=ORIGIN)
-check("a domain belongs to one configuration", code(r) == "sso.domainTaken" and r.get_json()["params"]["domain"]
-      == "acme.example", r.get_json())
+check("another organisation may list a domain nobody has proved", code(r) == "sso.saved", r.get_json())
+r = ana.post(f"/portal/api/sso/{acme['id']}/verify", json={"domain": "acme.example"}, headers=ORIGIN)
+check("verify without the record: refused, naming the record", r.status_code == 422 and code(r) == "sso.txtMissing"
+      and r.get_json()["params"] == {"name": "_gs1resolver.acme.example", "value": f"gs1resolver-sso={token}"},
+      r.get_json())
+r = ana.post(f"/portal/api/sso/{acme['id']}/approve", json={"domain": "acme.example"}, headers=ORIGIN)
+check("an organisation's administrator cannot approve a domain", r.status_code == 403, r.get_json())
+r = root.post(f"/portal/api/sso/{acme['id']}/approve", json={"domain": "acme.example"}, headers=ORIGIN)
+check("a server administrator's approval: refused while another organisation's account uses the domain (rui, Beta)",
+      code(r) == "sso.domainUsed" and r.get_json()["params"]["domain"] == "acme.example", r.get_json())
+TXT["_gs1resolver.acme.example"] = ["v=other", f"gs1resolver-verify=abc", f"gs1resolver-sso={token}"]
+r = ana.post(f"/portal/api/sso/{acme['id']}/verify", json={"domain": "Acme.Example"}, headers=ORIGIN)
+proof = (store.col("sso").find_one({"_id": acme["id"]}).get("proofs") or [{}])[0]
+check("the record published: proved by DNS (beside other records at the name), by whom", code(r) == "sso.domainProved"
+      and r.get_json()["item"]["domainStates"][0]["proof"] == "dns" and proof.get("domain") == "acme.example"
+      and proof.get("by") == "ana" and proof.get("how") == "dns", (r.get_json(), proof))
+TXT["_gs1resolver.acme.example"].append(
+    "gs1resolver-sso=" + store.col("sso").find_one({"_id": beta["id"]})["token"])
+r = bia.post(f"/portal/api/sso/{beta['id']}/verify", json={"domain": "acme.example"}, headers=ORIGIN)
+r2 = root.post(f"/portal/api/sso/{beta['id']}/approve", json={"domain": "acme.example"}, headers=ORIGIN)
+r3 = bia.put(f"/portal/api/sso/{beta['id']}", json={"clientId": provider.client_id}, headers=ORIGIN)
+check("a domain is proved in one configuration: another's verify, approval and save refused", code(r) == "sso.domainTaken"
+      and code(r2) == "sso.domainTaken" and code(r3) == "sso.domainTaken", (code(r), code(r2), code(r3)))
+r = bia.post(f"/portal/api/sso/{beta['id']}/verify", json={"domain": "gamma.example"}, headers=ORIGIN)
+check("…and a domain the configuration does not list", code(r) == "sso.domainNotListed", r.get_json())
+bia.put(f"/portal/api/sso/{beta['id']}", json={"domains": ["beta.example"]}, headers=ORIGIN)
+r = root.post(f"/portal/api/sso/{beta['id']}/approve", json={"domain": "beta.example"}, headers=ORIGIN)
+check("a server administrator approves a domain nobody else uses", code(r) == "sso.domainApproved"
+      and r.get_json()["item"]["domainStates"][0]["proof"] == "admin"
+      and r.get_json()["item"]["domainStates"][0]["provedBy"] == "root", r.get_json())
+bia.put(f"/portal/api/sso/{beta['id']}", json={"domains": ["beta.example", "beta2.example"]}, headers=ORIGIN)
+r = bia.put(f"/portal/api/sso/{beta['id']}", json={"domains": ["beta2.example"]}, headers=ORIGIN)
+r2 = bia.put(f"/portal/api/sso/{beta['id']}", json={"domains": ["beta.example", "beta2.example"]}, headers=ORIGIN)
+check("a domain removed from the list loses its proof; listed again, it waits again",
+      [s["proof"] for s in r.get_json()["item"]["domainStates"]] == [None]
+      and [s["proof"] for s in r2.get_json()["item"]["domainStates"]] == [None, None], r2.get_json())
+domain_events = [e["detail"] for e in store.col("journal").find({"action": "sso-domain"})]
+check("the journal: each proof and approval", domain_events == ["acme.example proved by DNS", "beta.example approved"],
+      domain_events)
+bia.delete(f"/portal/api/sso/{beta['id']}", headers=ORIGIN)
 for payload, expected in (({"domains": "not a domain"}, "sso.domainInvalid"), ({"domains": "localhost"}, "sso.domainInvalid"),
                           ({"issuer": "ftp://x.example"}, "sso.issuerInvalid"),
                           ({"issuer": "https://user:pw@x.example"}, "sso.issuerInvalid"),
@@ -247,6 +296,62 @@ check("the configuration's last failure noted for its administrators", last.get(
 failed = store.col("journal").find_one({"action": "login-failed", "detail": {"$regex": "sso.noAccount"}})
 check("refusals are in the organisation's journal", failed and failed.get("tenant") == acme["id"], failed)
 
+# ------------------------------------------------------------------ a verified e-mail, the subject (ADR 0025)
+ana.put(f"/portal/api/sso/{acme['id']}", json={"domains": ["acme.example", "acme2.example"]}, headers=ORIGIN)
+users.create("zoe", "zoe-password-long", "reader", tenant=acme["id"], email="zoe@acme2.example", must_change=False)
+refused("the provider's e-mail at a listed domain not yet proved", "domainMismatch", email="zoe@acme2.example",
+        start_email="edu@acme.example")
+ana.put(f"/portal/api/sso/{acme['id']}", json={"domains": ["acme.example"]}, headers=ORIGIN)
+refused("no email_verified claim", "noEmail", setup=lambda: provider.NEXT.update(email_verified=None))
+ana.put(f"/portal/api/sso/{acme['id']}", json={"emailVerifiedOptional": True}, headers=ORIGIN)
+refused("email_verified false, even when the provider is said not to send it", "noEmail",
+        setup=lambda: provider.NEXT.update(email_verified=False))
+provider.reset()
+provider.NEXT.update(email="edu@acme.example", email_verified=None)
+r, _ = sign_in("edu@acme.example")
+check("…a missing claim accepted when the configuration says its provider never sends it",
+      landed(r).endswith("/portal/#overview"), landed(r))
+ana.put(f"/portal/api/sso/{acme['id']}", json={"emailVerifiedOptional": False}, headers=ORIGIN)
+provider.reset()
+provider.NEXT.update(email="edu@acme.example", email_verified="true")
+r, _ = sign_in("edu@acme.example")
+check("…the claim as the string \"true\" accepted", landed(r).endswith("/portal/#overview"), landed(r))
+bound = users.get("edu")["sso"] or {}
+first = store.col("journal").find_one({"action": "login", "user": "edu", "detail": {"$regex": " bound$"}})
+check("the first sign-in bound the account to the provider's issuer and subject, in the journal",
+      bound.get("iss") == provider.issuer and bound.get("sub") == "sub-edu@acme.example" and first
+      and "subject sub-edu@acme.example bound" in first["detail"], (bound, first))
+listed = {u["username"]: u for u in ana.get("/portal/api/users").get_json()["users"]}
+check("…shown to the organisation's administrators", listed["edu"]["sso"]["subject"] == "sub-edu@acme.example"
+      and listed["edu"]["sso"]["issuer"] == provider.issuer and listed["ana"]["sso"] is None, listed["edu"])
+refused("another subject for the same e-mail (a mail attribute set by someone else)", "subjectMismatch",
+        setup=lambda: provider.NEXT.update(sub="someone-else"))
+failed = store.col("journal").find_one({"action": "login-failed", "detail": {"$regex": "subjectMismatch"}},
+                                       sort=[("at", -1)])
+check("…in the journal with the subject presented and the account's e-mail", failed and failed.get("user")
+      == "edu@acme.example" and "subject someone-else" in failed.get("detail", ""), failed)
+refused("a subject bound to another account", "subjectTaken", email="new@acme.example",
+        setup=lambda: provider.NEXT.update(sub="sub-edu@acme.example"))
+r = ana.put("/portal/api/users/edu", json={"ssoForget": True}, headers=ORIGIN)
+forgot = store.col("journal").find_one({"action": "user-update", "detail": {"$regex": "sso-forgotten"}})
+check("an administrator forgets the binding, in the journal", r.status_code == 200 and users.get("edu")["sso"] is None
+      and forgot and forgot.get("detail", "").startswith("edu "), (r.get_json(), forgot))
+provider.reset()
+provider.NEXT.update(email="edu@acme.example", sub="recreated-account")
+r, _ = sign_in("edu@acme.example")
+check("…then the new subject signs in and is bound", landed(r).endswith("/portal/#overview")
+      and users.get("edu")["sso"]["sub"] == "recreated-account", landed(r))
+users.update("edu", role="editor")
+check("other changes of the account keep the binding", (users.get("edu")["sso"] or {}).get("sub") == "recreated-account")
+users.update("edu", email="edu2@acme.example")
+users.update("edu", email="edu@acme.example")
+check("a new e-mail address drops it", users.get("edu")["sso"] is None)
+users.bind_sso("edu", provider.issuer, "sub-edu@acme.example")
+check("bind_sso: the same subject passes, another issuer rebinds", users.bind_sso("edu", provider.issuer,
+      "sub-edu@acme.example") == "same" and users.bind_sso("edu", "https://new.example", "x") == "bound"
+      and users.get("edu")["sso"]["iss"] == "https://new.example")
+users.update("edu", sso_forget=True)
+
 provider.reset()
 provider.NEXT["email"] = "edu@acme.example"
 browser = portal.app.test_client()
@@ -283,6 +388,9 @@ check("password sign-in off: the right password refused with auth.ssoRequired", 
       and code(r) == "auth.ssoRequired", (r.status_code, code(r)))
 r = fresh.post("/portal/api/login", json={"username": "edu", "password": "wrong-password"}, headers=ORIGIN)
 check("…a wrong password still the usual answer", r.status_code == 401 and code(r) == "auth.invalid")
+users.create("ext", "ext-password-long", "reader", tenant=acme["id"], email="ext@elsewhere.example", must_change=False)
+r = fresh.post("/portal/api/login", json={"username": "ext", "password": "ext-password-long"}, headers=ORIGIN)
+check("…not for an account whose e-mail domain the configuration has not proved", r.status_code == 200, code(r))
 sent = []
 saved = portal.mail.enabled, portal.notify.reachable, portal.send_link, portal.RECOVERY_SECONDS
 portal.mail.enabled, portal.notify.reachable = (lambda: True), (lambda account: True)
@@ -309,7 +417,19 @@ check("…which an organisation's administrator may not remove", r.status_code =
 r = root.delete("/portal/api/sso/operator", headers=ORIGIN)
 check("removed", code(r) == "sso.removed" and sso.get("operator") is None)
 actions = {e["action"] for e in store.col("journal").find({"action": {"$regex": "^sso-"}})}
-check("the journal: configurations saved and removed", actions == {"sso-save", "sso-remove"}, actions)
+check("the journal: configurations saved and removed, domains proved", actions == {"sso-save", "sso-remove", "sso-domain"},
+      actions)
+
+# ================================================================== configurations from before ADR 0025
+store.col("sso").insert_one({"_id": beta["id"], "issuer": provider.issuer, "clientId": "c", "clientSecret": "s",
+                             "domains": ["beta.example"], "enabled": True})
+changed = sso.upgrade()
+doc = sso.get(beta["id"])
+check("at the start, an earlier configuration's domains are recorded as proved at the upgrade, with a token",
+      changed == 1 and [(p["domain"], p["how"]) for p in doc["proofs"]] == [("beta.example", "upgrade")]
+      and len(doc.get("token", "")) == 32 and sso.for_email("bia@beta.example")["_id"] == beta["id"], doc)
+check("…once only", sso.upgrade() == 0 and sso.get(beta["id"])["token"] == doc["token"])
+sso.remove(beta["id"])
 
 # ================================================================== texts
 i18n = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read()

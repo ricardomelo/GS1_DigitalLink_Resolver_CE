@@ -5,11 +5,18 @@ One configuration per organisation and one for the operator, in the collection "
 
     {"_id": "t-…" | "operator", "issuer": "https://login.example.com/tenant/v2.0", "clientId": "…",
      "clientSecret": "…" (never sent to a browser), "domains": ["acme.example"], "enabled": true, "passwordOff": false,
+     "emailVerifiedOptional": false, "token": "<32 hex>",
+     "proofs": [{"domain": "acme.example", "how": "dns" | "admin" | "upgrade", "at", "by"}],
      "updated", "updatedBy", "lastLogin", "lastError": {"at", "code", "detail"}}
+
+A listed domain signs people in only once proved (Documentation/adr/0025-sso-domain-proof-and-subject.md): a DNS TXT
+record "_gs1resolver.<domain>" holding "gs1resolver-sso=<token>", or a server administrator's approval; a domain is
+proved in one configuration at most.
 
 start() turns an e-mail address into the provider's authorization address (the code flow with PKCE, state and nonce
 kept in the signed session cookie); finish() exchanges the code, verifies the ID token with the provider's keys and
-finds the portal account with that e-mail in that organisation. Accounts are never created here.
+finds the portal account with that e-mail in that organisation, bound at its first sign-in to the token's issuer and
+subject. Accounts are never created here.
 """
 import base64
 import hashlib
@@ -23,6 +30,7 @@ from urllib.parse import urlencode, urlparse
 import jwt
 import requests
 
+import domains as domain_proof
 import linkcheck
 import store
 import users
@@ -37,6 +45,8 @@ MAX_DOMAINS = 20
 LEEWAY = 60                   # seconds of clock difference accepted on exp/iat
 DOMAIN = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$")
 DISCOVERY = "/.well-known/openid-configuration"
+TXT_PREFIX = "gs1resolver-sso="     # at domain_proof.TXT_NAME + "." + domain, beside the QR code domains' record
+PROOF_WAYS = ("dns", "admin", "upgrade")
 
 
 class SsoError(Exception):
@@ -65,11 +75,20 @@ def tenant_of(scope: str) -> str | None:
 
 # ----------------------------------------------------------------------------------------------- configurations
 def public(doc: dict) -> dict:
-    """What the screen shows: everything but the secret (only whether there is one)."""
+    """What the screen shows: everything but the secret (only whether there is one); each domain with its proof and the
+    TXT record that proves it."""
     error = doc.get("lastError") or None
+    proofs = {p["domain"]: p for p in doc.get("proofs") or []}
+    token = doc.get("token") or ""
     return {"scope": doc["_id"], "issuer": doc.get("issuer") or "", "clientId": doc.get("clientId") or "",
             "secretSet": bool(doc.get("clientSecret")), "domains": doc.get("domains") or [],
+            "domainStates": [{"domain": d, "proof": proofs[d]["how"] if d in proofs else None,
+                              "provedAt": store.iso(proofs[d].get("at")) if d in proofs else None,
+                              "provedBy": proofs[d].get("by") if d in proofs else None,
+                              "txtName": f"{domain_proof.TXT_NAME}.{d}", "txtValue": TXT_PREFIX + token if token else ""}
+                             for d in doc.get("domains") or []],
             "enabled": bool(doc.get("enabled")), "passwordOff": bool(doc.get("passwordOff")),
+            "emailVerifiedOptional": bool(doc.get("emailVerifiedOptional")),
             "updated": store.iso(doc.get("updated")), "updatedBy": doc.get("updatedBy"),
             "lastLogin": store.iso(doc.get("lastLogin")),
             "lastError": {"at": store.iso(error.get("at")), "code": error.get("code"), "detail": error.get("detail")}
@@ -117,10 +136,87 @@ def clean_domains(values, scope: str) -> list[str]:
     if len(domains) > MAX_DOMAINS:
         raise UserError("sso.domainsTooMany", max=MAX_DOMAINS)
     for domain in domains:
-        other = _col().find_one({"domains": domain, "_id": {"$ne": scope}}, {"_id": 1})
-        if other:
+        if proved_elsewhere(domain, scope):
             raise UserError("sso.domainTaken", domain=domain)
     return domains
+
+
+def proved(doc: dict | None) -> list[str]:
+    """The listed domains of a configuration that are proved (only these sign people in)."""
+    if not doc:
+        return []
+    listed = doc.get("domains") or []
+    return [p["domain"] for p in doc.get("proofs") or [] if p.get("domain") in listed]
+
+
+def proved_elsewhere(domain: str, scope: str) -> bool:
+    """Whether another configuration has proved the domain."""
+    return any(domain in proved(other)
+               for other in _col().find({"_id": {"$ne": scope}, "proofs.domain": domain}))
+
+
+def _proof_target(scope: str, domain) -> tuple[dict, str]:
+    doc = get(scope)
+    domain = str(domain or "").strip().lower().rstrip(".")
+    if not doc:
+        raise UserError("sso.unknown")
+    if domain not in (doc.get("domains") or []):
+        raise UserError("sso.domainNotListed", domain=domain[:80])
+    if proved_elsewhere(domain, scope):
+        raise UserError("sso.domainTaken", domain=domain)
+    return doc, domain
+
+
+def _add_proof(doc: dict, domain: str, how: str, by: str) -> dict:
+    proofs = [p for p in doc.get("proofs") or [] if p.get("domain") != domain]
+    proofs.append({"domain": domain, "how": how, "at": store.now(), "by": by})
+    _col().update_one({"_id": doc["_id"]}, {"$set": {"proofs": proofs}})
+    forget()
+    return get(doc["_id"])
+
+
+def verify_domain(scope: str, domain, by: str) -> dict:
+    """Looks up the domain's TXT record; found, the domain is proved by DNS. Raises UserError("sso.txtMissing")."""
+    with users.locked():
+        doc, domain = _proof_target(scope, domain)
+        name, value = f"{domain_proof.TXT_NAME}.{domain}", TXT_PREFIX + doc["token"]
+        if value not in domain_proof.txt_records(name):
+            raise UserError("sso.txtMissing", name=name, value=value)
+        return _add_proof(doc, domain, "dns", by)
+
+
+def accounts_elsewhere(domain: str, scope: str) -> int:
+    """How many accounts outside the configuration's organisation (or the operator) have an address at the domain."""
+    tenant = tenant_of(scope)
+    pattern = "@" + re.escape(domain) + "$"
+    return sum(1 for a in users._users().find({"email": {"$regex": pattern}}, {"tenant": 1})
+               if (a.get("tenant") or None) != tenant)
+
+
+def approve_domain(scope: str, domain, by: str) -> dict:
+    """A server administrator's approval of a domain without a DNS record; refused when accounts of another
+    organisation (or of the operator) use the domain."""
+    with users.locked():
+        doc, domain = _proof_target(scope, domain)
+        if accounts_elsewhere(domain, scope):
+            raise UserError("sso.domainUsed", domain=domain)
+        return _add_proof(doc, domain, "admin", by)
+
+
+def upgrade() -> int:
+    """Configurations saved before domains needed a proof (ADR 0025 §2.1.7): their listed domains are recorded as
+    proved at the upgrade, so that sign-in goes on working. Idempotent; returns the configurations changed."""
+    changed = 0
+    for doc in _col().find({"proofs": {"$exists": False}}):
+        now = store.now()
+        change = {"proofs": [{"domain": d, "how": "upgrade", "at": now, "by": None} for d in doc.get("domains") or []]}
+        if not doc.get("token"):
+            change["token"] = secrets.token_hex(16)
+        _col().update_one({"_id": doc["_id"], "proofs": {"$exists": False}}, {"$set": change})
+        changed += 1
+    if changed:
+        forget()
+    return changed
 
 
 def save(scope: str, data: dict, by: str) -> dict:
@@ -134,12 +230,15 @@ def save(scope: str, data: dict, by: str) -> dict:
         domains = clean_domains(data.get("domains", doc.get("domains", [])), scope)
         enabled = bool(data.get("enabled", doc.get("enabled", False)))
         password_off = bool(data.get("passwordOff", doc.get("passwordOff", False)))
+        unverified_ok = bool(data.get("emailVerifiedOptional", doc.get("emailVerifiedOptional", False)))
         if issuer:
             issuer = check_url(issuer).rstrip("/")
         if len(client_id) > 200 or (client_id and not client_id.isprintable()):
             raise UserError("sso.clientIdInvalid")
         change = {"issuer": issuer, "clientId": client_id, "domains": domains, "enabled": enabled,
-                  "passwordOff": enabled and password_off, "updated": store.now(), "updatedBy": by}
+                  "passwordOff": enabled and password_off, "emailVerifiedOptional": unverified_ok,
+                  "proofs": [p for p in doc.get("proofs") or [] if p.get("domain") in domains],
+                  "token": doc.get("token") or secrets.token_hex(16), "updated": store.now(), "updatedBy": by}
         if isinstance(secret, str) and secret.strip():
             if len(secret) > 500 or not secret.isprintable():
                 raise UserError("sso.secretInvalid")
@@ -164,18 +263,21 @@ def remove(scope: str) -> dict | None:
 
 
 def for_email(email: str) -> dict | None:
-    """The configuration switched on for the domain of an e-mail address."""
+    """The configuration switched on that proved the domain of an e-mail address."""
     domain = str(email or "").strip().lower().rpartition("@")[2]
-    return _col().find_one({"domains": domain, "enabled": True}) if domain else None
+    if not domain:
+        return None
+    return next((doc for doc in _col().find({"domains": domain, "enabled": True}) if domain in proved(doc)), None)
 
 
 def password_off_for(account: dict | None) -> bool:
-    """Whether password sign-in is off for the account: its organisation's configuration says so (never for a server
-    administrator)."""
+    """Whether password sign-in is off for the account: its organisation's configuration says so and has proved the
+    domain of the account's e-mail (never for a server administrator)."""
     if not account or not account.get("tenant"):          # the operator's users, server administrators among them
         return False
-    doc = _col().find_one({"_id": account["tenant"]}, {"enabled": 1, "passwordOff": 1})
-    return bool(doc and doc.get("enabled") and doc.get("passwordOff"))
+    doc = _col().find_one({"_id": account["tenant"]}, {"enabled": 1, "passwordOff": 1, "domains": 1, "proofs": 1})
+    domain = str(account.get("email") or "").rpartition("@")[2]
+    return bool(doc and doc.get("enabled") and doc.get("passwordOff") and domain and domain in proved(doc))
 
 
 def any_enabled() -> bool:
@@ -320,8 +422,9 @@ def start(email: str, redirect_uri: str, session) -> str:
     return endpoint + ("&" if "?" in endpoint else "?") + urlencode(params)
 
 
-def finish(args, redirect_uri: str, session) -> tuple[str, dict]:
-    """(user name, configuration) of the provider's answer to start(); raises SsoError with what went wrong."""
+def finish(args, redirect_uri: str, session) -> tuple[str, dict, dict]:
+    """(user name, configuration, {"sub", "bound"}) of the provider's answer to start(); raises SsoError with what went
+    wrong. The account is bound to the token's issuer and subject at its first sign-in (ADR 0025 §2.2)."""
     flow = session.pop("sso", None)
     if not flow or not secrets.compare_digest(str(args.get("state", "")), flow.get("state", "")) \
             or time.time() - flow.get("at", 0) > FLOW_SECONDS:
@@ -356,16 +459,25 @@ def finish(args, redirect_uri: str, session) -> tuple[str, dict]:
         raise SsoError("sso.tokenFailed", "no id_token")
     claims = verify(id_token, doc, meta, flow["nonce"])
     email = str(claims.get("email") or "").strip().lower()
-    if not email or claims.get("email_verified") is False:
-        raise SsoError("sso.noEmail")
-    if email.rpartition("@")[2] not in (doc.get("domains") or []):
+    verified = claims.get("email_verified")
+    if isinstance(verified, str):                         # some providers send "true"
+        verified = verified.strip().lower() == "true"
+    if not email or not (verified is True or (verified is None and doc.get("emailVerifiedOptional"))):
+        raise SsoError("sso.noEmail", email)
+    if email.rpartition("@")[2] not in proved(doc):
         raise SsoError("sso.domainMismatch", email)
     found = users._users().find_one({"email": email})
     if not found or found.get("tenant") != tenant_of(doc["_id"]):
         raise SsoError("sso.noAccount", email)
     if found.get("disabled"):
         raise SsoError("sso.accountDisabled", email)
-    return found["_id"], doc
+    issuer, subject = str(claims["iss"]), str(claims["sub"])
+    bound = users.bind_sso(found["_id"], issuer, subject)
+    if bound == "mismatch":
+        raise SsoError("sso.subjectMismatch", f"{email} subject {subject}"[:200])
+    if bound == "taken":
+        raise SsoError("sso.subjectTaken", f"{email} subject {subject}"[:200])
+    return found["_id"], doc, {"sub": subject, "bound": bound == "bound"}
 
 
 def test(scope: str) -> dict:

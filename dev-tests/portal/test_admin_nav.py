@@ -235,9 +235,10 @@ missing = sorted(c for c in codes if i18n.count(f'"{c}"') != 2)
 check(f"every new text in both languages ({len(codes)})", len(codes) > 60 and not missing, missing)
 code_only = re.sub(r"//.*", "", re.sub(r"/\*.*?\*/", "", script, flags=re.S))
 check("no confirmation through the browser's dialog left", "confirm(" not in code_only
-      and script.count("await ask(") == 20, script.count("await ask("))   # the fourteen, the organisation's prefixes,
+      and script.count("await ask(") == 21, script.count("await ask("))   # the fourteen, the organisation's prefixes,
                                                                             # an older GCP length table (item 9.9),
-                                                                            # a version of the privacy notice (ADR 0017)
+                                                                            # a version of the privacy notice (ADR 0017),
+                                                                            # a single sign-on binding (ADR 0025)
                                                                             # a forwarding rule removed (ADR 0018)
                                                                             # the original appearance (ADR 0019)
                                                                             # and the strict mode switched on (ADR 0022)

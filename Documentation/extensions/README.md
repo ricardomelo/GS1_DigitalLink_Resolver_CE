@@ -665,7 +665,8 @@ message, links included.
 ## Single sign-on
 
 Each organisation can let its people sign in with the account they already have — Microsoft Entra ID, Google
-Workspace, Okta, Keycloak or any OpenID Connect provider ([ADR 0012](../adr/0012-single-sign-on.md)).
+Workspace, Okta, Keycloak or any OpenID Connect provider ([ADR 0012](../adr/0012-single-sign-on.md),
+[ADR 0025](../adr/0025-sso-domain-proof-and-subject.md)).
 
 **At the provider**: register a web application with the return address shown on the portal's screen
 (`https://<FQDN>/portal/sso/callback`), the scopes `openid email profile`, and note the issuer, the client ID and the
@@ -673,23 +674,34 @@ client secret. Examples of issuers: Entra ID `https://login.microsoftonline.com/
 `https://accounts.google.com`, Keycloak `https://<host>/realms/<realm>`, Okta `https://<domain>.okta.com`.
 
 **In the portal** (user menu → **Organisation sign-in**, administrators): the issuer, client ID and secret (the secret
-is write-only: leave the field empty to keep it), the organisation's **e-mail domains** (each domain belongs to one
-configuration in the installation), **On**, then **Test the provider** (reads the discovery document and the keys).
+is write-only: leave the field empty to keep it), the organisation's **e-mail domains**, **On**, then **Test the
+provider** (reads the discovery document and the keys). Tick **The provider does not send email_verified** only for a
+provider that never sends that claim (Microsoft Entra ID, by default); an address marked unverified is always refused.
 A server administrator sees every organisation's configuration and the operator's own.
+
+**Proving each domain**: a listed domain signs nobody in until it is proved. Publish the TXT record the screen shows —
+name `_gs1resolver.<domain>`, value `gs1resolver-sso=<token>` (the same name as a QR code domain's record, another
+value: both can live there) — and click **Verify**; or ask a server administrator to **Approve without DNS** (refused
+when accounts of another organisation use the domain). A domain is proved in one configuration at most. Configurations
+saved before this version show their domains as *accepted at the upgrade, without proof*: publish the record and click
+**Verify**, or remove the domains that are not the organisation's.
 
 **Signing in**: *Sign in with your organisation's account* on the sign-in page asks for the e-mail address; its
 domain chooses the provider; after the provider, the portal signs in the account **with that e-mail in that
-organisation** (the provider's `email`, not marked unverified). Nobody is created: administrators still create or
-invite the users and choose their roles and prefixes. A temporary password is not asked for after single sign-on.
+organisation** (the provider's `email`, verified, at a proved domain). The first sign-in binds the account to the
+provider's identity (its issuer and subject); a later sign-in with another identity for that address is refused. When
+a person's account at the provider is recreated, an administrator clicks **Forget organisation account** on the
+*Users* screen; a new e-mail address forgets it too. Nobody is created: administrators still create or invite the
+users and choose their roles and prefixes. A temporary password is not asked for after single sign-on.
 
 **Password sign-in off**: once single sign-on works, the organisation can switch password sign-in off for its users
 (their passwords are kept and work again if it is switched back on); password recovery then sends them nothing. It
-never applies to server administrators, who can always sign in and switch it off — for example when the
+applies only to accounts whose e-mail domain is proved, and never to server administrators, who can always sign in and switch it off — for example when the
 organisation's provider is down.
 
 The provider's addresses must be `https` on public addresses; `PORTAL_SSO_ALLOW_INSECURE=1` accepts `http` and private
 addresses (tests, or a provider on the operator's own network). The journal records each sign-in through a provider
-and each refusal with its reason; the screen shows the last sign-in and the last failure.
+with the provider's subject, each refusal with its reason, and each domain proved or approved; the screen shows the last sign-in and the last failure.
 
 ## Limits on exports
 

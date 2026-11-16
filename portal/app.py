@@ -201,6 +201,9 @@ def _bootstrap_admin() -> None:
 migrate.run(CONFIG_DIR)
 journal.apply_retention()
 exportlimits.seed_from_env(os.environ.get("PORTAL_EXPORT_LIMITS", ""))
+if sso.upgrade():                     # configurations saved before ADR 0025: their domains count as proved
+    log.warning("Single sign-on: e-mail domains of earlier configurations were accepted without proof; "
+                "replace them with a DNS proof on the Single sign-on screen (Documentation/adr/0025).")
 _bootstrap_admin()
 
 
@@ -2403,12 +2406,14 @@ def update_user(username):
     if username == g.user and (data.get("disabled") or data.get("role") not in (None, "admin")):
         raise users.UserError("users.notSelf")          # an administrator cannot lock himself out
     account = users.update(username, role=data.get("role"), prefixes=data.get("prefixes"),
-                           disabled=data.get("disabled"), email=data.get("email"))
+                           disabled=data.get("disabled"), email=data.get("email"),
+                           sso_forget=bool(data.get("ssoForget")))
     audit.info("user=%s action=user-update target=%s", g.user, username)
     log_event("user-update", tenant=target.get("tenant"),
               detail=f'{username} role={account["role"]} disabled={account["disabled"]} '
                      f'prefixes={",".join(account["prefixes"])}'
-                     + (" email-changed" if account["email"] != target.get("email") else ""))
+                     + (" email-changed" if account["email"] != target.get("email") else "")
+                     + (" sso-forgotten" if target.get("sso") and not account.get("sso") else ""))
     if account["email"] != target.get("email"):        # security: to the old address and to the new one
         when = notify.now_text()
         if target.get("email"):
@@ -3396,11 +3401,12 @@ def sso_callback():
     language = (session.get("sso") or {}).get("language")
     scope = (session.get("sso") or {}).get("scope")
     try:
-        username, doc = sso.finish(request.args, SSO_CALLBACK, session)
+        username, doc, subject = sso.finish(request.args, SSO_CALLBACK, session)
     except sso.SsoError as err:
         tenant = sso.tenant_of(scope) if scope else None
         audit.info("user=- action=login-failed addr=%s reason=%s", client_address(), err.code)
-        log_event("login-failed", user=shown_username(err.detail if "@" in err.detail else ""),
+        typed = err.detail.split(" ", 1)[0] if "@" in err.detail.split(" ", 1)[0] else ""
+        log_event("login-failed", user=shown_username(typed),
                   detail=f"{client_address()} single sign-on: {err.code} {err.detail}"[:300],
                   tenant=tenant, actor_tenant=tenant)
         if scope and err.code != "sso.expired":
@@ -3413,7 +3419,8 @@ def sso_callback():
                   tenant=account.get("tenant"), actor_tenant=account.get("tenant"))
         return redirect("/portal/login?sso=tenantDisabled")
     sso.note(doc["_id"], True)
-    open_session(username, language, f"{client_address()} single sign-on {urlparse_host(doc['issuer'])}")
+    open_session(username, language, f"{client_address()} single sign-on {urlparse_host(doc['issuer'])} "
+                                     f"subject {subject['sub']}"[:250] + (" bound" if subject["bound"] else ""))
     session["via"] = "sso"
     return redirect("/portal/#overview")
 
@@ -3482,6 +3489,36 @@ def test_sso(scope):
         return message("sso.scopeOutside", 403)
     result = sso.test(scope)
     return message(result.pop("code"), 200, result=result)
+
+
+@app.post("/portal/api/sso/<scope>/verify")
+@require_login
+@admin_required
+def verify_sso_domain(scope):
+    """Looks up the TXT record that proves one of the configuration's e-mail domains (ADR 0025)."""
+    if g.support:
+        raise ReadOnlySupport()
+    if not sso_scope_allowed(scope):
+        return message("sso.scopeOutside", 403)
+    domain = str((request.get_json(silent=True) or {}).get("domain", ""))
+    doc = sso.verify_domain(scope, domain, g.user)
+    log_event("sso-domain", tenant=sso.tenant_of(scope), detail=f"{domain.strip().lower()} proved by DNS")
+    return message("sso.domainProved", 200, params={"domain": domain.strip().lower()}, item=sso.public(doc))
+
+
+@app.post("/portal/api/sso/<scope>/approve")
+@require_login
+@server_admin_required
+def approve_sso_domain(scope):
+    """A server administrator's approval of an e-mail domain without a DNS record (ADR 0025)."""
+    if g.support:
+        raise ReadOnlySupport()
+    if not sso_scope_allowed(scope):
+        return message("sso.scopeOutside", 403)
+    domain = str((request.get_json(silent=True) or {}).get("domain", ""))
+    doc = sso.approve_domain(scope, domain, g.user)
+    log_event("sso-domain", tenant=sso.tenant_of(scope), detail=f"{domain.strip().lower()} approved")
+    return message("sso.domainApproved", 200, params={"domain": domain.strip().lower()}, item=sso.public(doc))
 
 
 # --------------------------------------------------------------------------- overview (ADR 0007)

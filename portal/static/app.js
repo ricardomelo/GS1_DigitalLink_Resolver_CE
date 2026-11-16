@@ -2588,8 +2588,13 @@ function userRow(u) {
   email.setAttribute("aria-label", t("users.email"));
   email.placeholder = t("users.emailPlaceholder");
   cell("users.email", email);
-  cell("users.state", t(u.disabled ? "users.disabled" : u.invited ? "users.invitedState"
-                        : u.mustChange ? "users.mustChange" : "users.active"));
+  const state = cell("users.state", t(u.disabled ? "users.disabled" : u.invited ? "users.invitedState"
+                                      : u.mustChange ? "users.mustChange" : "users.active"));
+  if (u.sso) {                                       // bound to the provider's subject at the first sign-in (ADR 0025)
+    const bound = el("small", "muted user-sso", t("users.ssoBound"));
+    bound.title = `${u.sso.issuer} · ${u.sso.subject}`;
+    state.append(document.createElement("br"), bound);
+  }
   cell("users.lastLogin", formatWhen(u.lastLogin));
   const actions = document.createElement("div");
   actions.className = "user-actions";
@@ -2605,6 +2610,9 @@ function userRow(u) {
   if (u.username !== CONFIG.user) {                // your own password: user menu → Options
     button(mailLink(u) && u.invited ? "users.resendInvite" : "users.resetPassword", () => resetUser(u));
     button(u.disabled ? "users.enable" : "users.disable", () => saveUser(u.username, { disabled: !u.disabled }));
+    if (u.sso) button("users.ssoForget", async () => {
+      if (await ask(t("users.confirmSsoForget", { user: u.username }))) saveUser(u.username, { ssoForget: true });
+    });
     button("users.remove", () => removeUser(u.username), "btn-danger-ghost");
   }
   cell("users.actions", actions);
@@ -3699,15 +3707,19 @@ function ssoCard(c) {
   form.append(field("sso.issuer", issuer, "sso.issuerHint", { issuer: c.issuer || "https://…" }),
               field("sso.clientId", clientId), field("sso.clientSecret", secret),
               field("sso.domains", domainsInput, "sso.domainsHint"),
-              check("sso-enabled", c.enabled, "sso.enabled"), check("sso-password-off", c.passwordOff, "sso.passwordOff"));
+              check("sso-enabled", c.enabled, "sso.enabled"), check("sso-password-off", c.passwordOff, "sso.passwordOff"),
+              check("sso-email-unverified", c.emailVerifiedOptional, "sso.emailVerifiedOptional"));
   card.append(form);
   card.append(el("p", "field-msg", t("sso.passwordOffHint")));
+  card.append(el("p", "field-msg", t("sso.emailVerifiedOptionalHint")));
+  if ((c.domainStates || []).length) card.append(ssoDomains(c, editable));
   const actions = el("div", "user-actions");
   const button = (key, cls, fn) => { const b = el("button", "btn " + cls, t(key)); b.type = "button"; b.addEventListener("click", fn); actions.append(b); };
   if (editable) {
     button("sso.save", "btn-primary", () => ssoCall("PUT", c.scope, "", {
       issuer: issuer.value.trim(), clientId: clientId.value.trim(), clientSecret: secret.value, domains: domainsInput.value,
-      enabled: $(".sso-enabled", form).checked, passwordOff: $(".sso-password-off", form).checked }));
+      enabled: $(".sso-enabled", form).checked, passwordOff: $(".sso-password-off", form).checked,
+      emailVerifiedOptional: $(".sso-email-unverified", form).checked }));
   }
   if (!c.blank) {
     button("sso.test", "btn-ghost", () => ssoCall("POST", c.scope, "/test", {}));
@@ -3717,6 +3729,36 @@ function ssoCard(c) {
   }
   card.append(actions);
   return card;
+}
+
+/* The configuration's e-mail domains and their proofs (ADR 0025): a DNS record, a server administrator's approval or
+   the upgrade; a domain without one signs nobody in. */
+function ssoDomains(c, editable) {
+  const box = el("div", "sso-proofs");
+  box.append(el("p", "field-msg", t("sso.proofHint")));
+  for (const d of c.domainStates) {
+    const row = el("div", "sso-proof" + (d.proof ? " is-proved" : ""));
+    row.dataset.domain = d.domain;
+    const head = el("div", "domain-head");
+    head.append(el("strong", "code", d.domain), el("span", "badge " + (d.proof === "dns" || d.proof === "admin"
+      ? "badge-created" : d.proof ? "badge-update" : "badge-unchanged"), t({ dns: "sso.proofDns", admin: "sso.proofAdmin", upgrade: "sso.proofUpgrade" }[d.proof] || "sso.proofNone")));
+    if (d.provedAt) head.append(el("small", "muted", formatWhen(d.provedAt) + (d.provedBy ? " · " + d.provedBy : "")));
+    row.append(head);
+    if (d.proof !== "dns" && d.proof !== "admin" && d.txtValue) {
+      const dl = el("dl", "domain-txt");
+      dl.append(el("dt", "", t("domains.txtName")), el("dd", "code", d.txtName),
+                el("dt", "", t("domains.txtValue")), el("dd", "code", d.txtValue));
+      row.append(dl);
+      const actions = el("div", "user-actions");
+      const button = (key, cls, suffix) => { const b = el("button", "btn " + cls, t(key)); b.type = "button";
+        b.addEventListener("click", () => ssoCall("POST", c.scope, suffix, { domain: d.domain })); actions.append(b); };
+      if (editable) button("sso.verify", "btn-primary", "/verify");
+      if (editable && ssoState.data.every) button("sso.approve", "btn-ghost", "/approve");
+      if (actions.children.length) row.append(actions);
+    }
+    box.append(row);
+  }
+  return box;
 }
 
 async function ssoCall(method, scope, suffix, body) {

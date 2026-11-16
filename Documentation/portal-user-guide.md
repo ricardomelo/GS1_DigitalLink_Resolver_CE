@@ -918,8 +918,8 @@ requests the strict mode would withhold, and the records to open in the editor b
 ### Alerts (administrators)
 
 **Alerts** (user menu) lists every alert the monitoring raised (section 17): when it started, when it ended (or
-*Ongoing*), its kind (resolver down, backup, certificate, request log space, GCP length table, spike of unregistered
-codes) and its detail, filtered by
+*Ongoing*), its kind (resolver down, backup, certificate, request log space, GCP length table, audit trail integrity,
+spike of unregistered codes) and its detail, filtered by
 kind and dates and, for the server administrator, by organisation. An organisation's administrators see their
 organisation's spikes. Alerts are listed from this version on (kept 400 days); earlier ones were not recorded.
 
@@ -1080,7 +1080,10 @@ integrity** shows one line per chain: its events, *Intact* or *Broken* with the 
 and its **head (receipt)**, a text such as `t-…/record:128:9f2c…`. Copy the heads now and then and keep them outside the
 server (a ticket, an e-mail to yourself): paste one later under **Check a receipt** to confirm that nothing up to it
 has changed. A broken chain, or a warning that the journal key is not set, is for the server administrator; the
-portal also checks every chain once a day and records each head in its log.
+portal also checks every chain once a day and records each head in its log. When that daily check, or anyone's
+**Verify integrity**, finds a chain broken, the server administrators receive an alert by e-mail (*Alert: … broken
+chain(s) in the audit trail*, again every day while it lasts, and *Resolved* once every chain is whole again), and
+the overview shows it under Operation.
 
 ## 16. Requests to the resolver
 
@@ -1197,8 +1200,8 @@ organisation's users see its spikes of codes nobody registered).
 
 **Operation** (server administrator only). Whether the job worker runs, whether e-mail is on, up to which day the
 daily counts are complete, the installation's active alerts and the state of each check of the monitoring: the
-resolver through the proxy, the daily backup, the HTTPS certificate, the request log's space and the GCP length table
-(the date and age of GS1's list in use). The server administrator can also choose an
+resolver through the proxy, the daily backup, the HTTPS certificate, the request log's space, the GCP length table
+(the date and age of GS1's list in use) and the audit trail's integrity (when its chains were last verified). The server administrator can also choose an
 **Organisation** at the top of the page: the figures are then that organisation's, as its administrators see them (or
 the operator's codes); Operation stays the installation's.
 

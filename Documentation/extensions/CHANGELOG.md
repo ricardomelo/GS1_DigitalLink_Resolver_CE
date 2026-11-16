@@ -5,6 +5,15 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
 
+### The journal: an alert when a chain breaks (session 40)
+- **Added: an alert by e-mail when the audit trail's integrity check finds a broken chain**
+  ([ADR 0026](../adr/0026-journal-integrity.md) §2.5, [ADR 0008](../adr/0008-monitoring-and-alerts.md)). The daily
+  verification of the journal's chains, and any administrator's *Verify integrity*, now keep their result; the
+  monitoring raises *Alert: … broken chain(s) in the audit trail* to the server administrators, naming each chain, the
+  problem and the event, reminds them every day while it lasts and sends *Resolved* once every chain is whole again.
+  A receipt typed wrongly is shown to whoever typed it and never alerts. The overview's Operation group shows when the
+  chains were last verified, and the *Alerts* screen lists the new kind. Twelve languages. Commit `30c81d5`.
+
 ### The journal: written first, sealed, verified (session 39)
 - **Changed: a record change is journalled before it is made** ([ADR 0026](../adr/0026-journal-integrity.md)). The
   journal entry of a save or a deletion (the editor, imports, the tenant API, *Fix serial numbers*) used to be written

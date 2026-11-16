@@ -553,9 +553,13 @@ the checker cannot be used to probe the server's own network.
   (`static/password.js`, `aria-pressed`, labelled in the user's language). The field is hidden again when
   its form is submitted, so password managers still see a password field. The script is one of the few
   files served without a session (`PUBLIC_ASSETS`), because the sign-in page needs it.
-- After five failed attempts a username (and, separately, a client address) is locked for 15 minutes.
-  The failures are kept in the portal's database (`login_failures`, emptied by MongoDB after 15 minutes),
-  so the lock holds across every replica of the portal and across restarts.
+- Wrong passwords delay the next attempt of that username **from that client address**: three are free, then
+  15 seconds, doubling with each further failure up to 15 minutes (`429 auth.wait` / `auth.locked` with
+  `Retry-After`). A client address that collects 20 failures in 15 minutes, whatever the usernames, waits
+  15 minutes. No username is ever locked from every address, so nobody can keep its owner out (finding F-005;
+  the official project had no throttle). Five failures of one account in 15 minutes, from any addresses, send
+  its owner one security message. The failures are kept in the portal's database (`login_failures`, emptied by
+  MongoDB after 15 minutes), so the limits hold across every replica of the portal and across restarts.
 - The user icon on the right of the header opens a menu (on hover with a mouse, or on click/keyboard)
   showing the username, **Options** and **Sign out**. Options lets users change their own password
   (current password required, at least 12 characters). Changing the password signs out every other

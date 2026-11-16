@@ -266,6 +266,45 @@ check("throttle: a successful sign-in clears both keys", throttle.retry_after(*k
 old = store.now() - timedelta(minutes=16)
 store.col("login_failures").insert_many([{"key": "user:old", "at": old} for _ in range(5)])
 check("throttle: failures older than 15 minutes do not count", throttle.retry_after("user:old") == 0)
+check("throttle: a limit of its own (the address's 20)", throttle.retry_after(keys[1], limit=20) == 0
+      and [throttle.fail(keys[1]) for _ in range(20)] and 890 <= throttle.retry_after(keys[1], limit=20) <= 901)
+
+# progressive delay per user name and address (finding F-005)
+pair = f"user-addr:{uuid.uuid4().hex}|192.0.2.9"
+
+
+def failures_ago(key, *seconds):
+    store.col("login_failures").insert_many([{"key": key, "at": store.now() - timedelta(seconds=s)} for s in seconds])
+
+
+failures_ago(pair, 1, 1)
+check("delay: two failures of a user name from one address cost nothing", throttle.delay(pair) == 0)
+failures_ago(pair, 1)
+check("delay: the third waits 15 seconds from the last failure", 13 <= throttle.delay(pair) <= 15, throttle.delay(pair))
+failures_ago(pair, 1)
+check("delay: the fourth 30 seconds", 28 <= throttle.delay(pair) <= 30, throttle.delay(pair))
+failures_ago(pair, 1)
+check("delay: the fifth 60 seconds (doubling)", 58 <= throttle.delay(pair) <= 60, throttle.delay(pair))
+failures_ago(pair, *[1] * 10)
+check("delay: never more than 15 minutes", 898 <= throttle.delay(pair) <= 900, throttle.delay(pair))
+later = f"user-addr:{uuid.uuid4().hex}|192.0.2.9"
+failures_ago(later, 40, 40, 40)
+check("delay: counted from the last failure (15 seconds already passed)", throttle.delay(later) == 0)
+recent = f"user-addr:{uuid.uuid4().hex}|192.0.2.9"
+failures_ago(recent, 300, 300, 1)
+check("delay: counted from the newest failure, not the oldest", 13 <= throttle.delay(recent) <= 15, throttle.delay(recent))
+check("delay: another address of the same user name waits nothing",
+      throttle.delay(pair.replace("192.0.2.9", "192.0.2.10")) == 0)
+victim = uuid.uuid4().hex
+failures_ago(f"user-addr:{victim}|192.0.2.1", 1, 1, 1)
+failures_ago(f"user-addr:{victim}|192.0.2.2", 1, 1, 1)
+failures_ago(f"user:{victim}", 1)
+failures_ago(f"user-addr:{victim}x|192.0.2.1", 1, 1, 1)
+throttle.clear_user(victim)
+check("clear_user: every address of the user name forgotten, and its count",
+      throttle.count(f"user-addr:{victim}|192.0.2.1") == throttle.count(f"user-addr:{victim}|192.0.2.2")
+      == throttle.count(f"user:{victim}") == 0)
+check("clear_user: a longer user name that starts with it is not touched", throttle.count(f"user-addr:{victim}x|192.0.2.1") == 3)
 
 # ------------------------------------------------------------------ migration of the files of earlier versions
 from werkzeug.security import generate_password_hash  # noqa: E402

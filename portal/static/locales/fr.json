@@ -1306,6 +1306,7 @@
  "login.passwordChanged": "Mot de passe changé. Connectez-vous avec le nouveau mot de passe.",
  "auth.invalid": "Nom d’utilisateur ou mot de passe incorrect.",
  "auth.locked": "Trop de tentatives infructueuses. Réessayez dans {minutes} minute(s).",
+ "auth.wait": "Trop de tentatives infructueuses. Patientez {seconds} secondes, puis réessayez.",
  "auth.required": "Votre session a pris fin. Veuillez vous reconnecter.",
  "auth.welcome": "Bienvenue.",
  "auth.loggedOut": "Vous êtes déconnecté.",

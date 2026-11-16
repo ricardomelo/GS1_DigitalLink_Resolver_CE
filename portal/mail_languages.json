@@ -26,9 +26,9 @@
     "Su dirección de correo electrónico en el portal de gestión de enlaces",
     "Hola:\n\nEsta dirección es ahora la dirección de correo electrónico del usuario {user} en el portal de gestión de enlaces. Los mensajes sobre la cuenta (cambios de contraseña, enlaces de recuperación) llegarán aquí.\n\nSi no conoce esta cuenta, avise a los administradores del portal."
    ],
-   "account-locked": [
+   "sign-in-failures": [
     "Intentos de inicio de sesión en su cuenta",
-    "Hola:\n\nEl usuario {user} no pudo iniciar sesión en el portal de gestión de enlaces tras varias contraseñas incorrectas, la última el {when} (UTC). El inicio de sesión de este usuario está bloqueado durante {minutes} minutos.\n\nSi ha sido usted, espere y vuelva a intentarlo, o use «¿Ha olvidado su contraseña?» en la página de inicio de sesión. Si no, es posible que alguien esté intentando usar su cuenta: avise a su administrador."
+    "Hola:\n\nEl usuario {user} no pudo iniciar sesión en el portal de gestión de enlaces tras varias contraseñas incorrectas en {minutes} minutos, la última el {when} (UTC).\n\nLa cuenta no está bloqueada: cada dirección que sigue intentándolo espera cada vez más entre intentos, así que usted todavía puede iniciar sesión desde su propio ordenador. Si ha sido usted, use «¿Ha olvidado su contraseña?» en la página de inicio de sesión si lo necesita. Si no, es posible que alguien esté intentando adivinar su contraseña: avise a su administrador."
    ],
    "api-key-created": [
     "Se ha creado una nueva clave de API",
@@ -123,9 +123,9 @@
     "Votre adresse e-mail sur le portail de gestion des liens",
     "Bonjour,\n\nCette adresse est désormais l’adresse e-mail de l’utilisateur {user} sur le portail de gestion des liens. Les messages concernant le compte (changements de mot de passe, liens de récupération) seront envoyés ici.\n\nSi vous ne connaissez pas ce compte, prévenez les administrateurs du portail."
    ],
-   "account-locked": [
+   "sign-in-failures": [
     "Tentatives de connexion à votre compte",
-    "Bonjour,\n\nL’utilisateur {user} n’a pas pu se connecter au portail de gestion des liens après plusieurs mots de passe erronés, le dernier le {when} (UTC). La connexion de cet utilisateur est bloquée pendant {minutes} minutes.\n\nSi c’est vous, patientez puis réessayez, ou utilisez « Mot de passe oublié ? » sur la page de connexion. Sinon, quelqu’un essaie peut-être d’utiliser votre compte : prévenez votre administrateur."
+    "Bonjour,\n\nL’utilisateur {user} n’a pas pu se connecter au portail de gestion des liens après plusieurs mots de passe erronés en {minutes} minutes, le dernier le {when} (UTC).\n\nLe compte n’est pas bloqué : chaque adresse qui continue d’essayer attend de plus en plus longtemps entre deux tentatives, vous pouvez donc toujours vous connecter depuis votre propre ordinateur. Si c’est vous, utilisez au besoin « Mot de passe oublié ? » sur la page de connexion. Sinon, quelqu’un essaie peut-être de deviner votre mot de passe : prévenez votre administrateur."
    ],
    "api-key-created": [
     "Une nouvelle clé d’API a été créée",
@@ -220,9 +220,9 @@
     "Ihre E-Mail-Adresse im Linkverwaltungsportal",
     "Guten Tag,\n\ndiese Adresse ist jetzt die E-Mail-Adresse des Benutzers {user} im Linkverwaltungsportal. Nachrichten zum Konto (Passwortänderungen, Wiederherstellungslinks) werden hierher gesendet.\n\nWenn Sie dieses Konto nicht kennen, informieren Sie die Administratoren des Portals."
    ],
-   "account-locked": [
+   "sign-in-failures": [
     "Anmeldeversuche bei Ihrem Konto",
-    "Guten Tag,\n\nder Benutzer {user} konnte sich nach mehreren falschen Passwörtern nicht am Linkverwaltungsportal anmelden, zuletzt am {when} (UTC). Die Anmeldung für diesen Benutzer ist für {minutes} Minuten gesperrt.\n\nWenn Sie das waren, warten Sie und versuchen Sie es erneut oder verwenden Sie „Passwort vergessen?“ auf der Anmeldeseite. Wenn nicht, versucht möglicherweise jemand, Ihr Konto zu verwenden: Informieren Sie Ihren Administrator."
+    "Guten Tag,\n\nder Benutzer {user} konnte sich nach mehreren falschen Passwörtern innerhalb von {minutes} Minuten nicht am Linkverwaltungsportal anmelden, zuletzt am {when} (UTC).\n\nDas Konto ist nicht gesperrt: Jede Adresse, die es weiter versucht, muss zwischen den Versuchen immer länger warten, sodass Sie sich von Ihrem eigenen Computer aus weiterhin anmelden können. Wenn Sie das waren, verwenden Sie bei Bedarf „Passwort vergessen?“ auf der Anmeldeseite. Wenn nicht, versucht möglicherweise jemand, Ihr Passwort zu erraten: Informieren Sie Ihren Administrator."
    ],
    "api-key-created": [
     "Ein neuer API-Schlüssel wurde erstellt",
@@ -317,9 +317,9 @@
     "Il Suo indirizzo e-mail nel portale di gestione dei link",
     "Buongiorno,\n\nquesto indirizzo è ora l'indirizzo e-mail dell'utente {user} nel portale di gestione dei link. I messaggi relativi all'account (modifiche della password, link di recupero) arriveranno qui.\n\nSe non conosce questo account, informi gli amministratori del portale."
    ],
-   "account-locked": [
+   "sign-in-failures": [
     "Tentativi di accesso al Suo account",
-    "Buongiorno,\n\nl'utente {user} non è riuscito ad accedere al portale di gestione dei link dopo diverse password errate, l'ultima il {when} (UTC). L'accesso per questo utente è bloccato per {minutes} minuti.\n\nSe è stato Lei, attenda e riprovi, oppure usi \"Ha dimenticato la password?\" nella pagina di accesso. In caso contrario, qualcuno potrebbe tentare di usare il Suo account: informi il Suo amministratore."
+    "Buongiorno,\n\nl'utente {user} non è riuscito ad accedere al portale di gestione dei link dopo diverse password errate in {minutes} minuti, l'ultima il {when} (UTC).\n\nL'account non è bloccato: ogni indirizzo che continua a provare attende sempre più a lungo tra un tentativo e l'altro, quindi Lei può ancora accedere dal Suo computer. Se è stato Lei, usi se necessario \"Ha dimenticato la password?\" nella pagina di accesso. In caso contrario, qualcuno potrebbe tentare di indovinare la Sua password: informi il Suo amministratore."
    ],
    "api-key-created": [
     "È stata creata una nuova chiave API",
@@ -414,9 +414,9 @@
     "Bağlantı yönetim portalındaki e-posta adresiniz",
     "Merhaba,\n\nBu adres artık bağlantı yönetim portalındaki {user} kullanıcısının e-posta adresidir. Hesapla ilgili iletiler (parola değişiklikleri, kurtarma bağlantıları) buraya gelecek.\n\nBu hesabı tanımıyorsanız portalın yöneticilerine bildirin."
    ],
-   "account-locked": [
+   "sign-in-failures": [
     "Hesabınıza oturum açma denemeleri",
-    "Merhaba,\n\n{user} kullanıcısı, sonuncusu {when} (UTC) tarihinde olmak üzere birkaç yanlış paroladan sonra bağlantı yönetim portalında oturum açamadı. Bu kullanıcının oturum açması {minutes} dakika boyunca engellendi.\n\nBunu siz yaptıysanız bekleyip yeniden deneyin veya oturum açma sayfasındaki \"Parolanızı mı unuttunuz?\" seçeneğini kullanın. Siz yapmadıysanız biri hesabınızı kullanmaya çalışıyor olabilir: yöneticinize bildirin."
+    "Merhaba,\n\n{user} kullanıcısı, {minutes} dakika içinde ve sonuncusu {when} (UTC) tarihinde olmak üzere birkaç yanlış paroladan sonra bağlantı yönetim portalında oturum açamadı.\n\nHesap kilitlenmedi: denemeyi sürdüren her adres, denemeler arasında giderek daha uzun bekler; bu nedenle kendi bilgisayarınızdan oturum açmaya devam edebilirsiniz. Bunu siz yaptıysanız gerekirse oturum açma sayfasındaki \"Parolanızı mı unuttunuz?\" seçeneğini kullanın. Siz yapmadıysanız biri parolanızı tahmin etmeye çalışıyor olabilir: yöneticinize bildirin."
    ],
    "api-key-created": [
     "Yeni bir API anahtarı oluşturuldu",
@@ -511,9 +511,9 @@
     "您在链接管理门户中的电子邮件地址",
     "您好：\n\n此地址现为链接管理门户中用户{user}的电子邮件地址。有关该账户的邮件（密码更改、找回链接）将发送到这里。\n\n如果您不了解此账户，请告知门户的管理员。"
    ],
-   "account-locked": [
+   "sign-in-failures": [
     "您账户的登录尝试",
-    "您好：\n\n用户{user}多次输入错误密码，无法登录链接管理门户，最后一次尝试在{when}（UTC）。该用户的登录已被锁定{minutes}分钟。\n\n如果是您本人，请稍候再试，或在登录页面使用“忘记密码？”。如果不是，可能有人试图使用您的账户：请告知您的管理员。"
+    "您好：\n\n用户{user}在{minutes}分钟内多次输入错误密码，无法登录链接管理门户，最后一次尝试在{when}（UTC）。\n\n该账户未被锁定：持续尝试的每个地址在两次尝试之间需要等待越来越长的时间，因此您仍可从自己的电脑登录。如果是您本人，如有需要，请在登录页面使用“忘记密码？”。如果不是，可能有人试图猜测您的密码：请告知您的管理员。"
    ],
    "api-key-created": [
     "已创建新的API密钥",
@@ -608,9 +608,9 @@
     "リンク管理ポータルのメールアドレス",
     "こんにちは。\n\nこのアドレスが、リンク管理ポータルのユーザー {user} のメールアドレスになりました。アカウントに関するメッセージ（パスワードの変更、再設定用リンク）はこちらに届きます。\n\nこのアカウントに心当たりがない場合は、ポータルの管理者にお知らせください。"
    ],
-   "account-locked": [
+   "sign-in-failures": [
     "アカウントへのサインイン試行",
-    "こんにちは。\n\nユーザー {user} は、誤ったパスワードが複数回入力されたため、リンク管理ポータルにサインインできませんでした。最後の試行は {when}（UTC）です。このユーザーのサインインは {minutes} 分間ブロックされます。\n\nご本人による試行の場合は、しばらく待ってから再度お試しいただくか、サインインページの「パスワードをお忘れですか？」を使用してください。心当たりがない場合は、誰かがあなたのアカウントを使用しようとしている可能性があります。管理者にお知らせください。"
+    "こんにちは。\n\nユーザー {user} は、{minutes} 分間に誤ったパスワードが複数回入力されたため、リンク管理ポータルにサインインできませんでした。最後の試行は {when}（UTC）です。\n\nアカウントはロックされていません。試行を続けるアドレスごとに次の試行までの待ち時間が長くなるため、ご自身のコンピューターからは引き続きサインインできます。ご本人による試行の場合は、必要に応じてサインインページの「パスワードをお忘れですか？」を使用してください。心当たりがない場合は、誰かがあなたのパスワードを推測しようとしている可能性があります。管理者にお知らせください。"
    ],
    "api-key-created": [
     "新しいAPIキーが作成されました",
@@ -705,9 +705,9 @@
     "링크 관리 포털의 이메일 주소",
     "안녕하십니까?\n\n이제 이 주소가 링크 관리 포털의 사용자 {user}의 이메일 주소입니다. 계정 관련 메시지(비밀번호 변경, 복구 링크)는 이 주소로 발송됩니다.\n\n이 계정을 모르신다면 포털 관리자에게 알리십시오."
    ],
-   "account-locked": [
+   "sign-in-failures": [
     "계정 로그인 시도 알림",
-    "안녕하십니까?\n\n사용자 {user}이(가) 잘못된 비밀번호를 여러 번 입력하여 링크 관리 포털에 로그인하지 못했습니다. 마지막 시도는 {when}(UTC)이었습니다. 이 사용자의 로그인은 {minutes}분 동안 차단됩니다.\n\n본인이 시도하셨다면 기다린 후 다시 시도하거나 로그인 페이지에서 \"비밀번호를 잊으셨습니까?\"를 사용하십시오. 본인이 아니라면 누군가 계정을 사용하려는 것일 수 있으므로 관리자에게 알리십시오."
+    "안녕하십니까?\n\n사용자 {user}이(가) {minutes}분 동안 잘못된 비밀번호를 여러 번 입력하여 링크 관리 포털에 로그인하지 못했습니다. 마지막 시도는 {when}(UTC)이었습니다.\n\n계정은 잠기지 않았습니다. 계속 시도하는 각 주소는 시도할 때마다 더 오래 기다려야 하므로 본인의 컴퓨터에서는 계속 로그인할 수 있습니다. 본인이 시도하셨다면 필요한 경우 로그인 페이지에서 \"비밀번호를 잊으셨습니까?\"를 사용하십시오. 본인이 아니라면 누군가 비밀번호를 추측하려는 것일 수 있으므로 관리자에게 알리십시오."
    ],
    "api-key-created": [
     "새 API 키가 생성되었습니다",
@@ -802,9 +802,9 @@
     "लिंक प्रबंधन पोर्टल में आपका ईमेल पता",
     "नमस्ते,\n\nयह पता अब लिंक प्रबंधन पोर्टल में उपयोगकर्ता {user} का ईमेल पता है। खाते से संबंधित संदेश (पासवर्ड बदलाव, पुनर्प्राप्ति लिंक) यहाँ आएँगे।\n\nयदि आप इस खाते को नहीं जानते, तो पोर्टल के व्यवस्थापकों को बताएँ।"
    ],
-   "account-locked": [
+   "sign-in-failures": [
     "आपके खाते में साइन-इन के प्रयास",
-    "नमस्ते,\n\nउपयोगकर्ता {user} कई गलत पासवर्ड के बाद लिंक प्रबंधन पोर्टल में साइन इन नहीं कर सका, अंतिम प्रयास {when} (UTC) को हुआ। इस उपयोगकर्ता के लिए साइन-इन {minutes} मिनट के लिए अवरुद्ध है।\n\nयदि यह आप थे, तो प्रतीक्षा करें और फिर से प्रयास करें, या साइन-इन पेज पर “पासवर्ड भूल गए?” का उपयोग करें। यदि नहीं, तो हो सकता है कोई आपके खाते का उपयोग करने की कोशिश कर रहा हो: अपने व्यवस्थापक को बताएँ।"
+    "नमस्ते,\n\nउपयोगकर्ता {user} {minutes} मिनट में कई गलत पासवर्ड के बाद लिंक प्रबंधन पोर्टल में साइन इन नहीं कर सका, अंतिम प्रयास {when} (UTC) को हुआ।\n\nखाता लॉक नहीं है: प्रयास जारी रखने वाले हर पते को प्रयासों के बीच अधिक समय तक प्रतीक्षा करनी पड़ती है, इसलिए आप अपने कंप्यूटर से अब भी साइन इन कर सकते हैं। यदि यह आप थे, तो ज़रूरत हो तो साइन-इन पेज पर “पासवर्ड भूल गए?” का उपयोग करें। यदि नहीं, तो हो सकता है कोई आपका पासवर्ड अनुमान लगाने की कोशिश कर रहा हो: अपने व्यवस्थापक को बताएँ।"
    ],
    "api-key-created": [
     "एक नई API कुंजी बनाई गई",
@@ -899,9 +899,9 @@
     "عنوان بريدك الإلكتروني في بوابة إدارة الروابط",
     "مرحبًا،\n\nأصبح هذا العنوان الآن عنوان البريد الإلكتروني للمستخدم {user} في بوابة إدارة الروابط. ستصل إلى هنا الرسائل المتعلقة بالحساب (تغييرات كلمة المرور، روابط الاستعادة).\n\nإذا كنت لا تعرف هذا الحساب، فأبلِغ مسؤولي البوابة."
    ],
-   "account-locked": [
+   "sign-in-failures": [
     "محاولات تسجيل دخول إلى حسابك",
-    "مرحبًا،\n\nتعذّر على المستخدم {user} تسجيل الدخول إلى بوابة إدارة الروابط بعد عدة كلمات مرور خاطئة، آخرها في {when} ‏(UTC). تسجيل الدخول لهذا المستخدم محظور لمدة {minutes} دقيقة.\n\nإذا كنت أنت، فانتظر وحاول مرة أخرى، أو استخدم «هل نسيت كلمة المرور؟» في صفحة تسجيل الدخول. وإذا لم تكن أنت، فقد يحاول أحدهم استخدام حسابك: أبلِغ المسؤول."
+    "مرحبًا،\n\nتعذّر على المستخدم {user} تسجيل الدخول إلى بوابة إدارة الروابط بعد عدة كلمات مرور خاطئة خلال {minutes} دقيقة، آخرها في {when} ‏(UTC).\n\nالحساب غير مقفل: كل عنوان يواصل المحاولة ينتظر وقتًا أطول فأطول بين المحاولات، لذا لا يزال بإمكانك تسجيل الدخول من حاسوبك. إذا كنت أنت، فاستخدم عند الحاجة «هل نسيت كلمة المرور؟» في صفحة تسجيل الدخول. وإذا لم تكن أنت، فقد يحاول أحدهم تخمين كلمة مرورك: أبلِغ المسؤول."
    ],
    "api-key-created": [
     "تم إنشاء مفتاح API جديد",

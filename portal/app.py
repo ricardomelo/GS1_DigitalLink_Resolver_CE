@@ -16,6 +16,7 @@ import csv
 import io
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -85,8 +86,16 @@ COOKIE_SECURE = os.environ.get("PORTAL_COOKIE_SECURE", "").strip().lower() not i
 SESSION_IDLE_MINUTES = max(0.1, float(os.environ.get("PORTAL_SESSION_IDLE_MINUTES", "30")))
 SESSION_MAX_HOURS = max(SESSION_IDLE_MINUTES / 60, float(os.environ.get("PORTAL_SESSION_MAX_HOURS", "12")))
 SESSION_WARNING_SECONDS = min(120.0, SESSION_IDLE_MINUTES * 60 / 4)
+# Sign-in throttle (finding F-005: no lock by user name alone, which anyone could turn against the account's owner).
+# Per user name and address: FREE_FAILURES wrong passwords, then a wait of FIRST_DELAY_SECONDS that doubles with each
+# further failure, up to LOCKOUT_SECONDS. Per address, whatever the user names: MAX_ADDRESS_FAILURES in the window,
+# then LOCKOUT_SECONDS. The owner is told once the account counts MAX_LOGIN_FAILURES from every address together.
 MAX_LOGIN_FAILURES = 5
-LOCKOUT_SECONDS = store.LOGIN_FAILURE_SECONDS   # 15 minutes
+LOCKOUT_SECONDS = store.LOGIN_FAILURE_SECONDS   # 15 minutes: how long a failure counts
+FREE_FAILURES = 3
+FIRST_DELAY_SECONDS = 15
+MAX_ADDRESS_FAILURES = 20
+FAILURE_PAUSE = 0.5         # every wrong password is answered after at least this long
 # Password recovery requests in the same window (Documentation/adr/0004-e-mail.md, section 3.5): per user name or
 # address typed, per browser address; invalid single-use links per browser address.
 RECOVERY_PER_LOGIN = 3
@@ -214,28 +223,49 @@ def message(code: str, status: int = 200, **extra):
 
 # --------------------------------------------------------------------------- authentication
 class LoginThrottle:
-    """Locks a username (and, separately, a client address) after repeated failures. The failures are
-    documents of the "login_failures" collection, so every replica of the portal sees the same count;
-    MongoDB deletes them once they are older than the lockout window (TTL index, store.py)."""
+    """Failed attempts, as documents of the "login_failures" collection, so every replica of the portal sees the same
+    count; MongoDB deletes them once they are older than LOCKOUT_SECONDS (TTL index, store.py). A key names what is
+    counted: "user-addr:<name>|<address>" (progressive delay), "addr:<address>" (hard limit), "user:<name>" (the
+    owner's notice only), "password-user:<name>" (the signed-in user's password change), and the recovery's keys."""
 
     @staticmethod
     def _failures():
         return store.col("login_failures")
 
-    def retry_after(self, *keys: str) -> int:
-        """Seconds to wait before another attempt for any of the keys (0 when none is locked)."""
+    def _recent(self, key: str, newest: bool, limit: int) -> list:
+        window = store.now() - timedelta(seconds=LOCKOUT_SECONDS)
+        return list(self._failures().find({"key": key, "at": {"$gt": window}}, {"at": 1})
+                    .sort("at", -1 if newest else 1).limit(limit))
+
+    def retry_after(self, *keys: str, limit: int = MAX_LOGIN_FAILURES) -> int:
+        """Seconds to wait before another attempt for any of the keys: a key that counts `limit` failures in the
+        window waits until the oldest of them leaves it (0 when none does)."""
         now = store.now()
-        window = now - timedelta(seconds=LOCKOUT_SECONDS)
         waits = []
         for key in keys:
-            recent = list(self._failures().find({"key": key, "at": {"$gt": window}}, {"at": 1})
-                          .sort("at", 1).limit(MAX_LOGIN_FAILURES))
-            if len(recent) >= MAX_LOGIN_FAILURES:
+            recent = self._recent(key, newest=False, limit=limit)
+            if len(recent) >= limit:
                 waits.append(int(LOCKOUT_SECONDS - (now - recent[0]["at"]).total_seconds()) + 1)
         return max(waits, default=0)
 
+    def delay(self, key: str) -> int:
+        """Seconds to wait before the next attempt of a user name from one address: none for the first FREE_FAILURES
+        failures in the window, then FIRST_DELAY_SECONDS after the last failure, doubling with each further one up
+        to LOCKOUT_SECONDS."""
+        count = self.count(key)
+        if count < FREE_FAILURES:
+            return 0
+        last = self._recent(key, newest=True, limit=1)[0]["at"]
+        wait = min(LOCKOUT_SECONDS, FIRST_DELAY_SECONDS * 2 ** (count - FREE_FAILURES))
+        return max(0, math.ceil(wait - (store.now() - last).total_seconds()))
+
+    def count(self, key: str) -> int:
+        """Failures of a key in the window."""
+        window = store.now() - timedelta(seconds=LOCKOUT_SECONDS)
+        return self._failures().count_documents({"key": key, "at": {"$gt": window}})
+
     def fail(self, *keys: str) -> None:
-        """Records a failed attempt for every key (user name and client address)."""
+        """Records a failed attempt for every key."""
         now = store.now()
         self._failures().insert_many([{"key": key, "at": now} for key in keys])
 
@@ -243,11 +273,32 @@ class LoginThrottle:
         """Forgets the failures of the keys after a successful sign-in."""
         self._failures().delete_many({"key": {"$in": list(keys)}})
 
+    def clear_user(self, name: str) -> None:
+        """Forgets every failure of a user name, from every address (a password set through a link)."""
+        self._failures().delete_many({"$or": [{"key": f"user:{name}"},
+                                              {"key": {"$regex": f"^{re.escape(f'user-addr:{name}|')}"}}]})
+
     def over(self, key: str, limit: int) -> bool:
         """Whether a key already counts `limit` events in the window (password recovery and links use their own
         keys, "forgot-…" and "link-…", in the same collection)."""
         window = store.now() - timedelta(seconds=LOCKOUT_SECONDS)
         return self._failures().count_documents({"key": key, "at": {"$gt": window}}, limit=limit) >= limit
+
+
+def login_keys(username: str) -> tuple[str, str, str]:
+    """The throttle's keys of a sign-in: the user name from this address, the address, the user name."""
+    name, addr = username.lower()[:users.EMAIL_MAX], client_address()
+    return f"user-addr:{name}|{addr}", f"addr:{addr}", f"user:{name}"
+
+
+def wait_answer(wait: int):
+    """429 with the wait in seconds (in minutes when longer) and Retry-After."""
+    if wait <= 90:
+        body, status = message("auth.wait", 429, params={"seconds": wait})
+    else:
+        body, status = message("auth.locked", 429, params={"minutes": -(-wait // 60)})
+    body.headers["Retry-After"] = str(wait)
+    return body, status
 
 
 throttle = LoginThrottle()
@@ -996,40 +1047,42 @@ def shown_username(typed: str) -> str:
 
 @app.post("/portal/api/login")
 def login():
-    """Signs a user in: throttled per user name and per address, audited, and the session is bound to the
-    account's password fingerprint.
+    """Signs a user in: delayed per user name from each address and limited per address (never locked by user name
+    alone), audited, and the session is bound to the account's password fingerprint.
     """
     data = request.get_json(silent=True) or {}
     username = str(data.get("username", "")).strip()
     password = str(data.get("password", ""))
-    keys = (f"user:{username.lower()}", f"addr:{client_address()}")
-    wait = throttle.retry_after(*keys)
+    pair, by_addr, by_user = login_keys(username)
+    wait = max(throttle.delay(pair), throttle.retry_after(by_addr, limit=MAX_ADDRESS_FAILURES))
     if wait:
-        return message("auth.locked", 429, params={"minutes": -(-wait // 60)})
+        return wait_answer(wait)
     account = users.get(username) if username else None
     tenant = (account or {}).get("tenant")
     if not username or not users.verify(username, password):
-        throttle.fail(*keys)
+        throttle.fail(pair, by_addr, by_user)
         typed = shown_username(username)
         audit.info("user=%s action=login-failed addr=%s", typed, client_address())
         log_event("login-failed", user=typed, detail=client_address(), tenant=tenant, actor_tenant=tenant)
-        if account and throttle.retry_after(keys[0]):   # this failure locked the account: tell its owner, once
-            notify.send(username, "account-locked", when=notify.now_text(), minutes=LOCKOUT_SECONDS // 60)
-        time.sleep(0.5)
+        if account and throttle.count(by_user) == MAX_LOGIN_FAILURES:   # tell the owner, once in the window
+            notify.send(username, "sign-in-failures", when=notify.now_text(), minutes=LOCKOUT_SECONDS // 60)
+        time.sleep(FAILURE_PAUSE)
         return message("auth.invalid", 401)
     if tenant_blocked(account):
         audit.info("user=%s action=login-refused addr=%s", username, client_address())
         log_event("login-refused", user=username, detail=client_address(), tenant=tenant, actor_tenant=tenant)
         return message("auth.tenantDisabled", 403)
+    # a sign-in clears the user name's failures, never the address's: an account of one's own must not reset the
+    # address's count between guesses at other accounts
     if sso.password_off_for(account):
         # the organisation signs its people in with its own provider (ADR 0012); the password was right, so saying
         # so tells nothing to someone who did not know it
-        throttle.clear(*keys)
+        throttle.clear(pair, by_user)
         audit.info("user=%s action=login-refused addr=%s reason=sso-only", username, client_address())
         log_event("login-refused", user=username, detail=f"{client_address()} password sign-in off (single sign-on)",
                   tenant=tenant, actor_tenant=tenant)
         return message("auth.ssoRequired", 403)
-    throttle.clear(*keys)
+    throttle.clear(pair, by_user)
     open_session(username, data.get("language"), client_address())
     return message("auth.welcome", 200, user=username, mustChange=bool((users.get(username) or {}).get("mustChange")))
 
@@ -1070,7 +1123,7 @@ def change_password():
     data = request.get_json(silent=True) or {}
     current = str(data.get("currentPassword", ""))
     new = str(data.get("newPassword", ""))
-    keys = (f"user:{g.user.lower()}",)
+    keys = (f"password-user:{g.user.lower()}",)     # not the sign-in's keys: others' wrong passwords do not count
     if throttle.retry_after(*keys):
         return message("auth.locked", 429, params={"minutes": LOCKOUT_SECONDS // 60})
     if not users.verify(g.user, current):
@@ -1186,7 +1239,7 @@ def set_password_by_link():
         log.error("Password through a link not set: %s", exc)
         return message("password.storeReadOnly", 500)
     tokens.purge(username)
-    throttle.clear(f"user:{username.lower()}")          # a locked account is open again
+    throttle.clear_user(username.lower())               # its sign-in delays end, from every address
     users.note_language(username, data.get("language"))
     action = "invite-accepted" if purpose == "invite" else "password-reset"
     audit.info("user=%s action=%s addr=%s", username, action, client_address())

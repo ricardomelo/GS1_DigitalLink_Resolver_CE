@@ -1306,6 +1306,7 @@
  "login.passwordChanged": "Password modificata. Acceda con la nuova password.",
  "auth.invalid": "Nome utente o password non corretti.",
  "auth.locked": "Troppi tentativi non riusciti. Riprovi tra {minutes} minuto/i.",
+ "auth.wait": "Troppi tentativi non riusciti. Attenda {seconds} secondi e riprovi.",
  "auth.required": "La Sua sessione è terminata. Acceda di nuovo.",
  "auth.welcome": "Benvenuto.",
  "auth.loggedOut": "Disconnessione effettuata.",

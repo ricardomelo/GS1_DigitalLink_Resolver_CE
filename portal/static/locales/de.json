@@ -1306,6 +1306,7 @@
  "login.passwordChanged": "Passwort geändert. Melden Sie sich mit dem neuen Passwort an.",
  "auth.invalid": "Benutzername oder Passwort falsch.",
  "auth.locked": "Zu viele fehlgeschlagene Versuche. Versuchen Sie es in {minutes} Minute(n) erneut.",
+ "auth.wait": "Zu viele fehlgeschlagene Versuche. Warten Sie {seconds} Sekunden und versuchen Sie es erneut.",
  "auth.required": "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
  "auth.welcome": "Willkommen.",
  "auth.loggedOut": "Sie haben sich abgemeldet.",

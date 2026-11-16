@@ -1306,6 +1306,7 @@
  "login.passwordChanged": "Contraseña cambiada. Inicie sesión con la nueva contraseña.",
  "auth.invalid": "Nombre de usuario o contraseña incorrectos.",
  "auth.locked": "Demasiados intentos fallidos. Vuelva a intentarlo dentro de {minutes} minuto(s).",
+ "auth.wait": "Demasiados intentos fallidos. Espere {seconds} segundos y vuelva a intentarlo.",
  "auth.required": "Su sesión ha finalizado. Vuelva a iniciar sesión.",
  "auth.welcome": "Le damos la bienvenida.",
  "auth.loggedOut": "Ha cerrado la sesión.",

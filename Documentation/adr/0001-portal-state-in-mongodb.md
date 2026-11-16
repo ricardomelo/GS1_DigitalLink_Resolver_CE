@@ -99,7 +99,7 @@ built-in server (`python -m main` → `app.run()`), and every service in `docker
 | `users` | user name | `hash`, `role`, `prefixes`, `disabled`, `mustChange`, `created`, `lastLogin` | — |
 | `record_meta` | record key (`meta.key()`) | `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | — |
 | `journal` | ObjectId (`jsonl-<line>` when migrated) | `at` (date), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt` | `{at: -1}`; `{anchor, qpath, at: -1}`; `{user, at: -1}`; `{category}`; TTL on `expiresAt` |
-| `login_failures` | ObjectId | `key` (user name or address), `at` (date) | `{key, at}`; TTL on `at`, 15 minutes |
+| `login_failures` | ObjectId | `key` (user name and address, address, user name, …: see the developer guide), `at` (date) | `{key, at}`; TTL on `at`, 15 minutes |
 | `jobs` | token | `type` (`import`, `linkcheck`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `error`, `expiresAt`; imports `plan`, `keyRecords`, `results`; link checks `scope`, `urls`, `problems`, `records` | `{state, created}`; TTL on `expiresAt` |
 | `workers` (step 3) | worker name (`host:pid:mode`) | `seen`, `mode`, `job` | TTL on `seen`, 10 minutes |
 | `linkcheck_cache` | address | `result`, `expiresAt` | TTL on `expiresAt` |

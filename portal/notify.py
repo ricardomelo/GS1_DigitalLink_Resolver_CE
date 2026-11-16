@@ -36,7 +36,7 @@ OPTIONAL = tuple(name for name, (optional, _) in CATEGORIES.items() if optional)
 TEMPLATES = {
     "invite": "account", "password-recovery": "account", "password-reset-admin": "account",
     "password-changed": "security", "email-changed-old": "security", "email-changed-new": "security",
-    "account-locked": "security", "api-key-created": "security", "api-key-expiring": "security",
+    "sign-in-failures": "security", "api-key-created": "security", "api-key-expiring": "security",
     "import-finished": "jobs", "linkcheck-finished": "jobs",
     "alert-resolver-down": "alerts", "alert-resolver-up": "alerts", "alert-backup-failed": "alerts",
     "alert-backup-ok": "alerts", "alert-certificate": "alerts", "alert-certificate-ok": "alerts",

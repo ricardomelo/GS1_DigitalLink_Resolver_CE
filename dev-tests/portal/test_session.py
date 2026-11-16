@@ -102,16 +102,18 @@ check("idle limit: a session without calls for longer is refused", idle.get("/po
 # (frontend_proxy_server/nginx.conf); what a client wrote before it reaches the portal only when nginx is bypassed or
 # misconfigured, and must never be the address the throttle counts or the audit trail records.
 import store  # noqa: E402
+from datetime import timedelta  # noqa: E402
 
+portal.FAILURE_PAUSE = 0                                 # the half second after each wrong password, not tested here
 anonymous = portal.app.test_client()
-for n in range(portal.MAX_LOGIN_FAILURES):              # a first address rotated at every attempt, as a forger would
+for n in range(portal.MAX_ADDRESS_FAILURES):            # a first address rotated at every attempt, as a forger would
     anonymous.post("/portal/api/login", json={"username": f"nobody{n}", "password": "wrong"},
                    headers={**ORIGIN, "X-Forwarded-For": f"10.9.8.{n}, 198.51.100.7"})
 answer = anonymous.post("/portal/api/login", json={"username": "tester", "password": "a-long-test-password"},
                         headers={**ORIGIN, "X-Forwarded-For": "10.9.8.250, 198.51.100.7"})
 check("throttle per address: a forged first X-Forwarded-For address rotated at every attempt does not escape it",
       answer.status_code == 429 and answer.get_json().get("code") == "auth.locked", answer.status_code)
-for n in range(portal.MAX_LOGIN_FAILURES):              # failures from 198.51.100.8 naming a victim's address first
+for n in range(portal.MAX_ADDRESS_FAILURES):            # failures from 198.51.100.8 naming a victim's address first
     anonymous.post("/portal/api/login", json={"username": f"nobody{n}", "password": "wrong"},
                    headers={**ORIGIN, "X-Forwarded-For": "203.0.113.20, 198.51.100.8"})
 answer = portal.app.test_client().post("/portal/api/login", json={"username": "tester", "password": "a-long-test-password"},
@@ -124,6 +126,60 @@ anonymous.post("/portal/api/login", json={"username": "nobody-traced", "password
 traced = store.col("journal").find_one({"action": "login-failed", "user": "nobody-traced"}) or {}
 check("the audit trail records the address the proxy set, not the one the client wrote",
       traced.get("detail") == "203.0.113.21", traced.get("detail"))
+store.col("login_failures").delete_many({})
+
+
+# ---------------------------------------------------------------- no lock by user name alone (finding F-005)
+# Wrong passwords for a user name delay that user name from that address only, more after each failure; an address
+# is limited whatever the user names it tries; the owner signs in from elsewhere.
+def sign_in_from(address, password, username="tester"):
+    return portal.app.test_client().post("/portal/api/login", json={"username": username, "password": password},
+                                         headers={**ORIGIN, "X-Forwarded-For": address})
+
+
+answers = [sign_in_from("198.51.100.30", "wrong") for _ in range(portal.MAX_LOGIN_FAILURES + 3)]
+check("five and more wrong passwords from one address: 401, then a wait from that address",
+      [a.status_code for a in answers[:portal.FREE_FAILURES]] == [401] * portal.FREE_FAILURES
+      and all(a.status_code == 429 for a in answers[portal.FREE_FAILURES:]), [a.status_code for a in answers])
+for _ in range(portal.FREE_FAILURES):                    # a second guessing address: the user name counts six failures
+    sign_in_from("198.51.100.31", "wrong")
+check("the account's owner still signs in from another address (six failures of the user name from two addresses)",
+      portal.throttle.count("user:tester") >= portal.MAX_LOGIN_FAILURES
+      and sign_in_from("203.0.113.31", "a-long-test-password").status_code == 200)
+waiting = sign_in_from("198.51.100.30", "a-long-test-password")
+body = waiting.get_json() or {}
+check("from the guessing address even the right password waits: 429 auth.wait with seconds and Retry-After",
+      waiting.status_code == 429 and body.get("code") == "auth.wait"
+      and 0 < body.get("params", {}).get("seconds", 0) <= portal.FIRST_DELAY_SECONDS
+      and waiting.headers.get("Retry-After") == str(body["params"]["seconds"]), (waiting.status_code, body))
+check("the wait is not a failure: the address's own count did not grow while it waited",
+      portal.throttle.count("user-addr:tester|198.51.100.30") == portal.FREE_FAILURES)
+store.col("login_failures").update_many({"key": "user-addr:tester|198.51.100.30"},
+                                        {"$set": {"at": store.now() - timedelta(seconds=portal.FIRST_DELAY_SECONDS + 1)}})
+check("once the wait has passed, the right password signs in from that address too",
+      sign_in_from("198.51.100.30", "a-long-test-password").status_code == 200)
+check("…and a sign-in forgets the user name's failures from that address",
+      portal.throttle.count("user-addr:tester|198.51.100.30") == 0)
+for n in range(portal.MAX_ADDRESS_FAILURES - 1):         # one address trying many user names (password spraying)
+    sign_in_from("198.51.100.40", "wrong", username=f"sprayed{n}")
+check("one address may try many user names up to its limit", sign_in_from("198.51.100.40", "a-long-test-password").status_code == 200)
+sign_in_from("198.51.100.40", "wrong", username="sprayed-last")
+answer = sign_in_from("198.51.100.40", "a-long-test-password")
+check("then the address waits 15 minutes whatever the user name (auth.locked in minutes)",
+      answer.status_code == 429 and (answer.get_json() or {}).get("code") == "auth.locked"
+      and (answer.get_json() or {}).get("params", {}).get("minutes") == 15, answer.get_json())
+check("a sign-in of one's own does not reset the address's count",
+      portal.throttle.count("addr:198.51.100.40") == portal.MAX_ADDRESS_FAILURES)
+signed_in = portal.app.test_client()
+signed_in.post("/portal/api/login", json={"username": "tester", "password": "a-long-test-password"},
+               headers={**ORIGIN, "X-Forwarded-For": "203.0.113.32"})
+for n in range(portal.MAX_LOGIN_FAILURES):              # after the owner signed in: wrong passwords from elsewhere
+    sign_in_from(f"198.51.100.5{n}", "wrong")
+changed = signed_in.post("/portal/api/password", json={"currentPassword": "wrong", "newPassword": "another-long-password"},
+                         headers={**ORIGIN, "X-Forwarded-For": "203.0.113.32"})
+check("others' wrong sign-in passwords do not lock the owner's password change",
+      changed.status_code != 429 and (changed.get_json() or {}).get("code") == "password.currentWrong",
+      (changed.status_code, changed.get_json()))
 store.col("login_failures").delete_many({})
 
 

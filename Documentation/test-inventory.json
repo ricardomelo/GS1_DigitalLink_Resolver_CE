@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-15",
+ "generated": "2026-11-16",
  "programs": {
   "about": {
    "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
@@ -209,7 +209,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_5bc2518ea8b…)",
+    "a wrong key is refused (rk_89567d64aed…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -937,8 +937,7 @@
    "checks": [
     "features.md: every table has a Checks column (230 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (394 references)",
-    "…and words found in one of its checks",
+    "…each reference names a program of the inventory (403 references)",
     "every test program is in the inventory (75)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
@@ -951,7 +950,7 @@
     "…and every decision record (24)",
     "every relative link of the documents leads to a file (40 documents)"
    ],
-   "count": 15,
+   "count": 14,
    "ciOnly": false
   },
   "domains": {
@@ -3164,7 +3163,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:39469/ok",
+    "internal address refused: http://127.0.0.1:43457/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -3200,7 +3199,7 @@
    "checks": [
     "mail off without PORTAL_MAIL_HOST",
     "a relay without a sender is refused",
-    "a user name without a password is refused",
+    "a user name without a password is refused2026-11-15 22:58:13,370 INFO portal.worker Housekeeping aggregate: 1.",
     "credentials without encryption are refused",
     "an unknown security mode is refused",
     "default ports: 465 for tls",
@@ -3312,7 +3311,7 @@
     "the old address is not told the new one",
     "no message when the address does not change",
     "own password changed: a security message",
-    "five wrong passwords lock the account and tell its owner once",
+    "five wrong passwords from any addresses tell the account's owner once (not locked)",
     "no message for a name without an account",
     "a recovery opens a locked account",
     "preferences: the address, the page's language until chosen, jobs off by default",
@@ -3748,7 +3747,7 @@
     "import preview: the address check offers Stop",
     "import preview: address check stopped, the import still possible",
     "import: Stop hidden before Apply",
-    "a running import offers Stop import2026-11-15 21:47:29,106 INFO werkzeug 127.0.0.1 - - [15/Nov/2026 21:47:29] \"\u001b[33mGET /api/01/09506000007021 HTTP/1.1\u001b[0m\" 404 -",
+    "a running import offers Stop import",
     "import stopped: the counts and the records not imported, the rows written listed, Stop gone",
     "every key of section 4.3 offered, each with its name",
     "GLN: its own label and qualifiers (254, 7040)",
@@ -3780,7 +3779,7 @@
     "qualifier filter: records with a serial number (with or without other qualifiers)",
     "qualifier filter and text search together",
     "the filters are in the address (a bookmark keeps them)",
-    "a filtered list exports only the records it shows2026-11-15 21:47:44,644 INFO werkzeug 127.0.0.1 - - [15/Nov/2026 21:47:44] \"GET /api/summary?links=true HTTP/1.1\" 200 -",
+    "a filtered list exports only the records it shows",
     "…and opening the address again shows the same list",
     "qualifier filter: records created elsewhere with qualifiers the portal does not manage",
     "a qualifier absent from the new key type is reset",
@@ -3809,7 +3808,7 @@
     "QR code with every qualifier",
     "changing the informative batch keeps the record open",
     "Open record asks before discarding an unsaved change",
-    "a serial number opened without its batch shows the stored variant and batch",
+    "a serial number opened without its batch shows the stored variant and batch2026-11-15 23:00:50,935 INFO werkzeug 127.0.0.1 - - [15/Nov/2026 23:00:50] \"POST /portal/api/record/warnings HTTP/1.1\" 200 -",
     "a different batch typed is kept and pointed out",
     "data attributes offered, editor closed",
     "ticking opens the editor with one row",
@@ -4044,7 +4043,7 @@
     "QR code with every qualifier",
     "changing the informative batch keeps the record open",
     "Open record asks before discarding an unsaved change",
-    "a serial number opened without its batch shows the stored variant and batch2026-11-15 21:50:28,660 INFO werkzeug 127.0.0.1 - - [15/Nov/2026 21:50:28] \"POST /portal/api/record/warnings HTTP/1.1\" 200 -",
+    "a serial number opened without its batch shows the stored variant and batch",
     "a different batch typed is kept and pointed out",
     "data attributes not offered without the syntax engine",
     "415 requires 8020",
@@ -4990,6 +4989,16 @@
     "throttle per address: a forged first X-Forwarded-For address rotated at every attempt does not escape it",
     "…and failures cannot be charged to another address by writing it first",
     "the audit trail records the address the proxy set, not the one the client wrote",
+    "five and more wrong passwords from one address: 401, then a wait from that address",
+    "the account's owner still signs in from another address (six failures of the user name from two addresses)",
+    "from the guessing address even the right password waits: 429 auth.wait with seconds and Retry-After",
+    "the wait is not a failure: the address's own count did not grow while it waited",
+    "once the wait has passed, the right password signs in from that address too",
+    "…and a sign-in forgets the user name's failures from that address",
+    "one address may try many user names up to its limit",
+    "then the address waits 15 minutes whatever the user name (auth.locked in minutes)",
+    "a sign-in of one's own does not reset the address's count",
+    "others' wrong sign-in passwords do not lock the owner's password change",
     "sign-in page: community notice in the footer",
     "portal: community notice in the footer",
     "no warning right after the sign-in",
@@ -5010,7 +5019,7 @@
     "Portuguese warning",
     "signing out from the warning"
    ],
-   "count": 33,
+   "count": 43,
    "ciOnly": false
   },
   "sheet": {
@@ -5272,6 +5281,17 @@
     "throttle: shared by every instance (replica)",
     "throttle: a successful sign-in clears both keys",
     "throttle: failures older than 15 minutes do not count",
+    "throttle: a limit of its own (the address's 20)",
+    "delay: two failures of a user name from one address cost nothing",
+    "delay: the third waits 15 seconds from the last failure",
+    "delay: the fourth 30 seconds",
+    "delay: the fifth 60 seconds (doubling)",
+    "delay: never more than 15 minutes",
+    "delay: counted from the last failure (15 seconds already passed)",
+    "delay: counted from the newest failure, not the oldest",
+    "delay: another address of the same user name waits nothing",
+    "clear_user: every address of the user name forgotten, and its count",
+    "clear_user: a longer user name that starts with it is not touched",
     "migration: users, metadata and journal moved",
     "migration: files renamed *.migrated and kept",
     "migration: an account from before roles is an administrator; others as they were",
@@ -5283,7 +5303,7 @@
     "migration: a users.json next to a database that holds users is not imported",
     "migration: an interrupted import is completed without duplicates"
    ],
-   "count": 58,
+   "count": 69,
    "ciOnly": false
   },
   "strict_mode": {

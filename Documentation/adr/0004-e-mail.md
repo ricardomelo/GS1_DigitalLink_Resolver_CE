@@ -147,7 +147,7 @@ appear in the browser: nobody waits for them.
 | Recovery by the user | *Forgot your password?* → user name or address → same answer for every input → when an account matches and may sign in, `reset` link by e-mail and journal `password-recovery` → as above |
 | Password chosen through a link | `POST /portal/api/password/link` with the token and the new password (minimum length as today) → password set, `mustChange` and `invited` cleared, every session and every other link of the user ended → security message "your password was changed" |
 | Address changed by an administrator | security message to the old address (it may no longer be the user's) and to the new one |
-| Account locked | the fifth failed sign-in for a user name that exists sends one security message (one per lock) |
+| Account locked | the fifth failed sign-in for a user name that exists sends one security message (one per lock). *Amended (finding F-005): accounts are no longer locked; the message `sign-in-failures` goes out when an account reaches five failures in 15 minutes from any addresses, and says it is not locked* |
 | Job finished | when the user switched *My background jobs* on: an import (counts) or a link check (problems found) finished |
 
 The time a request takes does not depend on whether an account matched (the same delay as a failed sign-in).

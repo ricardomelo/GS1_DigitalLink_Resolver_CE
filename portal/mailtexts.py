@@ -119,21 +119,23 @@ TEXTS = {
                   "sobre a conta (trocas de senha, links de recuperação) virão para cá.\n\n"
                   "Se você não conhece esta conta, avise os administradores do portal."),
     },
-    "account-locked": {
+    "sign-in-failures": {
         "en-GB": ("Sign-in attempts to your account",
                   "Hello,\n\n"
                   "The user {user} could not sign in to the link management portal after several wrong "
-                  "passwords, the last on {when} (UTC). Sign-in for this user is blocked for {minutes} "
-                  "minutes.\n\n"
-                  "If it was you, wait and try again, or use \"Forgot your password?\" on the sign-in page. If it "
-                  "was not, someone may be trying to use your account: tell your administrator."),
+                  "passwords in {minutes} minutes, the last on {when} (UTC).\n\n"
+                  "The account is not locked: each address that keeps trying waits longer between attempts, so "
+                  "you can still sign in from your own computer. If it was you, use \"Forgot your password?\" on "
+                  "the sign-in page if you need to. If it was not, someone may be trying to guess your password: "
+                  "tell your administrator."),
         "pt-BR": ("Tentativas de acesso à sua conta",
                   "Olá,\n\n"
                   "O usuário {user} não conseguiu entrar no portal de gestão de links depois de várias senhas "
-                  "erradas, a última em {when} (UTC). O acesso deste usuário está bloqueado por {minutes} "
-                  "minutos.\n\n"
-                  "Se foi você, espere e tente de novo, ou use \"Esqueceu a senha?\" na página de acesso. Se não "
-                  "foi, alguém pode estar tentando usar a sua conta: avise o seu administrador."),
+                  "erradas em {minutes} minutos, a última em {when} (UTC).\n\n"
+                  "A conta não está bloqueada: cada endereço que continua tentando espera cada vez mais entre as "
+                  "tentativas, e você ainda pode entrar a partir do seu computador. Se foi você, use \"Esqueceu a "
+                  "senha?\" na página de acesso, se precisar. Se não foi, alguém pode estar tentando adivinhar a "
+                  "sua senha: avise o seu administrador."),
     },
     "api-key-created": {
         "en-GB": ("A new API key was created",

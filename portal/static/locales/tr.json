@@ -1306,6 +1306,7 @@
  "login.passwordChanged": "Parola değiştirildi. Yeni parolayla oturum açın.",
  "auth.invalid": "Kullanıcı adı veya parola yanlış.",
  "auth.locked": "Çok fazla başarısız deneme. {minutes} dakika sonra yeniden deneyin.",
+ "auth.wait": "Çok fazla başarısız deneme. {seconds} saniye bekleyip yeniden deneyin.",
  "auth.required": "Oturumunuz sona erdi. Lütfen yeniden oturum açın.",
  "auth.welcome": "Hoş geldiniz.",
  "auth.loggedOut": "Oturumunuzu kapattınız.",

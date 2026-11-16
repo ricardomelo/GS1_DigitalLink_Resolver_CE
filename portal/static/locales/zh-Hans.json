@@ -1306,6 +1306,7 @@
  "login.passwordChanged": "密码已更改。请使用新密码登录。",
  "auth.invalid": "用户名或密码不正确。",
  "auth.locked": "失败次数过多。请在{minutes}分钟后重试。",
+ "auth.wait": "失败次数过多。请等待{seconds}秒后重试。",
  "auth.required": "您的会话已结束。请重新登录。",
  "auth.welcome": "欢迎。",
  "auth.loggedOut": "您已退出登录。",

@@ -1306,6 +1306,7 @@
  "login.passwordChanged": "비밀번호를 변경했습니다. 새 비밀번호로 로그인하십시오.",
  "auth.invalid": "사용자 이름 또는 비밀번호가 올바르지 않습니다.",
  "auth.locked": "실패한 시도가 너무 많습니다. {minutes}분 후에 다시 시도하십시오.",
+ "auth.wait": "실패한 시도가 너무 많습니다. {seconds}초 후에 다시 시도하십시오.",
  "auth.required": "세션이 종료되었습니다. 다시 로그인하십시오.",
  "auth.welcome": "환영합니다.",
  "auth.loggedOut": "로그아웃했습니다.",

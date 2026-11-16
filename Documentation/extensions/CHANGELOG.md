@@ -5,6 +5,26 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
 
+### The journal: written first, sealed, verified (session 39)
+- **Changed: a record change is journalled before it is made** ([ADR 0026](../adr/0026-journal-integrity.md)). The
+  journal entry of a save or a deletion (the editor, imports, the tenant API, *Fix serial numbers*) used to be written
+  after the data entry API had changed the record, and a failure to write it was only logged, so a record could change
+  without trace. Now the entry comes first; when the portal's database cannot take it, the change is refused with
+  *The audit journal could not be written* (503) and nothing is changed. A change the data entry API then refuses
+  adds an entry *Change not completed* naming the attempt; the record's history leaves such attempts out. The changes
+  the portal makes to a key's other records when it turns them to explicit default links are now journalled too.
+- **Added: every journal entry is sealed in a hash chain**, one per audit trail (each organisation's, the operator's)
+  and kind of entry (sign-ins, records, administration), with a key that stays outside the database
+  (`PORTAL_JOURNAL_KEY`). Changing, removing or inserting an entry, even directly in MongoDB or in a backup, breaks the
+  chain. Entries written before this version are sealed at the first start (marked so). **Operators:** the installer
+  adds `PORTAL_JOURNAL_KEY` to `.env` (an installation updated with `git pull` adds it by hand, see the release notes);
+  keep it with the other secrets, apart from the backups; `scripts/rotate-secrets.sh journal` replaces it. Without
+  it the portal starts and warns that the chains have no key.
+- **Added: *Verify integrity* on the Audit trail screen** (administrators): one line per chain with its result and its
+  head, a short text to copy and keep outside the server as a receipt; a receipt pasted later is looked for in its
+  chain. The worker verifies every chain once a day and writes each head to the portal's log. Twelve languages.
+  Commit `ad116df`.
+
 ### Single sign-on: domains proved, verified e-mail, the provider's subject (session 38)
 - **Changed: an e-mail domain of a single sign-on configuration signs people in only once proved**
   ([ADR 0025](../adr/0025-sso-domain-proof-and-subject.md)). Typing a domain used to claim it: any organisation's

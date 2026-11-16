@@ -1271,6 +1271,18 @@ earlier keep their domains, marked as accepted at the upgrade. 33 new checks in 
 caught after one check was added. The session also added F-005's staging steps to the test plan of sessions 32 to 37, and fixed finding F-017 (`8b6d643`):
 the operator's provider test was open to any organisation's administrator.
 
+## Session 39 — the journal written first and sealed
+
+The eighth finding of the security assessment's phase 1, step 1 of its record
+([ADR 0026](adr/0026-journal-integrity.md)), in one code commit (`ad116df`): a record change is journalled before the
+data entry API is called and refused when the journal cannot be written, a failed one followed by `change-failed`;
+every event is sealed in a hash chain per audit trail and retention category, with an HMAC whose key
+(`PORTAL_JOURNAL_KEY`) stays outside the database; events of earlier versions are sealed at the upgrade;
+administrators verify the chains on the Audit trail screen and keep their heads as receipts, and the worker verifies
+them daily and logs the heads. A new test program (`journal`, 27 checks) and 32 new checks in `store`, which also runs
+against a real MongoDB in the continuous integration; 25 mutations, all caught after one check was added. Insert-only
+access to the journal and an alert by e-mail are the record's step 2.
+
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|
 | Identification | GTIN + optional batch | 16 primary keys and 9 qualifiers, with the combinations of the standard |

@@ -1068,6 +1068,20 @@ administrator did to the organisation (its users, its prefixes, support access) 
 *operator*. The server administrator sees the operator's trail, with an **Organisation** column and everything
 the operator's users did to organisations; an organisation's whole trail only during support access.
 
+A change to a record is written to the audit trail before it is made. If the trail cannot be written (the portal's
+database is unavailable), the portal refuses the change — *The audit journal could not be written* — and nothing is
+changed; try again in a moment. When the resolver then refuses a change, the trail shows *Change not completed* after
+the attempt, and the record's history leaves the attempt out.
+
+**Verify integrity.** Every event is sealed in a chain: one per organisation and kind of event (*Sign-ins*, *Records*,
+*Administration*), each event bound to the one before it with a key that is not kept in the database, so an event
+changed, removed or added afterwards — even directly in the database or in a backup — breaks its chain. **Verify
+integrity** shows one line per chain: its events, *Intact* or *Broken* with the problem and the event where it starts,
+and its **head (receipt)**, a text such as `t-…/record:128:9f2c…`. Copy the heads now and then and keep them outside the
+server (a ticket, an e-mail to yourself): paste one later under **Check a receipt** to confirm that nothing up to it
+has changed. A broken chain, or a warning that the journal key is not set, is for the server administrator; the
+portal also checks every chain once a day and records each head in its log.
+
 ## 16. Requests to the resolver
 
 ![Requests](images/guide/requests.png)

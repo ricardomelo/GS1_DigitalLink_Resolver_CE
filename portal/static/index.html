@@ -1008,7 +1008,34 @@
         </div>
         <button type="submit" class="btn btn-primary" data-i18n="audit.filter"></button>
         <button type="button" class="btn btn-ghost" id="audit-csv" data-i18n="audit.csv"></button>
+        <button type="button" class="btn btn-ghost" id="audit-verify-open" data-i18n="audit.verify"></button>
       </form>
+      <section class="audit-verify" id="audit-verify" hidden>
+        <h2 data-i18n="audit.verify"></h2>
+        <p class="field-msg" data-i18n="audit.verifyLede"></p>
+        <p class="field-msg error" id="audit-verify-unkeyed" data-i18n="audit.notKeyed" hidden></p>
+        <div class="table-wrap">
+          <table class="records-table audit-chains">
+            <thead>
+              <tr>
+                <th scope="col" data-i18n="audit.chain"></th>
+                <th scope="col" data-i18n="audit.chainEvents"></th>
+                <th scope="col" data-i18n="audit.chainResult"></th>
+                <th scope="col" data-i18n="audit.chainHead"></th>
+              </tr>
+            </thead>
+            <tbody id="audit-chains-body"></tbody>
+          </table>
+        </div>
+        <form class="audit-filters" id="audit-receipt-form" novalidate>
+          <div class="audit-text">
+            <label for="audit-receipt" data-i18n="audit.receipt"></label>
+            <input id="audit-receipt" autocomplete="off" spellcheck="false" data-i18n-attr="placeholder:audit.receiptPlaceholder">
+          </div>
+          <button type="submit" class="btn btn-ghost" data-i18n="audit.receiptCheck"></button>
+        </form>
+        <p class="field-msg" id="audit-verify-msg" aria-live="polite"></p>
+      </section>
       <p class="field-msg" id="audit-count" aria-live="polite"></p>
       <div class="table-wrap">
         <table class="records-table audit-table">

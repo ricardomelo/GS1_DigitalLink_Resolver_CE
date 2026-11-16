@@ -235,7 +235,7 @@ EXISTING_ORDER=()
 MANAGED_KEYS=" MONGO_INITDB_ROOT_USERNAME MONGO_INITDB_ROOT_PASSWORD MONGO_URI SESSION_TOKEN FQDN
   RESOLVER_ORG_NAME RESOLVER_ORG_URL RESOLVER_CONTACT_STREET RESOLVER_CONTACT_LOCALITY RESOLVER_CONTACT_REGION
   RESOLVER_CONTACT_POSTCODE RESOLVER_CONTACT_COUNTRY RESOLVER_CONTACT_TELEPHONE PORTAL_ADMIN_USERNAME
-  PORTAL_ADMIN_PASSWORD PORTAL_DB_PASSWORD PORTAL_SECRET_KEY PROXY_BIND_ADDRESS DATABASE_BIND_ADDRESS TLS_MODE
+  PORTAL_ADMIN_PASSWORD PORTAL_DB_PASSWORD PORTAL_SECRET_KEY PORTAL_JOURNAL_KEY PROXY_BIND_ADDRESS DATABASE_BIND_ADDRESS TLS_MODE
   CERTBOT_EMAIL TLS_CERT_FILE TLS_KEY_FILE WEB_SERVICE_REPLICAS DATA_ENTRY_SERVICE_REPLICAS
   PORTAL_SERVICE_REPLICAS PORTAL_WORKER_REPLICAS PORTAL_MAIL_HOST PORTAL_MAIL_PORT PORTAL_MAIL_SECURITY
   PORTAL_MAIL_USERNAME PORTAL_MAIL_PASSWORD PORTAL_MAIL_FROM PORTAL_TIME_ZONE "
@@ -290,9 +290,11 @@ write_env() {
     env_line PORTAL_ADMIN_USERNAME "$PORTAL_ADMIN_USERNAME"
     env_line PORTAL_ADMIN_PASSWORD "$PORTAL_ADMIN_PASSWORD"
     printf '\n# Portal: password of its own database user (portal-db-init applies it at every start)\n'
-    printf '# and the key that signs its sessions (shared by every portal replica).\n'
+    printf '# the key that signs its sessions and the key that seals its journal (shared by every portal replica;\n'
+    printf '# keep the journal key with the backups: Documentation/adr/0026-journal-integrity.md).\n'
     env_line PORTAL_DB_PASSWORD "$PORTAL_DB_PASSWORD"
     env_line PORTAL_SECRET_KEY "$PORTAL_SECRET_KEY"
+    env_line PORTAL_JOURNAL_KEY "$PORTAL_JOURNAL_KEY"
     printf '\n# Portal: e-mail relay (empty host: no e-mail; see .env.example and Documentation/adr/0004-e-mail.md)\n'
     env_line PORTAL_MAIL_HOST "$PORTAL_MAIL_HOST"
     env_line PORTAL_MAIL_PORT "$PORTAL_MAIL_PORT"
@@ -623,6 +625,7 @@ secrets() {
   SESSION_TOKEN=$(existing SESSION_TOKEN)
   PORTAL_DB_PASSWORD=$(existing PORTAL_DB_PASSWORD)
   PORTAL_SECRET_KEY=$(existing PORTAL_SECRET_KEY)
+  PORTAL_JOURNAL_KEY=$(existing PORTAL_JOURNAL_KEY)
   local db_exists=0
   command -v docker >/dev/null 2>&1 && volume_exists resolver-database-volume && db_exists=1
 
@@ -662,8 +665,14 @@ secrets() {
     PORTAL_SECRET_KEY=$(random_secret 32)
     info "A session key for the portal was generated (signed-in users sign in again once)."
   fi
+  # The journal key seals the audit trail (ADR 0026); one already in .env is never replaced, since the events
+  # sealed with it could no longer be checked against it.
+  if [[ -z $PORTAL_JOURNAL_KEY ]]; then
+    PORTAL_JOURNAL_KEY=$(random_secret 32)
+    info "A key that seals the portal's journal was generated."
+  fi
   local value
-  for value in "$MONGO_PASSWORD" "$MONGO_URI" "$SESSION_TOKEN" "$PORTAL_DB_PASSWORD" "$PORTAL_SECRET_KEY"; do
+  for value in "$MONGO_PASSWORD" "$MONGO_URI" "$SESSION_TOKEN" "$PORTAL_DB_PASSWORD" "$PORTAL_SECRET_KEY" "$PORTAL_JOURNAL_KEY"; do
     [[ $value != *"'"* ]] || die "A secret in .env contains a single quote; replace it before running the installer."
   done
 }

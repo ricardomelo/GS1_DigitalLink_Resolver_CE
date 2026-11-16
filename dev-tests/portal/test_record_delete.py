@@ -111,7 +111,11 @@ def whole_deletes():
 
 
 def journal(value):
-    return sorted((e["action"], e.get("qpath") or "") for e in store.col("journal").find({"anchor": f"/01/{value}"}))
+    """The record events of a key that took effect: an attempt that a change-failed event names is left out (ADR 0026)."""
+    found = list(store.col("journal").find({"anchor": f"/01/{value}"}))
+    failed = {(e["ref"]["chain"], e["ref"]["seq"]) for e in found if e["action"] == "change-failed"}
+    return sorted((e["action"], e.get("qpath") or "") for e in found
+                  if e["action"] != "change-failed" and (e.get("chain"), e.get("seq")) not in failed)
 
 
 # ================================================================== the editor's delete
@@ -136,6 +140,8 @@ check("the data entry API fails the delete: 502 upstream.deleteFailed", r.status
 check("…every record of the key still there (the failure cannot leave the key empty)",
       entries_of(A) == [([], [], "Coffee"), ([{"10": "L2"}], [], "Batch L2")], entries_of(A))
 check("…nothing journalled as deleted", ("delete", "/10/L2") not in journal(A), journal(A))
+check("…the attempt journalled first, then change-failed naming it (ADR 0026)", store.col("journal").find_one(
+      {"anchor": f"/01/{A}", "action": "change-failed", "detail": "delete upstream.deleteFailed"}) is not None)
 
 r = edu.delete(f"/portal/api/record?key=01&value={A}&qualifiers=/10/L9", headers=ORIGIN)
 check("a batch the key has no record of: 404 record.notFound, nothing written", code(r) == "record.notFound"

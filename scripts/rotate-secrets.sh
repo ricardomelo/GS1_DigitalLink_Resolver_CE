@@ -3,7 +3,7 @@
 # installer generated, the database's own passwords changed to match, and the services recreated with them. A secret
 # is never printed or put on a command line; the previous .env is kept as .env.bak-<time> (mode 600).
 #
-#   sudo scripts/rotate-secrets.sh                 # every secret below
+#   sudo scripts/rotate-secrets.sh                 # every secret below but journal
 #   sudo scripts/rotate-secrets.sh token session   # only those named
 #
 #   token       SESSION_TOKEN               the data entry API's bearer token: systems that call /api need the new one
@@ -11,6 +11,8 @@
 #   portal-db   PORTAL_DB_PASSWORD          the portal's MongoDB user (portal-db-init sets it on the next start)
 #   mongo       MONGO_INITDB_ROOT_PASSWORD  MongoDB's root user, changed in the database first, then in .env and in
 #                                           MONGO_URI; skipped (nothing changed) when the database refuses
+#   journal     PORTAL_JOURNAL_KEY          seals the journal (ADR 0026); only when named: the events sealed before keep
+#                                           their links checked, but their seal is then reported as made with another key
 #
 # The services are recreated at the end (docker compose up -d): about a minute without the resolver, so run it at a
 # quiet hour. Take a backup first (scripts/resolver-backup.sh). Exit status 0 when every secret asked was rotated.
@@ -20,11 +22,12 @@ RESOLVER_DIR="${RESOLVER_DIR:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 cd "$RESOLVER_DIR"
 ENV_FILE=.env
 ALL=(token session portal-db mongo)
+KNOWN=("${ALL[@]}" journal)
 
 asked=("$@")
 (( ${#asked[@]} )) || asked=("${ALL[@]}")
 for name in "${asked[@]}"; do
-  [[ " ${ALL[*]} " == *" $name "* ]] || { echo "Unknown secret: $name (one of: ${ALL[*]})"; exit 2; }
+  [[ " ${KNOWN[*]} " == *" $name "* ]] || { echo "Unknown secret: $name (one of: ${KNOWN[*]})"; exit 2; }
 done
 [[ -f $ENV_FILE ]] || { echo "ERROR: no .env here ($RESOLVER_DIR): nothing to rotate"; exit 1; }
 
@@ -54,6 +57,7 @@ for name in "${asked[@]}"; do
     token)     put SESSION_TOKEN "$(random 32)"; rotated+=("SESSION_TOKEN (systems calling /api need the new value)") ;;
     session)   put PORTAL_SECRET_KEY "$(random 32)"; rotated+=("PORTAL_SECRET_KEY (portal users sign in again)") ;;
     portal-db) put PORTAL_DB_PASSWORD "$(random 24)"; rotated+=("PORTAL_DB_PASSWORD") ;;
+    journal)   put PORTAL_JOURNAL_KEY "$(random 32)"; rotated+=("PORTAL_JOURNAL_KEY (events sealed before: another key)") ;;
     mongo)
       user="$(value MONGO_INITDB_ROOT_USERNAME)"; uri="$(value MONGO_URI)"
       if [[ -z $user || ! $uri =~ ^mongodb://[^:/@]+:[^@]*@ ]]; then

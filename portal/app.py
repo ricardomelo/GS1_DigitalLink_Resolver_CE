@@ -21,6 +21,7 @@ import os
 import re
 import secrets
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
@@ -200,6 +201,10 @@ def _bootstrap_admin() -> None:
 # environment, and the first user is created while there is none.
 migrate.run(CONFIG_DIR)
 journal.apply_retention()
+journal.seal_unsealed()               # events written before ADR 0026 sealed in their chains, once
+if not journal.key():
+    log.warning("PORTAL_JOURNAL_KEY is not set: the journal's chains are sealed without a key, so anyone able to write "
+                "to the database could rewrite one consistently (Documentation/adr/0026-journal-integrity.md).")
 exportlimits.seed_from_env(os.environ.get("PORTAL_EXPORT_LIMITS", ""))
 if sso.upgrade():                     # configurations saved before ADR 0025: their domains count as proved
     log.warning("Single sign-on: e-mail domains of earlier configurations were accepted without proof; "
@@ -479,26 +484,64 @@ def check_access(anchor: str) -> None:
 _SCOPE = object()
 
 
-def log_event(action: str, tenant=_SCOPE, actor_tenant=_SCOPE, **fields) -> None:
-    """Journal entry (history and audit); a failure is logged, never shown to the user.
+def write_event(action: str, tenant=_SCOPE, actor_tenant=_SCOPE, **fields) -> dict:
+    """Journal entry (history and audit), sealed in its chain (ADR 0026); returns its {"chain", "seq"}. Raises when
+    it cannot be written: log_event() for events written after their change, journal_first() for record changes.
 
     tenant: whose audit trail the event belongs to (None: the operator's). By default the owner of the record
     for record events, otherwise the scope of the request. actor_tenant: the tenant of the user who acted (by
     default the account's); when an operator user acts on a tenant the event is marked byOperator."""
+    user = fields.pop("user", None) or getattr(g, "user", None) or "-"
+    if tenant is _SCOPE:
+        tenant = (tenants.owner(fields["anchor"], getattr(g, "tenants", None) or tenants.load())
+                  if fields.get("anchor") else getattr(g, "tenant", None))
+    if actor_tenant is _SCOPE:
+        actor_tenant = getattr(g, "account_tenant", None)
+    if tenant:
+        fields["tenant"] = tenant
+        if not actor_tenant:
+            fields["byOperator"] = True
+    return journal.append(action, user, **fields)
+
+
+def log_event(action: str, tenant=_SCOPE, actor_tenant=_SCOPE, **fields) -> None:
+    """write_event() for an event written after its change (sign-ins, administration, settings: a write to the same
+    database, which fails with it): a failure is logged as an error, never shown to the user."""
     try:
-        user = fields.pop("user", None) or getattr(g, "user", None) or "-"
-        if tenant is _SCOPE:
-            tenant = (tenants.owner(fields["anchor"], getattr(g, "tenants", None) or tenants.load())
-                      if fields.get("anchor") else getattr(g, "tenant", None))
-        if actor_tenant is _SCOPE:
-            actor_tenant = getattr(g, "account_tenant", None)
-        if tenant:
-            fields["tenant"] = tenant
-            if not actor_tenant:
-                fields["byOperator"] = True
-        journal.append(action, user, **fields)
+        write_event(action, tenant, actor_tenant, **fields)
+    except (OSError, PyMongoError, store.LockTimeout) as exc:
+        log.error("Journal not written (%s): %s", action, exc)
+
+
+class JournalUnavailable(Exception):
+    """A record change refused because its journal entry could not be written first (ADR 0026, section 2.1)."""
+
+
+@contextmanager
+def journal_first(anchor: str, pairs: list, doc: dict | None, action: str):
+    """Wraps the data entry API calls of one record change (ADR 0026, section 2.1): the event (create, update or
+    delete, with the record's content) is written first, and JournalUnavailable (503) raised, with nothing changed,
+    when it cannot be; a failure inside adds change-failed naming the attempt; a success updates the record's "last
+    change" metadata, which never makes a save fail."""
+    qpath = gs1.qualifier_path(pairs, encode=False)
+    try:
+        ref = write_event(action, anchor=anchor, qpath=qpath, doc=doc)
+    except (OSError, PyMongoError, store.LockTimeout) as exc:
+        log.error("Journal not written, %s of %s refused: %s", action, meta.key(anchor, qpath), exc)
+        raise JournalUnavailable() from exc
+    try:
+        yield
+    except Exception as exc:
+        log_event(journal.FAILED_ACTION, anchor=anchor, qpath=qpath, ref=ref,
+                  detail=f"{action} {getattr(exc, 'code', None) or type(exc).__name__}")
+        raise
+    try:
+        if action == "delete":
+            meta.remove(anchor, qpath)
+        else:
+            meta.touch(anchor, qpath, g.user, getattr(g, "tenant", None))
     except (OSError, PyMongoError) as exc:
-        log.warning("Journal not written (%s): %s", action, exc)
+        log.warning("Record metadata not updated for %s: %s", meta.key(anchor, qpath), exc)
 
 
 # Routes that take a file as the request's body (ADR 0015: GS1's GCP length table), with types a page of another site
@@ -532,6 +575,12 @@ def security_headers(resp):
 def on_validation_error(err):
     """A rule of the standard or of the portal was broken: 422 with the message code and parameters."""
     return message(err.code, 422, params=err.params)
+
+
+@app.errorhandler(JournalUnavailable)
+def on_journal_unavailable(err):
+    """A record change whose journal entry could not be written first: 503, nothing changed (ADR 0026)."""
+    return message("journal.unavailable", 503)
 
 
 @app.errorhandler(AccessDenied)
@@ -608,19 +657,6 @@ def describe_entry(entry: dict) -> dict:
                 "path": gs1.qualifier_path(pairs, encode=False),
                 "informative": [list(p) for p in gs1.pairs_from(entry.get("informativeQualifiers"))]}
     return {"kind": "other", "value": "".join(f"({q}){v}" for q, v in pairs)}
-
-
-def record_change(anchor: str, pairs: list, doc: dict | None, action: str) -> None:
-    """Keeps the "last change" metadata and the record's history; never makes a save fail."""
-    qpath = gs1.qualifier_path(pairs, encode=False)
-    try:
-        if action == "delete":
-            meta.remove(anchor, qpath)
-        else:
-            meta.touch(anchor, qpath, g.user, getattr(g, "tenant", None))
-    except (OSError, PyMongoError) as exc:
-        log.warning("Record metadata not updated for %s: %s", meta.key(anchor, qpath), exc)
-    log_event(action, anchor=anchor, qpath=qpath, doc=doc)
 
 
 def is_success(status: int, body) -> bool:
@@ -1561,32 +1597,31 @@ def store_record(anchor: str, pairs: list, doc: dict) -> bool:
 
     # Case 1: new key, or new batch/lot on an existing GTIN → POST /new (upsert appends the entry)
     if target is None:
-        status, body = resolver("POST", "/new", doc)
-        if not is_success(status, body):
-            raise UpstreamError("upstream.createRejected", 502, body)
+        with journal_first(anchor, pairs, doc, "create"):
+            status, body = resolver("POST", "/new", doc)
+            if not is_success(status, body):
+                raise UpstreamError("upstream.createRejected", 502, body)
         audit.info("user=%s action=create anchor=%s%s links=%d",
                    g.user, anchor, gs1.qualifier_path(pairs), len(doc["links"]))
-        record_change(anchor, pairs, doc, "create")
         return True
 
     # Case 2: existing entry → PUT (merge on linktype+hreflang+context), then a partial DELETE of the
     # links the user removed. In this order the product is never left without a target.
-    status, body = resolver("PUT", anchor, doc)
-    if not is_success(status, body):
-        raise UpstreamError("upstream.updateRejected", 502, body)
-
     new_keys = {gs1.link_key(l) for l in doc["links"]}
     removed = [{"linktype": l["linktype"], "hreflang": l.get("hreflang") or [],
                 "context": l.get("context") or []}
                for l in target.get("links", []) if gs1.link_key(l) not in new_keys]
-    if removed:
-        status, body = resolver("DELETE", anchor, {"qualifiers": qualifiers, "links": removed})
+    with journal_first(anchor, pairs, doc, "update"):
+        status, body = resolver("PUT", anchor, doc)
         if not is_success(status, body):
-            raise UpstreamError("upstream.partialUpdate", 502, body, count=len(removed))
+            raise UpstreamError("upstream.updateRejected", 502, body)
+        if removed:
+            status, body = resolver("DELETE", anchor, {"qualifiers": qualifiers, "links": removed})
+            if not is_success(status, body):
+                raise UpstreamError("upstream.partialUpdate", 502, body, count=len(removed))
 
     audit.info("user=%s action=update anchor=%s%s links=%d removed=%d",
                g.user, anchor, gs1.qualifier_path(pairs), len(doc["links"]), len(removed))
-    record_change(anchor, pairs, doc, "update")
     return False
 
 
@@ -1610,10 +1645,11 @@ def turn_to_explicit_defaults(anchor: str, entries: list[dict], key_default: str
         entry = entries[first.get("item", 1) - 1] if 0 < first.get("item", 1) <= len(entries) else {}
         raise ValidationError("record.rewriteRefused", record=describe_entry(entry).get("path") or anchor,
                               detail=str(first.get("error", ""))[:200])
-    for doc in changed:
-        status, body = resolver("PUT", anchor, doc)
-        if not is_success(status, body):
-            raise UpstreamError("upstream.updateRejected", 502, body)
+    for doc in changed:           # each journalled as an update of its record (ADR 0026, section 2.1)
+        with journal_first(anchor, gs1.pairs_from(doc.get("qualifiers")), doc, "update"):
+            status, body = resolver("PUT", anchor, doc)
+            if not is_success(status, body):
+                raise UpstreamError("upstream.updateRejected", 502, body)
     audit.info("user=%s action=explicit-defaults anchor=%s records=%d", g.user, anchor, len(changed))
 
 
@@ -1638,10 +1674,10 @@ def remove_record(anchor: str, pairs: list) -> None:
     target = find_entry(entries, gs1.qualifier_list(pairs))
     if target is None:
         raise ValidationError("record.notFound")
-    delete_one_record(anchor, target.get("qualifiers") or [])
+    with journal_first(anchor, pairs, target, "delete"):
+        delete_one_record(anchor, target.get("qualifiers") or [])
 
     audit.info("user=%s action=delete anchor=%s%s", g.user, anchor, gs1.qualifier_path(pairs))
-    record_change(anchor, pairs, target, "delete")
 
 
 def delete_one_record(anchor: str, qualifiers: list) -> None:
@@ -1721,16 +1757,16 @@ def fix_serial_records(anchor: str) -> tuple[int, list[str]]:
     done = 0
     try:
         for old, new in fixed:
-            status, body = resolver("POST", "/new", new)
-            if not is_success(status, body):
-                raise UpstreamError("upstream.updateRejected", 502, body)
-            record_change(anchor, gs1.pairs_from(new["qualifiers"]), new, "create")
-            delete_one_record(anchor, old.get("qualifiers") or [])
-            record_change(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete")
+            with journal_first(anchor, gs1.pairs_from(new["qualifiers"]), new, "create"):
+                status, body = resolver("POST", "/new", new)
+                if not is_success(status, body):
+                    raise UpstreamError("upstream.updateRejected", 502, body)
+            with journal_first(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete"):
+                delete_one_record(anchor, old.get("qualifiers") or [])
             done += 1
         for old in dropped:
-            delete_one_record(anchor, old.get("qualifiers") or [])
-            record_change(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete")
+            with journal_first(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete"):
+                delete_one_record(anchor, old.get("qualifiers") or [])
             done += 1
     finally:
         if done:
@@ -2878,6 +2914,29 @@ def audit_trail():
     return jsonify({"events": _audit_events()})
 
 
+@app.get("/portal/api/audit/verify")
+@require_login
+@admin_required
+def audit_verify():
+    """The hash chains of the request's audit trail verified (ADR 0026, section 2.4): an organisation's (also during
+    support access), or every chain for a server administrator outside support access. ?receipt=<chain>:<seq>:<hash>
+    checks a head kept earlier; a receipt of a chain outside the trail is refused (422 journal.badReceipt)."""
+    everything = g.server_admin and not g.support
+    names = journal.chains(g.tenant, everything=everything)
+    receipt = None
+    if request.args.get("receipt"):
+        receipt = journal.parse_receipt(request.args["receipt"])
+        if not receipt or not (everything or receipt[0].startswith((g.tenant or "operator") + "/")):
+            return message("journal.badReceipt", 422)
+        if receipt[0] not in names:
+            names.append(receipt[0])
+    results = [journal.verify(name, receipt) for name in names]
+    for result in results:
+        trail = result["chain"].split("/", 1)[0]
+        result["tenantName"] = None if trail == "operator" else tenant_name(trail)
+    return jsonify({"chains": results, "keyed": bool(journal.key())})
+
+
 @app.get("/portal/api/audit.csv")
 @require_login
 @admin_required
@@ -3790,7 +3849,7 @@ def label_response(anchor: str, args) -> Response:
 JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job, "mail": notify.run_mail_job}
 # What the worker runs about once an hour, outside any job (worker.HOUSEKEEPING_SECONDS)
 HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate, requestlog.fold_noise, requestlog.apply_retention,
-                requestlog.apply_size_limit, domains.recheck_all]
+                requestlog.apply_size_limit, domains.recheck_all, journal.checkpoint]
 # What the worker runs every PORTAL_MONITOR_MINUTES (Documentation/adr/0008-monitoring-and-alerts.md)
 MONITORING = [monitor.run]
 MONITOR_SECONDS = monitor.minutes() * 60

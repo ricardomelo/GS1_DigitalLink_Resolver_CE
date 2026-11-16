@@ -12,7 +12,7 @@ Connection, from the environment:
   PORTAL_DB_USERNAME, _PASSWORD       the portal's own user, created by db_init.py (the portal-db-init service)
   PORTAL_DB_NAME                      the database, also the user's authentication database
 
-Collections: users, tenants (tenants.py), record_meta, journal, login_failures, linkcheck_cache, settings, jobs
+Collections: users, tenants (tenants.py), record_meta, journal and journal_heads (journal.py, ADR 0026), login_failures, linkcheck_cache, settings, jobs
 and workers (jobs.py), tokens (tokens.py: invitation and recovery links), api_keys and api_rate (apikeys.py: the tenant
 API's keys and request counters), request_daily and api_requests (requestlog.py: daily counts of the resolver's
 requests and the tenant API's calls). The resolver's own log, resolver_log.requests, is another database that the
@@ -48,6 +48,9 @@ INDEXES = {
         ([("tenant", ASCENDING), ("at", DESCENDING)], {}),
         ([("category", ASCENDING)], {}),
         ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
+        # The hash chains of ADR 0026: one event per sequence number of a chain (unsealed events are left out)
+        ([("chain", ASCENDING), ("seq", ASCENDING)], {"unique": True,
+                                                      "partialFilterExpression": {"seq": {"$exists": True}}}),
     ],
     "login_failures": [
         ([("key", ASCENDING), ("at", ASCENDING)], {}),

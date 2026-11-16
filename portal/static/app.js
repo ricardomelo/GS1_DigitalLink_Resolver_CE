@@ -3096,6 +3096,53 @@ function downloadAudit() {
   location.href = BASE + "api/audit.csv?" + auditQuery();
 }
 
+/* The hash chains of the audit trail verified (Documentation/adr/0026-journal-integrity.md): one line per chain (its
+   trail and retention category), its result and its head, which the administrator keeps outside the server as a
+   receipt; a receipt typed below is looked for in its chain. */
+async function verifyAudit(event) {
+  if (event) event.preventDefault();
+  const panel = $("#audit-verify");
+  panel.hidden = false;
+  const receipt = $("#audit-receipt").value.trim();
+  I18N.set($("#audit-verify-msg"), "records.loading");
+  try {
+    const { chains, keyed } = await api("GET", "audit/verify" + (receipt ? "?receipt=" + encodeURIComponent(receipt) : ""));
+    $("#audit-verify-unkeyed").hidden = keyed;
+    $("#audit-chains-body").replaceChildren(...chains.map(c => {
+      const tr = document.createElement("tr");
+      tr.dataset.chain = c.chain;
+      const [trail, category] = c.chain.split("/");
+      const name = document.createElement("td");
+      name.textContent = (trail === "operator" ? t("users.operatorName") : (c.tenantName || trail)) + " · " +
+                         t("audit.category." + category);
+      const count = document.createElement("td");
+      count.textContent = c.events;
+      const result = document.createElement("td");
+      const badge = document.createElement("span");
+      badge.className = "badge " + (c.ok ? "badge-created" : "badge-failed");
+      if (c.ok) I18N.set(badge, "audit.chainOk");
+      else I18N.set(badge, "audit.chainBroken", { problem: t("audit.problem." + c.problem.kind), seq: c.problem.seq ?? "-" });
+      result.append(badge);
+      if (c.otherKey) {
+        const note = document.createElement("small");
+        note.className = "audit-chain-note";
+        I18N.set(note, "audit.chainOtherKey", { count: c.otherKey });
+        result.append(note);
+      }
+      const head = document.createElement("td");
+      head.className = "code audit-chain-head";
+      head.textContent = c.head || "";
+      tr.append(name, count, result, head);
+      return tr;
+    }));
+    const checked = chains.find(c => c.receipt !== undefined);
+    if (checked) I18N.set($("#audit-verify-msg"), checked.receipt ? "audit.receiptFound" : "audit.receiptMissing");
+    else I18N.set($("#audit-verify-msg"), chains.every(c => c.ok) ? "audit.verifyAllOk" : "audit.verifyBroken");
+  } catch (e) {
+    I18N.set($("#audit-verify-msg"), e.code, e.params);
+  }
+}
+
 /* ------------------------------------------------------------------ requests to the resolver (#requests)
    The log of resolver requests (Documentation/adr/0006-resolver-request-log.md), in the scope of the account: the
    last 30 days as bars, the latest requests with filters and pages, a CSV export, and for administrators the calls
@@ -5914,6 +5961,8 @@ async function init() {
   $("#support-cancel").addEventListener("click", () => $("#support-dialog").close());
   $("#support-leave").addEventListener("click", endSupport);
   $("#audit-csv").addEventListener("click", downloadAudit);
+  $("#audit-verify-open").addEventListener("click", verifyAudit);
+  $("#audit-receipt-form").addEventListener("submit", verifyAudit);
   $("#requests-filters").addEventListener("submit", e => loadRequests(e));
   $("#requests-map-box").addEventListener("toggle", () => loadRequestMap());
   $("#requests-more").addEventListener("click", () => loadRequests(null, true));

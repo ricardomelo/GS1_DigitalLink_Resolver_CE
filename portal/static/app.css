@@ -552,6 +552,10 @@ body:not([data-operator-view="true"]) .audit-tenant-col { display: none !importa
 .users-table .user-actions .btn { min-height: 2rem; padding: .25rem .7rem; font-size: .8125rem; }
 .users-table tr.is-disabled td:not(:last-child) { opacity: .55; }
 .audit-table td { font-size: .875rem; }
+.audit-verify { margin: 1rem 0 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.audit-verify h2 { font-size: 1.05rem; margin: 0 0 .25rem; }
+.audit-chain-head { font-size: .75rem; word-break: break-all; max-width: 32rem; user-select: all; }
+.audit-chain-note { display: block; margin-top: .25rem; color: var(--muted); }
 .audit-table .by-operator { display: inline-block; margin-inline-start: .35rem; padding: 0 .4rem; border-radius: 999px;
                             background: #E8EEF7; color: var(--gs1-blue); font-size: .75rem; font-weight: 600; }
 

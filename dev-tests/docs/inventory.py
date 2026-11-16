@@ -28,7 +28,7 @@ AREAS = [
                                                          "forwarding_resolver", "strict_resolver", "landing", "load"]),
     ("Records: keys, qualifiers, links and the editor", ["keys", "registration", "data_attributes", "special_chars",
                                                          "dictionary", "engine_messages", "link_types", "governance",
-                                                         "fix_serials", "record_delete", "portal_e2e", "portal_e2e_without_engine",
+                                                         "fix_serials", "record_delete", "journal", "portal_e2e", "portal_e2e_without_engine",
                                                          "link_types_e2e"]),
     ("Searching and filtering records", ["scan_search"]),
     ("Labels, RFID and NFC", ["label", "datamatrix", "datamatrix_e2e", "epc_label", "gcp", "gcp_e2e"]),

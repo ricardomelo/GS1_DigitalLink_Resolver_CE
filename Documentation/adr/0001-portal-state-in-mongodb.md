@@ -205,6 +205,11 @@ for its own retention (`RETENTION_DAYS`, 14 days by default). A record's history
 limit on `PORTAL_JOURNAL_RECORD_DAYS` also limits how far back a record can be restored; the configuration
 documents say so.
 
+*Amended on 16 November 2026 ([ADR 0026](0026-journal-integrity.md), finding F-008):* every event is sealed in a hash
+chain per audit trail and retention category, so that retention, which deletes a category's oldest events first, only
+removes a chain's beginning; a record change is journalled before the data entry API is called and refused when its
+event cannot be written.
+
 ### 3.6 Migration of existing installations
 
 At start-up, before serving requests, the portal (one process at a time, under a lock document in `settings`):

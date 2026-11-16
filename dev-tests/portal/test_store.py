@@ -24,7 +24,7 @@ PORTAL = os.environ.get("PORTAL_DIR", os.path.join(HERE, "..", "..", "portal"))
 CONFIG = tempfile.mkdtemp()
 os.environ.setdefault("PORTAL_DB_URI", "mongomock://")
 os.environ.setdefault("PORTAL_DB_NAME", f"devtest_store_{os.getpid()}")
-os.environ.update(SESSION_TOKEN="tok", FQDN="id.example.org", PORTAL_CONFIG_DIR=CONFIG,
+os.environ.update(SESSION_TOKEN="tok", FQDN="id.example.org", PORTAL_CONFIG_DIR=CONFIG, PORTAL_JOURNAL_KEY="journal-key-1",
                   PORTAL_ORIGIN="http://localhost", PORTAL_COOKIE_SECURE="false")
 for variable in ("PORTAL_JOURNAL_SESSION_DAYS", "PORTAL_JOURNAL_RECORD_DAYS", "PORTAL_JOURNAL_ADMIN_DAYS"):
     os.environ.pop(variable, None)
@@ -247,6 +247,164 @@ check("an unreadable value falls back to the default", journal.retention_days()[
 os.environ.pop("PORTAL_JOURNAL_SESSION_DAYS")
 os.environ.pop("PORTAL_JOURNAL_RECORD_DAYS")
 
+# ------------------------------------------------------------------ journal integrity (ADR 0026)
+from pymongo.errors import DuplicateKeyError  # noqa: E402
+
+J = store.col("journal")
+J.delete_many({})
+store.col("journal_heads").delete_many({})
+check("chains: unique index on (chain, seq) for sealed events only",
+      any(i.get("unique") and list(i["key"]) == ["chain", "seq"] for i in J.list_indexes()))
+refs = [journal.append("create", "ana", anchor="/01/09506000134352", qpath="", doc={"v": 1, "at": "x"}),
+        journal.append("login", "ana", detail="10.0.0.1"),
+        journal.append("update", "bia", anchor="/01/09506000134352", qpath="", doc={"v": 2.5, "list": [1, "a"]}),
+        journal.append("user-create", "ana", detail="carla", tenant="t-1"),
+        journal.append("update", "bia", tenant="t-1", anchor="/01/09506000134352", qpath="/10/L1", doc={"v": None})]
+check("append returns the event's chain and sequence number, one chain per trail and category",
+      refs == [{"chain": "operator/record", "seq": 1}, {"chain": "operator/session", "seq": 1},
+               {"chain": "operator/record", "seq": 2}, {"chain": "t-1/admin", "seq": 1}, {"chain": "t-1/record", "seq": 1}],
+      refs)
+first, second = J.find_one({"chain": "operator/record", "seq": 1}), J.find_one({"chain": "operator/record", "seq": 2})
+check("seal: prev empty for the first event, the previous hash after", first["prev"] == "" and second["prev"] == first["hash"])
+check("seal: hash is the SHA-256 of the stored content (read back from the database)",
+      all(journal.content_hash(d) == d["hash"] for d in J.find()), [d["seq"] for d in J.find()])
+check("seal: mac with the journal key, kid its identifier",
+      second["mac"] == journal.mac_of(second["hash"], b"journal-key-1") and second["kid"] == journal.key_id(b"journal-key-1")
+      and len(second["kid"]) == 8)
+check("chains of a trail; every chain", journal.chains("t-1") == ["t-1/admin", "t-1/record"]
+      and journal.chains() == ["operator/record", "operator/session"] and len(journal.chains(everything=True)) == 4)
+good = journal.verify("operator/record")
+check("verify: an untouched chain is ok, with its head as a receipt",
+      good["ok"] and good["events"] == 2 and good["first"] == 1 and good["last"] == 2 and good["keyed"]
+      and good["head"] == f'operator/record:2:{second["hash"]}' and good["otherKey"] == 0, good)
+
+
+def problem(chain, receipt=None):
+    found = journal.verify(chain, receipt)
+    return (found.get("problem") or {}).get("kind"), (found.get("problem") or {}).get("seq")
+
+
+J.update_one({"_id": first["_id"]}, {"$set": {"doc.v": 9}})
+check("verify: a changed event → hash at its sequence number", problem("operator/record") == ("hash", 1),
+      problem("operator/record"))
+forged = {**first, "doc": {**first["doc"], "v": 9}}
+J.update_one({"_id": first["_id"]}, {"$set": {"hash": journal.content_hash(forged)}})
+check("verify: a changed event whose hash was recomputed without the key → mac at its sequence number",
+      problem("operator/record") == ("mac", 1), problem("operator/record"))
+os.environ["PORTAL_JOURNAL_KEY"] = ""
+check("…without a key to check: its link breaks (prev of the next event)", problem("operator/record") == ("prev", 2),
+      problem("operator/record"))
+J.update_one({"_id": second["_id"]}, {"$set": {"prev": journal.content_hash(forged)}})
+check("…and with the next link rewritten too → the next event's hash", problem("operator/record") == ("hash", 2))
+os.environ["PORTAL_JOURNAL_KEY"] = "journal-key-1"
+J.replace_one({"_id": first["_id"]}, first)
+J.replace_one({"_id": second["_id"]}, second)
+J.update_one({"_id": second["_id"]}, {"$set": {"mac": "0" * 64}})
+check("verify: a seal not made with the key → mac", problem("operator/record") == ("mac", 2))
+J.replace_one({"_id": second["_id"]}, second)
+check("verify: restored → ok", journal.verify("operator/record")["ok"])
+
+for n in range(3, 6):
+    journal.append("update", "bia", anchor="/01/09506000134352", qpath="", doc={"v": n})
+middle = J.find_one({"chain": "operator/record", "seq": 3})
+J.delete_one({"_id": middle["_id"]})
+check("verify: an event deleted in the middle → gap", problem("operator/record") == ("gap", 3), problem("operator/record"))
+J.insert_one(middle)
+newest = J.find_one({"chain": "operator/record", "seq": 5})
+J.delete_one({"_id": newest["_id"]})
+check("verify: the newest event deleted → truncated (journal_heads remembers seq 5)",
+      problem("operator/record") == ("truncated", 5), problem("operator/record"))
+check("append after a deleted tail continues from journal_heads (the gap stays visible)",
+      journal.append("update", "bia", anchor="/01/09506000134352", qpath="", doc={"v": 6})["seq"] == 6
+      and problem("operator/record") == ("gap", 5))
+J.insert_one(newest)
+check("verify: tail restored → ok", journal.verify("operator/record")["ok"])
+try:
+    J.insert_one({**newest, "_id": "copy"})
+    check("a second event with the same sequence number is refused by the index", False)
+except DuplicateKeyError:
+    check("a second event with the same sequence number is refused by the index", True)
+J.delete_many({"chain": "operator/record", "seq": {"$lte": 2}})
+check("verify: a chain kept for ever must start at 1 → start", problem("operator/record") == ("start", 3))
+first_login = J.find_one({"chain": "operator/session"})
+journal.append("login", "ana", detail="10.0.0.2")
+J.delete_one({"_id": first_login["_id"]})
+check("verify: a category with retention may lose its beginning", journal.verify("operator/session")["ok"],
+      journal.verify("operator/session"))
+J.insert_many([first, second])
+
+head = journal.verify("operator/record")["head"]
+receipt = journal.parse_receipt(head)
+check("receipt: parsed (chain, seq, hash); text that is not one → None",
+      receipt == ("operator/record", 6, head.rsplit(":", 1)[1]) and journal.parse_receipt("operator/record:6:abc") is None
+      and journal.parse_receipt("x") is None and journal.parse_receipt("a:b:" + "0" * 64) is None
+      and journal.parse_receipt("operator/record:6:" + "g" * 64) is None)
+check("receipt: a kept head still in the chain", journal.verify("operator/record", receipt).get("receipt") is True)
+check("receipt: a head that is not in the chain → receipt",
+      problem("operator/record", ("operator/record", 6, "f" * 64)) == ("receipt", 6)
+      and journal.verify("operator/record", ("operator/record", 6, "f" * 64))["receipt"] is False)
+
+errors = []
+def racer():
+    try:
+        for _ in range(15):
+            journal.append("user-update", "ana", detail="race", tenant="t-race")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(exc)
+threads = [threading.Thread(target=racer) for _ in range(6)]
+[t.start() for t in threads]
+[t.join() for t in threads]
+seqs = sorted(d["seq"] for d in J.find({"chain": "t-race/admin"}))
+check("writers racing on one chain: every event numbered once, no gap, chain ok",
+      not errors and seqs == list(range(1, 91)) and journal.verify("t-race/admin")["ok"], (errors, seqs[-3:]))
+
+J.insert_many([{"at": store.parse_iso("2026-01-02T00:00:00Z"), "user": "old", "action": "user-remove", "category": "admin",
+                "tenant": "t-old", "detail": "second"},
+               {"at": store.parse_iso("2026-01-01T00:00:00Z"), "user": "old", "action": "user-create", "category": "admin",
+                "tenant": "t-old", "detail": "first"}])
+check("verify: events of a trail not yet sealed → unsealed", problem("t-old/admin") in (("unsealed", None), (None, None))
+      and journal.verify("operator/admin")["ok"])
+check("events written before ADR 0026 sealed once, in the order they were written, marked so",
+      journal.seal_unsealed() == 2 and [d["detail"] for d in J.find({"chain": "t-old/admin"}).sort("seq", 1)] == ["first", "second"]
+      and all(d["sealed"] == "upgrade" for d in J.find({"chain": "t-old/admin"})) and journal.seal_unsealed() == 0
+      and journal.verify("t-old/admin")["ok"])
+J.insert_one({"at": store.now(), "user": "old", "action": "user-create", "category": "admin", "tenant": "t-old"})
+check("verify: an unsealed event in a sealed trail → unsealed", problem("t-old/admin") == ("unsealed", None))
+journal.seal_unsealed()
+
+os.environ["PORTAL_JOURNAL_KEY"] = "journal-key-2"
+journal.append("user-update", "ana", detail="new key", tenant="t-old")
+rotated = journal.verify("t-old/admin")
+check("another key: the chain stays ok, its earlier events counted as sealed with another key",
+      rotated["ok"] and rotated["otherKey"] == 3, rotated)
+os.environ["PORTAL_JOURNAL_KEY"] = ""
+journal.append("user-update", "ana", detail="no key", tenant="t-old")
+unkeyed = J.find_one({"chain": "t-old/admin", "detail": "no key"})
+check("without a key: sealed without mac, kid empty, verification says not keyed",
+      "mac" not in unkeyed and unkeyed["kid"] == "" and journal.verify("t-old/admin")["keyed"] is False
+      and journal.verify("t-old/admin")["ok"])
+os.environ["PORTAL_JOURNAL_KEY"] = "journal-key-1"
+
+store.set_setting("journalCheckpoint", None)
+with_log = logging.getLogger("portal.journal")
+seen = []
+handler = logging.Handler()
+handler.emit = lambda record: seen.append((record.levelname, record.getMessage()))
+with_log.addHandler(handler)
+with_log.setLevel(logging.INFO)
+results = journal.checkpoint()
+check("daily checkpoint: every chain verified, each head written to the log",
+      len(results) == len(journal.chains(everything=True))
+      and any(level == "INFO" and f"Journal head {head}" in text for level, text in seen), seen[:3])
+check("daily checkpoint: once a day", journal.checkpoint() == [])
+store.set_setting("journalCheckpoint", None)
+J.update_one({"chain": "t-race/admin", "seq": 7}, {"$set": {"detail": "edited"}})
+seen.clear()
+journal.checkpoint()
+check("daily checkpoint: a broken chain logged as an error",
+      any(level == "ERROR" and "t-race/admin broken: hash at 7" in text for level, text in seen), seen)
+with_log.removeHandler(handler)
+
 # ------------------------------------------------------------------ sign-in throttle (app.LoginThrottle)
 import app  # noqa: E402
 
@@ -311,7 +469,7 @@ from werkzeug.security import generate_password_hash  # noqa: E402
 
 def empty_database():
     """Starts a part of the test from an empty database (the portal's user may only use its own database)."""
-    for name in ("users", "record_meta", "journal", "settings", "login_failures"):
+    for name in ("users", "record_meta", "journal", "journal_heads", "settings", "login_failures"):
         store.col(name).delete_many({})
 
 

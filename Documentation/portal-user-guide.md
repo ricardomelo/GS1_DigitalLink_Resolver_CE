@@ -99,8 +99,10 @@ below); otherwise ask the administrator for a new temporary password.
   temporary password. After signing in the portal asks you to set your own password before going on.
 - **Show the password.** The eye button inside a password field shows what you typed; it hides again when
   the form is sent.
-- **Too many attempts.** After 5 wrong passwords the account (and the computer they came from) waits
-  15 minutes before trying again.
+- **Too many attempts.** After 3 wrong passwords for a user name, the computer they came from waits
+  15 seconds before trying that user name again, then 30, 60 and so on, up to 15 minutes; the page says how long.
+  The account itself is never locked: you can still sign in from another computer. A computer that collects 20
+  wrong passwords in 15 minutes, whatever the user names, waits 15 minutes.
 - **Session.** The session ends after 30 minutes without use, and 12 hours after you signed in in any case
   (the administrator can change both). Typing, clicking and scrolling count as use, even before you save.
   Two minutes before the end a window counts down: choose **Stay signed in** to carry on, or **Sign out**.
@@ -135,8 +137,8 @@ for 72 hours. If the page says the link is no longer valid, it has expired, has 
 ask for a new one. If someone else is signed in in the same browser when you open a link, that session ends first.
 
 The portal also writes to you, always, when your password or your e-mail address is changed (to the old and the
-new address) and when your account is locked after five wrong passwords: if you did not do it, use **Forgotten
-your password?** at once and tell your administrator.
+new address) and when your account has five wrong passwords in 15 minutes, from any computer (it is not locked):
+if you did not do it, use **Forgotten your password?** at once and tell your administrator.
 
 ### The user menu
 

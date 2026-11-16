@@ -1249,6 +1249,16 @@ this history and of the changelog keep the old names. 5 new checks in `appearanc
   every such installation on the old name, now looking like the operator's choice. A stored former default is read as
   today's (`FORMER_TITLES`, in the portal and in the resolver), and saving again stores the new one.
 
+## Session 37 — no sign-in lock by user name
+
+The fifth finding of the security assessment's phase 1 (`5527110`): wrong passwords delay a user name from the address
+they came from (three free, then 15 seconds doubling up to 15 minutes) and limit an address to 20 failures in 15
+minutes; no user name is locked from every address, so nobody can keep its owner out. A successful sign-in no longer
+clears its address's count, and the password change in *Options* counts only the signed-in user's own mistakes. The
+security message at five failures says the account is not locked (`sign-in-failures`, twelve languages), and a new
+message code `auth.wait` gives the wait in seconds. 18 new checks in `store`, `session` and `mail`; 8 mutations, all
+caught.
+
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|
 | Identification | GTIN + optional batch | 16 primary keys and 9 qualifiers, with the combinations of the standard |

@@ -5,6 +5,18 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
 
+### No sign-in lock by user name (session 37)
+- **Changed: wrong passwords no longer lock an account.** Five wrong passwords for a user name, typed by anyone from
+  anywhere, locked it for 15 minutes even for its owner, so anyone who knew a user name could keep an editor or an
+  administrator out, repeatedly. Wrong passwords now delay that user name **from the address they came from** only:
+  three are free, then 15 seconds, doubling with each further failure up to 15 minutes; the sign-in page says how long
+  (*Wait N seconds*, or minutes) and the answer carries `Retry-After`. An address that collects 20 wrong passwords in
+  15 minutes, whatever the user names (it was 5), waits 15 minutes. A successful sign-in no longer resets its
+  address's count, so an account of one's own cannot be used to keep guessing at others. A user's own wrong current
+  password in *Options* still locks the password change after five, and others' wrong sign-ins no longer count there.
+  The security message sent at five failures now says the account is **not** locked and counts failures from every
+  address (template `sign-in-failures`, in place of `account-locked`; twelve languages). Commit `5527110`.
+
 ### The name GS1 Digital Link Resolver Suite (session 36)
 - **Changed, deliberately: the project is called GS1 Digital Link Resolver Suite**
   ([ADR 0024](../adr/0024-name-and-about.md)), in place of *GS1 Digital Link Resolver CE — Expansion Pack*, in the

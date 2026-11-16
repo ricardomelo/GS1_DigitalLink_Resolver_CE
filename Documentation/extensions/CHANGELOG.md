@@ -5,7 +5,27 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
 
-### No sign-in lock by user name (session 37)
+### Single sign-on: domains proved, verified e-mail, the provider's subject (session 38)
+- **Changed: an e-mail domain of a single sign-on configuration signs people in only once proved**
+  ([ADR 0025](../adr/0025-sso-domain-proof-and-subject.md)). Typing a domain used to claim it: any organisation's
+  administrator could list another organisation's domain, or a public mailbox domain, and so keep the rightful
+  organisation from using it and send people who typed such an address to their own provider. Now each listed domain
+  waits for a DNS TXT record at `_gs1resolver.<domain>` holding `gs1resolver-sso=<token>` (shown on the screen;
+  **Verify**), or for a server administrator's **Approve without DNS** (refused when accounts of another organisation
+  use the domain). A domain is proved in one configuration at most; a domain only listed elsewhere blocks nobody.
+  Password sign-in off applies only to users whose domain is proved. **Operators: configurations saved before this
+  version keep working — their domains are recorded as *accepted at the upgrade, without proof* — and should be
+  verified or corrected on the *Organisation sign-in* screen**; the portal's log says so at start.
+- **Changed: the provider must say the e-mail is verified** (`email_verified: true`); only an explicit `false` was
+  refused before. A configuration can say its provider never sends the claim (**The provider does not send
+  email_verified**; Microsoft Entra ID by default): **configurations using Entra ID must tick it**, or their users are
+  refused.
+- **Added: the account is bound to the provider's identity** at its first sign-in through the provider (issuer and
+  subject); a later sign-in presenting the same e-mail with another identity is refused, as is an identity already
+  bound to another account. The *Users* screen shows the binding and **Forget organisation account**, for a person
+  whose account at the provider was recreated; a new e-mail address forgets it too. The journal records the subject
+  of each sign-in, each domain proved or approved, and each binding forgotten. Twelve languages. Commit `1699d51`.
+
 - **Changed: wrong passwords no longer lock an account.** Five wrong passwords for a user name, typed by anyone from
   anywhere, locked it for 15 minutes even for its owner, so anyone who knew a user name could keep an editor or an
   administrator out, repeatedly. Wrong passwords now delay that user name **from the address they came from** only:

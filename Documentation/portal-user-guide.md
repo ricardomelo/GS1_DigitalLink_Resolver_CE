@@ -94,7 +94,8 @@ below); otherwise ask the administrator for a new temporary password.
 - **Organisation account (single sign-on).** When your organisation has set it up, **Sign in with your
   organisation's account** asks for your work e-mail and takes you to your organisation's sign-in page (Microsoft,
   Google…); you come back signed in. Your portal user must already exist with that e-mail — ask your administrator
-  otherwise. If your organisation has switched password sign-in off, the portal tells you to use this button.
+  otherwise. If the portal says your user is bound to another account at the provider, ask your administrator to
+  forget it. If your organisation has switched password sign-in off, the portal tells you to use this button.
 - **Temporary password.** A new account, or one whose password an administrator has reset, starts with a
   temporary password. After signing in the portal asks you to set your own password before going on.
 - **Show the password.** The eye button inside a password field shows what you typed; it hides again when
@@ -774,6 +775,10 @@ temporary password to be changed*, *Invited — waiting for the password*) and l
 - **Reset password** — the user's password stops working at once and the open sessions end; with e-mail and
   an address, the user receives a link to choose a new one; otherwise a new temporary password is shown once;
 - **Disable** / **Enable** — a disabled user cannot sign in, and keeps the account;
+- **Forget organisation account** — shown for a user marked *bound to the organisation's account* (pointing at it
+  shows the provider and the person's identity there): the portal accepts that user's organisation sign-in only from
+  the provider account first used. When the person's account at your provider is recreated, forget it; the next
+  organisation sign-in binds the account used. Changing the user's e-mail forgets it too;
 - **Remove** — deletes the account; the user's changes stay in the history and audit trail.
 
 Each user may have an **E-mail** address (optional, unique), where invitations, recovery links and security
@@ -796,11 +801,19 @@ your organisation (Microsoft Entra ID, Google Workspace, Okta, Keycloak — any 
 1. At your provider, register the portal as a web application with the **return address** the screen shows.
 2. Here, enter the provider's **Issuer**, the **Client ID** and the **Client secret** it gave you, and your
    organisation's **E-mail domains** (for example `company.com`). Tick **On** and select **Save**; then **Test the
-   provider**. The secret is never shown again: leave the field empty to keep it.
-3. Each user signs in with **Sign in with your organisation's account** and their work e-mail. Only people who already
-   have a portal user with that e-mail get in, with the role and prefixes you gave them.
-4. Once it works, you may tick **Switch password sign-in off for the organisation's users**. A server administrator can
-   always sign in with a password and switch it back on, for example if your provider is down.
+   provider**. The secret is never shown again: leave the field empty to keep it. Tick **The provider does not send
+   email_verified** only if your provider never sends it (Microsoft Entra ID, by default).
+3. **Prove each domain.** Under the form each domain shows its state. *Waiting for proof*: publish the TXT record shown
+   (name `_gs1resolver.<domain>`, value `gs1resolver-sso=…`) in the domain's DNS and select **Verify**; or ask a server
+   administrator, who can **Approve without DNS**. Until a domain is proved, nobody with an address there signs in
+   through the provider. A domain shown as *accepted at the upgrade, without proof* was set up before this check
+   existed: verify it too.
+4. Each user signs in with **Sign in with your organisation's account** and their work e-mail. Only people who already
+   have a portal user with that e-mail get in, with the role and prefixes you gave them. The first sign-in ties the
+   portal user to the person's account at the provider; see *Forget organisation account* under [Users](#users).
+5. Once it works, you may tick **Switch password sign-in off for the organisation's users**. A server administrator can
+   always sign in with a password and switch it back on, for example if your provider is down. It applies only to
+   users whose e-mail domain is proved.
 
 The card shows the last sign-in and the last failure (with its reason). A server administrator sees every
 organisation's configuration and sets up the operator's own; during support access the screen is read only.

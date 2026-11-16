@@ -1259,6 +1259,17 @@ security message at five failures says the account is not locked (`sign-in-failu
 message code `auth.wait` gives the wait in seconds. 18 new checks in `store`, `session` and `mail`; 8 mutations, all
 caught.
 
+## Session 38 — single sign-on: domains proved, the provider's subject
+
+The sixth and seventh findings of the security assessment's phase 1, in one record
+([ADR 0025](adr/0025-sso-domain-proof-and-subject.md)) and one code commit (`1699d51`): an e-mail domain of a single
+sign-on configuration signs people in only once proved by a DNS TXT record (`gs1resolver-sso=<token>` at
+`_gs1resolver.<domain>`) or a server administrator's approval, and in one configuration at most; the provider must say
+the e-mail is verified, unless the configuration says it never does; the account is bound to the provider's issuer and
+subject at its first sign-in, and an administrator forgets the binding on the *Users* screen. Configurations saved
+earlier keep their domains, marked as accepted at the upgrade. 33 new checks in `sso` and `sso_e2e`; 15 mutations, all
+caught after one check was added. The session also added F-005's staging steps to the test plan of sessions 32 to 37.
+
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|
 | Identification | GTIN + optional batch | 16 primary keys and 9 qualifiers, with the combinations of the standard |

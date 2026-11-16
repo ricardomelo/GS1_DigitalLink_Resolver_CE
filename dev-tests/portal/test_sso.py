@@ -201,6 +201,17 @@ r = root.put(f"/portal/api/sso/{acme['id']}", json={"enabled": False}, headers=O
 check("support access: the organisation's configuration, read only", listed["readOnly"] and not listed["every"]
       and [c["scope"] for c in listed["configs"]] == [acme["id"]] and r.status_code == 403, (listed, r.status_code))
 root.delete("/portal/api/support", headers=ORIGIN)
+root.post("/portal/api/support", json={"tenant": acme["id"], "reason": "Ticket 12"}, headers=ORIGIN)
+r = root.post(f"/portal/api/sso/{acme['id']}/test", json={}, headers=ORIGIN)
+check("support access may run the organisation's provider test", code(r) == "sso.testOk", r.get_json())
+root.delete("/portal/api/support", headers=ORIGIN)
+root.put("/portal/api/sso/operator", json={"issuer": provider.issuer, "clientId": "op", "clientSecret": "x",
+                                          "domains": ["operator.example"]}, headers=ORIGIN)
+r = ana.post("/portal/api/sso/operator/test", json={}, headers=ORIGIN)
+r2 = root.post("/portal/api/sso/operator/test", json={}, headers=ORIGIN)
+check("an organisation's administrator may not run the operator's provider test; a server administrator may",
+      r.status_code == 403 and code(r) == "sso.scopeOutside" and code(r2) == "sso.testOk", (code(r), code(r2)))
+root.delete("/portal/api/sso/operator", headers=ORIGIN)
 r = ana.post(f"/portal/api/sso/{acme['id']}/test", json={}, headers=ORIGIN)
 check("the provider's test: discovery and keys read", code(r) == "sso.testOk" and r.get_json()["result"]["keys"] == 1,
       r.get_json())

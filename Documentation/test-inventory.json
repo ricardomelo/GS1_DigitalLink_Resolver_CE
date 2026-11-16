@@ -5170,6 +5170,8 @@
     "without PORTAL_SSO_ALLOW_INSECURE: http and private addresses refused",
     "a server administrator lists every configuration with its organisation",
     "support access: the organisation's configuration, read only",
+    "support access may run the organisation's provider test",
+    "an organisation's administrator may not run the operator's provider test; a server administrator may",
     "the provider's test: discovery and keys read",
     "…a discovery document naming another issuer fails the test",
     "the sign-in page is told single sign-on is offered",
@@ -5233,7 +5235,7 @@
     "…once only",
     "every single sign-on text in both languages (34)"
    ],
-   "count": 91,
+   "count": 93,
    "ciOnly": false
   },
   "sso_e2e": {

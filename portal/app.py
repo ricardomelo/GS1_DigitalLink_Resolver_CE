@@ -3485,7 +3485,9 @@ def remove_sso(scope):
 @require_login
 @admin_required
 def test_sso(scope):
-    if not (sso_scope_allowed(scope) or scope == sso.scope_id(g.support)):
+    # support access may test the organisation in support (read only); outside it sso.scope_id(None) is the
+    # operator's scope, which only server administrators may reach (finding F-017)
+    if not (sso_scope_allowed(scope) or (g.support and scope == g.support)):
         return message("sso.scopeOutside", 403)
     result = sso.test(scope)
     return message(result.pop("code"), 200, result=result)

@@ -25,6 +25,9 @@ address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use th
   bound to another account. The *Users* screen shows the binding and **Forget organisation account**, for a person
   whose account at the provider was recreated; a new e-mail address forgets it too. The journal records the subject
   of each sign-in, each domain proved or approved, and each binding forgotten. Twelve languages. Commit `1699d51`.
+- **Fixed: an organisation's administrator could run the operator's provider test** (*Test the provider* of the
+  operator's configuration), which reads the operator's provider and shows the result; it is now reserved to server
+  administrators, support access still testing the organisation in support. Commit `8b6d643`.
 
 - **Changed: wrong passwords no longer lock an account.** Five wrong passwords for a user name, typed by anyone from
   anywhere, locked it for 15 minutes even for its owner, so anyone who knew a user name could keep an editor or an

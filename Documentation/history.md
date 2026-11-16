@@ -1268,7 +1268,8 @@ sign-on configuration signs people in only once proved by a DNS TXT record (`gs1
 the e-mail is verified, unless the configuration says it never does; the account is bound to the provider's issuer and
 subject at its first sign-in, and an administrator forgets the binding on the *Users* screen. Configurations saved
 earlier keep their domains, marked as accepted at the upgrade. 33 new checks in `sso` and `sso_e2e`; 15 mutations, all
-caught after one check was added. The session also added F-005's staging steps to the test plan of sessions 32 to 37.
+caught after one check was added. The session also added F-005's staging steps to the test plan of sessions 32 to 37, and fixed finding F-017 (`8b6d643`):
+the operator's provider test was open to any organisation's administrator.
 
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|

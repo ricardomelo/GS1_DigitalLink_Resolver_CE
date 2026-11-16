@@ -60,7 +60,7 @@ Constraints:
 ### 3.1 State (`alerts`, `portal/monitor.py`)
 
 ```
-{_id: "resolver" | "backup" | "certificate" | "logspace" | "gcptable" | "404:*" | "404:<tenant id>",
+{_id: "resolver" | "backup" | "certificate" | "logspace" | "gcptable" | "journal" | "404:*" | "404:<tenant id>",
  state: "ok" | "alert" | "unknown", since, checkedAt, failures (resolver), detail: {…},
  notifiedAt (the last message), notifiedLevel (logspace: the step last told), tenant (404 of an organisation)}
 ```
@@ -79,6 +79,14 @@ resolves it. The *Organisations* screen says the list's age next to it from the 
 today would look new); a daily reminder (noise for weeks while the operator waits for GS1's file); a setting on the
 screen (the other limits of the monitoring are in `.env` too).
 
+`journal`, the journal's hash chains ([ADR 0026](0026-journal-integrity.md) §2.5), was added on 16 November 2026, the
+owner away, on the recommended options: an alert while the last verification — the worker's daily one, or an
+administrator's *Verify integrity* — found a chain broken; unknown before the first verification; the usual daily
+reminder; resolved when a verification finds every chain whole again (a restore). The check reads the stored result
+and never walks the chains itself (a round every few minutes would read the whole journal). A wrong receipt typed by an
+administrator is shown to them and never raises the alert. Not chosen: the category `security` (always sent): every
+alert of the installation is in `alerts`, which server administrators can switch off for themselves only.
+
 `run()` (in `app.MONITORING`) takes the lock, runs each check, updates its document and decides the messages:
 `ok → alert` sends *alert*, `alert` for 24 hours more sends *reminder*, `alert → ok` sends *resolved* (not for spikes).
 
@@ -95,7 +103,7 @@ docker compose exec -T -e BACKUP_OK=… -e BACKUP_FILE=… -e BACKUP_SIZE=… -e
 
 `alert-resolver-down`, `alert-resolver-up`, `alert-backup-failed`, `alert-backup-ok`, `alert-certificate`,
 `alert-certificate-ok`, `alert-404-spike`; `alert-log-space`, `alert-log-space-ok` (ADR 0006, section 9);
-`alert-gcp-table`, `alert-gcp-table-ok`; in every language of ADR 0014.
+`alert-gcp-table`, `alert-gcp-table-ok`; `alert-journal`, `alert-journal-ok` (ADR 0026); in every language of ADR 0014.
 
 ### 3.4 Configuration
 

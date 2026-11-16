@@ -90,6 +90,14 @@
     "Resuelto: la tabla de longitudes de GCP de GS1 está al día",
     "Hola:\n\nEl portal de {operator} usa ahora la tabla de longitudes de GCP de GS1 del {date}, con {days} días. La lista antigua se había notificado el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
    ],
+   "alert-journal": [
+    "Alerta: {count} cadena(s) rota(s) en la pista de auditoría",
+    "Hola:\n\nLa verificación del {at} encontró rota(s) {count} cadena(s) de la pista de auditoría del portal de {operator} (desde {since}):\n\n{chains}\n\nSe modificó, eliminó o añadió un evento fuera del portal. Abra Pista de auditoría → Verificar integridad para ver cada cadena, conserve las copias de seguridad de la base de datos hechas antes de esa fecha y compruebe quién tiene acceso al servidor de la base de datos y a la clave del diario. Se lo recordaremos cada día mientras haya una cadena rota.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
+   "alert-journal-ok": [
+    "Resuelto: todas las cadenas de la pista de auditoría están íntegras",
+    "Hola:\n\nLa verificación del {at} encontró íntegras todas las cadenas de la pista de auditoría del portal de {operator}. Se había notificado una cadena rota el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
    "test": [
     "Mensaje de prueba del portal de gestión de enlaces",
     "Hola:\n\nEste es un mensaje de prueba enviado el {when} (UTC) para comprobar la configuración de correo electrónico del portal. Si puede leerlo, el servidor de envío aceptó el mensaje y lo entregó."
@@ -186,6 +194,14 @@
    "alert-gcp-table-ok": [
     "Résolu : la table des longueurs de GCP de GS1 est à jour",
     "Bonjour,\n\nLe portail de {operator} utilise désormais la table des longueurs de GCP de GS1 du {date}, vieille de {days} jours. L'ancienne liste avait été signalée le {since}.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-journal": [
+    "Alerte : {count} chaîne(s) rompue(s) dans le journal d’audit",
+    "Bonjour,\n\nLa vérification du {at} a trouvé {count} chaîne(s) du journal d’audit du portail de {operator} rompue(s) (depuis le {since}) :\n\n{chains}\n\nUn événement a été modifié, supprimé ou ajouté en dehors du portail. Ouvrez Journal d’audit → Vérifier l'intégrité pour voir chaque chaîne, conservez les sauvegardes de la base de données faites avant cette date et vérifiez qui a accès au serveur de base de données et à la clé du journal. Un rappel vous sera envoyé chaque jour tant qu’une chaîne est rompue.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-journal-ok": [
+    "Résolu : toutes les chaînes du journal d’audit sont intactes",
+    "Bonjour,\n\nLa vérification du {at} a trouvé intactes toutes les chaînes du journal d’audit du portail de {operator}. Une chaîne rompue avait été signalée le {since}.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
    ],
    "test": [
     "Message de test du portail de gestion des liens",
@@ -284,6 +300,14 @@
     "Behoben: Die GCP-Längentabelle von GS1 ist aktuell",
     "Hallo,\n\ndas Portal von {operator} verwendet jetzt die GCP-Längentabelle von GS1 vom {date}, {days} Tage alt. Die alte Liste war am {since} gemeldet worden.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
    ],
+   "alert-journal": [
+    "Warnung: {count} unterbrochene Kette(n) im Aktivitätsprotokoll",
+    "Hallo,\n\nDie Prüfung vom {at} hat {count} unterbrochene Kette(n) im Aktivitätsprotokoll des Portals von {operator} gefunden (seit {since}):\n\n{chains}\n\nEin Ereignis wurde außerhalb des Portals geändert, gelöscht oder hinzugefügt. Öffnen Sie Aktivitätsprotokoll → Integrität prüfen, um jede Kette zu sehen, bewahren Sie die vor diesem Datum erstellten Datenbanksicherungen auf und prüfen Sie, wer Zugang zum Datenbankserver und zum Journalschlüssel hat. Sie werden täglich erinnert, solange eine Kette unterbrochen ist.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
+   "alert-journal-ok": [
+    "Behoben: alle Ketten des Aktivitätsprotokolls sind unversehrt",
+    "Hallo,\n\nDie Prüfung vom {at} hat alle Ketten des Aktivitätsprotokolls des Portals von {operator} unversehrt gefunden. Eine unterbrochene Kette war am {since} gemeldet worden.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
    "test": [
     "Testnachricht des Linkverwaltungsportals",
     "Guten Tag,\n\ndies ist eine Testnachricht, die am {when} (UTC) gesendet wurde, um die E-Mail-Einstellungen des Portals zu prüfen. Wenn Sie sie lesen können, hat der Mailserver die Nachricht angenommen und zugestellt."
@@ -380,6 +404,14 @@
    "alert-gcp-table-ok": [
     "Risolto: la tabella delle lunghezze del GCP di GS1 è aggiornata",
     "Buongiorno,\n\nil portale di {operator} usa ora la tabella delle lunghezze del GCP di GS1 del {date}, di {days} giorni. Il vecchio elenco era stato segnalato il {since}.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-journal": [
+    "Avviso: {count} catena/e interrotta/e nel registro di audit",
+    "Buongiorno,\n\nLa verifica del {at} ha trovato interrotta/e {count} catena/e del registro di audit del portale di {operator} (dal {since}):\n\n{chains}\n\nUn evento è stato modificato, eliminato o aggiunto al di fuori del portale. Apra Registro di audit → Verifica integrità per vedere ogni catena, conservi i backup del database fatti prima di quella data e controlli chi ha accesso al server del database e alla chiave del registro. Riceverà un promemoria ogni giorno finché una catena resta interrotta.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-journal-ok": [
+    "Risolto: tutte le catene del registro di audit sono integre",
+    "Buongiorno,\n\nLa verifica del {at} ha trovato integre tutte le catene del registro di audit del portale di {operator}. Una catena interrotta era stata segnalata il {since}.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
    ],
    "test": [
     "Messaggio di prova dal portale di gestione dei link",
@@ -478,6 +510,14 @@
     "Çözüldü: GS1 GCP uzunluk tablosu güncel",
     "Merhaba,\n\n{operator} portalı artık GS1'in {date} tarihli, {days} günlük GCP uzunluk tablosunu kullanıyor. Eski liste {since} tarihinde bildirilmişti.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
    ],
+   "alert-journal": [
+    "Uyarı: denetim kaydında {count} kırık zincir",
+    "Merhaba,\n\n{at} tarihli doğrulama, {operator} portalının denetim kaydında {count} kırık zincir buldu ({since} tarihinden beri):\n\n{chains}\n\nBir olay portalın dışında değiştirildi, silindi veya eklendi. Her zinciri görmek için Denetim kaydı → Bütünlüğü doğrula'yı açın, bu tarihten önce alınan veritabanı yedeklerini saklayın ve veritabanı sunucusuna ve günlük anahtarına kimin erişebildiğini kontrol edin. Kırık bir zincir olduğu sürece size her gün hatırlatılacaktır.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "alert-journal-ok": [
+    "Çözüldü: denetim kaydının tüm zincirleri sağlam",
+    "Merhaba,\n\n{at} tarihli doğrulama, {operator} portalının denetim kaydındaki tüm zincirleri sağlam buldu. Kırık bir zincir {since} tarihinde bildirilmişti.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
    "test": [
     "Bağlantı yönetim portalından deneme iletisi",
     "Merhaba,\n\nBu, portalın e-posta ayarlarını kontrol etmek için {when} (UTC) tarihinde gönderilmiş bir deneme iletisidir. Okuyabiliyorsanız aktarıcı iletiyi kabul etti ve teslim etti."
@@ -574,6 +614,14 @@
    "alert-gcp-table-ok": [
     "已解决：GS1 厂商识别代码长度表已是最新",
     "您好：\n\n{operator} 的门户现在使用 GS1 于 {date} 发布的厂商识别代码长度表，已有 {days} 天。旧列表的提醒发出于 {since}。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-journal": [
+    "警报：审计日志中有 {count} 条链已断开",
+    "您好：\n\n{at} 的验证发现 {operator} 门户的审计日志中有 {count} 条链已断开（自 {since} 起）：\n\n{chains}\n\n有事件在门户之外被修改、删除或添加。请打开“审计日志 → 验证完整性”查看每条链，保留该日期之前的数据库备份，并检查谁能访问数据库服务器和日志密钥。只要仍有断开的链，系统每天都会提醒您。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-journal-ok": [
+    "已解决：审计日志的所有链均完整",
+    "您好：\n\n{at} 的验证发现 {operator} 门户审计日志的所有链均完整。此前已于 {since} 报告过一条断开的链。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
    ],
    "test": [
     "来自链接管理门户的测试邮件",
@@ -672,6 +720,14 @@
     "解決：GS1 事業者コード桁数表が最新になりました",
     "こんにちは。\n\n{operator} のポータルは現在、{date} 付けの GS1 事業者コード桁数表（{days} 日経過）を使用しています。古い表は {since} に通知されていました。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
    ],
+   "alert-journal": [
+    "警告：監査証跡に破損したチェーンが {count} 件あります",
+    "こんにちは。\n\n{at} の検証で、{operator} のポータルの監査証跡に破損したチェーンが {count} 件見つかりました（{since} から）：\n\n{chains}\n\nポータルの外でイベントが変更、削除、または追加されました。「監査証跡 → 完全性を検証」を開いて各チェーンを確認し、その日付より前に作成されたデータベースのバックアップを保管し、データベースサーバーとジャーナルの鍵に誰がアクセスできるかを確認してください。破損したチェーンがある間は毎日お知らせします。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
+   "alert-journal-ok": [
+    "解決：監査証跡のすべてのチェーンが完全です",
+    "こんにちは。\n\n{at} の検証で、{operator} のポータルの監査証跡のすべてのチェーンが完全であることが確認されました。破損したチェーンは {since} に報告されていました。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
    "test": [
     "リンク管理ポータルからのテストメッセージ",
     "こんにちは。\n\nこれは、ポータルのメール設定を確認するために {when}（UTC）に送信されたテストメッセージです。このメッセージが読めれば、リレーがメッセージを受け付けて配信しています。"
@@ -768,6 +824,14 @@
    "alert-gcp-table-ok": [
     "해결됨: GS1 업체코드 길이 표가 최신입니다",
     "안녕하세요.\n\n{operator}의 포털은 이제 {date}자 GS1 업체코드 길이 표({days}일 경과)를 사용합니다. 오래된 표는 {since}에 알려 드렸습니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-journal": [
+    "경고: 감사 기록에 손상된 체인 {count}개",
+    "안녕하세요.\n\n{at}의 검증에서 {operator} 포털의 감사 기록에 손상된 체인 {count}개가 발견되었습니다({since}부터):\n\n{chains}\n\n포털 밖에서 이벤트가 변경, 삭제 또는 추가되었습니다. 감사 기록 → 무결성 검증을 열어 각 체인을 확인하고, 그 날짜 이전에 만든 데이터베이스 백업을 보관하며, 데이터베이스 서버와 저널 키에 누가 접근할 수 있는지 확인하세요. 손상된 체인이 있는 동안 매일 알려 드립니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-journal-ok": [
+    "해결됨: 감사 기록의 모든 체인이 온전합니다",
+    "안녕하세요.\n\n{at}의 검증에서 {operator} 포털 감사 기록의 모든 체인이 온전한 것으로 확인되었습니다. 손상된 체인은 {since}에 보고되었습니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
    ],
    "test": [
     "링크 관리 포털 테스트 메시지",
@@ -866,6 +930,14 @@
     "हल हुआ: GS1 GCP लंबाई तालिका अद्यतन है",
     "नमस्ते,\n\n{operator} का पोर्टल अब {date} की GS1 GCP लंबाई तालिका का उपयोग करता है, जो {days} दिन पुरानी है। पुरानी सूची की सूचना {since} को दी गई थी।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
    ],
+   "alert-journal": [
+    "चेतावनी: ऑडिट ट्रेल में {count} टूटी हुई श्रृंखला(एँ)",
+    "नमस्ते,\n\n{at} के सत्यापन में {operator} के पोर्टल की ऑडिट ट्रेल में {count} श्रृंखला(एँ) टूटी हुई मिलीं ({since} से):\n\n{chains}\n\nकोई घटना पोर्टल के बाहर बदली, हटाई या जोड़ी गई। हर श्रृंखला देखने के लिए ऑडिट ट्रेल → अखंडता जाँचें खोलें, उस तारीख से पहले बने डेटाबेस बैकअप सुरक्षित रखें, और जाँचें कि डेटाबेस सर्वर और जर्नल कुंजी तक किसकी पहुँच है। जब तक कोई श्रृंखला टूटी रहेगी, आपको हर दिन याद दिलाया जाएगा।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
+   "alert-journal-ok": [
+    "हल हुआ: ऑडिट ट्रेल की सभी श्रृंखलाएँ अखंड हैं",
+    "नमस्ते,\n\n{at} के सत्यापन में {operator} के पोर्टल की ऑडिट ट्रेल की सभी श्रृंखलाएँ अखंड मिलीं। एक टूटी हुई श्रृंखला की सूचना {since} को दी गई थी।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
    "test": [
     "लिंक प्रबंधन पोर्टल से परीक्षण संदेश",
     "नमस्ते,\n\nयह पोर्टल की ईमेल सेटिंग जाँचने के लिए {when} (UTC) को भेजा गया एक परीक्षण संदेश है। यदि आप इसे पढ़ पा रहे हैं, तो रिले ने संदेश स्वीकार किया और उसे पहुँचा दिया।"
@@ -962,6 +1034,14 @@
    "alert-gcp-table-ok": [
     "تم الحل: جدول أطوال GCP من GS1 محدَّث",
     "مرحبًا،\n\nتستخدم بوابة {operator} الآن جدول أطوال GCP من GS1 الصادر في {date}، وعمره {days} يومًا. كان قد أُبلغ عن القائمة القديمة في {since}.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-journal": [
+    "تنبيه: {count} سلسلة مقطوعة في سجل التدقيق",
+    "مرحبًا،\n\nوجد التحقق الذي جرى في {at} عدد {count} من سلاسل سجل التدقيق في بوابة {operator} مقطوعة (منذ {since}):\n\n{chains}\n\nعُدِّل حدث أو حُذف أو أُضيف خارج البوابة. افتح سجل التدقيق ← التحقق من السلامة لرؤية كل سلسلة، واحتفظ بالنسخ الاحتياطية لقاعدة البيانات المأخوذة قبل ذلك التاريخ، وتحقق ممن يمكنه الوصول إلى خادم قاعدة البيانات وإلى مفتاح السجل. سنذكّرك كل يوم ما دامت هناك سلسلة مقطوعة.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-journal-ok": [
+    "تم الحل: جميع سلاسل سجل التدقيق سليمة",
+    "مرحبًا،\n\nوجد التحقق الذي جرى في {at} جميع سلاسل سجل التدقيق في بوابة {operator} سليمة. وكان قد أُبلغ عن سلسلة مقطوعة في {since}.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
    ],
    "test": [
     "رسالة اختبار من بوابة إدارة الروابط",

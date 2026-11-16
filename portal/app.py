@@ -2931,6 +2931,7 @@ def audit_verify():
         if receipt[0] not in names:
             names.append(receipt[0])
     results = [journal.verify(name, receipt) for name in names]
+    journal.record_verification(results)             # a broken chain alerts the server administrators (ADR 0026)
     for result in results:
         trail = result["chain"].split("/", 1)[0]
         result["tenantName"] = None if trail == "operator" else tenant_name(trail)

@@ -209,7 +209,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_05ea515c5cc…)",
+    "a wrong key is refused (rk_83424307263…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -935,9 +935,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (230 features)",
+    "features.md: every table has a Checks column (233 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (403 references)",
+    "…each reference names a program of the inventory (417 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (76)",
     "…and the inventory holds no program that no longer exists",
@@ -3198,7 +3198,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:42483/ok",
+    "internal address refused: http://127.0.0.1:39385/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -3545,6 +3545,19 @@
     "GET /gcp: the list and its age against the limit",
     "…a recent list is not old",
     "…no list: no age",
+    "the journal: before the first verification, unknown and no message",
+    "…every chain whole after the daily verification: ok, with when and how many chains",
+    "…an event changed in the database: nothing yet until a verification",
+    "…the next verification finds it: an alert, a message to the server administrators",
+    "…the message names the chain, the problem and the event",
+    "…the alert in the history, with the broken chain",
+    "…no reminder the same day",
+    "…a reminder the next day",
+    "an administrator's verification keeps the broken chain (still broken)",
+    "…once the event is put back (a restore), the administrator's verification takes the chain out at once",
+    "…and the next round resolves the alert with a message",
+    "a wrong receipt typed by an administrator is shown to them, never stored as an alert",
+    "monitoring off: the journal is not checked either",
     "overview of a server administrator: every active alert and the state of each check",
     "…an organisation's administrator: its own spike only, no checks (no Operation)",
     "…an operator user: no installation alerts",
@@ -3557,7 +3570,7 @@
     "the category alerts: optional and on by default",
     "…a user's choice is kept",
     "…messages in the recipient's language",
-    "eleven alert messages",
+    "thirteen alert messages",
     "alert-resolver-down: both languages with the same placeholders",
     "alert-resolver-up: both languages with the same placeholders",
     "alert-backup-failed: both languages with the same placeholders",
@@ -3569,9 +3582,11 @@
     "alert-log-space-ok: both languages with the same placeholders",
     "alert-gcp-table: both languages with the same placeholders",
     "alert-gcp-table-ok: both languages with the same placeholders",
+    "alert-journal: both languages with the same placeholders",
+    "alert-journal-ok: both languages with the same placeholders",
     "the screen's texts in both languages"
    ],
-   "count": 91,
+   "count": 106,
    "ciOnly": false
   },
   "overview": {
@@ -3645,7 +3660,7 @@
     "the resolver cannot be read: the overview still answers, without records",
     "the log cannot be read: 503 requests.unavailable",
     "signed out: 401",
-    "every overview text in both languages (172 keys)",
+    "every overview text in both languages (175 keys)",
     "the API's description has /stats and the scope stats:read",
     "sign-in opens the overview"
    ],
@@ -4912,7 +4927,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.001 ms; Node.js: tens of ms)"
    ],
    "count": 246,
    "ciOnly": false

@@ -2351,6 +2351,7 @@ function alertText(a) {
   const what = a.kind === "404" ? t("overview.alert.404", { count: d.count ?? "" })
     : a.kind === "logspace" && d.percent !== undefined ? t("overview.alert.logspace", { percent: nf(d.percent) })
     : a.kind === "gcptable" && d.days !== undefined ? t("overview.alert.gcptable", { days: d.days })
+    : a.kind === "journal" && d.count !== undefined ? t("overview.alert.journal", { count: d.count })
     : t("overview.check." + a.kind);
   const extra = d.error || d.reason || (d.host ? d.host : "") || "";
   return extra ? `${what} · ${extra}` : what;
@@ -2368,7 +2369,7 @@ async function loadAlerts(event) {
   const kinds = $("#alerts-kind");
   if (!kinds.options.length) {
     kinds.replaceChildren(i18nOption("alerts.anyKind", ""),
-                          ...["resolver", "backup", "certificate", "logspace", "gcptable", "404"].map(k => i18nOption("alerts.kind." + k, k)));
+                          ...["resolver", "backup", "certificate", "logspace", "gcptable", "journal", "404"].map(k => i18nOption("alerts.kind." + k, k)));
   }
   const fromHash = new URLSearchParams(location.hash.split("?")[1] || "").get("tenant");
   if (fromHash !== null && !event) $("#alerts-tenant").value = fromHash;
@@ -4210,15 +4211,17 @@ function renderOverview() {
     const d = c.detail || {};
     if (c.kind === "logspace" && d.reason === "noLimit") return t("overview.check.noLimit");
     if (c.kind === "gcptable" && d.reason === "none") return t("overview.check.gcpNone");
+    if (c.kind === "journal" && d.reason === "notVerified") return t("overview.check.journalNone");
     const extra = c.kind === "backup" && d.at ? t("overview.check.backupAt", { when: formatWhen(d.at) })
       : c.kind === "certificate" && d.expires ? t("overview.check.certExpires", { when: formatWhen(d.expires), days: d.days })
       : c.kind === "logspace" && d.percent !== undefined
         ? t("overview.check.spaceUse", { percent: nf(d.percent), max: formatBytes(d.max) })
       : c.kind === "gcptable" && d.date ? t("overview.check.gcpAge", { date: formatDay(d.date), days: d.days })
+      : c.kind === "journal" && d.at ? t("overview.check.journalAt", { when: formatWhen(d.at), chains: d.chains ?? 0 })
       : "";
     return t("overview.state." + (c.state || "unknown")) + (extra ? " · " + extra : "");
   };
-  if (op.checks) ["resolver", "backup", "certificate", "logspace", "gcptable"].forEach(name => facts.push(["overview.check." + name, checkText(op.checks[name])]));
+  if (op.checks) ["resolver", "backup", "certificate", "logspace", "gcptable", "journal"].forEach(name => facts.push(["overview.check." + name, checkText(op.checks[name])]));
   if (d.operation) facts.push(["overview.op.alerts", (op.alerts || []).length
     ? op.alerts.map(a => overviewAlert(a) + " · " +
                          t("overview.alertSince", { when: formatWhen(a.since) })).join("\n")

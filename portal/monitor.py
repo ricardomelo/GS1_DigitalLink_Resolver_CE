@@ -4,7 +4,7 @@ Monitoring and alerts by e-mail (Documentation/adr/0008-monitoring-and-alerts.md
 The job worker calls run() every PORTAL_MONITOR_MINUTES (app.MONITORING, worker.py); one replica at a time does the
 checks (the "monitor" lock, not waited for). Each check keeps a document in the portal's collection "alerts":
 
-    {_id: "resolver" | "backup" | "certificate" | "logspace" | "gcptable" | "404:*" | "404:<tenant id>",
+    {_id: "resolver" | "backup" | "certificate" | "logspace" | "gcptable" | "journal" | "404:*" | "404:<tenant id>",
      state: "ok" | "alert" | "unknown", since, checkedAt, failures, detail, notifiedAt, notifiedLevel, tenant}
 
 Each alert raised is also recorded in "alert_history" (Documentation/adr/0013-administration-and-navigation.md):
@@ -18,6 +18,8 @@ request log's space (Documentation/adr/0006-resolver-request-log.md, section 9) 
 limit, with a message at each step of SPACE_STEP points it reaches (80, 85, 90, 95, 100) instead of daily reminders.
 GS1's GCP length table in use (Documentation/adr/0015-gcp-length-table.md) is an alert from PORTAL_MONITOR_GCP_DAYS
 days after the date GS1 gave it, reminded every GCP_REMIND_DAYS days.
+The journal's hash chains (Documentation/adr/0026-journal-integrity.md, section 2.5) are an alert while the last
+verification (the worker's daily one, or an administrator's) found a chain broken.
 Server administrators receive the installation's alerts; an organisation's administrators its spikes of 404.
 
 Settings (section 3.4 of the ADR):
@@ -41,6 +43,7 @@ import requests
 from pymongo.errors import PyMongoError
 
 import gcp
+import journal
 import notify
 import requestlog
 import store
@@ -61,7 +64,7 @@ TOP_CODES = 5
 DEFAULT_URL = "http://frontend-proxy-service/.well-known/gs1resolver"
 SPACE_ALERT = 80
 SPACE_STEP = 5
-CHECKS = ("resolver", "backup", "certificate", "logspace", "gcptable")
+CHECKS = ("resolver", "backup", "certificate", "logspace", "gcptable", "journal")
 GCP_REMIND_DAYS = 7
 HISTORY = "alert_history"
 HISTORY_DAYS = 400
@@ -229,6 +232,18 @@ def check_gcp_table(now: datetime) -> tuple[str, dict]:
     if age is None:
         return "unknown", {"reason": "none"}
     return ("alert" if age["old"] else "ok"), {"date": age["date"], "days": age["days"], "max": age["maxDays"]}
+
+
+def check_journal() -> tuple[str, dict]:
+    """("alert" | "ok" | "unknown", detail) from the last verification of the journal's chains (journal.checkpoint(),
+    once a day, or an administrator's): an alert while a chain is broken; unknown before the first verification.
+    detail: at, chains (how many were verified), count and broken ([{chain, kind, seq}], the first ten)."""
+    found = journal.last_verification()
+    if not found or not found.get("at"):
+        return "unknown", {"reason": "notVerified"}
+    broken = list(found.get("broken") or [])
+    detail = {"at": store.iso(found["at"]), "chains": found.get("chains"), "count": len(broken), "broken": broken[:10]}
+    return ("alert" if broken else "ok"), detail
 
 
 def _megabytes(n) -> str:
@@ -438,6 +453,13 @@ def _run(now: datetime) -> dict:
                                 params={"date": (detail.get("date") or "")[:10], "days": detail.get("days", ""),
                                         "max": detail.get("max", "")},
                                 remind_hours=GCP_REMIND_DAYS * 24)
+    # the journal's hash chains (ADR 0026)
+    state, detail = check_journal()
+    found["journal"] = _update("journal", state, detail, now, ("alert-journal", "alert-journal-ok"),
+                               params={"count": detail.get("count", 0), "at": detail.get("at") or "",
+                                       "chains": "\n".join(f"  {b['chain']}: {b['kind']}"
+                                                           + (f" #{b['seq']}" if b.get("seq") else "")
+                                                           for b in detail.get("broken") or []) or "-"})
     # spikes of 404 per scope
     tenant_list = tenants.load()
     for scope, entry in spikes(now, tenant_list).items():

@@ -377,6 +377,18 @@ TEXTS = {
                   "dias. A lista antiga tinha sido avisada em {since}.\n\nVocê recebe esta mensagem como administrador do "
                   "servidor; pode desligar os alertas em Opções → E-mail."),
     },
+    "alert-journal": {
+        "en-GB": ("Alert: {count} broken chain(s) in the audit trail",
+                  "Hello,\n\nThe verification of {at} found {count} chain(s) of the audit trail of the portal of {operator} broken (since {since}):\n\n{chains}\n\nAn event was changed, removed or added outside the portal. Open Audit trail → Verify integrity to see each chain, keep the database backups made before that date, and check who can reach the database server and the journal key. You will be reminded every day while a chain is broken.\n\nYou receive this message as a server administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Alerta: {count} cadeia(s) quebrada(s) na trilha de auditoria",
+                  "Olá,\n\nA verificação de {at} encontrou {count} cadeia(s) da trilha de auditoria do portal de {operator} quebrada(s) (desde {since}):\n\n{chains}\n\nUm evento foi alterado, apagado ou acrescentado fora do portal. Abra Auditoria → Verificar integridade para ver cada cadeia, guarde as cópias de segurança do banco de dados feitas antes dessa data e verifique quem tem acesso ao servidor do banco de dados e à chave do diário. Você será lembrado todos os dias enquanto houver uma cadeia quebrada.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
+    },
+    "alert-journal-ok": {
+        "en-GB": ("Resolved: every chain of the audit trail is whole",
+                  "Hello,\n\nThe verification of {at} found every chain of the audit trail of the portal of {operator} whole. A broken chain had been reported on {since}.\n\nYou receive this message as a server administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Resolvido: todas as cadeias da trilha de auditoria estão íntegras",
+                  "Olá,\n\nA verificação de {at} encontrou íntegras todas as cadeias da trilha de auditoria do portal de {operator}. Uma cadeia quebrada tinha sido avisada em {since}.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
+    },
     "test": {
         "en-GB": ("Test message from the link management portal",
                   "Hello,\n\n"

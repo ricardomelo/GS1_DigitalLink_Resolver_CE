@@ -42,6 +42,7 @@ TEMPLATES = {
     "alert-backup-ok": "alerts", "alert-certificate": "alerts", "alert-certificate-ok": "alerts",
     "alert-404-spike": "alerts", "alert-log-space": "alerts", "alert-log-space-ok": "alerts",
     "alert-gcp-table": "alerts", "alert-gcp-table-ok": "alerts",
+    "alert-journal": "alerts", "alert-journal-ok": "alerts",
 }
 # Waits before each new try after a temporary failure, in minutes; after the last, the message has failed.
 RETRY_MINUTES = (1, 5, 15, 60, 120)

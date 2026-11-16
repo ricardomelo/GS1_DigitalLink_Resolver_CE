@@ -38,7 +38,9 @@ beginning. Seal fields: chain, seq (1, 2, … in the chain), prev (the previous 
 PORTAL_JOURNAL_KEY, absent without a key) and kid (key_id() of the key). A unique index on (chain, seq) numbers events
 safely across replicas; "journal_heads" keeps each chain's last seq and hash outside the retention. Events written
 before this version are sealed by seal_unsealed() at start-up, marked sealed "upgrade". verify() walks a chain;
-checkpoint() (the worker's housekeeping) verifies every chain and writes the heads to the log. A record change is
+checkpoint() (the worker's housekeeping) verifies every chain, writes the heads to the log and stores the result in
+settings "journalVerified" ({at, chains, broken: [{chain, kind, seq}]}), which an administrator's verification brings
+up to date (record_verification()) and the monitor's check "journal" reads (alert by e-mail, ADR 0026 section 2.5). A record change is
 journalled before the data entry API is called (app.journal_first()); a failed one adds change-failed with ref
 {chain, seq} of the attempt.
 """
@@ -70,6 +72,7 @@ KEY_VARIABLE = "PORTAL_JOURNAL_KEY"
 UNHASHED = ("_id", "expiresAt", "hash", "mac")      # every other stored field is sealed
 APPEND_TRIES = 50                                    # writers racing for the same chain retry this often
 FAILED_ACTION = "change-failed"
+VERIFIED_SETTING = "journalVerified"                 # the last verification's result, read by monitor.check_journal()
 _append_lock = threading.Lock()     # threads of one process take turns; processes race on the unique index
 
 
@@ -336,8 +339,35 @@ def checkpoint() -> list[dict]:
         else:
             log.error("Journal chain %s broken: %s at %s (head %s).", result["chain"], result["problem"]["kind"],
                       result["problem"].get("seq"), result["head"])
+    store.set_setting(VERIFIED_SETTING, {"at": store.now(), "chains": len(results),
+                                         "broken": [_broken(r) for r in results if not r["ok"]]})
     store.set_setting("journalCheckpoint", store.iso(today))
     return results
+
+
+def _broken(result: dict) -> dict:
+    return {"chain": result["chain"], "kind": result["problem"]["kind"], "seq": result["problem"].get("seq")}
+
+
+def record_verification(results: list[dict]) -> None:
+    """An administrator's verification (GET /portal/api/audit/verify) brings the stored result up to date for the
+    chains it walked, so that the monitor's alert (ADR 0026, section 2.5) does not wait for the next day: a broken
+    chain is added, a chain found whole again is taken out. A receipt that is not in its chain is shown to the
+    administrator who typed it and is not stored (anyone can type a wrong one)."""
+    stored = store.get_setting(VERIFIED_SETTING) or {}
+    walked = {r["chain"] for r in results}
+    broken = [b for b in stored.get("broken") or [] if b.get("chain") not in walked]
+    broken += [_broken(r) for r in results if not r["ok"] and r["problem"]["kind"] != "receipt"]
+    if broken == (stored.get("broken") or []):
+        return
+    store.set_setting(VERIFIED_SETTING, {**stored, "at": stored.get("at") or store.now(), "broken": broken})
+
+
+def last_verification() -> dict | None:
+    """The stored result of the last verification: {"at", "chains", "broken": [{"chain", "kind", "seq"}]}, None
+    before the first."""
+    found = store.get_setting(VERIFIED_SETTING)
+    return found if isinstance(found, dict) else None
 
 
 def _output(doc: dict, with_doc: bool = True) -> dict:

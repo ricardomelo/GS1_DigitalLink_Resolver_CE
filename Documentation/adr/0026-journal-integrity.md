@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (16 November 2026) |
+| Status | **Accepted** (16 November 2026); step 2 in progress: the alert delivered on 16 November 2026 (§2.5.1), insert-only access to follow |
 | Backlog item | 10.1, phase 1 of the security assessment ([ADR 0020](0020-security-assessment.md)); amends [ADR 0001](0001-portal-state-in-mongodb.md) §3.5 and the journal of [ADR 0002](0002-tenants.md) §3.5 |
 | Decided by | the owner of the branch's standing instruction (take the recommended option and carry on): a record change is journalled before the data entry API is called and refused when it cannot be; every event is sealed in a hash chain per audit trail and retention category, with a key kept outside the database; administrators verify the chains and can keep a chain's head as a receipt |
 
@@ -87,6 +87,12 @@ journal is not keyed: anyone able to write to the database could then rewrite a 
 ### 2.5 Later steps of this decision
 
 1. **An alert** (ADR 0008) when the daily verification finds a broken chain, by e-mail to the server administrators.
+   *Delivered (session 40, the owner away, recommended options):* `checkpoint()` stores its result in the setting
+   `journalVerified`; an administrator's verification brings it up to date for the chains it walked (a broken chain
+   added, a whole one taken out; a wrong receipt is shown to whoever typed it and never stored); the monitor's check
+   `journal` reads it every round (an alert while a chain is broken, reminded daily, resolved with a message when every
+   chain is whole again) and the overview shows it with the other checks. Messages `alert-journal` and
+   `alert-journal-ok` in the category `alerts` (ADR 0008 §3.1 says why not `security`).
 2. **Insert-only access**: the journal moves to a database of its own on which the portal's MongoDB user may find and
    insert only; retention changes and sealing at the upgrade run in `portal-db-init` with the root user.
 
@@ -124,4 +130,7 @@ Step 1: this record; `portal/journal.py` (chains, sealing, verification), `porta
 first, `change-failed`, the verification route, the daily housekeeping), the Audit screen, `.env.example`, the
 installer and `rotate-secrets.sh`; texts in the twelve languages; checks in `test_store.py` (also against a real
 MongoDB in the continuous integration), `test_record_delete.py` and a new `test_journal.py`, mutation-checked; ADR
-0001's note, the developer guide, the threat model, the changelog, features and the portal guide. Step 2: §2.5.
+0001's note, the developer guide, the threat model, the changelog, features and the portal guide. Step 2 (§2.5), the
+alert: `journal.py` (`journalVerified`, `record_verification()`, `last_verification()`), `monitor.py`
+(`check_journal()`), `app.py` (the verification route updates the stored result), the overview and the alert history,
+two messages and five screen texts in the twelve languages, 15 checks in `test_monitor.py` (7 mutations, all caught).

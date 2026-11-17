@@ -1083,7 +1083,9 @@ has changed. A broken chain, or a warning that the journal key is not set, is fo
 portal also checks every chain once a day and records each head in its log. When that daily check, or anyone's
 **Verify integrity**, finds a chain broken, the server administrators receive an alert by e-mail (*Alert: … broken
 chain(s) in the audit trail*, again every day while it lasts, and *Resolved* once every chain is whole again), and
-the overview shows it under Operation.
+the overview shows it under Operation. The journal is kept in a database of its own, where the portal itself may add
+events but never change or delete them, so even someone who obtains the portal's database password cannot quietly
+rewrite the trail.
 
 ## 16. Requests to the resolver
 

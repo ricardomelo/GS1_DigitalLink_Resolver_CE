@@ -5,6 +5,19 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
 
+### The journal: insert-only, in a database of its own (session 41)
+- **Changed: the portal can no longer change or delete journal events** ([ADR 0026](../adr/0026-journal-integrity.md)
+  §2.5.2). The journal (`journal`, `journal_heads`) moves to a database of its own, `<PORTAL_DB_NAME>_journal`
+  (`resolver_portal_journal` by default), where the portal's MongoDB user may read and add events but not change,
+  delete or index them; `portal-db-init` makes the indexes, applies retention changes and seals the events of earlier
+  versions with the root user. A tampered event was already detected by the chains; now the portal's database user
+  cannot make one at all.
+- **Operators:** take a backup before this update (`sudo scripts/resolver-backup.sh` in the repository, or your own): at the first
+  `docker compose up -d --build`, `portal-db-init` moves the journal once and prints `journal moved to
+  <name>_journal (N event(s))`; nothing else to do, and the daily dump already covers every database. A line
+  `WARNING: … reappeared after the journal moved` means a portal of the earlier version wrote during the update; those
+  few events stay in the old place, neither moved nor sealed. Commit `e51f0c1`.
+
 ### The journal: an alert when a chain breaks (session 40)
 - **Added: an alert by e-mail when the audit trail's integrity check finds a broken chain**
   ([ADR 0026](../adr/0026-journal-integrity.md) §2.5, [ADR 0008](../adr/0008-monitoring-and-alerts.md)). The daily

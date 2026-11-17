@@ -1292,6 +1292,18 @@ server administrators while a chain is broken, reminded daily and resolved when 
 receipt never alerts. Two messages and five screen texts in the twelve languages; 15 new checks in `monitor`; 7
 mutations, all caught. Insert-only access to the journal, in a database of its own, is the rest of step 2.
 
+## Session 41 — the journal insert-only, in a database of its own
+
+The rest of step 2 of [ADR 0026](adr/0026-journal-integrity.md) (§2.5.2), in one code commit (`e51f0c1`): the journal
+and its chain heads move to a database of their own, `<PORTAL_DB_NAME>_journal`, where the portal's MongoDB user holds
+a role that reads and inserts events (and moves heads forward) but cannot change, delete or index them. `portal-db-init`
+moves an existing journal there once — sealed events kept, nothing dropped unless every event is found again, a
+collection that reappears afterwards reported and left —, makes the indexes, applies retention changes and seals only
+the events it moved, with the root user; the portal's start-up leaves those steps to it when refused. Nine new
+checks in `store` and two in `journal` on mongomock, sixteen more in `store_mongodb` against a real MongoDB in the
+continuous integration (the role's exact privileges and every refusal); 11 mutations, all caught. Operators take a
+backup before the update.
+
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|
 | Identification | GTIN + optional batch | 16 primary keys and 9 qualifiers, with the combinations of the standard |

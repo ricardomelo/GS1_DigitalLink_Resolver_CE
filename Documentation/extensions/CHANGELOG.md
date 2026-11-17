@@ -7,6 +7,25 @@ address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use th
 when a key keeps changing under other writers, and a list sent to `POST /new` answers the error of the first item not
 written instead of 201.
 
+### A leaflet in another language or for another market is no longer given silently (session 43)
+- **Changed: a safety-critical link in a language the person did not ask for now comes with a choice**
+  ([ADR 0028](../adr/0028-language-fallback.md)). When a browser asks for a recall status, safety information, patient
+  leaflet, summary of product characteristics or instructions for use — or scans a code whose default target is one of
+  them — and none of the links is in a language the browser accepts, or marked for the market asked (`?context=`),
+  the resolver no longer redirects straight to the other one: it shows the page of a choice with every version of
+  that information and its language, under a notice in the visitor's language (*No "Patient information leaflet" in
+  your language…*; twelve languages). One tap opens a version. A browser that also accepts the language of the link
+  (most send English as a second choice) is redirected as before.
+- **Added: the header `Resolution-Fallback`** (`language`, `context` or both) on every redirect or choice whose links
+  do not serve the language or the context the request asked for, for every link type, exposed to web apps on other
+  origins. Apps (`Accept: */*`) keep receiving the redirect, now with the header. Links that declare no language or no
+  context serve everyone, as before. GS1's conformance suite is unaffected.
+- **Added: two warnings in the portal** (editor, tenant API `warnings`, import preview), which never refuse a save:
+  *Safety-critical links without a language* (marked `und`, undetermined: the resolver cannot tell anyone they are in
+  another language) and *Safety-critical links missing in the record's languages* (for example a product page in
+  Portuguese and English with a leaflet in English only: a request in Portuguese receives the English leaflet). Commit
+  `9f28dab`.
+
 ### No lost update when two people change one key (session 42)
 - **Fixed: two changes to the same identifier at the same moment no longer overwrite each other**
   ([ADR 0027](../adr/0027-conditional-writes.md)). Every write of the data entry API (`POST /new`, `PUT`, a `DELETE`

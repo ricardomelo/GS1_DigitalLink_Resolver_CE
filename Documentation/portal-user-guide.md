@@ -318,6 +318,13 @@ link that was not meant for it; a warning never stops you from saving:
 - **Batches without a record of their own receive these links**, under the targets of the product, when it holds
   safety-critical links and the identifier has batch or serial records: the box names them and the types, and whether
   the strict mode is on.
+- **Safety-critical links without a language**, under the targets, when a safety-critical link's language is *und*
+  (undetermined): the resolver gives it to a person asking in any language without telling them it may be in another
+  one. Choose the language the document is written in ([ADR 0028](adr/0028-language-fallback.md)).
+- **Safety-critical links missing in the record's languages**, under the targets, when other links of the record are
+  in a language the safety-critical ones are not (*Patient information leaflet: missing in pt-BR*): a person whose
+  phone asks for that language receives the leaflet in another language. Since session 43 the resolver tells them so,
+  and in a browser shows the versions that exist to choose from, but if a version in that language exists, add it.
 - **Batch LOTA already exists for this key**, under the qualifiers, when the batch or serial number typed differs from
   an existing one only in capitals, spaces, hyphens, dots, slashes, or O and I for 0 and 1 (*lota*, *L0TA*,
   *LOT-A*): GS1 values are exact, so a code printed with one does not find the other. Check the value on the pack.

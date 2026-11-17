@@ -1479,3 +1479,17 @@ opened earlier is refused rather than replacing another user's save of the same 
   response inside a tuple): fixed in session 25 (`6f28308`), to be offered upstream with the other fixes.
 
 Next steps: the open backlog, in the agreed order, is in the README ([Open backlog](../README.md#open-backlog)).
+
+## Session 43 — a language or market not served
+
+Finding F-010 of the security assessment, in one code commit (`9f28dab`; [ADR 0028](adr/0028-language-fallback.md)):
+the resolver keeps the standard's choice among links by language and context, and now says when the links it gives
+do not serve them — the header `Resolution-Fallback` (`language`, `context`) on a 307 or 300, judged on the default
+link's own languages for a plain scan, with links that declare no language or context serving everyone. For the five
+safety-critical types a browser receives the page of a choice with every link of the type and a notice in its language
+instead of the redirect; apps keep the redirect with the header, and GS1's suite is unaffected. The portal warns on
+safety-critical links marked `und` and on languages a record has for other links but not for its safety-critical
+ones, by the resolver's own rule. A new program, `language_resolver` (32 checks), 16 new checks in `safety_warnings`
+and one in `resolver`; 16 mutations, all caught. Left for later: a field in the request log for answers not served,
+and a list of an organisation's languages and markets.
+

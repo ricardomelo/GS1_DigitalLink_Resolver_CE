@@ -1304,6 +1304,18 @@ checks in `store` and two in `journal` on mongomock, sixteen more in `store_mong
 continuous integration (the role's exact privileges and every refusal); 11 mutations, all caught. Operators take a
 backup before the update.
 
+## Session 42 — no lost update on a key's document
+
+Finding F-009 of the security assessment, in one code commit (`875db4b`; [ADR 0027](adr/0027-conditional-writes.md)):
+every write of the data entry API goes through one path that writes the key's document only while it is still the
+one read — `write_document_if_unchanged()`, whose filter names every field of the document, or `create_document()`
+for a new key — and, when another writer changed it in between, reads it again and applies the change on top; after
+three attempts it answers 409 with nothing written. The official unconditional replace (`update_document()`) is gone;
+a list sent to `POST /new` stops at the item not written; the portal answers the 409 as `upstream.conflict` in twelve
+languages, and the tenant API documents it. 10 new checks in `data_entry_api` and 11 in `record_delete`; 8 mutations,
+all caught. Left for later: a revision carried from the editor's read to its save, so that a save from a record
+opened earlier is refused rather than replacing another user's save of the same record.
+
 | Area | 1.0.0 (session 1) | Now |
 |---|---|---|
 | Identification | GTIN + optional batch | 16 primary keys and 9 qualifiers, with the combinations of the standard |

@@ -373,6 +373,14 @@ After saving, the portal also checks that the targets answer and warns under any
 (section 13); the record is saved either way. If something is wrong, the message says what and where (for instance *Enter the address (URL) of target
 2.*). The label block shows **Published** once the record exists on the resolver.
 
+**Someone else changing the same identifier.** Two people (or a spreadsheet import, or an organisation's system) may
+change records of the same identifier at the same moment: each change is applied on top of the other, and none is
+lost. Should the identifier keep changing while the portal saves, nothing of your change is saved and the portal says
+*The records of this key were being changed by someone else at the same moment, and the resolver did not apply this
+change. Open the record again, check it and repeat the change.* The same applies to deleting a record and to fixing
+serial numbers. Two people saving the *same* record one after the other still leave the last one's version; the
+earlier one stays in the record's history (section 8).
+
 ## 6. Other records of the same identifier
 
 ![Other records of the same GTIN](images/guide/other-records.png)

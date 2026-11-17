@@ -3,7 +3,19 @@
 ## Unreleased (branch gs1br/develop)
 
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
-address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API.
+address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API. Its writes answer 409
+when a key keeps changing under other writers, and a list sent to `POST /new` answers the error of the first item not
+written instead of 201.
+
+### No lost update when two people change one key (session 42)
+- **Fixed: two changes to the same identifier at the same moment no longer overwrite each other**
+  ([ADR 0027](../adr/0027-conditional-writes.md)). Every write of the data entry API (`POST /new`, `PUT`, a `DELETE`
+  of links or of a record) now writes the key's document only while it is still the one it read; when another user,
+  import or system changed it in between, the API reads it again and applies the change on top, so both are kept. If
+  the key keeps changing, nothing is written and the answer is 409: the portal shows *The records of this key were
+  being changed by someone else at the same moment…* (twelve languages) and the tenant API answers 409
+  `upstream.conflict`. A list sent to `POST /new` stops at the first item not written and says which; `POST /new` on
+  an existing key no longer answers 200 when the write failed. Commit `875db4b`.
 
 ### The journal: insert-only, in a database of its own (session 41)
 - **Changed: the portal can no longer change or delete journal events** ([ADR 0026](../adr/0026-journal-integrity.md)

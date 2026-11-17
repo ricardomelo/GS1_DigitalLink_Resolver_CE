@@ -218,6 +218,8 @@ try:
           and root[NAME]["journal"].count_documents({}) == 1 and not root[JOURNAL_DB]["journal"].find_one({"_id": "late"}),
           run.stdout)
     root[NAME].drop_collection("journal")
+    for collection in ("journal", "journal_heads"):     # test_store.py below starts from an empty journal
+        root[JOURNAL_DB][collection].delete_many({})
     check("… the old password no longer works, the new one does", not can_sign_in(first) and can_sign_in(second))
     # MongoDB keeps roles as a set: usersInfo may list them in another order after updateUser
     # (two roles share the database resolver_log: ordered by database and role, never by database alone)

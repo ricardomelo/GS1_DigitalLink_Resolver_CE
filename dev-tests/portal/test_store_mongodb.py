@@ -2,8 +2,9 @@
 The portal's database layer against a real MongoDB, as installations run it: the user made by db_init.py
 (the portal-db-init service) and what it may do, the journal moved to a database of its own where that user may only
 read and insert (ADR 0026 section 2.5.2), test_store.py and test_jobs.py run again as that user,
-worker.py as real processes sharing the queue (test_worker_processes.py), and MongoDB's TTL monitor deleting
-expired documents. mongomock cannot show any of this.
+worker.py as real processes sharing the queue (test_worker_processes.py), the users db_init.py makes for the resolver
+and the data entry API and what each may do (ADR 0030), and MongoDB's TTL monitor deleting expired documents.
+mongomock cannot show any of this.
 
 Needs PORTAL_TEST_MONGO_URI: a MongoDB 7 connection with the right to create users (root). The continuous
 integration starts a mongo:7 service container for it (.github/workflows/dev-tests.yml, job "database").
@@ -33,6 +34,8 @@ HOST = os.environ.get("PORTAL_TEST_MONGO_HOST", "localhost:27017")
 NAME = f"devtest_portal_{os.getpid()}"
 JOURNAL_DB = f"{NAME}_journal"
 USER = f"devtest_user_{os.getpid()}"
+RESOLVER_USER = f"devtest_resolver_{os.getpid()}"       # the services' users (ADR 0030), in the admin database
+ENTRY_USER = f"devtest_entry_{os.getpid()}"
 failures = []
 
 
@@ -52,6 +55,18 @@ def db_init(**env):
 
 def user_uri(password: str) -> str:
     return f"mongodb://{quote_plus(USER)}:{quote_plus(password)}@{HOST}/{NAME}?authSource={NAME}"
+
+
+def service_uri(user: str, password: str) -> str:
+    return f"mongodb://{quote_plus(user)}:{quote_plus(password)}@{HOST}/?authSource=admin"
+
+
+def refused(label: str, attempt) -> None:
+    try:
+        attempt()
+        check(label, False)
+    except OperationFailure as exc:
+        check(label, exc.code == 13, exc.code)
 
 
 def can_sign_in(password: str) -> bool:
@@ -230,6 +245,82 @@ try:
     check("db_init refuses an empty password", db_init(PORTAL_DB_PASSWORD="").returncode == 1)
     check("db_init without MONGO_URI fails", db_init(PORTAL_DB_PASSWORD=second, MONGO_URI="").returncode == 1)
 
+    # ---------------------------------------------------------------- the services' users (ADR 0030)
+    resolver_pw, entry_pw = secrets.token_hex(12), secrets.token_hex(12)
+    services = dict(RESOLVER_DB_USERNAME=RESOLVER_USER, RESOLVER_DB_PASSWORD=resolver_pw,
+                    DATA_ENTRY_DB_USERNAME=ENTRY_USER, DATA_ENTRY_DB_PASSWORD=entry_pw)
+    run = db_init(PORTAL_DB_PASSWORD=second, **services)
+    check("db_init: the resolver's and the data entry API's users created, exit status 0",
+          run.returncode == 0 and f"user {RESOLVER_USER} of the resolver service created" in run.stdout
+          and f"user {ENTRY_USER} of the data entry service created" in run.stdout, (run.stdout[-400:], run.stderr[-300:]))
+    check("db_init: their passwords never printed", resolver_pw not in run.stdout + run.stderr
+          and entry_pw not in run.stdout + run.stderr)
+    for user, role in ((RESOLVER_USER, "resolverService"), (ENTRY_USER, "dataEntryService")):
+        info = root["admin"].command("usersInfo", user)["users"]
+        check(f"db_init: {role}'s user in the admin database with that role only",
+              info and info[0]["roles"] == [{"role": role, "db": "admin"}], info)
+    root["resolver_ce"]["gs1resolver"].insert_one({"_id": "devtest-probe", "data": []})
+    root[NAME]["settings"].insert_one({"_id": "devtest-probe", "value": 1})
+    root[NAME]["users"].insert_one({"_id": "devtest-probe", "hash": "x"})
+    with MongoClient(service_uri(RESOLVER_USER, resolver_pw), serverSelectionTimeoutMS=5000) as client:
+        check("resolver user: reads the records", client["resolver_ce"]["gs1resolver"].find_one({"_id": "devtest-probe"}))
+        for collection in ("tenants", "domains", "branding", "forwarding_rules"):   # refused: OperationFailure
+            list(client[NAME][collection].find({}, {"_id": 1}).limit(1))
+        check("resolver user: reads the portal's settings, tenants, domains, branding and forwarding rules",
+              client[NAME]["settings"].find_one({"_id": "devtest-probe"}) is not None)
+        log = client["resolver_log"]["requests"]
+        log.create_index([("t", -1)])
+        log.create_index([("expiresAt", 1)], expireAfterSeconds=0)
+        log.insert_many([{"_id": "devtest-resolver-event", "t": datetime(2026, 10, 15)}], ordered=False)
+        client["resolver_log"]["request_counts"].create_index([("b", -1)])
+        client["resolver_log"]["request_counts"].update_one(
+            {"_id": "devtest-count"}, {"$inc": {"n": 1}, "$max": {"msMax": 3}, "$setOnInsert": {"o": "redirect"}},
+            upsert=True)
+        check("resolver user: writes the request log as the resolver does (indexes, insert_many, the counts' upsert)",
+              root["resolver_log"]["requests"].find_one({"_id": "devtest-resolver-event"}) is not None
+              and root["resolver_log"]["request_counts"].find_one({"_id": "devtest-count"})["n"] == 1)
+        refused("resolver user: cannot read the portal's users", lambda: client[NAME]["users"].find_one())
+        refused("resolver user: cannot read the portal's sessions", lambda: client[NAME]["sessions"].find_one())
+        refused("resolver user: cannot read the journal", lambda: client[JOURNAL_DB]["journal"].find_one())
+        refused("resolver user: cannot write the records",
+                lambda: client["resolver_ce"]["gs1resolver"].insert_one({"_id": "devtest-forged"}))
+        refused("resolver user: cannot change the portal's settings",
+                lambda: client[NAME]["settings"].update_one({"_id": "devtest-probe"}, {"$set": {"value": 2}}))
+        refused("resolver user: cannot delete events of the request log",
+                lambda: log.delete_many({"_id": "devtest-resolver-event"}))
+        refused("resolver user: cannot create users",
+                lambda: client["admin"].command("createUser", "intruder", pwd="intruder-password", roles=["root"]))
+    with MongoClient(service_uri(ENTRY_USER, entry_pw), serverSelectionTimeoutMS=5000) as client:
+        records = client["resolver_ce"]["gs1resolver"]
+        records.insert_one({"_id": "devtest-entry", "data": []})
+        records.update_one({"_id": "devtest-entry"}, {"$set": {"data": [1]}})
+        found = records.find_one({"_id": "devtest-entry"})
+        records.delete_one({"_id": "devtest-entry"})
+        check("data entry user: reads, inserts, changes and deletes records",
+              found == {"_id": "devtest-entry", "data": [1]} and root["resolver_ce"]["gs1resolver"].find_one(
+                  {"_id": "devtest-entry"}) is None, found)
+        refused("data entry user: cannot read the portal's database", lambda: client[NAME]["settings"].find_one())
+        refused("data entry user: cannot write the request log",
+                lambda: client["resolver_log"]["requests"].insert_one({"_id": "devtest-forged"}))
+        refused("data entry user: cannot create users",
+                lambda: client["admin"].command("createUser", "intruder", pwd="intruder-password", roles=["root"]))
+    newer = secrets.token_hex(12)
+    run = db_init(PORTAL_DB_PASSWORD=second, **{**services, "RESOLVER_DB_PASSWORD": newer})
+
+    def service_signs_in(password: str) -> bool:
+        try:
+            with MongoClient(service_uri(RESOLVER_USER, password), serverSelectionTimeoutMS=5000) as client:
+                client["resolver_ce"]["gs1resolver"].find_one()
+            return True
+        except OperationFailure:
+            return False
+    check("db_init again: the resolver's user takes the new password of .env, the old one no longer works",
+          run.returncode == 0 and "brought up to date" in run.stdout and service_signs_in(newer)
+          and not service_signs_in(resolver_pw), run.stdout[-300:])
+    check("db_init: MongoDB's root user refused as a service's user, nothing changed",
+          db_init(PORTAL_DB_PASSWORD=second, RESOLVER_DB_USERNAME=re.sub(r"^mongodb://([^:]+):.*$", r"\1", ROOT_URI),
+                  RESOLVER_DB_PASSWORD="x" * 12).returncode == 1 and service_signs_in(newer))
+
     # ---------------------------------------------------------------- programs run again as the portal's user
     env = {k: v for k, v in os.environ.items() if not k.startswith("PORTAL_DB_")}
     env.update(PORTAL_DB_URI=user_uri(second), PORTAL_DB_NAME=NAME, DEV_TESTS_DB_ADMIN_URI=ROOT_URI)
@@ -278,7 +369,19 @@ finally:
     root.drop_database(NAME)
     root[JOURNAL_DB].command("dropAllRolesFromDatabase")
     root.drop_database(JOURNAL_DB)
-    root["resolver_log"]["requests"].delete_one({"_id": "probe-event"})
+    root["resolver_log"]["requests"].delete_many({"_id": {"$in": ["probe-event", "devtest-resolver-event"]}})
+    root["resolver_log"]["request_counts"].delete_one({"_id": "devtest-count"})
+    root["resolver_ce"]["gs1resolver"].delete_many({"_id": {"$regex": "^devtest-"}})
+    for service_user in (RESOLVER_USER, ENTRY_USER):
+        try:
+            root["admin"].command("dropUser", service_user)
+        except OperationFailure:
+            pass
+    for service_role in ("resolverService", "dataEntryService"):
+        try:
+            root["admin"].command("dropRole", service_role)
+        except OperationFailure:
+            pass
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

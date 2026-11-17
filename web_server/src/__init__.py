@@ -12,6 +12,7 @@ import gs1_syntax
 import landing
 import request_log
 import resolution
+import service_db
 import web_pages
 from web_namespace import web_namespace
 from mongo_db_init import mongo, init_mongo
@@ -36,15 +37,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     server_description = f"The web server is running at https://{os.getenv('FQDN', 'set-domain-name-in-env-variable-FQDN.com')}"
     logger.info(server_description)
 
-    # the example database password of .env.example warned about outside development (ADR 0021)
+    # the resolver's own MongoDB user, never the root one (ADR 0030); its example password refused outside development
+    example_secrets.refuse(['RESOLVER_DB_PASSWORD'])
     example_secrets.warn(['MONGO_URI'], logger)
-
-    mongo_url = os.getenv('MONGO_URI')
-    if not mongo_url:
-        raise RuntimeError("MONGO_URI environment variable is not set")
+    mongo_url = service_db.uri('RESOLVER', logger)
     # Log the host only — do not log credentials
-    mongo_host = mongo_url.split('@')[-1] if '@' in mongo_url else mongo_url
-    logger.info("Connecting to MongoDB at %s", mongo_host)
+    logger.info("Connecting to MongoDB at %s", service_db.host_of(mongo_url))
     app.config["MONGO_URI"] = mongo_url
     app.config["MONGO_DBNAME"] = "resolver_ce"
 

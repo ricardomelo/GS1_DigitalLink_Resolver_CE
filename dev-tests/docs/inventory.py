@@ -42,7 +42,7 @@ AREAS = [
       "safety_warnings", "safety_warnings_e2e", "appearance", "appearance_e2e"]),
     ("Interface and languages", ["portal_config", "i18n", "languages_e2e"]),
     ("The documents", ["docs"]),
-    ("Data store, installation and operation", ["store", "store_mongodb", "home", "install", "deploy"]),
+    ("Data store, installation and operation", ["store", "store_mongodb", "home", "install", "deploy", "least_privilege"]),
 ]
 CI_ONLY = {"store_mongodb"}
 # Checks gathered from every area under one heading, as the owner asked for "every search and filter, the search by EPC

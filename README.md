@@ -358,7 +358,7 @@ flowchart LR
     web --> db[("MongoDB<br/>database-service")]
     de --> db
     portal -->|"own user: users, history"| db
-    init["portal-db-init<br/>(one-shot)"] -.->|"creates the portal's user"| db
+    init["portal-db-init<br/>(one-shot)"] -.->|"creates each service's user"| db
     worker["portal-worker ×n<br/>imports, link checks"] -->|"jobs"| db
     worker -->|"bearer token"| de
 ```
@@ -369,7 +369,7 @@ flowchart LR
 | `web-service` | `WEB_SERVICE_REPLICAS` (1) | Resolves GS1 Digital Links (redirects, linksets, HTML pages) | internal |
 | `data-entry-service` | `DATA_ENTRY_SERVICE_REPLICAS` (1) | REST API to create, read, update and delete records | internal (via `/api`) |
 | `portal-service` | `PORTAL_SERVICE_REPLICAS` (1) | Link management portal (Flask + static front end) | internal (via `/portal/`) |
-| `portal-db-init` | one, at every start | Creates or updates the portal's database user, then exits | — |
+| `portal-db-init` | one, at every start | Creates or updates the database users of the portal, the resolver and the data entry API, each with the least privileges it needs ([ADR 0030](Documentation/adr/0030-least-privilege-services.md)), then exits; the only service given MongoDB's root user | — |
 | `portal-worker` | `PORTAL_WORKER_REPLICAS` (1) | Runs the portal's background jobs (spreadsheet imports, link checks, e-mail messages) from its database; the portal's image | — |
 | `mailpit` | none unless started (profile `mail-test`) | A test relay that keeps every e-mail, for trying the portal's e-mail before a real relay exists; never in production | `127.0.0.1:8025` |
 | `database-service` | `database-server` | MongoDB | `${DATABASE_BIND_ADDRESS}:27017` |
@@ -721,6 +721,11 @@ sudo FQDN=id.example.org TLS_MODE=letsencrypt CERTBOT_EMAIL=ops@example.org \
    MONGO_INITDB_ROOT_USERNAME='gs1resolver'
    MONGO_INITDB_ROOT_PASSWORD='$PASS'
    MONGO_URI='mongodb://gs1resolver:$PASS@database-service:27017'
+   PORTAL_DB_PASSWORD='$(openssl rand -hex 24)'
+   RESOLVER_DB_PASSWORD='$(openssl rand -hex 24)'
+   DATA_ENTRY_DB_PASSWORD='$(openssl rand -hex 24)'
+   PORTAL_SECRET_KEY='$(openssl rand -hex 32)'
+   PORTAL_JOURNAL_KEY='$(openssl rand -hex 32)'
    SESSION_TOKEN='$TOKEN'
    FQDN='id.example.org'
    RESOLVER_ORG_NAME='Example Org'
@@ -778,7 +783,8 @@ never committed).
 | Variable | Purpose |
 |---|---|
 | `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD` | MongoDB root user (applied when the database volume is created) |
-| `MONGO_URI` | Connection string of the web and data entry services |
+| `MONGO_URI` | MongoDB's root connection string, given to `portal-db-init` only ([ADR 0030](Documentation/adr/0030-least-privilege-services.md)) |
+| `RESOLVER_DB_USERNAME`, `RESOLVER_DB_PASSWORD`, `DATA_ENTRY_DB_USERNAME`, `DATA_ENTRY_DB_PASSWORD` | The database users of the resolver and of the data entry API (created by `portal-db-init`); the installer generates the passwords, and the services refuse to start on a real domain with the examples of `.env.example` |
 | `SESSION_TOKEN` | Bearer token of the data entry API (also used by the portal) |
 | `FQDN` | Domain of the resolver; the resolver root is `https://FQDN` |
 | `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | Operator in the description file, on the home page and on the resolver's pages (name linked to `RESOLVER_ORG_URL`) |
@@ -798,7 +804,7 @@ never committed).
 | `PORTAL_WORKER` (`external`) | Where imports and link checks run: `external`, the `portal-worker` service; `embedded`, a thread of the portal, for a set-up without that service |
 | `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_COOKIE_SECURE` | Optional portal settings: minutes without use and hours after the sign-in before the session ends, Secure cookie |
 | `BACKUP_COPY_TO` | An rsync destination (`user@host:/path`, or a mounted folder) to which each daily backup is copied; empty: no copy ([Documentation/extensions/README.md](Documentation/extensions/README.md#daily-backup)) |
-| `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Host addresses of ports 8080 and 27017 (read by Compose from `.env` only) |
+| `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Host addresses of ports 8080 and 27017 (read by Compose from `.env` only); default `127.0.0.1`, `0.0.0.0` for every interface |
 | `WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`, `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS` (1) | Containers of each service, 1 to 20 (read by Compose from `.env` only; the installer writes them) |
 | `WEB_SERVICE_PROCESSES`, `DATA_ENTRY_SERVICE_PROCESSES`, `PORTAL_SERVICE_PROCESSES` (2) | gunicorn processes in each container of the three web services (read by Compose from `.env` only) |
 

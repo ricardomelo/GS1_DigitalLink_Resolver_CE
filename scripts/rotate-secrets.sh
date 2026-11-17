@@ -9,6 +9,9 @@
 #   token       SESSION_TOKEN               the data entry API's bearer token: systems that call /api need the new one
 #   session     PORTAL_SECRET_KEY           signs the portal's sessions: everyone is signed out
 #   portal-db   PORTAL_DB_PASSWORD          the portal's MongoDB user (portal-db-init sets it on the next start)
+#   resolver-db RESOLVER_DB_PASSWORD        the resolver's MongoDB user (likewise; Documentation/adr/0030-least-privilege-
+#                                           services.md)
+#   data-entry-db DATA_ENTRY_DB_PASSWORD    the data entry API's MongoDB user (likewise)
 #   mongo       MONGO_INITDB_ROOT_PASSWORD  MongoDB's root user, changed in the database first, then in .env and in
 #                                           MONGO_URI; skipped (nothing changed) when the database refuses
 #   journal     PORTAL_JOURNAL_KEY          seals the journal (ADR 0026); only when named: the events sealed before keep
@@ -21,7 +24,7 @@ set -euo pipefail
 RESOLVER_DIR="${RESOLVER_DIR:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}"
 cd "$RESOLVER_DIR"
 ENV_FILE=.env
-ALL=(token session portal-db mongo)
+ALL=(token session portal-db resolver-db data-entry-db mongo)
 KNOWN=("${ALL[@]}" journal)
 
 asked=("$@")
@@ -57,6 +60,8 @@ for name in "${asked[@]}"; do
     token)     put SESSION_TOKEN "$(random 32)"; rotated+=("SESSION_TOKEN (systems calling /api need the new value)") ;;
     session)   put PORTAL_SECRET_KEY "$(random 32)"; rotated+=("PORTAL_SECRET_KEY (portal users sign in again)") ;;
     portal-db) put PORTAL_DB_PASSWORD "$(random 24)"; rotated+=("PORTAL_DB_PASSWORD") ;;
+    resolver-db) put RESOLVER_DB_PASSWORD "$(random 24)"; rotated+=("RESOLVER_DB_PASSWORD") ;;
+    data-entry-db) put DATA_ENTRY_DB_PASSWORD "$(random 24)"; rotated+=("DATA_ENTRY_DB_PASSWORD") ;;
     journal)   put PORTAL_JOURNAL_KEY "$(random 32)"; rotated+=("PORTAL_JOURNAL_KEY (events sealed before: another key)") ;;
     mongo)
       user="$(value MONGO_INITDB_ROOT_USERNAME)"; uri="$(value MONGO_URI)"

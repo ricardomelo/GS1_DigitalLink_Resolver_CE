@@ -209,7 +209,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_99626c36edc…)",
+    "a wrong key is refused (rk_ce9918835e1…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -887,6 +887,14 @@
     "data entry API: refuses to start with the example SESSION_TOKEN on id.example.org, naming it",
     "data entry API: starts with the example SESSION_TOKEN when FQDN is localhost (development)",
     "data entry API: starts with the example SESSION_TOKEN when FQDN is not set (development)",
+    "data entry API (its own database user): starts with values of its own on id.example.org",
+    "data entry API (its own database user): refuses to start with the example DATA_ENTRY_DB_PASSWORD on id.example.org, naming it",
+    "data entry API (its own database user): starts with the example DATA_ENTRY_DB_PASSWORD when FQDN is localhost (development)",
+    "data entry API (its own database user): starts with the example DATA_ENTRY_DB_PASSWORD when FQDN is not set (development)",
+    "resolver (its own database user): starts with values of its own on id.example.org",
+    "resolver (its own database user): refuses to start with the example RESOLVER_DB_PASSWORD on id.example.org, naming it",
+    "resolver (its own database user): starts with the example RESOLVER_DB_PASSWORD when FQDN is localhost (development)",
+    "resolver (its own database user): starts with the example RESOLVER_DB_PASSWORD when FQDN is not set (development)",
     "portal: starts with values of its own on id.example.org",
     "portal: refuses to start with the example SESSION_TOKEN on id.example.org, naming it",
     "portal: starts with the example SESSION_TOKEN when FQDN is localhost (development)",
@@ -900,9 +908,11 @@
     "data entry API: no warning with its own password",
     "resolver: starts with MongoDB's example password on id.example.org, with a warning that names the setting and not the password",
     "resolver: no warning with the example on localhost",
-    "resolver: no warning with its own password"
+    "resolver: no warning with its own password",
+    "resolver: connects as its own user, logging the host and never the password",
+    "data entry API: connects as its own user, logging the host and never the password"
    ],
-   "count": 156,
+   "count": 166,
    "ciOnly": false
   },
   "dictionary": {
@@ -945,11 +955,11 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (238 features)",
+    "features.md: every table has a Checks column (240 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (445 references)",
+    "…each reference names a program of the inventory (451 references)",
     "…and words found in one of its checks",
-    "every test program is in the inventory (78)",
+    "every test program is in the inventory (79)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
     "…and gathers every search and filter, the search by EPC included",
@@ -958,8 +968,8 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (29)",
-    "every relative link of the documents leads to a file (45 documents)"
+    "…and every decision record (30)",
+    "every relative link of the documents leads to a file (46 documents)"
    ],
    "count": 15,
    "ciOnly": false
@@ -2152,7 +2162,7 @@
     "nginx starts while a service name has no address yet",
     "…and answers that service's paths with an error meanwhile (502)",
     "…while the other services answer",
-    "the service is found once its name has an address, without restarting nginx (2.1 s)",
+    "the service is found once its name has an address, without restarting nginx (1.9 s)",
     "GET / → 200 text/html",
     "GET / serves the home page, not the resolver",
     "GET / carries the Content Security Policy",
@@ -2396,6 +2406,8 @@
     "A: MONGO_URI matches the password",
     "A: API token generated (64 hex)",
     "A: portal database password generated (48 hex)",
+    "A: passwords of the resolver's and the data entry API's database users generated (48 hex, different; ADR 0030)",
+    "A: MongoDB's root connection given to the database and portal-db-init only",
     "A: portal session key generated (64 hex)",
     "A: job worker reported running",
     "A: first-user password cleared after start",
@@ -2429,6 +2441,7 @@
     "B: no setting written twice (the last line of .env would win)",
     "B: secrets kept",
     "B: portal database password and session key kept",
+    "B: the resolver's database password kept",
     "B: settings kept from .env (operator)",
     "B: a time zone taken from the environment",
     "B: unmanaged setting carried over",
@@ -2441,6 +2454,7 @@
     "C: percent-encoded MONGO_URI kept as is",
     "C: MongoDB user and token kept",
     "C: an installation from before the portal's database gets its password and session key",
+    "C: an installation from before ADR 0030 gets the services' database passwords, the example one replaced",
     "C: quoted values read correctly",
     "C: existing certificate site kept",
     "C: Compose accepts the rewritten .env",
@@ -2489,7 +2503,7 @@
     "J: \"off\" switches e-mail off and forgets the credentials",
     "J: a test relay set by hand (mailpit, no encryption) is kept"
    ],
-   "count": 98,
+   "count": 102,
    "ciOnly": false
   },
   "item_page": {
@@ -3181,6 +3195,57 @@
    "count": 38,
    "ciOnly": false
   },
+  "least_privilege": {
+   "area": "Data store, installation and operation",
+   "checks": [
+    "compose: the file is accepted without .env",
+    "compose: MongoDB's root credentials reach the database and portal-db-init only",
+    "compose: web-service receives its own user and password (RESOLVER_DB_*)",
+    "compose: web-service starts after portal-db-init has made its user",
+    "compose: data-entry-service receives its own user and password (DATA_ENTRY_DB_*)",
+    "compose: data-entry-service starts after portal-db-init has made its user",
+    "compose: without .env MongoDB is published on the host's loopback address only",
+    "compose: without .env the proxy is published on the host's loopback address only (and told so)",
+    "compose: .env still chooses the addresses (PROXY_BIND_ADDRESS, DATABASE_BIND_ADDRESS)",
+    "web_server/Dockerfile: the image runs as a user of its own, not root",
+    "web_server/Dockerfile: that user is a system account made in the image",
+    "data_entry_server/Dockerfile: the image runs as a user of its own, not root",
+    "data_entry_server/Dockerfile: that user is a system account made in the image",
+    "portal/Dockerfile: the image runs as a user of its own, not root",
+    "portal/Dockerfile: that user is a system account made in the image",
+    "service_db.py: the same file in the resolver and the data entry API",
+    "service_db: the URI built from the service's user and password (percent-encoded, authSource=admin), not MONGO_URI",
+    "service_db: the host logged without the credentials",
+    "service_db: <PREFIX>_DB_HOST names another server",
+    "service_db: a complete <PREFIX>_DB_URI is preferred",
+    "service_db: MONGO_URI only as a fallback, with a warning naming the root user and not the password",
+    "service_db: no connection settings at all is an error naming them",
+    "db_init: the two services' roles defined in the admin database",
+    "db_init: the resolver's role finds records and the portal's tenants, domains, settings, branding and forwarding rules, and writes the request log (insert, update, indexes), nothing else",
+    "db_init: the data entry API's role reads and writes the records, nothing else",
+    "db_init: the resolver's user created in admin with its role only and the password of .env",
+    "db_init: the data entry API's user created in admin with its role only and the password of .env",
+    "db_init: says what it did, never a password",
+    "db_init: at the next start the users and roles are brought up to date (default user names), not made again",
+    "db_init: the resolver's role follows PORTAL_DB_NAME",
+    "db_init: a service without a password is left as it is, with a warning naming the setting",
+    "db_init: MongoDB's root user refused as a service's user (MONGO_INITDB_ROOT_USERNAME)",
+    "db_init: MongoDB's root user refused as a service's user (MONGO_URI)",
+    "db_init: the example root password warned about when FQDN is id.example.org",
+    "db_init: the example root password not warned about when FQDN is localhost",
+    "every collection the resolver's code names is found (a literal or a module constant)",
+    "the resolver's code uses only the collections its role grants",
+    "the scan of the resolver's code finds the collections it is known to use",
+    "the resolver names no database but the records' and the two it is given",
+    ".env.example: RESOLVER_DB_USERNAME and _PASSWORD, the password one example_secrets.py refuses",
+    ".env.example: DATA_ENTRY_DB_USERNAME and _PASSWORD, the password one example_secrets.py refuses",
+    "installer: RESOLVER_DB_PASSWORD written to .env, generated when missing or the example",
+    "installer: DATA_ENTRY_DB_PASSWORD written to .env, generated when missing or the example",
+    "rotation: resolver-db and data-entry-db among the secrets rotated by default"
+   ],
+   "count": 44,
+   "ciOnly": false
+  },
   "link_types": {
    "area": "Records: keys, qualifiers, links and the editor",
    "checks": [
@@ -3264,7 +3329,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:37763/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:43221/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",
@@ -5068,7 +5133,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.004 ms; Node.js: tens of ms)"
    ],
    "count": 247,
    "ciOnly": false
@@ -5780,7 +5845,7 @@
   "store_mongodb": {
    "area": "Data store, installation and operation",
    "checks": [],
-   "count": 259,
+   "count": 279,
    "ciOnly": true
   }
  }

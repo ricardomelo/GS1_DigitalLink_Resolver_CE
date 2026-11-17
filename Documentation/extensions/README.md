@@ -108,7 +108,9 @@ Every service loads `.env.example` and then `.env` if it exists; a value in `.en
 | Variable | Used by | Development default | For a server |
 |---|---|---|---|
 | `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD` | database (first start only), backup | `gs1resolver` / `gs1resolver` | new password |
-| `MONGO_URI` | web, data entry | matches the above | same credentials as above |
+| `MONGO_URI` | portal-db-init only (the root connection; ADR 0030) | matches the above | same credentials as above |
+| `RESOLVER_DB_USERNAME`, `RESOLVER_DB_PASSWORD` | resolver, portal-db-init (the resolver's own database user) | `resolver_web` (both) | random password (installer); the example refused on a real domain |
+| `DATA_ENTRY_DB_USERNAME`, `DATA_ENTRY_DB_PASSWORD` | data entry API, portal-db-init (its own database user) | `resolver_data_entry` (both) | random password (installer); the example refused on a real domain |
 | `SESSION_TOKEN` | data entry API, portal | `secret` | long random value |
 | `FQDN` | web (linksets, description file), portal | `localhost` | the resolver's domain |
 | `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | description file `contact` (`RESOLVER_ORG_URL` as `hasURL`), footer of the home page and of the resolver pages (name linked to `RESOLVER_ORG_URL`) | `My Organisation` | the operator |
@@ -119,7 +121,7 @@ Every service loads `.env.example` and then `.env` if it exists; a value in `.en
 | `PORTAL_JOURNAL_SESSION_DAYS`, `PORTAL_JOURNAL_RECORD_DAYS`, `PORTAL_JOURNAL_ADMIN_DAYS` | portal (journal retention) | 180, 0, 0 (0 = for ever) | as the operator's policy requires |
 | `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`, `PORTAL_MAIL_SECURITY`, `PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM` (and the optional `PORTAL_MAIL_REPLY_TO`, `PORTAL_MAIL_CA_FILE`, `PORTAL_MAIL_TIMEOUT`, `PORTAL_INVITE_HOURS`, `PORTAL_RESET_MINUTES`) | portal and its worker (e-mail, see *E-mail* below) | empty host: e-mail off | the organisation's relay (installer); the password only in `.env` |
 | `PORTAL_WORKER` | portal (where background jobs run) | `external` (the `portal-worker` service) | `external`; `embedded` (a thread of the portal) only for a set-up without `portal-worker` |
-| `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Docker Compose (**only from `.env`**) | `0.0.0.0` | `127.0.0.1` behind a TLS proxy |
+| `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Docker Compose (**only from `.env`**) | `127.0.0.1` (ADR 0030) | `127.0.0.1` behind a TLS proxy on the same host; `0.0.0.0` for a proxy on another machine |
 | `WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`, `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS` | Docker Compose (**only from `.env`**): containers of each service | 1 | as the load requires (1 to 20; the installer writes them) |
 | `WEB_SERVICE_PROCESSES`, `DATA_ENTRY_SERVICE_PROCESSES`, `PORTAL_SERVICE_PROCESSES` | Docker Compose (**only from `.env`**): gunicorn processes per container (`WEB_CONCURRENCY`) | 2 | about two per CPU core the service may use (gunicorn advises 2 × cores + 1 in all) |
 
@@ -1570,9 +1572,10 @@ runs imports with the same rules).
   and `/api/summary`. In `/api/docs`, click **Authorize** and enter `Bearer <SESSION_TOKEN>`; the value
   stays only in that browser tab (nothing is stored) and is sent with every protected operation.
 
-- Behind a TLS reverse proxy on the same host set `PROXY_BIND_ADDRESS=127.0.0.1` and
-  `DATABASE_BIND_ADDRESS=127.0.0.1` in `.env`: plain HTTP (port 8080) and MongoDB (27017) then stay off the
-  network. Docker publishes ports past the host firewall (ufw/iptables), so this setting matters.
+- Plain HTTP (port 8080) and MongoDB (27017) are published on `127.0.0.1` unless `.env` says otherwise
+  (`PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS`; ADR 0030): behind a TLS reverse proxy on the same host they stay off
+  the network. Docker publishes ports past the host firewall (ufw/iptables), so set `0.0.0.0` only for a proxy on
+  another machine, and limit who reaches the port there.
 - `/api` and `/swaggerui`, the official data entry API, are closed at the front-end proxy to every address
   (403) unless `DATA_ENTRY_API_ALLOW` in `.env` lists it: addresses or networks separated by spaces or commas, or
   `all` ([ADR 0021](../adr/0021-data-entry-api-closed.md)). The portal is not affected. Organisations' systems use
@@ -1582,9 +1585,16 @@ runs imports with the same rules).
   trail and the resolver's approximate location: behind a proxy not listed, every client shares its address. After a
   change: `docker compose up -d frontend-proxy-service`; the proxy's log says to whom
   the API is open (`docker compose logs frontend-proxy-service | grep api-access`).
-- The portal is given no root database credentials: its MongoDB user may read and write the portal's own
-  database only (`readWrite` on `PORTAL_DB_NAME`); only the one-shot `portal-db-init` service receives
-  `MONGO_URI`.
+- No service that answers requests is given the root database credentials
+  ([ADR 0030](../adr/0030-least-privilege-services.md)): the one-shot `portal-db-init` service alone receives
+  `MONGO_URI` and makes, at every start, a user per service with the least privileges it needs — the portal's own
+  database (`readWrite` on `PORTAL_DB_NAME`, read on the request log, insert-only on the journal), the resolver's
+  (reads the records and the portal settings it serves from, writes the request log) and the data entry API's (the
+  records only). The resolver, the data entry API and the portal run as unprivileged users in their containers.
+  **Updating an installation from before this change:** add the two new passwords to `.env` first, or run the
+  installer again, otherwise the resolver and the data entry API refuse to start on a real domain:
+  `grep -q '^RESOLVER_DB_PASSWORD=' .env || printf "RESOLVER_DB_PASSWORD='%s'\n" "$(openssl rand -hex 24)" >> .env`, the same
+  with `DATA_ENTRY_DB_PASSWORD`, then `docker compose up -d --build`.
 - For many users, switch on single sign-on per organisation (*Organisation sign-in*, below) and, once it works,
   password sign-in off for that organisation.
 - Set an export maximum for the organisations (*Organisations*) and limits per role on each organisation's page
@@ -1656,6 +1666,8 @@ rotates all four; name some to rotate only those:
 | `token` | `SESSION_TOKEN` | Systems that call the data entry API (`/api`) need the new token |
 | `session` | `PORTAL_SECRET_KEY` | Every portal user is signed out |
 | `portal-db` | `PORTAL_DB_PASSWORD` | Nothing: `portal-db-init` gives the portal's database user the new password on the start |
+| `resolver-db` | `RESOLVER_DB_PASSWORD` | Nothing: the same for the resolver's database user (ADR 0030) |
+| `data-entry-db` | `DATA_ENTRY_DB_PASSWORD` | Nothing: the same for the data entry API's database user |
 | `mongo` | `MONGO_INITDB_ROOT_PASSWORD`, `MONGO_URI` | Changed in MongoDB first (the new password given to `mongosh` on standard input); when the database refuses, `.env` keeps the old one and the script ends with status 1 |
 
 No secret is printed or put on a command line. The previous `.env` is kept as `.env.bak-<time>` (mode 600) for going

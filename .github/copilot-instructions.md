@@ -31,7 +31,7 @@ Four Docker containers on an internal network (`resolver-internal-network`):
 | `frontend-proxy-service` | 8080 (exposed) | NGINX proxy: `/api/*` → data-entry, everything else → web |
 | `database-service` | 27017 | MongoDB 7.0 (`resolver_ce` database, `gs1resolver` collection) |
 
-The data entry server is the only writer; the web server is read-only. Both connect to MongoDB via the `MONGO_URI` environment variable.
+The data entry server is the only writer; the web server is read-only. Each connects to MongoDB as its own user (`DATA_ENTRY_DB_*`, `RESOLVER_DB_*`, made by `portal-db-init`; `Documentation/adr/0030-least-privilege-services.md`); only `portal-db-init` receives the root `MONGO_URI`.
 
 ## Data Model
 

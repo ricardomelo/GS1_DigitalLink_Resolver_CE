@@ -130,6 +130,8 @@ check "A: MongoDB password generated (48 hex)" "[[ \$(envval MONGO_INITDB_ROOT_P
 check "A: MONGO_URI matches the password" "[[ \$(envval MONGO_URI) == mongodb://gs1resolver:\$(envval MONGO_INITDB_ROOT_PASSWORD)@database-service:27017 ]]"
 check "A: API token generated (64 hex)" "[[ \$(envval SESSION_TOKEN) =~ ^[0-9a-f]{64}$ ]]"
 check "A: portal database password generated (48 hex)" "[[ \$(envval PORTAL_DB_PASSWORD) =~ ^[0-9a-f]{48}$ ]]"
+check "A: passwords of the resolver's and the data entry API's database users generated (48 hex, different; ADR 0030)" "[[ \$(envval RESOLVER_DB_PASSWORD) =~ ^[0-9a-f]{48}$ && \$(envval DATA_ENTRY_DB_PASSWORD) =~ ^[0-9a-f]{48}$ && \$(envval RESOLVER_DB_PASSWORD) != \$(envval DATA_ENTRY_DB_PASSWORD) ]]"
+check "A: MongoDB's root connection given to the database and portal-db-init only" "[[ \$(compose_cfg | grep -c 'MONGO_URI: mongodb') == 2 ]]"
 check "A: portal session key generated (64 hex)" "[[ \$(envval PORTAL_SECRET_KEY) =~ ^[0-9a-f]{64}$ ]]"
 check "A: job worker reported running" "grep -q 'Job worker running' $SB/state/out"
 check "A: first-user password cleared after start" "[[ -z \$(envval PORTAL_ADMIN_PASSWORD) && \$(envval PORTAL_ADMIN_USERNAME) == admin ]]"
@@ -156,7 +158,7 @@ check "A: its first download tried at once; a failure only a warning" "grep -q '
 check "A: scan locations in the summary" "grep -q 'Scan locations *yes' $SB/state/out"
 check "A: the organisations' own domains applied every 5 minutes, quietly" "grep -q \"^\\*/5 \\* \\* \\* \\* root $SB/repo/scripts/custom-domains.sh apply --quiet\" $SB/state/domains-cron && [[ \$(stat -c %a $SB/state/domains-cron) == 644 ]]"
 A_TOKEN=$(envval SESSION_TOKEN); A_PWD=$(envval MONGO_INITDB_ROOT_PASSWORD)
-A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY)
+A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY); A_RESOLVER_DB=$(envval RESOLVER_DB_PASSWORD)
 
 # ------------------------------------------------------------------------------ B. re-run
 echo "--- B. second run on the same installation"
@@ -176,6 +178,7 @@ check "B: the portal and its worker receive the relay settings" "[[ \$(compose_c
 check "B: no setting written twice (the last line of .env would win)" "[[ -z \$(grep -oE '^[A-Z_]+=' $SB/repo/.env | sort | uniq -d) ]]"
 check "B: secrets kept" "[[ \$(envval SESSION_TOKEN) == $A_TOKEN && \$(envval MONGO_INITDB_ROOT_PASSWORD) == $A_PWD ]]"
 check "B: portal database password and session key kept" "[[ \$(envval PORTAL_DB_PASSWORD) == $A_PORTAL_DB && \$(envval PORTAL_SECRET_KEY) == $A_KEY ]]"
+check "B: the resolver's database password kept" "[[ \$(envval RESOLVER_DB_PASSWORD) == $A_RESOLVER_DB ]]"
 check "B: settings kept from .env (operator)" "[[ \$(envval RESOLVER_ORG_NAME) == 'Example Org' ]]"
 check "B: a time zone taken from the environment" "[[ \$(envval PORTAL_TIME_ZONE) == America/Sao_Paulo ]]"
 check "B: unmanaged setting carried over" "grep -q \"^PORTAL_SESSION_IDLE_MINUTES='20'\" $SB/repo/.env"
@@ -193,6 +196,7 @@ MONGO_INITDB_ROOT_USERNAME=resolveradmin
 MONGO_INITDB_ROOT_PASSWORD=p@ss:w0rd!xyz
 MONGO_URI=mongodb://resolveradmin:p%40ss%3Aw0rd%21xyz@database-service:27017
 SESSION_TOKEN=0123456789abcdef0123456789abcdef
+DATA_ENTRY_DB_PASSWORD=resolver_data_entry
 FQDN=idhml.example.org
 RESOLVER_ORG_NAME="GS1 Example"
 RESOLVER_CONTACT_STREET="Av. Exemplo, 328 - Pinheiros"
@@ -212,6 +216,7 @@ check "C: exit status 0" "[[ $rc == 0 ]]"
 check "C: percent-encoded MONGO_URI kept as is" "[[ \$(envval MONGO_URI) == 'mongodb://resolveradmin:p%40ss%3Aw0rd%21xyz@database-service:27017' ]]"
 check "C: MongoDB user and token kept" "[[ \$(envval MONGO_INITDB_ROOT_USERNAME) == resolveradmin && \$(envval SESSION_TOKEN) == 0123456789abcdef0123456789abcdef ]]"
 check "C: an installation from before the portal's database gets its password and session key" "[[ \$(envval PORTAL_DB_PASSWORD) =~ ^[0-9a-f]{48}$ && \$(envval PORTAL_SECRET_KEY) =~ ^[0-9a-f]{64}$ ]]"
+check "C: an installation from before ADR 0030 gets the services' database passwords, the example one replaced" "[[ \$(envval RESOLVER_DB_PASSWORD) =~ ^[0-9a-f]{48}$ && \$(envval DATA_ENTRY_DB_PASSWORD) =~ ^[0-9a-f]{48}$ ]]"
 check "C: quoted values read correctly" "[[ \$(envval RESOLVER_CONTACT_STREET) == 'Av. Exemplo, 328 - Pinheiros' ]]"
 check "C: existing certificate site kept" "grep -q snakeoil $SB/nginx/sites-available/gs1resolver && ! grep -q '^certbot' $SB/state/calls"
 check "C: Compose accepts the rewritten .env" "compose_cfg | grep -q 'MONGO_URI: mongodb://resolveradmin:p%40ss'"

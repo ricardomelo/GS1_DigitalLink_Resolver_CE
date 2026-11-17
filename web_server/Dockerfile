@@ -43,6 +43,11 @@ RUN pip install --isolated --no-cache-dir --index-url https://pypi.org/simple -r
 # Add the current directory contents into the container at /app
 ADD src /app/
 
+# The service runs as a user of its own, not as root (deliberate change to the official image;
+# Documentation/adr/0030-least-privilege-services.md): nothing in /app is written at run time.
+RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin resolver
+USER resolver
+
 EXPOSE 4000
 
 # gunicorn instead of Flask's built-in server, which is meant for development (deliberate change to the

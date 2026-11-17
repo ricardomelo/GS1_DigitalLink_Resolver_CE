@@ -2,11 +2,13 @@
 
 .env.example is public and holds working credentials so that "docker compose up -d" runs on a development machine
 without a .env. On any other installation those values are known to everyone: a service that finds the example data
-entry token or the portal's example database password while FQDN names a real host refuses to start, saying which
-setting to change, instead of serving with it. The installer replaces both whenever it finds them.
+entry token or the example password of its own database user (the portal's, the resolver's or the data entry API's:
+Documentation/adr/0030-least-privilege-services.md) while FQDN names a real host refuses to start, saying which setting
+to change, instead of serving with it. The installer replaces them whenever it finds them.
 
 MongoDB's root password is only warned about: the installer keeps it for a database created with it (it cannot change
 it without the database), so refusing it would stop an upgraded installation; scripts/rotate-secrets.sh mongo changes it.
+Since ADR 0030 only portal-db-init holds it.
 
 Development: FQDN empty, localhost, 127.0.0.1, ::1 or a name under .localhost.
 
@@ -18,7 +20,8 @@ import os
 from urllib.parse import urlsplit
 
 # A setting whose whole value is an example; a connection string whose password is
-EXAMPLE_VALUES = {"SESSION_TOKEN": "secret", "PORTAL_DB_PASSWORD": "resolver_portal"}
+EXAMPLE_VALUES = {"SESSION_TOKEN": "secret", "PORTAL_DB_PASSWORD": "resolver_portal",
+                  "RESOLVER_DB_PASSWORD": "resolver_web", "DATA_ENTRY_DB_PASSWORD": "resolver_data_entry"}
 EXAMPLE_URI_PASSWORDS = {"MONGO_URI": "gs1resolver"}
 DEVELOPMENT_HOSTS = {"", "localhost", "127.0.0.1", "::1", "[::1]"}
 

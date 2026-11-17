@@ -6,6 +6,16 @@ resolver's request log (resolver_log, Documentation/adr/0006-resolver-request-lo
 deleted, no index made), and nothing else (Documentation/adr/0001-portal-state-in-mongodb.md, section 3.1;
 Documentation/adr/0026-journal-integrity.md, section 2.5.2).
 
+It also creates, or brings up to date, the users of the two official services, so that neither holds MongoDB's root
+credentials (Documentation/adr/0030-least-privilege-services.md), both in the admin database with a role of their own
+defined there (a role outside admin may hold privileges on its own database only):
+  - the resolver (RESOLVER_DB_USERNAME, role RESOLVER_ROLE): reads the records (resolver_ce.gs1resolver) and the five
+    collections of the portal's database it serves from (tenants, domains, settings, branding, forwarding_rules), writes
+    the request log
+    (resolver_log.requests and request_counts: insert, update, indexes), and nothing else — not the portal's users,
+    sessions, keys or journal;
+  - the data entry API (DATA_ENTRY_DB_USERNAME, role DATA_ENTRY_ROLE): reads and writes the records, nothing else.
+
 The journal's upkeep that needs more than inserting runs here, with the root user: the one-time move of the journal
 from the portal's database into its own (move_journal(); the marker document journal_moved {_id: "moved"} in the
 journal's database says it is done, and a journal collection that reappears in the portal's database afterwards is
@@ -16,15 +26,18 @@ Run by the one-shot Compose service portal-db-init before the portal starts, on 
 so a new installation, an existing one and a restored one all end with the user and the password of .env.
 MongoDB's own /docker-entrypoint-initdb.d scripts run only on an empty volume and cannot serve the last two.
 
-Reads MONGO_URI (the root connection the official services use), PORTAL_DB_NAME, PORTAL_DB_USERNAME and
-PORTAL_DB_PASSWORD. Prints what it did, never a password. Exit status 0 on success.
+Reads MONGO_URI (the root connection; since ADR 0030 this service alone receives it), PORTAL_DB_NAME,
+PORTAL_DB_USERNAME, PORTAL_DB_PASSWORD, RESOLVER_DB_USERNAME, RESOLVER_DB_PASSWORD, DATA_ENTRY_DB_USERNAME and
+DATA_ENTRY_DB_PASSWORD (a service whose password is empty is left as it is, with a warning). Prints what it did, never a password. Exit status 0 on success.
 
   docker compose run --rm portal-db-init          # by hand, e.g. after changing PORTAL_DB_PASSWORD
 """
 import os
 import sys
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote, urlsplit
 
+import example_secrets
 from pymongo import MongoClient
 from pymongo.errors import BulkWriteError, PyMongoError
 
@@ -36,6 +49,64 @@ JOURNAL_ROLE = "journalAppend"                            # defined in the journ
 JOURNAL_COLLECTIONS = ("journal", "journal_heads")        # as store.JOURNAL_COLLECTIONS
 MARKER = "journal_moved"                                  # {_id: "moved", at, events}: the move is done
 SEAL_FIELDS = ("chain", "seq", "prev", "hash", "mac", "kid", "sealed")
+RECORDS_DB, RECORDS = "resolver_ce", "gs1resolver"       # the official services' records
+RESOLVER_ROLE = "resolverService"                        # defined in admin (privileges on several databases)
+DATA_ENTRY_ROLE = "dataEntryService"
+RESOLVER_PORTAL_COLLECTIONS = ("tenants", "domains", "settings", "branding", "forwarding_rules")   # read there
+LOG_COLLECTIONS = ("requests", "request_counts")         # the resolver's request log (ADR 0006)
+SERVICES = (("RESOLVER", "resolver_web", RESOLVER_ROLE), ("DATA_ENTRY", "resolver_data_entry", DATA_ENTRY_ROLE))
+
+
+def resolver_privileges(portal_db: str) -> list[dict]:
+    """The resolver: find on the records and on the portal's collections it serves from; the request log written."""
+    return ([{"resource": {"db": RECORDS_DB, "collection": RECORDS}, "actions": ["find"]}]
+            + [{"resource": {"db": portal_db, "collection": c}, "actions": ["find"]} for c in RESOLVER_PORTAL_COLLECTIONS]
+            + [{"resource": {"db": LOG_DB, "collection": c}, "actions": ["createIndex", "insert", "update"]}
+               for c in LOG_COLLECTIONS])
+
+
+def data_entry_privileges() -> list[dict]:
+    """The data entry API: the records read and written, nothing else."""
+    return [{"resource": {"db": RECORDS_DB, "collection": RECORDS},
+             "actions": ["find", "insert", "remove", "update"]}]
+
+
+def ensure_user(database, username: str, password: str, roles: list[dict]) -> str:
+    """Creates the user, or sets its password and roles; returns 'created' or 'brought up to date'."""
+    if database.command("usersInfo", username)["users"]:
+        database.command("updateUser", username, pwd=password, roles=roles)
+        return "brought up to date"
+    database.command("createUser", username, pwd=password, roles=roles)
+    return "created"
+
+
+def service_users(client, portal_db: str) -> None:
+    """The users of the resolver and of the data entry API (ADR 0030), in the admin database."""
+    admin = client["admin"]
+    ensure_role(admin, RESOLVER_ROLE, resolver_privileges(portal_db))
+    ensure_role(admin, DATA_ENTRY_ROLE, data_entry_privileges())
+    for prefix, default, role in SERVICES:
+        username = os.environ.get(f"{prefix}_DB_USERNAME", "").strip() or default
+        password = os.environ.get(f"{prefix}_DB_PASSWORD", "")
+        if not password:
+            print(f"portal-db-init: WARNING: {prefix}_DB_PASSWORD is not set; the user {username} was not created or "
+                  f"changed (Documentation/adr/0030-least-privilege-services.md).")
+            continue
+        if username == root_username():
+            raise RuntimeError(f"{prefix}_DB_USERNAME may not be MongoDB's root user")
+        done = ensure_user(admin, username, password, [{"role": role, "db": "admin"}])
+        print(f"portal-db-init: user {username} of the {prefix.lower().replace('_', ' ')} service {done}.")
+
+
+def root_username() -> str:
+    """The root user's name, from MONGO_INITDB_ROOT_USERNAME or the root connection string."""
+    name = os.environ.get("MONGO_INITDB_ROOT_USERNAME", "").strip()
+    if name:
+        return name
+    try:
+        return unquote(urlsplit(os.environ.get("MONGO_URI", "")).username or "")
+    except ValueError:
+        return ""
 
 
 def journal_privileges(journal_db: str) -> list[dict]:
@@ -174,6 +245,9 @@ def main() -> int:
     if not password:
         print("portal-db-init: PORTAL_DB_PASSWORD is not set.", file=sys.stderr)
         return 1
+    if not example_secrets.development() and example_secrets.in_use(["MONGO_URI"]):
+        print("portal-db-init: WARNING: MONGO_URI holds the example root password of .env.example, known to everyone; "
+              "change it with scripts/rotate-secrets.sh mongo (Documentation/adr/0030-least-privilege-services.md).")
     if name in RESERVED:
         print(f"portal-db-init: PORTAL_DB_NAME may not be {name!r}.", file=sys.stderr)
         return 1
@@ -185,16 +259,14 @@ def main() -> int:
         with MongoClient(root_uri, serverSelectionTimeoutMS=timeout, appname="portal-db-init") as client:
             ensure_role(client[LOG_DB], PRUNE_ROLE, PRUNE_PRIVILEGES)
             ensure_role(client[journal_db], JOURNAL_ROLE, journal_privileges(journal_db))
+            service_users(client, name)
             store, journal = connect_store(root_uri)
             unsealed = move_journal(client, name)
             database = client[name]
-            exists = database.command("usersInfo", username)["users"]
-            if exists:
-                database.command("updateUser", username, pwd=password, roles=roles)
-                print(f"portal-db-init: user {username} of database {name} brought up to date.")
-            else:
-                database.command("createUser", username, pwd=password, roles=roles)
+            if ensure_user(database, username, password, roles) == "created":
                 print(f"portal-db-init: user {username} created for database {name}.")
+            else:
+                print(f"portal-db-init: user {username} of database {name} brought up to date.")
         journal_upkeep(store, journal, unsealed)
     except (PyMongoError, RuntimeError) as exc:
         print(f"portal-db-init: {type(exc).__name__}: {exc}", file=sys.stderr)

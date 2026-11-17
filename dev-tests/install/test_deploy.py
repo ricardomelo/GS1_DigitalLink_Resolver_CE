@@ -17,7 +17,9 @@ Checks, without Docker:
   * the example secrets of .env.example (ADR 0021): the data entry API and the portal refuse to start with the example
     token or the portal's example database password while FQDN names a real host, naming the setting; the data entry
     API and the resolver warn about MongoDB's example password and start; they start with the examples on localhost
-    and with values of their own; the three copies of example_secrets.py are the same file;
+    and with values of their own; the three copies of example_secrets.py are the same file; the resolver and the data
+    entry API connect as their own database users (ADR 0030), refuse the example passwords of those users on a real
+    domain and never log a password;
   * one GS1 Barcode Syntax Engine release (ADR 0003): written once in docker-compose.yml, given to every image
     that checks GS1 data as a build argument, used by their Dockerfiles, the portal's build script and the
     CI set-up action without a release of their own, and the one portal/gs1_dictionary.json was made from;
@@ -452,12 +454,14 @@ def rotation_checks() -> None:
     MongoDB root password changed in the database first and given on standard input, nothing secret printed."""
     script = REPO / "scripts" / "rotate-secrets.sh"
     old = {"SESSION_TOKEN": "a" * 64, "PORTAL_SECRET_KEY": "b" * 64, "PORTAL_DB_PASSWORD": "c" * 48,
+           "RESOLVER_DB_PASSWORD": "d" * 48, "DATA_ENTRY_DB_PASSWORD": "e" * 48,
            "MONGO_INITDB_ROOT_PASSWORD": "p@ss:w0rd!xyz"}
     env_text = ("MONGO_INITDB_ROOT_USERNAME=resolveradmin\n"
                 f"MONGO_INITDB_ROOT_PASSWORD='{old['MONGO_INITDB_ROOT_PASSWORD']}'\n"
                 "MONGO_URI='mongodb://resolveradmin:p%40ss%3Aw0rd%21xyz@database-service:27017'\n"
                 f"SESSION_TOKEN='{old['SESSION_TOKEN']}'\nPORTAL_SECRET_KEY='{old['PORTAL_SECRET_KEY']}'\n"
-                f"PORTAL_DB_PASSWORD='{old['PORTAL_DB_PASSWORD']}'\nFQDN='id.example.org'\n")
+                f"PORTAL_DB_PASSWORD='{old['PORTAL_DB_PASSWORD']}'\nFQDN='id.example.org'\n"
+                f"RESOLVER_DB_PASSWORD='{old['RESOLVER_DB_PASSWORD']}'\nDATA_ENTRY_DB_PASSWORD='{old['DATA_ENTRY_DB_PASSWORD']}'\n")
 
     def rotate(args, database_accepts=True):
         work = Path(tempfile.mkdtemp(prefix="rotate-test-"))
@@ -487,6 +491,8 @@ esac
           "rotation: every secret gets a new value", (run.returncode, run.stdout[-300:]))
     check(re.fullmatch(r"[0-9a-f]{64}", new["SESSION_TOKEN"]) and re.fullmatch(r"[0-9a-f]{64}", new["PORTAL_SECRET_KEY"])
           and re.fullmatch(r"[0-9a-f]{48}", new["PORTAL_DB_PASSWORD"])
+          and re.fullmatch(r"[0-9a-f]{48}", new["RESOLVER_DB_PASSWORD"])
+          and re.fullmatch(r"[0-9a-f]{48}", new["DATA_ENTRY_DB_PASSWORD"])
           and re.fullmatch(r"[0-9a-f]{48}", new["MONGO_INITDB_ROOT_PASSWORD"]),
           "rotation: the installer's lengths (64 and 48 hexadecimal digits)")
     check(new["MONGO_URI"] == f"mongodb://resolveradmin:{new['MONGO_INITDB_ROOT_PASSWORD']}@database-service:27017",
@@ -507,6 +513,7 @@ esac
     run, new, backups, calls, given, work = rotate(["token", "session"])
     check(run.returncode == 0 and new["SESSION_TOKEN"] != old["SESSION_TOKEN"]
           and new["PORTAL_DB_PASSWORD"] == old["PORTAL_DB_PASSWORD"]
+          and new["RESOLVER_DB_PASSWORD"] == old["RESOLVER_DB_PASSWORD"]
           and new["MONGO_INITDB_ROOT_PASSWORD"] == old["MONGO_INITDB_ROOT_PASSWORD"] and "changeUserPassword" not in calls,
           "rotation: only the secrets named", run.stdout[-300:])
     shutil.rmtree(work, ignore_errors=True)
@@ -988,10 +995,20 @@ def example_secrets_checks() -> None:
     portal_env = {"PORTAL_CONFIG_DIR": tempfile.mkdtemp(prefix="deploy-examples-"), "PORTAL_SECRET_KEY": "k",
                   "PORTAL_DB_NAME": f"devtest_examples_{os.getpid()}", "DATA_ENTRY_URL": "http://127.0.0.1:9/api",
                   "RESOLVER_PUBLIC_URL": "https://id.example.org"}
+    entry_own = {"DATA_ENTRY_DB_USERNAME": "resolver_data_entry", "DATA_ENTRY_DB_PASSWORD": "pw-of-its-own",
+                 "DATA_ENTRY_DB_HOST": "127.0.0.1:9"}
+    resolver_own = {"RESOLVER_DB_USERNAME": "resolver_web", "RESOLVER_DB_PASSWORD": "pw-of-its-own",
+                    "RESOLVER_DB_HOST": "127.0.0.1:9"}
     services = {
         "data entry API": (REPO / "data_entry_server" / "src", factory,
                            {"SESSION_TOKEN": "tok-of-its-own", "MONGO_URI": own_uri},
                            [("SESSION_TOKEN", "secret")]),
+        # its own MongoDB user (ADR 0030), no MONGO_URI at all
+        "data entry API (its own database user)": (REPO / "data_entry_server" / "src", factory,
+                           {"SESSION_TOKEN": "tok-of-its-own", **entry_own},
+                           [("DATA_ENTRY_DB_PASSWORD", "resolver_data_entry")]),
+        "resolver (its own database user)": (REPO / "web_server" / "src", factory, resolver_own,
+                           [("RESOLVER_DB_PASSWORD", "resolver_web")]),
         "portal": (REPO / "portal", "import app; print('STARTED')",
                    {**portal_env, "SESSION_TOKEN": "tok-of-its-own", "PORTAL_DB_URI": "mongomock://"},
                    [("SESSION_TOKEN", "secret")]),
@@ -1009,7 +1026,7 @@ def example_secrets_checks() -> None:
 
     def start(folder: Path, code: str, settings: dict[str, str]) -> subprocess.CompletedProcess:
         env = {k: v for k, v in os.environ.items()
-               if not k.startswith(("PORTAL_", "RESOLVER_", "MONGO_", "SESSION_TOKEN", "FQDN"))}
+               if not k.startswith(("PORTAL_", "RESOLVER_", "DATA_ENTRY_", "MONGO_", "SESSION_TOKEN", "FQDN"))}
         env.update(settings)
         return subprocess.run([sys.executable, "-c", code], cwd=folder, env=env, capture_output=True, text=True,
                               timeout=120)
@@ -1039,6 +1056,18 @@ def example_secrets_checks() -> None:
             check("STARTED" in run.stdout and "example password" not in run.stderr,
                   f"{label}: no warning with {'its own password' if settings['MONGO_URI'] == own_uri else 'the example on localhost'}",
                   run.stderr[-300:])
+    # the connection logged by host, never with the service's password (ADR 0030)
+    for label, folder, own in (("resolver", REPO / "web_server" / "src", resolver_own),
+                               ("data entry API", REPO / "data_entry_server" / "src",
+                                {"SESSION_TOKEN": "tok-of-its-own", **entry_own})):
+        user = own.get("RESOLVER_DB_USERNAME") or own.get("DATA_ENTRY_DB_USERNAME")
+        code = ("import logging; logging.basicConfig(level=logging.INFO); from __init__ import create_app; "
+                "print('STARTED', create_app().config['MONGO_URI'])")
+        run = start(folder, code, {**own, "FQDN": "id.example.org"})
+        check(f"STARTED mongodb://{user}:pw-of-its-own@127.0.0.1:9/?authSource=admin" in run.stdout
+              and "127.0.0.1:9/?authSource=admin" in run.stderr and "pw-of-its-own" not in run.stderr
+              and "root user" not in run.stderr,
+              f"{label}: connects as its own user, logging the host and never the password", run.stderr[-300:])
     shutil.rmtree(portal_env["PORTAL_CONFIG_DIR"], ignore_errors=True)
 
 

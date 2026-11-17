@@ -83,8 +83,8 @@ flowchart LR
     proxy -->|"/api, /swaggerui (listed addresses)"| de
     proxy -->|"/portal/"| portal
     portal -->|"bearer token"| de
-    web -->|"root user"| db
-    de -->|"root user"| db
+    web -->|"own user: reads, writes the request log"| db
+    de -->|"own user: the records"| db
     portal -->|"own user"| db
     worker --> db
     worker -->|"link checks"| targets
@@ -102,21 +102,21 @@ flowchart LR
 | Service | Reachable from the internet | Internal only | Evidence |
 |---|---|---|---|
 | Host nginx | 80, 443 for the installation's name and each organisation's verified domain; passes every path on | — | `scripts/templates/nginx-site-https.conf:1-32`, `scripts/custom-domains.sh:104-113` |
-| `frontend-proxy-service` | through the host proxy: `/` and `/home/` (static), `/portal/`, `/api` and `/swaggerui` (to the addresses of `DATA_ENTRY_API_ALLOW` only; empty by default), everything else to the resolver | port 8080 on the host, bound as `PROXY_BIND_ADDRESS` | `frontend_proxy_server/nginx.conf:58-122`, `docker-compose.yml:172` |
+| `frontend-proxy-service` | through the host proxy: `/` and `/home/` (static), `/portal/`, `/api` and `/swaggerui` (to the addresses of `DATA_ENTRY_API_ALLOW` only; empty by default), everything else to the resolver | port 8080 on the host, bound as `PROXY_BIND_ADDRESS` (loopback unless `.env` says otherwise, ADR 0030) | `frontend_proxy_server/nginx.conf:58-122`, `docker-compose.yml:172` |
 | `web-service` (resolver) | `/{AI}/{value}[/{qualifier}/{value}…]`, compressed links and EPC forms (one segment), `/.well-known/gs1resolver`, `/_click`, `/_brand/{prefix}`, `/favicon.ico`, `/robots.txt`, `/heartbeat`; GET, HEAD, OPTIONS; no authentication | port 4000 | `web_server/src/web_namespace.py:24-227` |
 | `data-entry-service` | `/api/new`, `/api/validate`, `/api/summary`, `/api/index`, `/api/{AI}/{value}` (GET, PUT, DELETE), `/api/docs`; bearer token; `/api/heartbeat` open | port 3000 | `data_entry_server/src/data_entry_namespace.py:54-65`, `:68-292` |
 | `portal-service` | pages, `/portal/api/*` (session), `/portal/api/v1/*` (API key), sign-in, recovery and SSO routes, `/portal/healthz` | port 8000 | `portal/app.py:696-3576`, `portal/api_v1.py:109-249` |
 | `portal-worker` | nothing | jobs, housekeeping, monitoring; outbound HTTP, DNS, SMTP | `portal/app.py:3559-3566` |
-| `database-service` | nothing when bound to loopback | port 27017, bound as `DATABASE_BIND_ADDRESS` | `docker-compose.yml:19`, `scripts/install.sh:307` |
+| `database-service` | nothing when bound to loopback (the default, ADR 0030) | port 27017, bound as `DATABASE_BIND_ADDRESS` | `docker-compose.yml:19`, `scripts/install.sh:307` |
 
 ### 2.2 Data stores
 
 | Database | Collections that matter | Written by | Read by |
 |---|---|---|---|
-| `resolver_ce` | `gs1resolver`: one document per key, every record (qualifier set) and its links | data entry API | resolver, data entry API |
+| `resolver_ce` | `gs1resolver`: one document per key, every record (qualifier set) and its links | data entry API (role `dataEntryService`: find, insert, update, remove there only) | resolver (role `resolverService`: find), data entry API |
 | `resolver_portal_journal` | `journal` (audit trail and versions, sealed in hash chains), `journal_heads`, `journal_moved` (ADR 0026 §2.5.2) | the portal and worker insert (role `journalAppend`: events read and inserted only, heads moved forward); `portal-db-init` (root) moves, re-dates and seals | portal, worker |
-| `resolver_portal` | `users`, `tenants`, `record_meta`, `api_keys`, `tokens`, `sso`, `domains`, `domain_hosts`, `branding`, `forwarding_rules`, `settings` (appearance, forwarding fallback, retention, locks), `jobs`, `login_failures`, `request_daily`, `api_requests`, `alert_history`, `gcp_table` | portal, worker; the domains script (`domain_hosts`) | portal, worker; the resolver reads `tenants`, `domains`, `branding`, `forwarding_rules`, `settings` (`web_server/src/__init__.py:81-101`) |
-| `resolver_log` | `requests`, `request_counts` | resolver | portal (read, prune: `portal/db_init.py:42`) |
+| `resolver_portal` | `users`, `tenants`, `record_meta`, `api_keys`, `tokens`, `sso`, `domains`, `domain_hosts`, `branding`, `forwarding_rules`, `settings` (appearance, forwarding fallback, retention, locks), `jobs`, `login_failures`, `request_daily`, `api_requests`, `alert_history`, `gcp_table` | portal, worker; the domains script (`domain_hosts`) | portal, worker; the resolver reads `tenants`, `domains`, `branding`, `forwarding_rules`, `settings` and nothing else there (role `resolverService`, `portal/db_init.py`; ADR 0030) |
+| `resolver_log` | `requests`, `request_counts` | resolver (role `resolverService`: insert, update, indexes) | portal (read, prune: `portal/db_init.py:42`) |
 | Files | `.env` (every secret, mode 600), the `resolver-portal-config` volume (fallback session key), `/var/backups/resolver`, `./geoip` | installer, scripts | services, scripts |
 
 ### 2.3 Trust boundaries
@@ -125,7 +125,8 @@ flowchart LR
 2. **Proxy → services.** The services trust the proxy for the public host name and the client's address.
 3. **Portal → data entry API.** The portal holds the API's token and is the only place where organisations,
    prefixes, roles and the target rule are enforced; the API itself knows none of them.
-4. **Services → MongoDB.** The portal has its own user; the resolver and the data entry API use the root user.
+4. **Services → MongoDB.** Each service has its own user with the least privileges it needs, made by `portal-db-init`,
+   the only service given the root user ([ADR 0030](adr/0030-least-privilege-services.md)).
 5. **Organisation ↔ organisation.** Separation is derived at query time from GS1 Company Prefixes
    (`portal/tenants.py:69-78`), not stored on the records.
 6. **Operator ↔ organisation.** Server administrators see an organisation's data only through support access.
@@ -194,7 +195,7 @@ Ranked by the harm their loss causes; I = integrity, A = availability, C = confi
 | I1 | Worker jobs: imports, link checks, mail | the portal's user, the job owner's scope | `portal/app.py:1940-1984`, `:2071-2106` |
 | I2 | Link checker, domain check, SSO discovery, monitoring probes (outbound HTTP) | portal, worker | `portal/outbound.py`; `portal/linkcheck.py`; `portal/domains.py` `probe()`, `check()`; `portal/sso.py` `_send()`, `discovery()`, `finish()` |
 | I3 | DNS proof of domains | worker, portal | `portal/domains.py:264-301` |
-| I4 | Forwarding rules and caches read by the resolver | resolver, root database user | `web_server/src/forwarding.py`; `domains.py:53-77` |
+| I4 | Forwarding rules and caches read by the resolver | resolver, its own database user (find only) | `web_server/src/forwarding.py`; `domains.py:53-77` |
 | I5 | Backup, restore rehearsal, secret rotation, GeoIP update | root on the host, cron | `scripts/*.sh` |
 | I6 | Organisations' domains on the host: nginx sites and certificates from database content | root on the host, every 5 minutes | `scripts/custom-domains.sh:147-190` |
 | I7 | Installer and upgrade script | root on the host | `scripts/install.sh`, `scripts/upgrade-from-official.sh` |
@@ -271,8 +272,8 @@ L = likelihood, I = impact (H, M, L); rating = the pair.
 
 | ID | STRIDE | Threat | Controls in place | Residual gap | L × I |
 |---|---|---|---|---|---|
-| T-I1 | E | A flaw in an internet-facing service reaches all data | The portal has a database user limited to its own database and never receives the root credentials (`docker-compose.yml:105-111`, `portal/db_init.py:42`); the portal runs as an unprivileged user (`portal/Dockerfile:34`) | The resolver and the data entry API use the root database user and run as root in their containers | L × H |
-| T-I2 | I, E | Default or exposed secrets and ports | The installer generates every secret, writes `.env` with mode 600, binds the database and the proxy to loopback (`install.sh:262`, `:307`, `:333`, `:649`); rotation script | Started by hand without `.env`, the composition uses example credentials and publishes both ports on every interface; nothing refuses to start | M × H |
+| T-I1 | E | A flaw in an internet-facing service reaches all data | Every service has its own database user with the least privileges it needs, made by `portal-db-init`, the only service given the root credentials: the portal its own database (`portal/db_init.py`), the resolver `find` on the records and on five collections of the portal's database and writes to its request log (role `resolverService`), the data entry API the records only (role `dataEntryService`) (ADR 0030; F-012); the portal, the resolver and the data entry API run as unprivileged users (`portal/Dockerfile`, `web_server/Dockerfile`, `data_entry_server/Dockerfile`) | The resolver reads every document of `tenants`, `domains`, `settings`, `branding` and `forwarding_rules` (no secret may be stored there); the proxy's master process runs as root (official nginx image); file systems are writable | L × M |
+| T-I2 | I, E | Default or exposed secrets and ports | The installer generates every secret, writes `.env` with mode 600, binds the database and the proxy to loopback (`install.sh`); rotation script; the composition publishes both ports on loopback unless `.env` names another address; the services refuse to start on a real domain with the example token or the example password of their own database user (ADR 0021 §2.7, ADR 0030) | MongoDB's example root password and the portal's first user's example password are warned about or applied once, not refused; a manual start without `.env` still uses the example credentials (on loopback, with `FQDN=localhost`) | L × H |
 | T-I3 | T | Host scripts act on database content as root | Domain names validated again before reaching a file or a command; values passed as environment variables, never through a shell (`custom-domains.sh:41-50`, `:77-79`); nginx configuration tested before reload (`:172-176`) | *Not verified* on a live host | L × H |
 | T-I4 | I | Backups or logs disclose data | Archives of mode 600; credentials stay inside the database container; off-server copy; restore rehearsal | Archives not encrypted; SSO client secrets stored in clear; access logs keep addresses and full request lines | M × M |
 | T-I5 | T | A dependency, image or action is replaced | Syntax engine release pinned in one place (`docker-compose.yml:6`) with a weekly check; resolver and data entry dependencies pinned; CI with read-only permissions (`dev-tests.yml:20-21`) | Portal dependencies as ranges; no hashes; images and actions by mutable tag; a piped installer script in two images; no vulnerability scanning, SBOM or disclosure policy | M × H |
@@ -326,7 +327,7 @@ person may still receive wrong or no information. Behaviours marked *observed* w
 | Outbound requests | Resolved once, every address public, connected to the address checked with the name kept for TLS; HTTPS only for the link checker; each redirect hop checked; one link check per organisation, 2 requests per host at once; time limits | `portal/outbound.py`; `portal/linkcheck.py`; `portal/sso.py` `_send()`; `portal/domains.py` `probe()` |
 | Domains | DNS TXT proof; an organisation's domain answers for its prefixes only; host names validated again on the host | `portal/domains.py:264-287`; `web_server/src/domains.py:147-157`; `scripts/custom-domains.sh:77-79` |
 | TLS | TLS 1.2/1.3 at the host proxy, automatic certificates, expiry alert | `scripts/templates/nginx-site-https.conf:18`; `portal/monitor.py` |
-| Secrets | Generated by the installer, `.env` of mode 600, rotation script; the portal without root database credentials; client secrets never sent to a browser | `scripts/install.sh:262`, `:333`; `scripts/rotate-secrets.sh`; `docker-compose.yml:105-111`; `portal/sso.py:67-76` |
+| Secrets | Generated by the installer, `.env` of mode 600, rotation script; only `portal-db-init` holds the root database credentials, every other service its own user; client secrets never sent to a browser | `scripts/install.sh`; `scripts/rotate-secrets.sh`; `docker-compose.yml`; `portal/db_init.py`; `portal/sso.py:67-76` |
 | Audit trail | Journal of sign-ins, administration and every record version, per organisation, with retention per category, record changes journalled first, sealed in hash chains and verified (ADR 0026); text logs with each chain's daily head | `portal/journal.py`; `portal/app.py` `write_event()`, `journal_first()`, `audit_verify()` |
 | Request log privacy | No client address, no user agent, no full referrer, no values of unit qualifiers or attributes; retention per organisation | `web_server/src/request_log.py:1-30`, `:230-290` |
 | Exports | Limits per role and organisation within an installation maximum; journal entries | `portal/app.py:366-384`; `portal/exportlimits.py` |
@@ -344,7 +345,7 @@ Phrased as controls. P1: before any use with medicines or devices; P2: before va
 | # | Control | Why (threats, hazards) | Today |
 |---|---|---|---|
 | G-1 | **Close the official data entry API to the internet by default**: reachable from the portal only, or from listed addresses; integrations use the tenant API | T-D1 | Done: closed at the proxy unless `DATA_ENTRY_API_ALLOW` lists the address ([ADR 0021](adr/0021-data-entry-api-closed.md)); the token's own weaknesses remain |
-| G-2 | **Refuse to start with example secrets or open ports** outside development; loopback as the default bind | T-I2 | Partial: the example data entry token and the portal's example database password refused when `FQDN` names a real host, MongoDB's example password warned about ([ADR 0021](adr/0021-data-entry-api-closed.md) §2.7); the default bind is still every interface |
+| G-2 | **Refuse to start with example secrets or open ports** outside development; loopback as the default bind | T-I2 | Done: the example data entry token and the example passwords of the portal's, the resolver's and the data entry API's database users refused when `FQDN` names a real host, MongoDB's example root password warned about by `portal-db-init` ([ADR 0021](adr/0021-data-entry-api-closed.md) §2.7, [ADR 0030](adr/0030-least-privilege-services.md)); MongoDB and the proxy published on loopback by default |
 | G-3 | **Rate limiting at the proxy** per address: sign-in, recovery, tenant API, resolver paths that are not GS1 keys; bounded cost for every path | T-R3, T-A1, H-17 | None at the proxies; limits per user name and per API key exist in the portal |
 | G-4 | **Trusted-proxy handling of the client's address**, configured by the proxies in front | T-A1, T-D7 | Done: `real_ip` with `PROXY_TRUSTED_PROXIES` (and the host's nginx behind a loopback bind address), the result set alone in `X-Forwarded-For` for every service ([ADR 0021](adr/0021-data-entry-api-closed.md) §3) |
 | G-5 | **Second factor for editors and administrators** (TOTP or WebAuthn; mandatory for server administrators), or SSO enforced with the provider's second factor | T-A1, T-A2 | Absent; SSO per organisation exists |
@@ -358,7 +359,7 @@ Phrased as controls. P1: before any use with medicines or devices; P2: before va
 
 | # | Control | Why | Today |
 |---|---|---|---|
-| G-11 | Least-privilege database users for the resolver and the data entry API; non-root containers; read-only file systems | T-I1 | The portal's user is limited (exists); the other two use root |
+| G-11 | Least-privilege database users for the resolver and the data entry API; non-root containers; read-only file systems | T-I1 | Done but for read-only file systems: a user and a role per service, made by `portal-db-init`; the three Python services run as unprivileged users ([ADR 0030](adr/0030-least-privilege-services.md)) |
 | G-12 | Per-organisation allowlist of target domains, mandatory for safety-critical types; refusal of user information and address literals in targets | T-D2 | HTTPS-only rule exists |
 | G-13 | SSO hardening: how e-mail domains are claimed and how accounts are bound to the provider's identities | T-A6, T-T2 | Done: domains proved, `email_verified` required, the account bound to the provider's subject ([ADR 0025](adr/0025-sso-domain-proof-and-subject.md)) |
 | G-14 | Server-side sessions with revocation at sign-out and "sign out everywhere"; shorter limits for administrators | T-A3 | Idle and absolute limits exist |

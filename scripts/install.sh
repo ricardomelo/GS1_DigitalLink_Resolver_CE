@@ -235,7 +235,7 @@ EXISTING_ORDER=()
 MANAGED_KEYS=" MONGO_INITDB_ROOT_USERNAME MONGO_INITDB_ROOT_PASSWORD MONGO_URI SESSION_TOKEN FQDN
   RESOLVER_ORG_NAME RESOLVER_ORG_URL RESOLVER_CONTACT_STREET RESOLVER_CONTACT_LOCALITY RESOLVER_CONTACT_REGION
   RESOLVER_CONTACT_POSTCODE RESOLVER_CONTACT_COUNTRY RESOLVER_CONTACT_TELEPHONE PORTAL_ADMIN_USERNAME
-  PORTAL_ADMIN_PASSWORD PORTAL_DB_PASSWORD PORTAL_SECRET_KEY PORTAL_JOURNAL_KEY PROXY_BIND_ADDRESS DATABASE_BIND_ADDRESS TLS_MODE
+  PORTAL_ADMIN_PASSWORD PORTAL_DB_PASSWORD RESOLVER_DB_PASSWORD DATA_ENTRY_DB_PASSWORD PORTAL_SECRET_KEY PORTAL_JOURNAL_KEY PROXY_BIND_ADDRESS DATABASE_BIND_ADDRESS TLS_MODE
   CERTBOT_EMAIL TLS_CERT_FILE TLS_KEY_FILE WEB_SERVICE_REPLICAS DATA_ENTRY_SERVICE_REPLICAS
   PORTAL_SERVICE_REPLICAS PORTAL_WORKER_REPLICAS PORTAL_MAIL_HOST PORTAL_MAIL_PORT PORTAL_MAIL_SECURITY
   PORTAL_MAIL_USERNAME PORTAL_MAIL_PASSWORD PORTAL_MAIL_FROM PORTAL_TIME_ZONE "
@@ -273,6 +273,10 @@ write_env() {
     env_line MONGO_INITDB_ROOT_USERNAME "$MONGO_USER"
     env_line MONGO_INITDB_ROOT_PASSWORD "$MONGO_PASSWORD"
     env_line MONGO_URI "$MONGO_URI"
+    printf '# The MongoDB users of the resolver and of the data entry API (portal-db-init applies them at every start;\n'
+    printf '# Documentation/adr/0030-least-privilege-services.md)\n'
+    env_line RESOLVER_DB_PASSWORD "$RESOLVER_DB_PASSWORD"
+    env_line DATA_ENTRY_DB_PASSWORD "$DATA_ENTRY_DB_PASSWORD"
     printf '\n# Data entry API token (also used by the portal)\n'
     env_line SESSION_TOKEN "$SESSION_TOKEN"
     printf '\n# Public identity\n'
@@ -624,6 +628,8 @@ secrets() {
   MONGO_PASSWORD=$(existing MONGO_INITDB_ROOT_PASSWORD)
   SESSION_TOKEN=$(existing SESSION_TOKEN)
   PORTAL_DB_PASSWORD=$(existing PORTAL_DB_PASSWORD)
+  RESOLVER_DB_PASSWORD=$(existing RESOLVER_DB_PASSWORD)
+  DATA_ENTRY_DB_PASSWORD=$(existing DATA_ENTRY_DB_PASSWORD)
   PORTAL_SECRET_KEY=$(existing PORTAL_SECRET_KEY)
   PORTAL_JOURNAL_KEY=$(existing PORTAL_JOURNAL_KEY)
   local db_exists=0
@@ -661,6 +667,16 @@ secrets() {
     PORTAL_DB_PASSWORD=$(random_secret 24)
     info "A password for the portal's database user was generated."
   fi
+  # The same for the users of the resolver and of the data entry API (ADR 0030): MongoDB's root user is given to
+  # portal-db-init only, which makes them.
+  if [[ -z $RESOLVER_DB_PASSWORD || $RESOLVER_DB_PASSWORD == resolver_web ]]; then
+    RESOLVER_DB_PASSWORD=$(random_secret 24)
+    info "A password for the resolver's database user was generated."
+  fi
+  if [[ -z $DATA_ENTRY_DB_PASSWORD || $DATA_ENTRY_DB_PASSWORD == resolver_data_entry ]]; then
+    DATA_ENTRY_DB_PASSWORD=$(random_secret 24)
+    info "A password for the data entry API's database user was generated."
+  fi
   if [[ -z $PORTAL_SECRET_KEY ]]; then
     PORTAL_SECRET_KEY=$(random_secret 32)
     info "A session key for the portal was generated (signed-in users sign in again once)."
@@ -672,7 +688,8 @@ secrets() {
     info "A key that seals the portal's journal was generated."
   fi
   local value
-  for value in "$MONGO_PASSWORD" "$MONGO_URI" "$SESSION_TOKEN" "$PORTAL_DB_PASSWORD" "$PORTAL_SECRET_KEY" "$PORTAL_JOURNAL_KEY"; do
+  for value in "$MONGO_PASSWORD" "$MONGO_URI" "$SESSION_TOKEN" "$PORTAL_DB_PASSWORD" "$RESOLVER_DB_PASSWORD" "$DATA_ENTRY_DB_PASSWORD" \
+      "$PORTAL_SECRET_KEY" "$PORTAL_JOURNAL_KEY"; do
     [[ $value != *"'"* ]] || die "A secret in .env contains a single quote; replace it before running the installer."
   done
 }

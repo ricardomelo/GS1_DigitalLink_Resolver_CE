@@ -79,6 +79,7 @@ PROGRAMS = [
     Program("special_chars", "portal", "portal/test_special_chars.py"),
     Program("data_attributes", "portal", "portal/test_data_attributes.py", ("GS1_SYNTAX_ENGINE_DIR",)),
     Program("linkcheck", "portal", "portal/test_linkcheck.py"),
+    Program("outbound", "portal", "portal/test_outbound.py", needs_cmd=("openssl",)),
     Program("portal_config", "portal", "portal/test_portal_config.py"),
     Program("registration", "portal", "portal/test_registration.py"),
     Program("store", "portal", "portal/test_store.py"),

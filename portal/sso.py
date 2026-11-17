@@ -32,6 +32,7 @@ import requests
 
 import domains as domain_proof
 import linkcheck
+import outbound
 import store
 import users
 from users import UserError
@@ -113,9 +114,21 @@ def check_url(url: str, code: str = "sso.issuerInvalid") -> str:
     if parts.scheme not in (("https", "http") if insecure else ("https",)) or not parts.hostname \
             or parts.username or parts.password or parts.fragment or len(text) > 500:
         raise UserError(code)
-    if not insecure and linkcheck._public_host(parts.hostname) is False:
+    if not insecure and outbound.public_host(parts.hostname) is False:
         raise UserError("sso.issuerPrivate")
     return text
+
+
+def _send(method: str, url: str, **kwargs):
+    """One request to the provider (ADR 0029): connected to an address of the name checked once, never to the name
+    resolved again; no redirects. A private address raises SsoError(sso.issuerPrivate), a name without an address
+    requests.ConnectionError."""
+    try:
+        return outbound.request(method, url, insecure_allowed(), timeout=TIMEOUT, **kwargs)
+    except outbound.PrivateAddress:
+        raise SsoError("sso.issuerPrivate", url)
+    except outbound.OutboundError as exc:
+        raise requests.ConnectionError(type(exc).__name__)
 
 
 def clean_domains(values, scope: str) -> list[str]:
@@ -307,8 +320,7 @@ def _get_json(url: str) -> dict:
         check_url(url, "sso.discoveryFailed")
     except UserError as exc:
         raise SsoError(exc.code, url)
-    answer = requests.get(url, timeout=TIMEOUT, allow_redirects=False,
-                          headers={"Accept": "application/json", "User-Agent": linkcheck.USER_AGENT})
+    answer = _send("GET", url, headers={"Accept": "application/json", "User-Agent": linkcheck.USER_AGENT})
     if answer.status_code != 200:
         raise SsoError("sso.discoveryFailed", f"{url}: HTTP {answer.status_code}")
     try:
@@ -440,11 +452,11 @@ def finish(args, redirect_uri: str, session) -> tuple[str, dict, dict]:
     meta = discovery(doc["issuer"])
     try:
         check_url(meta["token_endpoint"], "sso.discoveryFailed")
-        answer = requests.post(meta["token_endpoint"], timeout=TIMEOUT, allow_redirects=False,
-                               headers={"Accept": "application/json", "User-Agent": linkcheck.USER_AGENT},
-                               data={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri,
-                                     "client_id": doc["clientId"], "client_secret": doc.get("clientSecret", ""),
-                                     "code_verifier": flow["verifier"]})
+        answer = _send("POST", meta["token_endpoint"],
+                       headers={"Accept": "application/json", "User-Agent": linkcheck.USER_AGENT},
+                       data={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri,
+                             "client_id": doc["clientId"], "client_secret": doc.get("clientSecret", ""),
+                             "code_verifier": flow["verifier"]})
     except UserError as exc:
         raise SsoError(exc.code, meta.get("token_endpoint", ""))
     except requests.RequestException as exc:

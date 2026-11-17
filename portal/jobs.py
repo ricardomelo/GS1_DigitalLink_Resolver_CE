@@ -97,6 +97,11 @@ def create(job_type: str, user: str, state: str, total: int, **fields) -> str:
     return token
 
 
+def active(job_type: str, **fields) -> dict | None:
+    """A job of the type, queued or running, with the fields given (the link check of an organisation, for instance)."""
+    return _col().find_one({"type": job_type, "state": {"$in": ["queued", "running"]}, **fields})
+
+
 def get(token: str, user: str, job_type: str) -> dict | None:
     """The user's job of that type, or None (unknown, someone else's or expired: MongoDB removes expired
     documents only about once a minute, so the date is checked here too)."""

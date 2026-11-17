@@ -456,6 +456,18 @@ check("check every record: a queued linkcheck job, each address with its records
       == [(BASE + "/missing/1", f"/01/{gtin(501)}|"), (BASE + "/ok/1", f"/01/{gtin(500)}|")], doc)
 status = web.get(f"/portal/api/links/jobs/{token}").get_json()
 check("link job status while queued", status["state"] == "queued" and status["total"] == 2, status)
+# ADR 0029: one link check queued or running per organisation
+r2 = other.post("/portal/api/links/jobs", json={"urls": [BASE + "/ok/busy"]})
+check("a second link check of the same organisation (another user) is refused while one is queued: linkcheck.busy",
+      r2.status_code == 422 and r2.get_json().get("code") == "linkcheck.busy"
+      and store.col("jobs").count_documents({"type": "linkcheck"}) == 1, (r2.status_code, r2.get_json()))
+store.col("jobs").insert_one({"_id": "lc-other", "type": "linkcheck", "user": "x", "state": "running",
+                              "tenant": "t-other", "created": store.now()})
+check("jobs.active(): a running check counts; another organisation's check does not block this one",
+      (jobs.active("linkcheck", tenant="t-other") or {}).get("_id") == "lc-other"
+      and (jobs.active("linkcheck", tenant=None) or {}).get("_id") == token
+      and jobs.active("linkcheck", tenant="t-third") is None and jobs.active("import", tenant=None) is None)
+store.col("jobs").delete_one({"_id": "lc-other"})
 w.run_once()
 status = web.get(f"/portal/api/links/jobs/{token}").get_json()
 check("check every record: finished, the problem mapped to its record",

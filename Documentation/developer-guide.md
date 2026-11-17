@@ -117,7 +117,8 @@ portal/                          new: the link management portal
   label.py                       labels: QR code and an EAN/UPC beside it, sizes; SVG, PNG, PDF, ZIP (ADR 0010)
   linear.py                      EAN-13, UPC-A, EAN-8 and UPC-E encoding (ADR 0010)
   sheet.py                       spreadsheet import and export
-  linkcheck.py                   link checker with SSRF guard
+  linkcheck.py                   link checker: HTTPS only, every hop checked, 2 requests per host at once (ADR 0029)
+  outbound.py                    requests to addresses users choose: resolved once, connected to the address checked (ADR 0029)
   store.py                       the portal's database: connection, indexes, settings, shared lock
   users.py                       user store and roles
   tenants.py                     tenants: organisations that own GS1 Company Prefixes (ADR 0002)
@@ -285,7 +286,8 @@ stops it after the record in hand (the records written stay).
 record, import preview) queues a job; the worker's `run_link_job()` checks each address once with
 `linkcheck.check_many()`; `GET /links/jobs/{token}` reports progress and problems; the last full check is
 kept in the database (settings `lastFullCheck`) for `GET /links/last`. `POST /links/jobs/{token}/cancel` stops a
-check within a second, with no result.
+check within a second, with no result. One link check is queued or running per organisation at a time (`jobs.active()`;
+a second one answers 422 `linkcheck.busy`, [ADR 0029](adr/0029-outbound-requests.md) §2.3).
 
 **A background job** ([ADR 0001](adr/0001-portal-state-in-mongodb.md), section 3.3). States `prepared` →
 `queued` → `running` → `finished`, `failed` or `cancelled` (stopped by its user, section 3.3.1: a queued job at once,
@@ -436,9 +438,23 @@ and separator detection), `map_header()` (column titles in any language, old `gt
 
 ### `linkcheck.py` — link checker
 
-`check_url()` (cached 10 minutes in the `linkcheck_cache` collection, shared by every replica) → `_check()`: follows redirects by hand (at most 5), resolves every host
-and refuses private, loopback and link-local addresses at each step, uses `HEAD` and falls back to `GET`
-without reading the body, reports HTTPS → HTTP downgrades. `check_many()` runs a thread pool with progress.
+`check_url()` (cached 10 minutes in the `linkcheck_cache` collection, shared by every replica) → `_check()`: follows redirects by hand (at most 5),
+reports an `http://` address as `linkcheck.insecureAddress` without a request, requests each hop with
+`outbound.request()` (private addresses refused, the address checked contacted), uses `HEAD` and falls back to `GET`
+without reading the body, reports HTTPS → HTTP downgrades. `check_many()` runs a thread pool (`WORKERS`) with progress,
+at most `PER_HOST` (2) requests to one host at once, the hosts taken in turn, results as they finish; an exception
+from `progress` cancels the addresses not started. `PORTAL_LINKCHECK_ALLOW_PRIVATE=1` (development tests only) lifts
+the address and HTTPS rules.
+
+### `outbound.py` — requests to addresses users choose
+
+[ADR 0029](adr/0029-outbound-requests.md). `request(method, url, allow_private=False, **kwargs)`: `target()` (http or
+https, a host, a valid port, no user information, else `BadAddress`), `addresses()` (the name resolved once; every
+address `is_global()` — IPv4 inside IPv6 forms checked too —, else `PrivateAddress`; none: `Unresolvable`), then a
+`requests` session without the environment's proxies whose `_PinnedAdapter` connects to one checked address while
+keeping the name for SNI and the certificate's check, the `Host` header set to the name; up to `MAX_ADDRESSES` (3)
+tried when one does not connect; redirects never followed. `public_host()` (True, False, None) for checks made when a
+setting is saved. Used by `linkcheck._request()`, `sso._send()` and `domains.probe()`.
 
 ### `store.py`, `users.py`, `tenants.py`, `meta.py`, `journal.py` — the portal's database
 
@@ -487,7 +503,8 @@ checks `allowed()` again before writing each record.
 
 ### `jobs.py`, `worker.py`
 
-`jobs.py` is the queue: `create()`, `get()` (the user's job of a type, not expired), `queue_prepared()`,
+`jobs.py` is the queue: `create()`, `get()` (the user's job of a type, not expired), `active()` (a queued or running
+job of a type with the fields given: an organisation's link check), `queue_prepared()`,
 `cancel()` (the user's import or link check: a queued one cancelled, a running one marked), `status()` (state,
 progress, `stalled`, `cancelling`, `error`), and for workers `announce()` / `withdraw()` /
 `workers_alive()`, `requeue_stale()`, `claim()` (the oldest queued job whose `notBefore`, if any, has
@@ -672,8 +689,8 @@ replace it) and never un-verifies; `recheck_all()` (in `app.HOUSEKEEPING`) recor
 `label_base(anchor, tenant, choice, installation)` gives the address in front of the GS1 path: the default domain of
 the record's company part (`default_for()`, longest prefix), the installation's, or a verified domain of the scope
 (else `domains.unusable`); `app.link_base()` uses it for the editor's preview, labels, the record's `digitalLink` and the
-tenant API. `check()` requests through the domain with `probe()` (no redirects followed, the link checker's guard
-against private addresses): the description file at the domain's root, or a redirect of a code of the organisation to
+tenant API. `check()` requests through the domain with `probe()` (`outbound.request()`: no redirects followed, private
+addresses refused, the address checked contacted, ADR 0029): the description file at the domain's root, or a redirect of a code of the organisation to
 the installation's same path and query. Section 7 of the ADR: `certificate(doc, host)` (the card's state: `None` for
 a domain not verified or redirected, `pending` until the host reports, `served` with `until`, `failed` with `error`,
 `attempts` and `nextAttemptAt`), `host_states(names)` and `with_hosts(docs)` (the reports in `domain_hosts`, written
@@ -721,6 +738,8 @@ accounts of another organisation at the domain), `upgrade()` (at start-up: confi
 `upgrade` proof per listed domain); `for_email()` and `password_off_for()` (never for the operator's users) read proved
 domains only.
 The provider: `discovery()` and `_keys()` cached an hour (`forget()`), the keys read again once for an unknown key ID;
+every request to it (`_get_json()`, the token exchange) goes through `_send()` → `outbound.request()` (ADR 0029:
+the address checked contacted; a private one is `sso.issuerPrivate` unless `PORTAL_SSO_ALLOW_INSECURE`);
 `start()` puts `state`, `nonce` and the PKCE verifier in the signed session cookie and gives the authorization address;
 `finish()` checks the state and its age (10 minutes), posts the code with the secret and the verifier, `verify()`s the
 ID token (algorithm among `ALGORITHMS`, key, issuer, audience, expiry with 60 s leeway, nonce, `azp`), and finds the
@@ -1467,7 +1486,8 @@ run against it. Setup and commands are in
 | `portal/test_sheet.py` | 44 | spreadsheets, limits per format |
 | `portal/test_special_chars.py` | 57 | special characters |
 | `portal/test_data_attributes.py` | 83 | data attributes, decimal families, QR options (needs `GS1_SYNTAX_ENGINE_DIR`) |
-| `portal/test_linkcheck.py` | 16 | link checker, SSRF guard |
+| `portal/test_linkcheck.py` | 30 | link checker, SSRF guard; [ADR 0029](adr/0029-outbound-requests.md): `http://` reported without a request (`linkcheck.insecureAddress`), user information invalid, internal addresses in IPv4 and IPv6 forms refused, a rebinding name never reaching the local server, at most 2 requests to one host at once while two hosts run side by side, a stop leaving the rest unrequested |
+| `portal/test_outbound.py` | 55 | requests to addresses users choose ([ADR 0029](adr/0029-outbound-requests.md)): which addresses are global (IPv4-mapped, 6to4, NAT64 included); a name resolved once and every address checked; addresses refused before any request; DNS rebinding (the address checked dialled, never the next answer); Host, SNI and the certificate's check on the name over a local HTTPS server; a certificate for another name refused; no redirect followed; the next address tried, three at most; no proxy from the environment; single sign-on's requests and the domain check through it. 14 mutations, all caught |
 | `portal/test_portal_config.py` | 13 | configuration and start-up, session limits |
 | `portal/test_session.py` | 43 | session limits (15 s idle in the test): server rules, the throttle and audit trail on the address the proxy set (not a forged first `X-Forwarded-For` address), the sign-in delay per user name and address with no lock by user name alone (F-005), warning, renewal on use, other tabs, absolute limit, both languages; community notice in the footer (about two minutes) |
 | `portal/test_store.py` | 110 | the portal's database layer: the journal's own database and its move, retention and sealing by `db_init.py` (ADR 0026 §2.5.2); connection settings, indexes, the shared lock (also between two administrators at once), users, record metadata, journal and its retention, its hash chains (ADR 0026: seals, every kind of tampering, racing writers, events sealed at the upgrade, receipts, keys, the daily checkpoint; 16 of the 25 mutations, all caught after one check was added), sign-in throttle and its progressive delay, migration of the old files (also interrupted and resumed) |
@@ -1500,7 +1520,7 @@ run against it. Setup and commands are in
 | `portal/test_epc.py` | 67 | the EPC encoder (ADR 0010 §8): the SGTIN's Tag Data Standard example, every partition and kind of serial number decoded back by the resolver's own decoder from `eh…` (the link's and the tag's hexadecimal) and `ex…`; the tag's hexadecimal padded to a 16-bit word and the link's to a digit, for every scheme (ADR 0010 §9); 200 random SGTINs the same as `epc-tds` encodes them; the definitions file against the TDT artefacts; SSCC, SGLN (the extension 0 without one), GRAI, GIAI, GSRN, GSRNP, GDTI, SGCN, CPI and ITIP at every partition, numeric and alphanumeric, decoded back; the 96-bit scheme only without leading zeros; a CPI's escapes; an SGCN's leading zeros; refusals and what a record needs first; about 480 random EPCs of eight scheme families the same as `epc-tds` writes from our tag URIs; `GET /portal/api/epc` (the organisation's length or a chosen one, filter by key, domain, refusals, access) and the record search by each new EPC through a resolver; both languages. Run in the `resolver` group, whose CI job has `epc-tds`. 18 mutations of item 9.10 and 3 of the word-aligned hexadecimal, all caught |
 | `portal/test_monitor.py` | 106 | monitoring ([ADR 0008](adr/0008-monitoring-and-alerts.md)): the settings; the resolver through a stand-in proxy (two failed rounds, no repeat, a reminder after 24 hours, resolved; the probe; no answer); the backup's record (unknown, late, failed, good again, the error in the message); the certificate (valid, once an hour, expiring, invalid, unreachable without a message, valid again); the request log's space against its limit (unknown without a limit or sizes, an alert at 80 %, a message per step of 5 up to 100, none within a step or after the trim, free space not counted, resolved below 80 %, the history; ADR 0006 §9, 7 of its 16 mutations); the age of GS1's GCP length table (unknown without a list or at 0, 89 days ok and 90 an alert, its message, no reminder the next day and one a week later, resolved by a higher limit or a newer list, the history, `GET /gcp`'s `age`; 12 mutations, all caught); the journal's hash chains (ADR 0026 §2.5: unknown before the first verification, ok after it, a changed event alerts only after the next verification, its message naming the chain, the problem and the event, the history, a reminder a day later, an administrator's verification keeping a broken chain and taking a whole one out at once, resolved with a message, a wrong receipt never alerting, monitoring off; 7 mutations, all caught); spikes per scope (the last hour only, the codes, robots' 404 without a GS1 key left out, the usual hour of the codes with a key, both settings, the end without a message); recipients (server administrators, an organisation's administrators, not readers, not a user who switched alerts off, not disabled accounts); the overview's alerts per scope and support access; the lock; the worker's schedule; the category and a user's choice; messages in the recipient's language and both languages' placeholders; the screen's texts. 21 mutations, all caught (3 of ADR 0006 §14) |
 | `portal/test_requestlog.py` | 177 | the request log in the portal ([ADR 0006](adr/0006-resolver-request-log.md)): who sees which events (an organisation, a user's prefixes, the operator, server administrators with each event's organisation, a limited server administrator, support access, a prefix moving between organisations), filters (outcome, device, automated, code as GTIN-13, GTIN-14, prefix, anchor; days of `PORTAL_TIME_ZONE`), pages with ties, the CSV (formulas protected, the organisation column, the journal), the daily aggregates (per key and for the installation, percentiles, expiry, finished days, replacement, the lock, the switch, an unknown time zone), requests per day per scope, the tenant API's calls (never the record or the secret; who sees them), the configuration, an unreadable log, the messages of both languages; browser, region and city in rows, filters, CSV, aggregates and the overview, the retention set in the portal (who sets which days, refusals, the journal, support access), the housekeeping applying it (ADR 0006 §8); the most space (who sees and sets it, refusals, megabytes of 1,048,576 bytes, the journal) and the housekeeping that trims the oldest events down to 95 % (ADR 0006 §9); the map's counts per country and place with positions, its filters and scope, the position in rows and the CSV (ADR 0006 §10). 10 of the 27 mutations of item 9.5, 7 of the 16 of finding F1 and 4 of the 12 of the map, all caught The counts in a day's aggregates (times' percentiles the events' only), today's figures per day and of the overview, the monitoring's 404s; the events of before deleted once their day is counted, from where the last run stopped, under a lock, with a journal event; the first run from the oldest count (ADR 0006 §11): 11 of its 20 mutations, all caught. Events whose key is no primary key left out of the list and the map and deleted with the others (§12); the map for an organisation or the operator a server administrator chose on the overview (§13): 3 of their 7 mutations, all caught |
-| `portal/test_jobs.py` | 97 | background jobs: states, expiry, atomic claim, ownership of writes, silent workers given back and failed after three attempts, the worker's announcement, `stalled`, the health check, the worker loop (errors, heartbeat, stop and hand-back, `JobLost`), the embedded worker and `PORTAL_WORKER`; imports through the API (queue, worker, journal, another user, a worker dying before and after writing a record, a failure); link checks through the API (every record, a list, a stop that cancels pending addresses); stopping a job (ADR 0001 §3.3.1: a queued one at once, a running one after its next write, the heartbeat and `finish()` never, a silent or stopping worker's marked job cancelled, the worker carrying on; an import through the API stopped while queued, while running with the records written kept and the journal's count, during its last record finished; a link check stopped while running and queued; another user refused). 17 mutations, all caught |
+| `portal/test_jobs.py` | 99 | background jobs: states, expiry, atomic claim, ownership of writes, silent workers given back and failed after three attempts, the worker's announcement, `stalled`, the health check, the worker loop (errors, heartbeat, stop and hand-back, `JobLost`), the embedded worker and `PORTAL_WORKER`; imports through the API (queue, worker, journal, another user, a worker dying before and after writing a record, a failure); link checks through the API (every record, a list, a stop that cancels pending addresses); stopping a job (ADR 0001 §3.3.1: a queued one at once, a running one after its next write, the heartbeat and `finish()` never, a silent or stopping worker's marked job cancelled, the worker carrying on; an import through the API stopped while queued, while running with the records written kept and the journal's count, during its last record finished; a link check stopped while running and queued; another user refused); one link check per organisation (`linkcheck.busy`, `jobs.active()`, ADR 0029). 17 mutations, all caught; 2 of ADR 0029, both caught |
 | `portal/test_worker_processes.py` | 13 | `worker.py` as real processes on a real MongoDB (run by `test_store_mongodb.py`): two workers share the queue without taking a job twice; SIGTERM hands the job back and the other worker finishes it; after SIGKILL a new worker continues the job once its heartbeat is old |
 | `portal/test_store_mongodb.py` | 259 | on a real MongoDB (`PORTAL_TEST_MONGO_URI`, CI only): the user made by `db_init.py` and its privileges (reading the request log and deleting its events — the role `requestLogPrune`, ADR 0006 §8 —, never inserting or changing one; in the journal's database the role `journalAppend`: events read and inserted, heads moved forward, never an event changed, replaced or deleted, an index made, the collection changed or dropped, ADR 0026 §2.5.2); the journal of an earlier version moved there once, sealed events kept and unsealed ones sealed, a collection that reappears reported and left; `test_store.py` (with `DEV_TESTS_DB_ADMIN_URI`, the root user, for its tampering and upkeep steps), `test_jobs.py` and `test_worker_processes.py` again as that user (their lines relayed); the TTL monitor, also for jobs and old worker announcements The request counts' upsert adding up and the portal user grouping them and deleting the automated events of counted days (ADR 0006 §11) |
 | `portal/test_registration.py` | 27 | §2.5.9 through the portal API: informative qualifiers (save, open, history, list, export, import), records against rule 2, the key's own record when saving and importing |

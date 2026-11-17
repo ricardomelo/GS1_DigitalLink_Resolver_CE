@@ -33,7 +33,7 @@ AREAS = [
                                                          "link_types_e2e"]),
     ("Searching and filtering records", ["scan_search"]),
     ("Labels, RFID and NFC", ["label", "datamatrix", "datamatrix_e2e", "epc_label", "gcp", "gcp_e2e"]),
-    ("Spreadsheets, link checks and background work", ["sheet", "linkcheck", "jobs"]),
+    ("Spreadsheets, link checks and background work", ["sheet", "linkcheck", "outbound", "jobs"]),
     ("The item's page", ["item_page", "item_page_e2e", "titles"]),
     ("Requests and the overview", ["requestlog", "requests_e2e", "overview", "overview_e2e"]),
     ("Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",

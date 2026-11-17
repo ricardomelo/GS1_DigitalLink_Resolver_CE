@@ -30,6 +30,7 @@ import requests
 
 import gs1
 import linkcheck
+import outbound
 import store
 import tenants
 import users
@@ -302,12 +303,14 @@ def recheck_all(now=None) -> int:
 
 
 def probe(url: str) -> requests.Response:
-    """One request through a domain without following redirects (public addresses only). Replaced by the tests."""
-    host = requests.utils.urlparse(url).hostname or ""
-    if linkcheck._public_host(host) is False:
+    """One request through a domain without following redirects, connected to a checked public address of the name
+    (outbound.request(), ADR 0029); PermissionError for a private address. Replaced by the tests."""
+    try:
+        return outbound.request("GET", url, timeout=TIMEOUT, headers={"User-Agent": linkcheck.USER_AGENT})
+    except outbound.PrivateAddress:
         raise PermissionError("private address")
-    return requests.get(url, allow_redirects=False, timeout=TIMEOUT,
-                        headers={"User-Agent": linkcheck.USER_AGENT})
+    except outbound.OutboundError as exc:
+        raise requests.ConnectionError(type(exc).__name__)
 
 
 def check(name, tenant: str | None, installation_url: str, sample_anchor: str | None) -> dict:

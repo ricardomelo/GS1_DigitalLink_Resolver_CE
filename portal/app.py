@@ -2336,6 +2336,8 @@ def start_link_job():
         scope = "list"
     if len(urls) > MAX_CHECK_URLS:
         raise ValidationError("linkcheck.tooMany", max=MAX_CHECK_URLS)
+    if jobs.active("linkcheck", tenant=g.tenant):         # one check at a time per organisation (ADR 0029)
+        raise ValidationError("linkcheck.busy")
     # addresses contain "." and are values, not field names
     token = jobs.create("linkcheck", g.user, "queued", len(urls), scope=scope, tenant=g.tenant,
                         urls=[{"url": url, "records": keys} for url, keys in urls.items()])

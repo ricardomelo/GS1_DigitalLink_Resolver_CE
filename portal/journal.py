@@ -2,7 +2,8 @@
 Journal of what happens in the portal: sign-ins, user administration and every record change, with the
 full content of each version of a record so that it can be restored.
 
-One document per event in the "journal" collection of the portal's database (store.py), included in the
+One document per event in the "journal" collection of the journal's database (store.py: "<PORTAL_DB_NAME>_journal",
+where the portal's user may read and insert only; ADR 0026 section 2.5.2), included in the
 daily backup with the rest of the database. Queries use indexes on the date, the record and the user.
 
 Event: {"at", "user", "action", "category", "tenant"?, "byOperator"?, "anchor"?, "qpath"?, "doc"?, "detail"?,
@@ -37,7 +38,10 @@ beginning. Seal fields: chain, seq (1, 2, … in the chain), prev (the previous 
 (SHA-256 of the canonical JSON of every field but _id, expiresAt, hash and mac), mac (HMAC-SHA-256 of hash with
 PORTAL_JOURNAL_KEY, absent without a key) and kid (key_id() of the key). A unique index on (chain, seq) numbers events
 safely across replicas; "journal_heads" keeps each chain's last seq and hash outside the retention. Events written
-before this version are sealed by seal_unsealed() at start-up, marked sealed "upgrade". verify() walks a chain;
+before this version are sealed by seal_unsealed(), marked sealed "upgrade": by portal-db-init when it moves them to the
+journal's database (root user), and at the portal's start-up where its user may still update the journal (an
+external MongoDB without portal-db-init); expiresAt follows a retention change the same way (apply_retention()).
+verify() walks a chain;
 checkpoint() (the worker's housekeeping) verifies every chain, writes the heads to the log and stores the result in
 settings "journalVerified" ({at, chains, broken: [{chain, kind, seq}]}), which an administrator's verification brings
 up to date (record_verification()) and the monitor's check "journal" reads (alert by e-mail, ADR 0026 section 2.5). A record change is
@@ -223,16 +227,31 @@ def _insert_sealed_locked(doc: dict, existing_id) -> dict:
     raise store.LockTimeout(f"journal chain {chain}")
 
 
-def seal_unsealed() -> int:
+def append_upgraded(doc: dict) -> int:
+    """Seals and inserts an event of an earlier version (migrate.py's journal.jsonl), marked sealed "upgrade", as the
+    next of its chain; an event whose _id is already stored is left alone. Returns 1 when inserted, else 0."""
+    if _journal().find_one({"_id": doc["_id"]}, {"_id": 1}):
+        return 0
+    doc["sealed"] = "upgrade"
+    _insert_sealed(doc)
+    return 1
+
+
+def seal_unsealed(ids=None) -> int:
     """Seals the events stored without a seal (written before ADR 0026, or by an older replica during an upgrade),
     in the order they were written, marked sealed "upgrade"; under a lock so that replicas starting together do it
-    once. Returns how many were sealed."""
+    once. ids limits it to those events: portal-db-init seals only the events it moved itself, never one that
+    someone inserted unsealed in the journal's database (that one stays unsealed and the verification reports it).
+    Returns how many were sealed."""
     journal = _journal()
-    if not journal.find_one({"seq": {"$exists": False}}, {"_id": 1}):
+    unsealed = {"seq": {"$exists": False}}
+    if ids is not None:
+        unsealed["_id"] = {"$in": list(ids)}
+    if not journal.find_one(unsealed, {"_id": 1}):
         return 0
     count = 0
     with store.lock("journal-seal", hold_seconds=3600, wait_seconds=3600):
-        for doc in journal.find({"seq": {"$exists": False}}).sort([("at", ASCENDING), ("_id", ASCENDING)]):
+        for doc in journal.find(unsealed).sort([("at", ASCENDING), ("_id", ASCENDING)]):
             doc["sealed"] = "upgrade"
             _insert_sealed(doc, existing_id=doc["_id"])
             count += 1

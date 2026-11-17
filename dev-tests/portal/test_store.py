@@ -4,7 +4,9 @@ indexes, the shared lock, users, record metadata, the journal with its retention
 the one-off migration of the files of earlier versions.
 
 Runs against mongomock (no server needed) unless PORTAL_DB_URI names a real MongoDB; test_store_mongodb.py
-runs it that way, as the portal's own least-privilege user, in the continuous integration.
+runs it that way, as the portal's own least-privilege user, in the continuous integration, with
+DEV_TESTS_DB_ADMIN_URI naming the root user: that user changes and deletes journal events (the tampering checks)
+and runs the retention and the sealing, which the portal's user may not (ADR 0026 section 2.5.2).
 
   pip install -r portal/requirements.txt mongomock
   python dev-tests/portal/test_store.py
@@ -38,6 +40,35 @@ import store  # noqa: E402
 import users  # noqa: E402
 
 REAL = not os.environ["PORTAL_DB_URI"].startswith("mongomock://")
+ADMIN_URI = os.environ.get("DEV_TESTS_DB_ADMIN_URI", "").strip()
+_admin_client = None
+
+
+def admin_col(name):
+    """A collection as the root user sees it (the portal's own view without DEV_TESTS_DB_ADMIN_URI)."""
+    global _admin_client
+    if not ADMIN_URI:
+        return store.col(name)
+    if _admin_client is None:
+        from pymongo import MongoClient
+        _admin_client = MongoClient(ADMIN_URI, serverSelectionTimeoutMS=20000)
+    database = store.journal_db_name() if name in store.JOURNAL_COLLECTIONS else store.DB_NAME
+    return _admin_client[database][name]
+
+
+def as_admin(step, *args, **kwargs):
+    """Runs a journal step that updates events (retention, sealing) connected as the root user, as portal-db-init
+    does, then connects as the portal's user again."""
+    if not ADMIN_URI:
+        return step(*args, **kwargs)
+    saved = os.environ["PORTAL_DB_URI"]
+    os.environ["PORTAL_DB_URI"] = ADMIN_URI
+    store.reset()
+    try:
+        return step(*args, **kwargs)
+    finally:
+        os.environ["PORTAL_DB_URI"] = saved
+        store.reset()
 failures = []
 
 
@@ -230,16 +261,16 @@ check("audit filters: dates inclusive", len(journal.search(since=today, until=to
 
 # retention changes are applied to existing events
 store.set_setting("journalRetention", None)
-journal.apply_retention()
+as_admin(journal.apply_retention)
 os.environ["PORTAL_JOURNAL_RECORD_DAYS"] = "30"
-changed = journal.apply_retention()
+changed = as_admin(journal.apply_retention)
 create = store.col("journal").find_one({"action": "create", "user": "ana"})
 check("retention of records set to 30 days: existing record events updated, others untouched",
       changed == {"record": 4} and create["expiresAt"] == day + timedelta(days=31),
       changed)
-check("unchanged retention: nothing to do", journal.apply_retention() == {})
+check("unchanged retention: nothing to do", as_admin(journal.apply_retention) == {})
 os.environ["PORTAL_JOURNAL_RECORD_DAYS"] = "0"
-journal.apply_retention()
+as_admin(journal.apply_retention)
 check("retention back to 0: record events kept for ever again",
       store.col("journal").count_documents({"category": "record", "expiresAt": {"$exists": True}}) == 0)
 os.environ["PORTAL_JOURNAL_SESSION_DAYS"] = "many"
@@ -250,9 +281,9 @@ os.environ.pop("PORTAL_JOURNAL_RECORD_DAYS")
 # ------------------------------------------------------------------ journal integrity (ADR 0026)
 from pymongo.errors import DuplicateKeyError  # noqa: E402
 
-J = store.col("journal")
+J = admin_col("journal")                 # the root user's view: changes and deletions are tampering here
 J.delete_many({})
-store.col("journal_heads").delete_many({})
+admin_col("journal_heads").delete_many({})
 check("chains: unique index on (chain, seq) for sealed events only",
       any(i.get("unique") and list(i["key"]) == ["chain", "seq"] for i in J.list_indexes()))
 refs = [journal.append("create", "ana", anchor="/01/09506000134352", qpath="", doc={"v": 1, "at": "x"}),
@@ -365,12 +396,12 @@ J.insert_many([{"at": store.parse_iso("2026-01-02T00:00:00Z"), "user": "old", "a
 check("verify: events of a trail not yet sealed → unsealed", problem("t-old/admin") in (("unsealed", None), (None, None))
       and journal.verify("operator/admin")["ok"])
 check("events written before ADR 0026 sealed once, in the order they were written, marked so",
-      journal.seal_unsealed() == 2 and [d["detail"] for d in J.find({"chain": "t-old/admin"}).sort("seq", 1)] == ["first", "second"]
-      and all(d["sealed"] == "upgrade" for d in J.find({"chain": "t-old/admin"})) and journal.seal_unsealed() == 0
+      as_admin(journal.seal_unsealed) == 2 and [d["detail"] for d in J.find({"chain": "t-old/admin"}).sort("seq", 1)] == ["first", "second"]
+      and all(d["sealed"] == "upgrade" for d in J.find({"chain": "t-old/admin"})) and as_admin(journal.seal_unsealed) == 0
       and journal.verify("t-old/admin")["ok"])
 J.insert_one({"at": store.now(), "user": "old", "action": "user-create", "category": "admin", "tenant": "t-old"})
 check("verify: an unsealed event in a sealed trail → unsealed", problem("t-old/admin") == ("unsealed", None))
-journal.seal_unsealed()
+as_admin(journal.seal_unsealed)
 
 os.environ["PORTAL_JOURNAL_KEY"] = "journal-key-2"
 journal.append("user-update", "ana", detail="new key", tenant="t-old")
@@ -470,7 +501,7 @@ from werkzeug.security import generate_password_hash  # noqa: E402
 def empty_database():
     """Starts a part of the test from an empty database (the portal's user may only use its own database)."""
     for name in ("users", "record_meta", "journal", "journal_heads", "settings", "login_failures"):
-        store.col(name).delete_many({})
+        admin_col(name).delete_many({})
 
 
 empty_database()
@@ -509,6 +540,11 @@ check("migration: damaged lines skipped and counted",
 migrated_login = store.col("journal").find_one({"action": "login"})
 check("migration: categories and retention applied to old events", migrated_login["category"] == "session"
       and migrated_login["expiresAt"] == store.parse_iso("2026-09-26T00:00:00Z") + timedelta(days=180))
+check("migration: old events sealed in their chains as they are inserted, marked so (the portal's user may not "
+      "update the journal afterwards)",
+      all(d.get("seq") and d.get("sealed") == "upgrade" for d in store.col("journal").find())
+      and all(journal.verify(c)["ok"] for c in journal.chains(everything=True)),
+      [(d["_id"], d.get("seq"), d.get("sealed")) for d in store.col("journal").find()])
 check("migration: a second start finds nothing to do", migrate.run(folder) == {})
 
 # a file that comes back (an old volume restored) does not overwrite the database
@@ -533,6 +569,84 @@ store.col("journal").insert_many([{**journal.event_document(store.parse_iso(e["a
 moved = migrate.run(folder)
 check("migration: an interrupted import is completed without duplicates",
       moved == {"journal": 1500} and store.col("journal").count_documents({}) == 2500, moved)
+
+# ------------------------------------------------------------------ the journal's own database (ADR 0026, 2.5.2)
+check("the journal and its heads live in <PORTAL_DB_NAME>_journal, everything else in the portal's database",
+      store.col("journal").database.name == store.col("journal_heads").database.name == store.DB_NAME + "_journal"
+      and store.col("users").database.name == store.DB_NAME and store.journal_db_name() == store.DB_NAME + "_journal")
+if not REAL:                       # against a real MongoDB with its roles: test_store_mongodb.py
+    import contextlib  # noqa: E402
+    import io  # noqa: E402
+
+    import db_init  # noqa: E402
+
+    empty_database()
+    client, name = store.db().client, store.DB_NAME
+    old_journal, old_heads = client[name]["journal"], client[name]["journal_heads"]
+    target = client[name + "_journal"]
+    target.drop_collection(db_init.MARKER)
+
+    def event(n, **fields):
+        return {"_id": f"old-{n}", "at": store.parse_iso(f"2026-09-0{n}T10:00:00Z"), "user": "u", "action": "login",
+                "category": "session", **fields}
+
+    check("db_init: the journal's role may read and insert events, and move heads forward, in that database only",
+          db_init.journal_privileges("x_journal") == [
+              {"resource": {"db": "x_journal", "collection": "journal"}, "actions": ["find", "insert", "listIndexes"]},
+              {"resource": {"db": "x_journal", "collection": "journal_heads"},
+               "actions": ["find", "insert", "listIndexes", "update"]}])
+    old_journal.insert_one(event(1))
+    saved_copy, db_init._copy = db_init._copy, lambda target_collection, docs: []      # a copy that loses events
+    try:
+        db_init.move_journal(client, name)
+        check("db_init: nothing is dropped when an event is missing after the copy", False)
+    except RuntimeError as exc:
+        check("db_init: nothing is dropped when an event is missing after the copy",
+              old_journal.count_documents({}) == 1 and not target[db_init.MARKER].find_one({"_id": "moved"}), exc)
+    finally:
+        db_init._copy = saved_copy
+    old_journal.delete_many({})
+    secret = journal.key()
+    first = journal._seal(event(1), "operator/session", 1, "", secret)
+    second = journal._seal(event(2), "operator/session", 2, first["hash"], secret)
+    old_journal.insert_many([first, second, event(3), journal._seal(event(4), "t-x/session", 1, "", secret)])
+    old_heads.insert_many([{"_id": "operator/session", "seq": 2, "hash": second["hash"]},
+                           {"_id": "t-x/session", "seq": 1, "hash": "h"}])
+    # a newer replica already wrote seq 1 of t-x/session in the journal's database: the old one collides
+    target["journal"].insert_one(journal._seal(event(5), "t-x/session", 1, "", secret))
+    target["journal_heads"].insert_one({"_id": "t-x/session", "seq": 1, "hash": "newer"})
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        moved_ids = db_init.move_journal(client, name)
+    check("db_init: the journal moves to its own database once, the old collections dropped, the move marked",
+          target["journal"].count_documents({}) == 5 and "journal" not in client[name].list_collection_names()
+          and "journal_heads" not in client[name].list_collection_names()
+          and target[db_init.MARKER].find_one({"_id": "moved"})["events"] == 4, out.getvalue())
+    check("db_init: sealed events keep their seal; unsealed ones and a (chain, seq) collision go in unsealed",
+          sorted(moved_ids) == ["old-3", "old-4"] and target["journal"].find_one({"_id": "old-1"})["hash"] == first["hash"]
+          and "seq" not in target["journal"].find_one({"_id": "old-4"}), moved_ids)
+    check("db_init: a chain's head already further on in the journal's database is kept",
+          target["journal_heads"].find_one({"_id": "t-x/session"})["hash"] == "newer"
+          and target["journal_heads"].find_one({"_id": "operator/session"})["seq"] == 2)
+    target["journal"].insert_one(event(6))               # inserted unsealed by someone else, not moved
+    with contextlib.redirect_stdout(out):
+        db_init.journal_upkeep(store, journal, moved_ids)
+    check("db_init: only the events it moved are sealed; an event inserted unsealed by anyone else is left and warned",
+          all(target["journal"].find_one({"_id": i}).get("sealed") == "upgrade" for i in moved_ids)
+          and "seq" not in target["journal"].find_one({"_id": "old-6"})
+          and "1 event(s) of the journal are not sealed" in out.getvalue()
+          and journal.verify("t-x/session")["ok"] and journal.verify("operator/session")["problem"]["kind"] == "unsealed",
+          out.getvalue())
+    old_journal.insert_one(event(7))                     # an old replica writing after the move
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        again = db_init.move_journal(client, name)
+    check("db_init: a journal that reappears in the portal's database after the move is reported, neither moved "
+          "nor sealed", again == [] and old_journal.count_documents({}) == 1 and "WARNING" in out.getvalue()
+          and f"{name}.journal reappeared" in out.getvalue() and not target["journal"].find_one({"_id": "old-7"}),
+          out.getvalue())
+    client[name].drop_collection("journal")
+    empty_database()
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

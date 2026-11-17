@@ -238,5 +238,33 @@ other = bob.get("/portal/api/audit/verify").get_json()
 check("…another organisation's verification does not see it", all(c["ok"] for c in other["chains"])
       and all(c["chain"].startswith(beta["id"] + "/") for c in other["chains"]), other)
 
+# start-up where the portal's user may only insert into the journal (ADR 0026 section 2.5.2)
+from pymongo.errors import OperationFailure  # noqa: E402
+
+calls, saved_steps = [], (journal.apply_retention, journal.seal_unsealed)
+
+
+def refused(code_number):
+    def step():
+        calls.append(code_number)
+        raise OperationFailure("not authorized", code=code_number)
+    step.__name__ = "refused"
+    return step
+
+
+journal.apply_retention, journal.seal_unsealed = refused(13), refused(13)
+try:
+    portal._journal_upkeep()
+    check("start-up: retention and sealing refused to the portal's user (code 13) are left to portal-db-init, "
+          "and both are tried", calls == [13, 13])
+    journal.apply_retention = refused(2)
+    try:
+        portal._journal_upkeep()
+        check("start-up: any other database error is not hidden", False)
+    except OperationFailure:
+        check("start-up: any other database error is not hidden", True)
+finally:
+    journal.apply_retention, journal.seal_unsealed = saved_steps
+
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

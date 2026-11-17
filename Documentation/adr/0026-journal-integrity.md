@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (16 November 2026); step 2 in progress: the alert delivered on 16 November 2026 (§2.5.1), insert-only access to follow |
+| Status | **Accepted** (16 November 2026); step 2 delivered: the alert on 16 November 2026 (§2.5.1), insert-only access on 17 November 2026 (§2.5.2) |
 | Backlog item | 10.1, phase 1 of the security assessment ([ADR 0020](0020-security-assessment.md)); amends [ADR 0001](0001-portal-state-in-mongodb.md) §3.5 and the journal of [ADR 0002](0002-tenants.md) §3.5 |
 | Decided by | the owner of the branch's standing instruction (take the recommended option and carry on): a record change is journalled before the data entry API is called and refused when it cannot be; every event is sealed in a hash chain per audit trail and retention category, with a key kept outside the database; administrators verify the chains and can keep a chain's head as a receipt |
 
@@ -95,6 +95,31 @@ journal is not keyed: anyone able to write to the database could then rewrite a 
    `alert-journal-ok` in the category `alerts` (ADR 0008 §3.1 says why not `security`).
 2. **Insert-only access**: the journal moves to a database of its own on which the portal's MongoDB user may find and
    insert only; retention changes and sealing at the upgrade run in `portal-db-init` with the root user.
+   *Delivered (session 41, the owner away, recommended options: done now, with a backup step before the update):*
+   - `journal` and `journal_heads` live in `<PORTAL_DB_NAME>_journal` (derived from the existing setting, no new
+     one), reached with the same client; `store.col()` routes the two names there, so no caller changed.
+   - `portal-db-init` defines the role `journalAppend` in that database — `find`, `insert`, `listIndexes` on `journal`;
+     the same and `update` on `journal_heads`, whose documents must move forward with their chains — and grants it to
+     the portal's user beside its other roles. No `remove`, `createIndex` (a TTL index on `at` would delete the whole
+     journal), `collMod` or `dropCollection`. The indexes, the TTL on `expiresAt` included, are made by
+     `portal-db-init`; the portal's refusal to make them is expected and ignored.
+   - The move, once: every document copied (an event already there skipped; one whose `(chain, seq)` is taken by
+     another inserted without its seal), every old `_id` found again (events expiring within the hour left out, the TTL
+     monitor may take them), then the old collections dropped and the marker `journal_moved` written in the journal's
+     database, which the portal cannot write. A journal collection that reappears in the portal's database afterwards
+     (an old replica writing during the update, or anyone with the portal's user) is printed as a WARNING and left:
+     neither moved nor sealed.
+   - `portal-db-init` applies retention changes and seals only the events it moved without a seal
+     (`seal_unsealed(ids)`), never one that someone inserted unsealed: that one stays and the verification reports it.
+     The portal still tries both at start-up (an external MongoDB without `portal-db-init`) and leaves them to
+     `portal-db-init` when refused. `journal.jsonl` of versions before ADR 0001 is sealed event by event as it is
+     imported.
+   - Residuals: `journal_heads` can still be updated (a head moved forward or reset is reported as `truncated` or as a
+     chain gap; one deleted needs the root user); the settings `journalCheckpoint`, `journalRetention` and
+     `journalVerified` stay in the portal's database, so whoever holds the portal's user can clear `journalVerified`
+     and delay the alert until the next daily check; the root user, and anyone with a backup, can still change events
+     (detected by the chains, not prevented); events can still be inserted unsealed or with a forged seal without the
+     key (reported).
 
 ## 3. Options considered
 
@@ -134,3 +159,8 @@ MongoDB in the continuous integration), `test_record_delete.py` and a new `test_
 alert: `journal.py` (`journalVerified`, `record_verification()`, `last_verification()`), `monitor.py`
 (`check_journal()`), `app.py` (the verification route updates the stored result), the overview and the alert history,
 two messages and five screen texts in the twelve languages, 15 checks in `test_monitor.py` (7 mutations, all caught).
+Step 2 (§2.5.2), insert-only access: `store.py` (the journal's database), `db_init.py` (the role, the move, the upkeep
+as root), `journal.py` (`seal_unsealed(ids)`, `append_upgraded()`), `migrate.py`, `app.py` (`_journal_upkeep()`); checks
+in `test_store.py` (the move and the upkeep on mongomock; on a real MongoDB with the root user for the tampering
+steps), `test_journal.py` and `test_store_mongodb.py` (the role's privileges and refusals, the move, against a real
+MongoDB in the continuous integration), mutation-checked; ADR 0001's note, the developer guide, the threat model.

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Daily backup of a GS1 Resolver CE installation: every MongoDB database (the resolver's records, the portal's own
-# database — users with password hashes, record metadata, journal, the daily counts of requests — and the log of
+# database — users with password hashes, record metadata, the daily counts of requests —, the journal's database
+# (<PORTAL_DB_NAME>_journal, ADR 0026 section 2.5.2) and the log of
 # resolver requests, resolver_log: mongodump cannot leave a whole database out, Documentation/adr/0006-resolver-
 # request-log.md, section 3.4) and the portal's configuration volume (the fallback session key and the files of
 # earlier versions, *.migrated). A failed dump says ERROR, leaves no partial file and exits with status 1. Each run's

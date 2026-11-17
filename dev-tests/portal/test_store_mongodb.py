@@ -1,6 +1,7 @@
 """
 The portal's database layer against a real MongoDB, as installations run it: the user made by db_init.py
-(the portal-db-init service) and what it may do, test_store.py and test_jobs.py run again as that user,
+(the portal-db-init service) and what it may do, the journal moved to a database of its own where that user may only
+read and insert (ADR 0026 section 2.5.2), test_store.py and test_jobs.py run again as that user,
 worker.py as real processes sharing the queue (test_worker_processes.py), and MongoDB's TTL monitor deleting
 expired documents. mongomock cannot show any of this.
 
@@ -30,6 +31,7 @@ if not ROOT_URI:
     sys.exit(0)
 HOST = os.environ.get("PORTAL_TEST_MONGO_HOST", "localhost:27017")
 NAME = f"devtest_portal_{os.getpid()}"
+JOURNAL_DB = f"{NAME}_journal"
 USER = f"devtest_user_{os.getpid()}"
 failures = []
 
@@ -66,6 +68,16 @@ root = MongoClient(ROOT_URI, serverSelectionTimeoutMS=20000)
 try:
     first, second = secrets.token_hex(12), secrets.token_hex(12)
 
+    # an installation of an earlier version: the journal in the portal's database (written by the root user here)
+    sys.path[:0] = [PORTAL]
+    import journal as journal_module  # noqa: E402  (its sealing functions; no connection is made by them)
+    seal_key = os.environ.get("PORTAL_JOURNAL_KEY", "").encode() or None
+    old_sealed = journal_module._seal({"_id": "old-sealed", "at": datetime(2026, 9, 1), "user": "u", "action": "login",
+                                       "category": "session"}, "operator/session", 1, "", seal_key)
+    root[NAME]["journal"].insert_many([old_sealed, {"_id": "old-unsealed", "at": datetime(2026, 9, 2), "user": "u",
+                                                    "action": "logout", "category": "session"}])
+    root[NAME]["journal_heads"].insert_one({"_id": "operator/session", "seq": 1, "hash": old_sealed["hash"]})
+
     # ---------------------------------------------------------------- the user made by db_init.py
     run = db_init(PORTAL_DB_PASSWORD=first)
     check("db_init: user created, exit status 0", run.returncode == 0 and "created" in run.stdout, run.stderr[-300:])
@@ -74,7 +86,26 @@ try:
     check("db_init: readWrite on the portal's database, read on the request log and deleting its events, nothing else",
           sorted(roles, key=lambda r: (r["db"], r["role"])) == sorted(
               [{"role": "readWrite", "db": NAME}, {"role": "read", "db": "resolver_log"},
-               {"role": "requestLogPrune", "db": "resolver_log"}], key=lambda r: (r["db"], r["role"])), roles)
+               {"role": "requestLogPrune", "db": "resolver_log"}, {"role": "journalAppend", "db": JOURNAL_DB}],
+              key=lambda r: (r["db"], r["role"])), roles)
+    append = root[JOURNAL_DB].command("rolesInfo", "journalAppend", showPrivileges=True)["roles"]
+    check("db_init: the journal's role reads and inserts events, and moves heads forward, nothing else",
+          append and sorted((p["resource"]["collection"], sorted(p["actions"])) for p in append[0]["privileges"])
+          == [("journal", ["find", "insert", "listIndexes"]), ("journal_heads", ["find", "insert", "listIndexes", "update"])]
+          and all(p["resource"]["db"] == JOURNAL_DB for p in append[0]["privileges"]), append)
+    moved = {d["_id"]: d for d in root[JOURNAL_DB]["journal"].find()}
+    check("db_init: the journal of an earlier version moved to its own database, the old collections dropped",
+          set(moved) == {"old-sealed", "old-unsealed"} and "journal" not in root[NAME].list_collection_names()
+          and "journal_heads" not in root[NAME].list_collection_names()
+          and root[JOURNAL_DB]["journal_moved"].find_one({"_id": "moved"})["events"] == 2, (moved, run.stdout))
+    check("db_init: a sealed event keeps its seal; the unsealed one is sealed after it, marked so",
+          moved["old-sealed"]["hash"] == old_sealed["hash"] and moved["old-unsealed"].get("seq") == 2
+          and moved["old-unsealed"].get("sealed") == "upgrade"
+          and root[JOURNAL_DB]["journal_heads"].find_one({"_id": "operator/session"})["seq"] == 2, moved)
+    indexes = list(root[JOURNAL_DB]["journal"].list_indexes())
+    check("db_init: the journal's indexes made in its database (the unique (chain, seq) and the TTL on expiresAt only)",
+          any(i.get("unique") and list(i["key"]) == ["chain", "seq"] for i in indexes)
+          and [list(i["key"]) for i in indexes if "expireAfterSeconds" in i] == [["expiresAt"]], indexes)
     prune = root["resolver_log"].command("rolesInfo", "requestLogPrune", showPrivileges=True)["roles"]
     check("db_init: the role deletes events of resolver_log.requests only",
           prune and [(p["resource"], sorted(p["actions"])) for p in prune[0]["privileges"]]
@@ -150,10 +181,43 @@ try:
             check("portal user: cannot create users", False)
         except OperationFailure as exc:
             check("portal user: cannot create users", exc.code == 13, exc.code)
+        events, heads = client[JOURNAL_DB]["journal"], client[JOURNAL_DB]["journal_heads"]
+        events.insert_one({"_id": "probe", "at": datetime(2026, 10, 14), "user": "u", "action": "login",
+                           "category": "session"})
+        check("portal user: inserts and reads journal events", events.find_one({"_id": "probe"})["action"] == "login"
+              and events.count_documents({"category": "session"}) >= 1)
+        heads.update_one({"_id": "probe/session", "seq": {"$lt": 1}}, {"$set": {"seq": 1, "hash": "h"}}, upsert=True)
+        check("portal user: moves a chain's head forward", heads.find_one({"_id": "probe/session"})["seq"] == 1)
+        refusals = {
+            "change an event": lambda: events.update_one({"_id": "probe"}, {"$set": {"user": "forged"}}),
+            "replace an event": lambda: events.replace_one({"_id": "probe"}, {"at": datetime(2026, 1, 1)}),
+            "delete an event": lambda: events.delete_one({"_id": "probe"}),
+            "drop the journal": lambda: events.drop(),
+            "make an index (a TTL could delete every event)": lambda: events.create_index("at", expireAfterSeconds=1),
+            "change the collection (collMod)": lambda: client[JOURNAL_DB].command("collMod", "journal"),
+            "delete a head": lambda: heads.delete_one({"_id": "probe/session"}),
+            "write the move's marker": lambda: client[JOURNAL_DB]["journal_moved"].insert_one({"_id": "x"}),
+        }
+        for what, attempt in refusals.items():
+            try:
+                attempt()
+                check(f"portal user: cannot {what} in the journal's database", False)
+            except OperationFailure as exc:
+                check(f"portal user: cannot {what} in the journal's database", exc.code == 13, exc.code)
+        check("… the event is unchanged", events.find_one({"_id": "probe"})["user"] == "u")
+        root[JOURNAL_DB]["journal"].delete_one({"_id": "probe"})
+        root[JOURNAL_DB]["journal_heads"].delete_one({"_id": "probe/session"})
 
+    root[NAME]["journal"].insert_one({"_id": "late", "at": datetime(2026, 9, 3), "user": "u", "action": "login",
+                                      "category": "session"})          # an old replica writing after the move
     run = db_init(PORTAL_DB_PASSWORD=second)
     check("db_init again with a new password: user brought up to date",
           run.returncode == 0 and "up to date" in run.stdout, run.stderr[-300:])
+    check("db_init: a journal that reappears in the portal's database is reported and left, neither moved nor sealed",
+          "WARNING" in run.stdout and f"{NAME}.journal reappeared" in run.stdout
+          and root[NAME]["journal"].count_documents({}) == 1 and not root[JOURNAL_DB]["journal"].find_one({"_id": "late"}),
+          run.stdout)
+    root[NAME].drop_collection("journal")
     check("… the old password no longer works, the new one does", not can_sign_in(first) and can_sign_in(second))
     # MongoDB keeps roles as a set: usersInfo may list them in another order after updateUser
     # (two roles share the database resolver_log: ordered by database and role, never by database alone)
@@ -166,7 +230,7 @@ try:
 
     # ---------------------------------------------------------------- programs run again as the portal's user
     env = {k: v for k, v in os.environ.items() if not k.startswith("PORTAL_DB_")}
-    env.update(PORTAL_DB_URI=user_uri(second), PORTAL_DB_NAME=NAME)
+    env.update(PORTAL_DB_URI=user_uri(second), PORTAL_DB_NAME=NAME, DEV_TESTS_DB_ADMIN_URI=ROOT_URI)
     for program, minimum in (("test_store.py", 50), ("test_jobs.py", 60), ("test_worker_processes.py", 10)):
         run = subprocess.run([sys.executable, os.path.join(HERE, program)], env=env, capture_output=True, text=True,
                              timeout=900)
@@ -182,6 +246,7 @@ try:
     sys.path[:0] = [PORTAL]
     os.environ.update(PORTAL_DB_URI=user_uri(second), PORTAL_DB_NAME=NAME)
     import store  # noqa: E402
+    store.reset()                         # imported earlier through journal.py, before PORTAL_DB_NAME was set
 
     now = store.now()
     store.col("login_failures").insert_one({"_id": "ttl-probe", "key": "user:ttl", "at": now - timedelta(minutes=20)})
@@ -209,6 +274,8 @@ finally:
     except OperationFailure:
         pass
     root.drop_database(NAME)
+    root[JOURNAL_DB].command("dropAllRolesFromDatabase")
+    root.drop_database(JOURNAL_DB)
     root["resolver_log"]["requests"].delete_one({"_id": "probe-event"})
 
 print(f"\n{len(failures)} failure(s)")

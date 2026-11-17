@@ -86,6 +86,11 @@ built-in server (`python -m main` → `app.run()`), and every service in `docker
   password, and changing `PORTAL_DB_PASSWORD` in `.env` takes effect at the next `up -d`.
   (MongoDB's own `/docker-entrypoint-initdb.d` scripts run only on an empty volume, so they cannot serve
   existing installations.)
+- *Note (17 November 2026, [ADR 0026](0026-journal-integrity.md) §2.5.2):* the journal (`journal`, `journal_heads`)
+  lives in a database of its own, `<PORTAL_DB_NAME>_journal`, where the portal's user holds the role `journalAppend`
+  (read and insert events; heads may move forward) and nothing else: no event can be changed or deleted and no index
+  made with it. `portal-db-init` makes the indexes, moves the journal of an earlier version there once, and applies
+  retention changes and the sealing of old events with the root user.
 - The portal builds its connection from these variables and `PORTAL_DB_HOST` (default
   `database-service:27017`), with `authSource=resolver_portal`. `MONGO_URI` stays blank for the portal.
 - `portal/store.py` holds the client (one per process, `pymongo` connection pool), creates the indexes at

@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-16",
+ "generated": "2026-11-17",
  "programs": {
   "about": {
    "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
@@ -209,7 +209,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_83424307263…)",
+    "a wrong key is refused (rk_e4e478ed73b…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -935,10 +935,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (233 features)",
+    "features.md: every table has a Checks column (234 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (417 references)",
-    "…and words found in one of its checks",
+    "…each reference names a program of the inventory (423 references)",
     "every test program is in the inventory (76)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
@@ -951,7 +950,7 @@
     "…and every decision record (26)",
     "every relative link of the documents leads to a file (42 documents)"
    ],
-   "count": 15,
+   "count": 14,
    "ciOnly": false
   },
   "domains": {
@@ -2747,9 +2746,11 @@
     "a receipt of a chain outside the trail: 422 journal.badReceipt",
     "text that is not a receipt: 422 journal.badReceipt",
     "an event changed in the database: its chain reported broken at that event",
-    "…another organisation's verification does not see it"
+    "…another organisation's verification does not see it",
+    "start-up: retention and sealing refused to the portal's user (code 13) are left to portal-db-init, and both are tried",
+    "start-up: any other database error is not hidden"
    ],
-   "count": 27,
+   "count": 29,
    "ciOnly": false
   },
   "keys": {
@@ -3198,7 +3199,7 @@
     "https → http hop is a downgrade",
     "results cached: the site is contacted once",
     "check_many: distinct URLs, progress reported",
-    "internal address refused: http://127.0.0.1:39385/ok",
+    "internal address refused: http://127.0.0.1:42525/ok",
     "internal address refused: http://169.254.169.254/latest/meta-data/",
     "internal address refused: http://localhost/",
     "internal address refused: http://10.0.0.1/"
@@ -4927,7 +4928,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.001 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
    ],
    "count": 246,
    "ciOnly": false
@@ -5417,11 +5418,20 @@
     "migration: journal events with their dates, history newest first",
     "migration: damaged lines skipped and counted",
     "migration: categories and retention applied to old events",
+    "migration: old events sealed in their chains as they are inserted, marked so (the portal's user may not update the journal afterwards)",
     "migration: a second start finds nothing to do",
     "migration: a users.json next to a database that holds users is not imported",
-    "migration: an interrupted import is completed without duplicates"
+    "migration: an interrupted import is completed without duplicates",
+    "the journal and its heads live in <PORTAL_DB_NAME>_journal, everything else in the portal's database",
+    "db_init: the journal's role may read and insert events, and move heads forward, in that database only",
+    "db_init: nothing is dropped when an event is missing after the copy",
+    "db_init: the journal moves to its own database once, the old collections dropped, the move marked",
+    "db_init: sealed events keep their seal; unsealed ones and a (chain, seq) collision go in unsealed",
+    "db_init: a chain's head already further on in the journal's database is kept",
+    "db_init: only the events it moved are sealed; an event inserted unsealed by anyone else is left and warned",
+    "db_init: a journal that reappears in the portal's database after the move is reported, neither moved nor sealed"
    ],
-   "count": 101,
+   "count": 110,
    "ciOnly": false
   },
   "strict_mode": {
@@ -5612,7 +5622,7 @@
   "store_mongodb": {
    "area": "Data store, installation and operation",
    "checks": [],
-   "count": 171,
+   "count": 259,
    "ciOnly": true
   }
  }

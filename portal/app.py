@@ -27,7 +27,7 @@ from functools import wraps
 
 import requests
 from flask import Flask, Response, g, jsonify, redirect, request, send_from_directory, session
-from pymongo.errors import PyMongoError
+from pymongo.errors import OperationFailure, PyMongoError
 
 import gs1
 import jobs
@@ -200,8 +200,23 @@ def _bootstrap_admin() -> None:
 # Start-up: the files of earlier versions move into the database once, the journal's retention follows the
 # environment, and the first user is created while there is none.
 migrate.run(CONFIG_DIR)
-journal.apply_retention()
-journal.seal_unsealed()               # events written before ADR 0026 sealed in their chains, once
+
+
+def _journal_upkeep() -> None:
+    """Retention changes and the sealing of events of earlier versions. portal-db-init does both with the root user
+    (ADR 0026 section 2.5.2): where the portal's user may only insert into the journal they are refused here, which is
+    expected; events it did not move stay unsealed and the verification reports them."""
+    for step in (journal.apply_retention, journal.seal_unsealed):
+        try:
+            step()
+        except OperationFailure as exc:
+            if exc.code != store.UNAUTHORIZED:
+                raise
+            log.info("Journal: %s left to portal-db-init (the portal's user may only insert into the journal).",
+                     step.__name__)
+
+
+_journal_upkeep()
 if not journal.key():
     log.warning("PORTAL_JOURNAL_KEY is not set: the journal's chains are sealed without a key, so anyone able to write "
                 "to the database could rewrite one consistently (Documentation/adr/0026-journal-integrity.md).")

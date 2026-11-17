@@ -7,6 +7,21 @@ address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use th
 when a key keeps changing under other writers, and a list sent to `POST /new` answers the error of the first item not
 written instead of 201.
 
+### Requests to addresses users choose: the address checked is the one contacted (session 44)
+- **Fixed: the link checker, single sign-on and the check of a QR code domain contact the address they checked**
+  ([ADR 0029](../adr/0029-outbound-requests.md)). The portal already refused names that resolve to an internal
+  address; it now resolves the name once and connects to the address it checked, keeping the name for the site and
+  its certificate, so a name whose answer changes between the check and the request cannot lead the portal into the
+  server's own network. Proxies set in the portal's environment (`HTTPS_PROXY`) are no longer used for these
+  requests; neither the installer nor the composition sets one.
+- **Changed: the link checker contacts HTTPS addresses only.** A target starting with `http://` (the portal saves
+  HTTPS targets only; records written through the official API may hold others) is reported as *the address does not
+  use HTTPS and was not checked* (twelve languages), without a request.
+- **Changed: one link check of many addresses at a time per organisation**, and at most two requests to one site at
+  once. A second **Check links** (or import preview check) while one is queued or running answers *Another link check
+  of your organisation is already under way. Wait for it to finish or stop it.* (twelve languages). Commit
+  `0d23833`.
+
 ### A leaflet in another language or for another market is no longer given silently (session 43)
 - **Changed: a safety-critical link in a language the person did not ask for now comes with a choice**
   ([ADR 0028](../adr/0028-language-fallback.md)). When a browser asks for a recall status, safety information, patient

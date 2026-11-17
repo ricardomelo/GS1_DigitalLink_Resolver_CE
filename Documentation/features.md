@@ -213,8 +213,10 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Check links (every record) | Background job, run by the job worker; summary kept; badge per record; *Only with problems* | `0da20ee`, `a072e9d` | `portal_e2e`: check every record · `jobs`: link check |
 | Import preview check | Optional, does not stop the import | `0da20ee` | `linkcheck` |
 | Stopping a check | *Stop* beside the progress of *Check links* and of the import preview's check ends it within a second, with no result; the previous full check stays shown ([ADR 0001 §3.3.1](adr/0001-portal-state-in-mongodb.md)) | `2bdae36` | `jobs`: link cancel · `portal_e2e`: link check stopped · `portal_e2e`: address check stopped |
-| SSRF guard | Only public addresses are contacted, at every redirect | `0da20ee` | `linkcheck`: internal address refused |
-| Clear reasons | HTTP errors, blocked checks (401/403/429), unreachable, HTTPS downgrade, too many redirects, private address, invalid | `0da20ee` | `linkcheck` |
+| SSRF guard | Only public addresses are contacted, at every redirect; the name is resolved once and the address checked is the one contacted, with the name kept for the `Host` header, SNI and the certificate, so a name whose answer changes (DNS rebinding) cannot reach the server's network; the same for single sign-on's requests and the check of a QR code domain ([ADR 0029](adr/0029-outbound-requests.md)) | `0da20ee`, `0d23833` | `linkcheck`: internal address refused · `linkcheck`: rebinding · `outbound`: rebinding · `outbound`: HTTPS: connected to the address checked · `outbound`: SSO discovery · `outbound`: domain check: connected to the address checked |
+| HTTPS only | An `http://` target is reported (*the address does not use HTTPS and was not checked*) without a request ([ADR 0029](adr/0029-outbound-requests.md)) | `0d23833` | `linkcheck`: http:// address reported without a request |
+| Limits on checks | One link check queued or running per organisation (*Another link check of your organisation is already under way…*); at most two requests to one site at once ([ADR 0029](adr/0029-outbound-requests.md)) | `0d23833` | `jobs`: a second link check of the same organisation · `linkcheck`: check_many: at most 2 requests to one host at once |
+| Clear reasons | HTTP errors, blocked checks (401/403/429), unreachable, HTTPS downgrade, an address without HTTPS, too many redirects, private address, invalid | `0da20ee` | `linkcheck` |
 
 ## Portal: governance
 

@@ -1493,3 +1493,15 @@ ones, by the resolver's own rule. A new program, `language_resolver` (32 checks)
 and one in `resolver`; 16 mutations, all caught. Left for later: a field in the request log for answers not served,
 and a list of an organisation's languages and markets.
 
+## Session 44 — requests to addresses users choose
+
+Finding F-011 of the security assessment, in one code commit (`0d23833`; [ADR 0029](adr/0029-outbound-requests.md)):
+the link checker, single sign-on's discovery, keys and token exchange, and the check of a QR code domain checked a
+name's addresses and then let the HTTP library resolve it again, so a name whose answer changed reached the server's
+network. A new module, `portal/outbound.py`, resolves the name once, checks every address (IPv4 inside IPv6 forms
+included) and connects to a checked one while keeping the name for the `Host` header, SNI and the certificate; no
+redirects, no proxy from the environment, user information refused, three addresses tried at most. The link checker
+contacts HTTPS addresses only (`linkcheck.insecureAddress`), sends at most two requests to one host at once, and an
+organisation runs one check of many addresses at a time (`linkcheck.busy`). A new program, `outbound` (55 checks), 14
+new checks in `linkcheck` and 2 in `jobs`; 17 mutations, all caught. Left for later: a daily budget of addresses per
+organisation, and the operator's own monitoring probe still connects by name.

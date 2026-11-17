@@ -7,6 +7,27 @@ address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use th
 when a key keeps changing under other writers, and a list sent to `POST /new` answers the error of the first item not
 written instead of 201.
 
+Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSWORD` and `DATA_ENTRY_DB_PASSWORD` to
+`.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
+(session 45, below).
+
+### The resolver and the data entry API without MongoDB's root user (session 45)
+- **Changed: every service connects to MongoDB as a user of its own, with the least privileges it needs**
+  ([ADR 0030](../adr/0030-least-privilege-services.md)). The resolver, which reads every anonymous request, and the
+  data entry API no longer receive MongoDB's root user: `portal-db-init`, the only service given it, creates at every
+  start a user for the resolver (it reads the records and the portal settings it serves from, and writes the request
+  log) and one for the data entry API (the records only), as it already did for the portal. A flaw in either can no
+  longer reach the portal's users, sessions, API keys or journal, nor create database users. New settings
+  `RESOLVER_DB_USERNAME`/`RESOLVER_DB_PASSWORD` and `DATA_ENTRY_DB_USERNAME`/`DATA_ENTRY_DB_PASSWORD` (optionally
+  `*_DB_HOST` or a complete `*_DB_URI`); the installer generates the passwords, `scripts/rotate-secrets.sh` rotates
+  them (`resolver-db`, `data-entry-db`). With `FQDN` naming a real host, each service refuses to start with the
+  example password of `.env.example`, naming the setting.
+- **Changed: the resolver's and the data entry API's containers no longer run as root** (a system user, as the
+  portal's already did).
+- **Changed: without `.env`, MongoDB (27017) and the proxy (8080) are published on the host's loopback address only.**
+  An installation made by the installer is unchanged (it writes both addresses); to reach a manual installation from
+  another machine set `PROXY_BIND_ADDRESS=0.0.0.0` in `.env`. Commit `3e92870`.
+
 ### Requests to addresses users choose: the address checked is the one contacted (session 44)
 - **Fixed: the link checker, single sign-on and the check of a QR code domain contact the address they checked**
   ([ADR 0029](../adr/0029-outbound-requests.md)). The portal already refused names that resolve to an internal

@@ -1505,3 +1505,20 @@ contacts HTTPS addresses only (`linkcheck.insecureAddress`), sends at most two r
 organisation runs one check of many addresses at a time (`linkcheck.busy`). A new program, `outbound` (55 checks), 14
 new checks in `linkcheck` and 2 in `jobs`; 17 mutations, all caught. Left for later: a daily budget of addresses per
 organisation, and the operator's own monitoring probe still connects by name.
+
+## Session 45 — the official services without MongoDB's root user
+
+Finding F-012 of the security assessment, in one code commit (`3e92870`;
+[ADR 0030](adr/0030-least-privilege-services.md)): the resolver, which parses every anonymous request, and the data
+entry API connected to MongoDB as its root user and ran as root in their containers; a manual start without `.env`
+published MongoDB and the proxy on every interface with the example credentials. `portal-db-init`, now the only service
+given the root connection, also makes a user per official service in `admin`, each with a role of its own (the
+resolver: `find` on the records and on five collections of the portal's database, writes to its request log; the data
+entry API: the records only); both services connect through `service_db.py` and refuse the example passwords of their
+users on a real domain; both images run as a system user; MongoDB and the proxy are published on loopback unless
+`.env` says otherwise; the installer and the rotation script handle the two new passwords. A new program,
+`least_privilege` (44 checks), 10 new checks in `deploy`, 4 in `install` and 20 against a real MongoDB in
+`store_mongodb`; 28 mutations, all caught. The scan of the resolver's code found `forwarding_rules`, read through a
+module constant, which a first version of the role had left out: a role written from a reading of the code needs a
+check that reads the code too. No screen changed, so the portal's user guide is unchanged. Left for later: read-only
+file systems, the proxy's master process as root, and MongoDB's example root password only warned about.

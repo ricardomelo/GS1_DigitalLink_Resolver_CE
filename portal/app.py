@@ -239,6 +239,15 @@ class UpstreamError(Exception):
         self.params = params
 
 
+def refused_upstream(code: str, status: int, body, **params) -> UpstreamError:
+    """The UpstreamError for a write the data entry API did not make: code (502) in general, upstream.conflict (409)
+    when the API answered 409 because the key's document kept changing under other writers while it tried to write
+    it (ADR 0027, F-009): nothing of the call was written, and the user can open the record again and repeat."""
+    if status == 409:
+        return UpstreamError("upstream.conflict", 409, body)
+    return UpstreamError(code, 502, body, **params)
+
+
 def message(code: str, status: int = 200, **extra):
     """JSON answer carrying a message code (rendered in the user's language by i18n.js) and extra fields."""
     return jsonify(code=code, **extra), status
@@ -1615,7 +1624,7 @@ def store_record(anchor: str, pairs: list, doc: dict) -> bool:
         with journal_first(anchor, pairs, doc, "create"):
             status, body = resolver("POST", "/new", doc)
             if not is_success(status, body):
-                raise UpstreamError("upstream.createRejected", 502, body)
+                raise refused_upstream("upstream.createRejected", status, body)
         audit.info("user=%s action=create anchor=%s%s links=%d",
                    g.user, anchor, gs1.qualifier_path(pairs), len(doc["links"]))
         return True
@@ -1629,7 +1638,7 @@ def store_record(anchor: str, pairs: list, doc: dict) -> bool:
     with journal_first(anchor, pairs, doc, "update"):
         status, body = resolver("PUT", anchor, doc)
         if not is_success(status, body):
-            raise UpstreamError("upstream.updateRejected", 502, body)
+            raise refused_upstream("upstream.updateRejected", status, body)
         if removed:
             status, body = resolver("DELETE", anchor, {"qualifiers": qualifiers, "links": removed})
             if not is_success(status, body):
@@ -1664,7 +1673,7 @@ def turn_to_explicit_defaults(anchor: str, entries: list[dict], key_default: str
         with journal_first(anchor, gs1.pairs_from(doc.get("qualifiers")), doc, "update"):
             status, body = resolver("PUT", anchor, doc)
             if not is_success(status, body):
-                raise UpstreamError("upstream.updateRejected", 502, body)
+                raise refused_upstream("upstream.updateRejected", status, body)
     audit.info("user=%s action=explicit-defaults anchor=%s records=%d", g.user, anchor, len(changed))
 
 
@@ -1697,12 +1706,13 @@ def remove_record(anchor: str, pairs: list) -> None:
 
 def delete_one_record(anchor: str, qualifiers: list) -> None:
     """One record removed by the data entry API (DELETE with removeRecord, ADR 0023), the others kept.
-    ValidationError record.notFound when it is already gone; UpstreamError upstream.deleteFailed otherwise."""
+    ValidationError record.notFound when it is already gone; UpstreamError upstream.conflict when the key kept changing
+    under other writers (409), upstream.deleteFailed otherwise."""
     status, body = resolver("DELETE", anchor, {"removeRecord": True, "qualifiers": qualifiers})
     if status == 404:
         raise ValidationError("record.notFound")
     if not is_success(status, body):
-        raise UpstreamError("upstream.deleteFailed", 502, body)
+        raise refused_upstream("upstream.deleteFailed", status, body)
 
 
 def rewrite_refusals(entries: list[dict]) -> list[dict]:
@@ -1775,7 +1785,7 @@ def fix_serial_records(anchor: str) -> tuple[int, list[str]]:
             with journal_first(anchor, gs1.pairs_from(new["qualifiers"]), new, "create"):
                 status, body = resolver("POST", "/new", new)
                 if not is_success(status, body):
-                    raise UpstreamError("upstream.updateRejected", 502, body)
+                    raise refused_upstream("upstream.updateRejected", status, body)
             with journal_first(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete"):
                 delete_one_record(anchor, old.get("qualifiers") or [])
             done += 1

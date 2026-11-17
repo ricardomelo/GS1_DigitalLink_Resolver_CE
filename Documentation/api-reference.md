@@ -118,6 +118,7 @@ Request body (required): [RecordInput](#schema-recordinput).
 | 201 | Created — [Saved](#schema-saved) |
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
+| 409 | The key's records were being changed by other writers at the same moment, and the data entry API wrote nothing of this change (upstream.conflict; ADR 0027). Read the record again and repeat the change. — [Error](#schema-error) |
 | 415 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
 | 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
@@ -141,6 +142,7 @@ Scope `records:write`.
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
 | 404 | No record with those qualifiers (record.notFound) — [Error](#schema-error) |
+| 409 | The key's records were being changed by other writers at the same moment, and the data entry API wrote nothing of this change (upstream.conflict; ADR 0027). Read the record again and repeat the change. — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 | 502 | The resolver's data entry API failed or refused the change (upstream.*) — [Error](#schema-error) |
 

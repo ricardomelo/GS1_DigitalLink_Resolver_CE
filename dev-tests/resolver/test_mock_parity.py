@@ -35,15 +35,13 @@ STORE = {}
 db = types.ModuleType("data_entry_db")
 db.read_document = lambda document_id: ({"response_status": 200, "data": copy.deepcopy(STORE[document_id])}
                                         if document_id in STORE else {"response_status": 404, "error": "not found"})
-db.create_document = lambda doc: (STORE.__setitem__(doc["_id"], copy.deepcopy(doc)), {"response_status": 201})[1]
-db.update_document = lambda doc: (STORE.__setitem__(doc["_id"], copy.deepcopy(doc)), {"response_status": 200})[1]
-db.read_all_documents = lambda: {"response_status": 200, "data": copy.deepcopy(list(STORE.values()))}
-db.read_index = lambda: {"response_status": 200, "data": list(STORE)}
-db.delete_document = lambda document_id: (STORE.pop(document_id, None), {"response_status": 200})[1]
+db.create_document = lambda doc: ({"response_status": 409, "error": "exists"} if doc["_id"] in STORE else
+                                  (STORE.__setitem__(doc["_id"], copy.deepcopy(doc)), {"response_status": 201})[1])
 
 
-def write_if_unchanged(doc, expected):
-    if doc["_id"] not in STORE or STORE[doc["_id"]]["data"] != expected:
+def stored_write(doc, expected):
+    """data_entry_db.write_document_if_unchanged() on STORE: written only while the stored document is the one read."""
+    if STORE.get(doc["_id"]) != expected:
         return {"response_status": 409, "error": "changed"}
     if doc["data"]:
         STORE[doc["_id"]] = copy.deepcopy(doc)
@@ -52,7 +50,11 @@ def write_if_unchanged(doc, expected):
     return {"response_status": 200}
 
 
-db.write_document_if_unchanged = write_if_unchanged
+db.write_document_if_unchanged = stored_write
+db.read_all_documents = lambda: {"response_status": 200, "data": copy.deepcopy(list(STORE.values()))}
+db.read_index = lambda: {"response_status": 200, "data": list(STORE)}
+db.delete_document = lambda document_id: (STORE.pop(document_id, None), {"response_status": 200})[1]
+
 sys.modules["data_entry_db"] = db
 
 sys.path.insert(0, os.path.join(REPO, "data_entry_server", "src"))

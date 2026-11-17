@@ -2018,6 +2018,7 @@
  "upstream.updateRejected": "Çözümleyici güncellemeyi reddetti.",
  "upstream.partialUpdate": "Yeni hedefler kaydedildi, ancak {count} eski hedef kaldırılamadı. Lütfen yeniden kaydedin.",
  "upstream.deleteFailed": "Çözümleyici kaydı silemedi.",
+ "upstream.conflict": "Bu anahtarın kayıtları aynı anda başka biri tarafından değiştiriliyordu ve çözümleyici bu değişikliği uygulamadı. Kaydı yeniden açın, kontrol edin ve değişikliği tekrarlayın.",
  "save.created": "Kayıt oluşturuldu. Kod artık girdiğiniz hedeflere götürüyor.",
  "save.updated": "Değişiklikler kaydedildi. Kod artık yeni hedeflere götürüyor.",
  "delete.done": "Kayıt silindi. Kod artık bu hedeflere götürmüyor.",

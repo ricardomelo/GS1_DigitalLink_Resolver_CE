@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import os
@@ -471,29 +472,70 @@ def _do_qualifiers_match(qualifiers1: list[dict[str, str]], qualifiers2: list[di
 
 
 # Process the document for insertion or update in the database
+WRITE_ATTEMPTS = 3
+
+
+class _Refused(Exception):
+    """An answer other than a write (404, 400...) decided while changing a document read by _write_document."""
+    def __init__(self, body: dict[str, Any], status: int):
+        super().__init__(body.get('error'))
+        self.body, self.status = body, status
+
+
+def _write_document(document_id: str, change) -> tuple[dict[str, Any], int]:
+    """
+    Every write of a key's document (ADR 0027): reads it, lets change(stored) build the new document from a copy of
+    what was read (stored is None when the key has no document), and writes it only while the stored document is
+    still the one read: create_document() refuses an _id another writer created in the meantime, and
+    write_document_if_unchanged() a document another writer changed or deleted (a document whose records are all gone
+    is deleted). On such a refusal the operation starts again from a new read, so the other writer's change is kept
+    and this one applied on top of it; after WRITE_ATTEMPTS refusals the answer is 409 with nothing written.
+    change returns (new document, answer), answer(write_result) being the operation's (body, status); it raises
+    _Refused for any other answer. The official code replaced the document by its _id alone, so of two writers
+    that read the same document the second undid the first while both were told it had worked (F-009).
+    """
+    for _ in range(WRITE_ATTEMPTS):
+        read_result = data_entry_db.read_document(document_id)
+        status = read_result['response_status']
+        if status not in (200, 404):
+            return read_result, status
+        stored = read_result['data'] if status == 200 else None
+        try:
+            document, answer = change(copy.deepcopy(stored))
+        except _Refused as refused:
+            return refused.body, refused.status
+        if stored is None:
+            write_result = data_entry_db.create_document(document)
+        else:
+            write_result = data_entry_db.write_document_if_unchanged(document, stored)
+        if write_result['response_status'] in (200, 201):
+            return answer(write_result)
+        if write_result['response_status'] != 409:
+            return write_result, write_result['response_status']
+        logger.info('Document %s changed by another writer while it was being written: read again', document_id)
+    return {"response_status": 409,
+            "error": f"Document {document_id} kept changing under other writers; nothing was written"}, 409
+
+
 def _process_document_upsert(authored_doc: dict[str, Any]) -> tuple[dict[str, Any], int]:
     """
     Writes every entry of authored_doc (several when a list sent to POST /new has more than one record of the key):
     an entry with the qualifiers of a stored one, or of one before it in authored_doc, is merged into it; any other
-    is added. The document is written once, at the end. The official code returned after the first entry when the
-    document existed, so the other records of a list were dropped with a 201, and a new document kept a record sent
-    twice as two entries with the same qualifiers.
+    is added. The document is written once, at the end, conditionally (_write_document). The official code returned
+    after the first entry when the document existed, so the other records of a list were dropped with a 201, and a
+    new document kept a record sent twice as two entries with the same qualifiers; it also answered 200 when the
+    update itself failed.
     """
-    try:
-        # Try to read the document from the database
-        read_result = data_entry_db.read_document(authored_doc['_id'])
-
-        if read_result["response_status"] == 200:
-            logger.info('Document already exists in database: %s', authored_doc['_id'])
-            document = read_result["data"]
-        elif read_result["response_status"] == 404:
+    def change(document):
+        if document is None:
             logger.info('Document does not exist: %s', authored_doc['_id'])
-            document = {**authored_doc, 'data': []}
+            document = {**copy.deepcopy(authored_doc), 'data': []}
+            created = True
         else:
-            # If response status is neither 200 nor 404, return the read_result and its status
-            return read_result, read_result["response_status"]
+            logger.info('Document already exists in database: %s', authored_doc['_id'])
+            created = False
 
-        for entry in authored_doc['data']:
+        for entry in copy.deepcopy(authored_doc['data']):
             # each entry consists of qualifiers and linkset; the qualifiers may be in a different order
             existing_db_entry = next((e for e in document['data']
                                       if _do_qualifiers_match(e['qualifiers'], entry['qualifiers'])), None)
@@ -508,18 +550,13 @@ def _process_document_upsert(authored_doc: dict[str, Any]) -> tuple[dict[str, An
                 # If the qualifiers don't match, add the entry to the document
                 document['data'].append(entry)
 
-        if read_result["response_status"] == 200:
-            update_result = data_entry_db.update_document(document)
+        if created:
+            return document, lambda result: ({"entry": authored_doc['_id'], "result": result}, 201)
+        return document, lambda result: ({"entry": authored_doc['_id'],
+                                          "qualifiers": authored_doc['data'][0]['qualifiers'], "result": result}, 200)
 
-            # Build the result entry and return it along with update status 200 (as the doc was updated)
-            return {"entry": authored_doc['_id'], "qualifiers": authored_doc['data'][0]['qualifiers'],
-                    "result": update_result}, 200
-
-        # Perform the document creation in the database
-        create_result = data_entry_db.create_document(document)
-
-        # Build the result entry and return it along with creation status 201
-        return {"entry": authored_doc['_id'], "result": create_result}, 201
+    try:
+        return _write_document(authored_doc['_id'], change)
 
     except Exception as e:
         logger.error('_process_document_insert: Error processing document: %s', e, exc_info=True)
@@ -599,6 +636,12 @@ def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[s
                     # data-loss / race-condition issues of DELETE + CREATE.
                     create_result, status = _process_document_upsert(validated_doc)
                     logger.info('Result: %s Status: %s', create_result, status)
+
+                    # Stop at the first item not written (a document that kept changing is a 409): the official
+                    # code answered 201 for the whole list whatever happened to each item
+                    if status not in (200, 201):
+                        return {"response_status": status, "error": f"{item['_id']}: {create_result.get('error')}",
+                                "written": create_results_list}, status
 
                     # Append the result to the results list
                     create_results_list.append(create_result)
@@ -761,23 +804,20 @@ def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, A
     - Merges links: matches by (linktype, hreflang, context).
       Matching links are updated; unmatched links are added.
     """
-    try:
-        # 1. Read the existing document
-        read_result = data_entry_db.read_document(document_id)
-        if read_result['response_status'] != 200:
-            return {"response_status": 404, "error": f"Document not found: {document_id}"}, 404
-
-        existing_db_doc = read_result['data']
+    def change(existing_db_doc):
+        # 1. The existing document, read by _write_document
+        if existing_db_doc is None:
+            raise _Refused({"response_status": 404, "error": f"Document not found: {document_id}"}, 404)
 
         # 2. Convert existing DB document to v3 format
         existing_v3_list = _convert_mongo_linkset_to_v3(existing_db_doc)
         if not existing_v3_list:
-            return {"response_status": 500, "error": "Failed to convert existing document"}, 500
+            raise _Refused({"response_status": 500, "error": "Failed to convert existing document"}, 500)
 
         # 3. Find the matching v3 item by qualifiers (default: no qualifiers); none is a 404, not the first record
         matched_idx = _matched_record_index(existing_v3_list, data.get('qualifiers', []))
         if matched_idx is None:
-            return _record_not_found(document_id, data.get('qualifiers', [])), 404
+            raise _Refused(_record_not_found(document_id, data.get('qualifiers', [])), 404)
 
         matched_v3 = existing_v3_list[matched_idx]
 
@@ -787,12 +827,12 @@ def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, A
                 matched_v3[field] = data[field]
         problem = registration_problem(matched_v3) or value_problem(matched_v3)
         if problem:
-            return {"response_status": 400, "error": problem}, 400
+            raise _Refused({"response_status": 400, "error": problem}, 400)
 
         # 5. Merge links
         if 'links' in data:
             existing_links = matched_v3.get('links', [])
-            for new_link in data['links']:
+            for new_link in copy.deepcopy(data['links']):
                 idx = _find_matching_link(existing_links, new_link)
                 if idx is not None:
                     existing_links[idx].update(new_link)
@@ -803,7 +843,7 @@ def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, A
         # 6. Convert merged v3 item back to DB format
         authored_result = _author_db_linkset_document(matched_v3)
         if authored_result['response_status'] != 200:
-            return authored_result, authored_result['response_status']
+            raise _Refused(authored_result, authored_result['response_status'])
 
         new_data_entry = authored_result['data']['data'][0]
 
@@ -814,12 +854,11 @@ def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, A
         if 'defaultLinktype' in data:
             existing_db_doc['defaultLinktype'] = data['defaultLinktype']
 
-        # 8. Persist
-        update_result = data_entry_db.update_document(existing_db_doc)
-        if update_result['response_status'] == 200:
-            return {"entry": document_id, "result": update_result}, 200
-        else:
-            return update_result, update_result['response_status']
+        return existing_db_doc, lambda result: ({"entry": document_id, "result": result}, 200)
+
+    try:
+        # 8. Persist, provided nobody changed the document in between (ADR 0027)
+        return _write_document(document_id, change)
 
     except Exception as e:
         logger.error('update_document: Error: %s', e, exc_info=True)
@@ -833,23 +872,20 @@ def delete_links(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any]
     Returns 404 if the document does not exist, or has no record with the payload's qualifiers.
     Returns 404 if none of the requested links were found in the document.
     """
-    try:
-        # 1. Read existing document
-        read_result = data_entry_db.read_document(document_id)
-        if read_result['response_status'] != 200:
-            return {"response_status": 404, "error": f"Document not found: {document_id}"}, 404
-
-        existing_db_doc = read_result['data']
+    def change(existing_db_doc):
+        # 1. The existing document, read by _write_document
+        if existing_db_doc is None:
+            raise _Refused({"response_status": 404, "error": f"Document not found: {document_id}"}, 404)
 
         # 2. Convert to v3
         existing_v3_list = _convert_mongo_linkset_to_v3(existing_db_doc)
         if not existing_v3_list:
-            return {"response_status": 500, "error": "Failed to convert existing document"}, 500
+            raise _Refused({"response_status": 500, "error": "Failed to convert existing document"}, 500)
 
         # 3. Find matching v3 item by qualifiers; none is a 404, not the first record
         matched_idx = _matched_record_index(existing_v3_list, data.get('qualifiers', []))
         if matched_idx is None:
-            return _record_not_found(document_id, data.get('qualifiers', [])), 404
+            raise _Refused(_record_not_found(document_id, data.get('qualifiers', [])), 404)
 
         matched_v3 = existing_v3_list[matched_idx]
 
@@ -864,33 +900,29 @@ def delete_links(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any]
                     removed_count += 1
 
         if removed_count == 0:
-            return {"response_status": 404, "error": "No matching links found to delete"}, 404
+            raise _Refused({"response_status": 404, "error": "No matching links found to delete"}, 404)
 
         matched_v3['links'] = existing_links
 
         # 5. Convert merged v3 back to DB format
         authored_result = _author_db_linkset_document(matched_v3)
         if authored_result['response_status'] != 200:
-            return authored_result, authored_result['response_status']
+            raise _Refused(authored_result, authored_result['response_status'])
 
         new_data_entry = authored_result['data']['data'][0]
 
         # 6. Replace the matched data entry in the existing DB document
         existing_db_doc['data'][matched_idx] = new_data_entry
 
-        # 7. Persist
-        update_result = data_entry_db.update_document(existing_db_doc)
-        if update_result['response_status'] == 200:
-            return {"entry": document_id, "removed": removed_count, "result": update_result}, 200
-        else:
-            return update_result, update_result['response_status']
+        return existing_db_doc, lambda result: ({"entry": document_id, "removed": removed_count, "result": result}, 200)
+
+    try:
+        # 7. Persist, provided nobody changed the document in between (ADR 0027)
+        return _write_document(document_id, change)
 
     except Exception as e:
         logger.error('delete_links: Error: %s', e, exc_info=True)
         return {"response_status": 500, "error": f"Internal Server Error - {str(e)}"}, 500
-
-
-RECORD_DELETE_ATTEMPTS = 3
 
 
 def delete_record(document_id: str, qualifiers: list[dict[str, str]]) -> tuple[dict[str, Any], int]:
@@ -899,30 +931,23 @@ def delete_record(document_id: str, qualifiers: list[dict[str, str]]) -> tuple[d
     the document's other records, in one atomic write of the document (ADR 0023): the document is replaced without the
     record, or deleted when it was the last one. The official API deleted whole documents only, so its callers deleted
     the key and wrote the other records back, leaving the key without any record between the two calls, or for good
-    when the second one failed. A document changed by another writer between the read and the write is read again.
-    Returns 404 when the document, or a record with these qualifiers, does not exist.
+    when the second one failed. A document changed by another writer between the read and the write is read again
+    (_write_document). Returns 404 when the document, or a record with these qualifiers, does not exist.
     """
+    def change(document):
+        if document is None:
+            raise _Refused({"response_status": 404, "error": f"Document not found: {document_id}"}, 404)
+        entries = document.get('data') or []
+        matched_idx = next((i for i, entry in enumerate(entries)
+                            if _do_qualifiers_match(entry.get('qualifiers') or [], qualifiers)), None)
+        if matched_idx is None:
+            raise _Refused(_record_not_found(document_id, qualifiers), 404)
+        remaining = {**document, 'data': entries[:matched_idx] + entries[matched_idx + 1:]}
+        return remaining, lambda result: ({"entry": document_id, "removed": 1, "remaining": len(remaining['data']),
+                                           "result": result}, 200)
+
     try:
-        for _ in range(RECORD_DELETE_ATTEMPTS):
-            read_result = data_entry_db.read_document(document_id)
-            if read_result['response_status'] == 404:
-                return {"response_status": 404, "error": f"Document not found: {document_id}"}, 404
-            if read_result['response_status'] != 200:
-                return read_result, read_result['response_status']
-            document = read_result['data']
-            entries = document.get('data') or []
-            matched_idx = next((i for i, entry in enumerate(entries)
-                                if _do_qualifiers_match(entry.get('qualifiers') or [], qualifiers)), None)
-            if matched_idx is None:
-                return _record_not_found(document_id, qualifiers), 404
-            remaining = {**document, 'data': entries[:matched_idx] + entries[matched_idx + 1:]}
-            write_result = data_entry_db.write_document_if_unchanged(remaining, entries)
-            if write_result['response_status'] == 200:
-                return {"entry": document_id, "removed": 1, "remaining": len(remaining['data']),
-                        "result": write_result}, 200
-            if write_result['response_status'] != 409:
-                return write_result, write_result['response_status']
-        return {"response_status": 409, "error": f"Document {document_id} kept changing; nothing was removed"}, 409
+        return _write_document(document_id, change)
 
     except Exception as e:
         logger.error('delete_record: Error: %s', e, exc_info=True)

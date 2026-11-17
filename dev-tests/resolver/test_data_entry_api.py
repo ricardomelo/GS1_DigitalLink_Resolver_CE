@@ -93,8 +93,22 @@ import data_entry_logic  # noqa: E402
 STORE = {}
 db.read_document = lambda document_id: ({"response_status": 200, "data": copy.deepcopy(STORE[document_id])}
                                         if document_id in STORE else {"response_status": 404, "error": "not found"})
-db.create_document = lambda doc: (STORE.__setitem__(doc["_id"], copy.deepcopy(doc)), {"response_status": 201})[1]
-db.update_document = lambda doc: (STORE.__setitem__(doc["_id"], copy.deepcopy(doc)), {"response_status": 200})[1]
+db.create_document = lambda doc: ({"response_status": 409, "error": "exists"} if doc["_id"] in STORE else
+                                  (STORE.__setitem__(doc["_id"], copy.deepcopy(doc)), {"response_status": 201})[1])
+
+
+def stored_write(doc, expected):
+    """data_entry_db.write_document_if_unchanged() on STORE: written only while the stored document is the one read."""
+    if STORE.get(doc["_id"]) != expected:
+        return {"response_status": 409, "error": "changed"}
+    if doc["data"]:
+        STORE[doc["_id"]] = copy.deepcopy(doc)
+    else:
+        STORE.pop(doc["_id"])
+    return {"response_status": 200}
+
+
+db.write_document_if_unchanged = stored_write
 db.read_all_documents = lambda: {"response_status": 200, "data": copy.deepcopy(list(STORE.values()))}
 data_entry_logic.data_entry_db = db
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -302,13 +316,7 @@ WRITES = []
 
 def write_if_unchanged(doc, expected):
     WRITES.append(doc["_id"])
-    if doc["_id"] not in STORE or STORE[doc["_id"]]["data"] != expected:
-        return {"response_status": 409, "error": "changed"}
-    if doc["data"]:
-        STORE[doc["_id"]] = copy.deepcopy(doc)
-    else:
-        STORE.pop(doc["_id"])
-    return {"response_status": 200}
+    return stored_write(doc, expected)
 
 
 db.write_document_if_unchanged = write_if_unchanged
@@ -370,6 +378,95 @@ for q in ([{"21": "S1"}], [{"10": "R3"}]):
 check("…the last record removed: the document goes with it", r.status_code == 200 and KEY not in STORE
       and not WHOLE, (r.status_code, STORE.get(KEY)))
 
+# ---------------------------------------------------------------- every write conditional: no lost update (F-009, ADR 0027)
+# The official code read a key's document, changed it in memory and replaced it by its _id: of two writers that read
+# the same document the second undid the first, and both were answered 200. Every write now goes through
+# write_document_if_unchanged() (or create_document(), which refuses an _id created in the meantime); a refusal reads
+# the document again and applies the change on top of the other writer's.
+LEAFLET = [{"linktype": "gs1:epil", "href": "https://example.com/leaflet", "title": "Leaflet", "hreflang": ["en"]}]
+SAFETY = [{"linktype": "gs1:safetyInfo", "href": "https://example.com/safety", "title": "Safety", "hreflang": ["en"]}]
+
+
+def racing(other_writer, times=1):
+    """read_document that lets another writer change the store right after the first `times` reads."""
+    seen = []
+
+    def read(document_id):
+        answer = real_read(document_id)
+        if len(seen) < times:
+            seen.append(1)
+            other_writer()
+        return answer
+    return read
+
+
+def linktypes(key, qualifiers):
+    for item in data_entry_logic._convert_mongo_linkset_to_v3(STORE[key]) if key in STORE else []:
+        if data_entry_logic._do_qualifiers_match(item.get("qualifiers") or [], qualifiers):
+            return sorted(l["linktype"] for l in item.get("links") or [])
+    return None
+
+
+def other_put(qualifiers, links):
+    """Another writer's PUT, straight through the logic (as a second replica of the API would do it)."""
+    return lambda: data_entry_logic.update_document(KEY, {"qualifiers": qualifiers, "links": links})
+
+
+STORE.clear()
+post([entry(), entry(qualifiers=[{"10": "L1"}])])
+WRITES.clear()
+db.read_document = racing(other_put([{"10": "L1"}], LEAFLET))
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY}, headers=AUTH)
+db.read_document = real_read
+check("PUT racing another writer's PUT on another record of the key → 200, read again and written on top",
+      r.status_code == 200 and WRITES.count(KEY) == 3, (r.status_code, WRITES))
+check("…the other writer's link kept (the official code lost it), this one written too",
+      linktypes(KEY, [{"10": "L1"}]) == ["gs1:epil", "gs1:pip"] and linktypes(KEY, []) == ["gs1:pip", "gs1:safetyInfo"],
+      STORE[KEY]["data"])
+
+db.read_document = racing(other_put([], LEAFLET))
+r = post(entry(qualifiers=[{"10": "L2"}]))
+db.read_document = real_read
+check("POST /new adding a record while another writer changes the key → 200, both changes kept",
+      r.status_code == 200 and linktypes(KEY, [{"10": "L2"}]) == ["gs1:pip"]
+      and "gs1:epil" in linktypes(KEY, []), (r.status_code, STORE[KEY]["data"]))
+
+db.read_document = racing(other_put([{"10": "L2"}], LEAFLET))
+r = client.delete("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY}, headers=AUTH)
+db.read_document = real_read
+check("DELETE of links racing another writer → 200, the links removed and the other writer's link kept",
+      r.status_code == 200 and "gs1:safetyInfo" not in linktypes(KEY, [])
+      and linktypes(KEY, [{"10": "L2"}]) == ["gs1:epil", "gs1:pip"], (r.status_code, STORE[KEY]["data"]))
+
+NEW_KEY = "01_09521234000013"
+db.read_document = racing(lambda: data_entry_logic.create_document(entry("/01/09521234000013", qualifiers=[{"10": "X1"}])))
+r = post(entry("/01/09521234000013", qualifiers=[{"10": "X2"}]))
+db.read_document = real_read
+check("POST /new creating a key another writer creates at the same moment → read again, both records kept",
+      r.status_code == 200 and [e["qualifiers"] for e in STORE[NEW_KEY]["data"]] == [[{"10": "X1"}], [{"10": "X2"}]],
+      (r.status_code, STORE.get(NEW_KEY)))
+
+before = copy.deepcopy(STORE)
+db.write_document_if_unchanged = lambda doc, expected: {"response_status": 409, "error": "changed"}
+answers = [client.put("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY}, headers=AUTH),
+           post(entry(qualifiers=[{"10": "L3"}])),
+           client.delete("/api/01/09506000134352", json={"qualifiers": [{"10": "L2"}], "links": LEAFLET}, headers=AUTH)]
+db.write_document_if_unchanged = write_if_unchanged
+check("a key that keeps changing → 409 for PUT, POST /new and DELETE of links, nothing written",
+      [a.status_code for a in answers] == [409, 409, 409] and STORE == before,
+      [(a.status_code, a.get_data(as_text=True)[:80]) for a in answers])
+db.write_document_if_unchanged = lambda doc, expected: {"response_status": 409, "error": "changed"}
+r = post([entry("/01/09521234000020"), entry(qualifiers=[{"10": "L4"}])])
+db.write_document_if_unchanged = write_if_unchanged
+check("…a list sent to POST /new stops at the item not written: 409 naming it, the written ones listed",
+      r.status_code == 409 and "09506000134352" in r.get_json().get("error", "")
+      and len(r.get_json().get("written", [])) == 1 and "01_09521234000020" in STORE, r.get_data(as_text=True)[:300])
+db.write_document_if_unchanged = lambda doc, expected: {"response_status": 500, "error": "Database error: down"}
+r = post(entry(qualifiers=[{"10": "L5"}]))
+db.write_document_if_unchanged = write_if_unchanged
+check("…a failed write of an existing key → its error status (the official code answered 200)", r.status_code == 500,
+      (r.status_code, r.get_data(as_text=True)[:120]))
+
 # the database layer itself (data_entry_db.write_document_if_unchanged) on mongomock: one conditional operation
 import importlib.util  # noqa: E402
 try:
@@ -385,16 +482,23 @@ if mongomock:
     real_db._resolver_collection = coll
     one, two = {"qualifiers": [], "linkset": {"a": 1}}, {"qualifiers": [{"10": "B"}], "linkset": {"a": 2}}
     coll.insert_one({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one, two]})
-    stale = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one]}, [two])
+    read = lambda: coll.find_one({"_id": "01_1"})
+    stale = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one]},
+                                                {"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [two]})
     check("database layer: records no longer the ones read → 409, the document untouched",
-          stale["response_status"] == 409 and coll.find_one({"_id": "01_1"})["data"] == [one, two], stale)
-    done = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one]}, [one, two])
-    check("database layer: the records still the ones read → replaced without the record", done["response_status"] == 200
-          and coll.find_one({"_id": "01_1"})["data"] == [one], done)
-    done = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": []}, [one])
+          stale["response_status"] == 409 and read()["data"] == [one, two], stale)
+    stale = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one]},
+                                                {**read(), "defaultLinktype": "gs1:epil"})
+    check("database layer: the key's default link type no longer the one read → 409, the document untouched",
+          stale["response_status"] == 409 and read()["data"] == [one, two], stale)
+    done = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one]}, read())
+    check("database layer: the document still the one read → replaced without the record", done["response_status"] == 200
+          and read()["data"] == [one], done)
+    check("database layer: no unconditional replace left (update_document gone)", not hasattr(real_db, "update_document"))
+    done = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": []}, read())
     check("database layer: no record left → the document deleted", done["response_status"] == 200
-          and coll.find_one({"_id": "01_1"}) is None, done)
-    gone = real_db.write_document_if_unchanged({"_id": "01_1", "data": []}, [one])
+          and read() is None, done)
+    gone = real_db.write_document_if_unchanged({"_id": "01_1", "data": []}, {"_id": "01_1", "data": [one]})
     check("database layer: a document already gone → 409", gone["response_status"] == 409, gone)
 else:
     print("SKIP the database layer on mongomock (pip install mongomock)")

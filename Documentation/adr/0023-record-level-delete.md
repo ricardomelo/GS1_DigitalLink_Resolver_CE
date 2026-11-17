@@ -35,7 +35,9 @@ refuses (made before a rule, or by another tool) could not lose any record, sinc
    while its records are still the ones read (the filter names `_id` and `data`), so a change made by another writer
    between the read and the write is not lost: the operation reads the document again, up to three times, then answers
    409 with nothing removed. This closes the lost update for this operation only; the general one (F-009, U-005) is
-   for later.
+   for later. *Note (17 November 2026, [ADR 0027](0027-conditional-writes.md)):* every write of a key's document now
+   goes this way (`_write_document()`); the filter names every field of the document read, not only `data`, and
+   `RECORD_DELETE_ATTEMPTS` became `WRITE_ATTEMPTS`.
 3. **The portal uses it everywhere it removed a record.** `remove_record()` (the editor and the tenant API) makes one
    call; nothing is written back, so nothing is checked first, and a key holding a record the API would refuse no
    longer blocks a deletion. *Fix serial numbers* writes each record as the serial number alone (`POST /new`), then

@@ -93,6 +93,7 @@
      "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Saved"}}}},
      "401": {"$ref": "#/components/responses/Unauthorised"},
      "403": {"$ref": "#/components/responses/Forbidden"},
+     "409": {"$ref": "#/components/responses/Conflict"},
      "415": {"$ref": "#/components/responses/Invalid"},
      "422": {"$ref": "#/components/responses/Invalid"},
      "429": {"$ref": "#/components/responses/RateLimit"},
@@ -108,6 +109,7 @@
      "401": {"$ref": "#/components/responses/Unauthorised"},
      "403": {"$ref": "#/components/responses/Forbidden"},
      "404": {"$ref": "#/components/responses/NotFound"},
+     "409": {"$ref": "#/components/responses/Conflict"},
      "429": {"$ref": "#/components/responses/RateLimit"},
      "502": {"$ref": "#/components/responses/Upstream"}
     }
@@ -162,7 +164,8 @@
    "NotFound": {"description": "No record with those qualifiers (record.notFound)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "Invalid": {"description": "A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "RateLimit": {"description": "Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait", "headers": {"Retry-After": {"schema": {"type": "integer"}}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-   "Upstream": {"description": "The resolver's data entry API failed or refused the change (upstream.*)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+   "Upstream": {"description": "The resolver's data entry API failed or refused the change (upstream.*)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+   "Conflict": {"description": "The key's records were being changed by other writers at the same moment, and the data entry API wrote nothing of this change (upstream.conflict; ADR 0027). Read the record again and repeat the change.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
   },
   "schemas": {
    "Error": {

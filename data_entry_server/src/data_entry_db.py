@@ -127,39 +127,17 @@ def read_all_documents() -> dict[str, Any]:
         return {"response_status": 500, "error": "Database error: " + str(e)}
 
 
-# Update an existing document in the 'gs1resolver' collection
-def update_document(data: dict[str, Any]) -> dict[str, Any]:
-    try:
-        resolver_coll = _get_collection()
-
-        result = resolver_coll.replace_one({"_id": data["_id"]}, data)
-        if result.matched_count == 0:
-            return {"response_status": 404, "error": f"No document found with id: {data['_id']}"}  # Document not found
-
-        return {"response_status": 200, "data": f"Document with anchor {data['_id']} updated successfully"}
-
-    except bson_errors.InvalidId as e:
-        logger.warning("update_document: Invalid ID format: %s", e)
-        return {"response_status": 400, "error": "Invalid ID format: " + str(e)}
-
-    except errors.PyMongoError as e:
-        logger.error("update_document: Database error: %s", e)
-        return {"response_status": 500, "error": "Database error: " + str(e)}
-
-    except Exception as e:
-        logger.error("update_document: Internal error: %s", e)
-        return {"response_status": 500, "error": "Internal Server Error - " + str(e)}
-
-
-# Replace or delete a document only while its records are still the ones read (ADR 0023): one atomic operation on the
+# Replace or delete a document only while it is still the one read (ADR 0023, ADR 0027): one atomic operation on the
 # document, so removing one record never leaves the key without its others, and a write made in between is not lost
-def write_document_if_unchanged(document: dict[str, Any], expected_data: list[Any]) -> dict[str, Any]:
-    """Writes document (its 'data' without one record) over the stored one, or deletes the stored one when document
-    has no records left, provided the stored records are still expected_data. 200 when written, 409 when the stored
-    document changed or went in the meantime (the caller reads it again)."""
+def write_document_if_unchanged(document: dict[str, Any], expected: dict[str, Any]) -> dict[str, Any]:
+    """Writes document over the stored one, or deletes the stored one when document has no records left, provided the
+    stored document is still expected, the document read: the filter names every field of it (_id, defaultLinktype,
+    data...), so it acts as the document's revision. 200 when written, 409 when the stored document changed or went
+    in the meantime (the caller reads it again). The official code replaced the document by its _id alone, so of two
+    writers that read the same document the second undid the first, and both were answered as successful (F-009)."""
     try:
         resolver_coll = _get_collection()
-        match = {"_id": document["_id"], "data": expected_data}
+        match = {**expected, "_id": document["_id"]}
         if document.get("data"):
             changed = resolver_coll.replace_one(match, document).matched_count
         else:

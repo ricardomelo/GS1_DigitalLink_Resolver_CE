@@ -41,7 +41,7 @@ import api_v1  # noqa: E402,F401
 import tenants  # noqa: E402
 
 CALLS = []          # (method, path, body) of every call the portal makes to the data entry API
-FAIL = {}           # {"method": ..., "remove": bool} → the next matching call answers 500
+FAIL = {}           # {"rule": f(method, body), "status": 409} → the next matching call answers 500 (or that status)
 
 
 @mock_data_entry.app.before_request
@@ -53,7 +53,8 @@ def watch():
     rule = FAIL.get("rule")
     if rule and rule(request.method, body):
         FAIL.pop("rule")
-        return jsonify(response_status=500, error="injected failure"), 500
+        status = FAIL.pop("status", 500)
+        return jsonify(response_status=status, error="injected failure"), status
     return None
 
 
@@ -217,6 +218,43 @@ r = edu.post("/portal/api/records/fix-serials", json={"key": "01", "value": E}, 
 check("a fixed record the data entry API would refuse: reported (record.rewriteRefused), nothing written",
       [x["code"] for x in r.get_json().get("refused", [])] == ["record.rewriteRefused"] and not writes()
       and entries_of(E) == [([], [], "Water"), ([{"10": "W3"}, {"21": "S9"}], [], "Unit S9")], (r.get_json(), writes()))
+
+# ================================================================== a key changing under other writers (F-009, ADR 0027)
+# The data entry API answers 409 when the key's document kept changing under other writers while it tried to write it
+# (nothing written). The portal answers 409 upstream.conflict (not 502 as for a refusal), and the journal names the
+# attempt as failed: the user opens the record again and repeats the change.
+SAVE = {"key": "01", "value": A, "description": "Coffee", "links": [
+    {"linkType": "gs1:pip", "url": "https://acme.example.com/new", "hreflang": ["en"], "title": "P"}]}
+attempts = [
+    ("the editor's save of a new record", "POST", lambda: edu.post("/portal/api/record", json={**SAVE, "qualifiers": "/10/N1"},
+                                                                  headers=ORIGIN)),
+    ("the editor's save of an existing record", "PUT", lambda: edu.post("/portal/api/record", json=SAVE, headers=ORIGIN)),
+    ("the editor's delete", "DELETE", lambda: edu.delete(f"/portal/api/record?key=01&value={A}&qualifiers=/10/L1",
+                                                         headers=ORIGIN)),
+    ("the tenant API's save", "PUT", lambda: portal.app.test_client().put(
+        f"/portal/api/v1/records/01/{A}", headers={"Authorization": f"Bearer {KEY}"},
+        json={"description": "Coffee", "links": SAVE["links"]})),
+    ("the tenant API's delete", "DELETE", lambda: portal.app.test_client().delete(
+        f"/portal/api/v1/records/01/{A}?qualifiers=/10/L1", headers={"Authorization": f"Bearer {KEY}"})),
+]
+for name, method, attempt in attempts:
+    put_raw(A, [([], "Coffee"), ([{"10": "L1"}], "Batch L1")])
+    before, events = entries_of(A), journal(A)
+    FAIL["rule"], FAIL["status"] = (lambda m: lambda method, body: method == m and isinstance(body, dict)
+                                    and not (body.get("links") and not body.get("anchor")))(method), 409
+    r = attempt()
+    FAIL.pop("rule", None), FAIL.pop("status", None)
+    check(f"{name}, the key changing under other writers: 409 upstream.conflict", r.status_code == 409
+          and code(r) == "upstream.conflict", (r.status_code, r.get_json()))
+    check(f"…the key's records as they were, the attempt journalled as failed", entries_of(A) == before
+          and journal(A) == events, (entries_of(A), journal(A)))
+put_raw(D, [([], "Milk"), ([{"10": "M9"}, {"21": "S5"}], "Unit S5")])
+FAIL["rule"], FAIL["status"] = (lambda method, body: method == "POST" and isinstance(body, dict)), 409
+r = edu.post("/portal/api/records/fix-serials", json={"key": "01", "value": D}, headers=ORIGIN)
+FAIL.pop("rule", None), FAIL.pop("status", None)
+check("fixing serial numbers while the key changes under other writers: 409 upstream.conflict, the old record kept",
+      r.status_code == 409 and code(r) == "upstream.conflict"
+      and entries_of(D) == [([], [], "Milk"), ([{"10": "M9"}, {"21": "S5"}], [], "Unit S5")], (r.get_json(), entries_of(D)))
 
 # ================================================================== the data entry API's own answers (the stand-in)
 mock = mock_data_entry.app.test_client()

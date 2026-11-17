@@ -2018,6 +2018,7 @@
  "upstream.updateRejected": "El resolver rechazó la actualización.",
  "upstream.partialUpdate": "Los nuevos destinos se guardaron, pero no se pudieron quitar {count} destino(s) antiguo(s). Vuelva a guardar.",
  "upstream.deleteFailed": "El resolver no pudo eliminar el registro.",
+ "upstream.conflict": "Otra persona o sistema estaba modificando los registros de esta clave en el mismo momento, y el resolver no aplicó este cambio. Abra de nuevo el registro, revíselo y repita el cambio.",
  "save.created": "Registro creado. El código ya lleva a los destinos que ha introducido.",
  "save.updated": "Cambios guardados. El código ya lleva a los nuevos destinos.",
  "delete.done": "Registro eliminado. El código ya no lleva a estos destinos.",

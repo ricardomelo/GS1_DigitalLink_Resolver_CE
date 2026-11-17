@@ -2018,6 +2018,7 @@
  "upstream.updateRejected": "Le résolveur a rejeté la mise à jour.",
  "upstream.partialUpdate": "Les nouvelles cibles ont été enregistrées, mais {count} ancienne(s) cible(s) n’ont pas pu être supprimées. Veuillez enregistrer de nouveau.",
  "upstream.deleteFailed": "Le résolveur n’a pas pu supprimer l’enregistrement.",
+ "upstream.conflict": "Les enregistrements de cette clé étaient modifiés au même moment par quelqu’un d’autre, et le résolveur n’a pas appliqué cette modification. Rouvrez l’enregistrement, vérifiez-le et refaites la modification.",
  "save.created": "Enregistrement créé. Le code mène désormais aux cibles que vous avez saisies.",
  "save.updated": "Modifications enregistrées. Le code mène désormais aux nouvelles cibles.",
  "delete.done": "Enregistrement supprimé. Le code ne mène plus à ces cibles.",

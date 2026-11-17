@@ -25,7 +25,8 @@ JSON = os.path.join(REPO, "Documentation", "test-inventory.json")
 AREAS = [
     ("Resolution: the resolver, its pages and its log", ["resolver", "gs1_suite", "epc_binary", "data_entry_api",
                                                          "mock_parity", "request_log", "domains_resolver",
-                                                         "forwarding_resolver", "strict_resolver", "landing", "load"]),
+                                                         "forwarding_resolver", "strict_resolver", "language_resolver",
+                                                         "landing", "load"]),
     ("Records: keys, qualifiers, links and the editor", ["keys", "registration", "data_attributes", "special_chars",
                                                          "dictionary", "engine_messages", "link_types", "governance",
                                                          "fix_serials", "record_delete", "journal", "portal_e2e", "portal_e2e_without_engine",

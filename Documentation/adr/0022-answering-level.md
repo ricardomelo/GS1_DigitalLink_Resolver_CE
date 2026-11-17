@@ -141,3 +141,7 @@ edited, and with the saved record), the tenant API (`warnings` in the answer of 
 preview (per record, on the key's records as they will be after the import); a near duplicate compares batch, serial
 and TPX values (AI 10, 21, 235). The organisation's *Resolution* tab also counts the batch and serial records that
 lack a safety-critical type a broader record holds.
+
+*Note (17 November 2026, [ADR 0028](0028-language-fallback.md)):* the same safety-critical types, when the link chosen
+does not serve the request's language or context, are offered to a browser as the page of a choice (300) with a
+notice, and every 307 or 300 that does not serve them carries `Resolution-Fallback`, beside the headers of 2.2.

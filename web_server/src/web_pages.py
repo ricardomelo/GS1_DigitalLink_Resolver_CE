@@ -356,20 +356,40 @@ def notice_html(locale: str, walked: tuple[str, str] | None) -> str:
     return render_template_string(_NOTICE, notice=notice) if notice else ''
 
 
+def fallback_notices(locale: str, linkset: list[dict], fallback: list[str] | None, context: str | None) -> str:
+    """The notices of a choice whose links do not serve the language or the context (market) the request named
+    (ADR 0028), as HTML: one for each, naming the link type offered."""
+    if not fallback:
+        return ''
+    terms = [public.rsplit('/', 1)[-1] for item in linkset for public in item if public.startswith('http')]
+    label = _label(locale, terms[0]) if terms else ''
+    html = ''
+    for what in ('language', 'context'):
+        if what in fallback:
+            notice = {'title': _t(locale, f'fallback.{what}.title', label=label, context=context or ''),
+                      'text': _t(locale, f'fallback.{what}.text')}
+            html += render_template_string(_NOTICE, notice=notice)
+    return html
+
+
 def render_linkset(identifiers: str, qualifier_path: str | None, linkset: list[dict],
                    json_ld: dict | None = None, choice: bool = False,
-                   walked: tuple[str, str] | None = None) -> str:
+                   walked: tuple[str, str] | None = None, fallback: list[str] | None = None,
+                   context: str | None = None) -> str:
     """HTML page listing every link of a linkset, for people who open ?linkType=linkset in a browser, or the
     links among which the resolver could not choose (choice: 300 Multiple Choices). With json_ld the linkset
     is embedded as JSON-LD too (GS1-Conformant Resolver 1.2.1, section 2.10). walked: the request's path and the
-    level that answered, when the links come from a less specific level (the notice of ADR 0022, section 2.3)."""
+    level that answered, when the links come from a less specific level (the notice of ADR 0022, section 2.3).
+    fallback: the preferences of the request ('language', 'context') that the links offered do not serve, with the
+    context asked (the notices of ADR 0028)."""
     locale = _request_locale()
     title = _t(locale, 'choice.title' if choice else 'linkset.title')
     body = render_template_string("{% if text %}<p>{{ text }}</p>{% endif %}<p class='code'>{{ hri }}</p>"
                                   "{{ notice|safe }}" + _LINKS,
                                   text=_t(locale, 'choice.text') if choice else '',
                                   hri=_hri(identifiers, qualifier_path), levels=_levels(locale, linkset),
-                                  notice=notice_html(locale, walked))
+                                  notice=fallback_notices(locale, linkset, fallback, context)
+                                  + notice_html(locale, walked))
     if json_ld is not None:
         # '<' escaped so that no value can close the script element
         data = json.dumps(json_ld, ensure_ascii=False).replace('<', '\\u003c')

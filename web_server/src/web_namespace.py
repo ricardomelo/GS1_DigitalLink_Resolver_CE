@@ -449,7 +449,8 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
             and resolution.STRICT.on_for(*identifiers.strip('/').split('/', 1))
         response_data, link_header = web_logic.read_document(identifiers, doc_id, qualifier_path, linktype,
                                                              accept_language_list, context, media_types_list,
-                                                             linkset_requested, strict=strict)
+                                                             linkset_requested, strict=strict,
+                                                             offer_choice=_wants_html())
     else:
         # a registered domain answers only for its organisation's keys (ADR 0009): as a code nobody registered
         response_data, link_header = {'response_status': 404, 'error': f'No document found for anchor: {doc_id}',
@@ -461,6 +462,10 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
     # the record that answered and whether the request walked up to it (ADR 0022, section 2.2)
     answered, match = response_data.pop('_anchor', None), response_data.pop('_match', None)
     headers = _resolution_headers(answered, match) if status in (300, 307) else {}
+    # the request's language or context that the links given do not serve (ADR 0028)
+    fallback = response_data.pop('_fallback', None) or []
+    if fallback and status in (300, 307):
+        headers['Resolution-Fallback'] = ', '.join(fallback)
     if match == 'withheld':
         # withheld by the strict mode: an app tells "nothing for this batch" from "nothing at all" (ADR 0022, 2.4)
         headers = {'Resolution-Match': 'withheld'}
@@ -544,7 +549,9 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
         if _wants_html():
             json_ld = web_logic.format_linkset_for_external_use(choice, identifiers, as_json_ld=True)
             response = Response(web_pages.render_linkset(identifiers, qualifier_path, linkset['linkset'], json_ld,
-                                                         choice=True, walked=walked), status=300, mimetype='text/html')
+                                                         choice=True, walked=walked, fallback=fallback,
+                                                         context=context),
+                                status=300, mimetype='text/html')
         else:
             response = Response(json.dumps(linkset, ensure_ascii=False), status=300,
                                 content_type='application/linkset+json')

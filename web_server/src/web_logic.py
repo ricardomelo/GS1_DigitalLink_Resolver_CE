@@ -591,6 +591,46 @@ def choose_links(links: list[dict[str, Any]], ranges: list[str], context: str | 
     return pool, decided
 
 
+def _declared(link: dict[str, Any], field: str) -> list[str]:
+    """The languages (hreflang, without 'und') or contexts a link declares, as a list."""
+    values = link.get(field) or []
+    if isinstance(values, str):
+        values = [values]
+    return [str(v) for v in values if v and not (field == 'hreflang' and str(v).lower() == 'und')]
+
+
+def unserved(links: list[dict[str, Any]], ranges: list[str], context: str | None) -> list[str]:
+    """
+    Which of the request's preferences the links chosen do not serve (ADR 0028): 'language' when the request named
+    languages, none of them '*', and every link chosen declares a language none of them matches; 'context' when the
+    request named a context and every link chosen declares contexts other than it. A link that declares no language
+    (or no context) serves every one: the organisation said nothing to the contrary.
+    """
+    found = []
+    ranges = [r for r in ranges if r != 'und']        # no Accept-Language: 'und' (web_namespace)
+    if links and ranges and '*' not in ranges and all(_declared(link, 'hreflang') for link in links) \
+            and _language_match(links, ranges) is None:
+        found.append('language')
+    if links and context and all(_declared(link, 'context') and context not in _declared(link, 'context')
+                                 for link in links):
+        found.append('context')
+    return found
+
+
+def _described(item: dict[str, Any], default_linktype: str | None, link: dict[str, Any]) -> dict[str, Any]:
+    """The default link with its languages and contexts: gs1:defaultLink is stored as href and title only, so the
+    link of the key's default link type with the same target describes it (ADR 0028)."""
+    if link.get('hreflang') or link.get('context'):
+        return link
+    for key in (_find_linktype_key(item, normalise_linktype(default_linktype) or ''),
+                _find_linktype_key(item, 'defaultLinkMulti')):
+        links = item.get(key) if key else None
+        for candidate in (links if isinstance(links, list) else [links] if isinstance(links, dict) else []):
+            if isinstance(candidate, dict) and candidate.get('href') == link.get('href'):
+                return candidate
+    return link
+
+
 def with_default_multi(item: dict[str, Any], default_linktype: str | None) -> dict[str, Any]:
     """
     The linkset item with gs1:defaultLinkMulti (section 2.5.8) when its links of the key's default link type
@@ -612,12 +652,39 @@ def with_default_multi(item: dict[str, Any], default_linktype: str | None) -> di
 
 
 def _handle_link_type(linktype: str | None, default_linktype: str, linkset: list[dict[str, Any]], accept_language_list: list[str], context: str | None, media_types_list: list[str] | None,
-                      linkset_requested: bool = False) -> dict[str, Any]:
+                      linkset_requested: bool = False, offer_choice: bool = False) -> dict[str, Any]:
     """
     One level of the record: the response for the requested link type, or for no link type the default
     (GS1-Conformant Resolver 1.2.1, sections 2.6.1 to 2.6.3). 307 with the link, 300 with the links of that
     type when the request cannot decide among them, 404 when this level has nothing of that type.
+    A 307 or 300 carries "_fallback" (ADR 0028): the preferences of the request its links do not serve. offer_choice
+    (a browser): a safety-critical link type answered by a link that does not serve the request's language or
+    context becomes a 300 offering every link of that type at this level, so that a person sees the choice.
     """
+    try:
+        result = _answer_link_type(linktype, default_linktype, linkset, accept_language_list, context,
+                                   media_types_list, linkset_requested)
+        if result.get('_fallback') and offer_choice and result['response_status'] == 307:
+            answered = normalise_linktype(linktype) if linktype else normalise_linktype(default_linktype)
+            item = with_default_multi(linkset[0], default_linktype)
+            key = _find_linktype_key(item, answered or '') if answered in resolution.SAFETY_CRITICAL else None
+            if key is None and answered in resolution.SAFETY_CRITICAL and linktype is None:
+                key = _find_linktype_key(item, 'defaultLinkMulti') or _find_linktype_key(item, 'defaultLink')
+            if key:
+                links = item[key] if isinstance(item[key], list) else [item[key]]
+                return {"response_status": 300, "data": [link for link in links if isinstance(link, dict)],
+                        "linktype_key": key, "_fallback": result['_fallback']}
+        return result
+
+    except Exception as e:
+        logger.error('handle_link_type error: %s', e)
+        return {"response_status": 500, "error": f"Unexpected error occurred. Details: {str(e)}"}
+
+
+def _answer_link_type(linktype: str | None, default_linktype: str, linkset: list[dict[str, Any]],
+                      accept_language_list: list[str], context: str | None, media_types_list: list[str] | None,
+                      linkset_requested: bool = False) -> dict[str, Any]:
+    """The answer of _handle_link_type() before the choice for a browser."""
     try:
         if linkset_requested or linktype in ['all', 'linkset']:
             return {"response_status": 200, "data": linkset}
@@ -636,12 +703,13 @@ def _handle_link_type(linktype: str | None, default_linktype: str, linkset: list
                 pool, decided = choose_links(item[multi_key], ranges, context, media_types_list)
                 if decided and pool:
                     hrefs = [link.get('href') for link in pool]
-                    if default_link and default_link.get('href') in hrefs:
-                        return {"response_status": 307, "data": default_link}
-                    return {"response_status": 307, "data": pool[0]}
+                    chosen = default_link if default_link and default_link.get('href') in hrefs else pool[0]
+                    return {"response_status": 307, "data": chosen,
+                            "_fallback": unserved([_described(item, default_linktype, chosen)], ranges, context)}
             if not default_link:
                 return {"response_status": 404, "error": "No default link at this level", "_outcome": "noLink"}
-            return {"response_status": 307, "data": default_link}
+            return {"response_status": 307, "data": default_link,
+                    "_fallback": unserved([_described(item, default_linktype, default_link)], ranges, context)}
 
         key = _find_linktype_key(item, normalise_linktype(linktype))
         if key is None:
@@ -651,9 +719,9 @@ def _handle_link_type(linktype: str | None, default_linktype: str, linkset: list
         if not pool:
             return {"response_status": 404, "error": f"No link found for linktype: {linktype}", "_outcome": "noLink"}
         if len(pool) == 1:
-            return {"response_status": 307, "data": pool[0]}
+            return {"response_status": 307, "data": pool[0], "_fallback": unserved(pool, ranges, context)}
         # Section 2.6.3, step 7: no best match among links of the same type (example 11)
-        return {"response_status": 300, "data": pool, "linktype_key": key}
+        return {"response_status": 300, "data": pool, "linktype_key": key, "_fallback": unserved(pool, ranges, context)}
 
     except Exception as e:
         logger.error('handle_link_type error: %s', e)
@@ -764,7 +832,7 @@ def format_linkset_for_external_use(response_data: dict[str, Any], identifiers: 
 
 def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None = '/', linktype: str | None = None, accept_language_list: list[str] | None = None, context: str | None = None,
                   media_types_list: list[str] | None = None, linkset_requested: bool = False,
-                  strict: bool = False) -> tuple[dict[str, Any], str | None]:
+                  strict: bool = False, offer_choice: bool = False) -> tuple[dict[str, Any], str | None]:
     """
     Resolves the request by walking the GTIN hierarchy (GS1-Conformant Resolver Standard 2.5.9/2.5.10):
     entries that apply to the requested path are evaluated from the most specific (e.g. batch/lot) to the
@@ -773,6 +841,9 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
     strict: the strict mode is on for the key's organisation (ADR 0022, section 2.4): a safety-critical link type
     asked with a batch or serial number is answered only by a record naming it; a link held only by a less specific
     level is withheld (404, _outcome and _match "withheld", _anchor the level that holds it).
+    offer_choice: the request comes from a browser; a safety-critical link that does not serve the request's language
+    or context is offered as a choice (300) instead of a redirect (ADR 0028). A 307 or 300 carries "_fallback", the
+    preferences its links do not serve.
     Always returns the tuple (response, Link header).
     """
     try:
@@ -827,7 +898,7 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
         stops = strict and resolution.applies(normalise_linktype(linktype), path_qualifiers)
         for entry in applicable:
             result = _handle_link_type(linktype, default_linktype, entry['linkset'],
-                                       accept_language_list, context, media_types_list)
+                                       accept_language_list, context, media_types_list, offer_choice=offer_choice)
             if stops and result['response_status'] in (300, 307) \
                     and not resolution.may_answer(path_qualifiers, entry.get('qualifiers') or []):
                 # the strict mode: a less specific level holds the link; nobody receives it as the batch's

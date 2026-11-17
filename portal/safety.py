@@ -13,7 +13,12 @@ Each warning is {"code", "params"}, its text in every language under the same co
 - "warning.productLevel": a record of the key alone holds safety-critical types while the key has batch or serial
   records: {"types", "count" (batch or serial records), "values": the qualifiers of the first five, "strict"};
 - "warning.nearDuplicate": a batch or serial value equal to another of the key's but for letter case, spaces,
-  hyphens, dots, slashes, or O and I for 0 and 1: {"ai", "value", "existing"}.
+  hyphens, dots, slashes, or O and I for 0 and 1: {"ai", "value", "existing"};
+- "warning.noLanguage": links of safety-critical types that declare no language, which the resolver gives to a
+  request in any language without saying so (Documentation/adr/0028-language-fallback.md): {"types"};
+- "warning.languageGap": safety-critical types whose links lack languages that other links of the record have (a
+  request in that language receives the type in another language, ADR 0028; compared as the resolver does, serves()):
+  {"gaps": [{"type", "missing": [tags]}]}.
 """
 from resolution import SAFETY_CRITICAL
 
@@ -39,6 +44,54 @@ def safety_types(links) -> list[str]:
     in the order of SAFETY_TYPES."""
     held = {link.get("linktype") or link.get("linkType") for link in links or [] if isinstance(link, dict)}
     return [t for t in SAFETY_TYPES if t in held]
+
+
+def _languages(link) -> list[str]:
+    """The languages a link declares (hreflang), without 'und'."""
+    tags = link.get("hreflang") or []
+    tags = [tags] if isinstance(tags, str) else tags
+    return [str(t) for t in tags if t and str(t).lower() != "und"]
+
+
+def serves(tags, wanted: str) -> bool:
+    """Whether links in the languages tags serve a request for wanted, as the resolver decides it
+    (web_logic._language_match, RFC 4647 lookup): the same tag, a shorter form of it (pt for pt-BR) or a more
+    specific one (pt-BR for pt); case ignored."""
+    wanted = wanted.lower()
+    return any(t == wanted or wanted.startswith(t + "-") or t.startswith(wanted + "-") for t in map(str.lower, tags))
+
+
+def language_warnings(links) -> list[dict]:
+    """The warnings of ADR 0028 for the links of one record: safety-critical types with a link that declares no
+    language, and safety-critical types (every link with a language) that do not serve a language another link of
+    the record has, by the resolver's rule (serves())."""
+    rows = [link for link in links or [] if isinstance(link, dict)]
+
+    def of(code):
+        return [link for link in rows if (link.get("linktype") or link.get("linkType")) == code]
+
+    held = safety_types(rows)
+    unmarked = [t for t in held if any(not _languages(link) for link in of(t))]
+    record, seen = [], set()
+    for link in rows:
+        for tag in _languages(link):
+            if tag.lower() not in seen:
+                seen.add(tag.lower())
+                record.append(tag)
+    gaps = []
+    for t in held:
+        if t in unmarked:
+            continue
+        own = [tag for link in of(t) for tag in _languages(link)]
+        missing = [tag for tag in record if not serves(own, tag)]
+        if missing:
+            gaps.append({"type": t, "missing": missing})
+    warnings = []
+    if unmarked:
+        warnings.append({"code": "warning.noLanguage", "params": {"types": unmarked}})
+    if gaps:
+        warnings.append({"code": "warning.languageGap", "params": {"gaps": gaps}})
+    return warnings
 
 
 def _template(pairs) -> bool:
@@ -85,6 +138,7 @@ def check(pairs, informative, links, entries, strict: bool) -> list[dict]:
                              "params": {"types": sorted(held, key=SAFETY_TYPES.index), "count": len(qualified),
                                         "values": [[list(q) for q in p] for p in qualified[:_SHOWN]],
                                         "strict": bool(strict)}})
+    warnings.extend(language_warnings(links))
 
     seen = set()
     for ai, value in pairs + informative:

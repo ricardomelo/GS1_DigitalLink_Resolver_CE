@@ -493,7 +493,9 @@ status, html = page_of(X + "/10/ZZ9?linkType=gs1:pip", "vi")
 check("choice page (300) of a batch without a record: the notice too",
       status == 300 and "Batch/lot ZZ9 has no information of its own" in html, (status, html[html.find("<main"):][:400]))
 status, html = page_of(X + "?linkType=gs1:pip", "vi")
-check("…not when the choice is the request's own level", status == 300 and "level-notice" not in html)
+check("…not when the choice is the request's own level", status == 300 and "has no information of its own" not in html)
+check("…but the notice of a language not served (ADR 0028): Vietnamese asked, none of the links in it",
+      "in your language" in html, html[html.find("<main"):][:400])
 status, html = page_of(Q + "/10/" + "%3Ci%3EX" + "?linkType=linkset")
 notice = html[html.find('class="level-notice"'):][:900]
 check("a batch value with markup is shown as text in the notice, decoded",

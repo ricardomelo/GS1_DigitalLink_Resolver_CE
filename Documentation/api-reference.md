@@ -259,11 +259,11 @@ Scope `labels:read`. X-Symbol names the 2D symbol and X-Dimension its X-dimensio
 
 ### Schema: Warning
 
-A warning on safety-critical link types (gs1:recallStatus, gs1:safetyInfo, gs1:epil, gs1:smpc, gs1:eifu) or a near-duplicate value. `warning.walkUp`: the record lacks `types` that the record of qualifiers `level` holds (`[]`: the key's own record); a request for this record receives that record's links or, when `strict` is true (the organisation's strict mode), a 404. `warning.productLevel`: the key's own record holds `types` while the key has `count` batch or serial records (`values`: the qualifiers of the first five); those without their own link of a type receive this one. `warning.nearDuplicate`: the value `value` of AI `ai` differs from the key's existing `existing` only in letter case, spaces, `-` `.` `/` or O/0 and I/1.
+A warning on safety-critical link types (gs1:recallStatus, gs1:safetyInfo, gs1:epil, gs1:smpc, gs1:eifu) or a near-duplicate value. `warning.walkUp`: the record lacks `types` that the record of qualifiers `level` holds (`[]`: the key's own record); a request for this record receives that record's links or, when `strict` is true (the organisation's strict mode), a 404. `warning.productLevel`: the key's own record holds `types` while the key has `count` batch or serial records (`values`: the qualifiers of the first five); those without their own link of a type receive this one. `warning.nearDuplicate`: the value `value` of AI `ai` differs from the key's existing `existing` only in letter case, spaces, `-` `.` `/` or O/0 and I/1. `warning.noLanguage`: links of the safety-critical `types` declare no language (`hreflang`), so the resolver gives them to a request in any language without saying so. `warning.languageGap`: for each of `gaps`, the safety-critical `type` has no link in the languages `missing` that other links of the record have; a request in one of them receives the type in another language, with the header `Resolution-Fallback: language`.
 
 | Field | Required | Type | Meaning |
 |---|---|---|---|
-| `code` | yes | string (one of `warning.walkUp`, `warning.productLevel`, `warning.nearDuplicate`) |  |
+| `code` | yes | string (one of `warning.walkUp`, `warning.productLevel`, `warning.nearDuplicate`, `warning.noLanguage`, `warning.languageGap`) |  |
 | `params` | yes | object |  |
 
 ### Schema: Stats

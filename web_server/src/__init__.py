@@ -111,8 +111,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     @app.after_request
     def add_headers(response: Response) -> Response:
         response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
-        # Resolution-Anchor and Resolution-Match: the level that answered (ADR 0022)
-        response.headers['Access-Control-Expose-Headers'] = 'Link, Location, Resolution-Anchor, Resolution-Match'
+        # Resolution-Anchor and Resolution-Match: the level that answered (ADR 0022); Resolution-Fallback: the
+        # language or context asked that the links given do not serve (ADR 0028)
+        response.headers['Access-Control-Expose-Headers'] = \
+            'Link, Location, Resolution-Anchor, Resolution-Match, Resolution-Fallback'
         return response
 
     return app

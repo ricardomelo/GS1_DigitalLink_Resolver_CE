@@ -5359,6 +5359,7 @@ function addRow(data = {}) {
       li.dataset.hreflang = JSON.stringify(tags);
       fillLanguageSelect(languageField, tags);
     }
+    scheduleWarnings();            // the languages of safety-critical links (ADR 0028)
   });
   $(".url", li).addEventListener("blur", e => {
     const value = e.target.value.trim();
@@ -5514,6 +5515,16 @@ function renderWarnings(warnings, open) {
       safety.push(warningItem(t("warning.productLevel.title"),
                               t("warning.productLevel.text", { count: p.count, list }), typeList(p.types),
                               t(p.strict ? "warning.strictOn" : "warning.strictOff")));
+    } else if (w.code === "warning.noLanguage" && open) {
+      safety.push(warningItem(t("warning.noLanguage.title"), t("warning.noLanguage.text"), typeList(p.types)));
+    } else if (w.code === "warning.languageGap" && open) {
+      const ul = document.createElement("ul");
+      p.gaps.forEach(g => {
+        const li = document.createElement("li");
+        li.textContent = t("warning.languageGap.item", { type: I18N.linkType(g.type)[0], languages: g.missing.join(", ") });
+        ul.append(li);
+      });
+      safety.push(warningItem(t("warning.languageGap.title"), t("warning.languageGap.text"), ul));
     }
   });
   $("#dup-warnings").replaceChildren(...dup);
@@ -5529,6 +5540,13 @@ function warningShort(w) {
     return t("warning.walkUp.short", { types: p.types.map(c => I18N.linkType(c)[0]).join(", "), level: levelText(p.level) });
   }
   if (w.code === "warning.productLevel") return t("warning.productLevel.short", { count: p.count });
+  if (w.code === "warning.noLanguage") {
+    return t("warning.noLanguage.short", { types: p.types.map(c => I18N.linkType(c)[0]).join(", ") });
+  }
+  if (w.code === "warning.languageGap") {
+    return p.gaps.map(g => t("warning.languageGap.item", { type: I18N.linkType(g.type)[0],
+                                                          languages: g.missing.join(", ") })).join("; ");
+  }
   return t("warning.nearDuplicate.short", { value: p.value, existing: p.existing });
 }
 

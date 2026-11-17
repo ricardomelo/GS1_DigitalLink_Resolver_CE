@@ -222,10 +222,72 @@ check("…LOTD, with its own three links: no warning", "warnings" not in by_valu
 check("…counted (2) and still to be created (warnings do not refuse)", r.get("warningCount") == 2
       and r.get("counts", {}).get("create") == 3 and not r.get("errors"), r.get("counts"))
 
+# --------------------------------------------------------------------------- languages (ADR 0028)
+def lang_link(kind, *tags, url=None):
+    return {"linkType": kind, "url": url or f"https://farma.example/{kind.split(':')[1]}-{'-'.join(tags) or 'x'}",
+            "title": "", "hreflang": list(tags)}
+
+
+def lang_record(*links):
+    return {"key": "01", "value": G2, "qualifiers": {}, "description": "Ibuprofen", "defaultLinkType": "gs1:pip",
+            "links": list(links)}
+
+
+w = preview_warnings(lang_record(lang_link("gs1:pip", "pt"), lang_link("gs1:pip", "en"),
+                                 lang_link("gs1:epil", "en"))).get_json()["warnings"]
+check("a leaflet in English only, the product page in Portuguese and English: warning.languageGap, missing pt",
+      codes(w) == ["warning.languageGap"] and find(w, "warning.languageGap")["gaps"] == [
+          {"type": "gs1:epil", "missing": ["pt"]}], w)
+w = preview_warnings(lang_record(lang_link("gs1:pip", "pt-BR"), lang_link("gs1:epil", "pt"),
+                                 lang_link("gs1:recallStatus", "pt-br"))).get_json()["warnings"]
+check("…compared as the resolver does: pt serves pt-BR, case ignored: no warning", w == [], w)
+w = preview_warnings(lang_record(lang_link("gs1:pip", "pt-BR"), lang_link("gs1:epil", "pt-PT"))).get_json()["warnings"]
+check("…pt-PT does not serve a request for pt-BR (the resolver would fall back): missing pt-BR",
+      (find(w, "warning.languageGap") or {}).get("gaps") == [{"type": "gs1:epil", "missing": ["pt-BR"]}], w)
+check("serves() is the resolver's lookup: pt-BR by pt, pt by pt-BR, not pt-BR by pt-PT nor en by en-x… for fr",
+      safety.serves(["pt"], "pt-BR") and safety.serves(["pt-BR"], "pt") and not safety.serves(["pt-PT"], "pt-BR")
+      and not safety.serves(["en"], "fr"))
+w = preview_warnings(lang_record(lang_link("gs1:pip", "pt"), lang_link("gs1:epil"),
+                                 lang_link("gs1:smpc", "und"), lang_link("gs1:smpc", "en"))).get_json()["warnings"]
+p = find(w, "warning.noLanguage")
+check("a leaflet without a language, a summary marked 'und': warning.noLanguage for both, in the five types' order",
+      p and p["types"] == ["gs1:epil", "gs1:smpc"], w)
+check("…a type with a link that declares no language is not also reported as missing a language",
+      find(w, "warning.languageGap") is None, w)
+w = preview_warnings(lang_record(lang_link("gs1:pip"), lang_link("gs1:certificationInfo", "fr"),
+                                 lang_link("gs1:epil", "pt"))).get_json()["warnings"]
+check("…other link types without a language, or in other languages, warn of nothing about themselves; the leaflet "
+      "lacks French", codes(w) == ["warning.languageGap"]
+      and find(w, "warning.languageGap")["gaps"] == [{"type": "gs1:epil", "missing": ["fr"]}], w)
+check("language_warnings() reads the stored form too (linktype, hreflang)",
+      safety.language_warnings([{"linktype": "gs1:eifu", "href": "x"}]) == [
+          {"code": "warning.noLanguage", "params": {"types": ["gs1:eifu"]}}])
+r = portal.app.test_client().put(f"/portal/api/v1/records/01/{G2}", headers={"Authorization": f"Bearer {key}"},
+                                 json={"description": "Ibuprofen", "links": [
+                                     {"linkType": "gs1:pip", "url": "https://farma.example/i", "hreflang": ["pt"]},
+                                     {"linkType": "gs1:epil", "url": "https://farma.example/l", "hreflang": ["und"]}]})
+check("the tenant API: a leaflet marked 'und' (undetermined) saved with warning.noLanguage",
+      r.status_code in (200, 201) and "warning.noLanguage" in codes((r.get_json() or {}).get("warnings") or []),
+      (r.status_code, r.get_json()))
+check("…both codes in openapi.json", {"warning.noLanguage", "warning.languageGap"} <= set(
+      spec["components"]["schemas"]["Warning"]["properties"]["code"]["enum"]))
+rows = [["01", G2, "/10/LANG1", "Ibuprofen LANG1", "gs1:pip", "https://farma.example/p1", "pt", "", "yes"],
+        ["01", G2, "/10/LANG1", "Ibuprofen LANG1", "gs1:epil", "https://farma.example/e1", "und", "", "no"]]
+r = edu.post("/portal/api/import/preview", json={"filename": "links.csv", "labels": {},
+             "content": base64.b64encode(sheet.write_csv(rows, {})).decode()}, headers=ORIGIN).get_json()
+item = next((i for i in r.get("records", []) if i["qualifiers"] == [["10", "LANG1"]]), {})
+check("the import's preview: a leaflet row in 'und' warned (warning.noLanguage)",
+      "warning.noLanguage" in codes(item.get("warnings", [])), r)
+script = open(os.path.join(PORTAL, "static", "app.js"), encoding="utf-8").read()
+check("the editor draws both and the import's preview has a line for each",
+      script.count('w.code === "warning.noLanguage"') == 2 and script.count('w.code === "warning.languageGap"') == 2)
+
 # --------------------------------------------------------------------------- the texts
 catalogue = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read()
 for name in ("warning.walkUp.title", "warning.walkUp.text", "warning.walkUp.strict", "warning.productLevel.text",
-             "warning.nearDuplicate.text", "import.warningsMany", "resolution.lackingMany"):
+             "warning.nearDuplicate.text", "import.warningsMany", "resolution.lackingMany", "warning.noLanguage.title",
+             "warning.noLanguage.text", "warning.noLanguage.short", "warning.languageGap.title",
+             "warning.languageGap.text", "warning.languageGap.item"):
     check(f"the text {name} in Portuguese and English", catalogue.count(f'"{name}":') == 2)
 page = open(os.path.join(PORTAL, "static", "index.html"), encoding="utf-8").read()
 check("the editor's boxes: under the qualifiers and under the targets, read aloud when they change",

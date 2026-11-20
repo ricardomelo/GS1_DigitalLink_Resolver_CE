@@ -290,6 +290,9 @@ try:
                 lambda: log.delete_many({"_id": "devtest-resolver-event"}))
         refused("resolver user: cannot create users",
                 lambda: client["admin"].command("createUser", "intruder", pwd="intruder-password", roles=["root"]))
+    # the probes out of the portal's collections before test_store.py runs on them below
+    root[NAME]["users"].delete_one({"_id": "devtest-probe"})
+    root[NAME]["settings"].delete_one({"_id": "devtest-probe"})
     with MongoClient(service_uri(ENTRY_USER, entry_pw), serverSelectionTimeoutMS=5000) as client:
         records = client["resolver_ce"]["gs1resolver"]
         records.insert_one({"_id": "devtest-entry", "data": []})

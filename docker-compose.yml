@@ -193,6 +193,12 @@ services:
       DATA_ENTRY_API_ALLOW: ${DATA_ENTRY_API_ALLOW:-}
       PROXY_TRUSTED_PROXIES: ${PROXY_TRUSTED_PROXIES:-}
       PROXY_BIND_ADDRESS: ${PROXY_BIND_ADDRESS:-127.0.0.1}
+      # request limits per client address (ADR 0031); empty, the defaults of api-access.sh
+      PROXY_LIMIT_RESOLVE: ${PROXY_LIMIT_RESOLVE:-}
+      PROXY_LIMIT_PORTAL: ${PROXY_LIMIT_PORTAL:-}
+      PROXY_LIMIT_SIGNIN: ${PROXY_LIMIT_SIGNIN:-}
+      PROXY_LIMIT_CONNECTIONS: ${PROXY_LIMIT_CONNECTIONS:-}
+      PROXY_LIMIT_EXEMPT: ${PROXY_LIMIT_EXEMPT:-}
     # the host's loopback address unless .env says otherwise (ADR 0030): the installer writes PROXY_BIND_ADDRESS
     ports:
       - "${PROXY_BIND_ADDRESS:-127.0.0.1}:8080:80"

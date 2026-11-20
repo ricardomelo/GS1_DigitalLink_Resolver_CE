@@ -3382,6 +3382,9 @@ async function loadApiCalls(event, more = false) {
         const id = document.createElement("code");
         id.textContent = c.key;
         key.append(c.keyName || "", c.keyName ? " " : "", id);
+      } else if (c.count > 1) {
+        // calls without a valid key are counted per minute, method, operation and status (ADR 0031)
+        I18N.set(key, "requests.noKeyCount", { count: c.count });
       } else {
         I18N.set(key, "requests.noKey");
       }

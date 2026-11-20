@@ -189,7 +189,6 @@ def governance(audit_scope: dict, allowed, per: dict, tenant: str | None, whole:
     calls_query = {"t": {"$gte": start, "$lt": end}}
     if not whole:
         calls_query["tenant"] = tenant if tenant else {"$exists": False}
-    calls = requestlog.api_calls()
     return {"changes": {a: n for a, n in actions.items() if a in journal.CATEGORIES["record"]},
             "byUser": _sorted_pairs(by_user, top),
             "signIns": actions.get("login", 0), "signInsRefused": sum(actions.get(a, 0) for a in REFUSED_SIGN_INS),
@@ -197,8 +196,8 @@ def governance(audit_scope: dict, allowed, per: dict, tenant: str | None, whole:
             "users": roles,
             "apiKeys": {"active": len(active),
                         "expiring": sum(1 for k in active if k["expiresAt"] <= now + timedelta(days=EXPIRING_DAYS))},
-            "apiCalls": {"calls": calls.count_documents(calls_query),
-                         "refused": calls.count_documents({**calls_query, "s": {"$gte": 400}})}}
+            "apiCalls": {"calls": requestlog.api_call_count(calls_query),
+                         "refused": requestlog.api_call_count({**calls_query, "s": {"$gte": 400}})}}
 
 
 # ----------------------------------------------------------------------------------------------- the whole answer

@@ -47,6 +47,8 @@ NGINX_CONF = PACKAGE / "frontend_proxy_server" / "nginx.conf"
 API_ACCESS_SCRIPT = PACKAGE / "frontend_proxy_server" / "api-access.sh"
 API_ACCESS_PATH = "/etc/nginx/api-access.conf"   # where the proxy image keeps the files the script writes
 REAL_IP_PATH = "/etc/nginx/real-ip.conf"
+# the request limits' files api-access.sh writes there too (ADR 0031)
+LIMIT_FILES = ("limits-http", "limit-exempt", "limit-server", "limit-resolve", "limit-portal", "limit-signin")
 HOME_DIR = PACKAGE / "frontend_proxy_server" / "home"
 MOUNT_PATH = "/usr/share/nginx/home"   # where the proxy image keeps the files
 
@@ -145,7 +147,11 @@ class Replica:
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
                 hits.append((name, self.command, self.path))
-                kind = "application/json"
+                kind, status, extra = "application/json", 200, {}
+                if "slow-" in self.path:                  # a long answer, holding its connection (ADR 0031)
+                    time.sleep(1.5)
+                if self.path.endswith("/upstream-429"):   # the service's own 429 (the portal's sign-in throttle)
+                    status, extra = 429, {"Retry-After": "99"}
                 if name == "resolver" and self.path.startswith("/api/.well-known/gs1resolver"):
                     body = json.dumps(DESCRIPTION).encode()
                 elif name == "portal" and self.path == "/portal/api/appearance":
@@ -159,8 +165,10 @@ class Replica:
                                        "host": self.headers.get("Host"),
                                        "realIp": self.headers.get("X-Real-IP"),
                                        "forwardedFor": self.headers.get("X-Forwarded-For")}).encode()
-                self.send_response(200)
+                self.send_response(status)
                 self.send_header("Content-Type", kind)
+                for header, value in extra.items():
+                    self.send_header(header, value)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -212,6 +220,8 @@ def start_nginx(workdir: Path, dns: StubDNS, ports: dict[str, int]) -> tuple[sub
     conf = conf.replace(MOUNT_PATH, str(HOME_DIR))
     conf = conf.replace(API_ACCESS_PATH, str(workdir / "api-access.conf"))
     conf = conf.replace(REAL_IP_PATH, str(workdir / "real-ip.conf"))
+    for name in LIMIT_FILES:
+        conf = conf.replace(f"/etc/nginx/{name}.conf", str(workdir / f"{name}.conf"))
     write_api_access(workdir, {})                      # as the container starts without the settings: closed
     for service, port in ports.items():
         conf = conf.replace(f"{service}:{PORTS[service]}", f"{service}:{port}")
@@ -240,11 +250,16 @@ def start_nginx(workdir: Path, dns: StubDNS, ports: dict[str, int]) -> tuple[sub
 
 def write_api_access(workdir: Path, settings: dict[str, str]) -> str:
     """Runs api-access.sh as the container's entrypoint does, with these settings and a routing table whose default
-    gateway is 127.0.0.1 (the address the test's requests come from); returns what it printed."""
+    gateway is 127.0.0.1 (the address the test's requests come from); returns what it printed. Unless the settings
+    name a request limit, the test's own address is exempt from them (ADR 0031): the other checks send requests in
+    bursts; limits_checks() tests the limits themselves."""
     (workdir / "route").write_text("Iface\tDestination\tGateway\tFlags\neth0\t00000000\t0100007F\t0003\n"
                                    "eth0\t000011AC\t00000000\t0001\n")
+    if not any(name.startswith("PROXY_LIMIT_") for name in settings):
+        settings = {**settings, "PROXY_LIMIT_EXEMPT": "127.0.0.0/8"}
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "API_ACCESS_FILE": str(workdir / "api-access.conf"),
-           "REAL_IP_FILE": str(workdir / "real-ip.conf"), "API_ACCESS_ROUTES": str(workdir / "route"), **settings}
+           "REAL_IP_FILE": str(workdir / "real-ip.conf"), "API_ACCESS_ROUTES": str(workdir / "route"),
+           "LIMITS_DIR": str(workdir), **settings}
     run = subprocess.run(["sh", str(API_ACCESS_SCRIPT)], env=env, capture_output=True, text=True)
     check(run.returncode == 0, f"api-access.sh runs with {settings or 'no settings'}" + (f" ({run.stderr.strip()})" if run.returncode else ""))
     return run.stderr
@@ -456,6 +471,129 @@ def client_address_checks(base: str, workdir: Path) -> None:
     check(seen == ("203.0.113.9", "203.0.113.9"), f"PROXY_BIND_ADDRESS=127.0.0.1: the host's proxy names the client ({seen})")
     text = (workdir / "real-ip.conf").read_text()
     check("set_real_ip_from 127.0.0.1;" in text, "api-access.sh writes the gateway as a trusted proxy in real-ip.conf")
+
+    write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "127.0.0.1"})
+    reload_nginx(workdir)
+
+
+def burst(base: str, path: str, count: int, forwarded: str | None = None, method: str = "GET",
+          headers: dict[str, str] | None = None) -> list[tuple[int, dict, str]]:
+    """count requests sent one after the other, as fast as possible."""
+    sent = {**(headers or {}), **({"X-Forwarded-For": forwarded} if forwarded else {})}
+    return [fetch(base + path, headers=sent, method=method, data=b"{}" if method == "POST" else None)
+            for _ in range(count)]
+
+
+def statuses(answers) -> list[int]:
+    return [a[0] for a in answers]
+
+
+def limits_checks(base: str, workdir: Path) -> None:
+    """Request limits per client address (ADR 0031, finding F-013): what api-access.sh writes from PROXY_LIMIT_*, and
+    the real nginx.conf refusing what goes beyond them, per address (an IPv6 address with its /64), before the
+    service is reached. Ends with the test's address exempt again."""
+    printed = write_api_access(workdir, {"PROXY_LIMIT_EXEMPT": ""})
+    zones = (workdir / "limits-http.conf").read_text()
+    check("limit_req_zone $limit_key zone=limit_resolve:10m rate=50r/s;" in zones
+          and "limit_req_zone $limit_key zone=limit_portal:10m rate=30r/s;" in zones
+          and "limit_req_zone $limit_key zone=limit_signin:10m rate=60r/m;" in zones
+          and "limit_conn_zone $limit_key zone=limit_conn:10m;" in zones, "limits: the defaults' zones (50/s, 30/s, 60/min)")
+    rules = {name: (workdir / f"{name}.conf").read_text() for name in LIMIT_FILES}
+    check("limit_req zone=limit_resolve burst=100 nodelay;" in rules["limit-resolve"]
+          and "limit_req zone=limit_portal burst=90 nodelay;" in rules["limit-portal"]
+          and "limit_req zone=limit_signin burst=30 nodelay;" in rules["limit-signin"]
+          and "limit_conn limit_conn 100;" in rules["limit-server"], "…and their bursts and connections, on by default")
+    check("request limits per address: resolution 50/s, portal 30/s, sign-in 60/min, connections 100" in printed,
+          "…api-access.sh says which limits apply")
+    reload_nginx(workdir)
+    answers = burst(base, "/01/09506000134352", 60)
+    check(statuses(answers) == [200] * 60, "…a phone, or a burst within the default, is never refused")
+
+    printed = write_api_access(workdir, {"PROXY_LIMIT_RESOLVE": "x", "PROXY_LIMIT_SIGNIN": "-1",
+                                         "PROXY_LIMIT_EXEMPT": "nonsense 203.0.113.0/24"})
+    check("PROXY_LIMIT_RESOLVE: 'x' is not a whole number; 50 kept" in printed and "PROXY_LIMIT_SIGNIN: '-1'" in printed
+          and "rate=50r/s" in (workdir / "limits-http.conf").read_text() and "rate=60r/m" in (workdir / "limits-http.conf").read_text(),
+          "…a value that is not a whole number keeps the default, with a warning")
+    check("PROXY_LIMIT_EXEMPT: 'nonsense' left out" in printed and (workdir / "limit-exempt.conf").read_text().count(" 1;") == 1,
+          "…an exempt entry that is not an address is left out")
+    reload_nginx(workdir)
+
+    # small limits, so a burst goes beyond them; the client named by a trusted proxy in front
+    write_api_access(workdir, {"PROXY_LIMIT_RESOLVE": "1", "PROXY_LIMIT_PORTAL": "1", "PROXY_LIMIT_SIGNIN": "2",
+                               "PROXY_LIMIT_CONNECTIONS": "1", "PROXY_LIMIT_EXEMPT": "198.51.100.0/24",
+                               "PROXY_TRUSTED_PROXIES": "127.0.0.1", "DATA_ENTRY_API_ALLOW": "all"})
+    reload_nginx(workdir)
+    before = len(hits)
+    answers = burst(base, "/01/09506000134352", 6, forwarded="203.0.113.50")
+    reached = sum(1 for h in hits[before:] if h[0] == "resolver")
+    # nginx serves the first request and a burst of two more at once (rate 1, burst 2), then refuses
+    check(statuses(answers)[:3] == [200] * 3 and statuses(answers)[3:] == [429] * 3,
+          f"resolution: beyond its rate and burst, 429 ({statuses(answers)})")
+    refused = answers[-1]
+    check(refused[1].get("Retry-After") == "1" and "text/plain" in refused[1].get("Content-Type", "")
+          and "Too many requests" in refused[2], "…with Retry-After and a plain text, from the proxy itself")
+    check(reached == 3, f"…the refused requests never reach the resolver ({reached} reached it)")
+    check(statuses(burst(base, "/", 1, forwarded="203.0.113.50")) == [429], "…the home page shares resolution's limit")
+    check(statuses(burst(base, "/01/09506000134352", 3, forwarded="203.0.113.51")) == [200] * 3,
+          "…another client address keeps its own share")
+    check(statuses(burst(base, "/01/09506000134352", 8, forwarded="198.51.100.9")) == [200] * 8,
+          "…an address of PROXY_LIMIT_EXEMPT is never limited")
+
+    answers = burst(base, "/portal/api/records", 8, forwarded="203.0.113.60")
+    check(statuses(answers)[:4] == [200] * 4 and 429 in statuses(answers),
+          f"portal: beyond its rate and burst of three times as many, 429 ({statuses(answers)})")
+    refused = answers[-1]
+    check(refused[1].get("Retry-After") == "1" and "application/json" in refused[1].get("Content-Type", "")
+          and json.loads(refused[2]).get("code") == "proxy.tooMany",
+          "…as JSON with the message code the portal's pages show (proxy.tooMany)")
+    check(statuses(burst(base, "/portal/api/v1/records", 1, forwarded="203.0.113.60")) == [429],
+          "…the tenant API shares the portal's limit")
+
+    answers = burst(base, "/portal/api/login", 4, forwarded="203.0.113.70", method="POST")
+    check(statuses(answers) == [200, 200, 429, 429], f"sign-in: beyond its rate a minute, 429 ({statuses(answers)})")
+    check(json.loads(answers[-1][2]).get("code") == "proxy.tooMany", "…as JSON with the message code")
+    for path in ("/portal/api/password/forgot", "/portal/api/password/link", "/portal/api/password/link/check",
+                 "/portal/api/sso/start"):
+        check(statuses(burst(base, path, 1, forwarded="203.0.113.70", method="POST")) == [429],
+              f"…{path} shares the sign-in limit")
+    check(statuses(burst(base, "/portal/sso/callback?code=x&state=y", 1, forwarded="203.0.113.70")) == [429],
+          "…so does the single sign-on callback")
+    check(statuses(burst(base, "/portal/api/login/options", 1, forwarded="203.0.113.70")) == [200],
+          "…the sign-in page's options are a portal request, not a sign-in")
+    answers = burst(base, "/portal/upstream-429", 1, forwarded="203.0.113.71")
+    check(statuses(answers) == [429] and answers[0][1].get("Retry-After") == "99"
+          and json.loads(answers[0][2]).get("upstream") == "portal",
+          "…a 429 of the portal itself passes through unchanged")
+
+    answers = burst(base, "/01/09506000134352", 3, forwarded="2001:db8:5:6::1") + \
+        burst(base, "/01/09506000134352", 1, forwarded="2001:db8:5:6:aaaa:bbbb:cccc:dddd")
+    check(statuses(answers) == [200] * 3 + [429], f"IPv6: another address of the same /64 shares its limit ({statuses(answers)})")
+    check(statuses(burst(base, "/01/09506000134352", 1, forwarded="2001:db8:5:7::1")) == [200],
+          "…another /64 keeps its own")
+    answers = burst(base, "/01/09506000134352", 3, forwarded="2001:db8::1") + \
+        burst(base, "/01/09506000134352", 1, forwarded="2001:db8::2:3:4")
+    check(statuses(answers) == [200] * 3 + [429], f"…a /64 written in short form too ({statuses(answers)})")
+
+    answers = burst(base, "/api/docs", 8, forwarded="203.0.113.80")
+    check(statuses(answers) == [200] * 8, f"the data entry API, for the addresses allowed, has no request rate ({statuses(answers)})")
+    results_box = []
+    slow = threading.Thread(target=lambda: results_box.append(fetch(base + "/api/slow-1", headers={"X-Forwarded-For": "203.0.113.90"})))
+    slow.start()
+    time.sleep(0.4)
+    second = fetch(base + "/api/docs", headers={"X-Forwarded-For": "203.0.113.90"})
+    other = fetch(base + "/api/docs", headers={"X-Forwarded-For": "203.0.113.91"})
+    slow.join()
+    check(second[0] == 429 and other[0] == 200 and results_box and results_box[0][0] == 200,
+          f"connections: beyond PROXY_LIMIT_CONNECTIONS at once from one address, 429 ({second[0]}, {other[0]})")
+
+    write_api_access(workdir, {"PROXY_LIMIT_RESOLVE": "0", "PROXY_LIMIT_PORTAL": "0", "PROXY_LIMIT_SIGNIN": "0",
+                               "PROXY_LIMIT_CONNECTIONS": "0", "PROXY_TRUSTED_PROXIES": "127.0.0.1"})
+    check(all("limit_" not in (workdir / f"{name}.conf").read_text() for name in LIMIT_FILES if name != "limits-http"),
+          "0 turns each limit off (nothing written where it applies)")
+    reload_nginx(workdir)
+    check(statuses(burst(base, "/01/09506000134352", 20, forwarded="203.0.113.50")) == [200] * 20
+          and statuses(burst(base, "/portal/api/login", 5, forwarded="203.0.113.70", method="POST")) == [200] * 5,
+          "…and the same clients are served again")
 
     write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "127.0.0.1"})
     reload_nginx(workdir)
@@ -761,6 +899,7 @@ def main() -> int:
         routing_checks(base)
         api_access_checks(base, workdir)
         client_address_checks(base, workdir)
+        limits_checks(base, workdir)
         replica_checks(base, cluster)
         browser_checks(base, port, shots)
     finally:

@@ -1585,6 +1585,16 @@ runs imports with the same rules).
   trail and the resolver's approximate location: behind a proxy not listed, every client shares its address. After a
   change: `docker compose up -d frontend-proxy-service`; the proxy's log says to whom
   the API is open (`docker compose logs frontend-proxy-service | grep api-access`).
+- The front-end proxy limits requests per client address ([ADR 0031](../adr/0031-request-limits.md)), the address
+  found as above (an IPv6 address counts with the rest of its `/64`): resolution and the home page 50 a second
+  (`PROXY_LIMIT_RESOLVE`, bursts of 100), the portal, its API and the tenant API 30 a second (`PROXY_LIMIT_PORTAL`,
+  bursts of 90), sign-in, password recovery and single sign-on 60 a minute (`PROXY_LIMIT_SIGNIN`, bursts of 30), and
+  100 connections at once (`PROXY_LIMIT_CONNECTIONS`). Beyond them the proxy answers 429 with `Retry-After`. `0` turns
+  one off; list your monitoring and any integrator that resolves in bulk from known servers in `PROXY_LIMIT_EXEMPT`
+  (addresses or networks). The official data entry API has no rate, only the connection limit. After a change:
+  `docker compose up -d frontend-proxy-service`; the proxy's log shows the limits in force
+  (`docker compose logs frontend-proxy-service | grep 'request limits'`) and each refusal as a warning
+  (`limiting requests`).
 - No service that answers requests is given the root database credentials
   ([ADR 0030](../adr/0030-least-privilege-services.md)): the one-shot `portal-db-init` service alone receives
   `MONGO_URI` and makes, at every start, a user per service with the least privileges it needs — the portal's own

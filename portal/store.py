@@ -62,6 +62,11 @@ INDEXES = {
         ([("key", ASCENDING), ("at", ASCENDING)], {}),
         ([("at", ASCENDING)], {"expireAfterSeconds": LOGIN_FAILURE_SECONDS}),
     ],
+    # failed sign-ins naming no account, counted per hour (failcount.py, ADR 0031)
+    "anonymous_failures": [
+        ([("journaled", ASCENDING), ("hour", ASCENDING)], {}),
+        ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
+    ],
     "linkcheck_cache": [
         ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
     ],
@@ -95,6 +100,8 @@ INDEXES = {
     ],
     "api_requests": [
         ([("t", DESCENDING)], {}),
+        # the minute's document of the calls without a valid key (requestlog.record_api_call(), ADR 0031)
+        ([("b", ASCENDING)], {"unique": True, "partialFilterExpression": {"b": {"$exists": True}}}),
         ([("tenant", ASCENDING), ("t", DESCENDING)], {}),
         ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
     ],

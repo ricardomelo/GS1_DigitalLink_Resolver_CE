@@ -462,11 +462,12 @@ def counts(scope: dict, start: datetime, end: datetime, allowed=None) -> tuple[d
     query = {**(scope or {}), "at": {"$gte": start, "$lt": end}}
     actions: dict[str, int] = {}
     by_user: dict[str, int] = {}
-    for event in _journal().find(query, {"action": 1, "user": 1, "anchor": 1}):
+    for event in _journal().find(query, {"action": 1, "user": 1, "anchor": 1, "count": 1}):
         if allowed and event.get("anchor") and not allowed(event["anchor"]):
             continue
         action = event.get("action", "")
-        actions[action] = actions.get(action, 0) + 1
+        # an event standing for several (failed sign-ins naming no account, counted an hour at a time: ADR 0031)
+        actions[action] = actions.get(action, 0) + max(1, int(event.get("count") or 1))
         if action in CATEGORIES["record"]:
             user = event.get("user", "-")
             by_user[user] = by_user.get(user, 0) + 1

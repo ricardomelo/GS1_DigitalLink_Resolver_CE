@@ -13,7 +13,8 @@ The resolver writes one event per resolution request into the collection "reques
     the resolver keeps instead of events for automated requests and requests without a key ("request_counts", ADR
     0006, section 11); the housekeeping deletes such events recorded before that change once their day is counted
     (fold_noise());
-  - records the tenant API's calls (record_api_call(), collection "api_requests") and lists them;
+  - records the tenant API's calls (record_api_call(), collection "api_requests") and lists them; a call without a
+    valid key is counted, one document per minute, method, operation and status, never stored one by one (ADR 0031);
   - keeps the retention set in the portal (ADR 0006, section 8): the installation's days (server administrators) and
     each organisation's, never longer; the resolver reads both to date each event's expiry, and the worker's
     housekeeping deletes what a shortened retention no longer keeps (apply_retention()); the space the log uses, and
@@ -37,6 +38,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from bson import ObjectId
 from bson.errors import InvalidId
 from pymongo import DESCENDING
+from pymongo.errors import DuplicateKeyError
 
 import gs1
 import store
@@ -860,18 +862,38 @@ def _tenant_list() -> list[dict]:
 
 
 def record_api_call(key: dict | None, method: str, operation: str | None, status: int, ms: int) -> None:
-    """One call of /portal/api/v1 (ADR 0006, decision 8): never the record, the query string or the key's secret."""
+    """One call of /portal/api/v1 (ADR 0006, decision 8): never the record, the query string or the key's secret.
+    A call without a valid key (anyone on the internet) adds one to the document of its minute, method, operation and
+    status (fields "b", the bucket, and "n", the calls; "ms" their total time) instead of a document of its own, so
+    calls in bulk cost the database a document a minute, not one each (ADR 0031, section 2.2)."""
     if not log_days():
         return
     days = days_for(key.get("tenant") if key else None, _tenant_list())
     now = store.now()
-    doc = {"t": now, "expiresAt": now + timedelta(days=days), "m": method, "op": (operation or "")[:120],
-           "s": status, "ms": ms}
-    if key:
-        doc["key"] = key.get("_id")
-        if key.get("tenant"):
-            doc["tenant"] = key["tenant"]
+    op = (operation or "")[:120]
+    if not key:
+        minute = now.replace(second=0, microsecond=0)
+        bucket = f"{minute.isoformat()}|{method}|{op}|{status}"
+        change = {"$inc": {"n": 1, "ms": ms},
+                  "$setOnInsert": {"t": minute, "expiresAt": minute + timedelta(days=days), "m": method, "op": op,
+                                   "s": status}}
+        try:
+            api_calls().update_one({"b": bucket}, change, upsert=True)
+        except DuplicateKeyError:                         # another replica made the minute's document first
+            api_calls().update_one({"b": bucket}, change)
+        return
+    doc = {"t": now, "expiresAt": now + timedelta(days=days), "m": method, "op": op, "s": status, "ms": ms}
+    doc["key"] = key.get("_id")
+    if key.get("tenant"):
+        doc["tenant"] = key["tenant"]
     api_calls().insert_one(doc)
+
+
+def api_call_count(query: dict) -> int:
+    """The calls the documents matching a query stand for: a counted document (no valid key) for its "n"."""
+    found = list(api_calls().aggregate([{"$match": query},
+                                        {"$group": {"_id": None, "n": {"$sum": {"$ifNull": ["$n", 1]}}}}]))
+    return found[0]["n"] if found else 0
 
 
 def list_api_calls(args, tenant_id: str | None, whole: bool, keys: dict, organisations: list[dict]) -> dict:
@@ -896,7 +918,10 @@ def list_api_calls(args, tenant_id: str | None, whole: bool, keys: dict, organis
     names = {t["id"]: t["name"] for t in organisations}
     rows = [{"id": str(d["_id"]), "at": _iso_ms(d["t"]), "key": d.get("key"), "keyName": keys.get(d.get("key")),
              "organisation": names.get(d.get("tenant")) if d.get("tenant") else None,
-             "method": d.get("m"), "operation": d.get("op"), "status": d.get("s"), "ms": d.get("ms")}
+             "method": d.get("m"), "operation": d.get("op"), "status": d.get("s"),
+             # a counted document: its calls and their average time
+             "ms": round(d["ms"] / d["n"]) if d.get("n") and d.get("ms") is not None else d.get("ms"),
+             "count": d.get("n", 1)}
             for d in docs[:size]]
     following = f"{_iso_ms(docs[size - 1]['t'])}|{docs[size - 1]['_id']}" if len(docs) > size else None
     return {"calls": rows, "next": following}

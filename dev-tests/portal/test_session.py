@@ -121,11 +121,73 @@ answer = portal.app.test_client().post("/portal/api/login", json={"username": "t
 check("…and failures cannot be charged to another address by writing it first", answer.status_code == 200,
       answer.status_code)
 store.col("login_failures").delete_many({})
-anonymous.post("/portal/api/login", json={"username": "nobody-traced", "password": "wrong"},
+anonymous.post("/portal/api/login", json={"username": "tester", "password": "wrong"},
                headers={**ORIGIN, "X-Forwarded-For": "10.9.8.7, 203.0.113.21"})
-traced = store.col("journal").find_one({"action": "login-failed", "user": "nobody-traced"}) or {}
+traced = store.col("journal").find_one({"action": "login-failed", "user": "tester"}) or {}
 check("the audit trail records the address the proxy set, not the one the client wrote",
       traced.get("detail") == "203.0.113.21", traced.get("detail"))
+store.col("login_failures").delete_many({})
+
+# ---------------------------------------------------------------- failed sign-ins naming no account (ADR 0031 §2.3)
+# Counted per hour, one journal event per finished hour; a failure naming an account is journalled at once (above).
+import failcount  # noqa: E402
+import journal  # noqa: E402
+
+failcount._counters().delete_many({})
+events_before = store.col("journal").count_documents({"action": "login-failed"})
+for n, address in enumerate(["203.0.113.40", "203.0.113.41", "203.0.113.40", "203.0.113.42"]):
+    anonymous.post("/portal/api/login", json={"username": f"ghost{n}", "password": "wrong"},
+                   headers={**ORIGIN, "X-Forwarded-For": address})
+anonymous.post("/portal/api/login", json={"username": "", "password": "x"}, headers={**ORIGIN, "X-Forwarded-For": "203.0.113.43"})
+counters = list(failcount._counters().find({}))
+check("failed sign-ins naming no account write no journal event each",
+      store.col("journal").count_documents({"action": "login-failed"}) == events_before,
+      store.col("journal").count_documents({"action": "login-failed"}) - events_before)
+check("…they are counted in one document of the hour, with the addresses seen (an empty name too)",
+      len(counters) == 1 and counters[0]["n"] == 5 and counters[0]["kind"] == "sign-in"
+      and sorted(counters[0]["addrs"]) == ["203.0.113.40", "203.0.113.41", "203.0.113.42", "203.0.113.43"]
+      and counters[0]["hour"].minute == 0 and counters[0]["journaled"] is False
+      and counters[0]["expiresAt"] > counters[0]["hour"] + timedelta(days=failcount.KEEP_DAYS), counters)
+check("…the sign-in throttle still counts them per address",
+      store.col("login_failures").count_documents({"key": "addr:203.0.113.40"}) == 2)
+for n in range(failcount.SAMPLE + 5):
+    failcount.note("sign-in", f"198.51.100.{100 + n}")
+counter = failcount._counters().find_one({})
+check(f"…at most {failcount.SAMPLE} addresses kept, whatever the crowd", counter["n"] == 5 + failcount.SAMPLE + 5
+      and len(counter["addrs"]) == failcount.SAMPLE, counter)
+check("the hour in progress is not journalled yet", failcount.journal_closed_hours() == 0
+      and store.col("journal").count_documents({"action": "login-failed"}) == events_before)
+check("the worker's hourly housekeeping runs it", failcount.journal_closed_hours in portal.HOUSEKEEPING)
+_real_now = store.now
+store.now = lambda: _real_now() + timedelta(hours=1)
+_real_append = journal.append
+journal.append = lambda *a, **k: (_ for _ in ()).throw(OSError("journal unreachable"))
+try:
+    try:
+        failcount.journal_closed_hours()
+        refused = False
+    except OSError:
+        refused = True
+    check("a journal that cannot be written gives the counter back, for the next run",
+          refused and failcount._counters().find_one({})["journaled"] is False)
+    journal.append = _real_append
+    written = failcount.journal_closed_hours()
+    again = failcount.journal_closed_hours()
+finally:
+    journal.append = _real_append
+    store.now = _real_now
+summary = store.col("journal").find_one({"action": "login-failed", "count": {"$exists": True}}) or {}
+check("after the hour: one journal event, once, however many workers run", written == 1 and again == 0
+      and store.col("journal").count_documents({"action": "login-failed"}) == events_before + 1, (written, again))
+check("…by '-' in the operator's trail, sealed, with the count, the hour and the first addresses",
+      summary.get("user") == "-" and "tenant" not in summary and summary.get("count") == counter["n"]
+      and summary.get("seq") is not None and f'{counter["n"]} failed sign-ins with a user name of no account' in summary.get("detail", "")
+      and f'{counter["hour"]:%Y-%m-%d %H:00} and' in summary.get("detail", "") and "203.0.113.41" in summary.get("detail", "")
+      and summary.get("detail", "").endswith("and others"), summary)
+_actions, _ = journal.counts(journal.scope_query(None, operator_view=True), counter["hour"],
+                             counter["hour"] + timedelta(hours=3))
+check("…the overview counts the failures it stands for", _actions.get("login-failed", 0) >= counter["n"], _actions)
+failcount._counters().delete_many({})
 store.col("login_failures").delete_many({})
 
 

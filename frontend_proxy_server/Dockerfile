@@ -9,7 +9,9 @@ COPY nginx.conf /etc/nginx/nginx.conf
 # /etc/nginx/real-ip.conf from the trusted proxies; the empty files baked in keep both closed, and the client's
 # address the connection's, if it never runs.
 COPY api-access.sh /docker-entrypoint.d/40-api-access.sh
-RUN chmod 755 /docker-entrypoint.d/40-api-access.sh && : > /etc/nginx/api-access.conf && : > /etc/nginx/real-ip.conf
+# The request limits (Documentation/adr/0031-request-limits.md) are written by the same script: empty, none.
+RUN chmod 755 /docker-entrypoint.d/40-api-access.sh && : > /etc/nginx/api-access.conf && : > /etc/nginx/real-ip.conf \
+    && for f in limits-http limit-exempt limit-server limit-resolve limit-portal limit-signin; do : > /etc/nginx/$f.conf; done
 # Home page served at "/" (see nginx.conf)
 COPY home /usr/share/nginx/home
 RUN chmod -R a+rX /usr/share/nginx/home

@@ -40,6 +40,7 @@ import domains
 import epc
 import example_secrets
 import exportlimits
+import failcount
 import gcp
 import linkcheck
 import mail
@@ -1126,7 +1127,10 @@ def login():
         throttle.fail(pair, by_addr, by_user)
         typed = shown_username(username)
         audit.info("user=%s action=login-failed addr=%s", typed, client_address())
-        log_event("login-failed", user=typed, detail=client_address(), tenant=tenant, actor_tenant=tenant)
+        if account:
+            log_event("login-failed", user=typed, detail=client_address(), tenant=tenant, actor_tenant=tenant)
+        else:       # a name of no account: counted, one journal event an hour (ADR 0031, section 2.3)
+            failcount.note("sign-in", client_address())
         if account and throttle.count(by_user) == MAX_LOGIN_FAILURES:   # tell the owner, once in the window
             notify.send(username, "sign-in-failures", when=notify.now_text(), minutes=LOCKOUT_SECONDS // 60)
         time.sleep(FAILURE_PAUSE)
@@ -3493,9 +3497,12 @@ def sso_callback():
         tenant = sso.tenant_of(scope) if scope else None
         audit.info("user=- action=login-failed addr=%s reason=%s", client_address(), err.code)
         typed = err.detail.split(" ", 1)[0] if "@" in err.detail.split(" ", 1)[0] else ""
-        log_event("login-failed", user=shown_username(typed),
-                  detail=f"{client_address()} single sign-on: {err.code} {err.detail}"[:300],
-                  tenant=tenant, actor_tenant=tenant)
+        if scope:
+            log_event("login-failed", user=shown_username(typed),
+                      detail=f"{client_address()} single sign-on: {err.code} {err.detail}"[:300],
+                      tenant=tenant, actor_tenant=tenant)
+        else:       # no sign-in in progress on this browser: counted (ADR 0031, section 2.3)
+            failcount.note("sso", client_address())
         if scope and err.code != "sso.expired":
             sso.note(scope, False, err.code, err.detail)
         session.pop("sso", None)
@@ -3877,7 +3884,7 @@ def label_response(anchor: str, args) -> Response:
 JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job, "mail": notify.run_mail_job}
 # What the worker runs about once an hour, outside any job (worker.HOUSEKEEPING_SECONDS)
 HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate, requestlog.fold_noise, requestlog.apply_retention,
-                requestlog.apply_size_limit, domains.recheck_all, journal.checkpoint]
+                requestlog.apply_size_limit, domains.recheck_all, journal.checkpoint, failcount.journal_closed_hours]
 # What the worker runs every PORTAL_MONITOR_MINUTES (Documentation/adr/0008-monitoring-and-alerts.md)
 MONITORING = [monitor.run]
 MONITOR_SECONDS = monitor.minutes() * 60

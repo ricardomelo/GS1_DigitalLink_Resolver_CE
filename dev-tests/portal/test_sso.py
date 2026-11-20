@@ -306,6 +306,21 @@ check("the configuration's last failure noted for its administrators", last.get(
       and "off@acme.example" in last.get("detail", ""), last)
 failed = store.col("journal").find_one({"action": "login-failed", "detail": {"$regex": "sso.noAccount"}})
 check("refusals are in the organisation's journal", failed and failed.get("tenant") == acme["id"], failed)
+# ADR 0031 §2.3: the provider's answer reaching the callback when this browser started no sign-in is counted
+import failcount  # noqa: E402
+failcount._counters().delete_many({})
+_before = store.col("journal").count_documents({"action": "login-failed"})
+for _ in range(3):
+    _r = portal.app.test_client().get("/portal/sso/callback?code=forged&state=forged",
+                                      headers={"X-Forwarded-For": "203.0.113.77"})
+_counter = failcount._counters().find_one({"kind": "sso"}) or {}
+check("a callback without a sign-in in progress: refused, counted, no journal event each",
+      _r.status_code == 302 and "/portal/login?sso=" in _r.headers.get("Location", "")
+      and store.col("journal").count_documents({"action": "login-failed"}) == _before
+      and _counter.get("n") == 3 and _counter.get("addrs") == ["203.0.113.77"], _counter)
+check("…its hour's journal event names single sign-on",
+      "3 single sign-on answers without a sign-in in progress" in failcount.detail_of(_counter), failcount.detail_of(_counter))
+failcount._counters().delete_many({})
 
 # ------------------------------------------------------------------ a verified e-mail, the subject (ADR 0025)
 ana.put(f"/portal/api/sso/{acme['id']}", json={"domains": ["acme.example", "acme2.example"]}, headers=ORIGIN)

@@ -365,7 +365,7 @@ flowchart LR
 
 | Service | Containers | Role | Published |
 |---|---|---|---|
-| `frontend-proxy-service` | `frontend-proxy-server` | Routes `/`, `/api`, `/portal/` and every Digital Link to every replica of the services; serves the home page | `${PROXY_BIND_ADDRESS}:8080` |
+| `frontend-proxy-service` | `frontend-proxy-server` | Routes `/`, `/api`, `/portal/` and every Digital Link to every replica of the services; serves the home page; limits requests per client address ([ADR 0031](Documentation/adr/0031-request-limits.md)) | `${PROXY_BIND_ADDRESS}:8080` |
 | `web-service` | `WEB_SERVICE_REPLICAS` (1) | Resolves GS1 Digital Links (redirects, linksets, HTML pages) | internal |
 | `data-entry-service` | `DATA_ENTRY_SERVICE_REPLICAS` (1) | REST API to create, read, update and delete records | internal (via `/api`) |
 | `portal-service` | `PORTAL_SERVICE_REPLICAS` (1) | Link management portal (Flask + static front end) | internal (via `/portal/`) |
@@ -641,7 +641,7 @@ For an organisation's own systems (an ERP, a PIM, a shop): the same rules as the
 organisation's records ([ADR 0005](Documentation/adr/0005-tenant-api.md)). An administrator creates a key in the
 portal (user menu → **API keys**: scopes, optional prefixes, validity) and sees it once; every call sends it as
 `Authorization: Bearer rk_<id>.<secret>`. Every operation is in the [tenant API reference](Documentation/api-reference.md). The description is public: `GET /portal/api/v1/openapi.json`
-(OpenAPI 3.1). Requests are limited per key (120 a minute by default; then 429 with `Retry-After`).
+(OpenAPI 3.1). Requests are limited per key (120 a minute by default; then 429 with `Retry-After`), and per client address at the proxy with the rest of the portal (`PROXY_LIMIT_PORTAL`, [ADR 0031](Documentation/adr/0031-request-limits.md)).
 
 | Operation | Scope | Purpose |
 |---|---|---|

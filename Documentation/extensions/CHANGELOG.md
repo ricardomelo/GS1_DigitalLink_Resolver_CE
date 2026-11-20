@@ -11,6 +11,15 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Spreadsheet imports read one row at a time (session 47)
+- **Changed: what an imported spreadsheet holds is bounded, not only its size**
+  ([ADR 0032](../adr/0032-spreadsheet-reading-limits.md)). Reading stops at the first data row past the format's limit
+  (5,000) instead of reading the whole sheet first; only the first 64 columns of a row are read (further columns are
+  ignored); blank rows no longer take memory. An Excel file whose contents unpack into more than 32 MB is refused with
+  *Once unpacked, the file holds more than 32 MB, the limit for an import. Split the spreadsheet into smaller parts.*
+  (twelve languages), as is one compressed otherwise than Excel does. A spreadsheet of the import's layout reaches
+  none of these limits; a crafted file of a few kilobytes could before take gigabytes of the portal's memory.
+
 ### Request limits per address; anonymous requests counted (session 46)
 - **New: the proxy limits how many requests one address may send** ([ADR 0031](../adr/0031-request-limits.md)).
   Resolution and the home page 50 a second (bursts of 100), the portal, its API and the tenant API 30 a second

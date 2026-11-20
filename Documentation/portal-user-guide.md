@@ -687,7 +687,9 @@ record; the **Default** column marks the target that opens first.
 
 1. **Import spreadsheet** (editors and administrators) opens the dialog. Choose the file: Excel (.xlsx),
    CSV or text (.csv, .txt). The dialog shows the limits per file (5,000 data rows and 700 KB for each
-   format); split larger files.
+   format); split larger files. Only the first 64 columns of the first sheet are read, and an Excel file whose
+   contents unpack into more than 32 MB is refused (*Once unpacked, the file holds more than 32 MB…*); a spreadsheet
+   with the import's columns never comes near either.
 2. Optionally tick **Also check that the addresses answer** (section 13).
 3. The portal checks every row with the editor's rules and shows a **preview** — *New*, *Changed*,
    *Unchanged*, *With errors* — and, for every wrong row, the row number and the reason (an invalid
@@ -1273,6 +1275,7 @@ the tenant API (`GET /portal/api/v1/stats`, API keys with the scope *Read statis
 | *The resolver did not respond.* | Try again in a few minutes; if it persists, tell the administrator. |
 | *Your session has ended. Please sign in again.* | Sign in; unsaved changes in the form are lost. |
 | *Too many unsuccessful attempts. Try again in N minute(s).* | Wait, or ask an administrator to reset your password. |
+| *Once unpacked, the file holds more than 32 MB, the limit for an import.* | The spreadsheet holds far more than its rows need (often a very large cell, image or hidden sheet): save only the import's columns in a new file, or split it. |
 | *Too many requests from your address. Wait a moment and try again.* | Wait a few seconds; if it happens often for everyone in your office, tell the operator (the limit per address can be raised). |
 | *If there is an account with this user name or e-mail address, a message … has been sent.* | Check your mailbox and its spam folder; nothing arrives if the account has no address: ask an administrator. |
 | *This link is no longer valid…* | Ask for a new one (**Forgotten your password?**, or the administrator for an invitation); only the newest link works, once. |

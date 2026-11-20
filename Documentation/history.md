@@ -1536,3 +1536,17 @@ as one event an hour by the housekeeping. 46 new checks in `home`, 8 in `request
 `special_chars`; 27 mutations, all caught. The defaults are generous on purpose (an office behind one address); an
 attacker with many addresses still gets each address's share, and the cost of individual paths is left for the code
 review.
+
+## Session 47 — spreadsheet imports read one row at a time
+
+Finding F-014 of the security assessment, in one code commit (`a5255c4`;
+[ADR 0032](adr/0032-spreadsheet-reading-limits.md)): the import limited the file's size and its data rows, but read the
+whole first sheet before counting them, every row padded to the widest. An Excel file is a ZIP archive, so its size
+said little: a 4 KB file named a row a million rows down, a 69 KB file with a cell in column XFD took 1.1 GB of memory,
+and a part of a few kilobytes could unpack into gigabytes. `sheet.read_table()` now reads rows one at a time and stops
+at the first data row past the limit, reads the first 64 columns of a row, keeps blank rows as one shared list (the
+row numbers stay right), reads no row after Excel's last one, and unpacks an XLSX file's parts before opening it,
+refusing more than 32 MB (*import.unpackedTooBig*, twelve languages) or parts compressed otherwise than Excel does.
+The worst file at the size limit now takes about a third of a second and 60 MB. The preview stays in the web request:
+moving it to the worker would change the dialog for a cost the limits already bound. 15 new checks in `sheet`, 1 in
+`jobs`; 16 mutations, all caught (the one that first survived, blank rows converted cell by cell, got its own check).

@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-17",
+ "generated": "2026-11-20",
  "programs": {
   "about": {
    "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
@@ -5845,7 +5845,7 @@
   "store_mongodb": {
    "area": "Data store, installation and operation",
    "checks": [],
-   "count": 279,
+   "count": 281,
    "ciOnly": true
   }
  }

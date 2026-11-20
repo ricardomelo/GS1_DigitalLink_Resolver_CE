@@ -1517,7 +1517,7 @@ resolver: `find` on the records and on five collections of the portal's database
 entry API: the records only); both services connect through `service_db.py` and refuse the example passwords of their
 users on a real domain; both images run as a system user; MongoDB and the proxy are published on loopback unless
 `.env` says otherwise; the installer and the rotation script handle the two new passwords. A new program,
-`least_privilege` (44 checks), 10 new checks in `deploy`, 4 in `install` and 20 against a real MongoDB in
+`least_privilege` (44 checks), 10 new checks in `deploy`, 4 in `install` and 22 against a real MongoDB in
 `store_mongodb`; 28 mutations, all caught. The scan of the resolver's code found `forwarding_rules`, read through a
 module constant, which a first version of the role had left out: a role written from a reading of the code needs a
 check that reads the code too. No screen changed, so the portal's user guide is unchanged. Left for later: read-only

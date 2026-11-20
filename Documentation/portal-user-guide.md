@@ -104,6 +104,10 @@ below); otherwise ask the administrator for a new temporary password.
   15 seconds before trying that user name again, then 30, 60 and so on, up to 15 minutes; the page says how long.
   The account itself is never locked: you can still sign in from another computer. A computer that collects 20
   wrong passwords in 15 minutes, whatever the user names, waits 15 minutes.
+- **Too many requests.** The installation also limits how many requests one address may send (sign-in and password
+  recovery: 60 a minute by default; the rest of the portal: 30 a second). Beyond that the page says *Too many requests
+  from your address. Wait a moment and try again.* People behind one office address share it; if they see the message
+  often, the operator can raise the limit.
 - **Session.** The session ends after 30 minutes without use, and 12 hours after you signed in in any case
   (the administrator can change both). Typing, clicking and scrolling count as use, even before you save.
   Two minutes before the end a window counts down: choose **Stay signed in** to carry on, or **Sign out**.
@@ -1090,6 +1094,12 @@ administrator did to the organisation (its users, its prefixes, support access) 
 *operator*. The server administrator sees the operator's trail, with an **Organisation** column and everything
 the operator's users did to organisations; an organisation's whole trail only during support access.
 
+A wrong password for an existing account is shown at once, in the account's organisation's trail, with the address
+it came from. Failed sign-ins with a user name that matches no account — the kind a script sends by the thousand —
+are counted instead: once an hour, the operator's trail gets one event by *-* saying how many there were in the past
+hour and from which addresses (the first ten), and the overview counts each of them. The event appears up to two
+hours after the attempts.
+
 A change to a record is written to the audit trail before it is made. If the trail cannot be written (the portal's
 database is unavailable), the portal refuses the change — *The audit journal could not be written* — and nothing is
 changed; try again in a moment. When the resolver then refuses a change, the trail shows *Change not completed* after
@@ -1161,7 +1171,9 @@ invalid requests that have no code; during support access, the organisation's.
 
 **Tenant API** (administrators). The second tab lists the calls the organisation's systems made with API keys
 (section 14): when, which key, the operation, the answer's status and the time taken — never the records or data
-they sent.
+they sent. Calls made without a valid key (anyone on the internet, a key typed wrong, revoked or expired) are counted
+rather than listed one by one: one row per minute, operation and status, *no valid key — N calls in this minute*,
+with the average time; a server administrator sees them.
 
 **Retention** (administrators). The third tab says how long requests are kept. The server administrator sets the
 days of the whole installation (1 to 3,650; the server's default, `RESOLVER_LOG_DAYS`, is shown below the field) and
@@ -1261,6 +1273,7 @@ the tenant API (`GET /portal/api/v1/stats`, API keys with the scope *Read statis
 | *The resolver did not respond.* | Try again in a few minutes; if it persists, tell the administrator. |
 | *Your session has ended. Please sign in again.* | Sign in; unsaved changes in the form are lost. |
 | *Too many unsuccessful attempts. Try again in N minute(s).* | Wait, or ask an administrator to reset your password. |
+| *Too many requests from your address. Wait a moment and try again.* | Wait a few seconds; if it happens often for everyone in your office, tell the operator (the limit per address can be raised). |
 | *If there is an account with this user name or e-mail address, a message … has been sent.* | Check your mailbox and its spam folder; nothing arrives if the account has no address: ask an administrator. |
 | *This link is no longer valid…* | Ask for a new one (**Forgotten your password?**, or the administrator for an invitation); only the newest link works, once. |
 

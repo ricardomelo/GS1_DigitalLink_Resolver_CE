@@ -1522,3 +1522,17 @@ users on a real domain; both images run as a system user; MongoDB and the proxy 
 module constant, which a first version of the role had left out: a role written from a reading of the code needs a
 check that reads the code too. No screen changed, so the portal's user guide is unchanged. Left for later: read-only
 file systems, the proxy's master process as root, and MongoDB's example root password only warned about.
+
+## Session 46 — request limits per address; anonymous events counted
+
+Finding F-013 of the security assessment, in one code commit (`c89c362`;
+[ADR 0031](adr/0031-request-limits.md)): nothing limited how many requests one address could send, and requests anyone
+can make wrote to the database each time — a failed sign-in with a new user name a journal event, every call of the
+tenant API an `api_requests` document, with or without a valid key. The installation's proxy now limits each client
+address (an IPv6 address with its `/64`) for resolution, the portal and sign-in, and its connections, each a
+`PROXY_LIMIT_*` setting with exempt addresses, answering 429 with `Retry-After` itself; calls without a valid key are
+counted per minute in one document, and failed sign-ins naming no account per hour, written to the operator's trail
+as one event an hour by the housekeeping. 46 new checks in `home`, 8 in `requestlog`, 10 in `session`, 2 in `sso`, 1 in
+`special_chars`; 27 mutations, all caught. The defaults are generous on purpose (an office behind one address); an
+attacker with many addresses still gets each address's share, and the cost of individual paths is left for the code
+review.

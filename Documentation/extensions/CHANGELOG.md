@@ -11,6 +11,25 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Request limits per address; anonymous requests counted (session 46)
+- **New: the proxy limits how many requests one address may send** ([ADR 0031](../adr/0031-request-limits.md)).
+  Resolution and the home page 50 a second (bursts of 100), the portal, its API and the tenant API 30 a second
+  (bursts of 90), sign-in, password recovery and single sign-on 60 a minute (bursts of 30), and 100 connections at
+  once, counted on the client's address found through the trusted proxies (an IPv6 address with the rest of its
+  `/64`). Beyond them the proxy answers 429 with `Retry-After` before any service is reached; the portal shows *Too
+  many requests from your address. Wait a moment and try again.* (twelve languages). New settings
+  `PROXY_LIMIT_RESOLVE`, `PROXY_LIMIT_PORTAL`, `PROXY_LIMIT_SIGNIN`, `PROXY_LIMIT_CONNECTIONS` (`0` turns one off)
+  and `PROXY_LIMIT_EXEMPT` (addresses or networks never limited: list your monitoring and any integrator that
+  resolves in bulk). The official data entry API keeps no request rate, only the connection limit.
+- **Changed: tenant API calls without a valid key are counted, not stored one by one.** One row per minute,
+  operation and status in *Requests → Tenant API* (*no valid key — N calls in this minute*), with the average time;
+  the overview adds them up.
+- **Changed: failed sign-ins with a user name of no account are counted, not journalled one by one.** Once an hour
+  the operator's audit trail gets one event with the count and the first ten addresses (up to two hours after the
+  attempts); the overview counts each failure. A wrong password for an existing account is still journalled at once
+  in its organisation's trail. The same for a single sign-on answer that reaches the portal without a sign-in in
+  progress. Commit `c89c362`.
+
 ### The resolver and the data entry API without MongoDB's root user (session 45)
 - **Changed: every service connects to MongoDB as a user of its own, with the least privileges it needs**
   ([ADR 0030](../adr/0030-least-privilege-services.md)). The resolver, which reads every anonymous request, and the

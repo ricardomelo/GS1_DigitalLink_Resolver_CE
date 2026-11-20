@@ -1282,6 +1282,7 @@
  "records.checkStopped": "リンクのチェックを停止しました。前回の結果はそのまま有効です。",
  "import.linksStopped": "アドレスのチェックを停止しました。",
  "import.tooBig": "ファイルがこの形式の上限である {max} KB を超えています。スプレッドシートを小さく分割してください。",
+ "import.unpackedTooBig": "展開するとファイルがインポートの上限である {max} MB を超えます。スプレッドシートを小さく分割してください。",
  "import.format": "形式を認識できません。Excelスプレッドシート（.xlsx）、またはCSVかテキストファイル（.csv、.txt）を使用してください。",
  "import.unreadable": "ファイルを読み込めませんでした。.xlsx またはCSVで保存し直して、もう一度お試しください。",
  "import.empty": "スプレッドシートが空です。",

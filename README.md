@@ -455,6 +455,8 @@ Whichever limit is reached first applies. 5 000 rows take about 200–300 KB in 
 counts there; in CSV each row takes about 180–370 bytes, so 700 KB is usually reached first, at about
 2 000–3 900 rows. Use XLSX or split the file for larger batches. The size limit follows from the portal's
 1 MB request limit (the file travels base64-encoded); the values are set in `FORMATS` in `portal/sheet.py`.
+Only the first 64 columns of a row are read, and an XLSX file that unpacks into more than 32 MB is refused
+(ADR 0032); a spreadsheet of the import's layout reaches neither.
 
 CSV and text files may be separated by `;`, `,` or tab and encoded in UTF-8, UTF-16 or Windows-1252. How
 the portal treats accents, invisible characters, line breaks and formulas is described in

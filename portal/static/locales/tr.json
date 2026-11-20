@@ -1282,6 +1282,7 @@
  "records.checkStopped": "Bağlantı kontrolü durduruldu. Önceki sonuç geçerliliğini koruyor.",
  "import.linksStopped": "Adres kontrolü durduruldu.",
  "import.tooBig": "Dosya, biçiminin sınırı olan {max} KB'tan büyük. Elektronik tabloyu daha küçük parçalara bölün.",
+ "import.unpackedTooBig": "Dosya açıldığında içe aktarma sınırı olan {max} MB'ı aşıyor. Elektronik tabloyu daha küçük parçalara bölün.",
  "import.format": "Biçim tanınmadı. Bir Excel elektronik tablosu (.xlsx) ya da CSV veya metin dosyası (.csv, .txt) kullanın.",
  "import.unreadable": "Dosya okunamadı. .xlsx veya CSV olarak yeniden kaydedip tekrar deneyin.",
  "import.empty": "Elektronik tablo boş.",

@@ -478,6 +478,12 @@ The file is sent base64-encoded inside a JSON request, which the portal (`MAX_CO
 XLSX (compressed, repeated texts stored once) but 900–1 800 KB in CSV, so a CSV reaches 700 KB at about
 2 000–3 900 rows. Raising the size limit needs the three request limits raised together.
 
+What a file holds is bounded too ([ADR 0032](../adr/0032-spreadsheet-reading-limits.md)): rows are read one at a
+time and reading stops at the first data row past the limit; only the first 64 columns (`MAX_COLUMNS`) of a row are
+read; an XLSX file whose parts unpack into more than 32 MB (`MAX_UNPACKED_MB`, measured by unpacking, not by what the
+archive declares) is refused with *import.unpackedTooBig*, as are parts compressed otherwise than stored or deflate.
+An honest file at the size limit unpacks into 4–15 MB.
+
 The default link type is shared by all the records of a key, so an import cannot change it while the key
 has other records.
 

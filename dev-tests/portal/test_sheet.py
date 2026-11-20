@@ -171,5 +171,108 @@ big = ("gtin;description;linkType;url\n07898357410015;" + "x" * (140 * 1024) + "
 check("a CSV cell above 128 KB is reported (import.unreadable), not a server error",
       error_code(lambda: sheet.read_table("big.csv", big)) == "import.unreadable")
 
+# What a file may hold once read (ADR 0032, finding F-014): the size limit bounds the file, not its content
+import zipfile  # noqa: E402
+from openpyxl import Workbook  # noqa: E402
+
+SHEET_HEAD = b'<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+
+
+def xlsx_with(sheet_rows: bytes, compression=zipfile.ZIP_DEFLATED) -> bytes:
+    """A workbook made by openpyxl whose first sheet's rows are replaced by the XML given."""
+    workbook = Workbook()
+    workbook.active.append(["x"])
+    plain = io.BytesIO()
+    workbook.save(plain)
+    source, out = zipfile.ZipFile(io.BytesIO(plain.getvalue())), io.BytesIO()
+    with zipfile.ZipFile(out, "w", compression) as target:
+        for info in source.infolist():
+            part = source.read(info)
+            if info.filename == "xl/worksheets/sheet1.xml":
+                part = SHEET_HEAD + sheet_rows + b"</sheetData></worksheet>"
+            target.writestr(info.filename, part)
+    return out.getvalue()
+
+
+def inline(ref: str, text: str) -> bytes:
+    return b'<c r="%s" t="inlineStr"><is><t>%s</t></is></c>' % (ref.encode(), text.encode())
+
+
+HEADER_CELLS = b"".join(inline(f"{c}1", t) for c, t in zip("ABCD", ["value", "description", "linkType", "url"]))
+ROW = b"".join(inline(f"{c}%d", t) for c, t in zip("ABCD", ["7898357410015", "A", "gs1:pip", "https://x.org"]))
+
+# A row a million rows down: the blank rows before it are one shared list, not a million rows of cells
+far = sheet.read_table("far.xlsx", xlsx_with(b'<row r="1">' + HEADER_CELLS + b'</row><row r="1000000">'
+                                             + (ROW % ((1000000,) * 4)) + b"</row>"))
+check("XLSX: a row far down is read with its row number; the blank rows before it share one list",
+      len(far) == 1000000 and far[-1][0] == "7898357410015" and len({id(r) for r in far[1:-1]}) == 1
+      and not far[1], (len(far), len({id(r) for r in far[1:-1]})))
+_calls, _cell_text = [], sheet._cell_text
+sheet._cell_text = lambda value: (_calls.append(1), _cell_text(value))[1]
+try:
+    sheet.read_table("far.xlsx", xlsx_with(b'<row r="1">' + HEADER_CELLS + b'</row><row r="200000">'
+                                           + (ROW % ((200000,) * 4)) + b"</row>"))
+finally:
+    sheet._cell_text = _cell_text
+check("XLSX: the cells of blank rows are not converted one by one (only the two rows with values)",
+      len(_calls) == 2 * sheet.MAX_COLUMNS, len(_calls))
+records, _ = sheet.parse_rows(far, {})
+check("XLSX: the far row keeps its spreadsheet row number", records and records[0]["rows"] == [1000000],
+      records and records[0]["rows"])
+beyond = sheet.read_table("beyond.xlsx", xlsx_with(b'<row r="1">' + HEADER_CELLS + b'</row><row r="50000000">'
+                                                    + (ROW % ((50000000,) * 4)) + b"</row>"))
+check("XLSX: rows past Excel's last row are not read", len(beyond) == 1, len(beyond))
+check("XLSX: blank rows at the end are dropped", len(sheet.read_table("tail.xlsx", xlsx_with(
+    b'<row r="1">' + HEADER_CELLS + b'</row><row r="900000"><c r="A900000"/></row>'))) == 1)
+
+# A cell in the last column (XFD): only the first MAX_COLUMNS cells of a row are read
+wide = sheet.read_table("wide.xlsx", xlsx_with(b'<row r="1">' + HEADER_CELLS + inline("XFD1", "far") + b"</row>"))
+check(f"XLSX: a cell in column XFD does not make rows of 16 384 cells (at most {sheet.MAX_COLUMNS})",
+      len(wide) == 1 and len(wide[0]) == sheet.MAX_COLUMNS and "far" not in wide[0], len(wide[0]) if wide else wide)
+csv_wide = sheet.read_table("wide.csv", b"value;description;linkType;url" + b";" * 300000 + b"tail\r\n")
+check(f"CSV: a row of 300 000 cells is read as its first {sheet.MAX_COLUMNS}",
+      len(csv_wide[0]) == sheet.MAX_COLUMNS and "tail" not in csv_wide[0], len(csv_wide[0]))
+check("CSV: blank rows share one list; trailing blank rows dropped",
+      [len(r) for r in sheet.read_table("b.csv", b"a;b\r\n\r\n\r\nc;d\r\n" + b"\r\n" * 50000)] == [2, 0, 0, 2])
+
+# Reading stops at the row limit, before the rest of the file is read
+for fmt, name in (("csv", "rows.csv"), ("xlsx", "rows.xlsx")):
+    max_rows = sheet.FORMATS[fmt][1]
+    if fmt == "csv":
+        data = b"value;description;linkType;url\r\n" + b"7898357410015;A;gs1:pip;https://x.org\r\n" * (max_rows + 1)
+    else:
+        data = xlsx_with(b'<row r="1">' + HEADER_CELLS + b"</row>" + b"".join(
+            b'<row r="%d">' % r + (ROW % ((r,) * 4)) + b"</row>" for r in range(2, max_rows + 3)))
+    exc = exc_of(lambda: sheet.read_table(name, data))
+    check(f"{fmt}: read_table refuses one data row past the limit itself", exc and exc.code == "import.tooManyRows"
+          and exc.params == {"max": max_rows, "format": fmt}, exc and (exc.code, exc.params))
+
+
+def endless():
+    """An iterator that fails if anything reads past the row limit's first extra row."""
+    yield ["value", "description", "linkType", "url"]
+    for _ in range(sheet.MAX_ROWS):
+        yield ["7898357410015", "A", "gs1:pip", "https://x.org"]
+    yield ["7898357410015", "A", "gs1:pip", "https://x.org"]
+    raise AssertionError("read past the row limit")
+
+
+exc = exc_of(lambda: sheet._take(endless(), sheet.MAX_ROWS, "csv"))
+check("reading stops at the first row past the limit (nothing after it is read)",
+      exc and exc.code == "import.tooManyRows", exc)
+check("leading blank rows and the header are not counted as data rows",
+      len(sheet._take(iter([[""], [], ["h"]] + [["d"]] * 3), 3, "csv")) == 6)
+
+# Unpacked size: measured by unpacking, refused before openpyxl opens the workbook
+big = xlsx_with(b'<row r="1">' + inline("A1", "a" * (sheet.MAX_UNPACKED_MB * 1024 * 1024 + 1)) + b"</row>")
+exc = exc_of(lambda: sheet.read_table("big.xlsx", big))
+check(f"XLSX: a few KB that unpack into more than {sheet.MAX_UNPACKED_MB} MB refused (import.unpackedTooBig)",
+      len(big) < 200 * 1024 and exc and exc.code == "import.unpackedTooBig" and exc.params == {"max": sheet.MAX_UNPACKED_MB},
+      (len(big), exc and (exc.code, exc.params)))
+under = xlsx_with(b'<row r="1">' + HEADER_CELLS + b'</row><row r="2">' + inline("A2", "a" * (8 * 1024 * 1024)) + b"</row>")
+check("XLSX: a file that unpacks into 8 MB is read", exc_of(lambda: sheet.read_table("under.xlsx", under)) is None)
+check("XLSX: parts compressed otherwise than Excel's (bzip2) refused as unreadable",
+      error_code(lambda: sheet.read_table("bz.xlsx", xlsx_with(b"", zipfile.ZIP_BZIP2))) == "import.unreadable")
+
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

@@ -19,6 +19,7 @@ import csv
 import io
 import re
 import unicodedata
+import zipfile
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -51,6 +52,14 @@ FORMATS = {
 }
 MAX_ROWS = max(rows for _, rows, _ in FORMATS.values())
 MAX_FILE_BYTES = max(kb for _, _, kb in FORMATS.values()) * 1024
+# Limits on what a file may hold once read (ADR 0032). The size limit above bounds the file, not its content: an
+# XLSX file is a ZIP archive, and a few kilobytes can unpack into gigabytes or name a cell a million rows down or
+# 16 384 columns across. Reading stops at the row limit; only the first MAX_COLUMNS columns of each row are read
+# (the layout has ten; further columns are ignored); an XLSX file whose parts unpack into more than
+# MAX_UNPACKED_MB is refused before it is opened (an honest file at the size limit unpacks into a few megabytes).
+MAX_COLUMNS = 64
+MAX_UNPACKED_MB = 32
+XLSX_LAST_ROW = 1_048_576
 
 # Spreadsheet programs run a cell that starts with one of these as a formula when they open a CSV file
 # ("CSV injection"): a description such as =HYPERLINK(…) would become a live link or worse. Exported CSV
@@ -109,12 +118,36 @@ def fold(text) -> str:
 
 # ------------------------------------------------------------------------------------------ reading
 def read_table(filename: str, data: bytes) -> Table:
-    """Returns the rows of the first sheet (XLSX) or of the CSV file, every cell as text."""
+    """Returns the rows of the first sheet (XLSX) or of the CSV file, every cell as text, at most MAX_COLUMNS
+    cells a row. Stops reading, with import.tooManyRows, at the first data row past the format's row limit."""
     file_format = detect_format(filename, data)
-    _, _, max_kb = FORMATS[file_format]
+    _, max_rows, max_kb = FORMATS[file_format]
     if len(data) > max_kb * 1024:
         raise SheetError("import.tooBig", max=max_kb, format=file_format)
-    return Table(_read_xlsx(data) if file_format == "xlsx" else _read_csv(data), file_format)
+    if file_format == "xlsx":
+        _check_unpacked(data)
+        return Table(_take(_read_xlsx(data), max_rows, file_format), file_format)
+    return Table(_take(_read_csv(data), max_rows, file_format), file_format)
+
+
+_BLANK: list = []      # every blank row is this one list: blank rows cost a reference each, not a row of cells
+
+
+def _take(rows, max_rows: int, file_format: str) -> list[list[str]]:
+    """The rows of an iterator up to the header and max_rows data rows (non-blank rows after the first non-blank
+    one); import.tooManyRows as soon as one more data row is read, before the rest of the file is."""
+    taken, filled = [], 0
+    for row in rows:
+        if not any(row):
+            taken.append(_BLANK)
+            continue
+        filled += 1
+        if filled > max_rows + 1:                  # the header and max_rows data rows
+            raise SheetError("import.tooManyRows", max=max_rows, format=file_format)
+        taken.append(row)
+    while taken and taken[-1] is _BLANK:          # blank rows at the end carry nothing
+        taken.pop()
+    return taken
 
 
 def _cell_text(value) -> str:
@@ -128,20 +161,47 @@ def _cell_text(value) -> str:
     return unprotect(str(value).strip())
 
 
-def _read_xlsx(data: bytes) -> list[list[str]]:
-    """Rows of the first sheet of an Excel workbook, as text."""
+def _check_unpacked(data: bytes) -> None:
+    """Refuses an XLSX file whose parts unpack into more than MAX_UNPACKED_MB, measured by unpacking them (the
+    sizes a ZIP archive declares can be false), and one whose parts use another compression than Excel's."""
+    budget = MAX_UNPACKED_MB * 1024 * 1024
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            for info in archive.infolist():
+                if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                    raise SheetError("import.unreadable")
+                with archive.open(info) as part:
+                    while chunk := part.read(1024 * 1024):
+                        budget -= len(chunk)
+                        if budget < 0:
+                            raise SheetError("import.unpackedTooBig", max=MAX_UNPACKED_MB)
+    except SheetError:
+        raise
+    except Exception as exc:  # noqa: BLE001  (any unreadable archive is reported the same way)
+        raise SheetError("import.unreadable") from exc
+
+
+def _read_xlsx(data: bytes):
+    """Rows of the first sheet of an Excel workbook, as text, one at a time (the first MAX_COLUMNS cells)."""
     try:
         workbook = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     except Exception as exc:  # noqa: BLE001  (any unreadable file is reported the same way)
         raise SheetError("import.unreadable") from exc
-    sheet = workbook.worksheets[0]
-    rows = [[_cell_text(v) for v in row] for row in sheet.iter_rows(values_only=True)]
-    workbook.close()
-    return rows
+    try:
+        # Excel's last row bounds the blank rows a file can make the reader produce by naming a row far down
+        for row in workbook.worksheets[0].iter_rows(max_row=XLSX_LAST_ROW, max_col=MAX_COLUMNS, values_only=True):
+            yield _BLANK if row.count(None) == len(row) else [_cell_text(v) for v in row]
+    except SheetError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise SheetError("import.unreadable") from exc
+    finally:
+        workbook.close()
 
 
-def _read_csv(data: bytes) -> list[list[str]]:
-    """Rows of a CSV or text file: encoding (UTF-16, UTF-8, Windows-1252) and separator detected."""
+def _read_csv(data: bytes):
+    """Rows of a CSV or text file, one at a time (the first MAX_COLUMNS cells): encoding (UTF-16, UTF-8,
+    Windows-1252) and separator detected."""
     # UTF-16 with its byte order mark is Excel's "Unicode text" (.txt, tab-separated); UTF-8 with or
     # without BOM is "CSV UTF-8"; Excel in Brazil saves plain "CSV" as Windows-1252.
     encodings = ("utf-16",) if data[:2] in (b"\xff\xfe", b"\xfe\xff") else ("utf-8-sig", "cp1252")
@@ -156,7 +216,8 @@ def _read_csv(data: bytes) -> list[list[str]]:
     first = text.split("\n", 1)[0]
     delimiter = max([";", ",", "\t"], key=first.count)   # ";" is Excel's separator in pt-BR
     try:
-        return [[unprotect(cell.strip()) for cell in row] for row in csv.reader(io.StringIO(text), delimiter=delimiter)]
+        for row in csv.reader(io.StringIO(text), delimiter=delimiter):
+            yield [unprotect(cell.strip()) for cell in row[:MAX_COLUMNS]]
     except csv.Error as exc:           # e.g. a cell above the csv module's 128 KB field limit
         raise SheetError("import.unreadable") from exc
 

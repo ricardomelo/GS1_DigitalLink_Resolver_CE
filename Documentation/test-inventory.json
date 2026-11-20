@@ -189,7 +189,7 @@
     "refused: apikeys.nameInvalid (ab)",
     "refused: apikeys.scopesInvalid (No scope)",
     "refused: apikeys.scopesInvalid (Bad scope)",
-    "refused: apikeys.daysInvalid (Zero)",
+    "refused: apikeys.daysInvalid (Zero)2026-11-20 22:34:39,621 INFO portal.worker Job 693e2ec9172946ceb3b1c5514f7aa9dc (mail of ana) started, attempt 1, from item 0 of 1.",
     "refused: apikeys.daysInvalid (Too long)",
     "refused: apikeys.nameExists (erp INTEGRATION)",
     "refused: users.prefixOutsideTenant (Outside)",
@@ -209,7 +209,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_1630023c242…)",
+    "a wrong key is refused (rk_c746d8b0dc9…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -955,9 +955,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (242 features)",
+    "features.md: every table has a Checks column (243 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (462 references)",
+    "…each reference names a program of the inventory (467 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (79)",
     "…and the inventory holds no program that no longer exists",
@@ -968,8 +968,8 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (31)",
-    "every relative link of the documents leads to a file (47 documents)"
+    "…and every decision record (32)",
+    "every relative link of the documents leads to a file (48 documents)"
    ],
    "count": 15,
    "ciOnly": false
@@ -2734,6 +2734,7 @@
     "embedded worker: stops on request",
     "PORTAL_WORKER=embedded: the portal starts its own worker thread",
     "PORTAL_WORKER=embedded: but not a second one inside worker.py",
+    "preview of an XLSX that unpacks too far: 422 import.unpackedTooBig, no job prepared",
     "preview: the import becomes a prepared job of its user with the plan",
     "status of a preview not applied yet: expired (the browser only asks after Apply)",
     "apply: 202 with the total; the job waits in the queue",
@@ -2787,7 +2788,7 @@
     "link cancel: seen at the next progress write; the addresses not started are not requested (not all 200)",
     "link cancel while queued: cancelled at once"
    ],
-   "count": 99,
+   "count": 100,
    "ciOnly": false
   },
   "journal": {
@@ -3375,7 +3376,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:43251/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:35879/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",
@@ -5187,7 +5188,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.004 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
    ],
    "count": 247,
    "ciOnly": false
@@ -5407,9 +5408,24 @@
     "key column: AI with or without brackets, empty means GTIN",
     "old spreadsheets with a GTIN column still import",
     "alphanumeric keys are not merged by case or zeros",
-    "a CSV cell above 128 KB is reported (import.unreadable), not a server error"
+    "a CSV cell above 128 KB is reported (import.unreadable), not a server error",
+    "XLSX: a row far down is read with its row number; the blank rows before it share one list",
+    "XLSX: the cells of blank rows are not converted one by one (only the two rows with values)",
+    "XLSX: the far row keeps its spreadsheet row number",
+    "XLSX: rows past Excel's last row are not read",
+    "XLSX: blank rows at the end are dropped",
+    "XLSX: a cell in column XFD does not make rows of 16 384 cells (at most 64)",
+    "CSV: a row of 300 000 cells is read as its first 64",
+    "CSV: blank rows share one list; trailing blank rows dropped",
+    "csv: read_table refuses one data row past the limit itself",
+    "xlsx: read_table refuses one data row past the limit itself",
+    "reading stops at the first row past the limit (nothing after it is read)",
+    "leading blank rows and the header are not counted as data rows",
+    "XLSX: a few KB that unpack into more than 32 MB refused (import.unpackedTooBig)",
+    "XLSX: a file that unpacks into 8 MB is read",
+    "XLSX: parts compressed otherwise than Excel's (bzip2) refused as unreadable"
    ],
-   "count": 44,
+   "count": 59,
    "ciOnly": false
   },
   "special_chars": {
@@ -5912,7 +5928,7 @@
   "store_mongodb": {
    "area": "Data store, installation and operation",
    "checks": [],
-   "count": 281,
+   "count": 282,
    "ciOnly": true
   }
  }

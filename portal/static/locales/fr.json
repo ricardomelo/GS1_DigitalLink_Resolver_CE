@@ -1282,6 +1282,7 @@
  "records.checkStopped": "Vérification des liens arrêtée. Le résultat précédent reste valable.",
  "import.linksStopped": "Vérification des adresses arrêtée.",
  "import.tooBig": "Le fichier dépasse {max} KB, la limite pour son format. Découpez la feuille de calcul en parties plus petites.",
+ "import.unpackedTooBig": "Décompressé, le fichier dépasse {max} MB, la limite d'une importation. Découpez la feuille de calcul en parties plus petites.",
  "import.format": "Format non reconnu. Utilisez une feuille de calcul Excel (.xlsx) ou un fichier CSV ou texte (.csv, .txt).",
  "import.unreadable": "Le fichier n’a pas pu être lu. Enregistrez-le de nouveau au format .xlsx ou CSV et réessayez.",
  "import.empty": "La feuille de calcul est vide.",

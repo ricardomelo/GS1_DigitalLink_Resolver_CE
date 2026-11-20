@@ -11,6 +11,7 @@ runs worker.py as real processes).
   python dev-tests/portal/test_jobs.py
 """
 import base64
+import io
 import http.server
 import logging
 import os
@@ -19,6 +20,7 @@ import sys
 import tempfile
 import threading
 import time
+import zipfile
 from datetime import timedelta
 
 from werkzeug.serving import make_server
@@ -309,6 +311,17 @@ def gtin(n):
     total = sum(int(d) * (3 if i % 2 == 0 else 1) for i, d in enumerate(reversed(body)))
     return "0" + body + str((10 - total % 10) % 10)
 
+
+# A workbook of a few KB that unpacks into more than the import's limit (ADR 0032): refused, no job prepared
+_bomb = io.BytesIO()
+with zipfile.ZipFile(_bomb, "w", zipfile.ZIP_DEFLATED) as _zip:
+    _zip.writestr("xl/worksheets/sheet1.xml", b"a" * (33 * 1024 * 1024))
+_before = store.col("jobs").count_documents({})
+r = web.post("/portal/api/import/preview", json={"filename": "x.xlsx", "content": base64.b64encode(_bomb.getvalue()).decode(),
+                                                 "labels": {}})
+check("preview of an XLSX that unpacks too far: 422 import.unpackedTooBig, no job prepared",
+      r.status_code == 422 and r.get_json().get("code") == "import.unpackedTooBig"
+      and store.col("jobs").count_documents({}) == _before, (r.status_code, r.get_json()))
 
 p = preview(sheet(100, 5))
 token = p["token"]

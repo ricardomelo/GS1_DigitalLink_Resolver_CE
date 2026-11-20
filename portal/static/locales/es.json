@@ -1282,6 +1282,7 @@
  "records.checkStopped": "Comprobación de enlaces detenida. El resultado anterior sigue vigente.",
  "import.linksStopped": "Comprobación de direcciones detenida.",
  "import.tooBig": "El archivo supera los {max} KB, el límite de su formato. Divida la hoja de cálculo en partes más pequeñas.",
+ "import.unpackedTooBig": "Descomprimido, el archivo supera los {max} MB, el límite de una importación. Divida la hoja de cálculo en partes más pequeñas.",
  "import.format": "Formato no reconocido. Use una hoja de cálculo de Excel (.xlsx) o un archivo CSV o de texto (.csv, .txt).",
  "import.unreadable": "No se pudo leer el archivo. Guárdelo de nuevo como .xlsx o CSV y vuelva a intentarlo.",
  "import.empty": "La hoja de cálculo está vacía.",

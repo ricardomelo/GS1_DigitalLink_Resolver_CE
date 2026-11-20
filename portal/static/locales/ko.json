@@ -1282,6 +1282,7 @@
  "records.checkStopped": "링크 점검을 중지했습니다. 이전 결과는 그대로 유효합니다.",
  "import.linksStopped": "주소 점검을 중지했습니다.",
  "import.tooBig": "파일이 해당 형식의 제한인 {max} KB보다 큽니다. 스프레드시트를 더 작게 나누십시오.",
+ "import.unpackedTooBig": "압축을 풀면 파일이 가져오기 제한인 {max} MB보다 큽니다. 스프레드시트를 더 작게 나누십시오.",
  "import.format": "인식할 수 없는 형식입니다. Excel 스프레드시트(.xlsx) 또는 CSV나 텍스트 파일(.csv, .txt)을 사용하십시오.",
  "import.unreadable": "파일을 읽을 수 없습니다. .xlsx 또는 CSV로 다시 저장한 후 다시 시도하십시오.",
  "import.empty": "스프레드시트가 비어 있습니다.",

@@ -1282,6 +1282,7 @@
  "records.checkStopped": "Linkprüfung angehalten. Das vorherige Ergebnis gilt weiter.",
  "import.linksStopped": "Adressprüfung angehalten.",
  "import.tooBig": "Die Datei ist größer als {max} KB, die Grenze für ihr Format. Teilen Sie die Tabelle in kleinere Teile auf.",
+ "import.unpackedTooBig": "Entpackt enthält die Datei mehr als {max} MB, die Grenze für einen Import. Teilen Sie die Tabelle in kleinere Teile auf.",
  "import.format": "Format nicht erkannt. Verwenden Sie eine Excel-Tabelle (.xlsx) oder eine CSV- oder Textdatei (.csv, .txt).",
  "import.unreadable": "Die Datei konnte nicht gelesen werden. Speichern Sie sie erneut als .xlsx oder CSV und versuchen Sie es noch einmal.",
  "import.empty": "Die Tabelle ist leer.",

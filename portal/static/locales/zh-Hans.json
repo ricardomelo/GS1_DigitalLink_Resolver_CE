@@ -1282,6 +1282,7 @@
  "records.checkStopped": "链接检查已停止。之前的结果仍然有效。",
  "import.linksStopped": "地址检查已停止。",
  "import.tooBig": "文件大于{max} KB，超出其格式的限制。请将电子表格拆分为较小的部分。",
+ "import.unpackedTooBig": "文件解压后大于{max} MB，超出导入的限制。请将电子表格拆分为较小的部分。",
  "import.format": "无法识别的格式。请使用Excel电子表格（.xlsx）或CSV、文本文件（.csv、.txt）。",
  "import.unreadable": "无法读取文件。请重新另存为.xlsx或CSV后重试。",
  "import.empty": "电子表格为空。",

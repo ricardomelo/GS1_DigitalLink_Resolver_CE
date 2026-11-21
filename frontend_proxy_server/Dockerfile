@@ -2,6 +2,9 @@
 # in an upstream block needs 1.27.3 or later (nginx.conf). Deliberate change to the official image (1.25.1).
 FROM nginx:1.30-alpine@sha256:caf4e1e032a20f9c3c5e28fc7f25ffd768ad8677b4975c54193075997b3a97e3
 LABEL authors="nick"
+# Alpine's security updates published since the digest, from its signed repository, at each build (as the database
+# image's dist-upgrade): the supply-chain workflow's scan found libxml2 corrected in Alpine but not yet in the image.
+RUN apk upgrade --no-cache
 
 COPY nginx.conf /etc/nginx/nginx.conf
 # Who may use /api and /swaggerui (Documentation/adr/0021-data-entry-api-closed.md): the image's entrypoint runs the

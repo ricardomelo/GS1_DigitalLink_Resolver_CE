@@ -445,6 +445,8 @@ def audit_checks() -> None:
     check(run([pip_fix], accept("pysec-2026-1")) == 0, "audit.py: an accepted identifier counts, in any case")
     check(run([pip_fix], accept("CVE-2026-11111", "2026-11-20")) == 1, "audit.py: an expired acceptance no longer counts")
     check(run([pip_fix], accept("CVE-2026-11111", "2026-11-21")) == 0, "audit.py: an acceptance counts on its expiry day")
+    check(run([pip_fix], accept("CVE-2026-11111").replace("    statement:", "    paths: [\"usr/bin/x\"]\n    statement:"))
+          == 1, "audit.py: an entry limited to an image's paths does not accept a lock file's vulnerability")
     check(run([npm_fix]) == 1, "audit.py: an npm vulnerability with a correction fails")
     check(run([npm_nofix]) == 0, "audit.py: an npm vulnerability without a correction is listed, not failed")
     check(run([npm_fix], accept("GHSA-xvch-5gv4-984h")) == 1,

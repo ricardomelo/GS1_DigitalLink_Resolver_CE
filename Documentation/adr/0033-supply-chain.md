@@ -93,7 +93,8 @@ resolver's direct dependencies pinned, and read-only permissions for the CI.
    and by `audit.py`: each entry names the advisory (CVE, GHSA or PYSEC; an alias matches too), a statement (why it
    does not reach the installation, or what waits for the correction), the review date and an expiry **at most 90
    days later**; after it, the scan fails again and the entry is reviewed anew. An entry is the last resort, after an
-   update of the package, the lock or the digest proved impossible. The list starts empty.
+   update of the package, the lock or the digest proved impossible. An entry may name `paths` (files of an image):
+   Trivy then accepts it only there, and `audit.py` never applies it to a lock file.
 6. **The tools fetched by hash.** pip-audit (and PyYAML for `audit.py`) from `.github/supply-chain/requirements.txt`,
    locked with hashes by `dev-tests/lock-dependencies.sh` and installed with `--require-hashes --no-deps` (Dependabot
    proposes its updates); Trivy by `.github/supply-chain/install-trivy.sh`, from its GitHub release by version, refused
@@ -105,7 +106,14 @@ resolver's direct dependencies pinned, and read-only permissions for the CI.
    13.0.0 (`portal/requirements.in`: `>=13.0,<14`) and PyMongo to 4.19.0, also in the resolver's and the data entry
    API's pins (a deliberate change of the official services' versions, recorded in the CHANGELOG); 4.19.0 rather
    than the newest 4.20.1, released two days before, which had not yet had time to be reviewed by others.
-8. **Checks.** `test_supply_chain.py` also fails when the workflow misses a trigger, a lock, a toolkit or an image of
+8. **The first run on GitHub** (on 3d69fbb) built the five images, which proved that the locks install in them, and
+   found HIGH vulnerabilities with corrections in two. The proxy's libxml2 was corrected in Alpine but not yet in
+   the `nginx:1.30-alpine` digest: its Dockerfile now runs `apk upgrade --no-cache`, as the database image runs
+   `apt-get dist-upgrade`. The database image's were all in files of the official `mongo:7-jammy` image that no
+   update of ours can reach: `gosu` built with Go 1.24.6 (26, one CRITICAL), MongoDB's database tools with an old
+   `golang.org/x/net` (one, in its HTML parser) and the entrypoint's `js-yaml` (three). Each was reviewed (what runs
+   the file, what input reaches it) and accepted in `accepted.yaml` for those paths only, until 19 February 2027.
+9. **Checks.** `test_supply_chain.py` also fails when the workflow misses a trigger, a lock, a toolkit or an image of
    the composition, writes outside the release job, stops failing on a correctable HIGH or CRITICAL vulnerability or
    attaching the SBOMs; when Trivy loses its version or hash check; when an accepted entry lacks a statement or a date
    or lasts more than 90 days; and it runs `audit.py` on made-up reports (a correction fails, none does not, an

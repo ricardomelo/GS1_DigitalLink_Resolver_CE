@@ -4,8 +4,175 @@
 #
 # An entry is the last resort, after updating the package, the lock or the image's digest proved impossible:
 #   - id: CVE-2026-00000            # or GHSA-xxxx-xxxx-xxxx / PYSEC-…; an alias of the advisory matches too
+#     paths: ["usr/bin/tool"]       # optional, images only: the files it is accepted in (elsewhere it still fails)
 #     statement: why it does not reach this installation, or what waits for the correction (no names: roles)
 #     reviewed: 2026-11-21          # the date of the review
 #     expired_at: 2027-02-19        # at most 90 days after the review: then the scan fails again, and it is reviewed anew
 # dev-tests/install/test_supply_chain.py fails on an entry without a statement or a date, or valid for longer.
-vulnerabilities: []
+#
+# The statements, shared by the entries below through YAML anchors (Trivy and audit.py both read them):
+x-statements:
+  gosu: &gosu >-
+    gosu, which the official mongo image's entrypoint runs once to drop from root to the mongodb user before it
+    starts mongod, is built with Go 1.24.6. It opens no connection and parses no URL, certificate, archive or input
+    other than the entrypoint's fixed arguments, so these flaws of Go's standard library are not reached. Waits
+    for a rebuild of the official mongo:7-jammy image (a new digest).
+  tools: &tools >-
+    golang.org/x/net in MongoDB's database tools (mongodump, mongorestore, bsondump and the others), run only by the
+    operator's backup scripts inside the database container against the local mongod; the flaw is in its HTML
+    parser, which those tools never use on anyone's input. Waits for MongoDB's next tools release in the image.
+  jsyaml: &jsyaml >-
+    js-yaml, which the official mongo image's entrypoint uses to read the operator's own mongod configuration file
+    at start; no YAML from anyone else reaches it. Waits for a rebuild of the official mongo:7-jammy image.
+
+vulnerabilities:
+  - id: CVE-2026-59869
+    paths: ["opt/js-yaml/package.json"]
+    statement: *jsyaml
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-84375
+    paths: ["opt/js-yaml/package.json"]
+    statement: *jsyaml
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: GHSA-5p4m-2wfm-xmqj
+    paths: ["opt/js-yaml/package.json"]
+    statement: *jsyaml
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-78661
+    paths: ["usr/bin/bsondump", "usr/bin/mongodump", "usr/bin/mongoexport", "usr/bin/mongofiles", "usr/bin/mongoimport", "usr/bin/mongorestore", "usr/bin/mongostat", "usr/bin/mongotop"]
+    statement: *tools
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2025-68121
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2025-61726
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2025-61729
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-111943
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-25679
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-27145
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-32280
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-32281
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-32283
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-33811
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-33814
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-33818
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-39820
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-39821
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-39822
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-39836
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-42499
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-42504
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-56853
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-56858
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-56859
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-56860
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-56862
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-78667
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-78669
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19
+  - id: CVE-2026-97031
+    paths: ["usr/local/bin/gosu"]
+    statement: *gosu
+    reviewed: 2026-11-21
+    expired_at: 2027-02-19

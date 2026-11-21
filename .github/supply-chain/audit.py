@@ -8,7 +8,8 @@ fails on a known vulnerability that has a correction available and is not accept
 
 A report's kind is told from its content (pip-audit: "dependencies"; npm audit: "auditReportVersion"). An accepted
 entry matches the advisory's identifier or any of its aliases (CVE, GHSA, PYSEC) and counts only until its
-expired_at date. Every vulnerability found is listed, with or without a correction, and the list also goes to the
+expired_at date; an entry with "paths" is Trivy's alone (files of an image) and never accepts a lock file's
+finding. Every vulnerability found is listed, with or without a correction, and the list also goes to the
 run's summary (GITHUB_STEP_SUMMARY) when there is one.
 
 Exit status: 0 nothing to correct; 1 a vulnerability to correct; 2 a report missing or unreadable (a failed scan
@@ -26,10 +27,12 @@ import yaml
 
 
 def accepted_ids(path: str, today: datetime.date) -> dict[str, str]:
-    """Identifier → statement of every entry still valid today."""
+    """Identifier → statement of every entry still valid today that is not limited to an image's paths."""
     doc = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     out = {}
     for entry in doc.get("vulnerabilities") or []:
+        if entry.get("paths"):
+            continue
         expires = entry.get("expired_at")
         if isinstance(expires, str):
             expires = datetime.date.fromisoformat(expires)

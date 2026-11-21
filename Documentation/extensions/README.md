@@ -1409,7 +1409,9 @@ What an installation builds is fixed by content, not by name ([ADR 0033](../adr/
   every change of a lock file, a Dockerfile or a workflow, and every Monday: pip-audit and npm audit read the lock
   files, and Trivy scans the five images it builds. A vulnerability with a correction available turns it red (in
   the images, HIGH and CRITICAL ones) until the update is merged; accepted exceptions, each with its reason and an
-  expiry within 90 days, are in `.github/supply-chain/accepted.yaml`. Read a red run in the repository's *Actions*
+  expiry within 90 days, are in `.github/supply-chain/accepted.yaml` (at present only files of the official MongoDB
+  image that its maintainers have yet to rebuild). The proxy image now also takes Alpine's security updates at each
+  build (`apk upgrade`), as the database image takes Ubuntu's. Read a red run in the repository's *Actions*
   tab (the run's summary and the artefact *image-sboms-and-reports*).
 - **SBOM**: each GitHub release carries a CycloneDX SBOM of each image (`resolver-<tag>-<service>.cdx.json`), the
   list of every package it contains, for an inventory or a scanner of your own.

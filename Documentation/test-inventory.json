@@ -958,6 +958,7 @@
     "features.md: every table has a Checks column (249 features)",
     "…every feature cites at least one check",
     "…each reference names a program of the inventory (487 references)",
+    "…and words found in one of its checks",
     "every test program is in the inventory (80)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
@@ -970,7 +971,7 @@
     "…and every decision record (33)",
     "every relative link of the documents leads to a file (49 documents)"
    ],
-   "count": 14,
+   "count": 15,
    "ciOnly": false
   },
   "domains": {
@@ -6029,20 +6030,21 @@
     ".github/workflows/supply-chain.yml: the SBOMs attached to the release",
     "install-trivy.sh: Trivy from its release, by version, refused unless its SHA-256 matches",
     ".github/supply-chain/accepted.yaml: a list of vulnerabilities (Trivy's ignore file format)",
-    ".github/supply-chain/accepted.yaml: every entry with an advisory, a statement, a review date and an expiry within 90 days (0 entries)",
+    ".github/supply-chain/accepted.yaml: every entry with an advisory, a statement, a review date and an expiry within 90 days (30 entries)",
     "audit.py: a vulnerability without a correction is listed, not failed",
     "audit.py: a Python vulnerability with a correction fails",
     "audit.py: an accepted alias of the advisory counts",
     "audit.py: an accepted identifier counts, in any case",
     "audit.py: an expired acceptance no longer counts",
     "audit.py: an acceptance counts on its expiry day",
+    "audit.py: an entry limited to an image's paths does not accept a lock file's vulnerability",
     "audit.py: an npm vulnerability with a correction fails",
     "audit.py: an npm vulnerability without a correction is listed, not failed",
     "audit.py: a package affected only through another (via a name) still fails when it can be corrected",
     "audit.py: a missing report fails as unreadable, never as clean",
     "audit.py: an unreadable report fails"
    ],
-   "count": 221,
+   "count": 222,
    "ciOnly": false
   },
   "tenants": {

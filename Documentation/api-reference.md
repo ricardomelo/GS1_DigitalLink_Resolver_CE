@@ -46,7 +46,7 @@ Scope `stats:read`. The figures of the portal's overview for the last 7, 30 or 9
 | 200 | The statistics — [Stats](#schema-stats) |
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
-| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
+| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 
 ### Operation: openapi
@@ -74,7 +74,7 @@ Scope `records:read`. Sorted by `id`; pass the `next` of an answer as `after` to
 | 200 | A page of records — [RecordList](#schema-recordlist) |
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
-| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
+| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 
 ### Operation: getRecord
@@ -95,7 +95,7 @@ Scope `records:read`.
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
 | 404 | No record with those qualifiers (record.notFound) — [Error](#schema-error) |
-| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
+| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 
 ### Operation: putRecord
@@ -118,9 +118,10 @@ Request body (required): [RecordInput](#schema-recordinput).
 | 201 | Created — [Saved](#schema-saved) |
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
+| 400 | The body is not one JSON object: not JSON at all, nested past what the parser follows, or an array, a text, a number or null (request.jsonInvalid) — [Error](#schema-error) |
 | 409 | The key's records were being changed by other writers at the same moment, and the data entry API wrote nothing of this change (upstream.conflict; ADR 0027). Read the record again and repeat the change. — [Error](#schema-error) |
-| 415 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
-| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
+| 415 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
+| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 | 502 | The resolver's data entry API failed or refused the change (upstream.*) — [Error](#schema-error) |
 
@@ -175,7 +176,7 @@ Scope `labels:read`. X-Symbol names the 2D symbol and X-Dimension its X-dimensio
 | 200 | The label |
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
-| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
+| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 
 ## Schemas

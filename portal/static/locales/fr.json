@@ -2052,6 +2052,8 @@
  "record.notFound": "Il n’existe aucun enregistrement pour ce code.",
  "request.forbiddenOrigin": "Origine non autorisée.",
  "request.jsonRequired": "Envoyez les données au format JSON.",
+ "request.jsonInvalid": "Les données envoyées ne sont pas un objet JSON valide.",
+ "request.fieldInvalid": "Le champ {field} contient une valeur d’un type incorrect.",
  "upstream.unavailable": "Le résolveur n’a pas répondu. Veuillez réessayer dans quelques minutes.",
  "upstream.unauthorised": "Le portail n’est pas autorisé sur le résolveur. Prévenez l’administrateur (jeton d’accès incorrect).",
  "upstream.readFailed": "L’enregistrement actuel n’a pas pu être lu depuis le résolveur.",

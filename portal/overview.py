@@ -226,7 +226,7 @@ def place_text(place: str) -> str:
 
 
 def _label(labels: dict, code: str) -> str:
-    return labels.get(code) or code
+    return sheet.xlsx_text(labels.get(code) or code)
 
 
 def summary_rows(data: dict, labels: dict) -> list[list]:

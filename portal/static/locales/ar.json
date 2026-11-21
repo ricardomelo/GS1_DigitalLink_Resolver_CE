@@ -2052,6 +2052,8 @@
  "record.notFound": "لا يوجد سجل لهذا الرمز.",
  "request.forbiddenOrigin": "المصدر غير مصرَّح له.",
  "request.jsonRequired": "أرسِل البيانات بتنسيق JSON.",
+ "request.jsonInvalid": "البيانات المرسلة ليست كائن JSON صالحًا.",
+ "request.fieldInvalid": "يحتوي الحقل {field} على قيمة من نوع غير صحيح.",
  "upstream.unavailable": "لم يستجب المحلِّل. يُرجى المحاولة مرة أخرى بعد بضع دقائق.",
  "upstream.unauthorised": "البوابة غير مصرَّح لها لدى المحلِّل. أبلِغ المسؤول (رمز وصول غير صحيح).",
  "upstream.readFailed": "تعذّرت قراءة السجل الحالي من المحلِّل.",

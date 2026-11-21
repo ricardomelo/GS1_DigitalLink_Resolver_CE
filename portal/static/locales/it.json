@@ -2052,6 +2052,8 @@
  "record.notFound": "Non esiste alcun record per questo codice.",
  "request.forbiddenOrigin": "Origine non autorizzata.",
  "request.jsonRequired": "Inviare i dati in formato JSON.",
+ "request.jsonInvalid": "I dati inviati non sono un oggetto JSON valido.",
+ "request.fieldInvalid": "Il campo {field} contiene un valore di tipo errato.",
  "upstream.unavailable": "Il resolver non ha risposto. Riprovi tra qualche minuto.",
  "upstream.unauthorised": "Il portale non è autorizzato sul resolver. Informi l'amministratore (token di accesso errato).",
  "upstream.readFailed": "Non è stato possibile leggere dal resolver il record attuale.",

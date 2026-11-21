@@ -2052,6 +2052,8 @@
  "record.notFound": "このコードのレコードはありません。",
  "request.forbiddenOrigin": "許可されていないオリジンです。",
  "request.jsonRequired": "データはJSONで送信してください。",
+ "request.jsonInvalid": "送信されたデータは有効なJSONオブジェクトではありません。",
+ "request.fieldInvalid": "フィールド {field} の値の型が正しくありません。",
  "upstream.unavailable": "リゾルバーが応答しませんでした。数分後にもう一度お試しください。",
  "upstream.unauthorised": "ポータルはリゾルバーで認可されていません。管理者にお知らせください（アクセストークンが正しくありません）。",
  "upstream.readFailed": "リゾルバーから現在のレコードを読み込めませんでした。",

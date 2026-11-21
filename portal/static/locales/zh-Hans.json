@@ -2052,6 +2052,8 @@
  "record.notFound": "此代码没有记录。",
  "request.forbiddenOrigin": "来源未获授权。",
  "request.jsonRequired": "请以JSON格式发送数据。",
+ "request.jsonInvalid": "发送的数据不是有效的JSON对象。",
+ "request.fieldInvalid": "字段 {field} 的值类型错误。",
  "upstream.unavailable": "解析器未响应。请在几分钟后重试。",
  "upstream.unauthorised": "门户未获得解析器的授权。请告知管理员（访问令牌不正确）。",
  "upstream.readFailed": "无法从解析器读取当前记录。",

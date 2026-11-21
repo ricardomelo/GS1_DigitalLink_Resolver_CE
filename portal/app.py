@@ -36,6 +36,7 @@ import journal
 import label
 import linear
 import apikeys
+import bodies
 import branding
 import domains
 import epc
@@ -599,6 +600,18 @@ def same_origin_only():
         if request.method != "DELETE" and not request.is_json and not (
                 request.path in RAW_UPLOADS and request.mimetype in RAW_UPLOADS[request.path]):
             return message("request.jsonRequired", 415)
+        # The body's shape before any route reads it (Documentation/adr/0040-request-bodies.md, findings F-023 and
+        # F-029): one JSON object whose fields hold the kinds bodies.FIELDS lists, else 400 or 422 instead of an
+        # error 500 halfway through the route. An empty body is left to the route, which reads it as {}.
+        if request.is_json and request.get_data(cache=True).strip():
+            try:
+                body = json.loads(request.get_data(cache=True))
+            except (ValueError, RecursionError):     # not JSON, or nested past what the parser follows
+                return message("request.jsonInvalid", 400)
+            refused = bodies.problem(body)
+            if refused:
+                code, status, params = refused
+                return message(code, status, **({"params": params} if params else {}))
 
 
 # The browser's rules for every answer of the portal (Documentation/adr/0038-browser-hardening.md, finding F-021): the

@@ -2052,6 +2052,8 @@
  "record.notFound": "Für diesen Code gibt es keinen Eintrag.",
  "request.forbiddenOrigin": "Herkunft nicht autorisiert.",
  "request.jsonRequired": "Senden Sie die Daten als JSON.",
+ "request.jsonInvalid": "Die gesendeten Daten sind kein gültiges JSON-Objekt.",
+ "request.fieldInvalid": "Das Feld {field} enthält einen Wert des falschen Typs.",
  "upstream.unavailable": "Der Resolver hat nicht geantwortet. Bitte versuchen Sie es in einigen Minuten erneut.",
  "upstream.unauthorised": "Das Portal ist beim Resolver nicht autorisiert. Informieren Sie den Administrator (falsches Zugriffstoken).",
  "upstream.readFailed": "Der aktuelle Eintrag konnte nicht aus dem Resolver gelesen werden.",

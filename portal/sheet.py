@@ -22,6 +22,7 @@ import unicodedata
 import zipfile
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -103,6 +104,18 @@ def protect(value) -> str:
     """A CSV cell that spreadsheet programs will not run as a formula."""
     text = "" if value is None else str(value)
     return "'" + text if text.startswith(FORMULA_START) else text
+
+
+def xlsx_text(value):
+    """A value an XLSX cell can hold: the control characters the format forbids (U+0000 to U+001F except tab and line
+    breaks) removed from texts, in nested labels too; openpyxl refuses the whole workbook otherwise (ADR 0040)."""
+    if isinstance(value, str):
+        return ILLEGAL_CHARACTERS_RE.sub("", value)
+    if isinstance(value, dict):
+        return {key: xlsx_text(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [xlsx_text(item) for item in value]
+    return value
 
 
 def unprotect(text: str) -> str:
@@ -369,6 +382,8 @@ def write_csv(rows: list[list[str]], labels: dict) -> bytes:
 def write_xlsx(rows: list[list[str]], labels: dict, link_types: list[tuple[str, str, str]],
                languages: list[tuple[str, str]], keys: list[tuple[str, str]] = ()) -> bytes:
     """Export as XLSX: the links sheet plus reference sheets of link types, keys and languages."""
+    labels, rows, link_types, languages, keys = (xlsx_text(labels), xlsx_text(rows), xlsx_text(list(link_types)),
+                                                 xlsx_text(list(languages)), xlsx_text(list(keys)))
     headers = labels.get("headers", {})
     sheets = labels.get("sheets", {})
     bold = Font(bold=True, color="FFFFFF")

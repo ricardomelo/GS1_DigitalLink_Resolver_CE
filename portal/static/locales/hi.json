@@ -2052,6 +2052,8 @@
  "record.notFound": "इस कोड का कोई रिकॉर्ड नहीं है।",
  "request.forbiddenOrigin": "ऑरिजिन अधिकृत नहीं है।",
  "request.jsonRequired": "डेटा JSON के रूप में भेजें।",
+ "request.jsonInvalid": "भेजा गया डेटा मान्य JSON ऑब्जेक्ट नहीं है।",
+ "request.fieldInvalid": "फ़ील्ड {field} में गलत प्रकार का मान है।",
  "upstream.unavailable": "रिज़ॉल्वर ने उत्तर नहीं दिया। कृपया कुछ मिनट बाद फिर से प्रयास करें।",
  "upstream.unauthorised": "पोर्टल रिज़ॉल्वर पर अधिकृत नहीं है। व्यवस्थापक को बताएँ (गलत एक्सेस टोकन)।",
  "upstream.readFailed": "मौजूदा रिकॉर्ड रिज़ॉल्वर से पढ़ा नहीं जा सका।",

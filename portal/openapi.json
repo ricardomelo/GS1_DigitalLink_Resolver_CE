@@ -93,6 +93,7 @@
      "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Saved"}}}},
      "401": {"$ref": "#/components/responses/Unauthorised"},
      "403": {"$ref": "#/components/responses/Forbidden"},
+     "400": {"$ref": "#/components/responses/Malformed"},
      "409": {"$ref": "#/components/responses/Conflict"},
      "415": {"$ref": "#/components/responses/Invalid"},
      "422": {"$ref": "#/components/responses/Invalid"},
@@ -162,7 +163,8 @@
    "Unauthorised": {"description": "No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "Forbidden": {"description": "The key lacks the scope (api.scope), or the record is outside its reach (access.prefix)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "NotFound": {"description": "No record with those qualifiers (record.notFound)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-   "Invalid": {"description": "A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+   "Invalid": {"description": "A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+   "Malformed": {"description": "The body is not one JSON object: not JSON at all, nested past what the parser follows, or an array, a text, a number or null (request.jsonInvalid)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "RateLimit": {"description": "Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait", "headers": {"Retry-After": {"schema": {"type": "integer"}}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "Upstream": {"description": "The resolver's data entry API failed or refused the change (upstream.*)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "Conflict": {"description": "The key's records were being changed by other writers at the same moment, and the data entry API wrote nothing of this change (upstream.conflict; ADR 0027). Read the record again and repeat the change.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}

@@ -2052,6 +2052,8 @@
  "record.notFound": "이 코드의 레코드가 없습니다.",
  "request.forbiddenOrigin": "허가되지 않은 출처입니다.",
  "request.jsonRequired": "데이터를 JSON으로 보내십시오.",
+ "request.jsonInvalid": "보낸 데이터가 올바른 JSON 객체가 아닙니다.",
+ "request.fieldInvalid": "{field} 필드의 값 유형이 잘못되었습니다.",
  "upstream.unavailable": "리졸버가 응답하지 않았습니다. 몇 분 후에 다시 시도하십시오.",
  "upstream.unauthorised": "포털이 리졸버에서 인증되지 않았습니다. 관리자에게 알리십시오(잘못된 접근 토큰).",
  "upstream.readFailed": "리졸버에서 현재 레코드를 읽을 수 없습니다.",

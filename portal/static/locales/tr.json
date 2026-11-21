@@ -2052,6 +2052,8 @@
  "record.notFound": "Bu kod için kayıt yok.",
  "request.forbiddenOrigin": "Kaynağa izin verilmiyor.",
  "request.jsonRequired": "Veriyi JSON olarak gönderin.",
+ "request.jsonInvalid": "Gönderilen veri geçerli bir JSON nesnesi değil.",
+ "request.fieldInvalid": "{field} alanı yanlış türde bir değer içeriyor.",
  "upstream.unavailable": "Çözümleyici yanıt vermedi. Lütfen birkaç dakika sonra yeniden deneyin.",
  "upstream.unauthorised": "Portalın çözümleyicide yetkisi yok. Yöneticiye bildirin (yanlış erişim belirteci).",
  "upstream.readFailed": "Mevcut kayıt çözümleyiciden okunamadı.",

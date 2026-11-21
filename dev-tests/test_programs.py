@@ -105,6 +105,7 @@ PROGRAMS = [
     Program("forwarding", "portal", "portal/test_forwarding.py"),
     Program("strict_mode", "portal", "portal/test_strict_mode.py"),
     Program("targets", "portal", "portal/test_targets.py"),
+    Program("malformed", "portal", "portal/test_malformed.py"),
     Program("safety_warnings", "portal", "portal/test_safety_warnings.py"),
     Program("appearance", "portal", "portal/test_appearance.py"),
     Program("docs", "portal", "docs/test_docs.py"),

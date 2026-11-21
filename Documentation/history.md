@@ -1579,5 +1579,7 @@ pip-audit comes from a lock with hashes, Trivy by version and SHA-256 (not throu
 replaced by a credential stealer in March 2026); accepted vulnerabilities need a reason and expire within 90 days.
 Run in the sandbox before the workflow existed, the scan found 48 known vulnerabilities with corrections in the locks
 of session 48: Pillow 12.3.0 and PyMongo 4.16.0, now 13.0.0 and 4.19.0 (also in the official services' pins).
-`test_supply_chain.py` 164 → 221 checks; 28 mutations, all caught. The images are built for the first time by the
-workflow's first run.
+The workflow's first run on GitHub built the five images (the first build since session 48) and failed on two: the
+proxy's libxml2, corrected by `apk upgrade` in its Dockerfile, and files of the official MongoDB image (`gosu`, the
+database tools, `js-yaml`), reviewed and accepted for those paths only until 19 February 2027 (`30f5879`).
+`test_supply_chain.py` 164 → 222 checks; 31 mutations, all caught.

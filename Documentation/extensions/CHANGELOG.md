@@ -17,7 +17,9 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
   read the four Python and two npm lock files, and Trivy scans the five images it builds (which also proves that the
   locks install in them). A vulnerability with a correction available fails it (in the images, HIGH and CRITICAL);
   exceptions, each with its reason, review date and an expiry within 90 days, are listed in
-  `.github/supply-chain/accepted.yaml` (empty). The tools are fetched by version and hash, not through third-party
+  `.github/supply-chain/accepted.yaml` (at present only files of the official MongoDB image: its `gosu`, database tools
+  and `js-yaml`, reviewed as out of reach until the image is rebuilt). The proxy image now takes Alpine's security
+  updates at each build (`apk upgrade`), which brought the corrected libxml2 the first scan asked for. The tools are fetched by version and hash, not through third-party
   actions.
 - **New: a CycloneDX SBOM of each image** is attached to each GitHub release (`resolver-<tag>-<service>.cdx.json`), and
   kept as an artefact of every run of the workflow.

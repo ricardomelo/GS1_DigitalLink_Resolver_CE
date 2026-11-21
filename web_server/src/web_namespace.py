@@ -316,8 +316,8 @@ def _resolver_description() -> Response:
     if terms:
         description['termsOfUse'] = terms            # the operator's own terms of use, when there are any
 
-    # the name the request was made on: an organisation's own domain with its stem (ADR 0009), another name of the
-    # installation, else FQDN
+    # the name the request was made on: an organisation's own domain with its stem (ADR 0009), another of the
+    # installation's names (FQDN_ALIASES, ADR 0039), else FQDN
     root = domains.public_name(request.environ) or os.getenv('FQDN', '').strip()
     if root:
         description['resolverRoot'] = f'https://{root}'

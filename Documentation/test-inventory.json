@@ -186,7 +186,7 @@
    "checks": [
     "an editor cannot list or create keys",
     "a tenant administrator creates a key: 201, the full key once",
-    "the key's item: tidy name, sorted scopes, 30 days, no hash2026-11-21 10:27:44,248 INFO portal.worker Job 9afcbaf32e8c413caea6ccdd78e1339a (mail of ana) started, attempt 1, from item 0 of 1.",
+    "the key's item: tidy name, sorted scopes, 30 days, no hash",
     "only the secret's SHA-256 is stored, under the organisation",
     "expiry: 30 days from now",
     "list: the organisation's keys, the scopes, the limits",
@@ -204,7 +204,7 @@
     "an operator key may not be limited to an organisation's prefix",
     "nobody revokes another scope's key",
     "during support access the server administrator still sees the operator's keys only",
-    "journal: api-key-create in the organisation's trail, by its administrator",
+    "journal: api-key-create in the organisation's trail, by its administrator2026-11-21 11:15:12,476 INFO portal.worker Job 01a61b0ea3dd46d79b0e746855ae2b6c (mail of ana) started, attempt 1, from item 0 of 1.",
     "…and the operator's key in the operator's trail",
     "the creator is told by e-mail of each key (ana's three, root's one)",
     "…naming the key, its id, the organisation and the scopes, never the secret",
@@ -213,7 +213,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_6a6b7b76800…)",
+    "a wrong key is refused (rk_a905aaf8b64…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -994,9 +994,10 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (259 features)",
+    "features.md: every table has a Checks column (260 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (542 references)",
+    "…each reference names a program of the inventory (546 references)",
+    "…and words found in one of its checks",
     "every test program is in the inventory (81)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
@@ -1006,10 +1007,10 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (38)",
-    "every relative link of the documents leads to a file (54 documents)"
+    "…and every decision record (39)",
+    "every relative link of the documents leads to a file (55 documents)"
    ],
-   "count": 14,
+   "count": 15,
    "ciOnly": false
   },
   "domains": {
@@ -1191,6 +1192,8 @@
     "…and so does the Link header",
     "linkset on another name of the installation: the anchors are on that name",
     "…and so is the Link header",
+    "…a second name of the list (after a space, with a port, in FQDN_ALIASES)",
+    "…a name with a final dot: the same name",
     "…the Link header of a redirect too",
     "…the JSON-LD linkset's @id and anchors too",
     "…and the description file's resolver root",
@@ -1203,6 +1206,19 @@
     "a host that is not a valid host name (-x.example): the installation's name",
     "a host that is not a valid host name (xxxxxxxxxxxxxxxxxxxx): the installation's name",
     "…in the description file too",
+    "a host nobody listed (evil.example): the linkset's anchors and Link header on the installation's name",
+    "a host nobody listed (alias.example.net.evil.example): the linkset's anchors and Link header on the installation's name",
+    "a host nobody listed (evilid.example.org): the linkset's anchors and Link header on the installation's name",
+    "a host nobody listed (example.org): the linkset's anchors and Link header on the installation's name",
+    "a host nobody listed (bad_name.example): the linkset's anchors and Link header on the installation's name",
+    "a host nobody listed (pending.acme.example): the linkset's anchors and Link header on the installation's name",
+    "a host nobody listed (redir.acme.example): the linkset's anchors and Link header on the installation's name",
+    "…the Link header of a redirect too",
+    "…the JSON-LD linkset's @id and anchors too",
+    "…and the description file's resolver root",
+    "…the Resolution-Anchor header too, and no header names the host",
+    "without FQDN_ALIASES a second name gets the installation's name",
+    "the installation's names: FQDN and the valid names of FQDN_ALIASES, in lower case without port or final dot",
     "a domain without a stem resolves its codes",
     "…and refuses the others",
     "Host when there is no X-Forwarded-Host",
@@ -1221,9 +1237,10 @@
     "the portal's database cannot be read: the last list is kept",
     "PORTAL_DB_NAME names the portal's database (resolver_portal by default)",
     "…or another",
-    "the proxy passes the public host to the resolver"
+    "the proxy passes the public host to the resolver",
+    "the host's site sends plain HTTP to the installation's name, not to the Host the client sent"
    ],
-   "count": 45,
+   "count": 61,
    "ciOnly": false
   },
   "engine_messages": {
@@ -2252,6 +2269,9 @@
     "GET /home/favicon.png → 200 image/png",
     "GET /home → 301 to /",
     "GET /home/ → 301 to /",
+    "GET /home with a forged Host → 301 to /, a path without the forged name (/)",
+    "GET /home/ with a forged Host → 301 to /, a path without the forged name (/)",
+    "GET /portal with a forged Host → 301 to /portal/, a path without the forged name (/portal/)",
     "GET /home/<unknown> → 404 (no directory listing, no fall-through)",
     "GET /01/09506000134352 → resolver (/api/01/09506000134352), unchanged",
     "GET /01/09506000134352: Host header 'resolver-web' accepted by Werkzeug",
@@ -2441,7 +2461,7 @@
     "phone: no horizontal scrolling",
     "without JavaScript: English text, menu visible"
    ],
-   "count": 208,
+   "count": 211,
    "ciOnly": false
   },
   "i18n": {
@@ -3488,7 +3508,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:33617/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:34197/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",
@@ -3627,7 +3647,7 @@
     "a link of a disabled account is refused",
     "…and cannot set its password",
     "ten invalid links per browser address, then a pause",
-    "reset of a user with an address: a link by e-mail, no password shown2026-11-21 10:27:21,060 INFO portal.worker Job 5e5f123652fe435382a7615888af8141 (mail of maria) started, attempt 1, from item 0 of 1.",
+    "reset of a user with an address: a link by e-mail, no password shown",
     "…the password stops working at once, the user's sessions end",
     "…the message says an administrator reset it",
     "…and the link sets a new password",
@@ -4448,7 +4468,7 @@
     "QR code with every qualifier",
     "changing the informative batch keeps the record open",
     "Open record asks before discarding an unsaved change",
-    "a serial number opened without its batch shows the stored variant and batch",
+    "a serial number opened without its batch shows the stored variant and batch2026-11-21 11:19:46,845 INFO werkzeug 127.0.0.1 - - [21/Nov/2026 11:19:46] \"GET /api/01/09506000134352 HTTP/1.1\" 200 -",
     "a different batch typed is kept and pointed out",
     "data attributes not offered without the syntax engine",
     "415 requires 8020",
@@ -5235,6 +5255,7 @@
     "no Resolution headers on a 404",
     "no Resolution headers on an unknown key",
     "Resolution-Anchor on the name the request was made on, like the linkset's anchors",
+    "…on the installation's name when that name is not one of its names (ADR 0039)",
     "item's page of a batch without a record: a notice naming the batch and the level whose links are shown",
     "…above the links",
     "…in the visitor's language (pt-BR)",
@@ -5302,9 +5323,9 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.001 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.003 ms; Node.js: tens of ms)"
    ],
-   "count": 247,
+   "count": 248,
    "ciOnly": false
   },
   "safety_warnings": {

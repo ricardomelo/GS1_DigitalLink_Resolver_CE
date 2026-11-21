@@ -320,6 +320,11 @@ def routing_checks(base: str) -> None:
     for path in ["/home", "/home/"]:
         status, headers, _ = fetch(base + path)
         check(status == 301 and headers.get("Location", "").endswith("/"), f"GET {path} → 301 to /")
+    # the redirects nginx writes itself carry the path alone, whatever Host the client sent (ADR 0039, finding F-022)
+    for path, target in (("/home", "/"), ("/home/", "/"), ("/portal", "/portal/")):
+        status, headers, _ = fetch(base + path, headers={"Host": "evil.example"})
+        check(status == 301 and headers.get("Location") == target,
+              f"GET {path} with a forged Host → 301 to {target}, a path without the forged name ({headers.get('Location')})")
 
     status, _, _ = fetch(base + "/home/does-not-exist.txt")
     check(status == 404, "GET /home/<unknown> → 404 (no directory listing, no fall-through)")

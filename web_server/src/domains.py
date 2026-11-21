@@ -18,7 +18,10 @@ A host that is not a registered domain (the installation's own name above all) i
 public_name() gives the name a request was made on, for the addresses the resolver writes about it (the linkset's
 anchors, the Link header, the description file's root): a GS1 Digital Link URI names the same item on any of the
 installation's names, and a client compares the anchors with the URI it asked for (GS1's conformance test suite
-requires the anchor to be that URI).
+requires the anchor to be that URI). Only names the installation knows are written: FQDN, the names listed in
+FQDN_ALIASES and the verified domains above; any other host a request names gets FQDN, so that a forged Host cannot
+put another name into an answer a shared cache might keep (Documentation/adr/0039-known-public-names.md, finding
+F-022).
 """
 import logging
 import os
@@ -93,18 +96,31 @@ def request_host(environ: dict) -> str:
     return host.split(':')[0]
 
 
+def _name(value: str) -> str:
+    """A host name as written in a setting: lower case, without spaces, port or final dot."""
+    return value.strip().lower().split(':')[0].rstrip('.')
+
+
+def known_names() -> frozenset[str]:
+    """The installation's own names: FQDN and those listed in FQDN_ALIASES (separated by commas or spaces), each a
+    valid host name; read at each call, so that a changed .env applies at the next start without a cache to empty."""
+    raw = [os.getenv('FQDN', '')] + re.split(r'[,\s]+', os.getenv('FQDN_ALIASES', '') or '')
+    return frozenset(name for name in map(_name, raw) if name and _HOST_NAME.match(name))
+
+
 def public_name(environ: dict) -> str | None:
-    """The public name the request was made on, as the start of its URI without the scheme: an organisation's domain
-    with its stem ("id.acme.example/gs1"), or the host the proxy names in X-Forwarded-Host when it is a valid host
-    name (another name of the installation). None without X-Forwarded-Host (a request that did not come through the
-    proxy): the caller then uses the installation's FQDN."""
+    """The public name the request was made on, as the start of its URI without the scheme: an organisation's verified
+    domain with its stem ("id.acme.example/gs1"), or the host the proxy names in X-Forwarded-Host when it is one of
+    the installation's own names (known_names()). None otherwise: without X-Forwarded-Host (a request that did not
+    come through the proxy) and for any other host, which a client chose; the caller then uses the installation's
+    FQDN (ADR 0039)."""
     entry = environ.get(ENV_KEY)
     if entry:
         return entry['host'] + entry['stem']
     if not environ.get('HTTP_X_FORWARDED_HOST'):
         return None
-    host = request_host(environ)
-    return host if _HOST_NAME.match(host) else None
+    host = request_host(environ).rstrip('.')
+    return host if host in known_names() else None
 
 
 def _without_stem(path: str, stem: str) -> str | None:

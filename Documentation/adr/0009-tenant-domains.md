@@ -188,6 +188,10 @@ that is not a host name — `FQDN`, as before. This covers the linkset's anchors
 `@id`, the `Link` header of linksets and redirects, and the description file's `resolverRoot`. Stored records are
 unchanged; links that hold an address (the item's page as a default target) keep the one the portal wrote.
 
+*Amended by [ADR 0039](0039-known-public-names.md) (finding F-022): the host in `X-Forwarded-Host` is written only when
+it is one of the installation's names — `FQDN` or a name listed in `FQDN_ALIASES` — and any other name gets `FQDN`; the
+list in `.env` not chosen below is now taken, because the host's site is its nginx's default for every name.*
+
 ### 8.3 Options considered
 
 | Point | Chosen (recommended) | Not chosen |

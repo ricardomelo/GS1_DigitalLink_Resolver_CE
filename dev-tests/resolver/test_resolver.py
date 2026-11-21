@@ -465,9 +465,14 @@ check("no Resolution headers on a linkset (its anchors name the levels)",
       resolution(Q + "/22/V1/10/L2?linkType=linkset", "application/linkset+json") == (200, None, None))
 check("no Resolution headers on a 404", resolution(Q + "?linkType=gs1:epil") == (404, None, None))
 check("no Resolution headers on an unknown key", resolution("/01/09506000999906") == (404, None, None))
+os.environ["FQDN_ALIASES"] = "id.brand.example"      # another of the installation's names (ADR 0039)
 r = client.get("/api" + Q + "/10/L1", headers={"Accept": "*/*", "X-Forwarded-Host": "id.brand.example"})
 check("Resolution-Anchor on the name the request was made on, like the linkset's anchors",
       r.headers.get("Resolution-Anchor") == "https://id.brand.example" + Q, r.headers.get("Resolution-Anchor"))
+del os.environ["FQDN_ALIASES"]
+r = client.get("/api" + Q + "/10/L1", headers={"Accept": "*/*", "X-Forwarded-Host": "id.brand.example"})
+check("…on the installation's name when that name is not one of its names (ADR 0039)",
+      r.headers.get("Resolution-Anchor") == ROOT + Q, r.headers.get("Resolution-Anchor"))
 # ---------------------------------------------------------------- the notice on the pages (ADR 0022, section 2.3)
 def page_of(path, language="en-GB,en;q=0.9"):
     r = client.get("/api" + path, headers={"Accept": "text/html", "Accept-Language": language})

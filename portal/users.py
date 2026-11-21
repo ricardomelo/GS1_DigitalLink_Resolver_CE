@@ -39,6 +39,7 @@ from datetime import datetime, timezone
 from pymongo.errors import DuplicateKeyError, PyMongoError
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import sessions
 import store
 
 MIN_PASSWORD_LENGTH = 12
@@ -116,7 +117,8 @@ def verify(username: str, password: str) -> bool:
 
 def fingerprint(username: str) -> str | None:
     """Short digest of the user's hash and state, stored in the session: changing the password,
-    disabling or removing the user signs out every other open session."""
+    disabling or removing the user signs out every other open session (the session records of sessions.py end
+    them too, and keep them ended when the account is enabled again)."""
     account = get(username)
     if not account or account["disabled"]:
         return None
@@ -237,6 +239,7 @@ def set_password(username: str, password: str, must_change: bool = False, role: 
             _set_email(username, account, email)
         _check_scope(account["tenant"], account["prefixes"])
         _save(username, account)
+    sessions.end_user(username)         # a new password ends every session of the account (ADR 0034)
 
 
 def create(username: str, password: str | None, role: str, prefixes=(), must_change: bool = True,
@@ -292,7 +295,9 @@ def update(username: str, role: str | None = None, prefixes=None, disabled: bool
         if not _active_admins(accounts):
             raise UserError("users.lastAdmin")
         _save(username, account)
-        return account
+    if account["disabled"]:
+        sessions.end_user(username)     # enabling the account again does not revive them (ADR 0034)
+    return account
 
 
 def clear_password(username: str) -> None:
@@ -305,6 +310,7 @@ def clear_password(username: str) -> None:
         account["hash"] = ""
         account["mustChange"] = False
         _save(username, account)
+    sessions.end_user(username)
 
 
 def find_login(login: str) -> str | None:
@@ -373,6 +379,7 @@ def remove(username: str) -> None:
         if not _active_admins(accounts):
             raise UserError("users.lastAdmin")
         _users().delete_one({"_id": username})
+    sessions.end_user(username)
 
 
 def touch_login(username: str) -> None:

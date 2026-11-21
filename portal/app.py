@@ -57,6 +57,7 @@ import requestlog
 import resolution
 import safety
 import sheet
+import sessions
 import sso
 import store
 import syntax
@@ -359,13 +360,21 @@ def tenant_blocked(account: dict | None) -> bool:
     return tenant is None or tenant["disabled"]
 
 
+def session_valid(username: str) -> bool:
+    """Whether the cookie's session id names an open session record of the user (sessions.py, ADR 0034): signing
+    out, a password change and an administrator's action end the record, and with it every copy of the cookie."""
+    return sessions.valid(session.get(sessions.COOKIE_KEY), username, SESSION_IDLE_MINUTES * 60, SESSION_MAX_HOURS * 3600)
+
+
 def current_user() -> str | None:
-    """Signed-in user of this session, or None. The session also carries a fingerprint of the account's
-    password hash: a password change or reset ends every other session of that user. A session older than
-    PORTAL_SESSION_MAX_HOURS ends whatever its use; the idle limit is checked with the cookie's signature.
+    """Signed-in user of this session, or None. The cookie names a session record in the portal's database
+    (session_valid) and carries a fingerprint of the account's password hash: a password change or reset ends
+    every other session of that user. A session older than PORTAL_SESSION_MAX_HOURS ends whatever its use; the idle
+    limit is checked with the cookie's signature and with the record's end.
     """
     username = session.get("user")
-    if username and users.fingerprint_matches(username, session.get("fp")) and not tenant_blocked(users.get(username)):
+    if (username and users.fingerprint_matches(username, session.get("fp")) and session_valid(username)
+            and not tenant_blocked(users.get(username))):
         if "since" not in session:          # sessions opened before the limit existed start counting now
             session["since"] = int(time.time())
         if session_ends_in() > 0:
@@ -1150,17 +1159,25 @@ def login():
                   tenant=tenant, actor_tenant=tenant)
         return message("auth.ssoRequired", 403)
     throttle.clear(pair, by_user)
-    open_session(username, data.get("language"), client_address())
+    open_session(username, data.get("language"), client_address(), "password")
     return message("auth.welcome", 200, user=username, mustChange=bool((users.get(username) or {}).get("mustChange")))
 
 
-def open_session(username: str, language, detail: str) -> None:
-    """Signs the user in on this browser (password or single sign-on): a new session bound to the account's password
-    fingerprint, the audit trail and the journal."""
+def new_session_id(username: str, via: str) -> str:
+    """A new session record of the user (sessions.py); its id goes into the cookie."""
+    return sessions.open_record(username, via, SESSION_IDLE_MINUTES * 60, SESSION_MAX_HOURS * 3600)
+
+
+def open_session(username: str, language, detail: str, via: str) -> None:
+    """Signs the user in on this browser (via "password" or "sso"): a new session record (ADR 0034) bound to the
+    account's password fingerprint, the audit trail and the journal."""
     tenant = (users.get(username) or {}).get("tenant")
     session.clear()
     session.permanent = True
-    session.update(user=username, fp=users.fingerprint(username), was_logged_in=True, since=int(time.time()))
+    session.update(user=username, fp=users.fingerprint(username), was_logged_in=True, since=int(time.time()),
+                   **{sessions.COOKIE_KEY: new_session_id(username, via)})
+    if via == "sso":
+        session["via"] = "sso"
     audit.info("user=%s action=login addr=%s", username, client_address())
     users.touch_login(username)
     users.note_language(username, language)     # the language of his messages, until he chooses one
@@ -1169,8 +1186,10 @@ def open_session(username: str, language, detail: str) -> None:
 
 @app.post("/portal/api/logout")
 def logout():
-    """Ends the session and records it in the audit trail."""
+    """Ends the session, its record included (every copy of the cookie stops working), and records it in the audit
+    trail."""
     username, support = session.get("user"), session.get("support")
+    sessions.end(session.get(sessions.COOKIE_KEY))
     session.clear()
     if username:
         tenant = (users.get(username) or {}).get("tenant")
@@ -1205,7 +1224,9 @@ def change_password():
     except users.StoreNotWritable as exc:
         log.error("Password change failed: %s", exc)
         return message("password.storeReadOnly", 500)
-    session["fp"] = users.fingerprint(g.user)   # keeps this session; every other session is signed out
+    # every session of the account ended (users.set_password); this browser stays signed in under a new id
+    session.update(fp=users.fingerprint(g.user),
+                   **{sessions.COOKIE_KEY: new_session_id(g.user, "sso" if session.get("via") == "sso" else "password")})
     audit.info("user=%s action=password-change", g.user)
     log_event("password-change", tenant=g.account_tenant)
     notify.send(g.user, "password-changed", when=notify.now_text())
@@ -3514,8 +3535,8 @@ def sso_callback():
         return redirect("/portal/login?sso=tenantDisabled")
     sso.note(doc["_id"], True)
     open_session(username, language, f"{client_address()} single sign-on {urlparse_host(doc['issuer'])} "
-                                     f"subject {subject['sub']}"[:250] + (" bound" if subject["bound"] else ""))
-    session["via"] = "sso"
+                                     f"subject {subject['sub']}"[:250] + (" bound" if subject["bound"] else ""),
+                 "sso")
     return redirect("/portal/#overview")
 
 

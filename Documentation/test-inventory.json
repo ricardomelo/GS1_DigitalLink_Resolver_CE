@@ -181,7 +181,7 @@
    "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
    "checks": [
     "an editor cannot list or create keys",
-    "a tenant administrator creates a key: 201, the full key once2026-11-21 03:39:06,396 INFO portal.worker Job 336183d0f8f7402da0e9d6c3e385c88f (mail of ana) started, attempt 1, from item 0 of 1.",
+    "a tenant administrator creates a key: 201, the full key once",
     "the key's item: tidy name, sorted scopes, 30 days, no hash",
     "only the secret's SHA-256 is stored, under the organisation",
     "expiry: 30 days from now",
@@ -199,7 +199,7 @@
     "each administrator lists only his own scope's keys",
     "an operator key may not be limited to an organisation's prefix",
     "nobody revokes another scope's key",
-    "during support access the server administrator still sees the operator's keys only2026-11-21 03:39:06,416 INFO portal.notify Message api-key-created for ana sent (accepted).",
+    "during support access the server administrator still sees the operator's keys only",
     "journal: api-key-create in the organisation's trail, by its administrator",
     "…and the operator's key in the operator's trail",
     "the creator is told by e-mail of each key (ana's three, root's one)",
@@ -209,7 +209,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_16582fad3e7…)",
+    "a wrong key is refused (rk_026e41d51b7…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -866,7 +866,7 @@
     "data-entry-service: stops cleanly on SIGTERM within Docker's 10-second stop period",
     "data-entry-service: requests are logged (docker compose logs)",
     "data-entry-service: no gunicorn control socket",
-    "portal image: every module and data file of portal/ is copied (50)",
+    "portal image: every module and data file of portal/ is copied (51)",
     "portal image: static files and assets are copied",
     "portal-service: the image runs gunicorn, with the process count left to WEB_CONCURRENCY",
     "portal-service: the image's default is two processes",
@@ -955,9 +955,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (249 features)",
+    "features.md: every table has a Checks column (250 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (487 references)",
+    "…each reference names a program of the inventory (493 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (80)",
     "…and the inventory holds no program that no longer exists",
@@ -968,8 +968,8 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (33)",
-    "every relative link of the documents leads to a file (49 documents)"
+    "…and every decision record (34)",
+    "every relative link of the documents leads to a file (50 documents)"
    ],
    "count": 15,
    "ciOnly": false
@@ -3376,7 +3376,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:38647/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:38609/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",
@@ -5316,6 +5316,31 @@
     "keep-alive within the idle limit",
     "idle limit counts from the last call: renewed session still open",
     "idle limit: a session without calls for longer is refused",
+    "a copied cookie works while its session is open",
+    "signing out ends the session for a copied cookie too",
+    "…and a copied cookie's page goes to the sign-in page",
+    "the cookie carries a random session id of at least 256 bits",
+    "the database keeps the id's SHA-256, never the id",
+    "…with the user, how it was opened and when it ends",
+    "…which is at most the absolute limit after the sign-in",
+    "the records expire by themselves (TTL index on expiresAt)",
+    "calls within a few seconds do not write the record each time",
+    "a call after a while renews the record's end (sliding, never past the absolute limit)",
+    "a record never outlives the absolute limit, whatever the idle limit",
+    "a valid cookie whose record is gone is refused",
+    "a record of another user does not open the session",
+    "a session opened before the records existed ends (sign in again)",
+    "…with the reason on the sign-in page",
+    "a password change keeps this browser signed in",
+    "…under a new session id",
+    "…and ends the copy of the cookie taken before it",
+    "disabling an account ends its sessions, even after it is enabled again",
+    "…its records are gone",
+    "an administrator's password reset ends the user's sessions",
+    "a password removed for a reset by link ends the user's sessions",
+    "disabling an organisation ends its users' sessions, even after it is enabled again",
+    "removing an account ends its sessions",
+    "an administrator's own session survives what it did to others",
     "throttle per address: a forged first X-Forwarded-For address rotated at every attempt does not escape it",
     "…and failures cannot be charged to another address by writing it first",
     "the audit trail records the address the proxy set, not the one the client wrote",
@@ -5359,7 +5384,7 @@
     "Portuguese warning",
     "signing out from the warning"
    ],
-   "count": 53,
+   "count": 78,
    "ciOnly": false
   },
   "sheet": {
@@ -6157,7 +6182,7 @@
   "store_mongodb": {
    "area": "Data store, installation and operation",
    "checks": [],
-   "count": 282,
+   "count": 284,
    "ciOnly": true
   }
  }

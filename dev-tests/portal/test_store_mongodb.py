@@ -344,7 +344,19 @@ try:
     import store  # noqa: E402
     store.reset()                         # imported earlier through journal.py, before PORTAL_DB_NAME was set
 
+    # ---------------------------------------------------------------- session records (ADR 0034) as the portal's user
+    import sessions  # noqa: E402
+    kept, other = (sessions.open_record("devtest-session", "password", 1800, 43200) for _ in range(2))
+    check("sessions: a record opened, found and renewed as the portal's user",
+          sessions.valid(kept, "devtest-session", 1800, 43200) and not sessions.valid(kept, "someone-else", 1800, 43200))
+    ended = sessions.end_user("devtest-session", keep=kept)
+    check("sessions: ending a user's other sessions keeps this one", ended == 1
+          and sessions.valid(kept, "devtest-session", 1800, 43200) and not sessions.valid(other, "devtest-session", 1800, 43200))
+    sessions.end(kept)
+
     now = store.now()
+    store.col("sessions").insert_one({"_id": "ttl-probe", "user": "x", "via": "password", "created": now, "seen": now,
+                                      "expiresAt": now - timedelta(minutes=1)})
     store.col("login_failures").insert_one({"_id": "ttl-probe", "key": "user:ttl", "at": now - timedelta(minutes=20)})
     store.col("journal").insert_one({"_id": "ttl-probe", "at": now, "user": "x", "action": "login",
                                      "category": "session", "expiresAt": now - timedelta(minutes=1)})
@@ -354,15 +366,15 @@ try:
     store.col("workers").insert_one({"_id": "ttl-probe", "seen": now - timedelta(seconds=store.WORKER_RECORD_SECONDS + 60)})
     store.col("journal").insert_one({"_id": "ttl-keep", "at": now, "user": "x", "action": "create", "category": "record"})
     deadline = time.monotonic() + 150                     # the monitor runs every 60 seconds
-    probed = ("login_failures", "journal", "linkcheck_cache", "jobs", "workers")
+    probed = ("login_failures", "journal", "linkcheck_cache", "jobs", "workers", "sessions")
     left = len(probed)
     while time.monotonic() < deadline:
         left = sum(store.col(c).count_documents({"_id": "ttl-probe"}) for c in probed)
         if not left:
             break
         time.sleep(5)
-    check("TTL: expired sign-in failures, journal events, cached results, jobs and old worker announcements are "
-          "deleted by MongoDB", left == 0, left)
+    check("TTL: expired sign-in failures, journal events, cached results, jobs, old worker announcements and session "
+          "records are deleted by MongoDB", left == 0, left)
     check("TTL: an event without expiresAt is kept", store.col("journal").count_documents({"_id": "ttl-keep"}) == 1)
 finally:
     try:

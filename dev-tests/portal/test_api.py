@@ -301,6 +301,7 @@ tenants.update(acme["id"], disabled=True)
 check("a key of a disabled organisation is refused", code(api("get", "/", ana_key)) == "api.keyInvalid")
 tenants.update(acme["id"], disabled=False)
 check("…and works again when it is enabled", api("get", "/", ana_key).status_code == 200)
+ana = client("ana", "ana-password-long")        # disabling the organisation ended her sessions (ADR 0034)
 
 # ================================================================== the request limit
 check("the first request of a minute records the last use", store.col("api_keys").find_one({"_id": ana_item["id"]}).get("lastUsed"))

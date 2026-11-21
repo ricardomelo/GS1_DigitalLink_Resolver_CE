@@ -13,7 +13,8 @@ Connection, from the environment:
   PORTAL_DB_NAME                      the database, also the user's authentication database
 
 Collections: users, tenants (tenants.py), record_meta, login_failures, linkcheck_cache, settings, jobs
-and workers (jobs.py), tokens (tokens.py: invitation and recovery links), api_keys and api_rate (apikeys.py: the tenant
+and workers (jobs.py), sessions (sessions.py: open sessions of the portal, ADR 0034), tokens (tokens.py: invitation
+and recovery links), api_keys and api_rate (apikeys.py: the tenant
 API's keys and request counters), request_daily and api_requests (requestlog.py: daily counts of the resolver's
 requests and the tenant API's calls). The journal, journal and journal_heads (journal.py, ADR 0026), lives in a
 database of its own, "<PORTAL_DB_NAME>_journal" (journal_db_name()), where the portal's user may read and insert
@@ -76,6 +77,11 @@ INDEXES = {
     ],
     "workers": [
         ([("seen", ASCENDING)], {"expireAfterSeconds": WORKER_RECORD_SECONDS}),
+    ],
+    # open sessions of the portal (sessions.py, ADR 0034)
+    "sessions": [
+        ([("user", ASCENDING)], {}),
+        ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
     ],
     "tokens": [
         ([("user", ASCENDING), ("purpose", ASCENDING)], {}),

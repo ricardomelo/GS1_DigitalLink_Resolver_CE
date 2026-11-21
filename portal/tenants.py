@@ -21,6 +21,7 @@ import secrets
 from datetime import datetime, timezone
 
 import gs1
+import sessions
 import store
 import users
 from users import UserError
@@ -154,6 +155,8 @@ def update(tenant_id: str, name=None, prefixes=None, disabled=None) -> tuple[dic
         if disabled is not None:
             after["disabled"] = bool(disabled)
         _tenants().update_one({"_id": tenant_id}, {"$set": {k: after[k] for k in ("name", "prefixes", "disabled")}})
+    if after["disabled"]:       # its users' sessions end, and stay ended if it is enabled again (ADR 0034)
+        sessions.end_users(name for name, account in users.load().items() if account.get("tenant") == tenant_id)
     return before, after
 
 

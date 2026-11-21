@@ -550,6 +550,12 @@ the checker cannot be used to probe the server's own network.
     (`PERMANENT_SESSION_LIFETIME`). Absolute limit: the session keeps its sign-in time (`since`); a request
     after the limit clears it (audit log line `action=session-limit`). Sessions opened before the limit
     existed start counting at their next request.
+  - Session records ([ADR 0034](../adr/0034-session-records.md)): the cookie carries a random session id; the
+    portal's database keeps its SHA-256 in the `sessions` collection, with the user and the session's end. Signing
+    out, a password change or reset, and disabling or removing the account or disabling its organisation remove
+    the records, so a copy of the cookie stops working too, and stays dead if the account or organisation is
+    enabled again. After the update that brought the records, everyone signs in once more (older cookies carry no
+    id).
   - The page mirrors both limits (`SessionClock` in `static/app.js`, from `session` in
     `GET /portal/api/config`, with relative seconds so the browser's clock does not matter). Every answered
     call renews the idle limit; key presses, clicks, scrolling and touches without server calls count as

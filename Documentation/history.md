@@ -1623,3 +1623,19 @@ sign-in names: an organisation's administrator who meets five already taken with
 15 minutes (`users.nameLimit`, twelve languages), and each name of another organisation tried is journalled as
 `user-create-refused` in the operator's trail. `test_tenants.py` 82 → 96 checks, `test_mail.py` 138 → 139,
 `test_sso.py` 112 → 113; 15 mutations, all caught.
+
+## Session 53 — target addresses
+
+Finding F-020 of the security assessment, in one code commit (`806ff42`;
+[ADR 0037](adr/0037-target-addresses.md)). The portal accepted any `https:` target without spaces or control
+characters: a user name before the host (`https://brand@evil…`, which opens the second name), an IP address in any of
+the forms a browser still reads as one (`2130706433`, `0x7f.1`, full-width digits), and names that reach devices on
+the scanning person's own network (`localhost`, `.local`, `.internal`…). These forms are now refused for every
+organisation, with a message of their own in twelve languages, wherever a target enters through the portal — the
+editor, imports, the tenant API, a restored version — and in forwarding destinations. An organisation's
+administrators (and the server administrators, also for the codes no organisation holds) may in addition list the
+hosts its links may point to (organisation's page, *Targets*, `portal/targets.py`): empty accepts any public host, as
+before; with hosts listed, each target must be one of them or a name under one, the item's page excepted.
+`test_targets.py`, a new program, 94 checks, and the *Targets* tab in `test_admin_nav_e2e.py`; 29 mutations, 27
+caught and 2 removed with the redundant code they mutated. A check of `test_mail_e2e.py` now accepts the sign-in page
+with `?reason=expired` (`4a6d09b`). The guide's *Domains* screenshot, left from session 51, was taken again.

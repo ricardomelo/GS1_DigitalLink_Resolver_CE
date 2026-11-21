@@ -294,7 +294,10 @@ Each target is one web page or document. For each target fill in:
   sends each person to the version in their browser's language. Someone whose language has no version
   gets the default target (the first one).
 - **Address (URL)** — the full address, starting with `https://`. Copy it from the browser's address bar;
-  spaces, line breaks and invisible characters are refused.
+  spaces, line breaks and invisible characters are refused, and so are a user name or password before the site's
+  name (`https://name@…`), an IP address instead of the name, and names that only work inside a network
+  (`localhost`, a name without a dot, `.local`, `.internal`…). If the organisation lists the hosts its links may
+  point to (section 14, *Targets*), the address must be on one of them.
 - **Title** (optional) — a short name shown in lists of links and on the item's page. Left empty, the link gets its
   type's name in the link's language (Portuguese or English) — and a new one if you change the language later.
 
@@ -767,6 +770,7 @@ task is:
 | See everything about one organisation in one place | their own | any organisation, and the operator's | [An organisation's page](#an-organisations-page-administrators) |
 | Limit exports per role (readers, editors, API keys) | their own | any organisation, and the operator's users | the organisation's page, *Exports* |
 | The strict mode for safety-critical link types | their own | any organisation, and the codes no organisation holds | the organisation's page, *Resolution* |
+| The hosts the links may point to | their own | any organisation, and the codes no organisation holds | the organisation's page, *Targets* |
 | The most rows per export in every organisation | — | yes | [Organisations](#organisations-server-administrators) |
 | Create, rename, disable, remove organisations; their GS1 Company Prefixes | — | yes | [Organisations](#organisations-server-administrators) and the organisation's page |
 | Upload GS1's GCP length table | — | yes | [Organisations](#organisations-server-administrators) |
@@ -924,7 +928,7 @@ without changing them, only through support access.
 **Organisation management** (user menu; the page is titled with the organisation's name) gathers an organisation's
 settings in one place, each in a tab: its **Prefixes**, its
 **Users** with their prefixes, its **Domains**, its **Item page** brands, its **Organisation sign-in**, its **API
-keys**, its **Exports**, its **Alerts** and its **Resolution**. Each tab links to the screen that changes it. An organisation's
+keys**, its **Exports**, its **Alerts**, its **Resolution** and its **Targets**. Each tab links to the screen that changes it. An organisation's
 administrators see their own; the server administrator opens any organisation from **Organisations** (**Open**),
 changes its prefixes on the **Prefixes** tab, and reaches another organisation's brands and API keys through support
 access; without choosing an organisation, the page shows the operator's own settings.
@@ -954,6 +958,16 @@ strict mode*. On the operator's page the same tab sets it for the codes no organ
 only in support access. Under the table the tab counts the **batch or serial records that lack a safety-critical
 link** a broader record of their identifier holds, and lists the first ten with the types each lacks: those are the
 requests the strict mode would withhold, and the records to open in the editor before switching it on.
+
+**Targets** lists the **hosts the organisation's links may point to**, also changed on the tab itself
+([ADR 0037](adr/0037-target-addresses.md)). Empty, as it starts, any public site is accepted. Type the sites one per
+line — the name only, such as `example.com`, without `https://`, a path or a port — and **Save hosts**: from then on a
+record is saved only when each of its links points to one of them or to a name under one (`shop.example.com` is under
+`example.com`; `example.com.other.net` is not). It applies in the editor, imports (each refused row is named), the
+tenant API and when a version is restored; records saved before do not change until they are edited, and the item's
+page is never refused. The audit trail records each change (*Link hosts changed*). On the operator's page the same tab
+sets the list for the codes no organisation holds; read only in support access. Whatever the list, no organisation's
+link may carry a user name or password, an IP address or a name that only exists inside a network.
 
 ### Alerts (administrators)
 

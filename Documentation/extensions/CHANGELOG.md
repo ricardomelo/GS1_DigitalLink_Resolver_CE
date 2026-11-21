@@ -11,6 +11,22 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Target addresses (session 53)
+- **Changed: a target with a user name or password before the host, an IP address, or a name that only exists inside
+  a network is refused** ([ADR 0037](../adr/0037-target-addresses.md)). `https://www.brand.example@other.example/`
+  opens `other.example`; `https://10.0.0.5/`, `https://2130706433/` (an IPv4 address written as one number) and
+  `https://printer.local/` send the person who scans to a device on their own network. The editor, imports (with the
+  row), the tenant API (422) and a restored version refuse them with their own message (`link.urlUserInfo`,
+  `link.urlAddress`, `link.urlHost`; twelve languages), and forwarding destinations refuse them too. Ports, names
+  outside ASCII and a trailing dot are still accepted; records saved before keep their targets until edited.
+- **New: the hosts an organisation's links may point to.** On the organisation's page, tab *Targets*, its
+  administrators (and the server administrators, also for the codes no organisation holds) list host names, one per
+  line; with hosts listed, a record is saved only when each target is one of them or a name under one
+  (`link.urlNotAllowed`), the item's page excepted. Empty, as it starts, accepts any public host. Journalled as
+  *Link hosts changed* (`target-hosts`); `PUT /portal/api/targets/hosts`.
+- Corrects finding F-020 of the security assessment. Nothing to add to `.env`; rebuild the portal
+  (`docker compose up -d --build`). Commit `806ff42`.
+
 ### User names and e-mail addresses of other organisations (session 52)
 - **Changed: an e-mail address is unique within an organisation, not in the whole installation**
   ([ADR 0036](../adr/0036-names-and-addresses-across-organisations.md)). An organisation's administrator could learn

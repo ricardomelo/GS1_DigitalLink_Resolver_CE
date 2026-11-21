@@ -11,6 +11,23 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Known vulnerabilities looked for; an SBOM per release (session 49)
+- **New: the *Supply chain* workflow** ([ADR 0033](../adr/0033-supply-chain.md), step 2) looks for known
+  vulnerabilities on every change of a lock file, a Dockerfile or a workflow, and every Monday: pip-audit and npm audit
+  read the four Python and two npm lock files, and Trivy scans the five images it builds (which also proves that the
+  locks install in them). A vulnerability with a correction available fails it (in the images, HIGH and CRITICAL);
+  exceptions, each with its reason, review date and an expiry within 90 days, are listed in
+  `.github/supply-chain/accepted.yaml` (empty). The tools are fetched by version and hash, not through third-party
+  actions.
+- **New: a CycloneDX SBOM of each image** is attached to each GitHub release (`resolver-<tag>-<service>.cdx.json`), and
+  kept as an artefact of every run of the workflow.
+- **Changed: Pillow 13.0.0 and PyMongo 4.19.0.** The first scan found known vulnerabilities with corrections in the
+  locked Pillow 12.3.0 (the portal's labels and logos; 43, five of them critical) and PyMongo 4.16.0 (every Python
+  service; 5). The portal now allows Pillow 13 (`>=13.0,<14`), and the resolver's and the data entry API's pins move
+  from PyMongo 4.16.0 to 4.19.0, a deliberate change of the official services' versions; behaviour unchanged.
+- Corrects finding F-015 of the security assessment, second and last step. Nothing to add to `.env`; rebuild the
+  images (`docker compose up -d --build`) to install the new Pillow and PyMongo.
+
 ### The supply chain fixed by content (session 48)
 - **Changed: every Python package is installed from a lock file with its hashes**
   ([ADR 0033](../adr/0033-supply-chain.md)). The resolver, the data entry API and the portal install `requirements.txt`

@@ -11,6 +11,23 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Domain claims that expire, proofs that lapse (session 51)
+- **Changed: adding a QR code domain no longer reserves it** ([ADR 0035](../adr/0035-domain-claims-and-lapsed-proofs.md)).
+  Until it is verified a domain is a claim, deleted after 7 days; several organisations may claim the same name, and
+  the first to verify it keeps it (the other claims go). Before, an organisation could add another's domain without
+  ever proving it and keep the rightful owner out.
+- **Changed: a verified domain whose DNS record disappears lapses.** The worker looks at the record daily, as before;
+  missing for 7 days the domain is shown as *Lapsed*: still served, so printed codes keep working, but no longer the
+  default nor a choice for new labels, its administrators receive the new alert *the DNS record that proves the domain
+  is missing* (twelve languages), the event `domain-lapsed` goes into the audit trail, and another organisation that
+  proves the domain takes it over (`domain-released` in the first one's trail). *Verify* with the record back ends the
+  lapse.
+- **Changed: single sign-on's DNS proofs lapse the same way**: a lapsed proof still signs people in, but no longer keeps
+  another configuration from proving the domain. Approvals by a server administrator do not lapse.
+- At the first start after the update, domains added but never verified become claims, deleted 7 days later unless
+  verified. Corrects finding F-018 of the security assessment and F-006's residual. Nothing to add to `.env`; rebuild
+  the portal (`docker compose up -d --build`). Commit `5405e90`.
+
 ### Signing out ends the session everywhere (session 50)
 - **Changed: the portal keeps a record of each open session** ([ADR 0034](../adr/0034-session-records.md)). The
   session cookie now carries a random session id, and the portal's database keeps its SHA-256 (new collection

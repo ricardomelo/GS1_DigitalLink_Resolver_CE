@@ -839,7 +839,9 @@ your organisation (Microsoft Entra ID, Google Workspace, Okta, Keycloak — any 
    (name `_gs1resolver.<domain>`, value `gs1resolver-sso=…`) in the domain's DNS and select **Verify**; or ask a server
    administrator, who can **Approve without DNS**. Until a domain is proved, nobody with an address there signs in
    through the provider. A domain shown as *accepted at the upgrade, without proof* was set up before this check
-   existed: verify it too.
+   existed: verify it too. Keep the record: the portal looks at it every day, and a DNS proof whose record is missing
+   for 7 days is shown as *Lapsed* — it still signs people in, but another organisation that proves the domain takes
+   it over, and the administrators receive an alert. Publish the record again and select **Verify**.
 4. Each user signs in with **Sign in with your organisation's account** and their work e-mail. Only people who already
    have a portal user with that e-mail get in, with the role and prefixes you gave them. The first sign-in ties the
    portal user to the person's account at the provider; see *Forget organisation account* under [Users](#users).
@@ -1025,8 +1027,12 @@ because it would read as a GS1 Application Identifier) and **how it reaches the 
   (without the stem) and the query string. *How to set up each mode* shows the rule for nginx and Apache.
 
 **Prove it is yours**: the card shows a TXT record (`_gs1resolver.<domain>` = `gs1resolver-verify=…`); create it in
-the domain's DNS and select **Verify**. A verified domain stays verified even if the record is removed later (printed
-codes keep working); the card shows when it was last seen. **Default for the prefixes**: the GS1 Company Prefixes
+the domain's DNS and select **Verify**. Until then the domain is only a claim, deleted after 7 days (the card shows the
+day); another organisation may claim the same domain, and whoever verifies it first keeps it. Keep the record in DNS:
+the portal looks at it every day and the card shows when it was last seen. If it is missing for 7 days the domain is
+*Lapsed*: it is still served (printed codes keep working while the domain points here), but new labels no longer carry
+it, the administrators receive an alert by e-mail, and another organisation that proves the domain takes it over.
+Publish the record again and select **Verify** to end the lapse. **Default for the prefixes**: the GS1 Company Prefixes
 whose QR codes carry this domain by default (one domain per prefix). **Test** requests through the domain — the
 resolver's description file, or a redirect of one of your codes — and shows the result. **Remove** deletes the domain
 from the portal: labels already printed with it keep working only while the domain still reaches the resolver.

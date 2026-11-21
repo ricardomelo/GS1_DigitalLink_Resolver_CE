@@ -1595,3 +1595,18 @@ it; `users.py` and `tenants.py` remove a user's records when the password is set
 disabled or removed or its organisation disabled, and a password change gives the browser a new id. Cookies signed
 before the change carry no id: everyone signs in once more. `test_session.py` 53 → 78 checks, `test_store_mongodb.py`
 282 → 284 (the records on a real MongoDB, TTL included); 17 mutations, all caught. No new screen or text.
+
+## Session 51 — domain claims that expire, proofs that lapse
+
+Finding F-018 of the security assessment, and the residual of F-006, in one code commit (`5405e90`;
+[ADR 0035](adr/0035-domain-claims-and-lapsed-proofs.md)). A QR code domain was unique from the moment it was added:
+an organisation could add another's domain, never prove it, and keep the rightful owner out; and a verified domain, or a
+single sign-on DNS proof, stayed proved for ever, even after the domain changed hands. A domain not yet verified is now
+a claim under the key `"<name> <tenant>"`, deleted by a TTL index after 7 days; several organisations may claim a name
+and the first proved becomes the domain under its own name, which is all the resolver and the host script read. The
+worker's daily look at each record (`app.recheck_domains()`) now acts on what it finds: missing for 7 days, a domain
+lapses — still served, no longer offered for new labels, journalled and told to its administrators by a new alert in
+twelve languages — and another organisation that proves it takes it over; a lapsed sign-on proof still signs people in
+but no longer blocks another configuration. `test_domains.py` 71 → 104 checks, `test_sso.py` 95 → 112,
+`test_domains_e2e.py` 41 → 44, `test_sso_e2e.py` 21 → 23, `test_store_mongodb.py` 284 → 285 (the TTL index on a real
+MongoDB); 32 mutations, all caught.

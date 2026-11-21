@@ -11,6 +11,21 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Malformed request bodies refused before the route (session 56)
+- **Changed: a malformed body is answered with what is wrong, never with an error 500.** Every write to the portal's
+  API, the organisations' API included, must send one JSON object; anything else — an array, a text, a number, `null`,
+  broken or deeply nested JSON — is answered **400 `request.jsonInvalid`**. A field holding a value of another kind
+  than the portal reads (a number for a text, an object for a user name or token, a row of `links` that is not an
+  object) is answered **422 `request.fieldInvalid`** with the field's path, such as `links.2.url`
+  ([ADR 0040](../adr/0040-request-bodies.md)). Before, 36 of the 60 write routes answered 500 to some such body.
+- **Change an integrator may notice:** the organisations' API (`PUT /portal/api/v1/records/…`) answers a body that is
+  not an object with 400 `request.jsonInvalid` (it was 422 `request.jsonRequired`, still given for an empty body), and
+  a row of `links` that is not an object or a language that is not a text with 422 `request.fieldInvalid` (they were
+  dropped silently). `openapi.json` describes both.
+- **Fixed:** an XLSX export (records or overview) failed when a translated column title carried a control character;
+  such characters are now left out of the workbook.
+- Corrects findings F-023 and F-029 of the security assessment. Commit `eda6315`.
+
 ### The installation's own names only (session 55)
 - **Changed: the resolver writes only names the installation knows.** The linkset's anchors, its JSON-LD `@id`, the
   `Link` and `Resolution-Anchor` headers and the description file's `resolverRoot` are on the name a request was made

@@ -1666,3 +1666,19 @@ ADR 0009 had weighed and set aside, a list in `.env`, is the one taken now. The 
 the client's `Host` too: the installation's proxy now writes them as paths, and the installer's certificate site
 redirects plain HTTP to its own name. Refusing unknown names with 421 was weighed and not taken. 9 mutations, all
 caught.
+
+## Session 56 — malformed request bodies
+
+Findings F-023 and F-029 of the security assessment, in one code commit (`eda6315`;
+[ADR 0040](adr/0040-request-bodies.md)). The portal's routes read their bodies trusting that the body was an object and
+each field the kind the browser sends. A sweep of the 60 write routes with every kind of value — first blind, then
+seeded with the valid bodies the other test programs send, every field and every field of their rows replaced — found
+36 routes answering 500: an array as the body, a number for a list of prefixes, a list for a link type, a row of links
+that was a text, a document nested past the parser. The same trust let an object such as `{"$ne": null}` reach code
+that builds database filters from a token or a user name; nothing leaked, but only by each route's care. One check now
+runs before every route: one JSON object (else 400 `request.jsonInvalid`), and the kinds of the fields a route would
+misread, from one table for the whole portal (else 422 `request.fieldInvalid` with the field's path). Fields whose routes
+already check every value keep their own messages. The seeded sweep, kept as a test program of 410 checks over every
+write route of the application's own table of routes, then found one more fault: an XLSX export failing on a control
+character in its column titles. A schema per route, a catch-all turning exceptions into 400, and refusing unknown
+fields were weighed and not taken. 15 mutations, all caught.

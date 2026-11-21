@@ -888,6 +888,11 @@ prefixes, who created it and when, its expiry, its last use and its state (*Acti
 its operations. This is the way for your systems to reach the records: the resolver's older data entry API (`/api`)
 is closed to the internet unless the server's operator opens it to listed addresses.
 
+**When a request is refused.** Answers carry a code your developers can look up in the technical description. A body
+that is not one JSON object is refused with `request.jsonInvalid`; a field holding a value of another kind than the API
+expects (a number where a text goes, a link that is not an object) with `request.fieldInvalid`, which names the field,
+such as `links.2.url` for the address of the second link. Nothing is saved in either case.
+
 ### Organisations (server administrators)
 
 ![Organisations](images/guide/organisations.png)

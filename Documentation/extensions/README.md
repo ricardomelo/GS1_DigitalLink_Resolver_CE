@@ -1405,6 +1405,14 @@ What an installation builds is fixed by content, not by name ([ADR 0033](../adr/
   image digests within their tag, GitHub Actions) and merged after the development tests pass; a release carries
   them. For an installation that follows the development branch, `git pull` and `docker compose up -d --build` after
   each merged update; for one that follows releases, the next release.
+- **Known vulnerabilities** are looked for by the *Supply chain* workflow (`.github/workflows/supply-chain.yml`) on
+  every change of a lock file, a Dockerfile or a workflow, and every Monday: pip-audit and npm audit read the lock
+  files, and Trivy scans the five images it builds. A vulnerability with a correction available turns it red (in
+  the images, HIGH and CRITICAL ones) until the update is merged; accepted exceptions, each with its reason and an
+  expiry within 90 days, are in `.github/supply-chain/accepted.yaml`. Read a red run in the repository's *Actions*
+  tab (the run's summary and the artefact *image-sboms-and-reports*).
+- **SBOM**: each GitHub release carries a CycloneDX SBOM of each image (`resolver-<tag>-<service>.cdx.json`), the
+  list of every package it contains, for an inventory or a scanner of your own.
 - **Reporting a weakness**: `SECURITY.md` (GitHub's private vulnerability reporting).
 
 The build needs outbound HTTPS to PyPI (`pypi.org`, `files.pythonhosted.org`), the npm registry, Docker Hub and

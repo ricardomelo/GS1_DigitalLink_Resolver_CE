@@ -1,0 +1,162 @@
+# Known vulnerabilities and SBOMs (Documentation/adr/0033-supply-chain.md, section 2.2). Kept apart from the
+# development tests: a vulnerability published overnight turns this workflow red, not every unrelated push.
+#
+#   * lock files: pip-audit on the four Python locks, npm audit on the two toolkits' locks; a known vulnerability
+#     with a correction available fails the job (.github/supply-chain/audit.py);
+#   * images: the five images built as docker-compose.yml builds them (which also proves that the locks install in
+#     the images), each scanned by Trivy for known vulnerabilities, HIGH and CRITICAL with a correction available
+#     failing the job, and described by a CycloneDX SBOM kept as the run's artefact;
+#   * release: the same SBOMs, built from the release's tag, attached to the GitHub release (the only job that may
+#     write, and only to the release).
+#
+# Accepted vulnerabilities, each with its reason, review date and expiry: .github/supply-chain/accepted.yaml.
+# Tools fetched by version and hash: pip-audit from .github/supply-chain/requirements.txt (--require-hashes),
+# Trivy by .github/supply-chain/install-trivy.sh (SHA-256), npm audit from the runner's Node.js. The weekly run
+# happens on the default branch (master), where GitHub reads schedules from.
+name: Supply chain
+
+on:
+  push:
+    branches: [master, gs1br/develop]
+    paths:
+      - "**/requirements*.txt"
+      - "**/requirements*.in"
+      - "**/package.json"
+      - "**/package-lock.json"
+      - "**/Dockerfile"
+      - "docker-compose.yml"
+      - "portal/tools/build-syntax-engine.sh"
+      - ".github/workflows/**"
+      - ".github/supply-chain/**"
+  pull_request:
+    branches: [master, gs1br/develop]
+    paths:
+      - "**/requirements*.txt"
+      - "**/requirements*.in"
+      - "**/package.json"
+      - "**/package-lock.json"
+      - "**/Dockerfile"
+      - "docker-compose.yml"
+      - "portal/tools/build-syntax-engine.sh"
+      - ".github/workflows/**"
+      - ".github/supply-chain/**"
+  schedule:
+    - cron: "41 4 * * 1"    # Mondays, before Dependabot's proposals (06:17)
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The five images, by their docker-compose.yml service; portal-worker and portal-db-init run portal-service's image
+  IMAGES: database-service data-entry-service web-service portal-service frontend-proxy-service
+  COMPOSE_PROJECT_NAME: supplychain
+
+jobs:
+  locks:
+    name: Lock files (pip-audit, npm audit)
+    if: github.event_name != 'release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: pip-audit, from its lock file with hashes
+        run: |
+          python -m venv "$RUNNER_TEMP/audit"
+          "$RUNNER_TEMP/audit/bin/pip" install --require-hashes --no-deps -r .github/supply-chain/requirements.txt
+      - name: Scan the lock files
+        run: |
+          mkdir -p reports
+          for lock in portal/requirements.txt web_server/src/requirements.txt data_entry_server/src/requirements.txt \
+                      dev-tests/requirements.txt; do
+            # exit status 1 means "vulnerabilities found": audit.py decides; a missing report fails it
+            "$RUNNER_TEMP/audit/bin/pip-audit" -r "$lock" --require-hashes --disable-pip --progress-spinner off \
+              --format json -o "reports/pip-${lock//\//_}.json" || true
+          done
+          for toolkit in web_server/src/gs1-digitallink-toolkit data_entry_server/src/gs1-digitallink-toolkit; do
+            (cd "$toolkit" && npm audit --package-lock-only --json) > "reports/npm-${toolkit//\//_}.json" || true
+          done
+          "$RUNNER_TEMP/audit/bin/python" .github/supply-chain/audit.py --accepted .github/supply-chain/accepted.yaml \
+            reports/*.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: lock-file-reports
+          path: reports/
+          retention-days: 30
+
+  images:
+    name: Images (build, Trivy, SBOM)
+    if: github.event_name != 'release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Trivy, by version and SHA-256
+        run: .github/supply-chain/install-trivy.sh "$RUNNER_TEMP/trivy"
+      - name: Build the five images
+        run: docker compose build $IMAGES
+      - name: Scan each image and write its SBOM
+        run: |
+          mkdir -p sbom reports
+          status=0
+          for service in $IMAGES; do
+            image="$COMPOSE_PROJECT_NAME-$service"
+            "$RUNNER_TEMP/trivy/trivy" image --quiet --format cyclonedx --output "sbom/$service.cdx.json" "$image"
+            # every known vulnerability, kept as the artefact; then the gate (the analysis comes from Trivy's cache)
+            "$RUNNER_TEMP/trivy/trivy" image --quiet --scanners vuln --format json --output "reports/$service.json" "$image"
+            echo "::group::$service"
+            "$RUNNER_TEMP/trivy/trivy" image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+              --ignorefile .github/supply-chain/accepted.yaml --exit-code 1 --format table "$image" \
+              || { echo "::error::$service: a HIGH or CRITICAL vulnerability with a correction available"; status=1; }
+            echo "::endgroup::"
+          done
+          exit $status
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: image-sboms-and-reports
+          path: |
+            sbom/
+            reports/
+          retention-days: 90
+
+  release-sbom:
+    name: SBOMs attached to the release
+    if: github.event_name == 'release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write    # gh release upload, to this release only
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Trivy, by version and SHA-256
+        run: .github/supply-chain/install-trivy.sh "$RUNNER_TEMP/trivy"
+      - name: Build the five images from the release's tag
+        run: docker compose build $IMAGES
+      - name: Write and attach the SBOMs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          mkdir -p sbom
+          for service in $IMAGES; do
+            "$RUNNER_TEMP/trivy/trivy" image --quiet --format cyclonedx \
+              --output "sbom/resolver-$TAG-$service.cdx.json" "$COMPOSE_PROJECT_NAME-$service"
+          done
+          gh release upload "$TAG" sbom/*.cdx.json --clobber --repo "$GITHUB_REPOSITORY"

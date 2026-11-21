@@ -19,15 +19,27 @@ Checks, from the repository's files alone (no network, no Docker):
     of another release;
   * Node.js copied into the resolver's and the data entry API's images where web_logic.py starts it;
   * Dependabot proposes updates for every directory with a lock file, a Dockerfile, the composition and the actions,
-    against the development branch, and leaves gs1encoder alone; SECURITY.md says how to report privately.
+    against the development branch, and leaves gs1encoder alone; SECURITY.md says how to report privately;
+  * the supply-chain workflow (step 2 of the ADR): on a change of a lock, a Dockerfile, the composition or a
+    workflow, weekly, by hand and on a release; read-only but for the release job; pip-audit on the four Python
+    locks and npm audit on the two npm locks; the five images built, scanned by Trivy against the reviewed list and
+    described by a CycloneDX SBOM, kept as artefact and attached to the release; pip-audit from a lock with hashes,
+    Trivy by version and SHA-256; every accepted vulnerability with a statement, a review date and an expiry within
+    90 days; audit.py failing on a vulnerability with a correction, not on one without, honouring an accepted
+    identifier or alias until its expiry, and on a report missing or unreadable.
 
 Requirements: PyYAML, packaging (both in dev-tests/requirements.txt).
 Run from anywhere:  python dev-tests/install/test_supply_chain.py
 Exits with status 1 on any failure.
 """
+import datetime
+import importlib.util
+import io
 import json
 import re
 import sys
+import tempfile
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import yaml
@@ -39,6 +51,9 @@ DOCKERFILES = ["web_server/Dockerfile", "data_entry_server/Dockerfile", "portal/
                "frontend_proxy_server/Dockerfile", "database_server/Dockerfile"]
 SERVICE_LOCKS = ["portal/requirements.txt", "web_server/src/requirements.txt", "data_entry_server/src/requirements.txt"]
 DEV_LOCK = "dev-tests/requirements.txt"
+TOOLS_LOCK = ".github/supply-chain/requirements.txt"   # the supply-chain workflow's own tools, resolved on their own
+WORKFLOW = ".github/workflows/supply-chain.yml"
+ACCEPTED = ".github/supply-chain/accepted.yaml"
 TOOLKITS = ["web_server/src/gs1-digitallink-toolkit", "data_entry_server/src/gs1-digitallink-toolkit"]
 DIGEST = re.compile(r"^[^@\s]+@sha256:[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
@@ -146,7 +161,8 @@ NPM_INIT = re.compile(r"\bnpm\s+init\s+(?!-y\b|--yes\b)[^\s-]")
 def scanned_files() -> list[str]:
     files = DOCKERFILES + workflow_files() + [".claude/hooks/session-start.sh", "docker-compose.yml"]
     files += sorted(str(p.relative_to(REPO)) for p in (REPO / "scripts").glob("*.sh"))
-    files += ["portal/tools/build-syntax-engine.sh", "dev-tests/lock-dependencies.sh"]
+    files += ["portal/tools/build-syntax-engine.sh", "dev-tests/lock-dependencies.sh",
+              ".github/supply-chain/install-trivy.sh"]
     return files
 
 
@@ -205,7 +221,7 @@ def direct_requirements(path: str) -> list[Requirement]:
 
 def lock_checks() -> None:
     locks = {}
-    for path in SERVICE_LOCKS + [DEV_LOCK]:
+    for path in SERVICE_LOCKS + [DEV_LOCK, TOOLS_LOCK]:
         head = text(path).splitlines()[:2]
         check(len(head) == 2 and head[1].strip() == "#    dev-tests/lock-dependencies.sh",
               f"{path}: written by dev-tests/lock-dependencies.sh", head)
@@ -292,7 +308,7 @@ def policy_checks() -> None:
         dirs = u.get("directories") or [u.get("directory")]
         covered.setdefault(u["package-ecosystem"], set()).update(d.rstrip("/") or "/" for d in dirs if d)
         check(u.get("target-branch") == "gs1br/develop", f"dependabot.yml: {u['package-ecosystem']} against gs1br/develop")
-    wanted = {"pip": {"/" + str(Path(p).parent) for p in SERVICE_LOCKS + [DEV_LOCK]},
+    wanted = {"pip": {"/" + str(Path(p).parent) for p in SERVICE_LOCKS + [DEV_LOCK, TOOLS_LOCK]},
               "npm": {"/" + t for t in TOOLKITS},
               "docker": {"/" + str(Path(p).parent) for p in DOCKERFILES},
               "docker-compose": {"/"},
@@ -308,8 +324,138 @@ def policy_checks() -> None:
           "SECURITY.md: reports go through GitHub's private vulnerability reporting, not public issues")
 
 
+# ------------------------------------------------------------------------------------- scanning and SBOM (step 2)
+
+def run_text(job: dict) -> str:
+    return "\n".join(re.sub(r"\\\n\s*", " ", str(s.get("run", ""))) for s in job.get("steps") or [])
+
+
+def workflow_checks() -> None:
+    doc = yaml.safe_load(text(WORKFLOW))
+    on = doc.get(True) or doc.get("on") or {}          # PyYAML reads the key "on" as True
+    paths = set((on.get("push") or {}).get("paths") or [])
+    wanted = {"**/requirements*.txt", "**/package-lock.json", "**/Dockerfile", "docker-compose.yml",
+              ".github/workflows/**", ".github/supply-chain/**"}
+    check(wanted <= paths, f"{WORKFLOW}: runs on a push that changes a lock, a Dockerfile, the composition or a "
+          "workflow", sorted(wanted - paths))
+    check(set((on.get("pull_request") or {}).get("paths") or []) == paths, f"{WORKFLOW}: the same paths on a pull request")
+    check(on.get("schedule") and "workflow_dispatch" in on, f"{WORKFLOW}: weekly and by hand")
+    check((on.get("release") or {}).get("types") == ["published"], f"{WORKFLOW}: on a published release")
+    check(doc.get("permissions") == {"contents": "read"}, f"{WORKFLOW}: read-only by default", doc.get("permissions"))
+    jobs = doc.get("jobs") or {}
+    writers = {name: job.get("permissions") for name, job in jobs.items() if "permissions" in job}
+    check(writers == {"release-sbom": {"contents": "write"}}, f"{WORKFLOW}: only the release job writes, and only "
+          "contents", writers)
+    check(str(jobs.get("release-sbom", {}).get("if", "")).replace(" ", "") == "github.event_name=='release'"
+          and all(str(j.get("if", "")).replace(" ", "") == "github.event_name!='release'"
+                  for n, j in jobs.items() if n != "release-sbom"),
+          f"{WORKFLOW}: the release job runs on a release only, the scans on everything else")
+    locks = run_text(jobs.get("locks", {}))
+    check(re.search(r'pip"? install --require-hashes --no-deps -r \.github/supply-chain/requirements\.txt', locks),
+          f"{WORKFLOW}: pip-audit installed from its lock with hashes")
+    for lock in SERVICE_LOCKS + [DEV_LOCK]:
+        check(lock in locks and "pip-audit\" -r \"$lock\" --require-hashes --disable-pip" in locks,
+              f"{WORKFLOW}: pip-audit scans {lock}")
+    for toolkit in TOOLKITS:
+        check(toolkit in locks and "npm audit --package-lock-only --json" in locks, f"{WORKFLOW}: npm audit scans {toolkit}")
+    check(f"audit.py --accepted {ACCEPTED}" in locks and "reports/*.json" in locks,
+          f"{WORKFLOW}: every report read by audit.py against {ACCEPTED}")
+    images = set(str((doc.get("env") or {}).get("IMAGES", "")).split())
+    compose = yaml.safe_load(text("docker-compose.yml"))["services"]
+    built = {n: json.dumps(s["build"], sort_keys=True) for n, s in compose.items() if "build" in s}
+    uncovered = [n for n, b in built.items() if n not in images and b not in {built.get(i) for i in images}]
+    check(len(images) == 5 and images <= set(built) and not uncovered,
+          f"{WORKFLOW}: the five images, every image docker-compose.yml builds", sorted(images) + uncovered)
+    for name in ("images", "release-sbom"):
+        body = run_text(jobs.get(name, {}))
+        check(".github/supply-chain/install-trivy.sh" in body and "docker compose build $IMAGES" in body
+              and "for service in $IMAGES" in body and "--format cyclonedx" in body,
+              f"{WORKFLOW}: {name} builds the five images with Trivy by hash and writes a CycloneDX SBOM of each")
+    gate = run_text(jobs.get("images", {}))
+    check(re.search(r"trivy\" image [^\n]*--severity HIGH,CRITICAL --ignore-unfixed[^\n]*--ignorefile " + re.escape(ACCEPTED)
+                    + r" --exit-code 1", gate), f"{WORKFLOW}: each image fails on HIGH or CRITICAL with a correction, "
+          f"against {ACCEPTED}")
+    uploads = [s for s in jobs.get("images", {}).get("steps") or [] if str(s.get("uses", "")).startswith("actions/upload-artifact@")]
+    check(uploads and "sbom/" in str(uploads[0].get("with", {}).get("path")) and uploads[0].get("if") == "always()",
+          f"{WORKFLOW}: the SBOMs and reports kept as the run's artefact")
+    check(re.search(r'gh release upload "\$TAG" sbom/\*\.cdx\.json', run_text(jobs.get("release-sbom", {}))),
+          f"{WORKFLOW}: the SBOMs attached to the release")
+    trivy = text(".github/supply-chain/install-trivy.sh")
+    check(re.search(r"^TRIVY_VERSION=\d+\.\d+\.\d+$", trivy, re.M) and re.search(r"^TRIVY_SHA256=[0-9a-f]{64}$", trivy, re.M)
+          and "sha256sum --check --strict" in trivy and "https://github.com/aquasecurity/trivy/releases/download/" in trivy,
+          "install-trivy.sh: Trivy from its release, by version, refused unless its SHA-256 matches")
+
+
+def accepted_checks() -> None:
+    doc = yaml.safe_load(text(ACCEPTED))
+    entries = doc.get("vulnerabilities")
+    check(isinstance(entries, list), f"{ACCEPTED}: a list of vulnerabilities (Trivy's ignore file format)")
+    bad = []
+    for entry in entries or []:
+        ident = str(entry.get("id", ""))
+        reviewed, expires = entry.get("reviewed"), entry.get("expired_at")
+        dated = isinstance(reviewed, datetime.date) and isinstance(expires, datetime.date)
+        if not (re.match(r"^(CVE-\d{4}-\d+|GHSA(-[0-9a-z]{4}){3}|PYSEC-\d{4}-\d+)$", ident)
+                and str(entry.get("statement", "")).strip() and dated and 0 < (expires - reviewed).days <= 90):
+            bad.append(entry)
+    check(isinstance(entries, list) and not bad, f"{ACCEPTED}: every entry with an advisory, a statement, a review date "
+          f"and an expiry within 90 days ({len(entries or [])} entries)", bad)
+
+
+def load_audit():
+    sys.dont_write_bytecode = True        # no __pycache__ left in .github/supply-chain
+    spec = importlib.util.spec_from_file_location("supply_chain_audit", REPO / ".github" / "supply-chain" / "audit.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def audit_checks() -> None:
+    audit = load_audit()
+    pip_fix = {"dependencies": [{"name": "pkg", "version": "1.0", "vulns": [
+        {"id": "PYSEC-2026-1", "fix_versions": ["1.1"], "aliases": ["CVE-2026-11111", "GHSA-aaaa-bbbb-cccc"]}]}]}
+    pip_nofix = {"dependencies": [{"name": "pkg", "version": "1.0", "vulns": [
+        {"id": "PYSEC-2026-2", "fix_versions": [], "aliases": []}]}, {"name": "other", "version": "2", "vulns": []}]}
+    npm_fix = {"auditReportVersion": 2, "vulnerabilities": {"minimist": {"range": "<=1.2.5", "fixAvailable": True,
+               "via": [{"source": 1, "url": "https://github.com/advisories/GHSA-xvch-5gv4-984h"}]},
+               "dependant": {"range": "1", "fixAvailable": True, "via": ["minimist"]}}}
+    npm_nofix = {"auditReportVersion": 2, "vulnerabilities": {"minimist": {"range": "<=1.2.5", "fixAvailable": False,
+                 "via": [{"source": 1, "url": "https://github.com/advisories/GHSA-xvch-5gv4-984h"}]}}}
+    clean_npm = {"auditReportVersion": 2, "vulnerabilities": {}}
+
+    def run(reports: list, accepted: str = "vulnerabilities: []\n", today: str = "2026-11-21") -> int:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = []
+            for i, report in enumerate(reports):
+                path = Path(tmp) / f"r{i}.json"
+                if report is not None:
+                    path.write_text(report if isinstance(report, str) else json.dumps(report), encoding="utf-8")
+                paths.append(str(path))
+            (Path(tmp) / "accepted.yaml").write_text(accepted, encoding="utf-8")
+            with redirect_stdout(io.StringIO()):
+                return audit.main(["--accepted", str(Path(tmp) / "accepted.yaml"), "--today", today] + paths)
+
+    def accept(ident: str, expires: str = "2027-01-01") -> str:
+        return (f"vulnerabilities:\n  - id: {ident}\n    statement: test\n    reviewed: 2026-11-21\n"
+                f"    expired_at: {expires}\n")
+
+    check(run([pip_nofix, clean_npm]) == 0, "audit.py: a vulnerability without a correction is listed, not failed")
+    check(run([pip_fix]) == 1, "audit.py: a Python vulnerability with a correction fails")
+    check(run([pip_fix], accept("CVE-2026-11111")) == 0, "audit.py: an accepted alias of the advisory counts")
+    check(run([pip_fix], accept("pysec-2026-1")) == 0, "audit.py: an accepted identifier counts, in any case")
+    check(run([pip_fix], accept("CVE-2026-11111", "2026-11-20")) == 1, "audit.py: an expired acceptance no longer counts")
+    check(run([pip_fix], accept("CVE-2026-11111", "2026-11-21")) == 0, "audit.py: an acceptance counts on its expiry day")
+    check(run([npm_fix]) == 1, "audit.py: an npm vulnerability with a correction fails")
+    check(run([npm_nofix]) == 0, "audit.py: an npm vulnerability without a correction is listed, not failed")
+    check(run([npm_fix], accept("GHSA-xvch-5gv4-984h")) == 1,
+          "audit.py: a package affected only through another (via a name) still fails when it can be corrected")
+    check(run([clean_npm, None]) == 2, "audit.py: a missing report fails as unreadable, never as clean")
+    check(run(["{not json"]) == 2 and run([{"something": "else"}]) == 2, "audit.py: an unreadable report fails")
+
+
 def main() -> int:
-    for section in (image_checks, action_checks, download_checks, lock_checks, npm_checks, policy_checks):
+    for section in (image_checks, action_checks, download_checks, lock_checks, npm_checks, policy_checks,
+                    workflow_checks, accepted_checks, audit_checks):
         try:
             section()
         except Exception as exc:          # a piece missing or changed: reported as a failure, the other sections run

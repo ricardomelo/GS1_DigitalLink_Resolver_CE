@@ -10,6 +10,7 @@
 # The development tests' environment (dev-tests/requirements.in: the three services and the test tools) is
 # resolved first, for Python 3.12 (the images' version) and every platform; each service's lock is then
 # resolved inside it (-c), so that a package has the same version in every image and in the tests.
+# The supply-chain workflow's tools (.github/supply-chain/requirements.in) are locked last, on their own.
 # Needs uv (https://docs.astral.sh/uv/) and PyPI. Then run every development test and commit the .in and .txt
 # files together; dev-tests/install/test_supply_chain.py fails when they are out of step.
 set -euo pipefail
@@ -26,3 +27,5 @@ compile dev-tests/requirements.in dev-tests/requirements.txt "$@"
 for service in portal web_server/src data_entry_server/src; do
   compile "$service/requirements.in" "$service/requirements.txt" -c dev-tests/requirements.txt
 done
+# The supply-chain workflow's own tools (pip-audit): never in an image or the tests, so resolved on their own
+compile .github/supply-chain/requirements.in .github/supply-chain/requirements.txt "$@"

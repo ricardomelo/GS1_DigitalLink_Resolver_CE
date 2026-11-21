@@ -34,5 +34,7 @@ as well.
 ## How the supply chain is protected
 
 Every Python package is installed from a lock file with its file hashes, every npm package from `package-lock.json`,
-every base image by digest and every GitHub Action by commit; Dependabot proposes the updates once a week
+every base image by digest and every GitHub Action by commit; Dependabot proposes the updates once a week. The
+*Supply chain* workflow scans the lock files (pip-audit, npm audit) and the five images (Trivy) for known
+vulnerabilities on every change and every week, and each release carries a CycloneDX SBOM of each image
 (`Documentation/adr/0033-supply-chain.md`).

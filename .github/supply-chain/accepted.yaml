@@ -1,0 +1,11 @@
+# Known vulnerabilities accepted after review (Documentation/adr/0033-supply-chain.md, section 2.2): the supply-chain
+# workflow (.github/workflows/supply-chain.yml) fails on a known vulnerability with a correction available unless it
+# is listed here. Read by Trivy (--ignorefile, the images) and by audit.py (pip-audit and npm audit, the lock files).
+#
+# An entry is the last resort, after updating the package, the lock or the image's digest proved impossible:
+#   - id: CVE-2026-00000            # or GHSA-xxxx-xxxx-xxxx / PYSEC-…; an alias of the advisory matches too
+#     statement: why it does not reach this installation, or what waits for the correction (no names: roles)
+#     reviewed: 2026-11-21          # the date of the review
+#     expired_at: 2027-02-19        # at most 90 days after the review: then the scan fails again, and it is reviewed anew
+# dev-tests/install/test_supply_chain.py fails on an entry without a statement or a date, or valid for longer.
+vulnerabilities: []

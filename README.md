@@ -902,6 +902,9 @@ portal in Chromium and the installer started that way too and are required since
 runs on nginx 1.30 from nginx.org, as in the proxy image. The versions of Python, Node.js, the engines,
 GS1's suite, Docker Compose and nginx are pinned in `.github/actions/dev-tests-setup/action.yml`; engines,
 packages and the browser are cached. Each job's result, with its check counts, is on the run's summary page.
+A second workflow, `.github/workflows/supply-chain.yml`, looks for known vulnerabilities in the lock files (pip-audit,
+npm audit) and in the five images it builds (Trivy), on every change of a lock, a Dockerfile or a workflow and every
+Monday, and attaches a CycloneDX SBOM of each image to each release ([ADR 0033](Documentation/adr/0033-supply-chain.md)).
 
 **Claude Code cloud sessions.** `CLAUDE.md` holds the conventions of this repository for Claude Code, and
 `.claude/hooks/session-start.sh` prepares a cloud session for the tests: the same pieces and pinned versions as
@@ -966,7 +969,6 @@ know whose data they handle.
 | Security | 10.1 | **Phase 1 of the security assessment: the code reviewed by area** ([ADR 0020](Documentation/adr/0020-security-assessment.md); the areas and questions of the [threat model](Documentation/threat-model.md), section 10), each finding of the private register fixed with a development test that fails before the fix, the most severe first | L | — |
 | | 10.2 | **Phase 2: adversarial verification**: a second pass that tries to refute each finding; an authorisation matrix (every route × role × organisation) and fuzzing of the resolver's paths as permanent development tests | M | 10.1 |
 | | 10.3 | **Controls for healthcare chosen by the owner** from the threat model's gaps (section 9) and answers (section 11) — for example a second factor, approval by a second person for safety-critical link types, allowed target domains per organisation, the answering level made visible, a tamper-evident audit trail — each with its own ADR | L | the owner's answers |
-| | 10.4 | **Supply chain and CI**: dependencies locked with hashes, images by digest, actions by commit, dependency and image scanning, an SBOM per release, a vulnerability disclosure policy | S | — |
 | | 10.5 | **Phase 4: dynamic tests on staging** run by the owner with the steps given, and an **independent penetration test** before production | M | 10.1, 7.2 |
 | Production | 7.2 | **Later, when the owner decides (20 October 2026).** **Production readiness**, on the servers: an installation on a clean machine, the off-server copy set up, a restore rehearsal, the staging secrets rotated and the [production checklist](Documentation/extensions/README.md#going-to-production) worked through (the scripts and the installer's final check of a scan through the proxy are done) | S | — |
 | | 7.4 | **More exhaustive load tests before production** (one rehearsal done and written up; the tests recommended are listed in the [procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded | S | 2.3, with 7.2 |
@@ -994,7 +996,8 @@ scripts/                        install.sh, templates/ (nginx), resolver-backup.
                                 custom-domains.sh (sites and certificates of organisations' own domains),
                                 restore-rehearsal.sh, rotate-secrets.sh, upgrade-from-official.sh
 dev-tests/                      development tests (see above)
-.github/                        workflows/dev-tests.yml (continuous integration), actions/dev-tests-setup/
+.github/                        workflows/dev-tests.yml (continuous integration), workflows/supply-chain.yml and
+                                supply-chain/ (known vulnerabilities, SBOMs), actions/dev-tests-setup/
 CLAUDE.md, .claude/             conventions and the session start hook for Claude Code cloud sessions
 Documentation/                  README.md (index), portal-user-guide.md, features.md, history.md,
                                 developer-guide.md, extensions/ (detailed documentation, changelog),

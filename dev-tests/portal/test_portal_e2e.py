@@ -30,6 +30,7 @@ os.environ.setdefault("PORTAL_DB_URI", "mongomock://")   # a real MongoDB when P
 os.environ["PORTAL_WORKER"] = "embedded"               # imports and link checks run in a thread of the portal
 sys.path[:0] = [HERE, PORTAL]
 
+import csp_guard  # noqa: E402,F401  (fails the program on a Content-Security-Policy violation: ADR 0038)
 import mock_data_entry  # noqa: E402
 import users  # noqa: E402
 users.set_password("tester", "a-long-test-password")

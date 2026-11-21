@@ -10,6 +10,10 @@ tenants and domains are in mongomock.
 
   pip install -r web_server/src/requirements.txt mongomock pillow
   python dev-tests/resolver/test_landing.py
+
+The browser's rules (ADR 0038, finding F-021): each page runs and styles only its own elements, with a nonce drawn for
+each answer, loads fonts from Google Fonts only where it uses them (never the item's page), is never framed; every
+other answer may load nothing; the pages are opened in Chromium (playwright) to see that the policy refuses nothing.
 """
 import base64
 import copy
@@ -437,6 +441,91 @@ check("…removed (Restore the original): the original again", "<span>GS1 Digita
 r = client.get("/api/favicon.ico")
 check("…and the project's favicon.ico", len(FAVICON) > 0 and r.data == FAVICON
       and 'rel="icon"' not in ask("/01/07891234999992")[0].get_data(as_text=True))
+
+# ---------------------------------------------------------------- the browser's rules (ADR 0038, finding F-021)
+def inline_elements(html):
+    """The page's <style> and <script> start tags, without the JSON-LD block (data the browser does not run)."""
+    return [t for t in re.findall(r"<(?:style|script)\b[^>]*>", html) if "application/ld+json" not in t]
+
+
+def policy_of(response):
+    return dict((part.strip().split(" ", 1) + [""])[:2] for part in
+                response.headers.get("Content-Security-Policy", "").split(";") if part.strip())
+
+
+pages = {"item page": ask(ACME2 + PAGE)[0], "linkset page": ask(ACME2 + "?linkType=linkset", ua="curl/8")[0],
+         "404 page": ask("/01/07891234999992")[0], "400 page": ask("/01/123")[0]}
+nonces = []
+for name, r in pages.items():
+    html, csp = r.get_data(as_text=True), policy_of(r)
+    found = re.fullmatch(r"'nonce-([A-Za-z0-9_-]{24})'", csp.get("script-src", ""))
+    nonce = found.group(1) if found else None
+    nonces.append(nonce)
+    tags = inline_elements(html)
+    check(f"CSP: the {name} runs and styles only its own elements, with this answer's nonce",
+          nonce and csp.get("default-src") == "'none'" and csp.get("style-src", "").startswith(f"'nonce-{nonce}'")
+          and tags and all(f'nonce="{nonce}"' in t for t in tags), (r.status_code, csp, tags))
+    check(f"…no style attribute or event handler in the {name}, which the policy would refuse",
+          not re.search(r"<[^>]+\s(?:style|on[a-z]+)=", html), re.findall(r"<[^>]+\s(?:style|on[a-z]+)=[^>]*>", html)[:3])
+    check(f"…nothing frames it, no base or form elsewhere, images of this origin and data: only",
+          csp.get("frame-ancestors") == "'none'" and csp.get("base-uri") == "'none'"
+          and csp.get("form-action") == "'none'" and csp.get("img-src") == "'self' data:", csp)
+    check(f"…no type guessed, the address of the item sent to no other site",
+          r.headers.get("X-Content-Type-Options") == "nosniff"
+          and r.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin", dict(r.headers))
+check("CSP: the item page loads nothing from other sites, not even fonts (ADR 0011)",
+      "font-src" not in policy_of(pages["item page"]) and "googleapis" not in str(policy_of(pages["item page"])),
+      policy_of(pages["item page"]))
+check("…the other pages may load the fonts of Google Fonts only",
+      policy_of(pages["404 page"]).get("font-src") == "https://fonts.gstatic.com"
+      and policy_of(pages["404 page"])["style-src"].endswith(" https://fonts.googleapis.com"),
+      policy_of(pages["404 page"]))
+check("…a new nonce for each answer", len(set(nonces)) == len(nonces) and ask(ACME2 + PAGE)[0].headers[
+      "Content-Security-Policy"] != pages["item page"].headers["Content-Security-Policy"], nonces)
+PORTAL["settings"].update_one({"_id": "appearance"}, {"$set": {"value": {"title": "<style>x</style><script>y</script>"}}},
+                              upsert=True)
+web_pages.APPEARANCE.forget()
+html = ask(ACME2 + "?linkType=linkset")[0].get_data(as_text=True)
+check("…an element written in a value is text, and gets no nonce", "&lt;style&gt;x&lt;/style&gt;&lt;script&gt;y" in html
+      and html.count("<script nonce=") == 1, html.count("<script nonce="))
+PORTAL["settings"].delete_one({"_id": "appearance"})
+web_pages.APPEARANCE.forget()
+OTHER = {"default-src": "'none'", "base-uri": "'none'", "form-action": "'none'", "frame-ancestors": "'none'"}
+for name, r in [("a redirect", ask(ACME, accept="*/*")[0]), ("a JSON linkset", ask(ACME, accept="application/json")[0]),
+                ("the description file", client.get("/api/.well-known/gs1resolver"))]:
+    check(f"CSP: {name} may load nothing", policy_of(r) == OTHER and r.headers.get("X-Content-Type-Options") == "nosniff",
+          (r.status_code, policy_of(r)))
+
+# The pages in Chromium: the policy refuses nothing, the style applies and the language menu's script runs
+try:
+    import threading
+    from playwright.sync_api import sync_playwright
+    from werkzeug.serving import make_server
+    server = make_server("127.0.0.1", 0, client.application, threaded=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_port}/api"
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        refused = []
+        context = browser.new_context(locale="en-GB", user_agent=MOBILE)
+        page = context.new_page()
+        page.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
+        for name, path in [("item page", ACME2 + PAGE), ("linkset page", ACME2 + "?linkType=linkset"),
+                           ("404 page", "/01/07891234999992")]:
+            page.goto(base + path)
+            background = page.evaluate("getComputedStyle(document.body).backgroundColor")
+            check(f"Chromium: the {name} styled by its own style element (body {background})",
+                  background == "rgb(240, 245, 250)", background)
+        page.select_option("#lang", "pt-BR")
+        page.wait_for_load_state()
+        page.wait_for_function("document.documentElement.lang === 'pt-BR'", timeout=5000)
+        check("Chromium: the language menu's script runs (pt-BR chosen, the page again in Portuguese)",
+              any(c["name"] == web_pages.LOCALE_COOKIE and c["value"] == "pt-BR" for c in context.cookies()))
+        check("Chromium: the policy refused nothing on the resolver's pages", not refused, refused[:3])
+        browser.close()
+    server.shutdown()
+except Exception as exc:  # noqa: BLE001  (a browser that cannot start is a failure, not a skip)
+    check("Chromium: the resolver's pages under their policy", False, repr(exc))
 
 print(f"\n{'FAILED' if failures else 'ALL PASSED'}: {len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

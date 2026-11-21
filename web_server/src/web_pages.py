@@ -17,12 +17,13 @@ import base64
 import logging
 import os
 import json
+import secrets
 import threading
 import time
 import unicodedata
 from urllib.parse import unquote, urlparse
 
-from flask import render_template_string, request
+from flask import g, render_template_string, request
 
 PRODUCT_NAME = os.getenv('RESOLVER_PRODUCT_NAME', 'GS1 Digital Link Resolver Suite')       # ADR 0024
 # A stored title equal to a former default is not the operator's choice (portal/appearance.py, FORMER_TITLES).
@@ -134,6 +135,45 @@ LOCALE_MATCHERS = [(prefix, tag) for prefix, tag in LOCALE_MATCHERS if tag in SU
 
 TEXT = {tag: texts['pages'] for tag, texts in PAGE_TEXTS.items()}
 LINK_TYPE_LABELS = {tag: texts['linkLabels'] for tag, texts in PAGE_TEXTS.items()}
+
+# The browser's rules for the resolver's answers (Documentation/adr/0038-browser-hardening.md, finding F-021). A page's
+# own <style> and <script> elements carry a nonce drawn for each answer; nothing else may run or style it, and nothing
+# is loaded from other sites but the fonts of the pages that use them. Every other answer (redirects, JSON, linksets)
+# may load nothing at all.
+PAGE_POLICY = ("default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'{fonts_css}; {fonts}"
+               "img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+OTHER_POLICY = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+# The Swagger UI of the library (flask-restx) writes its start-up script and style in the page, with the address of
+# the description in it: allowed inline, but it loads and calls nothing outside this origin and nothing frames it
+SWAGGER_POLICY = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+                  "img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; "
+                  "frame-ancestors 'none'")
+FONT_CSS = 'https://fonts.googleapis.com'
+FONT_FILES = 'https://fonts.gstatic.com'
+
+
+def content_security_policy() -> str:
+    """The Content-Security-Policy of the answer being made: the page's own (its nonce, and the fonts' sites when the
+    page loads fonts) when _page() made one, the Swagger UI's for the library's documentation page, else the policy
+    that allows nothing."""
+    if request.endpoint == 'api.doc':
+        return SWAGGER_POLICY
+    page = g.get('csp_page')
+    if not page:
+        return OTHER_POLICY
+    nonce, fonts = page
+    return PAGE_POLICY.format(nonce=nonce, fonts_css=f' {FONT_CSS}' if fonts else '',
+                              fonts=f'font-src {FONT_FILES}; ' if fonts else '')
+
+
+def _with_nonce(html: str, fonts: bool) -> str:
+    """The page's own <style> and <script> elements with this answer's nonce. Only the templates write these elements:
+    every value is escaped, so a '<style>' or '<script>' in a record's text reaches the page as text, not as markup
+    (the JSON-LD block is <script type=...>, data the browser does not run)."""
+    nonce = secrets.token_urlsafe(18)
+    g.csp_page = (nonce, fonts)
+    return html.replace('<style>', f'<style nonce="{nonce}">').replace('<script>', f'<script nonce="{nonce}">')
+
 
 _BASE = """<!doctype html>
 <html lang="{{ locale }}" dir="{{ direction }}"><head><meta charset="utf-8">
@@ -319,13 +359,14 @@ def _page(locale: str, title: str, body: str, fonts: bool = True, icon: str | No
     page's own favicon (the brand's logo on the item's page), else the installation's icon."""
     product, logo, style = appearance()           # the installation's title, logo and colours (ADR 0019)
     icon = icon or icon_address()
-    return render_template_string(_BASE, locale=locale, title=title, product=product, logo=logo, fonts=fonts, icon=icon,
+    html = render_template_string(_BASE, locale=locale, title=title, product=product, logo=logo, fonts=fonts, icon=icon,
                                   appearance_style=style,
                                   org=ORG_NAME, org_url=ORG_URL, footer=_t(locale, 'footer'),
                                   privacy_label=_t(locale, 'privacy'),
                                   language_label=_t(locale, 'language'), home_label=_t(locale, 'home'),
                                   locales=SUPPORTED_LOCALES, direction='rtl' if locale in RIGHT_TO_LEFT else 'ltr',
                                   cookie=LOCALE_COOKIE, body=body)
+    return _with_nonce(html, fonts)
 
 
 # The notice of a page whose links come from a less specific level than the request named (ADR 0022, section 2.3)

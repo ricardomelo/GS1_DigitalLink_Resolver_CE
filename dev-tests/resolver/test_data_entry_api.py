@@ -16,6 +16,8 @@ checks, through Flask's test client:
   * a DELETE with {"removeRecord": true, "qualifiers": [...]} removes one record and keeps the key's others in one
     conditional write of the document (ADR 0023), read again when another writer changed it; the database layer's
     conditional write on mongomock;
+  * the browser's rules (ADR 0038): the Swagger UI's policy (this origin only, never framed) and the policy of every
+    other answer (nothing at all); the Swagger UI opened in Chromium starts and the policy refuses nothing;
   * a body that is not JSON (or, for PUT and DELETE, not an object) and a record without a link of its default link
     type answer 400 and change nothing.
 
@@ -547,6 +549,40 @@ if ENGINE:
     check("without the engine (no script): values not checked, as before", r.status_code in (200, 201), r.status_code)
 else:
     print("SKIP values checked by the GS1 Barcode Syntax Engine (set GS1_SYNTAX_ENGINE)")
+
+# ---- The browser's rules (ADR 0038, finding F-021) ----
+r = client.get("/api/docs")
+csp = r.headers.get("Content-Security-Policy", "")
+check("CSP: the Swagger UI calls and loads nothing outside this origin, and nothing frames it",
+      "default-src 'self'" in csp and "connect-src 'self'" in csp and "frame-ancestors 'none'" in csp
+      and "object-src 'none'" in csp and "base-uri 'none'" in csp and "https:" not in csp, csp)
+check("…no type guessed", r.headers.get("X-Content-Type-Options") == "nosniff", dict(r.headers))
+for path, headers in [("/api/index", AUTH), ("/api/swagger.json", {}), ("/api/heartbeat", {})]:
+    r = client.get(path, headers=headers)
+    check(f"CSP: GET {path} may load nothing", r.headers.get("Content-Security-Policy") ==
+          "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+          and r.headers.get("X-Content-Type-Options") == "nosniff", (r.status_code, r.headers.get("Content-Security-Policy")))
+try:
+    import threading
+    from playwright.sync_api import sync_playwright
+    from werkzeug.serving import make_server
+    server = make_server("127.0.0.1", 0, client.application, threaded=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        refused = []
+        page.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
+        page.goto(f"http://127.0.0.1:{server.server_port}/api/docs")
+        page.wait_for_selector(".swagger-ui .info .title", timeout=15000)
+        check("Chromium: the Swagger UI starts under its policy and reads the description",
+              "GS1 Resolver Community Edition API" in page.inner_text(".swagger-ui .info .title")
+              and page.locator(".opblock-tag").count() > 0, page.inner_text(".swagger-ui .info"))
+        check("Chromium: the policy refused nothing on the Swagger UI", not refused, refused[:3])
+        browser.close()
+    server.shutdown()
+except Exception as exc:  # noqa: BLE001  (a browser that cannot start is a failure, not a skip)
+    check("Chromium: the Swagger UI under its policy", False, repr(exc))
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

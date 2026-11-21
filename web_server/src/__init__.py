@@ -113,6 +113,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         # language or context asked that the links given do not serve (ADR 0028)
         response.headers['Access-Control-Expose-Headers'] = \
             'Link, Location, Resolution-Anchor, Resolution-Match, Resolution-Fallback'
+        # the browser's rules (ADR 0038, finding F-021): a page runs and styles only its own elements, nothing frames
+        # it, no type is guessed, and the address of a scanned item goes to no other site
+        response.headers.setdefault('Content-Security-Policy', web_pages.content_security_policy())
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
         return response
 
     return app

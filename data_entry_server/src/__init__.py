@@ -3,7 +3,7 @@ import logging
 from typing import Any
 
 from flask_restx import Api
-from flask import Flask, url_for
+from flask import Flask, request, url_for
 from flask import Blueprint
 from flask_cors import CORS
 import os
@@ -14,6 +14,13 @@ import example_secrets
 import service_db
 
 logger = logging.getLogger(__name__)
+
+# The Swagger UI of flask-restx writes its start-up script and style in the page, with the address of the description
+# in it, so they are allowed inline; it loads and calls nothing outside this origin (ADR 0038, as the web server's)
+SWAGGER_POLICY = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+                  "img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; "
+                  "frame-ancestors 'none'")
+OTHER_POLICY = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
@@ -55,5 +62,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
         # registering api blueprint to app
         app.register_blueprint(api_blueprint)
+
+    @app.after_request
+    def browser_rules(response):
+        """The browser's rules (Documentation/adr/0038-browser-hardening.md, finding F-021): the Swagger UI of the
+        library runs its own inline start-up script and calls this origin only; every other answer may load nothing.
+        Nothing frames either, and no type is guessed."""
+        response.headers.setdefault('Content-Security-Policy',
+                                    SWAGGER_POLICY if request.endpoint == 'api.doc' else OTHER_POLICY)
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        return response
 
     return app

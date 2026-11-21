@@ -32,6 +32,7 @@ os.environ["PORTAL_WORKER"] = "embedded"
 sys.path[:0] = [HERE, PORTAL]
 
 import fake_oidc  # noqa: E402
+import csp_guard  # noqa: E402,F401  (fails the program on a Content-Security-Policy violation: ADR 0038)
 import mock_data_entry  # noqa: E402
 import users  # noqa: E402
 import tenants  # noqa: E402

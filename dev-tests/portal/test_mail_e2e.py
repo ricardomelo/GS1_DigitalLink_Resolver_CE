@@ -38,6 +38,7 @@ os.environ.update(DATA_ENTRY_URL=f"http://127.0.0.1:{DATA_ENTRY_PORT}/api", SESS
 os.environ.setdefault("PORTAL_DB_URI", "mongomock://")   # a real MongoDB when PORTAL_DB_URI is set
 os.environ["PORTAL_WORKER"] = "embedded"               # messages are sent by a thread of the portal
 
+import csp_guard  # noqa: E402,F401  (fails the program on a Content-Security-Policy violation: ADR 0038)
 import mock_data_entry  # noqa: E402
 import users  # noqa: E402
 users.create("root", "root-password-long", "admin", must_change=False, email="root@example.org")

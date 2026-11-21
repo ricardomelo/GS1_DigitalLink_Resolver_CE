@@ -5,7 +5,8 @@ white text hard to read on the main or the action colour, a logo that is not PNG
 and back to the project's; the icon of the browsers' tabs (favicon) likewise; the portal's pages served with the title,
 logo and icon already in them; "Restore the original"; who may change it (server administrators outside support access);
 the journal; what anyone may read (the appearance, its style sheet, the logo); and the setting as the resolver's own
-reader (web_server/src/web_pages.py) sees it.
+reader (web_server/src/web_pages.py) sees it. The browser's rules (ADR 0038): the Content-Security-Policy and the other
+headers on every answer, and nothing in the pages or their scripts that the policy would refuse.
 
   pip install -r portal/requirements.txt mongomock
   python dev-tests/portal/test_appearance.py
@@ -325,6 +326,40 @@ for page in ("index.html", "login.html", "privacy.html"):
           text.index('href="appearance.css"') > text.index('href="app.css"')
           and text.index('src="appearance.js"') > text.index('src="i18n.js"'), page)
 check("appearance.js is served before sign-in", anyone.get("/portal/appearance.js").status_code == 200)
+
+# ---- The browser's rules on every answer (Documentation/adr/0038-browser-hardening.md, finding F-021) ----
+POLICY = dict(part.strip().split(" ", 1) for part in (
+    "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
+    "font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; "
+    "base-uri 'none'; form-action 'self'; frame-ancestors 'none'").split(";"))
+for who, c, path in [("anyone", anyone, "/portal/login"), ("anyone", anyone, "/portal/privacy"),
+                     ("anyone", anyone, "/portal/about"), ("anyone", anyone, "/portal/api/appearance"),
+                     ("anyone", anyone, "/portal/app.js"), ("anyone", anyone, "/portal/no-such-page"),
+                     ("root", root, "/portal/"), ("root", root, "/portal/api/me")]:
+    r = c.get(path)
+    seen = dict(part.strip().split(" ", 1) for part in r.headers.get("Content-Security-Policy", "").split(";") if part.strip())
+    check(f"CSP: {path} ({who}, {r.status_code}): own scripts and styles only, Google Fonts, calls to this origin, "
+          "never framed", seen == POLICY, seen)
+    check(f"…{path}: a window of its own, no type guessed, never framed (older browsers)",
+          r.headers.get("Cross-Origin-Opener-Policy") == "same-origin"
+          and r.headers.get("X-Content-Type-Options") == "nosniff" and r.headers.get("X-Frame-Options") == "DENY",
+          dict(r.headers))
+# The pages the policy applies to may not hold what it refuses: an inline script or style element, a style attribute
+# or an event handler attribute (the scripts set styles through the DOM, which the policy allows)
+import re  # noqa: E402
+for name in ("index.html", "login.html", "privacy.html", "about.html"):
+    with open(os.path.join(PORTAL, "static", name), encoding="utf-8") as fh:
+        text = fh.read()
+    check(f"CSP: static/{name} holds no inline script, style element, style or event attribute",
+          not re.search(r"<script(?![^>]*\ssrc=)[^>]*>|<style\b|<[^>]+\s(?:style|on[a-z]+)=", text),
+          re.findall(r"<script(?![^>]*\ssrc=)[^>]*>|<style\b|<[^>]+\s(?:style|on[a-z]+)=[^>]*>", text)[:3])
+for name in ("app.js", "login.js", "privacy.js", "about.js", "appearance.js", "password.js", "requests-map.js",
+             "i18n.js"):
+    with open(os.path.join(PORTAL, "static", name), encoding="utf-8") as fh:
+        text = fh.read()
+    check(f"CSP: static/{name} writes no style or event attribute into markup and evaluates no text",
+          not re.search(r"style=|\son[a-z]+=[\"']|setAttribute\(\s*[\"'](?:style|on[a-z]+)|\beval\(|new Function\(", text),
+          re.findall(r".{30}(?:style=|setAttribute\(\s*[\"']style|\beval\(|new Function\().{30}", text)[:3])
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

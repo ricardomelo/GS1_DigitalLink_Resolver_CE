@@ -601,9 +601,22 @@ def same_origin_only():
             return message("request.jsonRequired", 415)
 
 
+# The browser's rules for every answer of the portal (Documentation/adr/0038-browser-hardening.md, finding F-021): the
+# pages run only the portal's own script files and style sheets (no inline script, style element or attribute: the
+# scripts change styles through the DOM, which the policy allows), fonts from Google Fonts, images of this origin,
+# data: (an uploaded logo's preview) and blob: (the label's QR code), calls to this origin only, nothing frames them
+# and a form may only be sent here.
+CONTENT_SECURITY_POLICY = ("default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
+                           "font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; "
+                           "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+
+
 @app.after_request
 def security_headers(resp):
-    """Headers added to every answer: no MIME sniffing, no framing, same-origin referrer, no caching."""
+    """Headers added to every answer: the content security policy, no MIME sniffing, no framing, a window of its own,
+    same-origin referrer, no caching."""
+    resp.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    resp.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
     resp.headers.setdefault("X-Frame-Options", "DENY")

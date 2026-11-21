@@ -11,6 +11,8 @@ replaced by frontend_proxy_server/home) and checks:
     addresses and networks of DATA_ENTRY_API_ALLOW, the client read from X-Forwarded-For only when the peer is a
     trusted proxy (PROXY_TRUSTED_PROXIES, or the container's gateway behind a loopback PROXY_BIND_ADDRESS); entries
     that are not addresses are left out without stopping nginx (frontend_proxy_server/api-access.sh writes the file);
+  * HTTPS only (ADR 0038): Strict-Transport-Security on every answer to a request made over HTTPS (the 429s too),
+    none over plain HTTP;
   * replicas (item 2.3, step 4): nginx starts while a service is missing and finds it later, shares
     the requests among every address a service name has, follows replicas added and removed without a
     restart, and skips a replica that has gone away;
@@ -488,6 +490,25 @@ def statuses(answers) -> list[int]:
     return [a[0] for a in answers]
 
 
+HSTS = "max-age=31536000"
+
+
+def hsts_checks(base: str) -> None:
+    """HTTPS only, for browsers (ADR 0038, finding F-021): every answer to a request the host's proxy received over
+    HTTPS (X-Forwarded-Proto: https) carries Strict-Transport-Security for a year, without includeSubDomains or
+    preload; over plain HTTP, none. The home page and its files, the resolver, the portal, the closed data entry API
+    and the description file: the locations with add_header of their own repeat it."""
+    paths = ["/", "/home/home.css", "/01/09506000134352", "/portal/", "/api/docs", "/.well-known/gs1resolver"]
+    for path in paths:
+        _, headers, _ = fetch(base + path, headers={"X-Forwarded-Proto": "https"})
+        check(headers.get("Strict-Transport-Security") == HSTS, f"HSTS: GET {path} over HTTPS → one year "
+              f"({headers.get('Strict-Transport-Security')!r})")
+    for proto in (None, "http"):
+        seen = [path for path in paths if "Strict-Transport-Security" in
+                fetch(base + path, headers={"X-Forwarded-Proto": proto} if proto else {})[1]]
+        check(not seen, f"HSTS: none over plain HTTP (X-Forwarded-Proto {proto or 'absent'}) ({seen})")
+
+
 def limits_checks(base: str, workdir: Path) -> None:
     """Request limits per client address (ADR 0031, finding F-013): what api-access.sh writes from PROXY_LIMIT_*, and
     the real nginx.conf refusing what goes beyond them, per address (an IPv6 address with its /64), before the
@@ -532,6 +553,8 @@ def limits_checks(base: str, workdir: Path) -> None:
     refused = answers[-1]
     check(refused[1].get("Retry-After") == "1" and "text/plain" in refused[1].get("Content-Type", "")
           and "Too many requests" in refused[2], "…with Retry-After and a plain text, from the proxy itself")
+    check(fetch(base + "/01/09506000134352", headers={"X-Forwarded-For": "203.0.113.50", "X-Forwarded-Proto": "https"})[1]
+          .get("Strict-Transport-Security") == HSTS, "…and, over HTTPS, Strict-Transport-Security (ADR 0038)")
     check(reached == 3, f"…the refused requests never reach the resolver ({reached} reached it)")
     check(statuses(burst(base, "/", 1, forwarded="203.0.113.50")) == [429], "…the home page shares resolution's limit")
     check(statuses(burst(base, "/01/09506000134352", 3, forwarded="203.0.113.51")) == [200] * 3,
@@ -546,6 +569,8 @@ def limits_checks(base: str, workdir: Path) -> None:
     check(refused[1].get("Retry-After") == "1" and "application/json" in refused[1].get("Content-Type", "")
           and json.loads(refused[2]).get("code") == "proxy.tooMany",
           "…as JSON with the message code the portal's pages show (proxy.tooMany)")
+    check(fetch(base + "/portal/api/records", headers={"X-Forwarded-For": "203.0.113.60", "X-Forwarded-Proto": "https"})[1]
+          .get("Strict-Transport-Security") == HSTS, "…and, over HTTPS, Strict-Transport-Security (ADR 0038)")
     check(statuses(burst(base, "/portal/api/v1/records", 1, forwarded="203.0.113.60")) == [429],
           "…the tenant API shares the portal's limit")
 
@@ -897,6 +922,7 @@ def main() -> int:
         base = f"http://127.0.0.1:{port}"
         startup_checks(base, cluster)
         routing_checks(base)
+        hsts_checks(base)
         api_access_checks(base, workdir)
         client_address_checks(base, workdir)
         limits_checks(base, workdir)

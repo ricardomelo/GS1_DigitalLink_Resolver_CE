@@ -2170,6 +2170,7 @@ function orgPanel(d, tab) {
   }
   if (tab === "exports") return orgExports(d);
   if (tab === "resolution") return orgResolution(d);
+  if (tab === "targets") return orgTargets(d);
   const link = el("p", "org-manage");
   const a = el("a", "", t("org.allAlerts"));
   a.href = "#alerts" + (CONFIG.serverAdmin && !CONFIG.support ? "?tenant=" + encodeURIComponent(d.operator ? "-" : d.id) : "");
@@ -2289,6 +2290,51 @@ function orgResolution(d) {
   }
   out.push(el("p", "field-msg", t("resolution.journalNote")));
   return out;
+}
+
+/* The hosts the organisation's targets may point to (ADR 0037, section 2.2): set by the organisation's administrators
+   and the server administrators (the operator's for the keys no organisation holds); empty accepts any public host;
+   read only in support access. The forms no target may take are refused for everyone and only described here. */
+function orgTargets(d) {
+  const x = d.targets;
+  const out = [el("h3", "", t("targets.title")),
+               el("p", "field-msg", t(d.operator ? "targets.introOperator" : "targets.intro")),
+               el("p", "field-msg", t("targets.always"))];
+  const label = el("label", "", t("targets.label"));
+  label.htmlFor = "org-target-hosts";
+  const box = el("textarea", "org-target-hosts");
+  Object.assign(box, { id: "org-target-hosts", rows: 6, value: x.hosts.join("\n"), disabled: !x.editable,
+                       placeholder: t("targets.placeholder"), spellcheck: false });
+  box.setAttribute("autocapitalize", "off");
+  box.setAttribute("aria-describedby", "org-targets-state");
+  const state = el("p", "field-msg", t(x.hosts.length ? "targets.stateList" : "targets.stateAny",
+                                         { count: nf(x.hosts.length), max: nf(x.max) })
+    + (x.updated ? " · " + t("resolution.updated", { when: formatWhen(x.updated), user: x.updatedBy || "—" }) : ""));
+  state.id = "org-targets-state";
+  out.push(label, box, state);
+  if (x.editable) {
+    const save = el("button", "btn btn-primary", t("targets.save"));
+    save.type = "button";
+    save.id = "org-save-targets";
+    save.addEventListener("click", saveOrgTargets);
+    out.push(save);
+  } else {
+    out.push(el("p", "field-msg", t("targets.readOnly")));
+  }
+  out.push(el("p", "field-msg", t("targets.journalNote")));
+  return out;
+}
+
+async function saveOrgTargets() {
+  const d = orgState.data;
+  try {
+    const result = await api("PUT", "targets/hosts", { tenant: d.id, hosts: $("#org-target-hosts").value });
+    d.targets = { ...d.targets, ...result.targets };
+    renderOrganisation();
+    orgStatus("ok", result.code, result.params);
+  } catch (e) {
+    orgStatus("error", e.code, e.params);
+  }
 }
 
 async function saveOrgResolution() {

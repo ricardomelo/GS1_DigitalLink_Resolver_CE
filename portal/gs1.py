@@ -13,7 +13,7 @@ import json
 import os
 import re
 import unicodedata
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlparse, urlsplit
 
 import gs1dict
 
@@ -769,7 +769,64 @@ def normalise_url(raw: str, position: int) -> str:
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.netloc or " " in url:
         raise ValidationError("link.urlInvalid", position=position, url=url)
+    problem = target_host_problem(url)
+    if problem:
+        raise ValidationError(problem, position=position, url=url)
     return url
+
+
+# Top-level names that reach hosts inside a network or outside the public web, never a public site: RFC 2606 and 6761
+# (localhost; test, which local development environments use), RFC 6762 (local), RFC 7686 (onion), RFC 9476 (alt),
+# RFC 8375 (home.arpa, and arpa itself), ICANN's .internal (2024), and the private names ICANN keeps out of the root
+# because networks use them inside (home, corp, lan, localdomain, intranet). The documentation names example and
+# invalid are not here: no resolver answers them, so they reach nothing (Documentation/adr/0037-target-addresses.md,
+# section 2.1).
+PRIVATE_TOP_NAMES = frozenset(("localhost", "local", "localdomain", "internal", "intranet", "lan", "home", "corp",
+                               "test", "onion", "alt", "arpa"))
+# A host whose last label is a number is an IPv4 address to a browser, however it is written (WHATWG URL Standard,
+# "ends in a number": 2130706433, 0x7f.1, 0177.0.0.1 and 127.1 all reach 127.0.0.1).
+_NUMERIC_LABEL = re.compile(r"(?:0x[0-9a-f]*|[0-9]+)")
+_HOST_LABEL = re.compile(r"[a-z0-9_-]+")
+
+
+def host_problem(host: str) -> str | None:
+    """Why a host name cannot be a target's (a message code: link.urlAddress for an address literal, link.urlHost for
+    a name that is not a public one), or None. The host as urlsplit() gives it: lower case, without brackets."""
+    # As a browser reads it (UTS #46): compatibility forms folded (a full-width １ is a 1) and the ideographic full
+    # stops taken as dots, so that 127。0。0。１ is refused like 127.0.0.1.
+    host = unicodedata.normalize("NFKC", host or "").lower()
+    host = host.replace("\u3002", ".").replace("\uff0e", ".").replace("\uff61", ".")
+    if ":" in host:                                     # IPv6, written in brackets
+        return "link.urlAddress"
+    host = host[:-1] if host.endswith(".") else host    # the root's dot: the same name
+    labels = host.split(".")
+    if not host or not all(labels):
+        return "link.urlHost"
+    if _NUMERIC_LABEL.fullmatch(labels[-1]):
+        return "link.urlAddress"
+    # Letters, digits, hyphens and underscores in each label; other characters only outside ASCII (an internationalised
+    # name, sent in Punycode). A percent sign would be decoded by the browser (%31%32%37.0.0.1 is 127.0.0.1).
+    if any(not _HOST_LABEL.fullmatch(label) and not all(ord(c) > 127 or _HOST_LABEL.fullmatch(c) for c in label)
+           for label in labels):
+        return "link.urlHost"
+    if len(labels) < 2 or labels[-1] in PRIVATE_TOP_NAMES:
+        return "link.urlHost"
+    return None
+
+
+def target_host_problem(url: str) -> str | None:
+    """Why an https address cannot be a target (Documentation/adr/0037-target-addresses.md): link.urlUserInfo for a
+    user name or password before the host, link.urlAddress for an IP address, link.urlHost for a name that is not a
+    public one, link.urlInvalid for a port that is not a number; None when the host can be one."""
+    netloc = urlsplit(url).netloc
+    if "@" in netloc:
+        return "link.urlUserInfo"
+    try:
+        parts = urlsplit(url)
+        parts.port                                      # raises ValueError for a port that is not a number
+    except ValueError:
+        return "link.urlInvalid"
+    return host_problem(parts.hostname or "")
 
 
 def guess_media_type(url: str) -> str:

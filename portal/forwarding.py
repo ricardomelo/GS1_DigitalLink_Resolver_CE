@@ -14,6 +14,7 @@ import re
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
+import gs1
 import store
 
 SETTING_FALLBACK = "forwarding.fallback"
@@ -62,6 +63,9 @@ def check_target(value, own_hosts: set[str]) -> str:
         raise ForwardingError("forwarding.urlInvalid") from None
     if parts.scheme != "https" or not host or any(c.isspace() for c in url) or parts.username or parts.password:
         raise ForwardingError("forwarding.urlInvalid")
+    problem = gs1.target_host_problem(url)             # an address literal or a private name (ADR 0037)
+    if problem:
+        raise ForwardingError(problem, url=url)
     if host in own_hosts:
         raise ForwardingError("forwarding.urlSelf", host=host)
     return url

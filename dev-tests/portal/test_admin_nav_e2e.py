@@ -182,7 +182,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(900)
     check("an organisation opened from the list: its page", page.is_visible("#organisation-view")
           and page.inner_text("#org-name") == "Beta Drinks" and page.url.endswith("#organisation?id=" + beta["id"]))
-    check("…its tabs, prefixes first", page.locator("#org-tabs [role=tab]").count() == 9
+    check("…its tabs, prefixes first", page.locator("#org-tabs [role=tab]").count() == 10
           and page.get_attribute("#org-tab-prefixes", "aria-selected") == "true")
     org_rows = page.locator("#org-panel .prefix-row")
     page.click("#org-panel .prefix-add"); org_rows.nth(1).locator("input").fill("78912345")
@@ -303,6 +303,25 @@ with sync_playwright() as p:
     ana.uncheck("#org-resolution-strict"); ana.click("#org-save-resolution"); ana.wait_for_timeout(600)
     check("…switched off without a confirmation", store.col("tenants").find_one({"_id": acme["id"]}).get("strictSafety")
           is False and "desligado" in ana.inner_text("#org-status"), ana.inner_text("#org-status"))
+
+    # ------------------------------------------------------------ the hosts the links may point to (ADR 0037)
+    ana.click("#org-tab-targets"); ana.wait_for_timeout(400)
+    check("the Targets tab: an empty list, any public host accepted", "Destinos" in ana.inner_text("#org-tabs")
+          and ana.input_value("#org-target-hosts") == ""
+          and "Qualquer host público é aceito" in ana.inner_text("#org-targets-state"), ana.inner_text("#org-panel"))
+    ana.fill("#org-target-hosts", "https://example.com/x"); ana.click("#org-save-targets"); ana.wait_for_timeout(500)
+    check("…a name with https:// refused with its message", "não é um nome de host público" in ana.inner_text("#org-status")
+          and not store.col("tenants").find_one({"_id": acme["id"]}).get("targetHosts"), ana.inner_text("#org-status"))
+    ana.fill("#org-target-hosts", "Example.COM\n*.gs1br.org"); ana.click("#org-save-targets"); ana.wait_for_timeout(600)
+    check("…saved: cleaned, shown again with the count and who changed it",
+          store.col("tenants").find_one({"_id": acme["id"]}).get("targetHosts") == ["example.com", "gs1br.org"]
+          and ana.input_value("#org-target-hosts") == "example.com\ngs1br.org"
+          and "Hosts listados: 2" in ana.inner_text("#org-targets-state")
+          and "ana" in ana.inner_text("#org-targets-state"), ana.inner_text("#org-panel"))
+    shot(ana, "organisation-targets-pt")
+    ana.fill("#org-target-hosts", ""); ana.click("#org-save-targets"); ana.wait_for_timeout(600)
+    check("…emptied again: any public host", store.col("tenants").find_one({"_id": acme["id"]}).get("targetHosts") == []
+          and "Lista vazia salva" in ana.inner_text("#org-status"), ana.inner_text("#org-status"))
 
     # ------------------------------------------------------------ phone width
     phone = browser.new_context(locale="en-GB", viewport={"width": 390, "height": 800}, is_mobile=True,

@@ -24,6 +24,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from urllib.parse import urlsplit
 
 import requests
 from flask import Flask, Response, g, jsonify, redirect, request, send_from_directory, session
@@ -61,6 +62,7 @@ import sessions
 import sso
 import store
 import syntax
+import targets
 import tenants
 import tokens
 import users
@@ -757,12 +759,34 @@ def landing_link(anchor: str, pairs) -> dict:
             "title": "Item page", "type": "text/html", "hreflang": ["und"]}
 
 
+def target_hosts(anchor: str) -> list[str]:
+    """The hosts a record's targets may point to (Documentation/adr/0037-target-addresses.md, section 2.2): the list
+    of the organisation holding the key, the operator's for keys no organisation holds; empty for any public host."""
+    tenant_list = getattr(g, "tenants", None)
+    if tenant_list is None:
+        tenant_list = tenants.load()
+    owner = tenants.owner(anchor, tenant_list)
+    if owner is None:
+        if g.get("operator_target_hosts") is None:     # read once per request (an import saves many records)
+            g.operator_target_hosts = targets.hosts(None)["hosts"]
+        return g.operator_target_hosts
+    return next((t.get("targetHosts") or [] for t in tenant_list if t["id"] == owner), [])
+
+
+def own_page(link_type: str, href: str) -> bool:
+    """Whether a target is a record's page on this installation (its own host or a verified domain), which no list of
+    hosts restricts."""
+    return (gs1.is_landing({"linktype": link_type, "href": href})
+            and (urlsplit(href).hostname or "").lower() in forwarding_own_hosts())
+
+
 def build_document(data: dict) -> tuple[str, str | None, dict]:
     """Validates a record sent by the browser (key, qualifiers, description, targets, default) and builds
     the Resolver CE v3 document: (anchor, qualifier pairs, document). Raises ValidationError on the first problem.
     """
     anchor = request_key(data)
     pairs, informative = request_record(data, anchor)
+    listed = target_hosts(anchor)
 
     description = gs1.clean_text(data.get("description"))
     if not description:
@@ -783,6 +807,8 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
         if link_type not in gs1.LINK_TYPE_CODES and link_type != gs1.LANDING_TYPE:
             raise ValidationError("link.typeRequired", position=position)
         href = gs1.normalise_url(row.get("url"), position)
+        if listed and not own_page(link_type, href):
+            targets.check(href, listed, position)
         hreflang = [gs1.normalise_language(h) for h in (row.get("hreflang") or []) if isinstance(h, str) and h]
         if not hreflang or not all(hreflang):
             raise ValidationError("link.languageRequired", position=position)
@@ -2804,6 +2830,7 @@ def organisation_page():
         "alerts": monitor.history(chosen, False, limit=20) if chosen else monitor.history(None, True, "-", limit=20),
         "exports": {**exportlimits.describe(tenant), "editable": not g.support},
         "resolution": {**resolution.strict(chosen), "editable": not g.support, "lacking": lacking_safety(chosen)},
+        "targets": {**targets.hosts(chosen), "editable": not g.support},
         "prefixChecks": prefix_checks(tenant["prefixes"] if tenant else []),
         "gcpTable": gcp_summary(),
         "canEditPrefixes": bool(g.server_admin and not g.support and tenant),
@@ -2886,6 +2913,38 @@ def set_resolution_strict():
         audit.info("user=%s action=resolution-strict tenant=%s %s", g.user, tenant_id or "-", detail)
         log_event("resolution-strict", tenant=tenant_id, detail=detail)
     return message("resolution.strictOn" if kept["strict"] else "resolution.strictOff", 200, resolution=kept)
+
+
+@app.errorhandler(targets.TargetsError)
+def on_targets_error(err):
+    """A list of target hosts refused: 422 with the message code."""
+    return message(err.code, 422, params=err.params)
+
+
+@app.put("/portal/api/targets/hosts")
+@require_login
+@admin_required
+def set_target_hosts():
+    """{"tenant": id or "operator", "hosts": [name, ...] or text}: the hosts the organisation's targets may point to
+    (Documentation/adr/0037-target-addresses.md, section 2.2); empty for any public host. An organisation's
+    administrators set their own; a server administrator any, and the operator's scope, outside support access.
+    Journalled."""
+    data = request.get_json(silent=True) or {}
+    if g.support:
+        return message("targets.readOnly", 403)
+    chosen = str(data.get("tenant") or "").strip()
+    if not g.server_admin:
+        if chosen != g.account_tenant:                 # another organisation's: as if it did not exist
+            return message("tenants.unknown", 404)
+    elif chosen != "operator" and not any(t["id"] == chosen for t in g.tenants):
+        return message("tenants.unknown", 404)
+    tenant_id = None if chosen == "operator" else chosen
+    kept, changed = targets.set_hosts(tenant_id, data.get("hosts"), g.user)
+    if changed:
+        detail = "hosts=" + (",".join(kept["hosts"]) or "-")
+        audit.info("user=%s action=target-hosts tenant=%s %s", g.user, tenant_id or "-", detail)
+        log_event("target-hosts", tenant=tenant_id, detail=detail[:500])
+    return message("targets.saved" if kept["hosts"] else "targets.savedAny", 200, targets=kept)
 
 
 @app.errorhandler(gcp.GcpError)

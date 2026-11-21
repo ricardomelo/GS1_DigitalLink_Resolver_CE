@@ -11,6 +11,27 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### The supply chain fixed by content (session 48)
+- **Changed: every Python package is installed from a lock file with its hashes**
+  ([ADR 0033](../adr/0033-supply-chain.md)). The resolver, the data entry API and the portal install `requirements.txt`
+  files that list every package, direct or not, at one version with the SHA-256 of its files (`pip install
+  --require-hashes`); their direct dependencies moved to `requirements.in`. The portal's packages no longer move to the
+  newest release within their ranges at each build. `dev-tests/lock-dependencies.sh` writes the lock files (the
+  development tests' first, each service's inside it), so the tests run the images' versions.
+- **Changed: base images by digest, actions by commit.** Every `FROM`, the test relay `axllent/mailpit` and the CI's
+  MongoDB are named `name:tag@sha256:…`; every GitHub Action by commit. `docker compose build --pull` no longer brings a
+  newer image of the same tag: a line's security release arrives as a new digest in the repository, then `git pull` and
+  `docker compose up -d --build`.
+- **Changed: Node.js in the resolver and the data entry API** comes from the official Node.js image and `gs1encoder`
+  from `package-lock.json` (`npm ci --ignore-scripts`); the images no longer pipe NodeSource's setup script into
+  `bash` nor run `npm init es6` (which fetched and ran the newest `create-es6`), and no longer contain npm or curl. The
+  build refuses a lock whose `gs1encoder` is not the release `docker-compose.yml` names.
+- **New: Dependabot** proposes the updates of the lock files, image digests and actions every Monday, against the
+  development branch (from the release that carries `.github/dependabot.yml` to the default branch);
+  **`SECURITY.md`** says how to report a vulnerability privately.
+- Corrects finding F-015 of the security assessment, first step: scanning for known vulnerabilities and an SBOM per
+  release follow (ADR 0033, step 2). Nothing to add to `.env`.
+
 ### Spreadsheet imports read one row at a time (session 47)
 - **Changed: what an imported spreadsheet holds is bounded, not only its size**
   ([ADR 0032](../adr/0032-spreadsheet-reading-limits.md)). Reading stops at the first data row past the format's limit

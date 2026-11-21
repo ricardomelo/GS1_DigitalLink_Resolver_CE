@@ -1550,3 +1550,19 @@ refusing more than 32 MB (*import.unpackedTooBig*, twelve languages) or parts co
 The worst file at the size limit now takes about a third of a second and 60 MB. The preview stays in the web request:
 moving it to the worker would change the dialog for a cost the limits already bound. 15 new checks in `sheet`, 1 in
 `jobs`; 16 mutations, all caught (the one that first survived, blank rows converted cell by cell, got its own check).
+
+## Session 48 — the supply chain fixed by content
+
+Finding F-015 of the security assessment, step 1, in one code commit (`9fa53ee`;
+[ADR 0033](adr/0033-supply-chain.md)). The portal's Python dependencies were ranges and nothing carried a hash; every
+base image and action was a mutable tag; the resolver's and the data entry API's images piped NodeSource's setup script
+into `bash` and ran `npm init es6`, which fetches and runs the newest `create-es6`; nothing proposed updates and no
+policy said how to report a weakness. Every Python service now installs a lock file with the SHA-256 of each package
+file (`--require-hashes --no-deps`), written by `dev-tests/lock-dependencies.sh` with uv: the development tests'
+environment first, each service's inside it, so that the CI, the cloud sessions and the images share one resolution.
+Node.js comes from the official image by digest and `gs1encoder` from `package-lock.json`, checked against
+`x-gs1-syntax-engine` at build; every image is named by tag and digest (looked up on Docker Hub and on its public
+mirror, which agree), every action by commit; `.github/dependabot.yml` proposes the updates weekly and `SECURITY.md`
+points to GitHub's private vulnerability reporting. Scanning for known vulnerabilities and an SBOM, which need the
+images built in the CI, are step 2. A new program, `test_supply_chain.py` (164 checks); 34 mutations, all caught. The
+images themselves could not be built in this sandbox: the staging test plan builds them.

@@ -117,6 +117,10 @@ below); otherwise ask the administrator for a new temporary password.
   working too. Changing your password signs out every other browser where you are signed in (this one stays
   signed in); an administrator resetting your password or disabling your account or organisation signs you out
   everywhere.
+- **Browser protections.** The portal and the resolver's pages tell your browser to run only their own code, to call
+  only the installation and never to show them inside another site's page; once your browser has opened the portal
+  over HTTPS, it uses only HTTPS for that address for a year, even if you type `http://`. Nothing changes in how you
+  use the portal; a browser extension that adds its own code or styles to pages may not work on it.
 - **Language.** The language menu at the top right switches at once, without losing what you typed, among
   twelve languages, each named in itself — first those written in the Latin alphabet, alphabetically: Deutsch,
   English (UK), Español, Français, Italiano, Português (Brasil), Türkçe; then العربية (written right to left), हिन्दी,

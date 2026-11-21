@@ -69,6 +69,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Configurable description file | `/.well-known/gs1resolver` takes `resolverRoot` and `contact` (name, address, telephone, `hasURL`) from `.env`, and `termsOfUse` from `RESOLVER_TERMS_URL`; validated against a schema in the tests | `766a652`, `764e360`, `cc72145`, `4f81234` | `resolver`: description file |
 | Operator footer | "GS1 Digital Link service operated by …" from `RESOLVER_ORG_NAME`, per installation | `766a652`, `764e360` | `resolver`: footer names the configured operator |
 | Resolver heartbeat | `GET /heartbeat` of the resolver answers 200 with its message (the official code answered 500: a `jsonify()` response inside a tuple) | `6f28308` | `request_log`: /heartbeat answers 200 with its message (the official code answered 500) |
+| Browser rules on the resolver's pages | Each page (a linkset or a choice in a browser, the error pages, the item's page) runs and styles only its own elements, by a nonce drawn for each answer; fonts from Google Fonts only on the pages that use them (never the item's page); never framed; redirects, JSON and the description file may load nothing; `nosniff` and `strict-origin-when-cross-origin` on every answer ([ADR 0038](adr/0038-browser-hardening.md) §2.2) | `7447750` | `landing`: CSP: the item page runs and styles only its own elements · `landing`: CSP: the item page loads nothing from other sites · `landing`: a new nonce for each answer · `landing`: CSP: a redirect may load nothing · `landing`: Chromium: the policy refused nothing |
 
 ## Data entry API
 
@@ -89,6 +90,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Closed to the internet by default | The proxy answers 403 to `/api` and `/swaggerui` unless `DATA_ENTRY_API_ALLOW` lists the client's address or network (`all`: everyone); the client found through trusted proxies only (the host's nginx behind a loopback `PROXY_BIND_ADDRESS`, `PROXY_TRUSTED_PROXIES`); wrong entries left out without stopping the proxy; the portal unaffected ([ADR 0021](adr/0021-data-entry-api-closed.md)) | `8405225` | `home`: without DATA_ENTRY_API_ALLOW · `home`: behind a trusted proxy · `home`: the gateway is not trusted · `home`: left out, each with a warning |
 | Example token refused | With `FQDN` naming a real host, the data entry API and the portal refuse to start with `.env.example`'s `SESSION_TOKEN`, the portal with its example `PORTAL_DB_PASSWORD`; MongoDB's example password is warned about ([ADR 0021](adr/0021-data-entry-api-closed.md) §2.7) | `8405225` | `deploy`: refuses to start with the example · `deploy`: starts with MongoDB's example password · `deploy`: when FQDN is localhost |
 | `gs1:defaultLink` links returned | A record's own links of type `gs1:defaultLink` (the item's page, explicit default links) are returned by `GET` and `/summary` and kept by `PUT` and `DELETE`; the official code dropped them | `cb67cf5` | `mock_parity`: returns a link of type gs1:defaultLink |
+| Swagger UI's policy | `/api/docs` calls and loads nothing outside the installation and is never framed; every other answer may load nothing; `nosniff` ([ADR 0038](adr/0038-browser-hardening.md) §2.3) | `7447750` | `data_entry_api`: CSP: the Swagger UI calls and loads nothing · `data_entry_api`: Chromium: the policy refused nothing on the Swagger UI |
 
 ## Portal: access and accounts
 
@@ -319,7 +321,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 |---|---|---|---|
 | Back end between browser and API | The API token never reaches the browser | `126f507` | `portal_config` |
 | Same-origin writes | Writes need a JSON body and the portal's own origin | `126f507` | `gcp`: another site's page |
-| Security headers | `nosniff`, `DENY` framing, same-origin referrer, `no-store` | `126f507` | `home`: Content Security Policy |
+| Security headers | A Content-Security-Policy on every answer (the portal's own script files and style sheets only, fonts from Google Fonts, calls to the installation only, never framed), `Cross-Origin-Opener-Policy`, `nosniff`, `DENY` framing, same-origin referrer, `no-store`; every browser test fails on a policy violation ([ADR 0038](adr/0038-browser-hardening.md) §2.1) | `126f507`, `7447750` | `home`: Content Security Policy · `appearance`: CSP: /portal/login · `appearance`: a window of its own · `appearance`: holds no inline script |
 | Special characters | ASCII digits only in identifiers; invisible characters removed; NFC text without control characters; addresses with spaces or line breaks refused; typed user names logged safely | `1b58bfd` | `special_chars` |
 | Formula protection | CSV/XLSX exports and the audit CSV cannot run formulas in Excel | `1b58bfd` | `special_chars`: no cell is a formula · `requestlog`: formula |
 | Large cells | A CSV cell above 128 KB is reported, not a server error | `9d12f9d` | `sheet`: a CSV cell above 128 KB |
@@ -384,6 +386,7 @@ How to use the portal: [portal user guide](portal-user-guide.md). How each featu
 | Installer's final checks | The home page, the description file, a scan of GS1's example GTIN through the proxy and the portal over the public address | `449edef` | `install`: a scan through the proxy checked at the end |
 | Load test | `dev-tests/load/load_test.py`: a steady rate of scans, linksets and item pages with response-time percentiles and pass/fail thresholds | `37c5664` | `load` |
 | `portal-worker` service | The portal's image running the job worker; `PORTAL_WORKER=embedded` runs it as a thread of the portal for a set-up without the service | `a072e9d` | `deploy`: worker · `jobs`: worker |
+| HTTPS only (HSTS) | Every answer to a request that came over HTTPS (`X-Forwarded-Proto` from the host's proxy) carries `Strict-Transport-Security: max-age=31536000`, the proxy's own 429s too; none over plain HTTP; no `includeSubDomains`, no preload ([ADR 0038](adr/0038-browser-hardening.md) §2.4) | `7447750` | `home`: HSTS: GET / over HTTPS · `home`: HSTS: none over plain HTTP · `home`: and, over HTTPS, Strict-Transport-Security |
 
 ## Development tests and documentation
 

@@ -11,6 +11,25 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### The browser's rules: Content-Security-Policy everywhere, HTTPS only (session 54)
+- **New: every answer of the portal, the resolver and the data entry API carries a Content-Security-Policy**
+  ([ADR 0038](../adr/0038-browser-hardening.md)). The portal's pages may run only the portal's own script files and
+  style sheets, load fonts from Google Fonts and images from the installation, call only the installation and never be
+  framed; the resolver's pages (a linkset or a choice in a browser, the error pages, the item's page) may run and style
+  only their own elements, by a code drawn for each answer, and the item's page loads nothing from other sites;
+  redirects, JSON answers and the description file may load nothing; the Swagger UI of the data entry API calls only
+  the installation. A script slipped into a record or a page by a flaw would be refused by the browser. The resolver's
+  answers also stop browsers guessing a type (`nosniff`) and state the referrer policy that keeps a scanned item's
+  address from the sites its links lead to; the portal adds `Cross-Origin-Opener-Policy: same-origin`.
+- **New: HTTPS only, for browsers.** Every answer to a request that came over HTTPS carries
+  `Strict-Transport-Security: max-age=31536000`, from the installation's proxy: a browser that has seen it uses only
+  HTTPS for that name (the installation's and each organisation's domain) for a year, even when someone types
+  `http://`. Not for other names under it and not preloaded; nothing over plain HTTP. It relies on the host's proxy
+  sending `X-Forwarded-Proto`, as the installer's and Certbot's configurations do.
+- The portal stays on the installation's name: a host name of its own was weighed and not taken (ADR 0038 §2.5).
+- Corrects finding F-021 of the security assessment. Nothing to add to `.env`; rebuild the services
+  (`docker compose up -d --build`). Commit `7447750`.
+
 ### Target addresses (session 53)
 - **Changed: a target with a user name or password before the host, an IP address, or a name that only exists inside
   a network is refused** ([ADR 0037](../adr/0037-target-addresses.md)). `https://www.brand.example@other.example/`

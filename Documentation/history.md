@@ -1639,3 +1639,16 @@ before; with hosts listed, each target must be one of them or a name under one, 
 `test_targets.py`, a new program, 94 checks, and the *Targets* tab in `test_admin_nav_e2e.py`; 29 mutations, 27
 caught and 2 removed with the redundant code they mutated. A check of `test_mail_e2e.py` now accepts the sign-in page
 with `?reason=expired` (`4a6d09b`). The guide's *Domains* screenshot, left from session 51, was taken again.
+
+## Session 54 — the browser's rules
+
+Finding F-021 of the security assessment, in one code commit (`7447750`;
+[ADR 0038](adr/0038-browser-hardening.md)). Only the home page had a Content-Security-Policy. Now every answer has
+one: the portal's pages may run only its own script files and style sheets (they hold no inline code, which a check
+on the files keeps so), with `Cross-Origin-Opener-Policy`; the resolver's pages run and style only their own elements,
+by a nonce drawn for each answer, and the item's page loads nothing from other sites; the Swagger UI of the data entry
+API calls only the installation; every other answer may load nothing, and none may be framed. The installation's
+proxy sends `Strict-Transport-Security` for a year on every answer to a request made over HTTPS. The portal keeps the
+installation's name: a host name of its own was weighed and left as a residual. Every portal browser program now
+imports `csp_guard.py`, which fails it on any policy message from Chromium, so the whole e2e group runs under the
+policy; the resolver's pages and the Swagger UI are opened in Chromium too. 23 mutations, all caught.

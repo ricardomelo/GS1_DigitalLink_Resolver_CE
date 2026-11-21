@@ -133,7 +133,8 @@ below); otherwise ask the administrator for a new temporary password.
 When the installation sends e-mail, the sign-in page shows **Forgotten your password?**. Enter your **user name
 or e-mail address** and select **Send the link**. The page always gives the same answer, whether or not an
 account matched, so it does not tell anyone who has an account here. If your account has an e-mail address, a
-message arrives with a link valid for 60 minutes (check the spam folder). Only the newest link works, once.
+message arrives with a link valid for 60 minutes (check the spam folder); an address used in several organisations
+receives a link for each of its accounts, each naming the user. Only the newest link works, once.
 After three requests for the same name the page asks you to wait 15 minutes.
 
 ![Choose your password](images/guide/choose-password.png)
@@ -813,8 +814,13 @@ temporary password to be changed*, *Invited — waiting for the password*) and l
   organisation sign-in binds the account used. Changing the user's e-mail forgets it too;
 - **Remove** — deletes the account; the user's changes stay in the history and audit trail.
 
-Each user may have an **E-mail** address (optional, unique), where invitations, recovery links and security
-notices go; changing it tells both the old and the new address. You cannot disable, demote or remove
+Each user may have an **E-mail** address (optional, unique within the organisation), where invitations, recovery
+links and security notices go; changing it tells both the old and the new address. Another organisation may give the
+same address to a user of its own (someone who works with both); a recovery by that address sends a link for each
+account. **User names** are unique in the whole installation, because they are what people type to sign in: when the
+portal answers that a user already exists, choose another name. An organisation's administrator who meets five names
+already taken within 15 minutes is asked to wait 15 minutes before creating users, and a name that belongs to another
+organisation is recorded in the server administrators' audit trail (*User name of another organisation tried*). You cannot disable, demote or remove
 your own user, and the portal always keeps at least one active server administrator. Users created before roles
 existed are administrators.
 
@@ -1279,6 +1285,7 @@ the tenant API (`GET /portal/api/v1/stats`, API keys with the scope *Read statis
 | *Targets N and M have the same type and language.* | Change the language of one of them, or remove one. |
 | *This identifier is outside what your user can reach (its organisation or GS1 Company Prefixes).* | The identifier belongs to another organisation, or to a prefix your user is not given: ask an administrator. |
 | *Your user's organisation is disabled. Contact the server administrator.* | The organisation was disabled by the server administrator. |
+| *Too many user names already in use were tried. Try again in 15 minute(s).* | An organisation's administrator met five user names already taken within 15 minutes; wait, then choose names nobody uses (user names are unique in the installation). |
 | *Prefix N overlaps M, which belongs to the organisation X.* | Each prefix belongs to one organisation only: check the prefix with GS1. |
 | *Your role does not allow this action.* | Ask an administrator for the editor role. |
 | *The content does not fit version N with correction L.* | Choose a higher version or *Automatic*, a lower correction, or fewer attributes. |

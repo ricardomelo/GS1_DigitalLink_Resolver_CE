@@ -1610,3 +1610,16 @@ twelve languages — and another organisation that proves it takes it over; a la
 but no longer blocks another configuration. `test_domains.py` 71 → 104 checks, `test_sso.py` 95 → 112,
 `test_domains_e2e.py` 41 → 44, `test_sso_e2e.py` 21 → 23, `test_store_mongodb.py` 284 → 285 (the TTL index on a real
 MongoDB); 32 mutations, all caught.
+
+## Session 52 — user names and e-mail addresses of other organisations
+
+Finding F-019 of the security assessment, in one code commit (`0f432e2`;
+[ADR 0036](adr/0036-names-and-addresses-across-organisations.md)). An organisation's administrator could learn from a
+refusal that a user name or an e-mail address belonged to someone in another organisation, one guess at a time and
+without limit. An address is now unique within an organisation (the operator's users are one scope), so its refusal
+says nothing about other organisations; password recovery by an address sends a link to each account that has it, and
+single sign-on looks for the account only in the configuration's organisation. User names stay the installation's
+sign-in names: an organisation's administrator who meets five already taken within 15 minutes creates no user for
+15 minutes (`users.nameLimit`, twelve languages), and each name of another organisation tried is journalled as
+`user-create-refused` in the operator's trail. `test_tenants.py` 82 → 96 checks, `test_mail.py` 138 → 139,
+`test_sso.py` 112 → 113; 15 mutations, all caught.

@@ -11,6 +11,22 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### User names and e-mail addresses of other organisations (session 52)
+- **Changed: an e-mail address is unique within an organisation, not in the whole installation**
+  ([ADR 0036](../adr/0036-names-and-addresses-across-organisations.md)). An organisation's administrator could learn
+  from the refusal *Another user already has this e-mail address* that a person had an account in another
+  organisation; now the same address may be given once in each organisation (the operator's users count as one).
+  Password recovery by an address sends a link to each account that has it; organisation sign-in looks for the account
+  only in the organisation of the provider's configuration.
+- **Changed: an organisation's administrator who tries user names already taken is slowed down.** User names stay
+  unique in the installation (they are what people type to sign in), so *The user … already exists* may still concern
+  another organisation; after five such answers within 15 minutes the administrator gets *Too many user names already
+  in use were tried* (twelve languages) and creates no user until 15 minutes have passed, and every name of another
+  organisation tried is journalled as `user-create-refused` in the operator's audit trail. Server administrators are
+  not limited.
+- Corrects finding F-019 of the security assessment. Nothing to add to `.env`; rebuild the portal
+  (`docker compose up -d --build`). Commit `0f432e2`.
+
 ### Domain claims that expire, proofs that lapse (session 51)
 - **Changed: adding a QR code domain no longer reserves it** ([ADR 0035](../adr/0035-domain-claims-and-lapsed-proofs.md)).
   Until it is verified a domain is a claim, deleted after 7 days; several organisations may claim the same name, and

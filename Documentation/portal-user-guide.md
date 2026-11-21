@@ -1052,7 +1052,9 @@ because it would read as a GS1 Application Identifier) and **how it reaches the 
 
 **Prove it is yours**: the card shows a TXT record (`_gs1resolver.<domain>` = `gs1resolver-verify=…`); create it in
 the domain's DNS and select **Verify**. Until then the domain is only a claim, deleted after 7 days (the card shows the
-day); another organisation may claim the same domain, and whoever verifies it first keeps it. Keep the record in DNS:
+day); another organisation may claim the same domain, and whoever verifies it first keeps it. Until it is verified,
+the addresses the resolver writes in its answers on the domain (the linkset's anchors, the description file) carry the
+installation's name, not the domain. Keep the record in DNS:
 the portal looks at it every day and the card shows when it was last seen. If it is missing for 7 days the domain is
 *Lapsed*: it is still served (printed codes keep working while the domain points here), but new labels no longer carry
 it, the administrators receive an alert by e-mail, and another organisation that proves the domain takes it over.

@@ -1652,3 +1652,17 @@ proxy sends `Strict-Transport-Security` for a year on every answer to a request 
 installation's name: a host name of its own was weighed and left as a residual. Every portal browser program now
 imports `csp_guard.py`, which fails it on any policy message from Chromium, so the whole e2e group runs under the
 policy; the resolver's pages and the Swagger UI are opened in Chromium too. 23 mutations, all caught.
+
+## Session 55 — the installation's own names
+
+Finding F-022 of the security assessment, in one code commit (`e8e7a23`;
+[ADR 0039](adr/0039-known-public-names.md)). Since session 23 (ADR 0009 §8) the resolver wrote the name a request was
+made on in its anchors, headers and description file, so that GS1's suite passes on a second name; it took any valid
+host name, trusting the host's nginx to let only the installation's names through. The installer's site is the host's
+default for every name, though, so a forged `Host` came back in the answers — harmless to the client that forged it,
+harmful behind a shared cache that does not key on the host. The resolver now writes a name only when it is `FQDN`,
+an organisation's verified domain, or one listed in a new setting, `FQDN_ALIASES`; any other gets `FQDN`. The option
+ADR 0009 had weighed and set aside, a list in `.env`, is the one taken now. The redirects nginx writes itself carried
+the client's `Host` too: the installation's proxy now writes them as paths, and the installer's certificate site
+redirects plain HTTP to its own name. Refusing unknown names with 421 was weighed and not taken. 9 mutations, all
+caught.

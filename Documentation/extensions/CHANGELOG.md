@@ -11,6 +11,23 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### The installation's own names only (session 55)
+- **Changed: the resolver writes only names the installation knows.** The linkset's anchors, its JSON-LD `@id`, the
+  `Link` and `Resolution-Anchor` headers and the description file's `resolverRoot` are on the name a request was made
+  on only when that name is `FQDN`, an organisation's verified domain, or one listed in the new setting
+  **`FQDN_ALIASES`** (other names of the installation, separated by commas); any other name a request gives — a forged
+  `Host`, a domain not verified yet — gets `FQDN` ([ADR 0039](../adr/0039-known-public-names.md), amending ADR 0009 §8).
+  A cache in front of the resolver can no longer keep an answer that points to a name an attacker chose.
+- **Changed: redirects without the client's host.** The installation's proxy writes its own redirects (`/portal` →
+  `/portal/`, `/home` → `/`) as a path, and the installer's site for an existing certificate redirects plain HTTP to
+  `https://FQDN`, never to the `Host` the client sent.
+- **Action for operators** whose installation answers on a second name of its own (a server block and certificate
+  on the host besides `FQDN`): list it, `printf 'FQDN_ALIASES=second.example.org\n' >> .env`, then
+  `docker compose up -d`; until then the linksets on that name carry `FQDN` and GS1's conformance suite fails there.
+  Organisations' verified domains need nothing. Installations using the installer's certificate template
+  (`nginx-site-https.conf`) get the new HTTP redirect when the installer is run again.
+- Corrects finding F-022 of the security assessment. Commit `e8e7a23`.
+
 ### The browser's rules: Content-Security-Policy everywhere, HTTPS only (session 54)
 - **New: every answer of the portal, the resolver and the data entry API carries a Content-Security-Policy**
   ([ADR 0038](../adr/0038-browser-hardening.md)). The portal's pages may run only the portal's own script files and

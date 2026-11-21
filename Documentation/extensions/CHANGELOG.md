@@ -11,6 +11,20 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Signing out ends the session everywhere (session 50)
+- **Changed: the portal keeps a record of each open session** ([ADR 0034](../adr/0034-session-records.md)). The
+  session cookie now carries a random session id, and the portal's database keeps its SHA-256 (new collection
+  `sessions`, emptied by MongoDB as sessions end). Signing out removes the record, so a copy of the cookie (from a
+  shared computer, a browser profile or a log) stops working at once instead of living until the idle or absolute
+  limit. A password change ends every other session of the account and gives this browser a new id; a password set
+  through a link or reset by an administrator, and an account disabled or removed or its organisation disabled, end
+  them all, and they stay ended when the account or organisation is enabled again (before, enabling it brought a
+  copied cookie back to life).
+- **Everyone signs in once more after the update**: cookies signed before it carry no session id and are refused,
+  with the usual *session ended* message.
+- Corrects finding F-016 of the security assessment. Nothing to add to `.env`; rebuild the portal
+  (`docker compose up -d --build`).
+
 ### Known vulnerabilities looked for; an SBOM per release (session 49)
 - **New: the *Supply chain* workflow** ([ADR 0033](../adr/0033-supply-chain.md), step 2) looks for known
   vulnerabilities on every change of a lock file, a Dockerfile or a workflow, and every Monday: pip-audit and npm audit

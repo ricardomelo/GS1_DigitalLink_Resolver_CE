@@ -1583,3 +1583,15 @@ The workflow's first run on GitHub built the five images (the first build since 
 proxy's libxml2, corrected by `apk upgrade` in its Dockerfile, and files of the official MongoDB image (`gosu`, the
 database tools, `js-yaml`), reviewed and accepted for those paths only until 19 February 2027 (`30f5879`).
 `test_supply_chain.py` 164 → 222 checks; 31 mutations, all caught.
+
+## Session 50 — signing out ends the session everywhere
+
+Finding F-016 of the security assessment in one code commit (`9424d30`; [ADR 0034](adr/0034-session-records.md)).
+The portal's session was a signed cookie and nothing more: signing out cleared it in one browser, and a copy kept
+working until its limits; an account or organisation disabled and enabled again brought a copy back to life. Each
+sign-in now opens a record in the new `sessions` collection (`portal/sessions.py`), named by a random id of 256 bits
+in the cookie and stored as its SHA-256, renewed at most once a minute and removed by a TTL index. Signing out removes
+it; `users.py` and `tenants.py` remove a user's records when the password is set or cleared and when the account is
+disabled or removed or its organisation disabled, and a password change gives the browser a new id. Cookies signed
+before the change carry no id: everyone signs in once more. `test_session.py` 53 → 78 checks, `test_store_mongodb.py`
+282 → 284 (the records on a real MongoDB, TTL included); 17 mutations, all caught. No new screen or text.

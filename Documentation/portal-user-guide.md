@@ -113,6 +113,10 @@ below); otherwise ask the administrator for a new temporary password.
   Two minutes before the end a window counts down: choose **Stay signed in** to carry on, or **Sign out**.
   Near the 12-hour limit the window cannot extend the session: save your work and sign in again. When the
   session ends the portal asks you to sign in again; other tabs of the portal share the same session.
+  **Sign out** ends the session on the server, not only in this browser: a copy of it taken elsewhere stops
+  working too. Changing your password signs out every other browser where you are signed in (this one stays
+  signed in); an administrator resetting your password or disabling your account or organisation signs you out
+  everywhere.
 - **Language.** The language menu at the top right switches at once, without losing what you typed, among
   twelve languages, each named in itself — first those written in the Latin alphabet, alphabetically: Deutsch,
   English (UK), Español, Français, Italiano, Português (Brasil), Türkçe; then العربية (written right to left), हिन्दी,

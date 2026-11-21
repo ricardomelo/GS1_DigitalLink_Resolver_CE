@@ -209,7 +209,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_7a1ced57438…)",
+    "a wrong key is refused (rk_7d970503007…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -955,9 +955,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (253 features)",
+    "features.md: every table has a Checks column (254 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (509 references)",
+    "…each reference names a program of the inventory (518 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (80)",
     "…and the inventory holds no program that no longer exists",
@@ -968,8 +968,8 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (35)",
-    "every relative link of the documents leads to a file (51 documents)"
+    "…and every decision record (36)",
+    "every relative link of the documents leads to a file (52 documents)"
    ],
    "count": 15,
    "ciOnly": false
@@ -1539,7 +1539,7 @@
     "each refusal is in the journal with the role, the rows and the limit",
     "each change of an organisation's limits is in its journal",
     "each change of the maximum is in the operator's journal",
-    "every journal action has its label in both languages (48)",
+    "every journal action has its label in both languages (49)",
     "the export texts in both languages"
    ],
    "count": 69,
@@ -3412,7 +3412,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:39945/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:46057/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",
@@ -3546,6 +3546,7 @@
     "recovery for gone@example.org: the usual answer",
     "nothing sent to an account without an address or disabled",
     "nothing sent to a user of a disabled organisation",
+    "recovery by an address two organisations use: the usual answer, a link to each account, to that address",
     "an unknown link: invalid (410)",
     "a link of a disabled account is refused",
     "…and cannot set its password",
@@ -3586,7 +3587,7 @@
     "every message code of e-mail is translated in both languages",
     "every new journal action has a name"
    ],
-   "count": 138,
+   "count": 139,
    "ciOnly": false
   },
   "mail_e2e": {
@@ -5225,7 +5226,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.003 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.001 ms; Node.js: tens of ms)"
    ],
    "count": 247,
    "ciOnly": false
@@ -5631,6 +5632,7 @@
     "refused: an e-mail of another domain → domainMismatch",
     "refused: no account with that e-mail → noAccount",
     "refused: the e-mail of another organisation's account → noAccount",
+    "the same address in two organisations: the configuration's organisation's account signs in (rui2, Acme)",
     "refused: a disabled account → accountDisabled",
     "refused: a domain without single sign-on (at the start) → noProvider",
     "refused: not an e-mail address (at the start) → emailInvalid",
@@ -5671,7 +5673,7 @@
     "…once only",
     "every single sign-on text in both languages (34)"
    ],
-   "count": 112,
+   "count": 113,
    "ciOnly": false
   },
   "sso_e2e": {
@@ -6209,12 +6211,26 @@
     "ownership after the indicator, extension or filler digit; other keys from the first digit",
     "command line: a new user created in a tenant; an existing user keeps his",
     "tenants.find by name ignoring case, or by id",
+    "F-019: an address in Acme",
+    "F-019: another organisation's administrator may give the same address (no refusal to learn from)",
+    "F-019: …but not twice in his own organisation",
+    "F-019: …nor the server administrator twice in one organisation",
+    "F-019: the operator is a scope of its own: its user may have the address too",
+    "F-019: …once",
+    "F-019: changing an address: another organisation's use is no refusal, the organisation's own is",
+    "F-019: recovery by address finds every account that has it",
+    "F-019: a name of his own organisation: already exists, nothing journalled",
+    "F-019: a name of another organisation: refused, and journalled in the operator's trail (who tried, which name)",
+    "F-019: after 5 names already taken in 15 minutes, no user is created (429, the wait in minutes)",
+    "F-019: …whatever the name, so the limit tells nothing either",
+    "F-019: …per administrator: the server administrator, who sees every user, is neither limited nor journalled",
+    "F-019: …until the refusals leave the window",
     "both languages have the same messages",
     "every message of the page is translated",
     "every message code of the server is translated",
     "every new journal action has a name"
    ],
-   "count": 82,
+   "count": 96,
    "ciOnly": false
   },
   "titles": {

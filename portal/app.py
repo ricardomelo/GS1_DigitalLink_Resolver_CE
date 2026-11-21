@@ -102,6 +102,7 @@ FAILURE_PAUSE = 0.5         # every wrong password is answered after at least th
 # Password recovery requests in the same window (Documentation/adr/0004-e-mail.md, section 3.5): per user name or
 # address typed, per browser address; invalid single-use links per browser address.
 RECOVERY_PER_LOGIN = 3
+NAME_REFUSALS = 5               # user names already taken an organisation's administrator may try in LOCKOUT_SECONDS (ADR 0036)
 RECOVERY_PER_ADDRESS = 10
 BAD_LINKS_PER_ADDRESS = 10
 RECOVERY_SECONDS = 0.5      # every recovery answer takes at least this long, whether or not an account matched
@@ -1263,7 +1264,8 @@ def send_link(username: str, purpose: str, template: str, language: str | None =
 @app.post("/portal/api/password/forgot")
 def forgot_password():
     """Password recovery (Documentation/adr/0004-e-mail.md, decision 6): sends a recovery link when the user name
-    or address typed belongs to an account that may sign in and has an address. The answer, and the time it
+    or address typed belongs to an account that may sign in and has an address (one link per account when the
+    address is used in several organisations, ADR 0036). The answer, and the time it
     takes, are the same whether or not an account matched."""
     if not mail.enabled():
         return message("password.recoveryOff", 404)
@@ -1276,9 +1278,10 @@ def forgot_password():
     if throttle.over(keys[0], RECOVERY_PER_LOGIN) or throttle.over(keys[1], RECOVERY_PER_ADDRESS):
         return message("password.recoveryLimit", 429, params={"minutes": LOCKOUT_SECONDS // 60})
     throttle.fail(*keys)
-    username = users.find_login(typed)
-    account = users.get(username) if username else None
-    if account and account.get("email") and notify.reachable(account) and not sso.password_off_for(account):
+    for username in users.find_logins(typed):          # an address may belong to one account per organisation
+        account = users.get(username)
+        if not (account and account.get("email") and notify.reachable(account) and not sso.password_off_for(account)):
+            continue
         language = account.get("language") or data.get("language")
         if send_link(username, "reset", "password-recovery", language=language):
             tenant = account.get("tenant")
@@ -2457,6 +2460,42 @@ def list_users():
                                if g.server_admin else []})
 
 
+class NameLimit(Exception):
+    """Too many user names already taken were tried (name_refusals_counted()): 429 users.nameLimit."""
+
+
+@app.errorhandler(NameLimit)
+def name_limit(_exc):
+    return message("users.nameLimit", 429, params={"minutes": LOCKOUT_SECONDS // 60})
+
+
+@contextmanager
+def name_refusals_counted(username: str):
+    """Around the creation of a user by an organisation's administrator (finding F-019, ADR 0036): user names are the
+    installation's sign-in names, so "already exists" may name an account of another organisation. Such refusals are
+    counted per administrator: after NAME_REFUSALS in LOCKOUT_SECONDS no user is created (users.nameLimit, 429) until
+    the oldest leaves the window, so that names cannot be tried in bulk; a refusal for a name held outside the
+    administrator's organisation goes into the operator's audit trail. Server administrators see every user."""
+    if g.server_admin:
+        yield
+        return
+    key = f"name-taken:{g.user}"
+    if throttle.over(key, NAME_REFUSALS):
+        audit.info("user=%s action=user-create-refused target=%s reason=limit", g.user, username)
+        raise NameLimit()
+    try:
+        yield
+    except users.UserError as exc:
+        if exc.code == "users.exists":
+            throttle.fail(key)
+            held = users.get(username)
+            if held and held.get("tenant") != g.account_tenant:
+                audit.info("user=%s action=user-create-refused target=%s reason=elsewhere", g.user, username)
+                log_event("user-create-refused", tenant=None,
+                          detail=f"{username} held by another organisation; tried from {tenant_name(g.account_tenant)}")
+        raise
+
+
 @app.post("/portal/api/users")
 @require_login
 @admin_required
@@ -2470,8 +2509,11 @@ def create_user():
     role, prefixes = str(data.get("role", "")), data.get("prefixes") or []
     detail = f'{username} role={data.get("role")} prefixes={",".join(prefixes)}'
     language = data.get("language") or (users.get(g.user) or {}).get("language")   # the inviter's, until the user signs in
-    if data.get("invite") and mail.enabled() and str(data.get("email") or "").strip():
-        users.create(username, None, role, prefixes, tenant=tenant, email=data.get("email"), language=language)
+    invite = bool(data.get("invite") and mail.enabled() and str(data.get("email") or "").strip())
+    password = None if invite else temporary_password()
+    with name_refusals_counted(username):
+        users.create(username, password, role, prefixes, tenant=tenant, email=data.get("email"), language=language)
+    if invite:
         if send_link(username, "invite", "invite", language=language):
             audit.info("user=%s action=user-create target=%s role=%s tenant=%s invited", g.user, username, role,
                        tenant or "-")
@@ -2479,9 +2521,6 @@ def create_user():
             return message("users.invited", 201, params={"user": username})
         password = temporary_password()                 # the invitation could not be queued: as before
         users.set_password(username, password, must_change=True)
-    else:
-        password = temporary_password()
-        users.create(username, password, role, prefixes, tenant=tenant, email=data.get("email"), language=language)
     audit.info("user=%s action=user-create target=%s role=%s tenant=%s", g.user, username, data.get("role"), tenant or "-")
     log_event("user-create", tenant=tenant, detail=detail)
     return message("users.created", 201, params={"user": username}, password=password)

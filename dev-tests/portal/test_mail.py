@@ -465,6 +465,16 @@ tenants.update(acme["id"], disabled=True)
 r = anon.post("/portal/api/password/forgot", json={"login": "ana"}, headers=addr())
 check("nothing sent to a user of a disabled organisation", code(r) == "password.recoverySent" and not wait_messages(1, 1.0))
 tenants.update(acme["id"], disabled=False)
+# ADR 0036 (finding F-019): an address may be used once per organisation; recovery by it sends a link to each account
+users.create("ana2", "ana2-password-long", "editor", must_change=False, email="ana@acme.example")   # the operator's
+relay.clear()
+r = anon.post("/portal/api/password/forgot", json={"login": "Ana@Acme.Example"}, headers=addr())
+messages = wait_messages(2)
+owners = sorted((tokens.peek(link_in(m)[1]) or {}).get("user", "") for m in messages)
+check("recovery by an address two organisations use: the usual answer, a link to each account, to that address",
+      code(r) == "password.recoverySent" and owners == ["ana", "ana2"]
+      and all(m["To"] == "ana@acme.example" for m in messages), (code(r), owners))
+users.remove("ana2")
 
 # invalid links
 r = anon.post("/portal/api/password/link/check", json={"token": "A" * 43}, headers=addr())

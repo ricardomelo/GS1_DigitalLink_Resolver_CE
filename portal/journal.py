@@ -10,7 +10,8 @@ Event: {"at", "user", "action", "category", "tenant"?, "byOperator"?, "anchor"?,
         "expiresAt"?}
   record actions: create, update, delete (doc = the record after the change, or before a deletion),
   import (detail = counts); others: login, login-failed, login-refused, logout, password-change, user-create,
-  user-update, user-reset, user-remove, export, tenant-create, tenant-update, tenant-remove, support-open,
+  user-update, user-reset, user-remove, user-create-refused (an organisation's administrator tried a user name
+  held by another organisation; in the operator's trail, ADR 0036), export, tenant-create, tenant-update, tenant-remove, support-open,
   support-close, and with e-mail (Documentation/adr/0004-e-mail.md) password-recovery (a recovery link was
   sent), password-reset (a password chosen through a recovery or reset link), invite-accepted, preferences and
   mail-failed (a message the relay refused; never the address); with the tenant API

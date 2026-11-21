@@ -173,9 +173,11 @@ def clean_email(value) -> str | None:
     return email
 
 
-def _check_email(username: str, email: str | None) -> None:
-    """Refuses an address another user already has (call under the lock)."""
-    if email and _users().find_one({"email": email, "_id": {"$ne": username}}, {"_id": 1}):
+def _check_email(username: str, email: str | None, tenant: str | None) -> None:
+    """Refuses an address another user of the same organisation (or of the operator) already has (call under the
+    lock). Addresses are unique per organisation, not in the installation, so that a refusal never tells an
+    administrator that a person has an account in another organisation (finding F-019, ADR 0036)."""
+    if email and _users().find_one({"email": email, "tenant": tenant or None, "_id": {"$ne": username}}, {"_id": 1}):
         raise UserError("users.emailExists")
 
 
@@ -214,7 +216,7 @@ def clean_prefixes(values) -> list[str]:
 def _set_email(username: str, account: dict, email) -> None:
     """A new e-mail address (checked: valid, unique); a changed one forgets the single sign-on binding."""
     new_email = clean_email(email)
-    _check_email(username, new_email)
+    _check_email(username, new_email, account.get("tenant"))
     if new_email != account["email"]:
         account["sso"] = None
     account["email"] = new_email
@@ -263,7 +265,7 @@ def create(username: str, password: str | None, role: str, prefixes=(), must_cha
         account["mustChange"] = must_change
     with locked():
         _check_scope(account["tenant"], prefixes)
-        _check_email(username, account["email"])
+        _check_email(username, account["email"], account["tenant"])
         try:
             _users().insert_one({"_id": username, **_stored(account)})
         except DuplicateKeyError:
@@ -313,23 +315,23 @@ def clear_password(username: str) -> None:
     sessions.end_user(username)
 
 
-def find_login(login: str) -> str | None:
-    """The user name an entry of the password recovery form means: a user name, or an e-mail address (case is
-    ignored for both)."""
+def find_logins(login: str) -> list[str]:
+    """The user names an entry of the password recovery form means: every account with that e-mail address (an
+    address may be used once per organisation, ADR 0036), or the one user name (case is ignored for both)."""
     text = str(login or "").strip()
     if not text or len(text) > EMAIL_MAX:
-        return None
+        return []
     if "@" in text:
-        doc = _users().find_one({"email": text.lower()}, {"_id": 1})
-        if doc:
-            return doc["_id"]
+        found = sorted(doc["_id"] for doc in _users().find({"email": text.lower()}, {"_id": 1}))
+        if found:
+            return found
     if get(text):
-        return text
+        return [text]
     if USERNAME.match(text):                       # user names are case-sensitive; recovery forgives case
         for doc in _users().find({}, {"_id": 1}):
             if doc["_id"].lower() == text.lower():
-                return doc["_id"]
-    return None
+                return [doc["_id"]]
+    return []
 
 
 def clean_language(value) -> str | None:

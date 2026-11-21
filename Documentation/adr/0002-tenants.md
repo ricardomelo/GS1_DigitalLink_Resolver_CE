@@ -64,7 +64,7 @@ Items 3.1 (e-mail), 3.2 (tenant API and keys), 4.2 (indicators per tenant), 5.1 
    the server administrator sees the operator's trail and every action of the operator's users, and a tenant's
    whole trail only during support access.
 8. **One e-mail address per user**, optional for now, checked for form, unique in the installation (ignoring
-   case), set by the administrators. It is not used before item 3.1 (e-mail), never written to the journal,
+   case) — since [ADR 0036](0036-names-and-addresses-across-organisations.md) unique per organisation —, set by the administrators. It is not used before item 3.1 (e-mail), never written to the journal,
    and removed with the user.
 9. **Privacy by design.** Data minimisation: an organisation's name and prefixes, a user's name, role, prefixes
    and e-mail, nothing else. A tenant's users never see the operator's or other tenants' user names (history,

@@ -58,6 +58,8 @@ Constraints of the installations:
 6. **Password recovery.** *Forgot your password?* on the sign-in page, shown only when mail is on. The user types
    his user name or e-mail address; **the answer is the same whether or not an account matched**, so the page
    does not reveal which names or addresses exist. Requests are limited per name and per address of the browser.
+   An address used in several organisations ([ADR 0036](0036-names-and-addresses-across-organisations.md)) gets a
+   link for each of its accounts.
    Nothing is sent to an account without an address, disabled, or of a disabled organisation. Choosing a
    password through a link ends every open session of the account and removes its other links.
 7. **A notification framework** (`portal/notify.py`): each message belongs to a **category**. *Security*

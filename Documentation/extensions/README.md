@@ -307,7 +307,7 @@ Roles (checked by the server on every call; the interface hides what a role cann
 | reader | consult, list, export, labels |
 
 - The `users` collection holds, per user: password hash, role, GS1 Company Prefixes, tenant (none for the
-  operator's users), e-mail address (optional, unique), disabled, must-change flag, creation and last sign-in.
+  operator's users), e-mail address (optional, unique within the organisation or among the operator's users, ADR 0036), disabled, must-change flag, creation and last sign-in.
   Users of a `users.json` from before roles (`{"name": "<hash>"}`) are imported as administrators. Changes to
   users are serialised by a lock shared by every portal replica, so the last enabled server administrator can
   never be removed or demoted.

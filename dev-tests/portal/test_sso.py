@@ -365,6 +365,16 @@ refused("no e-mail", "noEmail", email=None, start_email="edu@acme.example")
 refused("an e-mail of another domain", "domainMismatch", email="bia@beta.example", start_email="edu@acme.example")
 refused("no account with that e-mail", "noAccount", email="nobody@acme.example")
 refused("the e-mail of another organisation's account", "noAccount", email="rui@acme.example")
+# ADR 0036 (finding F-019): an address may be used once per organisation; the configuration's organisation's account
+# signs in even when another organisation's account has the same address (rui, Beta, was made first)
+users.create("rui2", "rui2-password-long", "reader", tenant=acme["id"], email="rui@acme.example", must_change=False)
+provider.reset()
+provider.NEXT["email"] = "rui@acme.example"
+r, browser = sign_in("rui@acme.example")
+me = browser.get("/portal/api/config").get_json() or {}
+check("the same address in two organisations: the configuration's organisation's account signs in (rui2, Acme)",
+      landed(r).endswith("/portal/#overview") and me.get("user") == "rui2", (landed(r), me.get("user")))
+users.remove("rui2")
 refused("a disabled account", "accountDisabled", email="off@acme.example")
 refused("a domain without single sign-on (at the start)", "noProvider", email="x@nowhere.example")
 refused("not an e-mail address (at the start)", "emailInvalid", email="nobody")

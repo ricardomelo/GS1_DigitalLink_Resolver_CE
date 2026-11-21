@@ -521,8 +521,9 @@ def finish(args, redirect_uri: str, session) -> tuple[str, dict, dict]:
         raise SsoError("sso.noEmail", email)
     if email.rpartition("@")[2] not in proved(doc):
         raise SsoError("sso.domainMismatch", email)
-    found = users._users().find_one({"email": email})
-    if not found or found.get("tenant") != tenant_of(doc["_id"]):
+    # the account of the configuration's organisation: an address may be used once per organisation (ADR 0036)
+    found = users._users().find_one({"email": email, "tenant": tenant_of(doc["_id"])})
+    if not found or (found.get("tenant") or None) != tenant_of(doc["_id"]):
         raise SsoError("sso.noAccount", email)
     if found.get("disabled"):
         raise SsoError("sso.accountDisabled", email)

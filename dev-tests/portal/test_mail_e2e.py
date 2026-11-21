@@ -176,7 +176,8 @@ with sync_playwright() as p:
           root.url.endswith("/portal/login") and root.is_visible("#link-form") and root.inner_text("#link-user") == "maria",
           root.url)
     root.goto(BASE); root.wait_for_timeout(500)
-    check("…and the earlier session is over", root.url.endswith("/portal/login"), root.url)
+    # the sign-in page, with or without "?reason=expired": the cookie may still name the ended session (ADR 0034)
+    check("…and the earlier session is over", root.url.split("?")[0].endswith("/portal/login"), root.url)
     again.goto(reset_link); again.wait_for_timeout(800)
     check("recovery link: 'Choose a new password'", again.inner_text("#link-title") == "Escolha uma nova senha"
           and again.inner_text("#link-user") == "maria")

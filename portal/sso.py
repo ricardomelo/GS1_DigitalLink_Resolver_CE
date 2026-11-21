@@ -6,12 +6,15 @@ One configuration per organisation and one for the operator, in the collection "
     {"_id": "t-…" | "operator", "issuer": "https://login.example.com/tenant/v2.0", "clientId": "…",
      "clientSecret": "…" (never sent to a browser), "domains": ["acme.example"], "enabled": true, "passwordOff": false,
      "emailVerifiedOptional": false, "token": "<32 hex>",
-     "proofs": [{"domain": "acme.example", "how": "dns" | "admin" | "upgrade", "at", "by"}],
+     "proofs": [{"domain": "acme.example", "how": "dns" | "admin" | "upgrade", "at", "by", "seenAt", "lapsedAt"}],
      "updated", "updatedBy", "lastLogin", "lastError": {"at", "code", "detail"}}
 
 A listed domain signs people in only once proved (Documentation/adr/0025-sso-domain-proof-and-subject.md): a DNS TXT
 record "_gs1resolver.<domain>" holding "gs1resolver-sso=<token>", or a server administrator's approval; a domain is
-proved in one configuration at most.
+proved in one configuration at most. The daily housekeeping looks again at each DNS proof's record (recheck_proofs(),
+Documentation/adr/0035-domain-claims-and-lapsed-proofs.md): missing for domains.LAPSE, the proof has lapsed. A lapsed
+proof still signs people in, but no longer keeps another configuration from proving the domain, which then takes it
+over.
 
 start() turns an e-mail address into the provider's authorization address (the code flow with PKCE, state and nonce
 kept in the signed session cookie); finish() exchanges the code, verifies the ID token with the provider's keys and
@@ -86,6 +89,8 @@ def public(doc: dict) -> dict:
             "domainStates": [{"domain": d, "proof": proofs[d]["how"] if d in proofs else None,
                               "provedAt": store.iso(proofs[d].get("at")) if d in proofs else None,
                               "provedBy": proofs[d].get("by") if d in proofs else None,
+                              "seenAt": store.iso(proofs[d].get("seenAt")) if d in proofs else None,
+                              "lapsedAt": store.iso(proofs[d].get("lapsedAt")) if d in proofs else None,
                               "txtName": f"{domain_proof.TXT_NAME}.{d}", "txtValue": TXT_PREFIX + token if token else ""}
                              for d in doc.get("domains") or []],
             "enabled": bool(doc.get("enabled")), "passwordOff": bool(doc.get("passwordOff")),
@@ -163,8 +168,9 @@ def proved(doc: dict | None) -> list[str]:
 
 
 def proved_elsewhere(domain: str, scope: str) -> bool:
-    """Whether another configuration has proved the domain."""
-    return any(domain in proved(other)
+    """Whether another configuration has proved the domain with a proof that has not lapsed."""
+    return any(domain in proved(other) and not any(p.get("domain") == domain and p.get("lapsedAt")
+                                                   for p in other.get("proofs") or [])
                for other in _col().find({"_id": {"$ne": scope}, "proofs.domain": domain}))
 
 
@@ -180,16 +186,25 @@ def _proof_target(scope: str, domain) -> tuple[dict, str]:
     return doc, domain
 
 
-def _add_proof(doc: dict, domain: str, how: str, by: str) -> dict:
+def _add_proof(doc: dict, domain: str, how: str, by: str) -> tuple[dict, list[str]]:
+    """Records the proof; a lapsed proof of the domain in another configuration goes (ADR 0035). Returns the
+    configuration and the scopes whose lapsed proof went."""
+    now = store.now()
     proofs = [p for p in doc.get("proofs") or [] if p.get("domain") != domain]
-    proofs.append({"domain": domain, "how": how, "at": store.now(), "by": by})
+    proofs.append({"domain": domain, "how": how, "at": now, "by": by, **({"seenAt": now} if how == "dns" else {})})
     _col().update_one({"_id": doc["_id"]}, {"$set": {"proofs": proofs}})
+    released = []
+    for other in _col().find({"_id": {"$ne": doc["_id"]}, "proofs": {"$elemMatch": {"domain": domain,
+                                                                                    "lapsedAt": {"$exists": True}}}}):
+        _col().update_one({"_id": other["_id"]}, {"$pull": {"proofs": {"domain": domain}}})
+        released.append(other["_id"])
     forget()
-    return get(doc["_id"])
+    return get(doc["_id"]), released
 
 
-def verify_domain(scope: str, domain, by: str) -> dict:
-    """Looks up the domain's TXT record; found, the domain is proved by DNS. Raises UserError("sso.txtMissing")."""
+def verify_domain(scope: str, domain, by: str) -> tuple[dict, list[str]]:
+    """Looks up the domain's TXT record; found, the domain is proved by DNS (again, for a lapsed proof). Raises
+    UserError("sso.txtMissing"). Returns what _add_proof() does."""
     with users.locked():
         doc, domain = _proof_target(scope, domain)
         name, value = f"{domain_proof.TXT_NAME}.{domain}", TXT_PREFIX + doc["token"]
@@ -206,7 +221,7 @@ def accounts_elsewhere(domain: str, scope: str) -> int:
                if (a.get("tenant") or None) != tenant)
 
 
-def approve_domain(scope: str, domain, by: str) -> dict:
+def approve_domain(scope: str, domain, by: str) -> tuple[dict, list[str]]:
     """A server administrator's approval of a domain without a DNS record; refused when accounts of another
     organisation (or of the operator) use the domain."""
     with users.locked():
@@ -214,6 +229,34 @@ def approve_domain(scope: str, domain, by: str) -> dict:
         if accounts_elsewhere(domain, scope):
             raise UserError("sso.domainUsed", domain=domain)
         return _add_proof(doc, domain, "admin", by)
+
+
+def recheck_proofs(now=None) -> list[dict]:
+    """Daily housekeeping (ADR 0035): looks again at the TXT record of each DNS proof not seen for a day. Found, the
+    proof is seen now and no longer lapsed; missing for domains.LAPSE since it was last seen (or made), it lapses.
+    Approvals and proofs of the upgrade have no record to look at. Returns the proofs that lapsed in this run:
+    [{"tenant", "domain", "seen"}]."""
+    now = now or store.now()
+    lapsed = []
+    for doc in _col().find({"proofs.how": "dns"}):
+        proofs, changed = [], False
+        for proof in doc.get("proofs") or []:
+            seen = proof.get("seenAt") or proof.get("at")
+            if proof.get("how") == "dns" and not (proof.get("seenAt") and now - proof["seenAt"] < domain_proof.RECHECK):
+                value = TXT_PREFIX + (doc.get("token") or "")
+                if value in domain_proof.txt_records(f"{domain_proof.TXT_NAME}.{proof['domain']}"):
+                    proof = {k: v for k, v in proof.items() if k != "lapsedAt"} | {"seenAt": now}
+                    changed = True
+                elif not proof.get("lapsedAt") and seen and now - seen >= domain_proof.LAPSE:
+                    proof = {**proof, "lapsedAt": now}
+                    lapsed.append({"tenant": tenant_of(doc["_id"]), "domain": proof["domain"], "seen": seen})
+                    changed = True
+            proofs.append(proof)
+        if changed:
+            _col().update_one({"_id": doc["_id"]}, {"$set": {"proofs": proofs}})
+    if lapsed:
+        forget()
+    return lapsed
 
 
 def upgrade() -> int:

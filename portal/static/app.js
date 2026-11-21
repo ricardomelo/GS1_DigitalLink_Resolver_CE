@@ -3567,8 +3567,8 @@ function domainCard(d) {
   card.dataset.domain = d.domain;
   const head = el("div", "domain-head");
   head.append(el("strong", "domain-name", d.domain + (d.stem || "")));
-  head.append(el("span", "badge " + (d.verified ? "badge-created" : "badge-unchanged"),
-                 t(d.verified ? "domains.verifiedBadge" : "domains.pendingBadge")));
+  head.append(el("span", "badge " + (d.lapsedAt ? "badge-error" : d.verified ? "badge-created" : "badge-unchanged"),
+                 t(d.lapsedAt ? "domains.lapsedBadge" : d.verified ? "domains.verifiedBadge" : "domains.pendingBadge")));
   head.append(el("span", "badge badge-update", t("domains.mode." + d.mode)));
   if (d.certificate) {
     head.append(el("span", "badge domain-cert is-" + d.certificate.state, t("domains.cert." + d.certificate.state)));
@@ -3582,9 +3582,17 @@ function domainCard(d) {
     dl.append(el("dt", "", t("domains.txtName")), el("dd", "code", d.txtName),
               el("dt", "", t("domains.txtValue")), el("dd", "code", d.txtValue));
     txt.append(dl);
+    if (d.expiresAt) txt.append(el("p", "field-msg", t("domains.pendingUntil", { date: formatWhen(d.expiresAt) })));
     card.append(txt);
   } else {
     card.append(el("p", "field-msg", t("domains.seen", { verified: formatWhen(d.verifiedAt), seen: formatWhen(d.seenAt) })));
+    if (d.lapsedAt) {
+      card.append(el("p", "field-msg is-error domain-lapsed", t("domains.lapsed", { seen: formatWhen(d.seenAt || d.verifiedAt) })));
+      const dl = el("dl", "overview-facts");
+      dl.append(el("dt", "", t("domains.txtName")), el("dd", "code", d.txtName),
+                el("dt", "", t("domains.txtValue")), el("dd", "code", d.txtValue));
+      card.append(dl);
+    }
   }
   if (d.certificate) card.append(certificateLine(d.certificate));
   if (d.check) {
@@ -3613,7 +3621,7 @@ function domainCard(d) {
     card.append(form);
     const actions = el("div", "user-actions");
     const button = (key, cls, fn) => { const b = el("button", "btn " + cls, t(key)); b.type = "button"; b.addEventListener("click", fn); actions.append(b); };
-    if (!d.verified) button("domains.verify", "btn-primary", () => domainCall("POST", d, "/verify", {}));
+    if (!d.verified || d.lapsedAt) button("domains.verify", "btn-primary", () => domainCall("POST", d, "/verify", {}));
     button("domains.check", "btn-ghost", () => domainCall("POST", d, "/check", {}));
     button("domains.remove", "btn-danger-ghost", async () => {
       if (await ask(t("domains.confirmRemove", { domain: d.domain }), { danger: true })) domainCall("DELETE", d, "");
@@ -3794,8 +3802,10 @@ function ssoDomains(c, editable) {
     head.append(el("strong", "code", d.domain), el("span", "badge " + (d.proof === "dns" || d.proof === "admin"
       ? "badge-created" : d.proof ? "badge-update" : "badge-unchanged"), t({ dns: "sso.proofDns", admin: "sso.proofAdmin", upgrade: "sso.proofUpgrade" }[d.proof] || "sso.proofNone")));
     if (d.provedAt) head.append(el("small", "muted", formatWhen(d.provedAt) + (d.provedBy ? " · " + d.provedBy : "")));
+    if (d.lapsedAt) head.append(el("span", "badge badge-error", t("domains.lapsedBadge")));
     row.append(head);
-    if (d.proof !== "dns" && d.proof !== "admin" && d.txtValue) {
+    if (d.lapsedAt) row.append(el("p", "field-msg is-error sso-lapsed", t("sso.proofLapsed", { seen: formatWhen(d.seenAt || d.provedAt) })));
+    if ((d.proof !== "dns" && d.proof !== "admin" || d.lapsedAt) && d.txtValue) {
       const dl = el("dl", "domain-txt");
       dl.append(el("dt", "", t("domains.txtName")), el("dd", "code", d.txtName),
                 el("dt", "", t("domains.txtValue")), el("dd", "code", d.txtValue));

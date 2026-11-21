@@ -2,17 +2,24 @@
 The organisations' own domains in the QR code (Documentation/adr/0009-tenant-domains.md; GS1 Digital Link URI Syntax
 1.7, section 4.11). One document per domain in the "domains" collection of the portal's database:
 
-    {"_id": "id.acme.example", "tenant": "t-…" (absent for the operator), "mode": "direct" | "redirect",
-     "stem": "" | "/gs1", "defaultFor": ["7891234"], "token": "<32 hex>", "verified": bool, "verifiedAt", "seenAt",
+    {"_id": "id.acme.example", "name": "id.acme.example", "tenant": "t-…" (absent for the operator),
+     "mode": "direct" | "redirect", "stem": "" | "/gs1", "defaultFor": ["7891234"], "token": "<32 hex>",
+     "verified": bool, "verifiedAt", "seenAt", "lapsedAt", "expiresAt" (unverified only),
      "check": {"at", "ok", "problem", "detail"}, "created", "createdBy"}
 
-A domain is proved by a DNS TXT record "_gs1resolver.<domain>" holding "gs1resolver-verify=<token>"; once verified it
-stays so (the daily housekeeping looks again and records when the record was last seen). The resolver
+A domain is proved by a DNS TXT record "_gs1resolver.<domain>" holding "gs1resolver-verify=<token>"
+(Documentation/adr/0035-domain-claims-and-lapsed-proofs.md). Until then it is a claim: several organisations may
+claim the same name, each under the _id "<name> <tenant or ->" (pending_id()), and the claim is deleted by its TTL
+PENDING after it was made. The first claim proved becomes the domain, under the _id "<name>", and the other claims of
+the name go. The daily housekeeping looks again at every verified domain's record (recheck_all()); missing for LAPSE,
+the domain is lapsed: still served, but no longer offered for labels, its administrators are told, and another
+organisation's claim that proves the name takes it over. Seen again, it is no longer lapsed. The resolver
 (web_server/src/domains.py) reads the verified "direct" domains and answers on them for their organisation's prefixes
 only; labels carry the default domain of the record's prefix, or the one chosen.
 
 Rules: a lower-case host name with at least two labels, not an address, not the installation's own name, not
-"localhost"; unique in the installation; at most MAX_PER_SCOPE per organisation (and for the operator); a stem of one
+"localhost"; verified in one scope at most, claimed once per scope; at most MAX_PER_SCOPE per organisation (and for
+the operator), claims included; a stem of one
 to three segments of letters, digits, "-", ".", "_", "~", none of them 2 to 4 digits (it would read as an AI); a
 default prefix is one of the organisation's prefixes (for the operator, any prefix no organisation holds) and is the
 default of one domain at most.
@@ -43,6 +50,8 @@ MODES = ("direct", "redirect")
 LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 STEM_SEGMENT = re.compile(r"^[A-Za-z0-9._~-]{1,40}$")
 RECHECK = timedelta(days=1)
+PENDING = timedelta(days=7)                # an unverified claim is deleted this long after it was made
+LAPSE = timedelta(days=7)                  # a verified domain whose record is missing this long is lapsed
 REDIRECTS = (301, 302, 307, 308)
 TIMEOUT = 10
 HOST_RUN_LATE = timedelta(minutes=15)      # the server's task runs every 5 minutes; three missed runs: a warning
@@ -90,9 +99,24 @@ def clean_mode(value) -> str:
     return mode
 
 
+def name_of(doc: dict) -> str:
+    """A domain's name (documents written before ADR 0035 have it in _id only)."""
+    return doc.get("name") or doc["_id"]
+
+
+def pending_id(name: str, tenant: str | None) -> str:
+    """The _id of an unverified claim: the name and the scope, apart by a space (never in a host name)."""
+    return f"{name} {tenant or '-'}"
+
+
+def usable(doc: dict) -> bool:
+    """Whether a domain may be put on new labels: verified and not lapsed."""
+    return bool(doc.get("verified")) and not doc.get("lapsedAt")
+
+
 def base_url(doc: dict) -> str:
     """The address a label carries for a domain: https://<domain><stem>."""
-    return f"https://{doc['_id']}{doc.get('stem') or ''}"
+    return f"https://{name_of(doc)}{doc.get('stem') or ''}"
 
 
 # ----------------------------------------------------------------------------------------------- reading
@@ -133,10 +157,13 @@ def host_run(now=None) -> dict:
 def public(doc: dict, tenant_names: dict | None = None, host: dict | None = None) -> dict:
     """What the Domains screen shows (the token too: the administrator writes it in DNS); host: the server's report of
     the domain (domain_hosts), for the certificate's state."""
-    out = {"domain": doc["_id"], "mode": doc.get("mode", "direct"), "stem": doc.get("stem") or "",
+    name = name_of(doc)
+    out = {"domain": name, "mode": doc.get("mode", "direct"), "stem": doc.get("stem") or "",
            "defaultFor": list(doc.get("defaultFor") or []), "verified": bool(doc.get("verified")),
            "verifiedAt": store.iso(doc.get("verifiedAt")), "seenAt": store.iso(doc.get("seenAt")),
-           "txtName": f"{TXT_NAME}.{doc['_id']}", "txtValue": TXT_PREFIX + doc.get("token", ""),
+           "lapsedAt": store.iso(doc.get("lapsedAt")),
+           "expiresAt": store.iso(doc.get("expiresAt")) if not doc.get("verified") else None,
+           "txtName": f"{TXT_NAME}.{name}", "txtValue": TXT_PREFIX + doc.get("token", ""),
            "check": {**(doc.get("check") or {}), "at": store.iso((doc.get("check") or {}).get("at"))}
            if doc.get("check") else None,
            "created": store.iso(doc.get("created")), "createdBy": doc.get("createdBy"),
@@ -150,21 +177,29 @@ def _scope(tenant: str | None) -> dict:
     return {"tenant": tenant} if tenant else {"tenant": None}
 
 
+def _live(docs) -> list[dict]:
+    """Leaves out claims whose time is up (the TTL index deletes them within a minute or so)."""
+    now = store.now()
+    return [d for d in docs if d.get("verified") or not d.get("expiresAt") or d["expiresAt"] > now]
+
+
 def load(tenant: str | None, every: bool = False) -> list[dict]:
-    """The domains of a scope (an organisation, or the operator), or every domain."""
-    return list(_col().find({} if every else _scope(tenant)).sort("_id", 1))
+    """The domains and claims of a scope (an organisation, or the operator), or every one."""
+    return sorted(_live(_col().find({} if every else _scope(tenant))), key=lambda d: (name_of(d), d["_id"]))
 
 
-def get(name: str, tenant: str | None, every: bool = False) -> dict:
-    doc = _col().find_one({"_id": str(name or "").lower(), **({} if every else _scope(tenant))})
+def get(name: str, tenant: str | None) -> dict:
+    """A domain or claim of the scope by its name."""
+    name = str(name or "").strip().lower()
+    doc = next(iter(_live(_col().find({"_id": {"$in": [name, pending_id(name, tenant)]}, **_scope(tenant)}))), None)
     if not doc:
         raise UserError("domains.unknown")
     return doc
 
 
 def verified(tenant: str | None) -> list[dict]:
-    """The verified domains of a scope, for labels."""
-    return [d for d in load(tenant) if d.get("verified")]
+    """The domains of a scope that new labels may carry (verified, not lapsed)."""
+    return [d for d in load(tenant) if usable(d)]
 
 
 def still_held(doc: dict, prefix: str, tenant_list: list[dict]) -> bool:
@@ -198,7 +233,7 @@ def label_base(anchor: str, tenant: str | None, choice: str | None, installation
     if choice == "installation":
         return installation_url
     doc = _col().find_one({"_id": choice, **_scope(tenant), "verified": True})
-    if not doc:
+    if not doc or not usable(doc):
         raise gs1.ValidationError("domains.unusable", domain=choice[:100])
     return base_url(doc)
 
@@ -217,19 +252,31 @@ def _check_defaults(prefixes, tenant: str | None, own: str | None) -> list[str]:
             raise UserError("domains.prefixOutside")
     for doc in _col().find({"defaultFor": {"$in": cleaned}, "_id": {"$ne": own}}):
         if any(still_held(doc, p, tenant_list) for p in cleaned if p in (doc.get("defaultFor") or [])):
-            raise UserError("domains.prefixTaken", domain=doc["_id"])
+            raise UserError("domains.prefixTaken", domain=name_of(doc))
     return cleaned
 
 
+def _taken(name: str, tenant: str | None) -> bool:
+    """Whether the name is verified in another scope and not lapsed there (a lapsed one can be taken over)."""
+    doc = _col().find_one({"_id": name})
+    return bool(doc) and (doc.get("tenant") or None) != tenant and not doc.get("lapsedAt")
+
+
 def create(name, mode, stem, tenant: str | None, by: str, installation: str) -> dict:
+    """A claim of a name for the scope: refused when the scope has it already or another scope has verified it (and
+    it has not lapsed); a claim of another scope does not stand in the way (ADR 0035)."""
     name, mode, stem = clean_name(name, installation), clean_mode(mode), clean_stem(stem)
     with users.locked():
-        if _col().find_one({"_id": name}):
+        mine = _live(_col().find({"_id": {"$in": [name, pending_id(name, tenant)]}, **_scope(tenant)}))
+        if mine or _taken(name, tenant):
             raise UserError("domains.exists")
-        if _col().count_documents(_scope(tenant)) >= MAX_PER_SCOPE:
+        if len(load(tenant)) >= MAX_PER_SCOPE:
             raise UserError("domains.tooMany", max=MAX_PER_SCOPE)
-        doc = {"_id": name, "mode": mode, "stem": stem, "defaultFor": [], "token": secrets.token_hex(16),
-               "verified": False, "created": store.now(), "createdBy": by}
+        now = store.now()
+        _col().delete_many({"_id": pending_id(name, tenant)})          # a claim whose time is up, not yet deleted
+        doc = {"_id": pending_id(name, tenant), "name": name, "mode": mode, "stem": stem, "defaultFor": [],
+               "token": secrets.token_hex(16), "verified": False, "created": now, "createdBy": by,
+               "expiresAt": now + PENDING}
         if tenant:
             doc["tenant"] = tenant
         _col().insert_one(doc)
@@ -257,7 +304,8 @@ def remove(name, tenant: str | None) -> dict:
     the host stays until removed by hand: custom-domains.sh list)."""
     doc = get(name, tenant)
     _col().delete_one({"_id": doc["_id"]})
-    store.col("domain_hosts").delete_one({"_id": doc["_id"]})
+    if doc.get("verified") or not _col().find_one({"_id": name_of(doc)}):    # never another scope's domain's report
+        store.col("domain_hosts").delete_one({"_id": name_of(doc)})
     return doc
 
 
@@ -273,33 +321,71 @@ def txt_records(host: str) -> list[str]:
     return ["".join(part.decode("utf-8", "replace") for part in record.strings) for record in answer]
 
 
-def verify(name, tenant: str | None) -> dict:
-    """Looks up the TXT record; a domain found is verified (and stays so). Returns the domain after the look."""
+def verify(name, tenant: str | None) -> tuple[dict, dict | None]:
+    """Looks up the TXT record. A claim found becomes the domain (refused with domains.exists while another scope's
+    domain of that name has not lapsed; a lapsed one is removed: the second value, for the journal) and the other
+    claims of the name go; a domain found is seen now and no longer lapsed. Returns (the domain after the look, the
+    lapsed domain of another scope it replaced or None)."""
     doc = get(name, tenant)
-    found = TXT_PREFIX + doc["token"] in txt_records(f"{TXT_NAME}.{doc['_id']}")
+    name = name_of(doc)
+    found = TXT_PREFIX + doc["token"] in txt_records(f"{TXT_NAME}.{name}")
+    if not found:
+        if not doc.get("verified"):
+            raise UserError("domains.txtMissing", name=f"{TXT_NAME}.{name}", value=TXT_PREFIX + doc["token"])
+        return doc, None
     now = store.now()
-    change = {"seenAt": now} if found else {}
-    if found and not doc.get("verified"):
-        change.update(verified=True, verifiedAt=now)
-    if change:
-        _col().update_one({"_id": doc["_id"]}, {"$set": change})
-    if not found and not doc.get("verified"):
-        raise UserError("domains.txtMissing", name=f"{TXT_NAME}.{doc['_id']}", value=TXT_PREFIX + doc["token"])
-    return {**doc, **change}
+    if doc.get("verified"):
+        _col().update_one({"_id": doc["_id"]}, {"$set": {"seenAt": now}, "$unset": {"lapsedAt": ""}})
+        doc = {**doc, "seenAt": now}
+        doc.pop("lapsedAt", None)
+        return doc, None
+    with users.locked():
+        replaced = _col().find_one({"_id": name})
+        if replaced and (not replaced.get("lapsedAt") or (replaced.get("tenant") or None) == tenant):
+            raise UserError("domains.exists")
+        if replaced:
+            _col().delete_one({"_id": name, "lapsedAt": {"$exists": True}})
+            store.col("domain_hosts").delete_one({"_id": name})
+        new = {k: v for k, v in doc.items() if k not in ("_id", "expiresAt", "check")}
+        new.update(_id=name, name=name, verified=True, verifiedAt=now, seenAt=now)
+        _col().insert_one(new)
+        _col().delete_many({"name": name, "verified": False})
+    return new, replaced
 
 
-def recheck_all(now=None) -> int:
-    """Daily housekeeping: looks again at the TXT record of every verified domain not seen for a day, recording when
-    it was last seen (never un-verifying). Returns the number found."""
+def recheck_all(now=None) -> list[dict]:
+    """Daily housekeeping: looks again at the TXT record of every verified domain not seen for a day. Found, it is
+    seen now and no longer lapsed; missing for LAPSE since it was last seen (or verified), it is lapsed. Returns the
+    domains that lapsed in this run (the caller journals them and tells their administrators)."""
     now = now or store.now()
-    found = 0
+    lapsed = []
     for doc in _col().find({"verified": True}):
         if doc.get("seenAt") and now - doc["seenAt"] < RECHECK:
             continue
-        if TXT_PREFIX + doc["token"] in txt_records(f"{TXT_NAME}.{doc['_id']}"):
-            _col().update_one({"_id": doc["_id"]}, {"$set": {"seenAt": now}})
-            found += 1
-    return found
+        if TXT_PREFIX + doc["token"] in txt_records(f"{TXT_NAME}.{name_of(doc)}"):
+            _col().update_one({"_id": doc["_id"]}, {"$set": {"seenAt": now}, "$unset": {"lapsedAt": ""}})
+        elif not doc.get("lapsedAt") and now - (doc.get("seenAt") or doc.get("verifiedAt") or now) >= LAPSE:
+            _col().update_one({"_id": doc["_id"], "lapsedAt": {"$exists": False}}, {"$set": {"lapsedAt": now}})
+            lapsed.append({**doc, "lapsedAt": now})
+    return lapsed
+
+
+def upgrade(now=None) -> int:
+    """Domains written before ADR 0035: each gets its name, and an unverified one becomes a claim under pending_id()
+    deleted PENDING after the upgrade. Idempotent; returns the documents changed."""
+    now = now or store.now()
+    changed = 0
+    for doc in _col().find({"name": {"$exists": False}}):
+        if doc.get("verified"):
+            _col().update_one({"_id": doc["_id"]}, {"$set": {"name": doc["_id"]}})
+        else:
+            claim = {**doc, "_id": pending_id(doc["_id"], doc.get("tenant")), "name": doc["_id"],
+                     "expiresAt": now + PENDING}
+            if not _col().find_one({"_id": claim["_id"]}):
+                _col().insert_one(claim)
+            _col().delete_one({"_id": doc["_id"], "verified": {"$ne": True}})
+        changed += 1
+    return changed
 
 
 def probe(url: str) -> requests.Response:
@@ -322,7 +408,7 @@ def check(name, tenant: str | None, installation_url: str, sample_anchor: str | 
         path = (sample_anchor or "/01/00000000000000") + "?linkType=all"
         url, expected = base + path, installation_url.rstrip("/") + path
     else:
-        url, expected = f"https://{doc['_id']}/.well-known/gs1resolver", None      # at the root, never under the stem
+        url, expected = f"https://{name_of(doc)}/.well-known/gs1resolver", None      # at the root, never under the stem
     result = {"at": store.now(), "url": url, "ok": False, "problem": None, "detail": None}
     try:
         answer = probe(url)

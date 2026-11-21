@@ -389,6 +389,20 @@ TEXTS = {
         "pt-BR": ("Resolvido: todas as cadeias da trilha de auditoria estão íntegras",
                   "Olá,\n\nA verificação de {at} encontrou íntegras todas as cadeias da trilha de auditoria do portal de {operator}. Uma cadeia quebrada tinha sido avisada em {since}.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
     },
+    "alert-domain-lapsed": {
+        "en-GB": ("Alert: the DNS record that proves {domain} is missing",
+                  "Hello,\n\n"
+                  "The portal of {operator} has not found the TXT record {record} for {days} days: it was last seen on {seen}. The record proves that you control {domain}.\n\n"
+                  "If {domain} is a domain of your QR codes, it is still served but no longer offered for new labels. If it signs people in with single sign-on, it still does. In both cases another organisation of this installation that proves the domain takes it over.\n\n"
+                  "If you still use the domain, publish the record again (Domains or Single sign-on shows its value) and click Verify. If you no longer use it, remove it.\n\n"
+                  "You receive this message as an administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Alerta: o registro DNS que comprova {domain} sumiu",
+                  "Olá,\n\n"
+                  "O portal de {operator} não encontra o registro TXT {record} há {days} dias: ele foi visto pela última vez em {seen}. O registro comprova que vocês controlam {domain}.\n\n"
+                  "Se {domain} é um domínio dos seus QR codes, ele continua atendido, mas não é mais oferecido para novas etiquetas. Se ele dá acesso pelo login único, continua dando. Nos dois casos, outra organização desta instalação que comprovar o domínio passa a tê-lo.\n\n"
+                  "Se ainda usam o domínio, publique o registro de novo (o valor está em Domínios ou em Login único) e clique em Verificar. Se não o usam mais, remova-o.\n\n"
+                  "Você recebe esta mensagem como administrador; pode desligar os alertas em Opções → E-mail."),
+    },
     "test": {
         "en-GB": ("Test message from the link management portal",
                   "Hello,\n\n"

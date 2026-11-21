@@ -101,6 +101,8 @@ with sync_playwright() as p:
     card = page.locator(".domain-card[data-domain='id.acme.example']")
     check("a domain added: the TXT record to add", card.count() == 1 and "_gs1resolver.id.acme.example" in card.inner_text()
           and "gs1resolver-verify=" in card.inner_text() and "Waiting for DNS" in card.inner_text(), card.inner_text()[:300])
+    check("…a claim, with the day it is deleted unless verified (ADR 0035)", "Deleted on" in card.inner_text()
+          and "the first to verify it keeps it" in card.inner_text(), card.inner_text()[:500])
     shot(page, "domains-pending")
     card.locator("button", has_text="Verify").click(); page.wait_for_timeout(800)
     check("verify before the record exists: what to add, said again", "was not found yet" in page.inner_text("#domains-status"),
@@ -139,6 +141,18 @@ with sync_playwright() as p:
           and "Served over HTTPS" in card.inner_text() and "valid until 15/01/2027" in card.inner_text(),
           card.inner_text()[:400])
     shot(page, "domains-verified")
+    # a lapsed domain (ADR 0035): the record missing for 7 days at the daily look
+    store.col("domains").update_one({"_id": "id.acme.example"}, {"$set": {"lapsedAt": store.now()}})
+    page.reload(); page.wait_for_timeout(1000)
+    card = page.locator(".domain-card[data-domain='id.acme.example']")
+    check("a lapsed domain: its badge, why, the record to publish again and Verify", card.locator(".badge-error",
+          has_text="Lapsed").count() == 1 and "no longer offered for new labels" in card.inner_text()
+          and "gs1resolver-verify=" in card.inner_text() and card.locator("button", has_text="Verify").count() == 1,
+          card.inner_text()[:600])
+    card.locator("button", has_text="Verify").click(); page.wait_for_timeout(1000)
+    card = page.locator(".domain-card[data-domain='id.acme.example']")
+    check("…verified again: no longer lapsed", "Lapsed" not in card.inner_text() and "Verified" in card.inner_text()
+          and card.locator("button", has_text="Verify").count() == 0, card.inner_text()[:400])
 
     # The label panel
     page.goto(BASE); page.wait_for_timeout(900)

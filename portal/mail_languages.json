@@ -98,6 +98,10 @@
     "Resuelto: todas las cadenas de la pista de auditoría están íntegras",
     "Hola:\n\nLa verificación del {at} encontró íntegras todas las cadenas de la pista de auditoría del portal de {operator}. Se había notificado una cadena rota el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
    ],
+   "alert-domain-lapsed": [
+    "Alerta: falta el registro DNS que comprueba {domain}",
+    "Hola:\n\nEl portal de {operator} no encuentra el registro TXT {record} desde hace {days} días: se vio por última vez el {seen}. El registro comprueba que ustedes controlan {domain}.\n\nSi {domain} es un dominio de sus códigos QR, sigue atendido, pero ya no se ofrece para nuevas etiquetas. Si da acceso con el inicio de sesión único, lo sigue dando. En ambos casos, otra organización de esta instalación que compruebe el dominio pasa a tenerlo.\n\nSi todavía usan el dominio, publiquen de nuevo el registro (su valor aparece en Dominios o en Inicio de sesión único) y pulsen Verificar. Si ya no lo usan, elimínenlo.\n\nRecibe este mensaje como administrador; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
    "test": [
     "Mensaje de prueba del portal de gestión de enlaces",
     "Hola:\n\nEste es un mensaje de prueba enviado el {when} (UTC) para comprobar la configuración de correo electrónico del portal. Si puede leerlo, el servidor de envío aceptó el mensaje y lo entregó."
@@ -202,6 +206,10 @@
    "alert-journal-ok": [
     "Résolu : toutes les chaînes du journal d’audit sont intactes",
     "Bonjour,\n\nLa vérification du {at} a trouvé intactes toutes les chaînes du journal d’audit du portail de {operator}. Une chaîne rompue avait été signalée le {since}.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-domain-lapsed": [
+    "Alerte : l’enregistrement DNS qui prouve {domain} est introuvable",
+    "Bonjour,\n\nLe portail de {operator} ne trouve plus l’enregistrement TXT {record} depuis {days} jours : il a été vu pour la dernière fois le {seen}. Cet enregistrement prouve que vous contrôlez {domain}.\n\nSi {domain} est un domaine de vos codes QR, il est toujours servi mais n’est plus proposé pour les nouvelles étiquettes. S’il donne accès par l’authentification unique, il le fait toujours. Dans les deux cas, une autre organisation de cette installation qui prouve le domaine le reprend.\n\nSi vous utilisez encore le domaine, publiez de nouveau l’enregistrement (sa valeur figure dans Domaines ou Authentification unique) et cliquez sur Vérifier. Sinon, supprimez-le.\n\nVous recevez ce message en tant qu’administrateur ; vous pouvez désactiver les alertes dans Options → E-mail."
    ],
    "test": [
     "Message de test du portail de gestion des liens",
@@ -308,6 +316,10 @@
     "Behoben: alle Ketten des Aktivitätsprotokolls sind unversehrt",
     "Hallo,\n\nDie Prüfung vom {at} hat alle Ketten des Aktivitätsprotokolls des Portals von {operator} unversehrt gefunden. Eine unterbrochene Kette war am {since} gemeldet worden.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
    ],
+   "alert-domain-lapsed": [
+    "Warnung: Der DNS-Eintrag, der {domain} nachweist, fehlt",
+    "Hallo,\n\nDas Portal von {operator} findet den TXT-Eintrag {record} seit {days} Tagen nicht mehr: Er wurde zuletzt am {seen} gesehen. Der Eintrag weist nach, dass Sie {domain} kontrollieren.\n\nIst {domain} eine Domain Ihrer QR-Codes, wird sie weiter bedient, aber nicht mehr für neue Etiketten angeboten. Ermöglicht sie die Anmeldung per Single Sign-on, tut sie das weiterhin. In beiden Fällen übernimmt eine andere Organisation dieser Installation, die die Domain nachweist, sie.\n\nWenn Sie die Domain noch nutzen, veröffentlichen Sie den Eintrag erneut (den Wert zeigen Domains oder Single Sign-on) und klicken Sie auf Verifizieren. Andernfalls entfernen Sie sie.\n\nSie erhalten diese Nachricht als Administrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
    "test": [
     "Testnachricht des Linkverwaltungsportals",
     "Guten Tag,\n\ndies ist eine Testnachricht, die am {when} (UTC) gesendet wurde, um die E-Mail-Einstellungen des Portals zu prüfen. Wenn Sie sie lesen können, hat der Mailserver die Nachricht angenommen und zugestellt."
@@ -412,6 +424,10 @@
    "alert-journal-ok": [
     "Risolto: tutte le catene del registro di audit sono integre",
     "Buongiorno,\n\nLa verifica del {at} ha trovato integre tutte le catene del registro di audit del portale di {operator}. Una catena interrotta era stata segnalata il {since}.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-domain-lapsed": [
+    "Avviso: manca il record DNS che dimostra {domain}",
+    "Buongiorno,\n\nIl portale di {operator} non trova il record TXT {record} da {days} giorni: è stato rilevato per l'ultima volta il {seen}. Il record dimostra che controllate {domain}.\n\nSe {domain} è un dominio dei vostri codici QR, è ancora servito ma non è più proposto per le nuove etichette. Se consente l'accesso con il single sign-on, continua a farlo. In entrambi i casi un'altra organizzazione di questa installazione che dimostra il dominio lo rileva.\n\nSe usate ancora il dominio, pubblicate di nuovo il record (il valore è in Domini o in Single sign-on) e fate clic su Verifica. Se non lo usate più, rimuovetelo.\n\nRiceve questo messaggio in qualità di amministratore; può disattivare gli avvisi in Opzioni → E-mail."
    ],
    "test": [
     "Messaggio di prova dal portale di gestione dei link",
@@ -518,6 +534,10 @@
     "Çözüldü: denetim kaydının tüm zincirleri sağlam",
     "Merhaba,\n\n{at} tarihli doğrulama, {operator} portalının denetim kaydındaki tüm zincirleri sağlam buldu. Kırık bir zincir {since} tarihinde bildirilmişti.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
    ],
+   "alert-domain-lapsed": [
+    "Uyarı: {domain} alan adını kanıtlayan DNS kaydı bulunamıyor",
+    "Merhaba,\n\n{operator} portalı {record} TXT kaydını {days} gündür bulamıyor: kayıt en son {seen} tarihinde görüldü. Bu kayıt, {domain} alan adını sizin kontrol ettiğinizi kanıtlar.\n\n{domain} QR kodlarınızın bir alan adıysa hâlâ hizmet veriyor, ancak artık yeni etiketler için sunulmuyor. Çoklu oturum açma ile giriş sağlıyorsa sağlamaya devam ediyor. Her iki durumda da bu kurulumda alan adını kanıtlayan başka bir kuruluş onu devralır.\n\nAlan adını hâlâ kullanıyorsanız kaydı yeniden yayımlayın (değeri Alan adları veya Çoklu oturum açma ekranında görünür) ve Doğrula'ya tıklayın. Artık kullanmıyorsanız kaldırın.\n\nBu iletiyi yönetici olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
    "test": [
     "Bağlantı yönetim portalından deneme iletisi",
     "Merhaba,\n\nBu, portalın e-posta ayarlarını kontrol etmek için {when} (UTC) tarihinde gönderilmiş bir deneme iletisidir. Okuyabiliyorsanız aktarıcı iletiyi kabul etti ve teslim etti."
@@ -622,6 +642,10 @@
    "alert-journal-ok": [
     "已解决：审计日志的所有链均完整",
     "您好：\n\n{at} 的验证发现 {operator} 门户审计日志的所有链均完整。此前已于 {since} 报告过一条断开的链。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-domain-lapsed": [
+    "告警：证明 {domain} 的 DNS 记录已找不到",
+    "您好：\n\n{operator}的门户已有{days}天找不到 TXT 记录 {record}：最近一次看到该记录是{seen}。该记录证明您控制着 {domain}。\n\n如果 {domain} 是您二维码的域名，它仍在提供服务，但不再用于新标签。如果它用于单点登录，则仍可登录。无论哪种情况，本安装中证明该域名的其他组织都可以接管它。\n\n如果您仍在使用该域名，请重新发布该记录（其值显示在“域名”或“单点登录”页面）并点击“验证”。如果不再使用，请将其删除。\n\n您以管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
    ],
    "test": [
     "来自链接管理门户的测试邮件",
@@ -728,6 +752,10 @@
     "解決：監査証跡のすべてのチェーンが完全です",
     "こんにちは。\n\n{at} の検証で、{operator} のポータルの監査証跡のすべてのチェーンが完全であることが確認されました。破損したチェーンは {since} に報告されていました。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
    ],
+   "alert-domain-lapsed": [
+    "アラート：{domain} を証明する DNS レコードが見つかりません",
+    "こんにちは。\n\n{operator} のポータルは {days} 日間 TXT レコード {record} を見つけられていません。最後に確認した日時は {seen} です。このレコードは、{domain} を管理していることを証明するものです。\n\n{domain} が QR コードのドメインであれば、引き続き応答しますが、新しいラベルには提示されません。シングルサインオンに使われているなら、引き続きサインインできます。いずれの場合も、このドメインを証明したこのインストールの別の組織が引き継ぎます。\n\nドメインを引き続き使う場合は、レコードを再度公開し（値は「ドメイン」または「シングルサインオン」に表示されます）、「検証」をクリックしてください。使わない場合は削除してください。\n\nこのメッセージは管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
    "test": [
     "リンク管理ポータルからのテストメッセージ",
     "こんにちは。\n\nこれは、ポータルのメール設定を確認するために {when}（UTC）に送信されたテストメッセージです。このメッセージが読めれば、リレーがメッセージを受け付けて配信しています。"
@@ -832,6 +860,10 @@
    "alert-journal-ok": [
     "해결됨: 감사 기록의 모든 체인이 온전합니다",
     "안녕하세요.\n\n{at}의 검증에서 {operator} 포털 감사 기록의 모든 체인이 온전한 것으로 확인되었습니다. 손상된 체인은 {since}에 보고되었습니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-domain-lapsed": [
+    "알림: {domain}을(를) 증명하는 DNS 레코드를 찾을 수 없습니다",
+    "안녕하세요.\n\n{operator} 포털이 {days}일 동안 TXT 레코드 {record}을(를) 찾지 못했습니다. 마지막으로 확인한 시점은 {seen}입니다. 이 레코드는 귀하가 {domain}을(를) 관리하고 있음을 증명합니다.\n\n{domain}이(가) QR 코드의 도메인이라면 계속 응답하지만 새 라벨에는 더 이상 제공되지 않습니다. 싱글 사인온 로그인에 사용된다면 계속 로그인할 수 있습니다. 두 경우 모두 이 설치에서 도메인을 증명한 다른 조직이 도메인을 인수합니다.\n\n도메인을 계속 사용한다면 레코드를 다시 게시하고(값은 도메인 또는 싱글 사인온 화면에 표시됨) 확인을 누르세요. 더 이상 사용하지 않는다면 삭제하세요.\n\n관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
    ],
    "test": [
     "링크 관리 포털 테스트 메시지",
@@ -938,6 +970,10 @@
     "हल हुआ: ऑडिट ट्रेल की सभी श्रृंखलाएँ अखंड हैं",
     "नमस्ते,\n\n{at} के सत्यापन में {operator} के पोर्टल की ऑडिट ट्रेल की सभी श्रृंखलाएँ अखंड मिलीं। एक टूटी हुई श्रृंखला की सूचना {since} को दी गई थी।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
    ],
+   "alert-domain-lapsed": [
+    "अलर्ट: {domain} को प्रमाणित करने वाला DNS रिकॉर्ड नहीं मिल रहा",
+    "नमस्ते,\n\n{operator} के पोर्टल को {days} दिनों से TXT रिकॉर्ड {record} नहीं मिल रहा: इसे पिछली बार {seen} को देखा गया था। यह रिकॉर्ड प्रमाणित करता है कि {domain} आपके नियंत्रण में है।\n\nयदि {domain} आपके QR कोड का डोमेन है, तो यह अभी भी सेवा देता है पर अब नए लेबलों के लिए उपलब्ध नहीं है। यदि यह सिंगल साइन-ऑन से साइन-इन कराता है, तो अब भी कराता है। दोनों ही स्थितियों में, इस इंस्टॉलेशन का कोई अन्य संगठन जो डोमेन प्रमाणित करे, उसे ले लेता है।\n\nयदि आप अभी भी डोमेन का उपयोग करते हैं, तो रिकॉर्ड फिर से प्रकाशित करें (उसका मान डोमेन या सिंगल साइन-ऑन में दिखता है) और सत्यापित करें पर क्लिक करें। यदि अब उपयोग नहीं करते, तो उसे हटा दें।\n\nआपको यह संदेश व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
    "test": [
     "लिंक प्रबंधन पोर्टल से परीक्षण संदेश",
     "नमस्ते,\n\nयह पोर्टल की ईमेल सेटिंग जाँचने के लिए {when} (UTC) को भेजा गया एक परीक्षण संदेश है। यदि आप इसे पढ़ पा रहे हैं, तो रिले ने संदेश स्वीकार किया और उसे पहुँचा दिया।"
@@ -1042,6 +1078,10 @@
    "alert-journal-ok": [
     "تم الحل: جميع سلاسل سجل التدقيق سليمة",
     "مرحبًا،\n\nوجد التحقق الذي جرى في {at} جميع سلاسل سجل التدقيق في بوابة {operator} سليمة. وكان قد أُبلغ عن سلسلة مقطوعة في {since}.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-domain-lapsed": [
+    "تنبيه: سجل DNS الذي يثبت {domain} غير موجود",
+    "مرحبًا،\n\nلم تعثر بوابة {operator} على سجل TXT {record} منذ {days} أيام: شوهد آخر مرة في {seen}. يثبت هذا السجل أنك تتحكم في {domain}.\n\nإذا كان {domain} نطاقًا لرموز QR الخاصة بك، فلا يزال يُخدَم لكنه لم يعد متاحًا للملصقات الجديدة. وإذا كان يتيح تسجيل الدخول الموحّد، فلا يزال يتيحه. وفي الحالتين تتولاه أي مؤسسة أخرى في هذا التثبيت تثبت النطاق.\n\nإذا كنت لا تزال تستخدم النطاق، فانشر السجل من جديد (تظهر قيمته في النطاقات أو تسجيل الدخول الموحّد) وانقر تحقّق. وإذا لم تعد تستخدمه، فاحذفه.\n\nتتلقى هذه الرسالة بصفتك مسؤولًا؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
    ],
    "test": [
     "رسالة اختبار من بوابة إدارة الروابط",

@@ -177,6 +177,73 @@ check("a domain removed from the list loses its proof; listed again, it waits ag
 domain_events = [e["detail"] for e in store.col("journal").find({"action": "sso-domain"})]
 check("the journal: each proof and approval", domain_events == ["acme.example proved by DNS", "beta.example approved"],
       domain_events)
+
+# ------------------------------------------------------------------ DNS proofs looked at again; lapsed (ADR 0035)
+def acme_proof():
+    return next(p for p in store.col("sso").find_one({"_id": acme["id"]})["proofs"] if p["domain"] == "acme.example")
+
+
+def set_proof(**fields):
+    doc = store.col("sso").find_one({"_id": acme["id"]})
+    proofs = [{**p, **fields} if p["domain"] == "acme.example" else p for p in doc["proofs"]]
+    store.col("sso").update_one({"_id": acme["id"]}, {"$set": {"proofs": proofs}})
+
+
+check("a DNS proof records when its record was seen", acme_proof().get("seenAt") == acme_proof()["at"], acme_proof())
+saved_txt = dict(TXT)
+TXT.clear()
+set_proof(seenAt=store.now() - timedelta(days=2))
+check("the daily look: the record missing for 2 days, nothing lapses", portal.sso.recheck_proofs() == []
+      and "lapsedAt" not in acme_proof())
+TXT.update(saved_txt)
+portal.sso.recheck_proofs()
+check("…the record there: seen now", store.now() - acme_proof()["seenAt"] < timedelta(minutes=1), acme_proof())
+set_proof(seenAt=store.now() - timedelta(hours=1))
+portal.sso.recheck_proofs()
+check("…looked at once a day", timedelta(minutes=59) < store.now() - acme_proof()["seenAt"] < timedelta(minutes=61))
+TXT.clear()
+set_proof(seenAt=store.now() - timedelta(days=7, hours=1))
+store.col("sso").update_one({"_id": acme["id"]}, {"$push": {"proofs":
+    {"domain": "old.acme.example", "how": "admin", "at": store.now() - timedelta(days=30), "by": "root"}}})
+mails = []
+real_send = portal.notify.send
+portal.notify.send = lambda user, template, **params: mails.append((user, template, params)) or True
+lapsed_count = portal.recheck_domains()
+portal.notify.send = real_send
+check("missing for 7 days: the proof has lapsed", lapsed_count == 1 and acme_proof().get("lapsedAt"), acme_proof())
+check("…an approval has no record to look at and never lapses", [p for p in store.col("sso").find_one(
+      {"_id": acme["id"]})["proofs"] if p["domain"] == "old.acme.example" and "lapsedAt" not in p])
+store.col("sso").update_one({"_id": acme["id"]}, {"$pull": {"proofs": {"domain": "old.acme.example"}}})
+event = store.col("journal").find_one({"action": "domain-lapsed"})
+check("…journalled in the organisation's trail ('sso <domain>')", event and event.get("tenant") == acme["id"]
+      and event["detail"].startswith("sso acme.example record missing since ") and event["user"] == "-", event)
+check("…its administrators told", [(u, t, p["domain"], p["record"]) for u, t, p in mails]
+      == [("ana", "alert-domain-lapsed", "acme.example", "_gs1resolver.acme.example")], mails)
+check("…once", portal.recheck_domains() == 0)
+state = portal.sso.public(store.col("sso").find_one({"_id": acme["id"]}))["domainStates"][0]
+check("…the screen shows it, with when the record was last seen", state["lapsedAt"] and state["seenAt"]
+      and state["proof"] == "dns", state)
+check("…and it still signs people in (nobody locked out)", (portal.sso.for_email("edu@acme.example") or {}).get("_id")
+      == acme["id"])
+r = bia.put(f"/portal/api/sso/{beta['id']}", json={"domains": ["beta.example", "acme.example"]}, headers=ORIGIN)
+check("another configuration may list a domain whose proof lapsed", code(r) == "sso.saved", r.get_json())
+r = root.post(f"/portal/api/sso/{beta['id']}/approve", json={"domain": "acme.example"}, headers=ORIGIN)
+check("…an approval is still refused while another organisation's account uses it", code(r) == "sso.domainUsed")
+TXT.update(saved_txt)
+r = bia.post(f"/portal/api/sso/{beta['id']}/verify", json={"domain": "acme.example"}, headers=ORIGIN)
+check("…and proving it takes it over: the lapsed proof goes", code(r) == "sso.domainProved"
+      and "acme.example" not in [p["domain"] for p in store.col("sso").find_one({"_id": acme["id"]})["proofs"]]
+      and "acme.example" in portal.sso.proved(store.col("sso").find_one({"_id": beta["id"]})), r.get_json())
+event = store.col("journal").find_one({"action": "domain-released"})
+check("…journalled in the first organisation's trail", event and event.get("tenant") == acme["id"]
+      and event["detail"] == "sso acme.example proved elsewhere", event)
+bia.put(f"/portal/api/sso/{beta['id']}", json={"domains": ["beta.example"]}, headers=ORIGIN)
+r = ana.post(f"/portal/api/sso/{acme['id']}/verify", json={"domain": "acme.example"}, headers=ORIGIN)
+check("a lapsed proof proved again is a fresh proof", code(r) == "sso.domainProved" and "lapsedAt" not in acme_proof())
+set_proof(lapsedAt=store.now(), seenAt=store.now() - timedelta(days=9))
+portal.sso.recheck_proofs()
+check("…and a lapsed proof whose record the daily look finds again is no longer lapsed", "lapsedAt" not in acme_proof()
+      and store.now() - acme_proof()["seenAt"] < timedelta(minutes=1), acme_proof())
 bia.delete(f"/portal/api/sso/{beta['id']}", headers=ORIGIN)
 for payload, expected in (({"domains": "not a domain"}, "sso.domainInvalid"), ({"domains": "localhost"}, "sso.domainInvalid"),
                           ({"issuer": "ftp://x.example"}, "sso.issuerInvalid"),

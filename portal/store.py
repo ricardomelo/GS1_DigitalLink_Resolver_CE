@@ -83,6 +83,11 @@ INDEXES = {
         ([("user", ASCENDING)], {}),
         ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
     ],
+    # the QR codes' domains and the claims of them (domains.py, ADR 0035): a claim not verified is deleted at expiresAt
+    "domains": [
+        ([("name", ASCENDING)], {}),
+        ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
+    ],
     "tokens": [
         ([("user", ASCENDING), ("purpose", ASCENDING)], {}),
         ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),

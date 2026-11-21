@@ -539,7 +539,7 @@ monitor._run(S + timedelta(minutes=30))
 job = MAIL.find_one({"template": "alert-404-spike", "user": "ana"})
 check("…messages in the recipient's language", job and "códigos sem cadastro" in job["subject"], job and job["subject"])
 templates = [t for t in mailtexts.TEXTS if t.startswith("alert-")]
-check("thirteen alert messages", len(templates) == 13, templates)
+check("fourteen alert messages", len(templates) == 14, templates)
 for template in templates:
     en, pt = mailtexts.TEXTS[template]["en-GB"], mailtexts.TEXTS[template]["pt-BR"]
     same = mailtexts.placeholders(en[0] + en[1]) == mailtexts.placeholders(pt[0] + pt[1])

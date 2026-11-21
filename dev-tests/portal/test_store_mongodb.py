@@ -365,17 +365,21 @@ try:
                                   "expiresAt": now - timedelta(minutes=1)})
     store.col("workers").insert_one({"_id": "ttl-probe", "seen": now - timedelta(seconds=store.WORKER_RECORD_SECONDS + 60)})
     store.col("journal").insert_one({"_id": "ttl-keep", "at": now, "user": "x", "action": "create", "category": "record"})
+    store.col("domains").insert_many([{"_id": "ttl-probe", "name": "ttl.example", "verified": False,     # ADR 0035
+                                       "expiresAt": now - timedelta(minutes=1)},
+                                      {"_id": "ttl-keep", "name": "keep.example", "verified": True}])
     deadline = time.monotonic() + 150                     # the monitor runs every 60 seconds
-    probed = ("login_failures", "journal", "linkcheck_cache", "jobs", "workers", "sessions")
+    probed = ("login_failures", "journal", "linkcheck_cache", "jobs", "workers", "sessions", "domains")
     left = len(probed)
     while time.monotonic() < deadline:
         left = sum(store.col(c).count_documents({"_id": "ttl-probe"}) for c in probed)
         if not left:
             break
         time.sleep(5)
-    check("TTL: expired sign-in failures, journal events, cached results, jobs, old worker announcements and session "
-          "records are deleted by MongoDB", left == 0, left)
+    check("TTL: expired sign-in failures, journal events, cached results, jobs, old worker announcements, session "
+          "records and domain claims are deleted by MongoDB", left == 0, left)
     check("TTL: an event without expiresAt is kept", store.col("journal").count_documents({"_id": "ttl-keep"}) == 1)
+    check("TTL: a verified domain (no expiresAt) is kept", store.col("domains").count_documents({"_id": "ttl-keep"}) == 1)
 finally:
     try:
         root[NAME].command("dropUser", USER)

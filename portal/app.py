@@ -223,6 +223,9 @@ if not journal.key():
     log.warning("PORTAL_JOURNAL_KEY is not set: the journal's chains are sealed without a key, so anyone able to write "
                 "to the database could rewrite one consistently (Documentation/adr/0026-journal-integrity.md).")
 exportlimits.seed_from_env(os.environ.get("PORTAL_EXPORT_LIMITS", ""))
+if domains.upgrade():                 # domains saved before ADR 0035: names stored, unverified ones made claims
+    log.info("Domains: unverified domains of earlier versions are now claims, deleted unless verified within %d days "
+             "(Documentation/adr/0035).", domains.PENDING.days)
 if sso.upgrade():                     # configurations saved before ADR 0025: their domains count as proved
     log.warning("Single sign-on: e-mail domains of earlier configurations were accepted without proof; "
                 "replace them with a DNS proof on the Single sign-on screen (Documentation/adr/0025).")
@@ -2616,6 +2619,27 @@ def notify_expiring_keys() -> int:
     return told
 
 
+def recheck_domains() -> int:
+    """Housekeeping of the worker (hourly; each record looked at once a day): the TXT records of the QR codes' verified
+    domains and of single sign-on's DNS proofs (ADR 0035). One missing for domains.LAPSE has lapsed: journalled in its
+    scope's trail and told to that scope's administrators (server administrators for the operator's). Returns how
+    many lapsed."""
+    now = store.now()
+    lapsed = [(d.get("tenant"), d["_id"], d.get("seenAt") or d.get("verifiedAt"), "")
+              for d in domains.recheck_all(now)]
+    lapsed += [(p["tenant"], p["domain"], p["seen"], "sso ") for p in sso.recheck_proofs(now)]
+    for tenant, name, seen, kind in lapsed:
+        seen_text = (store.iso(seen) or "-").replace("T", " ")[:16]
+        with app.test_request_context():
+            g.tenants = tenants.load()
+            log_event("domain-lapsed", tenant=tenant, actor_tenant=tenant, user="-",
+                      detail=f"{kind}{name} record missing since {seen_text}")
+            for user in monitor.recipients(tenant):
+                notify.send(user, "alert-domain-lapsed", domain=name, record=f"{domains.TXT_NAME}.{name}",
+                            days=domains.LAPSE.days, seen=seen_text + " UTC")
+    return len(lapsed)
+
+
 # --------------------------------------------------------------------------- tenants (server administrators)
 def lacking_safety(tenant_id: str | None) -> dict | None:
     """The batch and serial records of an organisation (None: the operator's keys) that lack a safety-critical link
@@ -3282,8 +3306,8 @@ def create_domain():
     data = request.get_json(silent=True) or {}
     tenant = _domain_write_scope()
     doc = domains.create(data.get("domain"), data.get("mode"), data.get("stem"), tenant, g.user, _installation_host())
-    log_event("domain-create", tenant=tenant, detail=f'{doc["_id"]} mode={doc["mode"]} stem={doc["stem"] or "-"}')
-    return message("domains.created", 201, params={"domain": doc["_id"]}, item=domains.public(doc))
+    log_event("domain-create", tenant=tenant, detail=f'{doc["name"]} mode={doc["mode"]} stem={doc["stem"] or "-"}')
+    return message("domains.created", 201, params={"domain": doc["name"]}, item=domains.public(doc))
 
 
 @app.put("/portal/api/domains/<name>")
@@ -3295,9 +3319,9 @@ def update_domain(name):
     before, after = domains.update(name, tenant, mode=data.get("mode"), stem=data.get("stem"),
                                    default_prefixes=data.get("defaultFor"))
     log_event("domain-update", tenant=tenant,
-              detail=f'{after["_id"]} mode={after.get("mode")} stem={after.get("stem") or "-"} '
+              detail=f'{domains.name_of(after)} mode={after.get("mode")} stem={after.get("stem") or "-"} '
                      f'default={",".join(after.get("defaultFor") or []) or "-"}')
-    return message("domains.saved", 200, params={"domain": after["_id"]}, item=domains.public(after))
+    return message("domains.saved", 200, params={"domain": domains.name_of(after)}, item=domains.public(after))
 
 
 @app.post("/portal/api/domains/<name>/verify")
@@ -3305,9 +3329,11 @@ def update_domain(name):
 @admin_required
 def verify_domain(name):
     tenant = _domain_write_scope()
-    was = domains.get(name, tenant).get("verified")
-    doc = domains.verify(name, tenant)
-    if not was:
+    was = domains.get(name, tenant)
+    doc, replaced = domains.verify(name, tenant)
+    if replaced:            # a lapsed domain of another scope, taken over (ADR 0035): in that scope's trail
+        log_event("domain-released", tenant=replaced.get("tenant"), detail=f'{replaced["_id"]} proved elsewhere')
+    if not was.get("verified") or (was.get("lapsedAt") and not doc.get("lapsedAt")):
         log_event("domain-verify", tenant=tenant, detail=doc["_id"])
     return message("domains.verified", 200, params={"domain": doc["_id"]}, item=domains.public(doc))
 
@@ -3320,7 +3346,7 @@ def check_domain(name):
     doc = domains.check(name, tenant, RESOLVER_PUBLIC_URL, _sample_anchor(tenant))
     result = doc["check"]
     return message("domains.checkOk" if result["ok"] else result["problem"], 200,
-                   params={"domain": doc["_id"], "detail": result.get("detail") or "", "url": result["url"]},
+                   params={"domain": domains.name_of(doc), "detail": result.get("detail") or "", "url": result["url"]},
                    item=domains.public(doc))
 
 
@@ -3330,8 +3356,8 @@ def check_domain(name):
 def remove_domain(name):
     tenant = _domain_write_scope()
     doc = domains.remove(name, tenant)
-    log_event("domain-remove", tenant=tenant, detail=doc["_id"])
-    return message("domains.removed", 200, params={"domain": doc["_id"]})
+    log_event("domain-remove", tenant=tenant, detail=domains.name_of(doc))
+    return message("domains.removed", 200, params={"domain": domains.name_of(doc)})
 
 
 # --------------------------------------------------------------------------- the item's page (ADR 0011)
@@ -3618,8 +3644,10 @@ def verify_sso_domain(scope):
     if not sso_scope_allowed(scope):
         return message("sso.scopeOutside", 403)
     domain = str((request.get_json(silent=True) or {}).get("domain", ""))
-    doc = sso.verify_domain(scope, domain, g.user)
+    doc, released = sso.verify_domain(scope, domain, g.user)
     log_event("sso-domain", tenant=sso.tenant_of(scope), detail=f"{domain.strip().lower()} proved by DNS")
+    for other in released:      # a lapsed proof of another configuration, taken over (ADR 0035): in its trail
+        log_event("domain-released", tenant=sso.tenant_of(other), detail=f"sso {domain.strip().lower()} proved elsewhere")
     return message("sso.domainProved", 200, params={"domain": domain.strip().lower()}, item=sso.public(doc))
 
 
@@ -3633,8 +3661,10 @@ def approve_sso_domain(scope):
     if not sso_scope_allowed(scope):
         return message("sso.scopeOutside", 403)
     domain = str((request.get_json(silent=True) or {}).get("domain", ""))
-    doc = sso.approve_domain(scope, domain, g.user)
+    doc, released = sso.approve_domain(scope, domain, g.user)
     log_event("sso-domain", tenant=sso.tenant_of(scope), detail=f"{domain.strip().lower()} approved")
+    for other in released:      # a lapsed proof of another configuration, taken over (ADR 0035): in its trail
+        log_event("domain-released", tenant=sso.tenant_of(other), detail=f"sso {domain.strip().lower()} proved elsewhere")
     return message("sso.domainApproved", 200, params={"domain": domain.strip().lower()}, item=sso.public(doc))
 
 
@@ -3905,7 +3935,7 @@ def label_response(anchor: str, args) -> Response:
 JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job, "mail": notify.run_mail_job}
 # What the worker runs about once an hour, outside any job (worker.HOUSEKEEPING_SECONDS)
 HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate, requestlog.fold_noise, requestlog.apply_retention,
-                requestlog.apply_size_limit, domains.recheck_all, journal.checkpoint, failcount.journal_closed_hours]
+                requestlog.apply_size_limit, recheck_domains, journal.checkpoint, failcount.journal_closed_hours]
 # What the worker runs every PORTAL_MONITOR_MINUTES (Documentation/adr/0008-monitoring-and-alerts.md)
 MONITORING = [monitor.run]
 MONITOR_SECONDS = monitor.minutes() * 60

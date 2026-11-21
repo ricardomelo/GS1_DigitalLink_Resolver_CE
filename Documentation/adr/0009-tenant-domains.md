@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). Implemented in one delivery. **Amended** on 17 October 2026 (section 7, item 9.6) and on 23 October 2026 (section 8, the addresses on the name requested) |
+| Status | **Accepted** (14 October 2026). Implemented in one delivery. **Amended** on 17 October 2026 (section 7, item 9.6) and on 23 October 2026 (section 8, the addresses on the name requested). Unverified domains as expiring claims and lapsed domains: [ADR 0035](0035-domain-claims-and-lapsed-proofs.md) (21 November 2026) |
 | Backlog items | 5.1 — the tenant's own domain in the QR code; 9.6 — domains without the terminal |
 | Decided by | the owner of the branch, away during the session, who asked for the recommended option on every point of section 4 |
 

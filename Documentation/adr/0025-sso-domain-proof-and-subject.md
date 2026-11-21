@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (16 November 2026) |
+| Status | **Accepted** (16 November 2026). DNS proofs looked at again daily and lapsed after 7 days missing: [ADR 0035](0035-domain-claims-and-lapsed-proofs.md) (21 November 2026) |
 | Backlog item | 10.1, phase 1 of the security assessment ([ADR 0020](0020-security-assessment.md)); amends [ADR 0012](0012-single-sign-on.md) |
 | Decided by | the owner of the branch's standing instruction (take the recommended option and carry on): a DNS record or a server administrator's approval proves an e-mail domain; `email_verified` is required unless the configuration says its provider never sends it; the account is bound to the provider's issuer and subject at its first sign-in |
 

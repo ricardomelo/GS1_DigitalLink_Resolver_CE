@@ -951,10 +951,14 @@ or, with a path stem, `https://id.acme.example/gs1/01/…`.
 
 **In the portal** (user menu → **Domains**, administrators): an organisation's administrators add its domains, a server
 administrator the operator's (and sees every domain); at most 10 per organisation. A name is a lower-case host name
-(internationalised names in Punycode), never the installation's own, unique in the installation; a stem has one to three
+(internationalised names in Punycode), never the installation's own; a stem has one to three
 segments, none of 2 to 4 digits. Each domain is proved by a DNS TXT record `_gs1resolver.<domain>` =
-`gs1resolver-verify=<token>` (**Verify**); it stays verified afterwards, the worker looking at the record once a day to
-show when it was last seen. **Default for the prefixes** makes it the default of the labels of those prefixes (the
+`gs1resolver-verify=<token>` (**Verify**). Until then it is a claim, deleted after 7 days: several organisations may
+claim the same name and the first to verify it keeps it ([ADR 0035](../adr/0035-domain-claims-and-lapsed-proofs.md)).
+The worker looks at the record of each verified domain once a day; missing for 7 days, the domain *lapses*: still
+served, so printed codes keep working, but no longer offered for new labels, its administrators are told by e-mail
+(alert), and another organisation that proves it takes it over. **Verify** with the record back ends the lapse. Single
+sign-on's DNS proofs are looked at the same way; a lapsed proof still signs people in. **Default for the prefixes** makes it the default of the labels of those prefixes (the
 longest prefix wins); the label panel's *Domain in the QR code* chooses another for one label. The record's
 `digitalLink`, the editor's preview, the label and the tenant API's labels (`domain=`) follow the same rule.
 **Test** requests through the domain (public addresses only).

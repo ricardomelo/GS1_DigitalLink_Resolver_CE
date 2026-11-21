@@ -115,6 +115,19 @@ with sync_playwright() as p:
           and proof.locator("button").count() == 0 and "_gs1resolver" not in proof.inner_text(),
           (page.inner_text("#sso-status"), proof.inner_text()))
     shot(page, "sso-screen")
+    doc = portal.store.col("sso").find_one({"_id": acme["id"]})          # the record missing for 7 days (ADR 0035)
+    portal.store.col("sso").update_one({"_id": acme["id"]}, {"$set": {"proofs": [
+        {**p, "lapsedAt": portal.store.now()} for p in doc["proofs"]]}})
+    page.reload(); page.wait_for_timeout(1200)
+    proof = page.locator(f".domain-card[data-scope='{acme['id']}'] .sso-proof[data-domain='acme.example']")
+    check("a lapsed proof: its badge, that it still signs people in, the record and Verify again",
+          proof.locator(".badge-error", has_text="Lapsed").count() == 1 and "still signs people in" in proof.inner_text()
+          and "_gs1resolver.acme.example" in proof.inner_text() and proof.locator("button", has_text="Verify").count() == 1,
+          proof.inner_text())
+    proof.locator("button", has_text="Verify").click(); page.wait_for_timeout(900)
+    proof = page.locator(f".domain-card[data-scope='{acme['id']}'] .sso-proof[data-domain='acme.example']")
+    check("…proved again: no longer lapsed", "Lapsed" not in proof.inner_text() and proof.locator("button").count() == 0,
+          proof.inner_text())
     page.click("#user-button"); page.click("#menu-logout"); page.wait_for_timeout(800)
 
     # Signing in through the provider

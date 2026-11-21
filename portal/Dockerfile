@@ -1,7 +1,7 @@
 # GS1 Barcode Syntax Engine (native library, Python binding, syntax dictionary), built in a separate
 # stage so the compiler does not end up in the portal image. It validates GS1 Digital Link data
 # attributes (syntax.py), at the release docker-compose.yml gives every service (ADR 0003).
-FROM python:3.12-slim-bookworm AS syntax-engine
+FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df AS syntax-engine
 ARG GS1_SYNTAX_ENGINE_RELEASE
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates make gcc libc6-dev \
  && rm -rf /var/lib/apt/lists/*
@@ -11,7 +11,7 @@ RUN bash /tmp/build-syntax-engine.sh /opt/gs1-syntax-engine "$GS1_SYNTAX_ENGINE_
 # The version the About page shows (ADR 0024, section 2.4): git runs here, on the checkout's .git that
 # docker-compose.yml gives as the additional context git-dir, and writes version.json; the final image receives
 # that file alone, neither git nor the history. A build without Git data writes {} and the page says "unknown".
-FROM python:3.12-slim-bookworm AS version
+FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df AS version
 RUN apt-get update && apt-get install -y --no-install-recommends git \
  && rm -rf /var/lib/apt/lists/* && git config --system --add safe.directory '*'
 COPY --from=git-dir . /src/.git
@@ -19,14 +19,15 @@ COPY about.py /tmp/about.py
 WORKDIR /src
 RUN python /tmp/about.py write /version.json || echo '{}' > /version.json
 
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 GS1_SYNTAX_ENGINE_DIR=/opt/gs1-syntax-engine
 WORKDIR /app
 COPY --from=syntax-engine /opt/gs1-syntax-engine /opt/gs1-syntax-engine
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Every package at the version and with the file hashes of the lock file (ADR 0033): pip refuses any other file.
+RUN pip install --no-cache-dir --require-hashes --no-deps -r requirements.txt
 
 # Every module and data file at the top of portal/ (gs1_dictionary.json holds the GS1 rules, ADR 0003). A list
 # of names once left a new module out of the image: the development test test_deploy.py starts the portal from

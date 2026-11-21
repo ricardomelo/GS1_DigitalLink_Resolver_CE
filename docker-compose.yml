@@ -211,7 +211,7 @@ services:
     # "docker compose --profile mail-test up -d mailpit" starts it. It accepts every message on port 1025
     # (PORTAL_MAIL_HOST=mailpit, PORTAL_MAIL_PORT=1025, PORTAL_MAIL_SECURITY=none) and shows them, with its API,
     # on port 8025 of the host's loopback address only.
-    image: axllent/mailpit:v1.31.5
+    image: axllent/mailpit:v1.31.5@sha256:94f6b70c1436defae6799d9ac7ff0eeff9540465b842026d5cdb018f1c0234ea
     profiles: ["mail-test"]
     environment:
       MP_MAX_MESSAGES: 500

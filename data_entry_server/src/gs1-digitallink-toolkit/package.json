@@ -1,40 +1,9 @@
 {
-  "name": "gs1encoder",
-  "version": "1.0.1",
-  "description": "Emscripten build and JavaScript wrappers for the GS1 Syntax Engine library",
-  "keywords": [
-    "digital-link",
-    "gs1-digital-link",
-    "application-identifiers",
-    "gs1-symtax"
-  ],
-  "main": "gs1encoder.mjs",
+  "name": "gs1-digitallink-toolkit",
+  "private": true,
+  "description": "The service's Node.js scripts and the GS1 Barcode Syntax Engine (gs1encoder) at the release docker-compose.yml names (x-gs1-syntax-engine); package-lock.json holds its integrity hash (Documentation/adr/0033-supply-chain.md)",
   "type": "module",
-  "engines": {
-    "node": ">= 14",
-    "npm": ">= 6"
-  },
-  "scripts": {
-    "test": "node --experimental-vm-modules node_modules/jest-cli/bin/jest.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/gs1/gs1-syntax-engine.git"
-  },
-  "author": "GS1 AISBL",
-  "contributors": [
-    "Terry Burton"
-  ],
-  "license": "Apache-2.0",
-  "bugs": {
-    "url": "https://github.com/gs1/gs1-syntax-engine/issues"
-  },
-  "homepage": "https://github.com/gs1/gs1-syntax-engine#readme",
-  "files": [
-    "gs1encoder-wasm.mjs",
-    "gs1encoder-wasm.wasm"
-  ],
-  "devDependencies": {
-    "jest-cli": "^29.7.0"
+  "dependencies": {
+    "gs1encoder": "1.4.1"
   }
 }

@@ -138,6 +138,7 @@ PROGRAMS = [
     Program("install", "install", "install/test_install.sh", ("COMPOSE_BIN",), ("nginx", "openssl"), root=True),
     Program("deploy", "install", "install/test_deploy.py", ("COMPOSE_BIN",), ("ps",)),
     Program("least_privilege", "install", "install/test_least_privilege.py", ("COMPOSE_BIN",)),
+    Program("supply_chain", "install", "install/test_supply_chain.py"),
 ]
 
 

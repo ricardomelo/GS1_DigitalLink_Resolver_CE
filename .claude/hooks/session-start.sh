@@ -20,16 +20,13 @@ GS1_TESTSUITE_COMMIT=32597c108ac1ecb9e90ce0081bb3a16e5a61e616
 GS1_WEBVOC_COMMIT=f8f407bf717233c871dca2f62f4e45b0940e8cad   # GS1 Web Vocabulary 1.16, the link types' source
 COMPOSE_VERSION=v2.29.7
 NGINX_VERSION=1.30.5
-# Playwright stays on the release whose Chromium (1194) was pre-installed in /opt/pw-browsers; a newer build
-# there is linked under 1194's names (below).
-PLAYWRIGHT_VERSION=1.56.0
 mkdir -p "$DEV_TOOLS/bin"
 
-# Python packages (pip skips what is already installed)
-python3 -m pip install -q --break-system-packages --ignore-installed blinker \
-  -r web_server/src/requirements.txt -r portal/requirements.txt -r data_entry_server/src/requirements.txt \
-  pytest jsonschema "playwright==$PLAYWRIGHT_VERSION" opencv-python-headless pillow pypdf mongomock "zxing-cpp>=2.2,<4" \
-  "mmdb-writer>=0.2.7,<0.3"
+# Python packages: the three services and the test tools at the versions and file hashes of the development tests'
+# lock file, as in the CI (Documentation/adr/0033-supply-chain.md). --ignore-installed: Debian's own packages (blinker)
+# cannot be uninstalled by pip. Playwright stays on the release whose Chromium (1194) was pre-installed in
+# /opt/pw-browsers (dev-tests/requirements.in); a newer build there is linked under 1194's names (below).
+python3 -m pip install -q --break-system-packages --ignore-installed --require-hashes --no-deps -r dev-tests/requirements.txt
 
 # Chromium for Playwright: the builds the pinned release wants (its browsers.json) when /opt/pw-browsers has them;
 # otherwise the newest ones there, linked under the wanted builds' names in $DEV_TOOLS/pw-browsers. The image moved

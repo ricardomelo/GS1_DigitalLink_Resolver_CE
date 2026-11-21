@@ -699,9 +699,9 @@ def release_checks() -> None:
           f"engine release {release}: the build argument of every service that checks GS1 data", args or err)
     for folder in ("web_server", "data_entry_server"):
         text = (REPO / folder / "Dockerfile").read_text()
-        check("ARG GS1_SYNTAX_ENGINE_RELEASE\n" in text and 'gs1encoder@$GS1_SYNTAX_ENGINE_RELEASE' in text
-              and not re.search(r"npm install[^\n]*gs1encoder(\s|$)", text),
-              f"engine release: {folder}/Dockerfile installs gs1encoder at the build argument's release")
+        check("ARG GS1_SYNTAX_ENGINE_RELEASE\n" in text and '"$locked" != "$GS1_SYNTAX_ENGINE_RELEASE"' in text
+              and "npm ci " in text and not re.search(r"npm install[^\n]*gs1encoder(\s|$)", text),
+              f"engine release: {folder}/Dockerfile installs gs1encoder from a lock of the build argument's release")
     portal = (REPO / "portal" / "Dockerfile").read_text()
     check("ARG GS1_SYNTAX_ENGINE_RELEASE" in portal and 'build-syntax-engine.sh /opt/gs1-syntax-engine "$GS1_SYNTAX_ENGINE_RELEASE"' in portal,
           "engine release: portal/Dockerfile builds the engine at the build argument's release")
@@ -724,7 +724,7 @@ def release_checks() -> None:
                 for name in ("portal-db-init", "portal-service", "portal-worker")}
     check(all(d and Path(d).resolve() == (REPO / ".git").resolve() for d in git_dirs.values()),
           "version: the portal's three builds receive the checkout's .git as the context git-dir", git_dirs)
-    stage = portal.split("FROM python:3.12-slim-bookworm AS version", 1)[-1].split("\nFROM ", 1)[0]
+    stage = re.split(r"FROM python:3\.12-slim-bookworm(?:@sha256:[0-9a-f]{64})? AS version", portal, maxsplit=1)[-1].split("\nFROM ", 1)[0]
     final = portal.rsplit("\nFROM ", 1)[-1]
     check("COPY --from=git-dir . /src/.git" in stage and "about.py write /version.json" in stage
           and "COPY --from=version /version.json ./version.json" in final

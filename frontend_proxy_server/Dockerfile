@@ -1,6 +1,6 @@
-# nginx 1.30 (stable branch; the tag follows its security releases at each build with --pull): "resolve"
+# nginx 1.30 (stable branch), by digest: its security releases arrive as a new digest proposed by Dependabot (ADR 0033); "resolve"
 # in an upstream block needs 1.27.3 or later (nginx.conf). Deliberate change to the official image (1.25.1).
-FROM nginx:1.30-alpine
+FROM nginx:1.30-alpine@sha256:caf4e1e032a20f9c3c5e28fc7f25ffd768ad8677b4975c54193075997b3a97e3
 LABEL authors="nick"
 
 COPY nginx.conf /etc/nginx/nginx.conf

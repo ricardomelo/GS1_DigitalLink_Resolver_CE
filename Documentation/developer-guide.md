@@ -174,13 +174,18 @@ portal/                          new: the link management portal
   tools/gen_engine_messages.py   writes (or --check, --summary) engine_messages.json from an engine build
   tools/dictionary_diff.py       what changes between two generated dictionaries (the weekly issue)
   assets/fonts/                  Liberation Sans for the label text (OFL)
-  Dockerfile, requirements.txt
+  Dockerfile                     the image; pip installs requirements.txt with --require-hashes (ADR 0033)
+  requirements.in                the portal's direct dependencies (ranges); requirements.txt locks them with hashes
 scripts/                         new: install.sh, templates/, resolver-backup.sh, resolver-backup.cron,
                                  restore-rehearsal.sh, rotate-secrets.sh, custom-domains.sh (+ .cron),
                                  geoip-update.sh (+ .cron), upgrade-from-official.sh
 dev-tests/                       new: development tests, their pytest layer and the screenshot script
+  requirements.in, .txt          the tests' environment (the three services + test tools), locked with hashes
+  lock-dependencies.sh           writes every Python lock file with uv: the tests' first, each service's inside it (ADR 0033)
 .github/workflows/dev-tests.yml  new: continuous integration (development tests on GitHub Actions)
 .github/actions/dev-tests-setup/ new: runner set-up for the tests, with the pinned versions
+.github/dependabot.yml           new: weekly update proposals for the locks, image digests and actions (ADR 0033)
+SECURITY.md                      new: how to report a vulnerability privately (ADR 0033)
 Documentation/                   README index, user guide, features, history, this guide,
                                  extensions/ (detailed documentation, changelog), images/,
                                  upstream-README.md
@@ -192,8 +197,8 @@ tests/, useful_external_python_scripts/   official
 | Service | Build | Port | Volumes | Containers |
 |---|---|---|---|---|
 | `database-service` | `database_server/` | `${DATABASE_BIND_ADDRESS:-127.0.0.1}:27017` | database data | 1 (`database-server`) |
-| `data-entry-service` | `data_entry_server/` (gunicorn) | internal 3000 | — | `DATA_ENTRY_SERVICE_REPLICAS` |
-| `web-service` | `web_server/` (gunicorn) | internal 4000 | — | `WEB_SERVICE_REPLICAS` |
+| `data-entry-service` | `data_entry_server/` (two stages: Node.js and `gs1encoder`, application; gunicorn) | internal 3000 | — | `DATA_ENTRY_SERVICE_REPLICAS` |
+| `web-service` | `web_server/` (three stages: syntax engine, Node.js and `gs1encoder`, application; gunicorn) | internal 4000 | — | `WEB_SERVICE_REPLICAS` |
 | `portal-db-init` | `portal/` (`python db_init.py`, runs once at each start) | — | — | 1 |
 | `portal-service` | `portal/` (two stages: syntax engine, application; gunicorn) | internal 8000 | `resolver-portal-config:/app/config` | `PORTAL_SERVICE_REPLICAS` |
 | `portal-worker` | `portal/` (`python worker.py`) | — | `resolver-portal-config:/app/config` | `PORTAL_WORKER_REPLICAS` |
@@ -220,7 +225,11 @@ the retention set in the portal from the portal's database with the same connect
 receives the root `MONGO_URI` ([ADR 0030](adr/0030-least-privilege-services.md)); every other service's is blanked
 and the resolver, the data entry API and the portal connect as their own users (`RESOLVER_DB_*`, `DATA_ENTRY_DB_*`,
 `PORTAL_DB_*`: user, password, host, or a complete `*_DB_URI`), after `portal-db-init` has finished well. The
-resolver's, the data entry API's and the portal's images run as unprivileged users (uid 10001). The worker has the portal's settings (it imports `app.py` and runs the
+resolver's, the data entry API's and the portal's images run as unprivileged users (uid 10001). Every base image is
+named by tag and digest and every Python package comes from the service's `requirements.txt` with its file hashes;
+the resolver's and the data entry API's images take `node` from a stage built on the official `node:24-bookworm-slim`,
+where `gs1encoder` is installed from the toolkit's `package-lock.json` with `npm ci --ignore-scripts` and refused when
+it is not `x-gs1-syntax-engine`'s release ([ADR 0033](adr/0033-supply-chain.md)). The worker has the portal's settings (it imports `app.py` and runs the
 same start-up, which is safe under the shared locks).
 
 ## 4. Request flows
@@ -1443,8 +1452,8 @@ Each service is an upstream block (`resolver-web`, `data-entry`, `portal`) whose
 with `resolve` and a shared `zone`: nginx asks Docker's DNS (`resolver 127.0.0.11 valid=10s`) for every
 replica's address, again every 10 seconds, shares the requests among them in turn, and goes on to another
 replica when one refuses the connection. It starts even while a service has no address yet (that service's
-paths answer 502 until it has). This needs nginx 1.27.3 or later; the image is `nginx:1.30-alpine`
-(rebuilt with `docker compose build --pull` to take a new security release of the 1.30 branch).
+paths answer 502 until it has). This needs nginx 1.27.3 or later; the image is `nginx:1.30-alpine` by digest
+(a new security release of the 1.30 branch arrives as Dependabot's proposal of a new digest, ADR 0033).
 `/api` and `/swaggerui` answer 403 unless the client's address is allowed (ADR 0021): the `geo
 $data_entry_api_allowed` block includes `/etc/nginx/api-access.conf`, which `api-access.sh` writes when the container
 starts (the nginx image runs `/docker-entrypoint.d/40-api-access.sh` before nginx) from three settings Compose passes
@@ -1616,13 +1625,14 @@ run against it. Setup and commands are in
 | `install/test_install.sh` | 102 | installer through shims (Compose v2), including a portal whose job worker does not start; replica counts written, kept, taken from the environment and refused when invalid; the time zone of the request counts (the server's, from the environment, refused when not a name); the e-mail relay (off by default, written with STARTTLS or TLS, its password kept and never shown, switched off, a test relay set by hand kept, refusals); no setting written twice in `.env`; the final checks through the proxy (a scan, the portal over HTTPS) and a scan answered 502; the passwords of the resolver's and the data entry API's database users generated, kept, the example replaced, and MongoDB's root connection given to the database and `portal-db-init` only ([ADR 0030](adr/0030-least-privilege-services.md)) |
 | `install/test_deploy.py` | 166 | the organisations' domains on the host with the report to the portal, growing waits, `--quiet`, the lock and the 5-minute cron file (ADR 0009 §7; 7 of the 16 mutations of item 9.6); the GeoIP database's monthly update with a stand-in `curl` (DB-IP's month or the previous one, `GEOIP_URL` from `.env` never printed with its query string, a file that is not an MMDB refused, the old file kept; its cron file, the resolver's read-only mount); the daily backup with a stand-in `docker` (only options `mongodump` has; a failed dump: `ERROR`, status 1, no partial file; a good one: the archive, `OK`; each run recorded for the portal's monitoring, a record that cannot be written only a warning, the record's mongosh script valid JavaScript; the off-server copy and its failure); `restore-rehearsal.sh` and `rotate-secrets.sh` with a stand-in `docker` (item 7.2); `upgrade-from-official.sh` with a stand-in `docker`, an official clone and a local branch of the GS1 Digital Link Resolver Suite (the backup before anything changes and owner-only, the containers stopped with the volume kept before the installer, the branch switched with the official one kept, the credentials and token kept in `.env`, an `.env` of its own left alone, the records compared, `--check`, five refusals that change nothing, fewer records afterwards; 11 mutations, all caught); `custom-domains.sh` with stand-in `docker`, `nginx`, `systemctl` and `certbot` (CERTBOT_EMAIL needed, sites from the template, Certbot per domain, a name that is not a host name refused, domains already served left alone, orphan sites listed); `docker compose config` of the replicas and process counts (defaults, values from `.env`, a refused value, names kept by the database and the proxy); the proxy image's nginx version and `resolve` in every upstream; each image's gunicorn `CMD` started locally (three processes, an answer, the request logged, a clean stop on SIGTERM within 10 s); the portal's fallback session key with six processes starting together and eight threads while writing it is slow; the portal started from the files the `COPY` lines of its Dockerfile put in the image, every module and data file of `portal/` among them; one engine release, in `docker-compose.yml` only, given to every image (ADR 0003), the resolver's image building the engine's library with the portal's script (build context `engine-tools`); the example secrets of `.env.example` (ADR 0021): the data entry API and the portal refuse to start with the example token or the portal's example database password while `FQDN` names a real host, the data entry API and the resolver only warn about MongoDB's example password, every service starts with the examples on `localhost` or without `FQDN`, the three copies of `example_secrets.py` identical (8 mutations, all caught); the resolver and the data entry API connecting as their own database users, refusing the example passwords of those users on a real domain, never logging a password, and the rotation of both passwords ([ADR 0030](adr/0030-least-privilege-services.md)); the About page's version (ADR 0024): the portal's three builds receive `.git` as the context `git-dir`, a separate stage writes `version.json`, the final image takes that file alone, and the portal started without it answers an unknown version and the official repository (1 mutation, caught) |
 | `install/test_least_privilege.py` | 44 | the least privilege of the services ([ADR 0030](adr/0030-least-privilege-services.md), F-012), without Docker or MongoDB: `docker compose config` without `.env` (MongoDB's root credentials reach the database and `portal-db-init` only; the resolver and the data entry API receive their own user and start after `portal-db-init`; MongoDB and the proxy on the loopback address unless `.env` names another); the three Python images run as a system user of their own; `service_db.py` (the URI built and percent-encoded with `authSource=admin`, a complete URI preferred, `MONGO_URI` only as a fallback with a warning, an error with nothing; the two copies identical); `db_init.py` with a stand-in client (the roles `resolverService` and `dataEntryService` in `admin` with exactly their privileges, the users made then brought up to date, a service without a password left alone, the root user refused, no password printed, the example root password warned about); every collection the resolver's code names granted by its role; `.env.example`, the installer and the rotation script. 28 mutations, all caught |
+| `install/test_supply_chain.py` | 164 | the supply chain ([ADR 0033](adr/0033-supply-chain.md), F-015), from the repository's files: every image of the Dockerfiles, the composition and the workflows named by digest (a stage of the same file excepted, `COPY --from` a stage, a named context or a digest); every action by commit with its release in a comment, every workflow's permissions, checkout without credentials; no download piped into a shell, no `npm init` initializer, npm only as `npm ci --ignore-scripts` and pip only with `--require-hashes --no-deps` in the images, the CI and the cloud hook; the four Python locks written by `lock-dependencies.sh`, each line a pin with SHA-256 hashes, every direct dependency locked and within its specifier, each service's lock at the tests' versions and hashes; both toolkits' `package.json` and `package-lock.json` (`gs1encoder` at `x-gs1-syntax-engine`, npm registry, SHA-512 integrity), the image's refusal of another release, `node` and the package copied where `web_logic.py` starts it; Dependabot for every directory, against `gs1br/develop`, `gs1encoder` left alone; `SECURITY.md`. 34 mutations, all caught |
 
 **pytest and continuous integration.** `dev-tests/test_programs.py` runs each program above as one pytest
 test (a subprocess from the repository root): exit status 0 without a `FAIL` line passes; otherwise the
 report shows the `FAIL` lines and the end of the output; a program that only printed `SKIP` is skipped.
 Markers group them: `resolver` (resolver, EPC binary, data entry, GS1 suite, the load test script), `portal` (the portal programs
 without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`, `test_requests_e2e.py`, `test_overview_e2e.py`, `test_domains_e2e.py`, `test_item_page_e2e.py`, `test_sso_e2e.py`, `test_about_e2e.py`, `test_privacy_e2e.py`…), `home`,
-`install` (the installer through password-less `sudo` when not root, `test_deploy.py` and `test_least_privilege.py`), `database` (`test_store_mongodb.py`). `dev-tests/conftest.py` keeps the programs from
+`install` (the installer through password-less `sudo` when not root, `test_deploy.py`, `test_least_privilege.py` and `test_supply_chain.py`), `database` (`test_store_mongodb.py`). `dev-tests/conftest.py` keeps the programs from
 being imported by pytest, registers the markers and prints the check counts of each program at the end (and
 in the GitHub Actions run summary; on GitHub each failed program's `FAIL` lines also become an annotation of
 the job, which the API gives where the logs cannot be downloaded). With `DEV_TESTS_STRICT=1` a program fails when an environment variable
@@ -1643,12 +1653,13 @@ job starts a `mongo:7` service container and runs the `portal` and `database` gr
 informative (`continue-on-error`) until it proves stable; `e2e` and `install` started that way and are
 required since step 4 of item 2.3. The composite action
 `.github/actions/dev-tests-setup` installs only what a job asks for and exports the variables: Python 3.12
-and Node.js 24 as in the images; `gs1encoder`, `epc-tds` and `ajv-dist` at pinned versions (cache keyed by
+and Node.js 24 as in the images; the Python packages of `dev-tests/requirements.txt` with `--require-hashes` (ADR 0033); `gs1encoder`, `epc-tds` and `ajv-dist` at pinned versions (cache keyed by
 the versions, `gs1encoder`'s read from `docker-compose.yml`); the portal's engine built by
 `portal/tools/build-syntax-engine.sh` at that release (cache keyed by the release and the script); Chromium (cache keyed by the Playwright version); GS1's suite at commit
 `32597c1`; Ubuntu's nginx for the installer, nginx 1.30.5 from nginx.org for the proxy test; Docker
 Compose v2.29.7. Change a version there, in one place; the engine's release is not there but in
-`docker-compose.yml`.
+`docker-compose.yml`. Every action is named by commit with its release in a comment, the `mongo:7` service by digest
+(ADR 0033); `.github/dependabot.yml` proposes their updates weekly.
 
 `docs/screenshots.py` regenerates the images of the README and of the user guide, in English, from the real portal with example data (GS1 logo hidden). The e-mail images (`mail_images()`) are made with e-mail
 switched on for them only, against the relay of `fake_smtp.py`. Commit only images that really changed.
@@ -1689,14 +1700,27 @@ need no code. A `+` scheme needs code only for a Table F format or TDS 14.5 meth
 does not know; a `++` scheme only an entry in `PLUS_PLUS` while TDT has no artefact for it. Add its TDS
 annex E vector to `test_epc_binary.py`.
 
+**A Python dependency.** Add it to the service's `requirements.in` (and nothing to `requirements.txt` by hand), run
+`dev-tests/lock-dependencies.sh` (needs uv and PyPI; `--upgrade-package X` moves one package, `--upgrade` all) and
+commit the `.in` and `.txt` files of every service and of `dev-tests/` together; a test tool goes into
+`dev-tests/requirements.in`. `test_supply_chain.py` fails on a lock out of step. A Dependabot proposal that changes a
+service's lock alone fails there too: run the script on its branch ([ADR 0033](adr/0033-supply-chain.md)).
+
+**An image, an action or an npm package.** Name an image `name:tag@sha256:<digest>` (the digest of the multi-platform
+index: `docker buildx imagetools inspect name:tag`), an action `owner/action@<commit>  # vX.Y.Z`, and install npm
+packages from a committed `package-lock.json` with `npm ci --ignore-scripts`; never pipe a download into a shell.
+Add the new directory to `.github/dependabot.yml`.
+
 **The syntax engine.** The weekly job *GS1 Barcode Syntax Engine update check*
 (`.github/workflows/engine-update.yml`) opens an issue when a newer release exists, with what changes in the
 dictionary, the engine messages that need a translation and the portal's test results. To update, change the
 release in one place, `x-gs1-syntax-engine` in `docker-compose.yml`; build the engine
 (`portal/tools/build-syntax-engine.sh <dir>`), regenerate the dictionary (`python portal/tools/gen_dictionary.py
 <dir>`) and the messages (`python portal/tools/gen_engine_messages.py <dir>`), add the new or changed messages to
-both languages of `i18n.js` (`engine.*`; the English one is the engine's text, parameters as `{p1}`, `{p2}`…), run
-every test, commit; on the server `docker compose up -d --build`. Every image, the build script, CI and the tests
+both languages of `i18n.js` (`engine.*`; the English one is the engine's text, parameters as `{p1}`, `{p2}`…), lock the
+new `gs1encoder` in both toolkits (`npm install --package-lock-only --save-exact gs1encoder@<release>` in
+`web_server/src/gs1-digitallink-toolkit` and `data_entry_server/src/gs1-digitallink-toolkit`; the image build refuses a
+lock of another release), run every test, commit; on the server `docker compose up -d --build`. Every image, the build script, CI and the tests
 follow the one release (`test_deploy.py` fails when something holds a release of its own; `test_dictionary.py` and
 `test_engine_messages.py` when a file was made from another or a message has no translation).
 

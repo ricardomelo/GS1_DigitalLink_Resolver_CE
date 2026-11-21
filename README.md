@@ -826,7 +826,7 @@ sudo scripts/rotate-secrets.sh                                   # new secrets i
 # more replicas: change e.g. WEB_SERVICE_REPLICAS=2 in .env, then
 docker compose up -d                                             # adds or removes containers; the proxy follows within 10 s
 docker compose ps                                                # one line per container (…-web-service-1, …-web-service-2)
-docker compose build --pull frontend-proxy-service && docker compose up -d   # the latest nginx 1.30 security release
+git pull && docker compose up -d --build                         # updates, image digests included (ADR 0033)
 ```
 
 Set the number of replicas in `.env`, not with `docker compose up --scale`: the next `docker compose up`

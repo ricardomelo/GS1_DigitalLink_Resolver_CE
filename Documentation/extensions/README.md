@@ -48,6 +48,7 @@ British English, for operators and developers. People who register records read 
 - [What each action does on the API](#what-each-action-does-on-the-api)
 - [QR code label](#qr-code-label)
 - [GS1 Digital Link data attributes](#gs1-digital-link-data-attributes)
+- [Supply chain](#supply-chain)
 - [Resolver CE changes](#resolver-ce-changes)
 - [Operations](#operations)
 - [Hardening](#hardening)
@@ -1385,6 +1386,30 @@ chosen version and error correction level, and the label says when the content d
 opens for date fields on phones. AI titles are GS1's data titles, which are
 language-neutral on labels.
 
+## Supply chain
+
+What an installation builds is fixed by content, not by name ([ADR 0033](../adr/0033-supply-chain.md)):
+
+- **Python packages** come from each service's `requirements.txt`, which lists every package at one version with the
+  hashes of its files; the build fails if PyPI serves anything else. The portal's direct dependencies, ranges in
+  `portal/requirements.in`, no longer move at each build: they change only when the repository's lock files do.
+- **Base images** are named by tag and digest (`python:3.12-slim-bookworm@sha256:…`, `nginx:1.30-alpine@sha256:…`,
+  `mongo:7-jammy@sha256:…`, `node:24-bookworm-slim@sha256:…`, and the test relay's `axllent/mailpit`). `docker compose
+  build --pull` no longer brings a newer image of the same tag: the line's security releases arrive as a new digest in
+  the repository, then `git pull` and `docker compose up -d --build`.
+- **Node.js** in the resolver and the data entry API is the official Node.js image's binary, and `gs1encoder` comes
+  from `package-lock.json` with its integrity hash; the images no longer run NodeSource's setup script nor
+  `npm init es6`, and no longer contain npm or curl (`docker compose exec web-service curl …` no longer works; use
+  `python3 -c` or the host's curl).
+- **Updates** are proposed every Monday by Dependabot as pull requests against the development branch (lock files,
+  image digests within their tag, GitHub Actions) and merged after the development tests pass; a release carries
+  them. For an installation that follows the development branch, `git pull` and `docker compose up -d --build` after
+  each merged update; for one that follows releases, the next release.
+- **Reporting a weakness**: `SECURITY.md` (GitHub's private vulnerability reporting).
+
+The build needs outbound HTTPS to PyPI (`pypi.org`, `files.pythonhosted.org`), the npm registry, Docker Hub and
+GitHub (the syntax engine's source), as before.
+
 ## Resolver CE changes
 
 | Before | After | Standard reference |
@@ -1506,8 +1531,9 @@ docker compose ps                          # …-web-service-1, …-web-service-
   container), `docker compose exec portal-service …` runs in the first replica (`--index 2` for another).
 - **Session key.** With several portal replicas on one host the fallback `secret.key` is shared through the
   volume; on several hosts set `PORTAL_SECRET_KEY` (the installer always does).
-- **The proxy image** follows nginx's 1.30 branch (`nginx:1.30-alpine`); `docker compose build --pull
-  frontend-proxy-service && docker compose up -d` takes its latest security release.
+- **The proxy image** follows nginx's 1.30 branch (`nginx:1.30-alpine`), named by digest: a new security release of
+  the branch arrives as a new digest in the repository ([Supply chain](#supply-chain)); `git pull` and
+  `docker compose up -d --build` take it.
 
 ### Load test and scale-out rehearsal
 

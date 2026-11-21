@@ -3,6 +3,7 @@
 # pieces its programs need. The versions are pinned here, in one place, so that a result does not change
 # without a deliberate update:
 #   * Python 3.12 and Node.js 24, as in the service images (web_server/Dockerfile, portal/Dockerfile);
+#   * the Python packages of dev-tests/requirements.txt, with their file hashes (ADR 0033);
 #   * gs1encoder (the resolver's GS1 Barcode Syntax Engine) and the portal's build of the engine, both on
 #     the release written in docker-compose.yml (x-gs1-syntax-engine), read from there;
 #   * epc-tds, the independent EPC library test_epc_binary.py compares with;
@@ -60,33 +61,29 @@ runs:
           echo "NGINX_VERSION=1.30.5"
         } >> "$GITHUB_ENV"
 
-    - uses: actions/setup-python@v7
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
       with:
         python-version: "3.12"
         cache: pip
-        cache-dependency-path: |
-          web_server/src/requirements.txt
-          portal/requirements.txt
-          data_entry_server/src/requirements.txt
+        cache-dependency-path: dev-tests/requirements.txt
 
     - name: Python packages
       shell: bash
+      # The three services and the test tools at the versions and file hashes of the development tests' lock file
+      # (dev-tests/requirements.in, written by dev-tests/lock-dependencies.sh; Documentation/adr/0033-supply-chain.md)
       run: |
-        python -m pip install -q -r web_server/src/requirements.txt -r portal/requirements.txt \
-          -r data_entry_server/src/requirements.txt pytest jsonschema playwright opencv-python-headless pillow mongomock \
-          "zxing-cpp>=2.2,<4" \
-          "mmdb-writer>=0.2.7,<0.3"   # zxing-cpp reads the labels' Data Matrix back (test_datamatrix.py); mmdb-writer
-                                      # writes the GeoIP database test_request_log.py looks addresses up in
+        python -m pip install -q --require-hashes --no-deps -r dev-tests/requirements.txt
+        python -m pip check
         echo "PLAYWRIGHT_VERSION=$(python -m pip show playwright | sed -n 's/^Version: //p')" >> "$GITHUB_ENV"
 
     - if: inputs.npm == 'true' || inputs.gs1-suite == 'true'
-      uses: actions/setup-node@v7
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
       with:
         node-version: "24"
 
     - if: inputs.npm == 'true'
       id: npm-cache
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: |
           ~/.cache/dev-tests/se
@@ -114,7 +111,7 @@ runs:
 
     - if: inputs.syntax-engine == 'true'
       id: engine-cache
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: ~/.cache/dev-tests/gs1se
         # A change of the release or of the script builds the engine again.
@@ -130,7 +127,7 @@ runs:
       run: echo "GS1_SYNTAX_ENGINE_DIR=$DEV_TOOLS/gs1se" >> "$GITHUB_ENV"
 
     - if: inputs.playwright == 'true'
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: ~/.cache/ms-playwright
         key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}-chromium

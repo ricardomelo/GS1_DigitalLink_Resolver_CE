@@ -58,7 +58,7 @@ runs:
           echo "GS1_TESTSUITE_COMMIT=32597c108ac1ecb9e90ce0081bb3a16e5a61e616"
           echo "GS1_WEBVOC_COMMIT=f8f407bf717233c871dca2f62f4e45b0940e8cad"   # GS1 Web Vocabulary 1.16
           echo "COMPOSE_VERSION=v2.29.7"
-          echo "NGINX_VERSION=1.30.5"
+          echo "NGINX_VERSION=1.30.7"
         } >> "$GITHUB_ENV"
 
     - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0

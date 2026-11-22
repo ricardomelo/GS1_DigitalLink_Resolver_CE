@@ -39,6 +39,12 @@ EOF
 #!/bin/bash
 echo "systemctl \$*" >> $s/calls
 EOF
+  # dpkg-query: the version of the host's nginx package, from a state file (a fixed Ubuntu 24.04 build by default)
+  cat > "$b/dpkg-query" <<EOF
+#!/bin/bash
+if [[ "\$*" == *" nginx" ]]; then cat $s/nginx-version 2>/dev/null || printf '1.24.0-2ubuntu7.20'; exit 0; fi
+exec /usr/bin/dpkg-query "\$@"
+EOF
   cat > "$b/usermod" <<EOF
 #!/bin/bash
 echo "usermod \$*" >> $s/calls
@@ -110,7 +116,7 @@ run_installer() {   # extra environment as arguments; answers (if any) on stdin
     INSTALL_LOG_FILE="$SB/state/install.log" INSTALL_NGINX_AVAILABLE="$SB/nginx/sites-available" \
     INSTALL_NGINX_ENABLED="$SB/nginx/sites-enabled" INSTALL_CRON_FILE="$SB/state/cron" \
     INSTALL_GEOIP_CRON_FILE="$SB/state/geoip-cron" INSTALL_DOMAINS_CRON_FILE="$SB/state/domains-cron" \
-    INSTALL_HEALTH_TIMEOUT=30 INSTALL_PROXY_RESTART_AFTER=5 INSTALL_WORKER_TIMEOUT=5 INSTALL_DOCKER_GROUP_USER= "$@" \
+    INSTALL_OS_CODENAME=noble INSTALL_HEALTH_TIMEOUT=30 INSTALL_PROXY_RESTART_AFTER=5 INSTALL_WORKER_TIMEOUT=5 INSTALL_DOCKER_GROUP_USER= "$@" \
     bash "$SB/repo/scripts/install.sh" ${INSTALLER_ARGS:---non-interactive} > "$SB/state/out" 2>&1
 }
 
@@ -145,6 +151,9 @@ check "A: nginx site enabled" "[[ -L $SB/nginx/sites-enabled/gs1resolver ]]"
 check "A: nginx -t passed" "grep -q '^nginx -t' $SB/state/calls"
 check "A: certbot called for the domain" "grep -q 'certbot --nginx -d id.example.org --non-interactive --agree-tos -m ops@example.org --redirect' $SB/state/calls"
 check "A: nginx and certbot packages requested" "grep -q 'apt-get install -y.*certbot python3-certbot-nginx' $SB/state/calls"
+check "A: the host's nginx installed or updated even when already there (ADR 0042)" "dpkg -s nginx >/dev/null 2>&1 && grep -q '^apt-get install -y nginx certbot python3-certbot-nginx' $SB/state/calls && grep -q '^apt-get update' $SB/state/calls"
+check "A: a fixed nginx package reported as carrying the November 2026 fixes" "grep -q 'nginx 1.24.0-2ubuntu7.20 carries the security fixes of November 2026' $SB/state/out && ! grep -q 'predates the security fixes' $SB/state/out"
+check "A: the site served over HTTP/1.1 only (no http2)" "! grep -q http2 $SB/nginx/sites-available/gs1resolver"
 check "A: one replica of each service written to .env" "[[ \$(envval WEB_SERVICE_REPLICAS)\$(envval DATA_ENTRY_SERVICE_REPLICAS)\$(envval PORTAL_SERVICE_REPLICAS)\$(envval PORTAL_WORKER_REPLICAS) == 1111 ]]"
 check "A: Compose reads the replica counts" "[[ \$(compose_cfg | grep -c 'replicas: 1') == 4 ]]"
 check "A: replicas in the summary" "grep -q 'Replicas *resolver 1, data entry API 1, portal 1, job worker 1' $SB/state/out"
@@ -162,6 +171,8 @@ A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY); A_R
 
 # ------------------------------------------------------------------------------ B. re-run
 echo "--- B. second run on the same installation"
+printf '1.24.0-2ubuntu7.19' > "$SB/state/nginx-version"
+printf 'server {\n    listen 443 ssl http2;\n    listen [::]:443 ssl http2;\n    server_name id.example.org;\n}\n' >> "$SB/nginx/sites-available/gs1resolver"
 echo "PORTAL_SESSION_IDLE_MINUTES='20'" >> "$SB/repo/.env"
 sed -i "s/^WEB_SERVICE_REPLICAS=.*/WEB_SERVICE_REPLICAS='2'/" "$SB/repo/.env"
 : > "$SB/state/calls"
@@ -187,6 +198,12 @@ check "B: Compose scales the services as written" "[[ \$(compose_cfg | grep -c '
 check "B: previous .env backed up with mode 600" "ls $SB/repo/.env.bak-* >/dev/null && [[ \$(stat -c %a \$(ls $SB/repo/.env.bak-* | head -n 1)) == 600 ]]"
 check "B: existing portal users detected, no first user" "grep -q 'existing users are kept' $SB/state/out && [[ -z \$(envval PORTAL_ADMIN_PASSWORD) ]]"
 check "B: site with certificate kept, certbot not called" "! grep -q '^certbot' $SB/state/calls"
+check "B: an nginx package without the November 2026 fixes: warned, with the command that updates it" "grep -q 'nginx 1.24.0-2ubuntu7.19 predates the security fixes of November 2026' $SB/state/out && grep -q 'sudo apt-get install --only-upgrade nginx' $SB/state/out"
+check "B: a kept site that serves HTTP/2: warned, with the command that turns it off" "grep -q 'The site serves HTTP/2' $SB/state/out && grep -q 'To turn it off: sudo sed -i -E' $SB/state/out"
+B_SED=$(grep -o "sed -i -E '[^']*'" "$SB/state/out" | head -n 1)
+cp "$SB/nginx/sites-available/gs1resolver" "$SB/state/h2-site"
+eval "$B_SED $SB/state/h2-site"
+check "B: ... and that command leaves the listen lines without http2, the rest unchanged" "[[ -n \"$B_SED\" ]] && ! grep -q http2 $SB/state/h2-site && [[ \$(grep -c 'listen 443 ssl;' $SB/state/h2-site) == 1 ]] && diff <(grep -v listen $SB/state/h2-site) <(grep -v listen $SB/nginx/sites-available/gs1resolver) >/dev/null"
 
 # ------------------------------------------------------------------------------ C. server migrated by hand
 echo "--- C. existing .env written by hand (double quotes, percent-encoded URI), volumes present"
@@ -232,6 +249,7 @@ check "D: exit status 0" "[[ $rc == 0 ]]"
 check "D: HTTPS site with the given files" "grep -Eq \"ssl_certificate +$SB/state/cert.pem;\" $SB/nginx/sites-available/gs1resolver"
 check "D: nginx -t passed with the certificate" "grep -q '^nginx -t' $SB/state/calls && ! grep -q 'rejected' $SB/state/out"
 check "D: certbot not used" "! grep -q '^certbot' $SB/state/calls"
+check "D: the HTTPS site without HTTP/2 (listen 443 ssl, ADR 0042)" "grep -q 'listen 443 ssl;' $SB/nginx/sites-available/gs1resolver && ! grep -Eq '^[^#]*http2' $SB/nginx/sites-available/gs1resolver"
 check "D: no schedule for the organisations' domains (no Let's Encrypt), and how to add one" "[[ ! -e $SB/state/domains-cron ]] && grep -q 'install scripts/custom-domains.cron' $SB/state/out"
 
 # ------------------------------------------------------------------------------ E. external proxy
@@ -341,6 +359,17 @@ check "J: \"off\" switches e-mail off and forgets the credentials" "[[ $rc == 0 
 printf "PORTAL_MAIL_HOST='mailpit'\nPORTAL_MAIL_PORT='1025'\nPORTAL_MAIL_SECURITY='none'\nPORTAL_MAIL_FROM='portal@example.org'\n" >> "$SB/repo/.env"
 run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org; rc=$?
 check "J: a test relay set by hand (mailpit, no encryption) is kept" "[[ $rc == 0 && \$(envval PORTAL_MAIL_HOST) == mailpit && \$(envval PORTAL_MAIL_SECURITY) == none && \$(envval PORTAL_MAIL_PORT) == 1025 ]]"
+
+# ------------------------------------------------------------------------------ L. the host's nginx versions
+echo "--- L. which nginx packages carry the security fixes of November 2026 (ADR 0042)"
+eval "$(sed -n '/^declare -A HOST_NGINX_FIXED/,/^}/p' "$HERE/../../scripts/install.sh")"
+for case in "1.24.0-2ubuntu7.19 noble no" "1.24.0-2ubuntu7.20 noble yes" "1.24.0-2ubuntu8 noble yes" \
+            "1.18.0-6ubuntu14.23 jammy no" "1.18.0-6ubuntu14.24 jammy yes" "1.18.0-6ubuntu14.24 focal unknown" \
+            "1.30.6-1~noble noble no" "1.30.7-1~noble noble yes" "1.31.8-1~jammy jammy no" "1.31.9-1~jammy jammy yes" \
+            "1.28.3-1~noble noble no" "1.32.0-1~noble noble yes"; do
+  read -r version codename expected <<< "$case"
+  check "L: nginx $version on $codename: $expected" "[[ \$(host_nginx_fixed $version $codename) == $expected ]]"
+done
 
 echo
 echo "$PASS passed, $FAIL failed"

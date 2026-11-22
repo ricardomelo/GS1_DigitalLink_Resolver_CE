@@ -19,7 +19,7 @@ AJV_DIST_VERSION=8.17.1
 GS1_TESTSUITE_COMMIT=32597c108ac1ecb9e90ce0081bb3a16e5a61e616
 GS1_WEBVOC_COMMIT=f8f407bf717233c871dca2f62f4e45b0940e8cad   # GS1 Web Vocabulary 1.16, the link types' source
 COMPOSE_VERSION=v2.29.7
-NGINX_VERSION=1.30.5
+NGINX_VERSION=1.30.7
 mkdir -p "$DEV_TOOLS/bin"
 
 # Python packages: the three services and the test tools at the versions and file hashes of the development tests'

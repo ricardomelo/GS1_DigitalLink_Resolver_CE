@@ -414,6 +414,44 @@ render_template() {
   chmod 644 "$target"
 }
 
+# The first package of the host's nginx with the security fixes of November 2026 (CVE-2026-123007 and nine more, nginx
+# 1.30.7 / 1.31.9): Ubuntu's own builds per release, nginx.org's by version (Documentation/adr/0042-host-nginx.md).
+declare -A HOST_NGINX_FIXED=([jammy]=1.18.0-6ubuntu14.24 [noble]=1.24.0-2ubuntu7.20)
+HOST_NGINX_STABLE_FIXED=1.30.7
+HOST_NGINX_MAINLINE_FIXED=1.31.9
+
+# Whether a version of the nginx package carries those fixes: "yes", "no" or "unknown" (a release not in the table).
+host_nginx_fixed() {
+  local version=$1 codename=$2 upstream minor
+  if [[ $version == *ubuntu* || $version == *debian* || $version == *deb* ]]; then
+    [[ -n ${HOST_NGINX_FIXED[$codename]-} ]] || { echo unknown; return; }
+    dpkg --compare-versions "$version" ge "${HOST_NGINX_FIXED[$codename]}" && echo yes || echo no
+    return
+  fi
+  upstream=${version%%-*}                         # nginx.org: 1.30.7-1~noble
+  minor=$(printf '%s' "$upstream" | cut -d. -f2)
+  if [[ ! $minor =~ ^[0-9]+$ ]]; then echo unknown
+  elif (( minor % 2 == 1 )); then
+    dpkg --compare-versions "$upstream" ge "$HOST_NGINX_MAINLINE_FIXED" && echo yes || echo no
+  else
+    dpkg --compare-versions "$upstream" ge "$HOST_NGINX_STABLE_FIXED" && echo yes || echo no
+  fi
+}
+
+check_host_nginx() {
+  local version codename
+  version=$(dpkg-query -W -f='${Version}' nginx 2>/dev/null || true)
+  # shellcheck source=/dev/null
+  codename=${INSTALL_OS_CODENAME:-$( [[ -r /etc/os-release ]] && . /etc/os-release && printf '%s' "${UBUNTU_CODENAME:-${VERSION_CODENAME-}}")}
+  [[ -n $version ]] || return 0
+  case $(host_nginx_fixed "$version" "$codename") in
+    yes) ok "The host's nginx $version carries the security fixes of November 2026" ;;
+    no) warn "The host's nginx $version predates the security fixes of November 2026 (CVE-2026-123007 and others)."
+        warn "Update it as soon as the package is published: sudo apt-get update && sudo apt-get install --only-upgrade nginx" ;;
+    *) info "The host's nginx $version: compare it with the vendor's security notices (release ${codename:-unknown} not checked)." ;;
+  esac
+}
+
 site_has_certificate() {
   [[ -f $NGINX_AVAILABLE/$SITE_NAME ]] && grep -q "ssl_certificate" "$NGINX_AVAILABLE/$SITE_NAME"
 }
@@ -422,6 +460,10 @@ configure_nginx() {
   local site=$NGINX_AVAILABLE/$SITE_NAME template
   if [[ $TLS_MODE == letsencrypt ]] && site_has_certificate && grep -q "server_name $FQDN;" "$site"; then
     ok "nginx site $SITE_NAME already serves $FQDN with a certificate: kept as it is."
+    if grep -Eq '^[[:space:]]*(listen[^;#]*[[:space:]]http2|http2[[:space:]]+on)' "$site"; then
+      warn "The site serves HTTP/2, where nginx's most serious flaws of November 2026 lie; the installer's sites no longer do."
+      warn "To turn it off: sudo sed -i -E 's/(listen[^;]*) http2/\\1/' $site && sudo nginx -t && sudo systemctl reload nginx"
+    fi
     return
   fi
   if [[ -f $site ]]; then
@@ -738,14 +780,13 @@ install_prerequisites() {
   if [[ $TLS_MODE != external ]]; then
     local packages=(nginx)
     [[ $TLS_MODE == letsencrypt ]] && packages+=(certbot python3-certbot-nginx)
-    local missing=() p
-    for p in "${packages[@]}"; do dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p"); done
-    if (( ${#missing[@]} )); then
-      info "Installing ${missing[*]}…"
-      run apt-get update
-      run apt-get install -y "${missing[@]}"
-    fi
+    # installed or brought up to date: the host's nginx faces the Internet, and an nginx installed before (by hand or
+    # by an earlier run) would otherwise keep its version for ever (Documentation/adr/0042-host-nginx.md)
+    info "Installing or updating ${packages[*]}…"
+    run apt-get update
+    run apt-get install -y "${packages[@]}"
     ok "nginx$([[ $TLS_MODE == letsencrypt ]] && echo ' and Certbot')"
+    check_host_nginx
   fi
   if [[ -n $INSTALL_DOCKER_GROUP_USER ]] && ! id -nG "$INSTALL_DOCKER_GROUP_USER" | grep -qw docker; then
     run usermod -aG docker "$INSTALL_DOCKER_GROUP_USER"

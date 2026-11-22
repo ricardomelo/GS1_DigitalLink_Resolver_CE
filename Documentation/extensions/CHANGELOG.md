@@ -6,11 +6,32 @@ Change of behaviour an integrator may notice: the official data entry API (`/api
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API. Its writes answer 409
 when a key keeps changing under other writers, and a list sent to `POST /new` answers the error of the first item not
 written instead of 201. Every target it is sent must be an `https:` address with a public host name (400 otherwise; a
-target the key already holds is accepted).
+target the key already holds is accepted). Every anchor it is sent must be `/AI/value` with a GS1 primary key (400
+otherwise; qualifiers go in `qualifiers`).
 
 Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSWORD` and `DATA_ENTRY_DB_PASSWORD` to
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
+
+### Anchors of one shape and one document id per anchor in the data entry API (session 64)
+- **Changed: the official data entry API accepts anchors of one shape only**
+  ([ADR 0049](../adr/0049-data-entry-anchors.md); a deliberate change to the official code). Every anchor sent to
+  `POST /new` (one entry, a list, or the legacy v2 key type and key), `PUT` and `POST /validate` must be `/AI/value`:
+  one of the sixteen GS1 Digital Link primary keys and its value, in printable ASCII, with no other slash and no
+  spaces. Anything else — an anchor carrying qualifiers (`/01/…/10/LOT`), another AI, a value with spaces or accents —
+  is answered **400** naming the anchor, with nothing written (a list is refused whole). The official API stored such
+  anchors without checking their qualifiers or values, under ids the resolver never reads.
+- **Fixed: a key value with `_` keeps its anchor.** The official API turned every `/` of an anchor into `_` in the
+  document's id and every `_` back into `/`: `/8004/9506000AB_12` was listed and answered as `/8004/9506000AB/12`, and
+  `/8004/A/B` and `/8004/A_B` were one document. An id now splits at its first `_` (the AI is digits only), in the data
+  entry API and in the resolver: a value's own `_` is kept, a `%2F` in a request never reads another key's record.
+  `GET`, `PUT` and `DELETE /api/{AI}/{value}` answer 400 when the AI part holds `_`, and `GET /api/{AI}/{value}/…`
+  (more segments) answers 400. Stored documents keep their ids; a document written before from an anchor of another
+  shape is listed in `/summary` under the anchor its id now gives (`/01/X_10_Y`) and can be removed with `DELETE`.
+  The portal's behaviour does not change.
+- **Integrators:** a system that writes through `/api` must send the key as `/AI/value` and its qualifiers in
+  `qualifiers`.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`. Commit `6527a49`.
 
 ### Targets sent to the data entry API follow the portal's rule (session 63)
 - **Changed: the official data entry API refuses the targets the portal refuses**

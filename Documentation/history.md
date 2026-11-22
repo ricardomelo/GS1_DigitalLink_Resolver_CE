@@ -1798,3 +1798,15 @@ rewrites of them (explicit default links, the serial-number fix) are not refused
 choose. A switch to turn the rule off, refusing stored targets and the per-organisation host lists were weighed and not
 taken. `test_data_entry_api.py` gained 33 checks; 14 mutations, all caught.
 
+## Session 64 — anchors of one shape and one document id per anchor in the data entry API
+
+Finding U-004 of the security assessment, in code that came from the official project, in one code commit
+(`6527a49`; [ADR 0049](adr/0049-data-entry-anchors.md)). The official data entry API turned every `/` of an anchor
+into `_` in the document id and every `_` back into `/`, so a key value with `_` came back under another anchor and
+`/8004/A/B`, `/8004/A_B`, the path `/api/8004_A/B` and the resolver's `/8004/A%2FB` all named one document; anchors
+without exactly two slashes skipped the registration and value checks. Every anchor is now `/AI/value` with one of the
+sixteen primary keys (the portal's list, compared by the tests) and a printable-ASCII value, or 400; an id splits at
+its first `_`, in the data entry API and in the resolver, so stored documents keep their ids and a value's `_` is
+kept. A new id format, escaping `_`, removing the documents written before under other shapes and letting the portal
+accept `_` in key values were weighed and not taken. `test_data_entry_api.py` gained 35 checks, `test_mock_parity.py`
+4, `test_resolver.py` 3; 15 mutations, all caught.

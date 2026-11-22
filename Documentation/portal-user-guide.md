@@ -899,7 +899,9 @@ prefixes, who created it and when, its expiry, its last use and its state (*Acti
 **Revoke** stops a key at once. Changes made with a key appear in the history and the audit trail with the user
 `api:<id>`. The technical description of the API is linked under the list (`openapi.json`); the README describes
 its operations. This is the way for your systems to reach the records: the resolver's older data entry API (`/api`)
-is closed to the internet unless the server's operator opens it to listed addresses.
+is closed to the internet unless the server's operator opens it to listed addresses. When it is open, it accepts a key
+only as `/AI/value` (one of the keys the portal offers and its value, with the qualifiers sent apart) and keeps a
+value's `_` as it is ([ADR 0049](adr/0049-data-entry-anchors.md)).
 
 **When a request is refused.** Answers carry a code your developers can look up in the technical description. A body
 that is not one JSON object is refused with `request.jsonInvalid`; a field holding a value of another kind than the API

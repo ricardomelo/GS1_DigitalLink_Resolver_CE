@@ -483,8 +483,10 @@ check("CSV: browser, region, city and the city's position after the country",
       head[head.index("country"):head.index("country") + 6] == ["country", "browser", "region", "city", "latitude",
                                                                  "longitude"]
       and any(r[head.index("city")] == "Campinas" and r[head.index("latitude")] == "-22.9" for r in table[1:]), head)
-# the local day of the events (NOW), not today(): a run that starts just before midnight local time ends on the next day
-NOW_DAY = NOW.replace(tzinfo=UTC).astimezone(requestlog.zone()).date()
+# the local day of the events (event()'s default time, five minutes before NOW), not today() nor NOW's: a run that starts
+# just before midnight local time ends on the next day, and one that starts in the first five minutes after it has its
+# events on the day before (CI run 44978787931 at 03:03 UTC, 00:03 in PORTAL_TIME_ZONE)
+NOW_DAY = (NOW - timedelta(minutes=5)).replace(tzinfo=UTC).astimezone(requestlog.zone()).date()
 requestlog.count_day(NOW_DAY)
 doc = requestlog.daily().find_one({"_id": f"{NOW_DAY.isoformat()}|01|0{ACME_IN}"}) or {}
 check("aggregates: browsers, countries and places per key", doc.get("browser") == {"chrome": 1, "safari": 1}

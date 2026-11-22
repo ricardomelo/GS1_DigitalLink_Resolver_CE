@@ -12,9 +12,12 @@ COPY nginx.conf /etc/nginx/nginx.conf
 # /etc/nginx/real-ip.conf from the trusted proxies; the empty files baked in keep both closed, and the client's
 # address the connection's, if it never runs.
 COPY api-access.sh /docker-entrypoint.d/40-api-access.sh
-# The request limits (Documentation/adr/0031-request-limits.md) are written by the same script: empty, none.
+# The request limits (Documentation/adr/0031-request-limits.md) are written by the same script: empty, none. So is
+# the access log's choice (Documentation/adr/0043-access-logs.md): the file baked in keeps the minimal log.
 RUN chmod 755 /docker-entrypoint.d/40-api-access.sh && : > /etc/nginx/api-access.conf && : > /etc/nginx/real-ip.conf \
-    && for f in limits-http limit-exempt limit-server limit-resolve limit-portal limit-signin; do : > /etc/nginx/$f.conf; done
+    && for f in limits-http limit-exempt limit-server limit-resolve limit-portal limit-signin; do : > /etc/nginx/$f.conf; done \
+    && printf '%s\n' 'map $host $access_log_minimal { default 1; }' 'map $host $access_log_full { default 0; }' \
+       'limit_req_log_level info;' 'limit_conn_log_level info;' > /etc/nginx/access-log.conf
 # Home page served at "/" (see nginx.conf)
 COPY home /usr/share/nginx/home
 RUN chmod -R a+rX /usr/share/nginx/home

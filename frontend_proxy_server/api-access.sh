@@ -28,18 +28,24 @@
 #   PROXY_LIMIT_EXEMPT      addresses or networks (CIDR) counted by none of these: the operator's monitoring, an
 #                           integrator's servers that resolve in bulk
 #
+# and what the access log keeps (Documentation/adr/0043-access-logs.md), access-log.conf:
+#
+#   PROXY_ACCESS_LOG        minimal (the default: no client address, no query string, the path's first segment only),
+#                           full (the address and the whole request line: personal data) or off
+#
 # 0 turns a limit off; a value that is not a whole number keeps the default, with a warning.
 #
 # An entry that is not an address or a network is left out with a warning (it opens nothing); the proxy still
 # starts, so a typing error never takes the resolver down. For the tests: API_ACCESS_FILE and REAL_IP_FILE (the files
 # written), LIMITS_DIR (the folder of the limits' files) and API_ACCESS_ROUTES (the kernel's routing table, read for
-# the gateway).
+# the gateway), ACCESS_LOG_FILE (the access log's file).
 set -eu
 
 OUT="${API_ACCESS_FILE:-/etc/nginx/api-access.conf}"
 REAL_IP="${REAL_IP_FILE:-/etc/nginx/real-ip.conf}"
 ROUTES="${API_ACCESS_ROUTES:-/proc/net/route}"
 LIMITS="${LIMITS_DIR:-/etc/nginx}"
+ACCESS_LOG="${ACCESS_LOG_FILE:-/etc/nginx/access-log.conf}"
 
 say() { echo "api-access: $*" >&2; }
 
@@ -156,3 +162,22 @@ write "$LIMITS/limit-exempt.conf" "$exempt"
 
 shown() { if [ "$1" -gt 0 ]; then echo "$1$2"; else echo "off"; fi; }
 say "request limits per address: resolution $(shown "$resolve" /s), portal $(shown "$portal" /s), sign-in $(shown "$signin" /min), connections $(shown "$connections" '')$( [ -n "$exempt" ] && printf '; exempt: %s' "$(printf '%s' "$exempt" | sed 's/ 1;$//' | tr '\n' ' ' | sed 's/ $//')" )"
+
+# ---- The access log (ADR 0043) ----
+mode=$(printf '%s' "${PROXY_ACCESS_LOG:-}" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+case $mode in
+  ""|minimal) mode=minimal ;;
+  full|off) ;;
+  *) say "PROXY_ACCESS_LOG: '${PROXY_ACCESS_LOG}' is not minimal, full or off; minimal kept"; mode=minimal ;;
+esac
+minimal=0; full=0; level=info
+case $mode in minimal) minimal=1 ;; full) full=1; level=warn ;; esac
+write "$ACCESS_LOG" "map \$host \$access_log_minimal { default $minimal; }
+map \$host \$access_log_full { default $full; }
+limit_req_log_level $level;
+limit_conn_log_level $level;"
+case $mode in
+  minimal) say "access log: minimal (no client address, no query string)" ;;
+  full) say "access log: full (client addresses and whole request lines: personal data; see the privacy notice)" ;;
+  off) say "access log: off" ;;
+esac

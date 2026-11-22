@@ -464,6 +464,10 @@ configure_nginx() {
       warn "The site serves HTTP/2, where nginx's most serious flaws of November 2026 lie; the installer's sites no longer do."
       warn "To turn it off: sudo sed -i -E 's/(listen[^;]*) http2/\\1/' $site && sudo nginx -t && sudo systemctl reload nginx"
     fi
+    if (( $(grep -Ec '^[[:space:]]*server_name[[:space:]]' "$site") > $(grep -Ec '^[[:space:]]*access_log[[:space:]]+off;' "$site") )); then
+      warn "The site keeps an access log with each client's address and query string; the installer's sites keep none (ADR 0043)."
+      warn "To turn it off: sudo sed -i -E -e '/^[[:space:]]*access_log[[:space:]]+off;/d' -e 's/^([[:space:]]*server_name[^;]*;)/\\1\\n    access_log off;/' $site && sudo nginx -t && sudo systemctl reload nginx"
+    fi
     return
   fi
   if [[ -f $site ]]; then

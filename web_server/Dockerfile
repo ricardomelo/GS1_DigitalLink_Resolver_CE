@@ -69,4 +69,6 @@ EXPOSE 4000
 # On "docker compose stop" the requests in hand finish within Docker's 10-second stop period
 # (--graceful-timeout 8); gunicorn's control socket is not used.
 ENV WEB_CONCURRENCY=2
-CMD ["gunicorn", "--threads", "8", "--bind", "0.0.0.0:4000", "--graceful-timeout", "8", "--no-control-socket", "--access-logfile", "-", "__init__:create_app()"]
+# No access log (Documentation/adr/0043-access-logs.md): the proxy writes one line per request, without the
+# client's address or the query string; gunicorn's would hold the whole request line, the User-Agent and the referrer.
+CMD ["gunicorn", "--threads", "8", "--bind", "0.0.0.0:4000", "--graceful-timeout", "8", "--no-control-socket", "__init__:create_app()"]

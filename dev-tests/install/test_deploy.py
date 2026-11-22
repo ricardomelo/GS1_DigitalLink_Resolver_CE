@@ -603,6 +603,8 @@ def domains_script_checks() -> None:
     check("server_name id.acme.example;" in text and "proxy_pass http://127.0.0.1:8080;" in text
           and "proxy_set_header Host $host;" in text and (enabled / "gs1resolver-domain-id.acme.example").is_symlink(),
           "custom domains: apply writes a site from the installer's template and enables it", (result.stdout, text[:300]))
+    check(re.search(r"server_name id\.acme\.example;\n(?:\s*#[^\n]*\n)*\s*access_log off;", text),
+          "custom domains: the site keeps no access log (ADR 0043)", text[:400])
     check("certbot --nginx -d id.acme.example --non-interactive --agree-tos -m ops@example.org" in log
           and "certbot --nginx -d shop.beta.example" in log and "nginx -t" in log and "systemctl reload nginx" in log,
           "custom domains: nginx checked and reloaded, Certbot asked for each certificate", log[-600:])
@@ -682,6 +684,28 @@ def compose_config(env_lines: list[str]) -> tuple[dict | None, str]:
     if run.returncode:
         return None, run.stderr
     return json.loads(run.stdout), run.stderr
+
+
+def logging_checks() -> None:
+    """Each container's output kept in a bounded number of files of a bounded size (ADR 0043, finding F-025), from
+    .env; and the proxy given PROXY_ACCESS_LOG."""
+    for lines, size, files in (([], "10m", "5"), (["LOG_MAX_SIZE=50m", "LOG_MAX_FILES=2", "PROXY_ACCESS_LOG=off"], "50m", "2")):
+        config, err = compose_config(lines)
+        services = (config or {}).get("services", {})
+        logging = {name: service.get("logging") for name, service in services.items()}
+        check(len(services) >= 7 and all(entry == {"driver": "json-file", "options": {"max-size": size, "max-file": files}}
+                                         for entry in logging.values()),
+              f"every service keeps at most {files} log files of {size} ({'.env' if lines else 'the defaults'})",
+              logging or err)
+        proxy = services.get("frontend-proxy-service", {}).get("environment", {})
+        if not lines:
+            text = (REPO / "docker-compose.yml").read_text().split("\nservices:\n", 1)[1].split("\nvolumes:\n", 1)[0]
+            names = re.findall(r"^  ([a-z][a-z-]*):\n", text, re.M)
+            blocks = re.split(r"^  [a-z][a-z-]*:\n", text, flags=re.M)[1:]
+            check(names and all("    logging: *logging\n" in block for block in blocks),
+                  f"…those of an optional profile too ({len(names)} services in the file)", names)
+        check(proxy.get("PROXY_ACCESS_LOG", None) == ("off" if lines else ""),
+              f"the proxy is given PROXY_ACCESS_LOG ({proxy.get('PROXY_ACCESS_LOG')!r})")
 
 
 ENGINE_SERVICES = ("web-service", "data-entry-service", "portal-service", "portal-worker", "portal-db-init")
@@ -917,7 +941,9 @@ def server_checks(label: str, dockerfile: Path, workdir: Path, path: str, expect
         check(code == 0, f"{label}: stops cleanly on SIGTERM within Docker's {STOP_PERIOD}-second stop period", code)
         log.seek(0)
         output = log.read().decode("utf-8", "replace")
-        check(f'"GET {path} HTTP/1.1" 200' in output, f"{label}: requests are logged (docker compose logs)")
+        check("--access-logfile" not in cmd and f"GET {path}" not in output,
+              f"{label}: no access log (ADR 0043: the proxy logs each request, without the address or query string)",
+              output[-300:])
         check("Control socket listening" not in output, f"{label}: no gunicorn control socket", output[-300:])
     finally:
         if proc.poll() is None:
@@ -1084,6 +1110,7 @@ def main() -> int:
     rotation_checks()
     domains_script_checks()
     release_checks()
+    logging_checks()
     proxy_checks()
     no_db = "mongodb://127.0.0.1:9/?serverSelectionTimeoutMS=300"
     server_checks("web-service", REPO / "web_server" / "Dockerfile", REPO / "web_server" / "src",

@@ -154,6 +154,7 @@ check "A: nginx and certbot packages requested" "grep -q 'apt-get install -y.*ce
 check "A: the host's nginx installed or updated even when already there (ADR 0042)" "dpkg -s nginx >/dev/null 2>&1 && grep -q '^apt-get install -y nginx certbot python3-certbot-nginx' $SB/state/calls && grep -q '^apt-get update' $SB/state/calls"
 check "A: a fixed nginx package reported as carrying the November 2026 fixes" "grep -q 'nginx 1.24.0-2ubuntu7.20 carries the security fixes of November 2026' $SB/state/out && ! grep -q 'predates the security fixes' $SB/state/out"
 check "A: the site served over HTTP/1.1 only (no http2)" "! grep -q http2 $SB/nginx/sites-available/gs1resolver"
+check "A: the site keeps no access log (ADR 0043)" "[[ \$(grep -c 'access_log off;' $SB/nginx/sites-available/gs1resolver) == \$(grep -c '^ *server_name ' $SB/nginx/sites-available/gs1resolver) ]] && grep -q 'server_name id.example.org;' $SB/nginx/sites-available/gs1resolver"
 check "A: one replica of each service written to .env" "[[ \$(envval WEB_SERVICE_REPLICAS)\$(envval DATA_ENTRY_SERVICE_REPLICAS)\$(envval PORTAL_SERVICE_REPLICAS)\$(envval PORTAL_WORKER_REPLICAS) == 1111 ]]"
 check "A: Compose reads the replica counts" "[[ \$(compose_cfg | grep -c 'replicas: 1') == 4 ]]"
 check "A: replicas in the summary" "grep -q 'Replicas *resolver 1, data entry API 1, portal 1, job worker 1' $SB/state/out"
@@ -204,6 +205,11 @@ B_SED=$(grep -o "sed -i -E '[^']*'" "$SB/state/out" | head -n 1)
 cp "$SB/nginx/sites-available/gs1resolver" "$SB/state/h2-site"
 eval "$B_SED $SB/state/h2-site"
 check "B: ... and that command leaves the listen lines without http2, the rest unchanged" "[[ -n \"$B_SED\" ]] && ! grep -q http2 $SB/state/h2-site && [[ \$(grep -c 'listen 443 ssl;' $SB/state/h2-site) == 1 ]] && diff <(grep -v listen $SB/state/h2-site) <(grep -v listen $SB/nginx/sites-available/gs1resolver) >/dev/null"
+check "B: a kept site with a server that keeps an access log: warned, with the command that turns it off" "grep -q 'The site keeps an access log' $SB/state/out && grep -q \"To turn it off: sudo sed -i -E -e '/\" $SB/state/out"
+B_LOG_SED=$(grep "The site keeps an access log" -A1 "$SB/state/out" | grep -o "sed -i -E -e '[^']*' -e '[^']*'" | head -n 1)
+cp "$SB/nginx/sites-available/gs1resolver" "$SB/state/log-site"
+eval "$B_LOG_SED $SB/state/log-site"
+check "B: ... and that command gives each server one access_log off, the rest unchanged" "[[ -n \"$B_LOG_SED\" ]] && [[ \$(grep -c 'access_log off;' $SB/state/log-site) == 2 ]] && [[ \$(grep -A1 'server_name' $SB/state/log-site | grep -c 'access_log off;') == 2 ]] && diff <(grep -v access_log $SB/state/log-site) <(grep -v access_log $SB/nginx/sites-available/gs1resolver) >/dev/null"
 
 # ------------------------------------------------------------------------------ C. server migrated by hand
 echo "--- C. existing .env written by hand (double quotes, percent-encoded URI), volumes present"
@@ -250,6 +256,7 @@ check "D: HTTPS site with the given files" "grep -Eq \"ssl_certificate +$SB/stat
 check "D: nginx -t passed with the certificate" "grep -q '^nginx -t' $SB/state/calls && ! grep -q 'rejected' $SB/state/out"
 check "D: certbot not used" "! grep -q '^certbot' $SB/state/calls"
 check "D: the HTTPS site without HTTP/2 (listen 443 ssl, ADR 0042)" "grep -q 'listen 443 ssl;' $SB/nginx/sites-available/gs1resolver && ! grep -Eq '^[^#]*http2' $SB/nginx/sites-available/gs1resolver"
+check "D: neither of the HTTPS site's servers keeps an access log (ADR 0043)" "[[ \$(grep -c 'access_log off;' $SB/nginx/sites-available/gs1resolver) == 2 && \$(grep -c '^ *server_name ' $SB/nginx/sites-available/gs1resolver) == 2 ]]"
 check "D: no schedule for the organisations' domains (no Let's Encrypt), and how to add one" "[[ ! -e $SB/state/domains-cron ]] && grep -q 'install scripts/custom-domains.cron' $SB/state/out"
 
 # ------------------------------------------------------------------------------ E. external proxy

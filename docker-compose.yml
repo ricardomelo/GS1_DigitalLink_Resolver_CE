@@ -5,8 +5,18 @@
 # issue and a test run: portal/gs1_dictionary.json must be generated again from the new release.
 x-gs1-syntax-engine: &gs1-syntax-engine "1.4.1"
 
+# The containers' output (Documentation/adr/0043-access-logs.md): Docker's json-file driver keeps it until the container
+# is removed, with no limit of its own; here each container keeps at most LOG_MAX_FILES files of LOG_MAX_SIZE (from
+# .env; 10m and 5 by default), the oldest dropped first. Read it with "docker compose logs <service>".
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILES:-5}
+
 services:
   database-service:
+    logging: *logging
     build: './database_server'
     container_name: database-server
     restart: always
@@ -28,6 +38,7 @@ services:
   # (default 2). They keep no state of their own, so they have no fixed container_name (Compose cannot
   # replicate a service with one); the proxy finds every replica through Docker's DNS (nginx.conf).
   data-entry-service:
+    logging: *logging
     build:
       context: './data_entry_server'
       args:
@@ -53,6 +64,7 @@ services:
       - resolver-internal-network
 
   web-service:
+    logging: *logging
     build:
       context: './web_server'
       additional_contexts:
@@ -85,6 +97,7 @@ services:
       - resolver-internal-network
 
   portal-db-init:
+    logging: *logging
     # One-shot: creates the MongoDB users of the portal, the resolver and the data entry API, each with the least
     # privileges it needs, or brings their passwords and roles up to date, then exits; the other services start
     # after it. It alone receives the root MONGO_URI (Documentation/adr/0030-least-privilege-services.md).
@@ -107,6 +120,7 @@ services:
       - resolver-internal-network
 
   portal-service:
+    logging: *logging
     # Link management portal for non-technical users (served at /portal/ by the proxy)
     build:
       context: './portal'
@@ -141,6 +155,7 @@ services:
       - resolver-internal-network
 
   portal-worker:
+    logging: *logging
     # Runs the portal's background jobs (spreadsheet imports, link checks) from the jobs collection of the
     # portal's database; same image and settings as the portal, another command. It finishes the record in
     # hand, hands its job back to the queue and stops on "docker compose stop" (stop_grace_period). Each
@@ -178,6 +193,7 @@ services:
       - resolver-internal-network
 
   frontend-proxy-service:
+    logging: *logging
     build: './frontend_proxy_server'
     container_name: frontend-proxy-server
     # nginx asks Docker's DNS for the addresses of these services every 10 seconds ("resolve" in
@@ -199,6 +215,8 @@ services:
       PROXY_LIMIT_SIGNIN: ${PROXY_LIMIT_SIGNIN:-}
       PROXY_LIMIT_CONNECTIONS: ${PROXY_LIMIT_CONNECTIONS:-}
       PROXY_LIMIT_EXEMPT: ${PROXY_LIMIT_EXEMPT:-}
+      # what the access log keeps (ADR 0043): minimal (the default), full or off
+      PROXY_ACCESS_LOG: ${PROXY_ACCESS_LOG:-}
     # the host's loopback address unless .env says otherwise (ADR 0030): the installer writes PROXY_BIND_ADDRESS
     ports:
       - "${PROXY_BIND_ADDRESS:-127.0.0.1}:8080:80"
@@ -206,6 +224,7 @@ services:
       - resolver-internal-network
 
   mailpit:
+    logging: *logging
     # Only for trying the portal's e-mail on a test installation before a real relay exists
     # (Documentation/adr/0004-e-mail.md, decision 9); never in production. Not started by "docker compose up":
     # "docker compose --profile mail-test up -d mailpit" starts it. It accepts every message on port 1025

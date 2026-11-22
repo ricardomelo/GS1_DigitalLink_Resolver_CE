@@ -1645,8 +1645,17 @@ runs imports with the same rules).
   one off; list your monitoring and any integrator that resolves in bulk from known servers in `PROXY_LIMIT_EXEMPT`
   (addresses or networks). The official data entry API has no rate, only the connection limit. After a change:
   `docker compose up -d frontend-proxy-service`; the proxy's log shows the limits in force
-  (`docker compose logs frontend-proxy-service | grep 'request limits'`) and each refusal as a warning
-  (`limiting requests`).
+  (`docker compose logs frontend-proxy-service | grep 'request limits'`) and each refusal as a line with status 429
+  (with `PROXY_ACCESS_LOG=full`, also as a warning, `limiting requests`, naming the client).
+- The logs keep no scanner's address ([ADR 0043](../adr/0043-access-logs.md)). The front-end proxy writes one line per
+  request with the time, the method, the path's first segment (`/01`, `/portal`; `/...` for anything else, such as a
+  compressed link), the status, the size and the time taken: never the client's address, the rest of the path, the
+  query string, the User-Agent or the referrer. `PROXY_ACCESS_LOG=full` writes the former line with all of them, for a
+  diagnosis (personal data: say so in the privacy notice while it lasts); `off` writes nothing. The resolver, the data
+  entry API and the portal write no access log, and the installer's nginx sites keep none (`access_log off;`); for a
+  site written before, the installer prints the command that turns its log off. Each container keeps at most
+  `LOG_MAX_FILES` files (5) of `LOG_MAX_SIZE` (10m) of output, the oldest dropped first. After a change:
+  `docker compose up -d`; `docker compose logs frontend-proxy-service | grep 'access log'` shows the choice in force.
 - No service that answers requests is given the root database credentials
   ([ADR 0030](../adr/0030-least-privilege-services.md)): the one-shot `portal-db-init` service alone receives
   `MONGO_URI` and makes, at every start, a user per service with the least privileges it needs — the portal's own

@@ -49,6 +49,7 @@ NGINX_CONF = PACKAGE / "frontend_proxy_server" / "nginx.conf"
 API_ACCESS_SCRIPT = PACKAGE / "frontend_proxy_server" / "api-access.sh"
 API_ACCESS_PATH = "/etc/nginx/api-access.conf"   # where the proxy image keeps the files the script writes
 REAL_IP_PATH = "/etc/nginx/real-ip.conf"
+ACCESS_LOG_PATH = "/etc/nginx/access-log.conf"   # the access log's choice, written by api-access.sh (ADR 0043)
 # the request limits' files api-access.sh writes there too (ADR 0031)
 LIMIT_FILES = ("limits-http", "limit-exempt", "limit-server", "limit-resolve", "limit-portal", "limit-signin")
 HOME_DIR = PACKAGE / "frontend_proxy_server" / "home"
@@ -222,6 +223,7 @@ def start_nginx(workdir: Path, dns: StubDNS, ports: dict[str, int]) -> tuple[sub
     conf = conf.replace(MOUNT_PATH, str(HOME_DIR))
     conf = conf.replace(API_ACCESS_PATH, str(workdir / "api-access.conf"))
     conf = conf.replace(REAL_IP_PATH, str(workdir / "real-ip.conf"))
+    conf = conf.replace(ACCESS_LOG_PATH, str(workdir / "access-log.conf"))
     for name in LIMIT_FILES:
         conf = conf.replace(f"/etc/nginx/{name}.conf", str(workdir / f"{name}.conf"))
     write_api_access(workdir, {})                      # as the container starts without the settings: closed
@@ -261,7 +263,7 @@ def write_api_access(workdir: Path, settings: dict[str, str]) -> str:
         settings = {**settings, "PROXY_LIMIT_EXEMPT": "127.0.0.0/8"}
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "API_ACCESS_FILE": str(workdir / "api-access.conf"),
            "REAL_IP_FILE": str(workdir / "real-ip.conf"), "API_ACCESS_ROUTES": str(workdir / "route"),
-           "LIMITS_DIR": str(workdir), **settings}
+           "LIMITS_DIR": str(workdir), "ACCESS_LOG_FILE": str(workdir / "access-log.conf"), **settings}
     run = subprocess.run(["sh", str(API_ACCESS_SCRIPT)], env=env, capture_output=True, text=True)
     check(run.returncode == 0, f"api-access.sh runs with {settings or 'no settings'}" + (f" ({run.stderr.strip()})" if run.returncode else ""))
     return run.stderr
@@ -629,6 +631,89 @@ def limits_checks(base: str, workdir: Path) -> None:
     reload_nginx(workdir)
 
 
+def new_log_lines(workdir: Path, name: str, before: int) -> str:
+    """What nginx wrote to a log of the work folder after the given size."""
+    path = workdir / name
+    return path.read_bytes()[before:].decode("utf-8", "replace") if path.exists() else ""
+
+
+def log_size(workdir: Path, name: str) -> int:
+    path = workdir / name
+    return path.stat().st_size if path.exists() else 0
+
+
+def access_log_checks(base: str, workdir: Path) -> None:
+    """What the access log keeps (ADR 0043, finding F-025): by default the time, the method, the path's first segment,
+    the status, the size and the time taken, never the client's address, the rest of the path, the query string, the
+    User-Agent or the referrer; PROXY_ACCESS_LOG=full the whole line, =off nothing; the request limits' refusals
+    reach the error log only with full. Runs after limits_checks(), whose refusals happened with the default."""
+    errors = (workdir / "error.log").read_text() if (workdir / "error.log").exists() else ""
+    check("limiting requests" not in errors and "limiting connections" not in errors,
+          "by default, the request limits' refusals are not written to the error log (they name the client)")
+    probe = {"X-Forwarded-For": "203.0.113.44", "User-Agent": "ProbeAgent/7", "Referer": "https://referrer.example/page"}
+    serial = "/01/09506000134352/10/LOT7/21/SERIAL-4471?17=261231&linkType=gs1:pip"
+    printed = write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "127.0.0.1", "PROXY_TRUSTED_PROXIES": "127.0.0.1"})
+    check("access log: minimal" in printed, "api-access.sh says the access log is minimal by default")
+    check("$access_log_minimal { default 1; }" in (workdir / "access-log.conf").read_text()
+          and "limit_req_log_level info;" in (workdir / "access-log.conf").read_text(),
+          "…and writes the minimal log's choice, with the limits' refusals below the error log's level")
+    dockerfile = (PACKAGE / "frontend_proxy_server" / "Dockerfile").read_text()
+    baked = re.search(r"printf '%s\\n' ((?:'[^']*'\s*(?:\\\n\s*)?)+)> /etc/nginx/access-log\.conf", dockerfile)
+    written = [line for line in (workdir / "access-log.conf").read_text().splitlines() if not line.startswith("#")]
+    check(baked and re.findall(r"'([^']*)'", baked.group(1)) == written,
+          "the image's baked access-log.conf is the minimal choice api-access.sh writes (if the script never runs)")
+    reload_nginx(workdir)
+    before = log_size(workdir, "access.log")
+    paths = {serial: "/01", "/AbC9xQ0kLmN2pR4sT6uV8wY": "/...", "/portal/api/v1/records?gcp=950600": "/portal",
+             "/.well-known/gs1resolver": "/.well-known", "/": "/", "/?utm_source=SERIAL": "/", "/favicon.ico": "/favicon.ico",
+             "/8004/0950600013435CUSTOMER-NAME": "/8004"}
+    for path in paths:
+        fetch(base + path, headers=probe)
+    time.sleep(0.3)
+    lines = [line for line in new_log_lines(workdir, "access.log", before).splitlines() if line.strip()]
+    check(len(lines) == len(paths), f"minimal: one line per request ({len(lines)} for {len(paths)})")
+    areas = [line.split(" ")[2] if len(line.split(" ")) > 2 else "" for line in lines]
+    check(areas == list(paths.values()), f"minimal: the path's first segment when it is a word or an AI, else /... ({areas})")
+    joined = "\n".join(lines)
+    for secret, what in (("203.0.113.44", "the client's address"), ("127.0.0.1", "the connection's address"),
+                         ("SERIAL", "a serial number"), ("LOT7", "the rest of the path"), ("261231", "the query string"),
+                         ("linkType", "the query string's names"), ("ProbeAgent", "the User-Agent"),
+                         ("referrer.example", "the referrer"), ("CUSTOMER", "an identifier's value"),
+                         ("AbC9xQ0", "a compressed link")):
+        check(secret not in joined, f"minimal: no {what} in the access log")
+    check(all(re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d (GET|HEAD) \S+ \d{3} \d+ \d+\.\d{3}", line)
+              for line in lines), "minimal: time, method, area, status, size and time taken, nothing else")
+
+    printed = write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "127.0.0.1", "PROXY_TRUSTED_PROXIES": "127.0.0.1",
+                                         "PROXY_ACCESS_LOG": " Full ", "PROXY_LIMIT_RESOLVE": "1",
+                                         "PROXY_LIMIT_EXEMPT": ""})
+    check("access log: full" in printed and "personal data" in printed, "full: api-access.sh says the log holds personal data")
+    reload_nginx(workdir)
+    before, errors_before = log_size(workdir, "access.log"), log_size(workdir, "error.log")
+    answers = [fetch(base + serial, headers={**probe, "X-Forwarded-For": "203.0.113.45"}) for _ in range(4)]
+    time.sleep(0.3)
+    full = new_log_lines(workdir, "access.log", before)
+    check("203.0.113.45" in full and "SERIAL-4471" in full and "17=261231" in full and "ProbeAgent/7" in full,
+          "full: the client's address, the whole request line and the User-Agent")
+    check(429 in statuses(answers) and "limiting requests" in new_log_lines(workdir, "error.log", errors_before),
+          "full: a request limit's refusal is written to the error log, as before (warn)")
+
+    printed = write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "127.0.0.1", "PROXY_TRUSTED_PROXIES": "127.0.0.1",
+                                         "PROXY_ACCESS_LOG": "off"})
+    check("access log: off" in printed, "off: api-access.sh says so")
+    reload_nginx(workdir)
+    before = log_size(workdir, "access.log")
+    fetch(base + serial, headers=probe)
+    time.sleep(0.3)
+    check(new_log_lines(workdir, "access.log", before).strip() == "", "off: no line in the access log")
+
+    printed = write_api_access(workdir, {"DATA_ENTRY_API_ALLOW": "127.0.0.1", "PROXY_ACCESS_LOG": "verbose"})
+    check("PROXY_ACCESS_LOG: 'verbose' is not minimal, full or off; minimal kept" in printed
+          and "$access_log_minimal { default 1; }" in (workdir / "access-log.conf").read_text(),
+          "another value: the minimal log, with a warning")
+    reload_nginx(workdir)
+
+
 class Cluster:
     """The replicas behind the proxy and the stub DNS that names them."""
 
@@ -931,6 +1016,7 @@ def main() -> int:
         api_access_checks(base, workdir)
         client_address_checks(base, workdir)
         limits_checks(base, workdir)
+        access_log_checks(base, workdir)
         replica_checks(base, cluster)
         browser_checks(base, port, shots)
     finally:

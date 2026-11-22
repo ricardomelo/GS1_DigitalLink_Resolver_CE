@@ -13,6 +13,7 @@ import forwarding
 import landing
 import request_log
 import resolution
+import settings_age
 import web_logic
 import web_pages
 
@@ -86,14 +87,22 @@ def _page_linkset(identifiers: str, qualifier_path: str | None) -> list[dict] | 
     return web_logic.format_linkset_for_external_use(data, identifiers)['linkset']
 
 
+# The caches of the portal's settings whose age the heartbeat reports (settings_age)
+SETTINGS_CACHES = (domains.MAP, forwarding.FORWARDING, resolution.STRICT, landing.BRANDS, web_pages.APPEARANCE,
+                   request_log.RETENTION)
+
+
 @web_namespace.route('/heartbeat')
 class Heartbeat(Resource):
     def get(self) -> tuple[dict[str, str], int]:
         """
         Return a simple heartbeat response to indicate the application is running.
         A dict, which Flask-RESTX turns into JSON: the official jsonify() response inside a tuple answered 500.
+        "settings": "stale" while a cache of the portal's settings could not be read for longer than
+        RESOLVER_SETTINGS_MAX_AGE_S, else "current"; the portal's monitor alerts on it (finding F-033,
+        Documentation/adr/0053-settings-age.md).
         """
-        return {'response_message': 'Server is running!'}, 200
+        return {'response_message': 'Server is running!', 'settings': settings_age.state(SETTINGS_CACHES)}, 200
 
     def head(self) -> Response:
         """

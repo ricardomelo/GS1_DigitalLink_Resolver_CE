@@ -2415,7 +2415,7 @@ async function loadAlerts(event) {
   const kinds = $("#alerts-kind");
   if (!kinds.options.length) {
     kinds.replaceChildren(i18nOption("alerts.anyKind", ""),
-                          ...["resolver", "backup", "certificate", "logspace", "gcptable", "journal", "404"].map(k => i18nOption("alerts.kind." + k, k)));
+                          ...["resolver", "settings", "backup", "certificate", "logspace", "gcptable", "journal", "404"].map(k => i18nOption("alerts.kind." + k, k)));
   }
   const fromHash = new URLSearchParams(location.hash.split("?")[1] || "").get("tenant");
   if (fromHash !== null && !event) $("#alerts-tenant").value = fromHash;
@@ -4281,7 +4281,7 @@ function renderOverview() {
       : "";
     return t("overview.state." + (c.state || "unknown")) + (extra ? " · " + extra : "");
   };
-  if (op.checks) ["resolver", "backup", "certificate", "logspace", "gcptable", "journal"].forEach(name => facts.push(["overview.check." + name, checkText(op.checks[name])]));
+  if (op.checks) ["resolver", "settings", "backup", "certificate", "logspace", "gcptable", "journal"].forEach(name => facts.push(["overview.check." + name, checkText(op.checks[name])]));
   if (d.operation) facts.push(["overview.op.alerts", (op.alerts || []).length
     ? op.alerts.map(a => overviewAlert(a) + " · " +
                          t("overview.alertSince", { when: formatWhen(a.since) })).join("\n")

@@ -44,6 +44,7 @@ TEMPLATES = {
     "alert-404-spike": "alerts", "alert-log-space": "alerts", "alert-log-space-ok": "alerts",
     "alert-gcp-table": "alerts", "alert-gcp-table-ok": "alerts",
     "alert-journal": "alerts", "alert-journal-ok": "alerts", "alert-domain-lapsed": "alerts",
+    "alert-settings-stale": "alerts", "alert-settings-current": "alerts",
     "forwarding-on": "alerts", "forwarding-off": "alerts",
 }
 # Waits before each new try after a temporary failure, in minutes; after the last, the message has failed.

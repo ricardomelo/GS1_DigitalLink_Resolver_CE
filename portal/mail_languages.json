@@ -98,6 +98,14 @@
     "Resuelto: todas las cadenas de la pista de auditoría están íntegras",
     "Hola:\n\nLa verificación del {at} encontró íntegras todas las cadenas de la pista de auditoría del portal de {operator}. Se había notificado una cadena rota el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
    ],
+   "alert-settings-stale": [
+    "Alerta: el resolver no puede leer los ajustes del portal",
+    "Hola:\n\nDesde el {since}, el resolver de {operator} no ha podido leer los ajustes del portal en la base de datos durante más tiempo que su límite (RESOLVER_SETTINGS_MAX_AGE_S; 15 minutos si no se define). Hasta que vuelva a leerlos, no envía ningún código a otro resolver (reglas por prefijo y resolver de último recurso) y muestra las páginas de los artículos sin las marcas de las organizaciones; conserva los dominios, el modo estricto y la conservación del registro de accesos que leyó por última vez.\n\nDirección comprobada: {url}\n\nEn el servidor, «docker compose logs --tail=100 web-service» muestra qué ajustes y por qué (líneas «not read»). Recibirá un mensaje cuando vuelva a leerlos y, mientras tanto, un recordatorio cada 24 horas.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
+   "alert-settings-current": [
+    "Resuelto: el resolver vuelve a leer los ajustes del portal",
+    "Hola:\n\nEl resolver de {operator} vuelve a leer los ajustes del portal y los aplica ({url}). Había informado de que no podía leerlos el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
    "alert-domain-lapsed": [
     "Alerta: falta el registro DNS que comprueba {domain}",
     "Hola:\n\nEl portal de {operator} no encuentra el registro TXT {record} desde hace {days} días: se vio por última vez el {seen}. El registro comprueba que ustedes controlan {domain}.\n\nSi {domain} es un dominio de sus códigos QR, sigue atendido, pero ya no se ofrece para nuevas etiquetas. Si da acceso con el inicio de sesión único, lo sigue dando. En ambos casos, otra organización de esta instalación que compruebe el dominio pasa a tenerlo.\n\nSi todavía usan el dominio, publiquen de nuevo el registro (su valor aparece en Dominios o en Inicio de sesión único) y pulsen Verificar. Si ya no lo usan, elimínenlo.\n\nRecibe este mensaje como administrador; puede desactivar las alertas en Opciones → Correo electrónico."
@@ -214,6 +222,14 @@
    "alert-journal-ok": [
     "Résolu : toutes les chaînes du journal d’audit sont intactes",
     "Bonjour,\n\nLa vérification du {at} a trouvé intactes toutes les chaînes du journal d’audit du portail de {operator}. Une chaîne rompue avait été signalée le {since}.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-settings-stale": [
+    "Alerte : le résolveur ne peut pas lire les paramètres du portail",
+    "Bonjour,\n\nDepuis le {since}, le résolveur de {operator} n’a pas pu lire les paramètres du portail dans la base de données pendant plus longtemps que sa limite (RESOLVER_SETTINGS_MAX_AGE_S ; 15 minutes si elle n’est pas définie). Tant qu’il ne les a pas relus, il n’envoie aucun code à un autre résolveur (règles par préfixe et résolveur de dernier recours) et affiche les pages des articles sans les marques des organisations ; il conserve les domaines, le mode strict et la durée de conservation du journal des accès lus en dernier.\n\nAdresse vérifiée : {url}\n\nSur le serveur, « docker compose logs --tail=100 web-service » indique quels paramètres et pourquoi (lignes « not read »). Vous recevrez un message lorsqu’il les relira, et un rappel toutes les 24 heures d’ici là.\n\nVous recevez ce message en tant qu’administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-settings-current": [
+    "Résolu : le résolveur lit de nouveau les paramètres du portail",
+    "Bonjour,\n\nLe résolveur de {operator} lit de nouveau les paramètres du portail et les applique ({url}). Il avait signalé ne plus pouvoir les lire le {since}.\n\nVous recevez ce message en tant qu’administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
    ],
    "alert-domain-lapsed": [
     "Alerte : l’enregistrement DNS qui prouve {domain} est introuvable",
@@ -332,6 +348,14 @@
     "Behoben: alle Ketten des Aktivitätsprotokolls sind unversehrt",
     "Hallo,\n\nDie Prüfung vom {at} hat alle Ketten des Aktivitätsprotokolls des Portals von {operator} unversehrt gefunden. Eine unterbrochene Kette war am {since} gemeldet worden.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
    ],
+   "alert-settings-stale": [
+    "Warnung: Der Resolver kann die Einstellungen des Portals nicht lesen",
+    "Guten Tag,\n\nseit {since} konnte der Resolver von {operator} die Einstellungen des Portals länger als seine Grenze (RESOLVER_SETTINGS_MAX_AGE_S; 15 Minuten, wenn nicht gesetzt) nicht aus der Datenbank lesen. Bis er sie wieder liest, sendet er keinen Code an einen anderen Resolver (Regeln nach Präfix und Resolver der letzten Instanz) und zeigt die Artikelseiten ohne die Marken der Organisationen; die zuletzt gelesenen Domains, den strengen Modus und die Aufbewahrung des Zugriffsprotokolls behält er bei.\n\nGeprüfte Adresse: {url}\n\nAuf dem Server zeigt „docker compose logs --tail=100 web-service“, welche Einstellungen und warum (Zeilen „not read“). Sie erhalten eine Nachricht, sobald er sie wieder liest, und bis dahin alle 24 Stunden eine Erinnerung.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
+   "alert-settings-current": [
+    "Behoben: Der Resolver liest die Einstellungen des Portals wieder",
+    "Guten Tag,\n\nder Resolver von {operator} liest die Einstellungen des Portals wieder und wendet sie an ({url}). Er hatte am {since} gemeldet, dass er sie nicht lesen kann.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
    "alert-domain-lapsed": [
     "Warnung: Der DNS-Eintrag, der {domain} nachweist, fehlt",
     "Hallo,\n\nDas Portal von {operator} findet den TXT-Eintrag {record} seit {days} Tagen nicht mehr: Er wurde zuletzt am {seen} gesehen. Der Eintrag weist nach, dass Sie {domain} kontrollieren.\n\nIst {domain} eine Domain Ihrer QR-Codes, wird sie weiter bedient, aber nicht mehr für neue Etiketten angeboten. Ermöglicht sie die Anmeldung per Single Sign-on, tut sie das weiterhin. In beiden Fällen übernimmt eine andere Organisation dieser Installation, die die Domain nachweist, sie.\n\nWenn Sie die Domain noch nutzen, veröffentlichen Sie den Eintrag erneut (den Wert zeigen Domains oder Single Sign-on) und klicken Sie auf Verifizieren. Andernfalls entfernen Sie sie.\n\nSie erhalten diese Nachricht als Administrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
@@ -448,6 +472,14 @@
    "alert-journal-ok": [
     "Risolto: tutte le catene del registro di audit sono integre",
     "Buongiorno,\n\nLa verifica del {at} ha trovato integre tutte le catene del registro di audit del portale di {operator}. Una catena interrotta era stata segnalata il {since}.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-settings-stale": [
+    "Avviso: il resolver non riesce a leggere le impostazioni del portale",
+    "Buongiorno,\n\ndal {since} il resolver di {operator} non è riuscito a leggere le impostazioni del portale nel database per un tempo superiore al suo limite (RESOLVER_SETTINGS_MAX_AGE_S; 15 minuti se non impostato). Finché non le rilegge, non invia alcun codice a un altro resolver (regole per prefisso e resolver di ultima istanza) e mostra le pagine degli articoli senza i marchi delle organizzazioni; mantiene i domini, la modalità rigorosa e la conservazione del registro degli accessi letti per ultimi.\n\nIndirizzo verificato: {url}\n\nSul server, \"docker compose logs --tail=100 web-service\" mostra quali impostazioni e perché (righe \"not read\"). Riceverà un messaggio quando le rileggerà e, nel frattempo, un promemoria ogni 24 ore.\n\nRiceve questo messaggio in qualità di amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-settings-current": [
+    "Risolto: il resolver legge di nuovo le impostazioni del portale",
+    "Buongiorno,\n\nil resolver di {operator} legge di nuovo le impostazioni del portale e le applica ({url}). Aveva segnalato di non poterle leggere il {since}.\n\nRiceve questo messaggio in qualità di amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
    ],
    "alert-domain-lapsed": [
     "Avviso: manca il record DNS che dimostra {domain}",
@@ -566,6 +598,14 @@
     "Çözüldü: denetim kaydının tüm zincirleri sağlam",
     "Merhaba,\n\n{at} tarihli doğrulama, {operator} portalının denetim kaydındaki tüm zincirleri sağlam buldu. Kırık bir zincir {since} tarihinde bildirilmişti.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
    ],
+   "alert-settings-stale": [
+    "Uyarı: çözümleyici portalın ayarlarını okuyamıyor",
+    "Merhaba,\n\n{operator} kuruluşunun çözümleyicisi {since} tarihinden beri portalın ayarlarını veritabanından sınırından (RESOLVER_SETTINGS_MAX_AGE_S; ayarlanmadıysa 15 dakika) daha uzun süredir okuyamıyor. Onları yeniden okuyana kadar hiçbir kodu başka bir çözümleyiciye göndermiyor (öneke göre kurallar ve son çare çözümleyici) ve ürün sayfalarını kuruluşların markaları olmadan gösteriyor; en son okuduğu alan adlarını, katı modu ve erişim kaydının saklama süresini koruyor.\n\nKontrol edilen adres: {url}\n\nSunucuda \"docker compose logs --tail=100 web-service\" hangi ayarların okunamadığını ve nedenini gösterir (\"not read\" satırları). Ayarları yeniden okuduğunda bir ileti, bu arada her 24 saatte bir hatırlatma alacaksınız.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "alert-settings-current": [
+    "Çözüldü: çözümleyici portalın ayarlarını yeniden okuyor",
+    "Merhaba,\n\n{operator} kuruluşunun çözümleyicisi portalın ayarlarını yeniden okuyor ve uyguluyor ({url}). {since} tarihinde onları okuyamadığını bildirmişti.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
    "alert-domain-lapsed": [
     "Uyarı: {domain} alan adını kanıtlayan DNS kaydı bulunamıyor",
     "Merhaba,\n\n{operator} portalı {record} TXT kaydını {days} gündür bulamıyor: kayıt en son {seen} tarihinde görüldü. Bu kayıt, {domain} alan adını sizin kontrol ettiğinizi kanıtlar.\n\n{domain} QR kodlarınızın bir alan adıysa hâlâ hizmet veriyor, ancak artık yeni etiketler için sunulmuyor. Çoklu oturum açma ile giriş sağlıyorsa sağlamaya devam ediyor. Her iki durumda da bu kurulumda alan adını kanıtlayan başka bir kuruluş onu devralır.\n\nAlan adını hâlâ kullanıyorsanız kaydı yeniden yayımlayın (değeri Alan adları veya Çoklu oturum açma ekranında görünür) ve Doğrula'ya tıklayın. Artık kullanmıyorsanız kaldırın.\n\nBu iletiyi yönetici olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
@@ -682,6 +722,14 @@
    "alert-journal-ok": [
     "已解决：审计日志的所有链均完整",
     "您好：\n\n{at} 的验证发现 {operator} 门户审计日志的所有链均完整。此前已于 {since} 报告过一条断开的链。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-settings-stale": [
+    "告警：解析器无法读取门户的设置",
+    "您好：\n\n自{since}起，{operator}的解析器无法从数据库读取门户的设置，且持续时间已超过其上限（RESOLVER_SETTINGS_MAX_AGE_S；未设置时为15分钟）。在重新读取之前，它不会将任何代码发送到其他解析器（按前缀的规则和最后求助解析器），商品页面也不显示各组织的品牌；它保留最后一次读取的域名、严格模式和访问日志保留期限。\n\n检查的地址：{url}\n\n在服务器上，“docker compose logs --tail=100 web-service”可显示哪些设置及原因（含“not read”的行）。解析器重新读取设置时您将收到通知，在此期间每24小时会收到一次提醒。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-settings-current": [
+    "已恢复：解析器重新读取门户的设置",
+    "您好：\n\n{operator}的解析器已重新读取门户的设置并加以应用（{url}）。它曾于{since}报告无法读取这些设置。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
    ],
    "alert-domain-lapsed": [
     "告警：证明 {domain} 的 DNS 记录已找不到",
@@ -800,6 +848,14 @@
     "解決：監査証跡のすべてのチェーンが完全です",
     "こんにちは。\n\n{at} の検証で、{operator} のポータルの監査証跡のすべてのチェーンが完全であることが確認されました。破損したチェーンは {since} に報告されていました。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
    ],
+   "alert-settings-stale": [
+    "アラート：リゾルバーがポータルの設定を読み込めません",
+    "こんにちは。\n\n{since} 以降、{operator} のリゾルバーは、上限（RESOLVER_SETTINGS_MAX_AGE_S。未設定の場合は15分）を超えてデータベースからポータルの設定を読み込めていません。再び読み込むまで、コードを別のリゾルバーに送らず（プレフィックスによるルールと最後の手段のリゾルバー）、アイテムページを組織のブランドなしで表示します。最後に読み込んだドメイン、厳格モード、アクセスログの保存期間は維持します。\n\nチェックしたアドレス：{url}\n\nサーバー上で「docker compose logs --tail=100 web-service」を実行すると、どの設定がなぜ読み込めないかがわかります（「not read」の行）。再び読み込むとメッセージが届きます。それまでの間は24時間ごとにリマインダーが届きます。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
+   "alert-settings-current": [
+    "解決：リゾルバーが再びポータルの設定を読み込んでいます",
+    "こんにちは。\n\n{operator} のリゾルバーが再びポータルの設定を読み込み、適用しています（{url}）。{since} に設定を読み込めないと報告していました。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
    "alert-domain-lapsed": [
     "アラート：{domain} を証明する DNS レコードが見つかりません",
     "こんにちは。\n\n{operator} のポータルは {days} 日間 TXT レコード {record} を見つけられていません。最後に確認した日時は {seen} です。このレコードは、{domain} を管理していることを証明するものです。\n\n{domain} が QR コードのドメインであれば、引き続き応答しますが、新しいラベルには提示されません。シングルサインオンに使われているなら、引き続きサインインできます。いずれの場合も、このドメインを証明したこのインストールの別の組織が引き継ぎます。\n\nドメインを引き続き使う場合は、レコードを再度公開し（値は「ドメイン」または「シングルサインオン」に表示されます）、「検証」をクリックしてください。使わない場合は削除してください。\n\nこのメッセージは管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
@@ -916,6 +972,14 @@
    "alert-journal-ok": [
     "해결됨: 감사 기록의 모든 체인이 온전합니다",
     "안녕하세요.\n\n{at}의 검증에서 {operator} 포털 감사 기록의 모든 체인이 온전한 것으로 확인되었습니다. 손상된 체인은 {since}에 보고되었습니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-settings-stale": [
+    "알림: 리졸버가 포털의 설정을 읽을 수 없습니다",
+    "안녕하십니까?\n\n{since}부터 {operator}의 리졸버가 한도(RESOLVER_SETTINGS_MAX_AGE_S, 설정하지 않으면 15분)보다 오래 데이터베이스에서 포털의 설정을 읽지 못하고 있습니다. 다시 읽을 때까지 어떤 코드도 다른 리졸버로 보내지 않으며(접두사별 규칙과 최후 수단 리졸버), 품목 페이지를 조직의 브랜드 없이 표시합니다. 마지막으로 읽은 도메인, 엄격 모드, 접속 기록 보존 기간은 유지합니다.\n\n점검한 주소: {url}\n\n서버에서 \"docker compose logs --tail=100 web-service\"로 어떤 설정을 왜 읽지 못하는지 확인할 수 있습니다(\"not read\" 줄). 다시 읽으면 메시지를 보내 드리며, 그동안 24시간마다 알림을 보내 드립니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-settings-current": [
+    "해결됨: 리졸버가 포털의 설정을 다시 읽습니다",
+    "안녕하십니까?\n\n{operator}의 리졸버가 포털의 설정을 다시 읽고 적용합니다({url}). 리졸버는 {since}에 설정을 읽을 수 없다고 알렸습니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
    ],
    "alert-domain-lapsed": [
     "알림: {domain}을(를) 증명하는 DNS 레코드를 찾을 수 없습니다",
@@ -1034,6 +1098,14 @@
     "हल हुआ: ऑडिट ट्रेल की सभी श्रृंखलाएँ अखंड हैं",
     "नमस्ते,\n\n{at} के सत्यापन में {operator} के पोर्टल की ऑडिट ट्रेल की सभी श्रृंखलाएँ अखंड मिलीं। एक टूटी हुई श्रृंखला की सूचना {since} को दी गई थी।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
    ],
+   "alert-settings-stale": [
+    "अलर्ट: रिज़ॉल्वर पोर्टल की सेटिंग पढ़ नहीं पा रहा है",
+    "नमस्ते,\n\n{since} से {operator} का रिज़ॉल्वर अपनी सीमा (RESOLVER_SETTINGS_MAX_AGE_S; तय न होने पर 15 मिनट) से अधिक समय से डेटाबेस से पोर्टल की सेटिंग नहीं पढ़ पाया है। जब तक वह इन्हें फिर से नहीं पढ़ता, वह कोई भी कोड किसी दूसरे रिज़ॉल्वर को नहीं भेजता (प्रीफ़िक्स के अनुसार नियम और अंतिम विकल्प रिज़ॉल्वर) और आइटम पेज संगठनों के ब्रांड के बिना दिखाता है; वह अंतिम बार पढ़े गए डोमेन, सख़्त मोड और एक्सेस लॉग की अवधि बनाए रखता है।\n\nजाँचा गया पता: {url}\n\nसर्वर पर, \"docker compose logs --tail=100 web-service\" दिखाता है कि कौन-सी सेटिंग और क्यों (\"not read\" वाली पंक्तियाँ)। जब यह इन्हें फिर से पढ़ेगा तो आपको संदेश मिलेगा, और तब तक हर 24 घंटे में एक रिमाइंडर।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
+   "alert-settings-current": [
+    "समाधान: रिज़ॉल्वर फिर से पोर्टल की सेटिंग पढ़ रहा है",
+    "नमस्ते,\n\n{operator} का रिज़ॉल्वर फिर से पोर्टल की सेटिंग पढ़ रहा है और उन्हें लागू कर रहा है ({url})। इसने {since} को बताया था कि यह उन्हें पढ़ नहीं पा रहा है।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
    "alert-domain-lapsed": [
     "अलर्ट: {domain} को प्रमाणित करने वाला DNS रिकॉर्ड नहीं मिल रहा",
     "नमस्ते,\n\n{operator} के पोर्टल को {days} दिनों से TXT रिकॉर्ड {record} नहीं मिल रहा: इसे पिछली बार {seen} को देखा गया था। यह रिकॉर्ड प्रमाणित करता है कि {domain} आपके नियंत्रण में है।\n\nयदि {domain} आपके QR कोड का डोमेन है, तो यह अभी भी सेवा देता है पर अब नए लेबलों के लिए उपलब्ध नहीं है। यदि यह सिंगल साइन-ऑन से साइन-इन कराता है, तो अब भी कराता है। दोनों ही स्थितियों में, इस इंस्टॉलेशन का कोई अन्य संगठन जो डोमेन प्रमाणित करे, उसे ले लेता है।\n\nयदि आप अभी भी डोमेन का उपयोग करते हैं, तो रिकॉर्ड फिर से प्रकाशित करें (उसका मान डोमेन या सिंगल साइन-ऑन में दिखता है) और सत्यापित करें पर क्लिक करें। यदि अब उपयोग नहीं करते, तो उसे हटा दें।\n\nआपको यह संदेश व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
@@ -1150,6 +1222,14 @@
    "alert-journal-ok": [
     "تم الحل: جميع سلاسل سجل التدقيق سليمة",
     "مرحبًا،\n\nوجد التحقق الذي جرى في {at} جميع سلاسل سجل التدقيق في بوابة {operator} سليمة. وكان قد أُبلغ عن سلسلة مقطوعة في {since}.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-settings-stale": [
+    "تنبيه: لا يستطيع المحلِّل قراءة إعدادات البوابة",
+    "مرحبًا،\n\nمنذ {since}، لم يتمكن محلِّل {operator} من قراءة إعدادات البوابة من قاعدة البيانات لمدة تتجاوز حده (RESOLVER_SETTINGS_MAX_AGE_S؛ 15 دقيقة إن لم يُضبط). وإلى أن يقرأها مجددًا، لن يرسل أي رمز إلى محلِّل آخر (القواعد حسب البادئة والمحلّل الأخير)، وسيعرض صفحات المنتجات دون علامات المؤسسات التجارية؛ ويحتفظ بالنطاقات والوضع الصارم ومدة الاحتفاظ بسجل الوصول التي قرأها آخر مرة.\n\nالعنوان الذي تم فحصه: {url}\n\nعلى الخادم، يُظهر الأمر «docker compose logs --tail=100 web-service» الإعدادات المعنية والسبب (الأسطر «not read»). ستتلقى رسالة عندما يقرأها مجددًا، وتذكيرًا كل 24 ساعة في الأثناء.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-settings-current": [
+    "تم الحل: المحلِّل يقرأ إعدادات البوابة مجددًا",
+    "مرحبًا،\n\nعاد محلِّل {operator} يقرأ إعدادات البوابة ويطبّقها ({url}). وكان قد أبلغ في {since} أنه لا يستطيع قراءتها.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
    ],
    "alert-domain-lapsed": [
     "تنبيه: سجل DNS الذي يثبت {domain} غير موجود",

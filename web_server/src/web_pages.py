@@ -25,6 +25,8 @@ from urllib.parse import unquote, urlparse
 
 from flask import g, render_template_string, request
 
+import settings_age
+
 PRODUCT_NAME = os.getenv('RESOLVER_PRODUCT_NAME', 'GS1 Digital Link Resolver Suite')       # ADR 0024
 # A stored title equal to a former default is not the operator's choice (portal/appearance.py, FORMER_TITLES).
 FORMER_TITLES = ('GS1 Resolver Community Edition',)
@@ -63,7 +65,8 @@ except OSError:
 
 class Appearance:
     """The installation's appearance set in the portal (Documentation/adr/0019-appearance.md): the setting "appearance"
-    of the portal's database, read again after CACHE_SECONDS (the last kept on failure); {} for the original."""
+    of the portal's database, read again after CACHE_SECONDS (the last kept on failure, for RESOLVER_SETTINGS_MAX_AGE_S
+    at most: then the original until it is read again; finding F-033, ADR 0053); {} for the original."""
     CACHE_SECONDS = 30
 
     def __init__(self, database=None):
@@ -71,20 +74,27 @@ class Appearance:
         self._doc: dict = {}
         self._loaded = 0.0
         self._lock = threading.Lock()
+        self.age = settings_age.Age('Appearance', 'the pages are shown with the original appearance')
 
     def current(self) -> dict:
+        self.refresh()
+        return {} if self.database is None or self.age.stale() else self._doc
+
+    def refresh(self) -> None:
+        """Reads the appearance again when CACHE_SECONDS have passed; a failure keeps the last one (settings_age)."""
         if self.database is None:
-            return {}
+            return
         now = time.monotonic()
         if now - self._loaded >= self.CACHE_SECONDS:
             with self._lock:
                 if now - self._loaded >= self.CACHE_SECONDS:
                     try:
                         self._doc = (self.database()['settings'].find_one({'_id': 'appearance'}) or {}).get('value') or {}
+                        self.age.read(now)
                     except Exception as exc:          # noqa: BLE001 — the pages keep the last appearance
                         logging.getLogger(__name__).warning('Appearance not read (%s); the last one is kept.', exc)
+                        self.age.failed(now)
                     self._loaded = now
-        return self._doc
 
     def forget(self) -> None:
         self._loaded = 0.0

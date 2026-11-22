@@ -26,6 +26,7 @@ from flask import Response, make_response, render_template_string, request
 
 import domains
 import request_log
+import settings_age
 import web_pages
 
 logger = logging.getLogger(__name__)
@@ -70,27 +71,36 @@ ICONS = {
 
 # ----------------------------------------------------------------------------------------------- branding
 class BrandMap:
-    """The portal's branding: {prefix or "*": doc}, read again after CACHE_SECONDS (the last kept on failure)."""
+    """The portal's branding: {prefix or "*": doc}, read again after CACHE_SECONDS (the last kept on failure, for
+    RESOLVER_SETTINGS_MAX_AGE_S at most: then no brand until it is read again, since a brand shows a verified site;
+    finding F-033, Documentation/adr/0053-settings-age.md)."""
 
     def __init__(self, database=None):
         self.database = database
         self._map: dict[str, dict] = {}
         self._loaded = 0.0
         self._lock = threading.Lock()
+        self.age = settings_age.Age('Branding', "the item's pages are shown without the organisations' brands")
 
     def _all(self) -> dict[str, dict]:
+        self.refresh()
+        return {} if self.database is None or self.age.stale() else self._map
+
+    def refresh(self) -> None:
+        """Reads the brands again when CACHE_SECONDS have passed; a failure keeps the last ones (settings_age)."""
         if self.database is None:
-            return {}
+            return
         now = time.monotonic()
         if now - self._loaded >= CACHE_SECONDS:
             with self._lock:
                 if now - self._loaded >= CACHE_SECONDS:
                     try:
                         self._map = {doc['_id']: doc for doc in self.database()['branding'].find({})}
+                        self.age.read(now)
                     except Exception as exc:          # noqa: BLE001 — the page is shown without a brand
                         logger.warning('Branding not read (%s); the last one is kept.', exc)
+                        self.age.failed(now)
                     self._loaded = now
-        return self._map
 
     def for_part(self, part: str | None) -> dict | None:
         """The branding of the longest prefix of a company part, else the installation's ("*")."""

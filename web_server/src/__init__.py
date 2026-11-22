@@ -14,6 +14,7 @@ import landing
 import request_log
 import resolution
 import service_db
+import settings_age
 import web_pages
 from web_namespace import web_namespace
 from mongo_db_init import mongo, init_mongo
@@ -55,6 +56,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         logger.warning("%s must be a whole number of milliseconds from %d to %d: %d is used.", db_budget.SETTING,
                        db_budget.MIN_MS, db_budget.MAX_MS, db_budget.DEFAULT_MS)
     logger.info("A request may spend %.1f s reading MongoDB", db_budget.seconds())
+    # how long the caches may go on with the portal's settings they cannot read again (finding F-033,
+    # Documentation/adr/0053-settings-age.md)
+    if settings_age.invalid():
+        logger.warning("%s must be a whole number of seconds from %d to %d: %d is used.", settings_age.SETTING,
+                       settings_age.MIN_S, settings_age.MAX_S, settings_age.DEFAULT_S)
+    logger.info("The portal's settings are used for %d s at most when they cannot be read again", settings_age.limit())
 
     with app.app_context():
         # setting up a blueprint for your API routes

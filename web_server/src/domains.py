@@ -30,6 +30,7 @@ import threading
 import time
 
 import request_log
+import settings_age
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +46,16 @@ def portal_db_name() -> str:
 
 class DomainMap:
     """The verified direct domains: {host: {"stem", "prefixes" (None for the operator), "excluded"}}, read again
-    after CACHE_SECONDS; when the database cannot be read the last map is kept."""
+    after CACHE_SECONDS; when the database cannot be read the last map is kept, also once it is older than
+    RESOLVER_SETTINGS_MAX_AGE_S (without it a domain would answer for every key; the age is logged and alerted:
+    finding F-033, Documentation/adr/0053-settings-age.md)."""
 
     def __init__(self, database=None):
         self.database = database        # a function giving the portal's database (pymongo), set by create_app
         self._map: dict[str, dict] = {}
         self._loaded = 0.0
         self._lock = threading.Lock()
+        self.age = settings_age.Age('Domains', 'the last domains read are kept')
 
     def _load(self) -> dict[str, dict]:
         db = self.database()
@@ -68,16 +72,24 @@ class DomainMap:
     def lookup(self, host: str) -> dict | None:
         if not host or self.database is None:
             return None
+        self.refresh()
+        return self._map.get(host)
+
+    def refresh(self) -> None:
+        """Reads the domains again when CACHE_SECONDS have passed; a failure keeps the last ones (settings_age)."""
+        if self.database is None:
+            return
         now = time.monotonic()
         if now - self._loaded >= CACHE_SECONDS:
             with self._lock:
                 if now - self._loaded >= CACHE_SECONDS:
                     try:
                         self._map = self._load()
+                        self.age.read(now)
                     except Exception as exc:          # noqa: BLE001 — the resolver keeps answering
                         logger.warning('Domains not read (%s); the last list is kept.', exc)
+                        self.age.failed(now)
                     self._loaded = now
-        return self._map.get(host)
 
     def forget(self) -> None:
         """Reads the domains again at the next request (tests)."""

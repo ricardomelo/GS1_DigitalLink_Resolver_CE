@@ -4,7 +4,8 @@ Monitoring and alerts by e-mail (Documentation/adr/0008-monitoring-and-alerts.md
 The job worker calls run() every PORTAL_MONITOR_MINUTES (app.MONITORING, worker.py); one replica at a time does the
 checks (the "monitor" lock, not waited for). Each check keeps a document in the portal's collection "alerts":
 
-    {_id: "resolver" | "backup" | "certificate" | "logspace" | "gcptable" | "journal" | "404:*" | "404:<tenant id>",
+    {_id: "resolver" | "settings" | "backup" | "certificate" | "logspace" | "gcptable" | "journal" | "404:*" |
+          "404:<tenant id>",
      state: "ok" | "alert" | "unknown", since, checkedAt, failures, detail, notifiedAt, notifiedLevel, tenant}
 
 Each alert raised is also recorded in "alert_history" (Documentation/adr/0013-administration-and-navigation.md):
@@ -20,6 +21,8 @@ GS1's GCP length table in use (Documentation/adr/0015-gcp-length-table.md) is an
 days after the date GS1 gave it, reminded every GCP_REMIND_DAYS days.
 The journal's hash chains (Documentation/adr/0026-journal-integrity.md, section 2.5) are an alert while the last
 verification (the worker's daily one, or an administrator's) found a chain broken.
+The resolver's caches of the portal's settings (finding F-033, Documentation/adr/0053-settings-age.md) are an alert
+while the resolver's heartbeat, through the proxy, says "settings": "stale".
 Server administrators receive the installation's alerts; an organisation's administrators its spikes of 404.
 
 Settings (section 3.4 of the ADR):
@@ -64,7 +67,7 @@ TOP_CODES = 5
 DEFAULT_URL = "http://frontend-proxy-service/.well-known/gs1resolver"
 SPACE_ALERT = 80
 SPACE_STEP = 5
-CHECKS = ("resolver", "backup", "certificate", "logspace", "gcptable", "journal")
+CHECKS = ("resolver", "settings", "backup", "certificate", "logspace", "gcptable", "journal")
 GCP_REMIND_DAYS = 7
 HISTORY = "alert_history"
 HISTORY_DAYS = 400
@@ -151,6 +154,28 @@ def check_resolver() -> tuple[bool, dict]:
         if not good(answer.status_code):
             return False, {"url": target, "status": answer.status_code}
     return True, {"url": url, "probe": probe or None}
+
+
+def heartbeat_url() -> str:
+    """The resolver's heartbeat through the proxy: the host of PORTAL_MONITOR_URL, path /heartbeat."""
+    url = monitor_url()
+    return url.split("://", 1)[0] + "://" + url.split("://", 1)[-1].split("/", 1)[0] + "/heartbeat"
+
+
+def check_settings() -> tuple[str, dict]:
+    """("alert" | "ok" | "unknown", detail) from the resolver's heartbeat (finding F-033,
+    Documentation/adr/0053-settings-age.md): an alert while it says "settings": "stale" (a cache of the portal's
+    settings could not be read for longer than RESOLVER_SETTINGS_MAX_AGE_S); unknown when it does not answer (the check
+    "resolver" covers that) or says nothing about them (a resolver older than the finding)."""
+    url = heartbeat_url()
+    try:
+        answer = requests.get(url, timeout=TIMEOUT_SECONDS, allow_redirects=False)
+        found = answer.json() if answer.status_code == 200 else None
+    except (requests.RequestException, ValueError):
+        return "unknown", {"url": url}
+    settings = found.get("settings") if isinstance(found, dict) else None
+    state = {"stale": "alert", "current": "ok"}.get(settings, "unknown")
+    return state, {"url": url}
 
 
 def check_backup(now: datetime) -> tuple[str, dict]:
@@ -432,6 +457,10 @@ def _run(now: datetime) -> dict:
     found["resolver"] = _update("resolver", state, detail, now, ("alert-resolver-down", "alert-resolver-up"),
                                 params={"url": detail.get("url"), "problem": detail.get("error") or detail.get("status") or ""},
                                 failures=failures)
+    # the resolver's caches of the portal's settings (F-033)
+    state, detail = check_settings()
+    found["settings"] = _update("settings", state, detail, now, ("alert-settings-stale", "alert-settings-current"),
+                                params={"url": detail.get("url") or ""})
     # backup
     state, detail = check_backup(now)
     found["backup"] = _update("backup", state, detail, now, ("alert-backup-failed", "alert-backup-ok"),

@@ -67,6 +67,7 @@ PROGRAMS = [
     Program("domains_resolver", "resolver", "resolver/test_domains_resolver.py"),
     Program("forwarding_resolver", "resolver", "resolver/test_forwarding_resolver.py"),
     Program("strict_resolver", "resolver", "resolver/test_strict_resolver.py"),
+    Program("settings_age", "resolver", "resolver/test_settings_age.py"),
     Program("language_resolver", "resolver", "resolver/test_language_resolver.py"),
     Program("landing", "resolver", "resolver/test_landing.py"),
     Program("load", "resolver", "load/test_load.py"),

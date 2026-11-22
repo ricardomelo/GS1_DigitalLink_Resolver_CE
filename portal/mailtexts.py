@@ -389,6 +389,18 @@ TEXTS = {
         "pt-BR": ("Resolvido: todas as cadeias da trilha de auditoria estão íntegras",
                   "Olá,\n\nA verificação de {at} encontrou íntegras todas as cadeias da trilha de auditoria do portal de {operator}. Uma cadeia quebrada tinha sido avisada em {since}.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
     },
+    "alert-settings-stale": {
+        "en-GB": ("Alert: the resolver cannot read the portal's settings",
+                  "Hello,\n\nSince {since} the resolver of {operator} has not been able to read the portal's settings from the database for longer than its limit (RESOLVER_SETTINGS_MAX_AGE_S; 15 minutes unless set). Until it reads them again it sends no code to another resolver (prefix rules and the resolver of last resort) and shows the item's pages without the organisations' brands; it keeps the domains, the strict mode and the request log's retention it read last.\n\nAddress checked: {url}\n\nOn the server, \"docker compose logs --tail=100 web-service\" shows which settings and why (lines \"not read\"). You will receive a message when it reads them again, and a reminder every 24 hours meanwhile.\n\nYou receive this message as a server administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Alerta: o Resolver não consegue ler as configurações do portal",
+                  "Olá,\n\nDesde {since} o Resolver de {operator} não consegue ler as configurações do portal no banco de dados por mais tempo que o seu limite (RESOLVER_SETTINGS_MAX_AGE_S; 15 minutos se não for definido). Até lê-las de novo, ele não envia nenhum código a outro resolver (regras por prefixo e resolver de último recurso) e mostra as páginas dos itens sem as marcas das organizações; mantém os domínios, o modo estrito e a retenção dos acessos que leu por último.\n\nEndereço verificado: {url}\n\nNo servidor, \"docker compose logs --tail=100 web-service\" mostra quais configurações e por quê (linhas \"not read\"). Você receberá uma mensagem quando ele voltar a lê-las, e um lembrete a cada 24 horas enquanto isso.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
+    },
+    "alert-settings-current": {
+        "en-GB": ("Resolved: the resolver reads the portal's settings again",
+                  "Hello,\n\nThe resolver of {operator} reads the portal's settings again and applies them ({url}). It had reported them unreadable on {since}.\n\nYou receive this message as a server administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Resolvido: o Resolver voltou a ler as configurações do portal",
+                  "Olá,\n\nO Resolver de {operator} voltou a ler as configurações do portal e a aplicá-las ({url}). Ele tinha avisado em {since} que não conseguia lê-las.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
+    },
     "alert-domain-lapsed": {
         "en-GB": ("Alert: the DNS record that proves {domain} is missing",
                   "Hello,\n\n"

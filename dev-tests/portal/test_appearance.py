@@ -85,6 +85,10 @@ root, ana, anyone = client("root", "root-password-long"), client("ana", "ana-pas
 
 # The resolver's own reader of the same setting (web_server/src/web_pages.py), on the portal's database
 RESOLVER_SRC = os.path.join(HERE, "..", "..", "web_server", "src")
+# web_pages imports the resolver's settings_age (ADR 0053), which the portal does not have
+age_spec = importlib.util.spec_from_file_location("settings_age", os.path.join(RESOLVER_SRC, "settings_age.py"))
+sys.modules["settings_age"] = importlib.util.module_from_spec(age_spec)
+age_spec.loader.exec_module(sys.modules["settings_age"])
 spec = importlib.util.spec_from_file_location("resolver_web_pages", os.path.join(RESOLVER_SRC, "web_pages.py"))
 web_pages = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(web_pages)

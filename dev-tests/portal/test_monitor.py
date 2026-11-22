@@ -1,7 +1,8 @@
 """
 Monitoring and alerts by e-mail (Documentation/adr/0008-monitoring-and-alerts.md): the settings; the resolver checked
 through a stand-in proxy (two failed rounds before an alert, a reminder a day, a message when it answers again, the
-probe of a registered code); the backup's record (unknown, late, failed, good again); the certificate (expiring,
+probe of a registered code); the resolver's settings by its heartbeat (finding F-033: an alert while it says they are
+stale, reminded daily, resolved; unknown when it does not answer or says nothing); the backup's record (unknown, late, failed, good again); the certificate (expiring,
 invalid, unreachable, once an hour); the request log's space against its limit (80 %, then every 5); the age of GS1's
 GCP length table (unknown without one, an alert from 90 days, reminded weekly, resolved by a newer list); the journal's
 hash chains (ADR 0026: unknown before the first verification, an alert when the daily or an administrator's
@@ -72,6 +73,15 @@ def check(name, condition, detail=""):
 # A stand-in proxy whose answers the test chooses
 proxy = Flask("proxy")
 ANSWER = {"/.well-known/gs1resolver": 200, "/01/09506000134352": 307}
+
+
+HEART = {"status": 200, "body": {"response_message": "Server is running!", "settings": "current"}}
+
+
+@proxy.route("/heartbeat")
+def heartbeat():
+    # the resolver's heartbeat, its settings' age (finding F-033)
+    return HEART["body"], HEART["status"]
 
 
 @proxy.route("/<path:path>")
@@ -172,6 +182,51 @@ os.environ["PORTAL_MONITOR_URL"] = "http://127.0.0.1:9/.well-known/gs1resolver"
 ok, detail = monitor.check_resolver()
 check("a proxy that does not answer: a failure with the error's name", not ok and detail.get("error"), detail)
 os.environ["PORTAL_MONITOR_URL"] = f"http://127.0.0.1:{PROXY_PORT}/.well-known/gs1resolver"
+
+# ================================================================== the resolver's settings (finding F-033, ADR 0053)
+clear()
+monitor._run(NOW)
+check("the resolver's settings: the heartbeat through the proxy says current: ok, no message",
+      state("settings") == "ok" and not sent()
+      and ALERTS.find_one({"_id": "settings"})["detail"] == {"url": f"http://127.0.0.1:{PROXY_PORT}/heartbeat"},
+      (state("settings"), sent(), ALERTS.find_one({"_id": "settings"})))
+HEART["body"] = {"response_message": "Server is running!", "settings": "stale"}
+monitor._run(NOW + timedelta(minutes=5))
+check("…stale: an alert at once (the resolver waited RESOLVER_SETTINGS_MAX_AGE_S already), a message to the server "
+      "administrators who want alerts", state("settings") == "alert" and sent() == [("root", "alert-settings-stale")],
+      sent())
+job = MAIL.find_one({"template": "alert-settings-stale"})
+check("…the message says what the resolver no longer applies, what it keeps and where to look",
+      job and job["subject"] == "Alert: the resolver cannot read the portal's settings"
+      and "/heartbeat" in job["text"] and "Example Operator" in job["text"] and "RESOLVER_SETTINGS_MAX_AGE_S" in job["text"]
+      and "resolver of last resort" in job["text"] and "docker compose logs --tail=100 web-service" in job["text"],
+      job and job["text"][:600])
+check("…in the alert history", store.col(monitor.HISTORY).find_one({"check": "settings", "endedAt": None}) is not None)
+monitor._run(NOW + timedelta(minutes=10))
+check("…no new message while it lasts", len(sent("alert-settings-stale")) == 1, sent())
+monitor._run(NOW + timedelta(hours=24, minutes=6))
+check("…a reminder after 24 hours", sent("alert-settings-stale") == [("root", "alert-settings-stale")] * 2, sent())
+HEART["status"] = 503
+monitor._run(NOW + timedelta(hours=24, minutes=11))
+check("…a heartbeat that does not answer: unknown, which resolves nothing and sends nothing (the check resolver covers "
+      "it)", state("settings") == "unknown" and not sent("alert-settings-current"), sent())
+HEART["status"] = 200
+HEART["body"] = {"response_message": "Server is running!"}
+check("…a heartbeat without settings (a resolver older than the finding): unknown", monitor.check_settings()[0]
+      == "unknown")
+HEART["body"] = "not JSON"
+check("…an answer that is not JSON: unknown", monitor.check_settings()[0] == "unknown")
+HEART["body"] = {"response_message": "Server is running!", "settings": "stale"}
+monitor._run(NOW + timedelta(hours=24, minutes=16))
+HEART["body"] = {"response_message": "Server is running!", "settings": "current"}
+monitor._run(NOW + timedelta(hours=24, minutes=21))
+check("…current again: resolved, a message", state("settings") == "ok"
+      and sent()[-1] == ("root", "alert-settings-current"), sent())
+job = MAIL.find_one({"template": "alert-settings-current"})
+check("…which names the date it was reported", job and job["subject"]
+      == "Resolved: the resolver reads the portal's settings again" and " UTC" in job["text"], job and job["text"][:300])
+check("the check among the installation's checks and the kinds of the alert history",
+      "settings" in monitor.CHECKS and "settings" in monitor.KINDS)
 
 # ================================================================== the backup's record
 clear()
@@ -491,7 +546,7 @@ root = client("root", "root-password-long")
 op = root.get("/portal/api/overview").get_json()["operation"]
 check("overview of a server administrator: every active alert and the state of each check",
       sorted(a["kind"] for a in op["alerts"]) == ["404", "404", "backup", "resolver"]
-      and set(op["checks"]) == {"resolver", "backup", "certificate", "logspace", "gcptable", "journal"},
+      and set(op["checks"]) == {"resolver", "settings", "backup", "certificate", "logspace", "gcptable", "journal"},
       op.get("alerts"))
 # Operation is the server administrators' only (ADR 0013); everyone else's alerts come with record quality
 ana = client("ana", "ana-password-long")
@@ -539,7 +594,7 @@ monitor._run(S + timedelta(minutes=30))
 job = MAIL.find_one({"template": "alert-404-spike", "user": "ana"})
 check("…messages in the recipient's language", job and "códigos sem cadastro" in job["subject"], job and job["subject"])
 templates = [t for t in mailtexts.TEXTS if t.startswith("alert-")]
-check("fourteen alert messages", len(templates) == 14, templates)
+check("sixteen alert messages", len(templates) == 16, templates)
 for template in templates:
     en, pt = mailtexts.TEXTS[template]["en-GB"], mailtexts.TEXTS[template]["pt-BR"]
     same = mailtexts.placeholders(en[0] + en[1]) == mailtexts.placeholders(pt[0] + pt[1])

@@ -9,7 +9,8 @@ withheld (404 with Resolution-Match: withheld; web_logic.read_document(), web_na
 The portal keeps the setting in its own database (PORTAL_DB_NAME): the field "strictSafety" of an organisation
 (collection "tenants") and the setting "resolution.strict" for the keys no organisation holds (the operator's scope).
 The resolver reads both with its root connection at most every CACHE_SECONDS and keeps the last ones read when the
-database does not answer. The organisation that owns a key is the one with the longest GS1 Company Prefix that starts
+database does not answer, also once they are older than RESOLVER_SETTINGS_MAX_AGE_S (switching the strict mode off
+would give withheld links; the age is logged and alerted: finding F-033, Documentation/adr/0053-settings-age.md). The organisation that owns a key is the one with the longest GS1 Company Prefix that starts
 it, as everywhere else.
 """
 import logging
@@ -17,6 +18,7 @@ import threading
 import time
 
 import request_log
+import settings_age
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,7 @@ class StrictMode:
         self._operator = False
         self._loaded = 0.0
         self._lock = threading.Lock()
+        self.age = settings_age.Age('Strict mode', 'the last strict mode read is kept')
 
     def _load(self) -> None:
         db = self.database()
@@ -51,7 +54,8 @@ class StrictMode:
         self._prefixes = sorted(prefixes, key=lambda item: -len(item[0]))
         self._operator = bool(setting.get('enabled'))
 
-    def _fresh(self) -> None:
+    def refresh(self) -> None:
+        """Reads the settings again when CACHE_SECONDS have passed; a failure keeps the last ones (settings_age)."""
         if self.database is None:
             return
         now = time.monotonic()
@@ -60,14 +64,16 @@ class StrictMode:
                 if now - self._loaded >= CACHE_SECONDS:
                     try:
                         self._load()
+                        self.age.read(now)
                     except Exception as exc:          # noqa: BLE001 — the resolver keeps answering
                         logger.warning('Strict mode not read (%s); the last settings are kept.', exc)
+                        self.age.failed(now)
                     self._loaded = now
 
     def on_for(self, ai: str, value: str) -> bool:
         """Whether the strict mode is on for the organisation that owns this key (the operator's for a key no
         organisation holds)."""
-        self._fresh()
+        self.refresh()
         part = request_log.company_part(ai, value)
         if not part:
             return False

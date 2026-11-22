@@ -88,7 +88,7 @@ def _verdict(data: str) -> tuple[bool, str]:
             encoder.ai_data_str = data
             encoder.get_dl_uri(None)
     except _errors as exc:
-        return False, str(exc)
+        return False, str(exc)   # log only: check() logs the engine's reason, never answers it
     return True, ""
 
 

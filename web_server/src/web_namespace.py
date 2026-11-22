@@ -135,6 +135,7 @@ class DocOperationsNonGS1DigitalLinkRequest(Resource):
             try:
                 return _resolve_compressed_epc(non_gs1dl_request)
             except web_logic.ToolkitBusy as e:
+                # log only: _unavailable() logs the reason and answers a fixed text
                 return _unavailable('/' + non_gs1dl_request, e)
         try:
             logger.info('Non-GS1DL request received')
@@ -159,6 +160,7 @@ class DocOperationsNonGS1DigitalLinkRequest(Resource):
             return _bad_request('/' + non_gs1dl_request, decompress_result.get('error', 'Not a GS1 Digital Link'))
 
         except web_logic.ToolkitBusy as e:
+            # log only: _unavailable() logs the reason and answers a fixed text
             return _unavailable('/' + non_gs1dl_request, e)
         except Exception as e:
             logger.warning('Error getting document: %s', e)
@@ -177,6 +179,7 @@ class DocOperationsIdentifiersOnly(Resource):
             return _resolve_path(anchor_ai_code, [anchor_ai_code, anchor_ai])
 
         except web_logic.ToolkitBusy as e:
+            # log only: _unavailable() logs the reason and answers a fixed text
             return _unavailable(f'/{anchor_ai_code}/{anchor_ai}', e)
         except Exception as e:
             logger.warning('Error getting document: %s', e)
@@ -211,6 +214,7 @@ class DocOperationsResource(Resource):
             return _resolve_path(anchor_ai_code, [anchor_ai_code, anchor_ai, *(extra_segments or '').split('/')])
 
         except web_logic.ToolkitBusy as e:
+            # log only: _unavailable() logs the reason and answers a fixed text
             return _unavailable(f'/{anchor_ai_code}/{anchor_ai}/{extra_segments}', e)
         except Exception as e:
             logger.warning('Error getting document: %s', e)
@@ -285,6 +289,7 @@ def _resolve_compressed_epc(segment: str) -> Response | tuple[Any, int]:
         epc = epc_binary.decompress(segment)
     except epc_binary.EpcDecodeError as e:
         logger.info('EPC binary string not decoded: %s', e)
+        # own message: EpcDecodeError's texts are epc_binary's own
         return _bad_request('/' + segment, f'Not a decodable EPC binary string: {e}')
     path, attributes = epc.path(), epc.query()
     logger.debug('%s decoded as %s %s?%s (hostname %s)', segment, epc.scheme, path, attributes, epc.hostname)

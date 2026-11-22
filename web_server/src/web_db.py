@@ -47,9 +47,8 @@ def read_document(anchor: str) -> dict[str, Any]:
 
         return {"response_status": 200, "data": document}
 
-    except bson_errors.InvalidId as e:
-        logger.error("Invalid ID format: %s", e)
-        return {"response_status": 500, "error": "Invalid ID format: " + str(e)}
-    except errors.PyMongoError as e:
-        logger.error("Database error: %s", e)
-        return {"response_status": 500, "error": "Database error: " + str(e)}
+    except (bson_errors.InvalidId, errors.PyMongoError):
+        # the exception (it names the database's host and port) to the log, a fixed text to the caller (finding
+        # U-006, Documentation/adr/0050-error-answers.md)
+        logger.error("Database error reading %s", anchor, exc_info=True)
+        return {"response_status": 500, "error": "Database error: see the resolver's log"}

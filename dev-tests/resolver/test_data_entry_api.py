@@ -24,7 +24,9 @@ checks, through Flask's test client:
   pip install -r data_entry_server/src/requirements.txt
   python dev-tests/resolver/test_data_entry_api.py
 """
+import glob
 import json
+import re
 import os
 import sys
 import types
@@ -770,6 +772,133 @@ check("anchors: …PUT of an old document whose anchor breaks the rule → 400, 
       and "an anchor is /AI/value" in r.get_json().get("error", "") and STORE["gtin_1"] == old, r.get_data(as_text=True))
 r = client.delete("/api/gtin/1", headers=AUTH)
 check("anchors: …DELETE of it removes it", r.status_code == 200 and "gtin_1" not in STORE, r.get_data(as_text=True))
+
+# ---- Error answers without the exception's text (ADR 0050, finding U-006) ----
+import ast  # noqa: E402
+import logging  # noqa: E402
+
+SECRET = "db-host.internal:27017 (secret detail)"
+
+
+def answers_from_exception(folder):
+    """Every return or abort() inside an 'except ... as e' block whose value uses e: an answer built from the
+    exception's text (the official code answered 'Database error: ' + str(e) and the like). A line marked
+    '# own message' (on it or just above) answers a refusal whose text the service's own code wrote; '# log only'
+    passes the exception to a function that only logs it."""
+    found = []
+    for path in sorted(glob.glob(os.path.join(REPO, folder, "*.py"))):
+        with open(path, encoding="utf-8") as fh:
+            source = fh.read()
+        tree, lines = ast.parse(source), [""] + source.splitlines()
+        for handler in ast.walk(tree):
+            if not isinstance(handler, ast.ExceptHandler) or not handler.name:
+                continue
+            for node in ast.walk(handler):
+                value = node.value if isinstance(node, ast.Return) else node if isinstance(node, ast.Call) \
+                    and getattr(node.func, "id", getattr(node.func, "attr", "")) == "abort" else None
+                if value is not None and any(isinstance(n, ast.Name) and n.id == handler.name for n in ast.walk(value)) \
+                        and not re.search("# (own message|log only)", lines[node.lineno] + lines[node.lineno - 1]):
+                    found.append(f"{os.path.basename(path)}:{node.lineno}")
+    return found
+
+
+class LogLines(logging.Handler):
+    """The service's log as an operator reads it, tracebacks included."""
+    def __init__(self):
+        super().__init__()
+        self.lines = []
+        self.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
+
+    def emit(self, record):
+        self.lines.append(self.format(record))
+
+    def text(self):
+        return "\n".join(self.lines)
+
+
+def secret_free(answer):
+    return SECRET not in json.dumps(answer) and "secret detail" not in json.dumps(answer)
+
+
+found = answers_from_exception(os.path.join("data_entry_server", "src"))
+check("error answers: no answer of the data entry API built from an exception's text", not found, found)
+log = LogLines()
+logging.getLogger().addHandler(log)
+real_read = db.read_document
+
+
+def failing_read(document_id):
+    raise RuntimeError(SECRET)
+
+
+db.read_document = failing_read
+requests = {"POST /new": lambda: post(entry(qualifiers=[{"10": "E1"}])),
+            "PUT": lambda: client.put("/api/01/09506000134352", json={"itemDescription": "y"}, headers=AUTH),
+            "DELETE of links": lambda: client.delete("/api/01/09506000134352", json={"links": PIP}, headers=AUTH),
+            "DELETE of a record": lambda: client.delete("/api/01/09506000134352", headers=AUTH,
+                                                        json={"removeRecord": True, "qualifiers": [{"10": "E1"}]})}
+for name, send in requests.items():
+    log.lines.clear()
+    r = send()
+    check(f"error answers: {name} on a failure → 500 with a fixed text, not the exception's",
+          r.status_code == 500 and secret_free(r.get_data(as_text=True)) and "log" in r.get_json().get("error", ""),
+          (r.status_code, r.get_data(as_text=True)[:200]))
+    check(f"error answers: …the exception's text and its traceback in the service's log ({name})",
+          SECRET in log.text() and "Traceback" in log.text(), log.text()[-300:])
+db.read_document = real_read
+real_write = db.create_document
+db.create_document = failing_read
+log.lines.clear()
+r = post(entry("/01/09521234000099"))
+db.create_document = real_write
+check("error answers: POST /new whose write fails → 500 with a fixed text, the traceback in the service's log",
+      r.status_code == 500 and secret_free(r.get_data(as_text=True)) and SECRET in log.text()
+      and "Traceback" in log.text(), (r.status_code, r.get_data(as_text=True)[:200], log.text()[-300:]))
+real_create = data_entry_logic.create_document
+data_entry_logic.create_document = failing_read
+r = post(entry())
+data_entry_logic.create_document = real_create
+check("error answers: a failure outside the data entry logic (the route's own abort) → 500 without the text",
+      r.status_code == 500 and secret_free(r.get_data(as_text=True)), (r.status_code, r.get_data(as_text=True)[:200]))
+r = client.post("/api/new", data="5", content_type="application/json", headers=AUTH)
+check("error answers: a body neither an object nor a list → 400 that does not repeat the body",
+      r.status_code == 400 and not r.get_json().get("error", "").rstrip().endswith("5"), r.get_data(as_text=True))
+if mongomock:
+    from pymongo import errors as pymongo_errors  # noqa: E402
+    from bson import errors as bson_errors  # noqa: E402
+
+    class FailingCollection:
+        """A database that fails every operation with a message naming its host, as PyMongo's errors do."""
+        def __init__(self, error=pymongo_errors.ServerSelectionTimeoutError):
+            self.error = error
+
+        def _fail(self, *args, **kwargs):
+            raise self.error(SECRET)
+        find_one = insert_one = find = replace_one = delete_one = _fail
+
+    log.lines.clear()
+    real_db._resolver_collection = FailingCollection()
+    layer = {"create": real_db.create_document({"_id": "01_1", "data": [{}]}),
+             "read": real_db.read_document("/01/1"), "index": real_db.read_index(),
+             "summary": real_db.read_all_documents(), "conditional write":
+             real_db.write_document_if_unchanged({"_id": "01_1", "data": [{}]}, {"_id": "01_1", "data": []}),
+             "delete": real_db.delete_document("/01/1")}
+    check("database layer: a database that fails → 500 with a fixed text in every operation, never its message",
+          all(a["response_status"] == 500 and secret_free(a) for a in layer.values()), layer)
+    check("database layer: …its message in the log, once per operation", log.text().count(SECRET) >= 6,
+          log.text()[-400:])
+    real_db._resolver_collection = FailingCollection(bson_errors.InvalidId)
+    invalid = [real_db.read_document("/01/1"), real_db.read_index(), real_db.delete_document("/01/1")]
+    check("database layer: an invalid id → 400 with a fixed text", all(a["response_status"] == 400 and secret_free(a)
+                                                                         for a in invalid), invalid)
+    duplicate = FailingCollection(pymongo_errors.DuplicateKeyError)
+    duplicate.find_one = lambda *a, **k: None
+    real_db._resolver_collection = duplicate
+    twice = real_db.create_document({"_id": "01_1", "data": [{}]})
+    check("database layer: a document written in between (duplicate key) → 409 naming the document, not the index",
+          twice["response_status"] == 409 and "01_1" in twice["error"] and secret_free(twice), twice)
+    real_db._resolver_collection = coll
+logging.getLogger().removeHandler(log)
 
 # ---- The browser's rules (ADR 0038, finding F-021) ----
 r = client.get("/api/docs")

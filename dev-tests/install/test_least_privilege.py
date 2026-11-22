@@ -7,7 +7,9 @@ Checks, without Docker or MongoDB:
     MONGO_INITDB_ROOT_*) reach only the database and portal-db-init, every other service sees them empty; the
     resolver and the data entry API start after portal-db-init has finished well; the database and the proxy are
     published on the host's loopback address unless .env names another;
-  * the Dockerfiles of the resolver, the data entry API and the portal: the image runs as a user of its own, not root;
+  * the Dockerfiles of the resolver, the data entry API and the portal: the image runs as a user of its own, not root,
+    and its final stage installs no package from Debian's repository (the official images installed nano: an editor
+    for whoever gets a shell in the container; finding U-006, ADR 0050);
   * service_db.py (the resolver's and the data entry API's connection): the URI built from <PREFIX>_DB_* with the
     credentials percent-encoded and authSource=admin, a complete <PREFIX>_DB_URI preferred, MONGO_URI only as a
     fallback with a warning, an error with nothing; the two copies are the same file;
@@ -123,6 +125,12 @@ def dockerfile_checks() -> None:
         text = (REPO / folder / "Dockerfile").read_text()
         check(user and re.search(rf"useradd [^\n]*--system[^\n]*\b{re.escape(user)}\b", text),
               f"{folder}/Dockerfile: that user is a system account made in the image", user)
+        final = text.splitlines()[max(i for i, line in enumerate(text.splitlines())
+                                       if line.strip().upper().startswith("FROM ")):]
+        package = re.compile(r"\b(apt-get|apt|dpkg) +(install|-i)\b|\bnano\b")
+        installs = [line.strip() for line in final if not line.strip().startswith("#") and package.search(line)]
+        check(not installs, f"{folder}/Dockerfile: the final image installs no package from Debian's repository "
+              "(no editor)", installs)
 
 
 # --------------------------------------------------------------------------- service_db.py

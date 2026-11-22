@@ -18,6 +18,11 @@ import web_db
 
 logger = logging.getLogger(__name__)
 
+# A failure is answered with a fixed text; the exception and its traceback go to the resolver's log (finding U-006;
+# Documentation/adr/0050-error-answers.md). The official code answered "Unexpected error occurred. Details: " + str(e)
+# and the like. An answer made from an exception carries "# own message" when its text is this code's own.
+INTERNAL_ERROR = "Internal server error: see the resolver's log"
+
 # Pattern for validating GS1 Digital Link path segments (AI codes + values).
 # Allows alphanumeric characters, hyphens, dots, underscores, percent-encoded bytes, and parentheses;
 # also '?', '=' and '&' for the query string of a GS1 Digital Link decoded from an EPC binary string.
@@ -268,13 +273,13 @@ def _do_qualifiers_match(qualifier_path: str | None, doc_qualifiers: list[dict[s
 
     except KeyError as e:
         logger.warning('_do_qualifiers_match KeyError: %s', e)
-        return False, [f"KeyError occurred. Details: {str(e)}"]
+        return False, ["KeyError occurred"]
     except TypeError as e:
         logger.warning('_do_qualifiers_match TypeError: %s', e)
-        return False, [f"TypeError occurred. Expected list or dictionary-like object. Details: {str(e)}"]
-    except Exception as e:
-        logger.warning('_do_qualifiers_match error: %s', e)
-        return False, [f"Unexpected error occurred. Details: {str(e)}"]
+        return False, ["TypeError occurred. Expected list or dictionary-like object"]
+    except Exception:
+        logger.warning('_do_qualifiers_match error', exc_info=True)
+        return False, [INTERNAL_ERROR]
 
 
 def public_root() -> str:
@@ -413,17 +418,15 @@ def _validate_and_fetch_document(identifier: str, qualifier_path: str | None, do
         raise
     except ValueError as e:
         logger.warning('_validate_and_fetch_document ValueError: %s', e)
-        return {"response_status": 400,
-                "error": f"ValueError occurred. Possibly invalid identifiers or qualifier_path. Details: {str(e)}"}
+        return {"response_status": 400, "error": "Invalid identifiers or qualifier path"}
 
     except TypeError as e:
         logger.warning('_validate_and_fetch_document TypeError: %s', e)
-        return {"response_status": 400,
-                "error": f"TypeError occurred. Expected string-like object. Details: {str(e)}"}
+        return {"response_status": 400, "error": "Invalid identifiers or qualifier path"}
 
-    except Exception as e:
-        logger.error('_validate_and_fetch_document error: %s', e)
-        return {"response_status": 500, "error": f"Unexpected error occurred. Details: {str(e)}"}
+    except Exception:
+        logger.error('_validate_and_fetch_document error', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}
 
 
 def _replace_linkset_template_variables(linkset: list[dict[str, Any]], template_variables_list: list[dict[str, str]]) -> list[dict[str, Any]] | dict[str, Any]:
@@ -441,21 +444,13 @@ def _replace_linkset_template_variables(linkset: list[dict[str, Any]], template_
             linkset = _substituted(linkset, [(t['template_variable'], t['value']) for t in template_variables_list])
         return linkset
 
-    except KeyError as e:
-        return {"response_status": 400, "error": f"KeyError occurred - {str(e)}"}
+    except (KeyError, TypeError, json.JSONDecodeError):
+        logger.warning('replace_linkset_template_variables: the record\'s template could not be filled', exc_info=True)
+        return {"response_status": 400, "error": "The record's template variables could not be replaced"}
 
-    except TypeError as e:
-        logger.warning('replace_linkset_template_variables TypeError: %s', e)
-        return {"response_status": 400,
-                "error": f"TypeError occurred. Expected list or dictionary-like object - {str(e)}"}
-
-    except json.JSONDecodeError as e:
-        logger.warning('replace_linkset_template_variables JSONDecodeError: %s', e)
-        return {"response_status": 400, "error": f"JSONDecodeError occurred. Invalid JSON format - {str(e)}"}
-
-    except Exception as e:
-        logger.error('replace_linkset_template_variables error: %s', e)
-        return {"response_status": 500, "error": f"Unexpected error - {str(e)}"}
+    except Exception:
+        logger.error('replace_linkset_template_variables error', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}
 
 
 
@@ -713,9 +708,9 @@ def _handle_link_type(linktype: str | None, default_linktype: str, linkset: list
                         "linktype_key": key, "_fallback": result['_fallback']}
         return result
 
-    except Exception as e:
-        logger.error('handle_link_type error: %s', e)
-        return {"response_status": 500, "error": f"Unexpected error occurred. Details: {str(e)}"}
+    except Exception:
+        logger.error('handle_link_type error', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}
 
 
 def _answer_link_type(linktype: str | None, default_linktype: str, linkset: list[dict[str, Any]],
@@ -760,9 +755,9 @@ def _answer_link_type(linktype: str | None, default_linktype: str, linkset: list
         # Section 2.6.3, step 7: no best match among links of the same type (example 11)
         return {"response_status": 300, "data": pool, "linktype_key": key, "_fallback": unserved(pool, ranges, context)}
 
-    except Exception as e:
-        logger.error('handle_link_type error: %s', e)
-        return {"response_status": 500, "error": f"Unexpected error occurred. Details: {str(e)}"}
+    except Exception:
+        logger.error('_answer_link_type error', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}
 
 
 def get_compressed_link(uncompressed_link: str) -> dict[str, Any]:
@@ -962,6 +957,6 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
 
     except ToolkitBusy:
         raise
-    except Exception as e:
+    except Exception:
         logger.error('read_document: Internal Server Error', exc_info=True)
-        return {"response_status": 500, "error": "Internal Server Error: " + str(e)}, None
+        return {"response_status": 500, "error": INTERNAL_ERROR}, None

@@ -21,8 +21,8 @@ LABEL authors="nick"
 ENV PYTHONUNBUFFERED 1
 
 # Node.js for the GS1 Digital Link Toolkit and the GS1 Barcode Syntax Engine (the stage "node" above), at the path
-# the service starts it from; nano as in the official image, from Debian's signed repository.
-RUN apt-get update && apt-get install -y --no-install-recommends nano && rm -rf /var/lib/apt/lists/*
+# the service starts it from. No editor: the official image installed nano, a tool for whoever gets a shell in the
+# container (finding U-006, Documentation/adr/0050-error-answers.md); docker compose cp copies a file in and out.
 COPY --from=node /usr/local/bin/node /usr/bin/node
 RUN node --version
 ADD src/gs1-digitallink-toolkit /app/gs1-digitallink-toolkit

@@ -687,6 +687,81 @@ check("web_db: an anchor's id keeps the value's '_' and turns only the slash aft
                                              "8004_A/B", "/8004/A/B")]
       == ["01_09506000134352", "01_09506000134352", "8004_A_B", "8004_A_B", "8004_A/B", "8004_A/B"])
 
+# Error answers without the exception's text (ADR 0050, finding U-006)
+import ast  # noqa: E402
+import logging  # noqa: E402
+from pymongo import errors as pymongo_errors  # noqa: E402
+
+SECRET = "db-host.internal:27017 (secret detail)"
+
+
+def answers_from_exception(folder):
+    """Every return or abort() inside an 'except ... as e' block whose value uses e: an answer built from the
+    exception's text (the official code answered 'Unexpected error occurred. Details: ' + str(e) and the like). A
+    line marked '# own message' (on it or just above) answers a refusal whose text the service's own code wrote;
+    '# log only' passes the exception to a function that only logs it."""
+    found = []
+    for path in sorted(glob.glob(os.path.join(REPO, folder, "*.py"))):
+        with open(path, encoding="utf-8") as fh:
+            source = fh.read()
+        tree, lines = ast.parse(source), [""] + source.splitlines()
+        for handler in ast.walk(tree):
+            if not isinstance(handler, ast.ExceptHandler) or not handler.name:
+                continue
+            for node in ast.walk(handler):
+                value = node.value if isinstance(node, ast.Return) else node if isinstance(node, ast.Call) \
+                    and getattr(node.func, "id", getattr(node.func, "attr", "")) == "abort" else None
+                if value is not None and any(isinstance(n, ast.Name) and n.id == handler.name for n in ast.walk(value)) \
+                        and not re.search("# (own message|log only)", lines[node.lineno] + lines[node.lineno - 1]):
+                    found.append(f"{os.path.basename(path)}:{node.lineno}")
+    return found
+
+
+class LogLines(logging.Handler):
+    """The service's log as an operator reads it, tracebacks included."""
+    def __init__(self):
+        super().__init__()
+        self.lines = []
+        self.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
+
+    def emit(self, record):
+        self.lines.append(self.format(record))
+
+
+found = answers_from_exception(os.path.join("web_server", "src"))
+check("error answers: no answer of the resolver built from an exception's text", not found, found)
+log = LogLines()
+logging.getLogger().addHandler(log)
+
+
+class FailingCollection:
+    def find_one(self, *args, **kwargs):
+        raise pymongo_errors.ServerSelectionTimeoutError(SECRET)
+
+
+real_web_db._resolver_collection = FailingCollection()
+failed = real_web_db.read_document(UNDER)
+real_web_db._resolver_collection = None
+check("error answers: web_db on a database that fails → 500 with a fixed text, not its message (host and port)",
+      failed["response_status"] == 500 and SECRET not in json.dumps(failed) and "log" in failed["error"], failed)
+real_unserved = web_logic.unserved
+
+
+def failing_unserved(*args, **kwargs):
+    raise RuntimeError(SECRET)
+
+
+web_logic.unserved = failing_unserved
+r = get(UNDER)
+web_logic.unserved = real_unserved
+check("error answers: a failure while choosing the link → 500 with a fixed text, not the exception's",
+      r.status_code == 500 and SECRET not in r.get_data(as_text=True)
+      and "log" in (r.get_json() or {}).get("error", ""), (r.status_code, r.get_data(as_text=True)[:200]))
+text = "\n".join(log.lines)
+check("error answers: …both in the resolver's log, with the traceback", text.count(SECRET) >= 2 and "Traceback" in text,
+      text[-400:])
+logging.getLogger().removeHandler(log)
+
 # ---------------------------------------------------------------- the engine in the resolver's process (gs1_syntax.py)
 ENGINE_DIR = os.environ.get("GS1_SYNTAX_ENGINE_DIR")
 if ENGINE_DIR:

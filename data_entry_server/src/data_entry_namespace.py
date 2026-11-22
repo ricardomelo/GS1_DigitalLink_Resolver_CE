@@ -143,9 +143,10 @@ class NewDocOperations(TokenResource):
             response_data, http_response_status = data_entry_logic.create_document(data)
             return response_data, http_response_status
 
-        except Exception as e:
-            logger.warning('Error creating document: %s', e)
-            abort(500, description="Error creating document:" + str(e))
+        except Exception:
+            # the exception to the log, a fixed text to the caller (finding U-006, ADR 0050)
+            logger.error('Error creating document', exc_info=True)
+            abort(500, description="Error creating document: see the data entry service's log")
 
 
 @data_entry_namespace.route('/validate')
@@ -258,9 +259,10 @@ class DocOperations(TokenResource):
             response_data, http_response_status = data_entry_logic.update_document(document_id, data)
             return response_data, http_response_status
 
-        except Exception as e:
-            logger.warning('Error updating document: %s', e)
-            abort(500, description="Error updating document:" + str(e))
+        except Exception:
+            # the exception to the log, a fixed text to the caller (finding U-006, ADR 0050)
+            logger.error('Error updating document', exc_info=True)
+            abort(500, description="Error updating document: see the data entry service's log")
 
     @data_entry_namespace.doc(description="Delete a document or remove specific links from it using its anchor. "
                          "If a JSON body with a 'links' list is provided, only the matching links "

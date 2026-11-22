@@ -12,6 +12,11 @@ import target_rule
 
 logger = logging.getLogger(__name__)
 
+# A failure is answered with a fixed text; the exception and its traceback go to the service's log (finding U-006;
+# Documentation/adr/0050-error-answers.md). The official code answered "Internal Server Error - " + str(e). An answer
+# made from an exception carries "# own message" when the exception is this code's own refusal (its text written here).
+INTERNAL_ERROR = "Internal server error: see the data entry service's log"
+
 # Pattern for validating GS1 AI data strings before passing to subprocess
 _GS1_AI_DATA_PATTERN = re.compile(r'^[\w()./:%-]+$')
 
@@ -148,7 +153,7 @@ def registration_problem(entry: dict[str, Any]) -> str | None:
         ais = _qualifier_ais(entry.get('qualifiers'), 'qualifiers')
         informative = _qualifier_ais(entry.get('informativeQualifiers'), 'informativeQualifiers')
     except ValueError as error:
-        return str(error)
+        return str(error)   # own message: _qualifier_ais() refuses with its own text
     allowed = KEY_QUALIFIERS.get(key, set())
     for ai in ais:
         if ai not in allowed:
@@ -510,11 +515,12 @@ def _author_db_linkset_document(data_entry_format: dict[str, Any]) -> dict[str, 
 
     except KeyError as key_error:
         logger.error('Missing key during conversion: %s', key_error)
+        # own message: the name of the field the entry lacks
         return {"response_status": 400, "error": f'Missing key during conversion: {key_error}'}
 
-    except Exception as e:
-        logger.error('_author_linkset_document: Error processing document: %s', e, exc_info=True)
-        return {"response_status": 500, "error": "Internal Server Error - " + str(e)}
+    except Exception:
+        logger.error('_author_linkset_document: Error processing document', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}
 
 
 def _do_qualifiers_match(qualifiers1: list[dict[str, str]], qualifiers2: list[dict[str, str]]) -> bool:
@@ -565,6 +571,7 @@ def _write_document(document_id: str, change) -> tuple[dict[str, Any], int]:
         try:
             document, answer = change(copy.deepcopy(stored))
         except _Refused as refused:
+            # own message: the refusal written by the change
             return refused.body, refused.status
         if stored is None:
             write_result = data_entry_db.create_document(document)
@@ -620,9 +627,9 @@ def _process_document_upsert(authored_doc: dict[str, Any]) -> tuple[dict[str, An
     try:
         return _write_document(authored_doc['_id'], change)
 
-    except Exception as e:
-        logger.error('_process_document_insert: Error processing document: %s', e, exc_info=True)
-        return {"response_status": 500, "error": "Internal Server Error - " + str(e)}, 500
+    except Exception:
+        logger.error('_process_document_insert: Error processing document', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}, 500
 
 
 def _author_db_linkset_list(data_list: list[dict[str, Any]]) -> dict[str, Any]:
@@ -652,9 +659,9 @@ def _author_db_linkset_list(data_list: list[dict[str, Any]]) -> dict[str, Any]:
 
         return {"response_status": 200, "data": transformed_data_list}
 
-    except Exception as e:
-        logger.error('_author_mongo_linkset_list: Error processing document: %s', e)
-        return {"response_status": 500, "error": "Internal Server Error - " + str(e)}
+    except Exception:
+        logger.error('_author_mongo_linkset_list: Error processing document', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}
 
 def convert_path_to_document_id(path: str) -> str:
     """The document id of an anchor: '/8004/A_B' -> '8004_A_B'. Only /AI/value has one (ADR 0049): the AI is digits
@@ -735,11 +742,12 @@ def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[s
         # If 'data' is not a list nor a dictionary, return an error response (with its status: the official code
         # returned the dictionary alone, which the namespace unpacked as body and status)
         else:
-            return {"response_status": 400, "error": "Invalid data format: " + str(data)}, 400
+            return {"response_status": 400, "error": "Invalid data format: the body is a JSON object or a list of "
+                                                     "objects"}, 400
 
-    except Exception as e:
-        # If there's any exception during processing, return a server error response
-        return {"response_status": 500, "error": "Internal Server Error - " + str(e)}, 500
+    except Exception:
+        logger.error('create_document: Error processing the body', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}, 500
 
 
 def read_document(document_id: str) -> dict[str, Any]:
@@ -931,9 +939,9 @@ def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, A
         # 8. Persist, provided nobody changed the document in between (ADR 0027)
         return _write_document(document_id, change)
 
-    except Exception as e:
-        logger.error('update_document: Error: %s', e, exc_info=True)
-        return {"response_status": 500, "error": f"Internal Server Error - {str(e)}"}, 500
+    except Exception:
+        logger.error('update_document: Error', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}, 500
 
 
 def delete_links(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any], int]:
@@ -991,9 +999,9 @@ def delete_links(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any]
         # 7. Persist, provided nobody changed the document in between (ADR 0027)
         return _write_document(document_id, change)
 
-    except Exception as e:
-        logger.error('delete_links: Error: %s', e, exc_info=True)
-        return {"response_status": 500, "error": f"Internal Server Error - {str(e)}"}, 500
+    except Exception:
+        logger.error('delete_links: Error', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}, 500
 
 
 def delete_record(document_id: str, qualifiers: list[dict[str, str]]) -> tuple[dict[str, Any], int]:
@@ -1020,9 +1028,9 @@ def delete_record(document_id: str, qualifiers: list[dict[str, str]]) -> tuple[d
     try:
         return _write_document(document_id, change)
 
-    except Exception as e:
-        logger.error('delete_record: Error: %s', e, exc_info=True)
-        return {"response_status": 500, "error": f"Internal Server Error - {str(e)}"}, 500
+    except Exception:
+        logger.error('delete_record: Error', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}, 500
 
 
 def delete_document(anchor: str) -> dict[str, Any]:

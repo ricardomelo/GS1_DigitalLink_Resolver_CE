@@ -8,6 +8,13 @@ from mongo_db_init import mongo
 
 logger = logging.getLogger(__name__)
 
+# Error answers carry fixed texts; what went wrong goes to the service's log with its traceback. The official code
+# answered the exception's text ("Database error: " + str(e)), which names the database's host and port, the index
+# and the key (finding U-006; Documentation/adr/0050-error-answers.md).
+DATABASE_ERROR = "Database error: see the data entry service's log"
+INTERNAL_ERROR = "Internal server error: see the data entry service's log"
+INVALID_ID = "Invalid document id"
+
 # Cached collection reference — PyMongo handles connection pooling underneath
 _resolver_collection: Collection | None = None
 
@@ -58,16 +65,18 @@ def create_document(data: dict[str, Any]) -> dict[str, Any]:
         result = resolver_coll.insert_one(data)
         return {"response_status": 201, "data": f"Document with id {str(result.inserted_id)} created successfully"}
 
-    except errors.DuplicateKeyError as e:
-        return {"response_status": 409, "error": "Duplicate key error: " + str(e)}
+    except errors.DuplicateKeyError:
+        # written by another request between the check above and the insert
+        logger.warning("create_document: %s written in the meantime", data['_id'], exc_info=True)
+        return {"response_status": 409, "error": f"Document with id {data['_id']} already exists"}
 
-    except errors.PyMongoError as e:
-        logger.error("Database error in create_document: %s", e)
-        return {"response_status": 500, "error": "Database error: " + str(e)}
+    except errors.PyMongoError:
+        logger.error("Database error in create_document", exc_info=True)
+        return {"response_status": 500, "error": DATABASE_ERROR}
 
-    except Exception as e:
-        logger.error("Internal error in create_document: %s", e)
-        return {"response_status": 500, "error": "Internal Server Error - " + str(e)}
+    except Exception:
+        logger.error("Internal error in create_document", exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}
 
 
 # Read a document from the 'gs1resolver' collection
@@ -84,12 +93,13 @@ def read_document(document_id: str) -> dict[str, Any]:
 
         return {"response_status": 200, "data": document}
 
-    except bson_errors.InvalidId as e:
-        return {"response_status": 400, "error": "Invalid ID format: " + str(e)}
+    except bson_errors.InvalidId:
+        logger.warning("Invalid document id", exc_info=True)
+        return {"response_status": 400, "error": INVALID_ID}
 
-    except errors.PyMongoError as e:
-        logger.error("Database error in read_document: %s", e)
-        return {"response_status": 500, "error": "Database error: " + str(e)}
+    except errors.PyMongoError:
+        logger.error("Database error in read_document", exc_info=True)
+        return {"response_status": 500, "error": DATABASE_ERROR}
 
 
 def read_index() -> dict[str, Any]:
@@ -103,12 +113,13 @@ def read_index() -> dict[str, Any]:
 
         return {"response_status": 200, "data": document_ids}
 
-    except bson_errors.InvalidId as e:
-        return {"response_status": 400, "error": "Invalid ID format: " + str(e)}
+    except bson_errors.InvalidId:
+        logger.warning("Invalid document id", exc_info=True)
+        return {"response_status": 400, "error": INVALID_ID}
 
-    except errors.PyMongoError as e:
-        logger.error("Database error in read_index: %s", e)
-        return {"response_status": 500, "error": "Database error: " + str(e)}
+    except errors.PyMongoError:
+        logger.error("Database error in read_index", exc_info=True)
+        return {"response_status": 500, "error": DATABASE_ERROR}
 
 
 # Read every document (used for the summary of all records)
@@ -117,9 +128,9 @@ def read_all_documents() -> dict[str, Any]:
         resolver_coll = _get_collection()
         return {"response_status": 200, "data": list(resolver_coll.find({}))}
 
-    except errors.PyMongoError as e:
-        logger.error("Database error in read_all_documents: %s", e)
-        return {"response_status": 500, "error": "Database error: " + str(e)}
+    except errors.PyMongoError:
+        logger.error("Database error in read_all_documents", exc_info=True)
+        return {"response_status": 500, "error": DATABASE_ERROR}
 
 
 # Replace or delete a document only while it is still the one read (ADR 0023, ADR 0027): one atomic operation on the
@@ -141,9 +152,9 @@ def write_document_if_unchanged(document: dict[str, Any], expected: dict[str, An
             return {"response_status": 409, "error": f"Document {document['_id']} changed while it was being written"}
         return {"response_status": 200, "data": f"Document with anchor {document['_id']} written"}
 
-    except errors.PyMongoError as e:
-        logger.error("write_document_if_unchanged: Database error: %s", e)
-        return {"response_status": 500, "error": "Database error: " + str(e)}
+    except errors.PyMongoError:
+        logger.error("write_document_if_unchanged: Database error", exc_info=True)
+        return {"response_status": 500, "error": DATABASE_ERROR}
 
 
 # Delete a document from the 'gs1resolver' collection
@@ -159,11 +170,12 @@ def delete_document(document_id: str) -> dict[str, Any]:
         # Operation was successful and the document was deleted
         return {"response_status": 200, "data": f"Document with anchor {document_id} deleted successfully"}
 
-    except bson_errors.InvalidId as e:
-        return {"response_status": 400, "error": "Invalid ID format: " + str(e)}
-    except errors.PyMongoError as e:
-        logger.error("delete_document: Database error: %s", e)
-        return {"response_status": 500, "error": "Database error: " + str(e)}
-    except Exception as e:
-        logger.error("delete_document: Internal error: %s", e)
-        return {"response_status": 500, "error": "Internal Server Error - " + str(e)}
+    except bson_errors.InvalidId:
+        logger.warning("Invalid document id", exc_info=True)
+        return {"response_status": 400, "error": INVALID_ID}
+    except errors.PyMongoError:
+        logger.error("delete_document: Database error", exc_info=True)
+        return {"response_status": 500, "error": DATABASE_ERROR}
+    except Exception:
+        logger.error("delete_document: Internal error", exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}

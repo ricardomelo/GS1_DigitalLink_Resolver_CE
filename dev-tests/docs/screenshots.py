@@ -172,7 +172,7 @@ import tenants  # noqa: E402 — organisations for the guide's images
 
 def sign_in(browser, locale, viewport=None):
     """A new browser in the locale, signed in as maria."""
-    page = browser.new_context(locale=locale, viewport=viewport or {"width": 1280, "height": 1100}).new_page()
+    page = browser.new_context(bypass_csp=True, locale=locale, viewport=viewport or {"width": 1280, "height": 1100}).new_page()
     page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.on("dialog", lambda dialog: dialog.accept())    # "discard unsaved changes?" between pictures
     page.goto(BASE); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
@@ -261,7 +261,7 @@ def guide_images(locale: str, folder: str, description: str) -> None:
     os.makedirs(os.path.join(OUT, folder), exist_ok=True)
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1100}).new_page()
+        page = browser.new_context(bypass_csp=True, locale=locale, viewport={"width": 1280, "height": 1100}).new_page()
         page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
         page.on("dialog", lambda dialog: dialog.accept())    # "discard unsaved changes?" between pictures
         page.goto(BASE); page.wait_for_timeout(500)
@@ -354,7 +354,7 @@ def forwarding_images(browser, folder: str, locale: str) -> None:
                              "maria", set(), new=True)
         forwarding.save_rule("7895555", {"target": "https://beta.example.com/products", "mode": "fixed"}, "maria",
                              set(), new=True)
-    page = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1100}).new_page()
+    page = browser.new_context(bypass_csp=True, locale=locale, viewport={"width": 1280, "height": 1100}).new_page()
     page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(1000)
@@ -368,7 +368,7 @@ def appearance_images(browser, folder: str, locale: str) -> None:
     preview, not saved, so every other picture keeps the original (Documentation/adr/0019-appearance.md)."""
     icon = os.path.join(tempfile.mkdtemp(), "icon.png")
     Image.new("RGB", (64, 64), (232, 177, 0)).save(icon, "PNG")
-    page = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1350}).new_page()
+    page = browser.new_context(bypass_csp=True, locale=locale, viewport={"width": 1280, "height": 1350}).new_page()
     page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
     page.click("#login-submit"); page.wait_for_timeout(1000)
@@ -385,7 +385,7 @@ def appearance_images(browser, folder: str, locale: str) -> None:
 def privacy_images(browser, folder: str, locale: str) -> None:
     """The privacy notice as anyone sees it, before a version is published: the default text in the reader's language
     (Documentation/adr/0017-privacy-notice.md)."""
-    page = browser.new_context(locale=locale, viewport={"width": 1280, "height": 900}).new_page()
+    page = browser.new_context(bypass_csp=True, locale=locale, viewport={"width": 1280, "height": 900}).new_page()
     page.goto(BASE + "privacy"); page.wait_for_timeout(1200)
     save(page, f"{folder}/privacy.png", clip={"x": 0, "y": 0, "width": 1280, "height": 900})
     page.context.close()
@@ -433,7 +433,7 @@ def mail_images(browser, folder: str, locale: str) -> None:
                       PORTAL_MAIL_FROM="portal@example.org")
     users.update("maria", email="maria@brand.example")
     try:
-        ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 900})
+        ctx = browser.new_context(bypass_csp=True, locale=locale, viewport={"width": 1280, "height": 900})
         page = ctx.new_page()
         page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
         page.goto(BASE + "login"); page.wait_for_timeout(600)
@@ -450,7 +450,7 @@ def mail_images(browser, folder: str, locale: str) -> None:
         save(page, f"{folder}/choose-password.png", clip={"x": 0, "y": 0, "width": 1280, "height": 860})
         ctx.close()
 
-        ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1100})
+        ctx = browser.new_context(bypass_csp=True, locale=locale, viewport={"width": 1280, "height": 1100})
         page = ctx.new_page()
         page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
         page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
@@ -469,7 +469,7 @@ def mail_images(browser, folder: str, locale: str) -> None:
 
 def apikey_images(browser, folder: str, locale: str) -> None:
     """The API keys screen with a key just created (Documentation/adr/0005-tenant-api.md)."""
-    ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1100})
+    ctx = browser.new_context(bypass_csp=True, locale=locale, viewport={"width": 1280, "height": 1100})
     page = ctx.new_page()
     page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
@@ -490,7 +490,7 @@ def domain_images(browser, folder: str, locale: str) -> None:
     import domains
     records = {}
     domains.txt_records = lambda name: records.get(name, [])
-    ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1300})
+    ctx = browser.new_context(bypass_csp=True, locale=locale, viewport={"width": 1280, "height": 1300})
     page = ctx.new_page()
     page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
@@ -537,7 +537,7 @@ def item_page_images(browser, folder: str, locale: str) -> None:
     import base64
     import subprocess
     logo = example_logo()
-    ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1200})
+    ctx = browser.new_context(bypass_csp=True, locale=locale, viewport={"width": 1280, "height": 1200})
     page = ctx.new_page()
     page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
@@ -554,7 +554,7 @@ def item_page_images(browser, folder: str, locale: str) -> None:
                           capture_output=True, text=True).stdout
     data = "data:image/png;base64," + base64.b64encode(open(logo, "rb").read()).decode()
     html = re.sub(r'src="/_brand/[^"]*"', f'src="{data}"', html)
-    ctx = browser.new_context(locale=locale, viewport={"width": 390, "height": 844}, device_scale_factor=2,
+    ctx = browser.new_context(bypass_csp=True, locale=locale, viewport={"width": 390, "height": 844}, device_scale_factor=2,
                               is_mobile=True)
     page = ctx.new_page()
     page.set_content(html); page.wait_for_timeout(400)
@@ -568,7 +568,7 @@ def sso_images(browser, folder: str, locale: str) -> None:
     import sso
     sso.save("operator", {"issuer": "https://login.brand.example/realms/staff", "clientId": "resolver-portal",
                           "clientSecret": "example-secret", "domains": ["brand.example"], "enabled": True}, "maria")
-    ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1000})
+    ctx = browser.new_context(bypass_csp=True, locale=locale, viewport={"width": 1280, "height": 1000})
     page = ctx.new_page()
     page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")
@@ -637,7 +637,7 @@ def requests_images(browser, folder: str, locale: str) -> None:
     """The Requests screen of a server administrator: the last 30 days and the latest requests (ADR 0006); the
     overview of the same month (ADR 0007)."""
     seed_requests()
-    ctx = browser.new_context(locale=locale, viewport={"width": 1280, "height": 1250})
+    ctx = browser.new_context(bypass_csp=True, locale=locale, viewport={"width": 1280, "height": 1250})
     page = ctx.new_page()
     page.on("load", lambda pg: pg.add_style_tag(content=SHOT_STYLE))
     page.goto(BASE + "login"); page.fill("#username", "maria"); page.fill("#password", "a-long-test-password")

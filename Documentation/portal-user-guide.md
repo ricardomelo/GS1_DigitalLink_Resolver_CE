@@ -1018,6 +1018,11 @@ and makes it the notice in force at once. Every publication is a new numbered ve
 and an optional note on what changed; earlier versions stay readable from the page's list and are never changed. Adapt
 the default to your organisation (contact, legal basis, the law that applies) before going to production.
 
+The default notice says that a scanner's address is not kept. The servers' technical logs keep it no more than the
+request log does: one line per request with the time, the first part of the path, the status and the time taken, and
+no address, query string or browser identification (the operator's setting `PROXY_ACCESS_LOG`). If the operator turns
+the full access log on for a diagnosis, it holds addresses for as long as it is on: say so in the notice meanwhile.
+
 ### Forwarding (server administrators)
 
 ![Forwarding](images/guide/forwarding.png)

@@ -1667,6 +1667,21 @@ the client's `Host` too: the installation's proxy now writes them as paths, and 
 redirects plain HTTP to its own name. Refusing unknown names with 421 was weighed and not taken. 9 mutations, all
 caught.
 
+## Session 58 — access logs
+
+Finding F-025 of the security assessment, in one code commit (`909b826`;
+[ADR 0043](adr/0043-access-logs.md)). The request log was designed to keep no scanner's address, User-Agent or
+serial number, and the default privacy notice says so; but the front-end proxy's access log kept all of them for every
+request (nginx's `main` format: the client's address, the whole request line with its query string, the referrer and
+the User-Agent), gunicorn in the three web services kept the request line, the referrer and the User-Agent, the host's
+nginx kept its own `combined` log, and Docker kept the containers' output without a limit. The proxy's log is now
+minimal by default — the time, the method, the path's first segment when it is a word or an application identifier
+(else `/...`), the status, the size and the time taken — and `PROXY_ACCESS_LOG` chooses `full` (the former line) or
+`off`; the request limits' refusals leave the error log except with `full`; gunicorn and the host's sites write no
+access log; every service keeps at most `LOG_MAX_FILES` files of `LOG_MAX_SIZE`. Turning every log off, and a
+truncated address, were weighed and not taken. `test_home.py`, `test_deploy.py` and `test_install.sh` gained the
+checks; 17 mutations, all caught. No new interface text.
+
 ## Session 57 — a queued import and its account
 
 Finding F-024 of the security assessment, in one code commit (`4bb4928`;

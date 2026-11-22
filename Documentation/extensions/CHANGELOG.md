@@ -11,6 +11,25 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Access logs without the client's address or the query string (session 58)
+- **Changed: the front-end proxy's access log keeps no personal data by default**
+  ([ADR 0043](../adr/0043-access-logs.md)). Each line holds the time, the method, the path's first segment (`/01`,
+  `/portal`; `/...` for anything else, such as a compressed link), the status, the size and the time taken: no longer
+  the client's address, the rest of the path, the query string, the User-Agent or the referrer, which the request log
+  never kept either. The request limits' refusals no longer write the client's address to the error log; they show in
+  the access log as status 429.
+- **Added: `PROXY_ACCESS_LOG`** in `.env`: `minimal` (the default), `full` (the former line, with the time taken: for
+  a diagnosis; personal data, to be stated in the privacy notice while it lasts) or `off`.
+- **Changed: the resolver, the data entry API and the portal write no access log** (gunicorn without
+  `--access-logfile`), and **the installer's nginx sites keep none** (`access_log off;`, for the organisations' domains
+  too). When the installer keeps a Let's Encrypt site that still logs, it prints the command that turns it off.
+- **Added: each container's output is bounded**: at most `LOG_MAX_FILES` (5) files of `LOG_MAX_SIZE` (10m), the
+  oldest dropped first (Docker kept it whole until the container was removed).
+- **Operators:** after `git pull`, `docker compose up -d --build`; then, for a site the installer kept,
+  `grep -c 'access_log off' /etc/nginx/sites-enabled/*` and the installer's command for any file that shows fewer
+  than its servers. A tool that read the proxy's former lines reads the new ones, or sets `PROXY_ACCESS_LOG=full`.
+  Commit `909b826`.
+
 ### The host's nginx kept up to date, over HTTP/1.1 (session 57)
 - **Security: nginx's release of 18 November 2026** (CVE-2026-123007 and nine more, fixed in nginx 1.30.7 and 1.31.9;
   the most serious needs HTTP/2 and has a public proof of concept). The front-end proxy already runs nginx 1.30.7 (its

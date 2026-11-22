@@ -1783,5 +1783,4 @@ process, a process still running after 3 seconds is killed, and when none can an
 with `Retry-After`, not 400, since the link may be valid; the answers for recent segments are remembered, and the
 toolkit's error text no longer reaches the client. Decompressing in the resolver's own process (a port of the
 toolkit), a long-running Node.js worker and settings for the limits were weighed and not taken. `test_resolver.py`
-gained 22 checks, with the real toolkit; 13 mutations, all caught. Session 61's own handover section, missing from
-the maintainer's notes, was written by this session from the security log and this file.
+gained 22 checks, with the real toolkit; 14 mutations, all caught.

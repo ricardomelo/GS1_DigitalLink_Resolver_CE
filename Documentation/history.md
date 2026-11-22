@@ -1682,6 +1682,15 @@ Cancelling queued imports from every place that changes an account, and keeping 
 were weighed and not taken. `test_jobs.py` 100 → 116 checks; 13 mutations, all caught. Two new texts in the twelve
 languages.
 
+The same session assessed nginx's security release of 18 November 2026, at the owner's request (a news article on
+"serious flaws in nginx"): ten flaws fixed in nginx 1.30.7 and 1.31.9, the worst (CVE-2026-123007) in HTTP/2 with a
+public proof of concept. The front-end proxy's image was already 1.30.7 and its configuration meets none of the
+conditions; the host's nginx, Ubuntu's package that ends TLS, was installed by the installer only when missing and the
+HTTPS site it wrote served HTTP/2. Commit `7c3bea5` ([ADR 0042](adr/0042-host-nginx.md)): the installer installs or
+updates nginx on every run and compares the package with the fixed versions, the HTTPS site serves HTTP/1.1 only, a
+kept site serving HTTP/2 is reported with the command that turns it off, and the tests run nginx 1.30.7.
+`test_install.sh` 102 → 121 checks; 9 mutations, all caught.
+
 ## Session 56 — malformed request bodies
 
 Findings F-023 and F-029 of the security assessment, in one code commit (`eda6315`;

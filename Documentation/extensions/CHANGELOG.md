@@ -11,6 +11,19 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### The host's nginx kept up to date, over HTTP/1.1 (session 57)
+- **Security: nginx's release of 18 November 2026** (CVE-2026-123007 and nine more, fixed in nginx 1.30.7 and 1.31.9;
+  the most serious needs HTTP/2 and has a public proof of concept). The front-end proxy already runs nginx 1.30.7 (its
+  image's digest of 21 November) and meets none of the flaws' conditions; the host's nginx, which ends TLS, is
+  Ubuntu's package ([ADR 0042](../adr/0042-host-nginx.md)).
+- **Changed: the installer installs or updates the host's nginx on every run** (and Certbot), instead of installing it
+  only when missing, and checks its version: a package older than the fixed ones (Ubuntu 24.04 1.24.0-2ubuntu7.20,
+  22.04 1.18.0-6ubuntu14.24, nginx.org 1.30.7 or 1.31.9) is reported with the command that updates it.
+- **Changed: the HTTPS site written for an existing certificate serves HTTP/1.1 only** (`listen 443 ssl;`). When the
+  installer keeps a Let's Encrypt site that serves HTTP/2, it says so and prints the command that turns it off.
+- **Operators:** update the host's nginx now — `sudo apt-get update && sudo apt-get install --only-upgrade nginx` —
+  or run the installer again. Commit `7c3bea5`.
+
 ### A queued import stops when its account may no longer write (session 57)
 - **Changed: a queued import writes only while its account may.** The worker reads the account again before each
   record, as every request does: when an administrator removes or disables the account, disables its organisation or

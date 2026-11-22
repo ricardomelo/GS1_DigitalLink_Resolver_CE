@@ -1682,6 +1682,10 @@ access log; every service keeps at most `LOG_MAX_FILES` files of `LOG_MAX_SIZE`.
 truncated address, were weighed and not taken. `test_home.py`, `test_deploy.py` and `test_install.sh` gained the
 checks; 17 mutations, all caught. No new interface text.
 
+The same session fixed a test that failed only in the first five minutes after midnight in the tests' time zone
+(`23be98d`): `test_requestlog.py` read the day's aggregates on the day of its clock, while its events were five minutes
+earlier, on the day before (the MongoDB job of CI run 44978787931 started at 00:03 in São Paulo).
+
 ## Session 57 — a queued import and its account
 
 Finding F-024 of the security assessment, in one code commit (`4bb4928`;

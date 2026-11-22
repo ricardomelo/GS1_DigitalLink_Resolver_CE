@@ -21,9 +21,16 @@ def _get_collection() -> Collection:
 
 
 def _reformat_id(anchor_id: str) -> str:
-    anchor_id = anchor_id.replace('/', '_')
-    if anchor_id[:1] == '_':
+    """The document id of an anchor, as the data entry API writes it: '01/0950...' or '/01/0950...' -> '01_0950...';
+    an id ('8004_A_B') is returned unchanged. Only a slash right after the AI's digits becomes '_': a value keeps its
+    own '_', and a value with a '/' (a %2F in the request; the data entry API never stores one) gives an id no
+    document has (Documentation/adr/0049-data-entry-anchors.md). The official code turned every '/' into '_', so
+    /8004/A%2FB read the document of /8004/A_B (finding U-004)."""
+    if anchor_id[:1] == '/':
         anchor_id = anchor_id[1:]
+    ai = len(anchor_id) - len(anchor_id.lstrip('0123456789'))
+    if anchor_id[ai:ai + 1] == '/':
+        anchor_id = anchor_id[:ai] + '_' + anchor_id[ai + 1:]
     return anchor_id
 
 

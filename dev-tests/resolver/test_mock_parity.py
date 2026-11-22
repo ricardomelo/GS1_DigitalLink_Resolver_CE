@@ -249,5 +249,14 @@ check("DELETE of the whole key: both accept", real.status_code == mock.status_co
 real, mock = both("get", "/01/09506000134352")
 check("after the DELETE both answer 404", real.status_code == mock.status_code == 404, (real.status_code, mock.status_code))
 
+# Anchors (ADR 0049, finding U-004): /AI/value only, and no AI part with "_" in a path
+for anchor in ("/01/09506000134352/10/L1", "/99/X", "01/09506000134352"):
+    real, mock = both("post", "/new", {**record([link("gs1:pip", "https://a.example/p")], "gs1:pip"), "anchor": anchor})
+    check(f"POST /new with the anchor {anchor!r}: both answer 400", real.status_code == mock.status_code == 400,
+          (real.status_code, mock.status_code))
+real, mock = both("get", "/8004_0950600013/A")
+check("GET of a path whose AI part has '_': both answer 400", real.status_code == mock.status_code == 400,
+      (real.status_code, mock.status_code))
+
 print(f"\n{'FAILED' if failures else 'PASSED'}: {len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

@@ -71,6 +71,38 @@ def _test_gs1_digital_link_syntax(url: str) -> bool:
         return False
 
 
+# The primary keys of GS1 Digital Link (GS1 Digital Link URI Syntax 1.7, section 4.3; the AIs with "dlpkey" in the GS1
+# Barcode Syntax Dictionary, as portal/gs1.py PRIMARY_KEYS reads them - dev-tests compare the two lists). An anchor is
+# "/" + one of these + "/" + a value of printable ASCII characters other than "/" and space
+# (Documentation/adr/0049-data-entry-anchors.md).
+KEY_AIS: frozenset[str] = frozenset({'00', '01', '253', '255', '401', '402', '414', '415', '417', '8003', '8004',
+                                     '8006', '8010', '8013', '8017', '8018'})
+_ANCHOR = re.compile(r'/([0-9]{2,4})/([!-.0-~]+)')   # the value: printable ASCII, no "/" and no space
+
+
+def entry_anchor(entry: dict[str, Any]) -> Any:
+    """The anchor of an entry: a v3 entry's "anchor", or the one a v2 entry's key type and key make."""
+    if 'identificationKeyType' in entry or 'identificationKey' in entry:
+        key_type, key = entry.get('identificationKeyType'), entry.get('identificationKey')
+        return f"/{key_type}/{key}" if isinstance(key_type, str) and isinstance(key, str) else None
+    return entry.get('anchor')
+
+
+def anchor_problem(entry: dict[str, Any]) -> str | None:
+    """Why the entry's anchor cannot be stored, or None. An anchor is /AI/value: exactly two slashes, a primary key
+    AI and a value of printable ASCII characters other than "/" and space (GS1 values are ASCII). The official API
+    stored an anchor of any shape under a document id with every "/" turned into "_", skipping the registration and
+    value checks for anything but two slashes, and read every "_" back as "/": /8004/A_B and /8004/A/B were the same
+    document (finding U-004)."""
+    anchor = entry_anchor(entry)
+    match = _ANCHOR.fullmatch(anchor) if isinstance(anchor, str) else None
+    if not match or match.group(1) not in KEY_AIS:
+        shown = repr(anchor[:80]) if isinstance(anchor, str) else 'missing'
+        return (f"anchor {shown}: an anchor is /AI/value, a GS1 primary key ({', '.join(sorted(KEY_AIS, key=int))}) "
+                f"and its value, with no other slash, no spaces and no characters outside printable ASCII")
+    return None
+
+
 # The qualifiers each primary key accepts in a registration (GS1 Digital Link URI Syntax 1.7, section 4.9);
 # keys not listed accept none. AI 8020 is required with AI 415.
 KEY_QUALIFIERS: dict[str, set[str]] = {
@@ -108,10 +140,10 @@ def registration_problem(entry: dict[str, Any]) -> str | None:
     (URI Syntax 1.7, section 4.9) and the registration rules of GS1-Conformant Resolver 1.2.1, section
     2.5.9: AI 235 stands alone (rule 1) and, with AI 21, AI 22 and AI 10 are not part of the
     registration (rule 2) - they may be kept as informativeQualifiers instead."""
-    anchor = entry.get('anchor')
-    if not isinstance(anchor, str) or anchor.count('/') != 2 or not anchor.startswith('/'):
-        return None   # v2 documents and malformed anchors are handled by the existing code
-    key = anchor.split('/')[1]
+    problem = anchor_problem(entry)
+    if problem or 'anchor' not in entry:
+        return problem   # a v2 document has no qualifier lists: only its anchor is checked here
+    key = entry['anchor'].split('/')[1]
     try:
         ais = _qualifier_ais(entry.get('qualifiers'), 'qualifiers')
         informative = _qualifier_ais(entry.get('informativeQualifiers'), 'informativeQualifiers')
@@ -205,11 +237,7 @@ def _sent_hrefs(entry: dict[str, Any]) -> list:
 def _stored_hrefs(entry: dict[str, Any]) -> set[str]:
     """The targets already stored in the document of the entry's key (none for a new key or an entry without one)."""
     try:
-        if 'identificationKeyType' in entry:
-            anchor = f"/{entry['identificationKeyType']}/{entry['identificationKey']}"
-        else:
-            anchor = entry['anchor']
-        result = data_entry_db.read_document(convert_path_to_document_id(anchor))
+        result = data_entry_db.read_document(convert_path_to_document_id(entry_anchor(entry)))
     except (KeyError, TypeError, ValueError, AttributeError):
         return set()
     return target_rule.document_hrefs(result.get('data')) if result.get('response_status') == 200 else set()
@@ -318,7 +346,7 @@ def _convert_mongo_linkset_to_v3(mongo_linkset_format: dict[str, Any]) -> list[d
 
         for item in mongo_linkset_format['data']:
             output_item = {
-                'anchor': "/" + mongo_linkset_format['_id'].replace('_', '/'),
+                'anchor': document_id_to_anchor(mongo_linkset_format['_id']),
                 'itemDescription': '',
                 'defaultLinktype': mongo_linkset_format['defaultLinktype'],
                 'links': []
@@ -629,14 +657,20 @@ def _author_db_linkset_list(data_list: list[dict[str, Any]]) -> dict[str, Any]:
         return {"response_status": 500, "error": "Internal Server Error - " + str(e)}
 
 def convert_path_to_document_id(path: str) -> str:
-    if path.count('/') < 2:
-        logger.warning("Error: path format error for: %s", path)
-        raise ValueError("Error: path format error")
+    """The document id of an anchor: '/8004/A_B' -> '8004_A_B'. Only /AI/value has one (ADR 0049): the AI is digits
+    only, so the first "_" of an id ends it and the value keeps its own "_" - an id names one anchor and back. The
+    official function joined every segment with "_", so /8004/A/B and /8004/A_B had the same id (finding U-004)."""
+    match = _ANCHOR.fullmatch(path) if isinstance(path, str) else None
+    if not match:
+        raise ValueError("an anchor is /AI/value, with no other slash, no spaces and no characters outside "
+                         "printable ASCII")
+    return f"{match.group(1)}_{match.group(2)}"
 
-    parts = path.strip().split('/')
-    parts = [p for p in parts if p != '']
 
-    return '_'.join(parts)
+def document_id_to_anchor(document_id: str) -> str:
+    """The anchor of a document id: '8004_A_B' -> '/8004/A_B' (the first "_" only; the official code turned every
+    "_" into "/", so a value with "_" came back under another anchor)."""
+    return '/' + document_id.replace('_', '/', 1)
 
 
 def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[str, Any] | list[dict[str, Any]], int]:
@@ -766,11 +800,8 @@ def read_index() -> dict[str, Any]:
         result = data_entry_db.read_index()
 
         if result['response_status'] == 200:
-            # format the list to include the '/' at the beginning and replace the '_' with '/'
-            formatted_list = []
-            for item in result['data']:
-                formatted_list.append('/{}'.format(item.replace('_', '/')))
-            result['data'] = formatted_list
+            # the anchors of the document ids (the first '_' only: a value keeps its own '_', ADR 0049)
+            result['data'] = [document_id_to_anchor(item) for item in result['data']]
 
         return result
 

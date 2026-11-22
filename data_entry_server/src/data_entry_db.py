@@ -22,29 +22,24 @@ def _get_collection() -> Collection:
 
 # This script provides the four CRUD functions to interact with the MongoDB database
 
-# This function reformats the document id to be used in the database.
-# Example: '/01/05392000229648' -> '01_05392000229648'. The leading '/' is removed
-# and any other '/' characters are replaced with '_'. This is because some
-# document database systems do not allow '/' characters in the primary identifier.
-# This function survives keeping the correct format if called with a format that is already the internal format!
+# The document id of an anchor: '/01/05392000229648' -> '01_05392000229648', '/8004/A_B' -> '8004_A_B'. The leading
+# '/' is removed and the slash after the AI becomes '_' (some document databases do not allow '/' in the primary
+# identifier). Only the first one: the data entry API stores /AI/value anchors only, the AI is digits, so the first '_'
+# of an id ends the AI and the value keeps its own '_' (Documentation/adr/0049-data-entry-anchors.md). The official
+# function turned every '/' into '_', so /8004/A/B and /8004/A_B were one document (finding U-004).
+# Called with an id already in the internal form, it returns it unchanged.
 def _reformat_id_for_db(document_id: str) -> str:
-    document_id = document_id.replace('/', '_')
-    if document_id[:1] == '_':
+    if document_id[:1] == '/':
         document_id = document_id[1:]
-    return document_id
+    return document_id.replace('/', '_', 1)
 
 
-# This function reverses the reformatting performed by _reformat_id_for_db().
-# Example: '01_05392000229648' -> '/01/05392000229648'. The leading '_' is replaced
-# with a '/' and any other '_' characters are replaced with '/'. This is because
-# we should be consistent with external views of id'.
-# Note that, like function _reformat_id_for_db(), this function survives keeping the
-# correct format should it be called with the external format already!
+# The reverse of _reformat_id_for_db(): '8004_A_B' -> '/8004/A_B' (the first '_' only; the official function turned
+# every '_' into '/', so a value with '_' came back under another anchor). An anchor is returned unchanged.
 def _reformat_id_for_external_use(document_id: str) -> str:
     if document_id[0:1] == '/':
-        return document_id.replace('_', '/')
-    else:
-        return '/' + document_id.replace('_', '/')
+        return document_id
+    return '/' + document_id.replace('_', '/', 1)
 
 
 # Create a new document in the 'gs1resolver' collection

@@ -52,7 +52,7 @@ def convert_mongo_linkset_to_v3(mongo_linkset_format):
 
     for item in mongo_linkset_format['data']:
         output_item = {
-            'anchor': "/" + mongo_linkset_format['_id'].replace('_', '/'),
+            'anchor': "/" + mongo_linkset_format['_id'].replace('_', '/', 1),  # the first '_' only (ADR 0049)
             'itemDescription': '',
             'defaultLinktype': mongo_linkset_format['defaultLinktype'],
             'links': []

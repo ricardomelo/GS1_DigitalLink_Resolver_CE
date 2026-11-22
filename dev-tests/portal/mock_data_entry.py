@@ -8,6 +8,7 @@ Bearer token: "tok".
 """
 # Stands in for the Resolver CE data entry API (what matters: upsert and PUT merge links, partial DELETE)
 import copy
+import re
 from flask import Flask, request, jsonify
 app = Flask(__name__)
 DB = {}
@@ -19,7 +20,7 @@ def auth():
 def v3(did):
     d=DB[did]; out=[]
     for e in d["entries"]:
-        it={"anchor":"/"+did.replace("_","/"),"itemDescription":e["itemDescription"],"defaultLinktype":d["default"],"links":copy.deepcopy(e["links"])}
+        it={"anchor":"/"+did.replace("_","/",1),"itemDescription":e["itemDescription"],"defaultLinktype":d["default"],"links":copy.deepcopy(e["links"])}
         if e["qualifiers"]: it["qualifiers"]=e["qualifiers"]
         if e.get("informative"): it["informativeQualifiers"]=copy.deepcopy(e["informative"])
         out.append(it)
@@ -27,6 +28,10 @@ def v3(did):
 def rule2(qualifiers):
     ais={k for i in (qualifiers or []) for k in i}
     return "21" in ais and bool(ais & {"22","10"})
+KEYS={"00","01","253","255","401","402","414","415","417","8003","8004","8006","8010","8013","8017","8018"}
+def bad_anchor(doc):   # ADR 0049: /AI/value, a primary key, printable ASCII without "/" or space
+    m=re.fullmatch(r"/([0-9]{2,4})/([!-.0-~]+)",doc.get("anchor") or "") if isinstance(doc,dict) else None
+    return not m or m.group(1) not in KEYS
 def upsert(doc):
     did=doc["anchor"].split("/")[-2]+"_"+doc["anchor"].split("/")[-1]
     assert not rule2(doc.get("qualifiers")), "rule 2 of section 2.5.9"
@@ -50,14 +55,17 @@ def new():
     if not auth(): return "no",403
     d=request.json
     if isinstance(d,list):
+        if any(bad_anchor(x) for x in d): return jsonify(response_status=400,error="anchor"),400
         if any(rule2(x.get("qualifiers")) for x in d): return jsonify(response_status=400,error="rule 2"),400
         for x in d: upsert(x)
         return jsonify([{"ok":1}]),201
+    if bad_anchor(d): return jsonify(response_status=400,error="anchor"),400
     if rule2(d.get("qualifiers")): return jsonify(response_status=400,error="rule 2"),400
     s=upsert(d); return jsonify({"entry":"x","result":{"response_status":s}}),s
 @app.route("/api/<c>/<v>",methods=["GET","PUT","DELETE"])
 def doc(c,v):
     if not auth(): return "no",403
+    if "_" in c: return jsonify(response_status=400,error="path"),400
     did=f"{c}_{v}"
     d=request.get_json(silent=True)
     remove=request.method=="DELETE" and isinstance(d,dict) and "removeRecord" in d

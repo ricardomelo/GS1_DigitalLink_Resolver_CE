@@ -337,7 +337,8 @@ _PRIMES = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 6
 # What the portal does differently from the dictionary, on purpose. Each entry says why.
 PORTAL_EXCEPTIONS = {
     # Alphanumeric values of keys (CSET 82 in the dictionary): letters, digits, full stop and hyphen. "_" is
-    # excluded because the data entry service turns "/" into "_" in document ids; the other symbols would need
+    # excluded: the official data entry service read every "_" of a document id back as "/" (since ADR 0049 only the
+    # first, so a value's "_" is safe; the portal's forms and hints were kept); the other symbols would need
     # percent-encoding in the URI.
     "key_chars": r"A-Za-z0-9.\-",
     # Alphanumeric values of key qualifiers (CSET 82): letters, digits, ".", "_" and "-".

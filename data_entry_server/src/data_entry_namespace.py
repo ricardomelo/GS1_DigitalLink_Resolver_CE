@@ -76,6 +76,19 @@ class TokenResource(Resource):
         return {'result': False, 'message': "Token is invalid"}
 
 
+# The document id of /{anchor_ai_code}/{anchor_ai}: '8004' and 'A_B' -> '8004_A_B'. The first '_' of an id ends the
+# AI (Documentation/adr/0049-data-entry-anchors.md), so a path whose AI part has a '_' would name another anchor's
+# document (/8004_A/B is /8004/A_B): it is refused, as a path with more segments is (finding U-004).
+ANCHOR_PATH_ERROR = {"response_status": 400,
+                     "error": "The path is /{AI}/{value}: the AI without '_', the value without '/'"}
+
+
+def _document_id(anchor_ai_code: str, anchor_ai: str) -> str | None:
+    if not anchor_ai_code or '_' in anchor_ai_code or not anchor_ai:
+        return None
+    return f'{anchor_ai_code}_{anchor_ai}'
+
+
 @data_entry_namespace.route('/heartbeat')
 class HeartBeat(TokenResource):
     @data_entry_namespace.doc(description="Check if the server is running")
@@ -213,7 +226,9 @@ class DocOperations(TokenResource):
             elif not token_result['result']:
                 return token_result['message'], 403
 
-            document_id = f'{anchor_ai_code}_{anchor_ai}'
+            document_id = _document_id(anchor_ai_code, anchor_ai)
+            if document_id is None:
+                return ANCHOR_PATH_ERROR, 400
             response_data = data_entry_logic.read_document(document_id)
             return response_data, response_data['response_status']
 
@@ -237,7 +252,9 @@ class DocOperations(TokenResource):
             data, refusal = _json_body(object_only=True)
             if refusal:
                 return refusal
-            document_id = f'{anchor_ai_code}_{anchor_ai}'
+            document_id = _document_id(anchor_ai_code, anchor_ai)
+            if document_id is None:
+                return ANCHOR_PATH_ERROR, 400
             response_data, http_response_status = data_entry_logic.update_document(document_id, data)
             return response_data, http_response_status
 
@@ -262,7 +279,9 @@ class DocOperations(TokenResource):
             elif not token_result['result']:
                 return token_result['message'], 403
 
-            document_id = f'{anchor_ai_code}_{anchor_ai}'
+            document_id = _document_id(anchor_ai_code, anchor_ai)
+            if document_id is None:
+                return ANCHOR_PATH_ERROR, 400
 
             # A JSON body removes the links it names (a partial delete); without a body the whole document is
             # deleted. A body that cannot be read, or names no link, is refused, never taken for no body.
@@ -297,7 +316,8 @@ class DocOperations(TokenResource):
 @data_entry_namespace.route('/<anchor_ai_code>/<anchor_ai>/<path:extra_segments>')
 @data_entry_namespace.doc(security='BearerAuth')
 class DocOperationsQualified(TokenResource):
-    @data_entry_namespace.doc(description="Retrieve a document using its anchor")
+    @data_entry_namespace.doc(description="Answers 400: an anchor is /{AI}/{value}, and a record's qualifiers are "
+                                          "read with GET /{AI}/{value}")
     def get(self, anchor_ai_code: str, anchor_ai: str, extra_segments: str) -> tuple[Any, int] | Response:
         try:
             token_result = self.is_auth_token_ok()
@@ -306,9 +326,9 @@ class DocOperationsQualified(TokenResource):
             elif not token_result['result']:
                 return token_result['message'], 403
 
-            document_id = data_entry_logic.convert_path_to_document_id(f"/{anchor_ai_code}/{anchor_ai}/{extra_segments}")
-            response_data = data_entry_logic.read_document(document_id)
-            return response_data, response_data['response_status']
+            # An anchor is /AI/value (ADR 0049). The official route read /01/X/10/Y as the document 01_X_10_Y, which
+            # only a malformed anchor could write; such a document is now read as /01/X_10_Y (finding U-004)
+            return ANCHOR_PATH_ERROR, 400
 
         except Exception as e:
             logger.warning('Error getting document %s', e)

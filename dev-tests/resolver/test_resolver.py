@@ -11,6 +11,7 @@ import base64
 import copy
 import glob
 import importlib
+import importlib.util
 import json
 import os
 import re
@@ -49,11 +50,15 @@ def author(doc):
 sys.path.pop(0)
 sys.modules.pop("data_entry_logic")
 sys.path.insert(0, os.path.join(REPO, "web_server", "src"))
+# the real mapping of an anchor to a document id (web_db._reformat_id), on a dictionary instead of MongoDB
+_spec = importlib.util.spec_from_file_location("real_web_db", os.path.join(REPO, "web_server", "src", "web_db.py"))
+real_web_db = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(real_web_db)
 web_db = types.ModuleType("web_db")
 
 
 def read_document(anchor):
-    key = anchor.replace("/", "_").lstrip("_")
+    key = real_web_db._reformat_id(anchor)
     return {"response_status": 200, "data": copy.deepcopy(DB[key])} if key in DB else {"response_status": 404, "error": "nf"}
 
 
@@ -664,6 +669,23 @@ location = r.headers.get("Location", "")
 check("serialised key template, a rest with quotes: the registered host, the rest encoded in one segment",
       r.status_code == 307 and urlsplit(location).hostname == "brand.example"
       and unquote(urlsplit(location).path) == '/asset/0950600013430/7","x":"', f"{r.status_code} {location}")
+
+# Document ids (ADR 0049, finding U-004): a value's own "_" kept, a %2F in a value never read as the slash after the AI
+UNDER = "/8004/0950600013A_B"
+author({"anchor": UNDER, "itemDescription": "Asset", "defaultLinktype": "gs1:pip",
+        "links": [{"linktype": "gs1:pip", "href": "https://brand.example/a_b", "title": "A_B", "type": "text/html",
+                   "hreflang": ["en"]}]})
+r = get(UNDER)
+check("a key value with '_' resolves to its own record", r.status_code == 307
+      and r.headers.get("Location") == "https://brand.example/a_b", f"{r.status_code} {r.headers.get('Location')}")
+r = get("/8004/0950600013A%2FB")
+check("…the value A/B (a %2F) does not read the record of A_B (the official code turned every '/' into '_')",
+      r.status_code != 307 and "brand.example/a_b" not in r.headers.get("Location", ""),
+      f"{r.status_code} {r.headers.get('Location')}")
+check("web_db: an anchor's id keeps the value's '_' and turns only the slash after the AI",
+      [real_web_db._reformat_id(a) for a in ("/01/09506000134352", "01/09506000134352", "8004_A_B", "/8004/A_B",
+                                             "8004_A/B", "/8004/A/B")]
+      == ["01_09506000134352", "01_09506000134352", "8004_A_B", "8004_A_B", "8004_A/B", "8004_A/B"])
 
 # ---------------------------------------------------------------- the engine in the resolver's process (gs1_syntax.py)
 ENGINE_DIR = os.environ.get("GS1_SYNTAX_ENGINE_DIR")

@@ -502,6 +502,16 @@ if mongomock:
           and read() is None, done)
     gone = real_db.write_document_if_unchanged({"_id": "01_1", "data": []}, {"_id": "01_1", "data": [one]})
     check("database layer: a document already gone → 409", gone["response_status"] == 409, gone)
+    # document ids (ADR 0049, finding U-004): the slash after the AI only, a value's own "_" kept both ways
+    check("database layer: an anchor's id and back, a value's '_' kept",
+          [real_db._reformat_id_for_db(a) for a in ("/8004/A_B", "8004_A_B", "/01/09506000134352", "/8004/A/B")]
+          == ["8004_A_B", "8004_A_B", "01_09506000134352", "8004_A/B"]
+          and [real_db._reformat_id_for_external_use(i) for i in ("8004_A_B", "/8004/A_B")] == ["/8004/A_B"] * 2)
+    coll.insert_one({"_id": "8004_A_B", "defaultLinktype": "gs1:pip", "data": [one]})
+    check("database layer: /8004/A_B reads its document", real_db.read_document("/8004/A_B")["response_status"] == 200)
+    missing = real_db.read_document("8004_A_C")
+    check("database layer: a missing document named by its own anchor", missing["response_status"] == 404
+          and "/8004/A_C" in missing["error"] and "/8004/A/C" not in missing["error"], missing)
 else:
     print("SKIP the database layer on mongomock (pip install mongomock)")
 
@@ -671,6 +681,95 @@ check("targets: …the same private top-level names", target_rule.PRIVATE_TOP_NA
       target_rule.PRIVATE_TOP_NAMES ^ portal_gs1.PRIVATE_TOP_NAMES)
 check("targets: …a target with spaces around it refused, not trimmed (the portal trims what a person typed)",
       target_rule.target_problem(" https://example.com/p") == "urlChars")
+
+# ---- Anchors and document ids (ADR 0049, finding U-004) ----
+# The official API stored an anchor of any shape under an id with every "/" turned into "_", skipped the registration
+# and value checks for anything but two slashes, and read every "_" back as "/": a key value with "_" came back under
+# another anchor, and /8004/A/B and /8004/A_B were one document.
+STORE.clear()
+BAD_ANCHORS = [
+    ("three slashes (a qualifier in the anchor)", "/01/09506000134352/10/ABC"),
+    ("one slash", "/01"), ("no leading slash", "01/09506000134352"), ("a doubled slash", "//01/09506000134352"),
+    ("an empty value", "/01/"), ("an AI that is not a primary key (17)", "/17/261231"), ("an unknown AI", "/99/X"),
+    ("an AI that is not digits", "/gtin/09506000134352"), ("a space in the value", "/8004/9506000AB 12"),
+    ("a character outside ASCII", "/8004/9506000ABÄ"), ("a control character", "/8004/9506000AB\x01"),
+    ("a trailing slash", "/01/09506000134352/"),
+]
+for name, anchor in BAD_ANCHORS:
+    r = post(entry(anchor))
+    check(f"anchors: POST /new refuses {name} → 400 naming the anchor, nothing stored", r.status_code == 400
+          and "an anchor is /AI/value" in r.get_json().get("error", "") and not STORE, r.get_data(as_text=True))
+r = post(entry(None))
+check("anchors: POST /new without an anchor → 400", r.status_code == 400 and not STORE, r.get_data(as_text=True))
+r = post({"identificationKeyType": "01", "identificationKey": "09506000134352/10/X", "itemDescription": "x",
+          "qualifierPath": "/", "responses": [{"linkType": "gs1:pip", "targetUrl": "https://example.com/p",
+                                               "linkTitle": "P", "mimeType": "text/html", "ianaLanguage": "en",
+                                               "defaultLinkType": True}]})
+check("anchors: a v2 entry whose key has a slash → 400, nothing stored", r.status_code == 400
+      and "an anchor is /AI/value" in r.get_json().get("error", "") and not STORE, r.get_data(as_text=True))
+V2 = {"identificationKeyType": "01", "identificationKey": "09506000134352", "itemDescription": "x", "qualifierPath": "/",
+      "responses": [{"linkType": "gs1:pip", "targetUrl": "https://example.com/p", "linkTitle": "P",
+                     "mimeType": "text/html", "ianaLanguage": "en", "defaultLinkType": True}]}
+r = post(V2)
+check("anchors: a v2 entry with a valid key accepted", r.status_code == 201 and list(STORE) == ["01_09506000134352"],
+      r.get_data(as_text=True))
+STORE.clear()
+r = post([entry(), entry("/01/09506000134352/21/S1")])
+check("anchors: a list with one malformed anchor refused whole, naming the item", r.status_code == 400
+      and r.get_json().get("error", "").startswith("Item 2: anchor") and not STORE, r.get_data(as_text=True))
+r = client.post("/api/validate", json=[entry(), entry("/99/X")], headers=AUTH)
+check("anchors: POST /validate names the malformed anchor", r.status_code == 200
+      and [p["item"] for p in r.get_json()["problems"]] == [2], r.get_json())
+check("anchors: the API's primary keys are the portal's", data_entry_logic.KEY_AIS == set(portal_gs1.PRIMARY_KEYS),
+      data_entry_logic.KEY_AIS ^ set(portal_gs1.PRIMARY_KEYS))
+
+GIAI = "/8004/9506000AB_12"
+r = post(entry(GIAI))
+check("anchors: a key value with '_' accepted, stored under one id", r.status_code == 201
+      and list(STORE) == ["8004_9506000AB_12"], (r.get_data(as_text=True), list(STORE)))
+r = client.get("/api/8004/9506000AB_12", headers=AUTH)
+check("anchors: …read back under its own anchor (the official code answered /8004/9506000AB/12)", r.status_code == 200
+      and [e["anchor"] for e in r.get_json()["data"]] == [GIAI], r.get_json())
+lines = client.get("/api/summary", headers=AUTH).get_json().get("data", [])
+check("anchors: …listed in /summary under its own anchor", [l["anchor"] for l in lines] == [GIAI], lines)
+db.read_index = lambda: {"response_status": 200, "data": list(STORE)}
+r = client.get("/api/index", headers=AUTH)
+check("anchors: …and in /index", r.get_json().get("data") == [GIAI], r.get_json())
+r = client.put("/api/8004/9506000AB_12", json={"itemDescription": "renamed"}, headers=AUTH)
+data = client.get("/api/8004/9506000AB_12", headers=AUTH).get_json()["data"]
+check("anchors: …changed by PUT (its anchor passes the rule)", r.status_code == 200
+      and [e["itemDescription"] for e in data] == ["renamed"], (r.get_data(as_text=True), data))
+before = copy.deepcopy(STORE)
+for method in ("get", "put", "delete"):
+    r = getattr(client, method)("/api/8004_9506000AB/12", json={"itemDescription": "x"} if method == "put" else None,
+                                headers=AUTH)
+    check(f"anchors: {method.upper()} /api/8004_9506000AB/12 (an AI part with '_') → 400, not the document of "
+          f"{GIAI}", r.status_code == 400 and STORE == before, (r.status_code, r.get_data(as_text=True)[:120]))
+r = client.get("/api/8004/9506000AB/12", headers=AUTH)
+check("anchors: GET of a path with more segments → 400, not the document of " + GIAI, r.status_code == 400
+      and "9506000AB_12" not in r.get_data(as_text=True), r.get_data(as_text=True)[:200])
+check("anchors: an anchor's document id and back, one to one",
+      data_entry_logic.convert_path_to_document_id(GIAI) == "8004_9506000AB_12"
+      and data_entry_logic.document_id_to_anchor("8004_9506000AB_12") == GIAI)
+try:
+    data_entry_logic.convert_path_to_document_id("/8004/9506000AB/12")
+    check("anchors: no document id for /8004/9506000AB/12 (the official code gave it the id of " + GIAI + ")", False)
+except ValueError:
+    check("anchors: no document id for /8004/9506000AB/12 (the official code gave it the id of " + GIAI + ")", True)
+
+# documents written by the official code from anchors of other shapes: readable and removable, never written again
+STORE["01_09506000134352_10_X"] = {"_id": "01_09506000134352_10_X", "defaultLinktype": "gs1:pip",
+                                   "data": copy.deepcopy(STORE["8004_9506000AB_12"]["data"])}
+STORE["gtin_1"] = {"_id": "gtin_1", "defaultLinktype": "gs1:pip", "data": copy.deepcopy(STORE["8004_9506000AB_12"]["data"])}
+lines = client.get("/api/summary", headers=AUTH).get_json().get("data", [])
+check("anchors: an old document of another shape listed in /summary under the anchor its id now reads",
+      sorted(l["anchor"] for l in lines) == sorted([GIAI, "/01/09506000134352_10_X", "/gtin/1"]), lines)
+old = copy.deepcopy(STORE["gtin_1"])
+r = client.put("/api/gtin/1", json={"itemDescription": "x"}, headers=AUTH)
+check("anchors: …PUT of an old document whose anchor breaks the rule → 400, unchanged", r.status_code == 400
+      and "an anchor is /AI/value" in r.get_json().get("error", "") and STORE["gtin_1"] == old, r.get_data(as_text=True))
+r = client.delete("/api/gtin/1", headers=AUTH)
+check("anchors: …DELETE of it removes it", r.status_code == 200 and "gtin_1" not in STORE, r.get_data(as_text=True))
 
 # ---- The browser's rules (ADR 0038, finding F-021) ----
 r = client.get("/api/docs")

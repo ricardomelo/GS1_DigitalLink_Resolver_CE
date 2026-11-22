@@ -1771,3 +1771,17 @@ checks; 16 mutations, all caught. The Forwarding screen's hint says so, in the t
 tool, stopped by the portal's Content-Security-Policy since session 54, takes its pictures again (`5d261c8`); only the
 Forwarding screen's image is renewed.
 
+
+## Session 62 — compressed links decompressed within limits
+
+Finding U-002 of the security assessment, in code that came from the official project, in one code commit
+(`642839d`; [ADR 0047](adr/0047-toolkit-processes.md)). A path of one segment that is not an EPC binary string may be
+a compressed GS1 Digital Link, which only the GS1 Digital Link Toolkit decompresses, in Node.js: the official code
+started a process for every such path — robots' `/wp-login.php` included — and waited for it without a time limit.
+Now a segment that is not URI-safe base64 is refused at once, at most two processes run at a time in each server
+process, a process still running after 3 seconds is killed, and when none can answer in time the resolver says 503
+with `Retry-After`, not 400, since the link may be valid; the answers for recent segments are remembered, and the
+toolkit's error text no longer reaches the client. Decompressing in the resolver's own process (a port of the
+toolkit), a long-running Node.js worker and settings for the limits were weighed and not taken. `test_resolver.py`
+gained 22 checks, with the real toolkit; 13 mutations, all caught. Session 61's own handover section, missing from
+the maintainer's notes, was written by this session from the security log and this file.

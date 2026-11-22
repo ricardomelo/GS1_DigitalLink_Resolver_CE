@@ -11,6 +11,19 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Compressed links decompressed within limits (session 62)
+- **Changed: a one-segment path starts the GS1 Digital Link Toolkit only when it can be a compressed GS1 Digital
+  Link** ([ADR 0047](../adr/0047-toolkit-processes.md); a deliberate change to the official code). The official
+  resolver started a Node.js process for every path of one segment — `/wp-login.php` as well as a compressed link —
+  and waited for it without a time limit. Now a segment that is not 4 to 1,024 letters, digits, `-` or `_` is
+  answered 400 at once; at most two toolkit processes run at a time in each server process, a process still running
+  after 3 seconds is stopped, and when none can answer in time the resolver answers **503 with `Retry-After: 1`**
+  (*Please try again in a moment*; JSON for applications), counted as an error in the request log. The answer for a
+  compressed link is remembered, so scanning the same code again starts nothing; the 400 for a segment that does not
+  decompress no longer carries the toolkit's own error text. Uncompressed links and EPC binary strings are not
+  affected.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`. Commit `642839d`.
+
 ### A forwarding rule told to the organisations it concerns (session 61)
 - **Changed: an organisation learns when a forwarding rule sends its codes elsewhere**
   ([ADR 0046](../adr/0046-forwarding-tells-organisations.md)). A prefix rule of the server administrators

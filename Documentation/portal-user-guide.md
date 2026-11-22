@@ -1197,7 +1197,9 @@ answered — a QR code read by a phone, a link opened, an app asking for the lin
 **Last 30 days.** One bar per day: in blue the requests answered, in orange those **not found** (404) — a code that
 nobody registered, or a link type the record does not have. The line above the bars gives the totals. Requests made
 by machines — search engine crawlers, link previews, monitors, command-line tools — are counted apart and left out
-of the bars.
+of the bars. A compressed link (one part of letters, digits, `-` and `_` after the resolver's name) is opened by a
+separate program, a few at a time: when too many arrive at once the scan is answered *Please try again in a moment*
+(counted under *Error*) and the next attempt normally succeeds; other forms of the link are not affected.
 
 **Latest requests.** The newest first, 200 at a time (**Show more** for the next ones). Each row shows when, the
 **Code** (the identifier and the qualifiers in the scan: a serial number appears only as `/21/*`; `?17` means the QR

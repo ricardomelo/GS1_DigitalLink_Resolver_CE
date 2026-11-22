@@ -989,7 +989,7 @@ record is saved only when each of its links points to one of them or to a name u
 tenant API and when a version is restored; records saved before do not change until they are edited, and the item's
 page is never refused. The audit trail records each change (*Link hosts changed*). On the operator's page the same tab
 sets the list for the codes no organisation holds; read only in support access. Whatever the list, no organisation's
-link may carry a user name or password, an IP address or a name that only exists inside a network.
+link may carry a user name or password, an IP address or a name that only exists inside a network. The server's older data entry API, when the operator opens it to a system, refuses the same addresses for every new link ([ADR 0048](adr/0048-data-entry-target-rule.md)).
 
 ### Alerts (administrators)
 

@@ -5,11 +5,27 @@
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API. Its writes answer 409
 when a key keeps changing under other writers, and a list sent to `POST /new` answers the error of the first item not
-written instead of 201.
+written instead of 201. Every target it is sent must be an `https:` address with a public host name (400 otherwise; a
+target the key already holds is accepted).
 
 Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSWORD` and `DATA_ENTRY_DB_PASSWORD` to
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
+
+### Targets sent to the data entry API follow the portal's rule (session 63)
+- **Changed: the official data entry API refuses the targets the portal refuses**
+  ([ADR 0048](../adr/0048-data-entry-target-rule.md); a deliberate change to the official code). The official API
+  stored any `href` — `javascript:`, `data:`, `http:`, an IP address or a name inside the operator's network — and the
+  resolver then redirected whoever scanned the code to it. Every target sent to `POST /new` (one entry, a list, or
+  the legacy v2 `targetUrl`), `PUT` and `POST /validate` must now be an `https:` address with a public host name, as
+  in the portal ([ADR 0037](../adr/0037-target-addresses.md)): no user name or password before the host, no IP
+  address however written, no name such as `localhost`, `.local` or `.internal`, no spaces or control characters.
+  Anything else is answered **400** naming the link and the reason, with nothing written (a list is refused whole). A
+  target the key already holds is accepted as it is, so records saved before keep resolving and can still be
+  rewritten. The portal's own behaviour does not change: it already refused these targets.
+- **Integrators:** a system that writes through `/api` with `http:` targets, or targets on internal names, must send
+  `https:` addresses on public names after the update.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`. Commit `0067b4c`.
 
 ### Compressed links decompressed within limits (session 62)
 - **Changed: a one-segment path starts the GS1 Digital Link Toolkit only when it can be a compressed GS1 Digital

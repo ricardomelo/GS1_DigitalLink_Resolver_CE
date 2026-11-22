@@ -1784,3 +1784,17 @@ with `Retry-After`, not 400, since the link may be valid; the answers for recent
 toolkit's error text no longer reaches the client. Decompressing in the resolver's own process (a port of the
 toolkit), a long-running Node.js worker and settings for the limits were weighed and not taken. `test_resolver.py`
 gained 22 checks, with the real toolkit; 14 mutations, all caught.
+
+## Session 63 — targets sent to the data entry API follow the portal's rule
+
+Finding U-003 of the security assessment, in code that came from the official project, in one code commit (`0067b4c`;
+[ADR 0048](adr/0048-data-entry-target-rule.md)). The official data entry API stored any `href` — `javascript:`,
+`data:`, `http:`, an address inside the operator's network — and its `_validate_data()` hook returned every document
+unchanged; only the portal applied the target rule of ADR 0037. The API now applies the same rule, copied into
+`data_entry_server/src/target_rule.py` and compared with the portal's address by address, to every target sent to
+`POST /new` (a list checked whole, the v2 `targetUrl` too), `PUT` and `POST /validate`, answering 400 naming the link.
+A target the key's document already holds is accepted as it is, so that older records keep working and the portal's
+rewrites of them (explicit default links, the serial-number fix) are not refused for a target the person did not
+choose. A switch to turn the rule off, refusing stored targets and the per-organisation host lists were weighed and not
+taken. `test_data_entry_api.py` gained 33 checks; 14 mutations, all caught.
+

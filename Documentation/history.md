@@ -1834,3 +1834,14 @@ languages, counted as an error, never sent to the last resort; the serialised ke
 stop the same way. An outcome of its own in the request log, sending to the last resort during an outage and serving
 cached answers were weighed and not taken. `test_resolver.py` gained 12 checks, `test_forwarding_resolver.py` 6;
 12 mutations, all caught.
+
+## Session 67 — an outage of the database answered within seconds
+
+Finding F-032 of the security assessment, a residual of F-031 measured before it was fixed, in one code commit
+(`990b469`; [ADR 0052](adr/0052-database-time-budget.md)). Run with the resolver's real PyMongo client and nothing
+listening on the database's address, one scan waited 180 seconds before its 503: six reads in turn (domains,
+forwarding, the record, the appearance twice, the request log's retention), each for PyMongo's 30-second server
+selection timeout, where F-031 had counted one. All the reads of a request now share one time budget
+(`RESOLVER_DB_TIMEOUT_MS`, 5 seconds by default, `pymongo.timeout()` around the whole application), and the 503's
+`Retry-After` follows it. A shorter server selection timeout alone, a circuit breaker and the same budget for the data
+entry API were weighed and not taken. `test_resolver.py` gained 10 checks; 10 mutations, all caught.

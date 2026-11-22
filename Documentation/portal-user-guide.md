@@ -1207,7 +1207,8 @@ separate program, a few at a time: when too many arrive at once the scan is answ
 (counted under *Error*) and the next attempt normally succeeds; other forms of the link are not affected. While the
 resolver cannot read its records' database, every scan is answered *Please try again in a moment* too, counted under
 *Error* — never as *Code not registered* — when the request log can still be written; it uses the same database, so
-during a complete outage those scans are mostly missing here ([ADR 0051](adr/0051-records-unavailable.md)).
+during a complete outage those scans are mostly missing here ([ADR 0051](adr/0051-records-unavailable.md)). Such a
+scan is answered within a few seconds (5 by default; [ADR 0052](adr/0052-database-time-budget.md)).
 
 **Latest requests.** The newest first, 200 at a time (**Show more** for the next ones). Each row shows when, the
 **Code** (the identifier and the qualifiers in the scan: a serial number appears only as `/21/*`; `?17` means the QR

@@ -13,13 +13,26 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### An outage of the database answered within seconds (session 67)
+- **Fixed: while the resolver cannot reach MongoDB, each scan is answered within 5 seconds**
+  ([ADR 0052](../adr/0052-database-time-budget.md); a deliberate change to the official resolver's connection). A
+  request reads the database up to six times (the organisations' domains, forwarding, the strict mode, the request
+  log's retention, the brands, the appearance and the record), and each read waited 30 seconds for an unreachable
+  database: one scan could wait three minutes before the *Please try again in a moment* of session 66, holding one of
+  the resolver's threads, so that other scans queued and timed out. All the reads of a request now share one time
+  budget: during an outage the scan is answered 503 within it, with `Retry-After` of the same number of seconds (5
+  instead of 30); a working database answers well within it.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`: the optional setting
+  `RESOLVER_DB_TIMEOUT_MS` (milliseconds, 500 to 60000, default 5000) raises the budget for a slow but working database;
+  the resolver's log says the budget at start. Commit `990b469`.
+
 ### A failure of the records' database answered "try again", never "not registered" (session 66)
 - **Fixed: while the resolver cannot read its records' database, a scan is answered 503 with `Retry-After`**
   ([ADR 0051](../adr/0051-records-unavailable.md); a deliberate change to the official code). The official code read
   the database's failure like a missing document: during an outage of MongoDB every scan, of registered codes too, was
   answered 404 with the page *No information registered for this product*, counted in *Requests* as *Code not
   registered* and, with the resolver of last resort switched on, sent to that other resolver. It is now answered 503
-  with `Retry-After: 30` — the page *The request could not be completed — Please try again in a moment* for a browser,
+  with `Retry-After: 30` (5 since session 67) — the page *The request could not be completed — Please try again in a moment* for a browser,
   `The resolver cannot read its records at the moment: try again later` for an app — counted under *Error* when the
   request log can still be written (it uses the same database), and never
   sent to the resolver of last resort; a button of the item's page answers the same. Prefix rules still forward, an

@@ -61,7 +61,10 @@ class RobotsTxt(Resource):
 class ItemPageClick(Resource):
     def get(self) -> Response | tuple[Any, int]:
         """A link of the item's page, logged as a click and redirected to (Documentation/adr/0011-item-page.md)."""
-        return landing.click(_page_linkset)
+        try:
+            return landing.click(_page_linkset)
+        except web_logic.RecordsUnavailable:
+            return _records_unavailable(request.args.get('a', ''))
 
 
 @web_namespace.route('/_brand/<prefix>')
@@ -72,9 +75,12 @@ class ItemPageLogo(Resource):
 
 
 def _page_linkset(identifiers: str, qualifier_path: str | None) -> list[dict] | None:
-    """The linkset of a record, as its page lists it (None when there is none)."""
+    """The linkset of a record, as its page lists it (None when there is none); RecordsUnavailable when the records'
+    database could not be read (finding F-031)."""
     ai, value = identifiers.strip('/').split('/', 1)
     data, _ = web_logic.read_document(identifiers, f'{ai}_{value}', qualifier_path, None, [], None, None, True)
+    if data.get('response_status') == 503:
+        raise web_logic.RecordsUnavailable(identifiers)
     if data.get('response_status') != 200:
         return None
     return web_logic.format_linkset_for_external_use(data, identifiers)['linkset']
@@ -326,6 +332,16 @@ def _unavailable(path: str, reason: Exception) -> Response | tuple[Any, int]:
     return {'response_status': 503, 'error': 'The resolver is busy: try again in a moment'}, 503, headers
 
 
+def _records_unavailable(path: str) -> Response | tuple[Any, int]:
+    """503 with Retry-After when the records' database could not be read (finding F-031,
+    Documentation/adr/0051-records-unavailable.md): the page that asks to try again, or JSON; web_db logged the cause."""
+    headers = {'Retry-After': web_logic.RECORDS_RETRY_AFTER}
+    if _wants_html():
+        return Response(web_pages.render_error(503, path, None, None, None), status=503, mimetype='text/html',
+                        headers=headers)
+    return {'response_status': 503, 'error': web_logic.RECORDS_UNAVAILABLE}, 503, headers
+
+
 def _resolver_description() -> Response:
     """
     Resolver Description File (GS1-Conformant Resolver standard, section 3).
@@ -494,6 +510,10 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
     if match == 'withheld':
         # withheld by the strict mode: an app tells "nothing for this batch" from "nothing at all" (ADR 0022, 2.4)
         headers = {'Resolution-Match': 'withheld'}
+    if status == 503:
+        # the records' database could not be read: try again, never "unknown", never the resolver of last resort; the
+        # request log counts an error (finding F-031, Documentation/adr/0051-records-unavailable.md)
+        headers['Retry-After'] = web_logic.RECORDS_RETRY_AFTER
     # the request's path and the level that answered (or holds the withheld link), for the notice on the pages
     # (ADR 0022, sections 2.3 and 2.4)
     walked = (web_logic._encoded_identifier(identifiers) + (qualifier_path or '').rstrip('/'), answered) \

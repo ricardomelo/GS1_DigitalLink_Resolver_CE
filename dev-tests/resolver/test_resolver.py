@@ -762,6 +762,78 @@ check("error answers: …both in the resolver's log, with the traceback", text.c
       text[-400:])
 logging.getLogger().removeHandler(log)
 
+# ---------------------------------------------------------------- a records' database that fails (ADR 0051, F-031)
+# web_db answers 500 when MongoDB cannot be read (above). The official code read that like a missing document: 404, the
+# page "no information registered for this product", the request log's "unknown", the resolver of last resort.
+PAGE_TEXTS = json.load(open(os.path.join(REPO, "web_server", "src", "page_texts.json"), encoding="utf-8"))
+reads = []
+
+
+def failing_read(anchor):
+    reads.append(anchor)
+    return {"response_status": 500, "error": "Database error: see the resolver's log"}
+
+
+web_db.read_document = failing_read
+r = get(G)
+check("records' database down: a registered code → 503 with Retry-After, not 404", r.status_code == 503
+      and r.headers.get("Retry-After") == web_logic.RECORDS_RETRY_AFTER and int(web_logic.RECORDS_RETRY_AFTER) > 0,
+      (r.status_code, dict(r.headers)))
+check("…JSON: the fixed text that asks to try again, not 'No document found'", (r.get_json() or {}).get("error")
+      == web_logic.RECORDS_UNAVAILABLE and "No document" not in r.get_data(as_text=True), r.get_data(as_text=True)[:200])
+r = get(G + "/10/123", accept="text/html")
+html = r.get_data(as_text=True)
+check("…a browser: the page that asks to try again (error.other), not 'no information registered'",
+      r.status_code == 503 and r.headers.get("Retry-After") == web_logic.RECORDS_RETRY_AFTER
+      and PAGE_TEXTS["pt-BR"]["pages"]["error.other.title"] in html
+      and PAGE_TEXTS["pt-BR"]["pages"]["error.404.title"] not in html, (r.status_code, html[:300]))
+r = get(G + "?linkType=linkset", accept="application/linkset+json")
+check("…a linkset asked for: 503", r.status_code == 503 and r.headers.get("Retry-After"), r.status_code)
+r = client.head("/api" + G, headers={"Accept": "*/*"})
+check("…HEAD: 503 with Retry-After", r.status_code == 503 and r.headers.get("Retry-After"), r.status_code)
+reads.clear()
+r = get(GI + "7777777")
+check("…a serialised key: 503 after the first read, no search for a shorter stored prefix",
+      r.status_code == 503 and len(reads) == 1, (r.status_code, reads))
+
+
+def failing_after(count):
+    """The database answers the first count reads (from the dictionary), then fails."""
+    def read(anchor):
+        if len(reads) >= count:
+            return failing_read(anchor)
+        reads.append(anchor)
+        return read_document(anchor)
+    return read
+
+
+reads.clear()
+web_db.read_document = failing_after(2)
+r = get(GI + "7777777")
+check("…the database failing during the search for a serialised key's prefix: 503, not 404 nor a shorter prefix",
+      r.status_code == 503 and len(reads) == 3, (r.status_code, reads))
+reads.clear()
+web_db.read_document = failing_after(100)
+get(GI + "7777777")
+searched = len(reads)                     # the reads of the whole search: the exact key, the binary search, the scan
+reads.clear()
+web_db.read_document = failing_after(searched - 1)
+r = get(GI + "7777777")
+check("…and while reading the longest prefix found again (its last read): 503", r.status_code == 503
+      and searched > 3, (r.status_code, searched))
+web_db.read_document = failing_read
+r = get("/_click?a=" + G + "&l=0&i=0&t=instructions", accept="text/html")
+check("…an item page's button: 503 with Retry-After, not 404 'Not a link of this item'",
+      r.status_code == 503 and r.headers.get("Retry-After") and "Not a link" not in r.get_data(as_text=True),
+      (r.status_code, r.get_data(as_text=True)[:200]))
+r = get("/01/0789835741001X")
+check("…an invalid code: still 400 (the syntax is checked before the database)", r.status_code == 400, r.status_code)
+web_db.read_document = read_document
+r = get(G)
+check("records' database back: the same code redirected again", r.status_code == 307, r.status_code)
+r = get("/_click?a=" + G + "&l=0&i=0&t=instructions", accept="text/html")
+check("…and the item page's button too", r.status_code == 302, r.status_code)
+
 # ---------------------------------------------------------------- the engine in the resolver's process (gs1_syntax.py)
 ENGINE_DIR = os.environ.get("GS1_SYNTAX_ENGINE_DIR")
 if ENGINE_DIR:

@@ -213,7 +213,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_bc8ade0a6af…)",
+    "a wrong key is refused (rk_37101b2e718…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -1116,9 +1116,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (270 features)",
+    "features.md: every table has a Checks column (272 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (595 references)",
+    "…each reference names a program of the inventory (607 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (82)",
     "…and the inventory holds no program that no longer exists",
@@ -1129,8 +1129,8 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (50)",
-    "every relative link of the documents leads to a file (66 documents)"
+    "…and every decision record (51)",
+    "every relative link of the documents leads to a file (67 documents)"
    ],
    "count": 15,
    "ciOnly": false
@@ -1876,6 +1876,12 @@
     "a compressed link of an unknown key: sent uncompressed",
     "a linkset asked for an unknown key: sent too",
     "HEAD: sent too",
+    "the records' database down, the last resort on: a registered code → 503 with Retry-After, not sent there",
+    "…the request log: outcome error, not unknown nor fallback",
+    "…a code nobody registered: 503 too, not sent",
+    "…a compressed link: 503, not sent",
+    "…a prefix rule still forwards (it is read before the records, from the portal's settings)",
+    "the records' database back: a code nobody registered sent to the last resort again",
     "a prefix rule: every key of the prefix sent, even one registered here, its path and query kept",
     "…a GTIN-13 of the prefix",
     "…other prefixes answered here",
@@ -1892,7 +1898,7 @@
     "a database that does not answer: the last settings kept",
     "the default address is GS1's global resolver"
    ],
-   "count": 26,
+   "count": 32,
    "ciOnly": false
   },
   "gcp": {
@@ -3737,7 +3743,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:41911/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:46735/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",
@@ -5971,6 +5977,18 @@
     "error answers: web_db on a database that fails → 500 with a fixed text, not its message (host and port)",
     "error answers: a failure while choosing the link → 500 with a fixed text, not the exception's",
     "error answers: …both in the resolver's log, with the traceback",
+    "records' database down: a registered code → 503 with Retry-After, not 404",
+    "…JSON: the fixed text that asks to try again, not 'No document found'",
+    "…a browser: the page that asks to try again (error.other), not 'no information registered'",
+    "…a linkset asked for: 503",
+    "…HEAD: 503 with Retry-After",
+    "…a serialised key: 503 after the first read, no search for a shorter stored prefix",
+    "…the database failing during the search for a serialised key's prefix: 503, not 404 nor a shorter prefix",
+    "…and while reading the longest prefix found again (its last read): 503",
+    "…an item page's button: 503 with Retry-After, not 404 'Not a link of this item'",
+    "…an invalid code: still 400 (the syntax is checked before the database)",
+    "records' database back: the same code redirected again",
+    "…and the item page's button too",
     "the GS1 Barcode Syntax Engine loads in the resolver's process",
     "in-process answers equal Node.js's for 19 URIs, valid and invalid",
     "…and for element strings",
@@ -5980,7 +5998,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)",
+    "an uncached check takes well under a millisecond (0.001 ms; Node.js: tens of ms)",
     "one-segment path that cannot be a compressed GS1 Digital Link (wp-login.php): 400, no Node.js process",
     "one-segment path that cannot be a compressed GS1 Digital Link (a%20b): 400, no Node.js process",
     "one-segment path that cannot be a compressed GS1 Digital Link (config.bak): 400, no Node.js process",
@@ -6004,7 +6022,7 @@
     "…an EPC binary string too",
     "…and a compression asked for answers 503 in its body"
    ],
-   "count": 277,
+   "count": 289,
    "ciOnly": false
   },
   "safety_warnings": {

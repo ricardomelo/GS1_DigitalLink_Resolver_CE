@@ -3,10 +3,11 @@ Forwarding in the resolver (Documentation/adr/0018-forwarding.md): the resolver 
 does not know sent to https://id.gs1.org, or the operator's address, with its path and query string; switched off by
 default; never a known key, a missing link type or an invalid request) and the prefix rules (every key of a prefix
 sent to its destination before this resolver's records, the path kept or a fixed address, the longest prefix first,
-GTIN-13, SSCC and GLN, disabled rules ignored, an organisation's own domain limited to its keys), the request log's
-outcomes, the settings read again after the cache and kept when the database fails. No Docker, no MongoDB: documents
-are authored with the real data entry code and resolved with the real web server code through Flask's test client;
-the portal's settings are in mongomock.
+GTIN-13, SSCC and GLN, disabled rules ignored, an organisation's own domain limited to its keys), nothing sent to the
+resolver of last resort while the records' database fails (503), the request log's outcomes, the settings read again
+after the cache and kept when the database fails. No Docker, no MongoDB: documents are authored with the real data
+entry code and resolved with the real web server code through Flask's test client; the portal's settings are in
+mongomock.
 
   pip install -r web_server/src/requirements.txt mongomock
   python dev-tests/resolver/test_forwarding_resolver.py
@@ -146,6 +147,31 @@ r, _ = ask(UNKNOWN, accept="application/linkset+json")
 check("a linkset asked for an unknown key: sent too", r.status_code == 307, r.status_code)
 r, _ = ask(UNKNOWN, method="HEAD")
 check("HEAD: sent too", r.status_code == 307 and r.headers["Location"].endswith(UNKNOWN), dict(r.headers))
+
+# A records' database that fails (ADR 0051, finding F-031): the resolver cannot tell a code nobody registered, so
+# nothing goes to the resolver of last resort (the official code read web_db's 500 as a missing document)
+records = web_db.read_document
+web_db.read_document = lambda anchor: {"response_status": 500, "error": "Database error: see the resolver's log"}
+settings(fallback={"enabled": True})
+r, e = ask(KNOWN)
+check("the records' database down, the last resort on: a registered code → 503 with Retry-After, not sent there",
+      r.status_code == 503 and "Location" not in r.headers and r.headers.get("Retry-After"),
+      (r.status_code, dict(r.headers)))
+check("…the request log: outcome error, not unknown nor fallback", (e.get("o"), e.get("s")) == ("error", 503), e)
+r, e = ask(UNKNOWN, accept="application/json")
+check("…a code nobody registered: 503 too, not sent", r.status_code == 503 and e.get("o") == "error", (r.status_code, e))
+r, e = ask("/UnKnOwN")
+check("…a compressed link: 503, not sent", r.status_code == 503 and e.get("o") == "error", (r.status_code, e))
+settings(fallback={"enabled": True}, rules=[("7895555", "https://beta-resolver.example.net", "path", True)])
+r, e = ask(BETA)
+check("…a prefix rule still forwards (it is read before the records, from the portal's settings)",
+      r.status_code == 307 and r.headers["Location"].startswith("https://beta-resolver") and e.get("o") == "forwarded",
+      (r.status_code, e))
+web_db.read_document = records
+settings(fallback={"enabled": True})
+r, e = ask(UNKNOWN)
+check("the records' database back: a code nobody registered sent to the last resort again",
+      r.status_code == 307 and e.get("o") == "fallback", (r.status_code, e))
 
 # ---------------------------------------------------------------- prefix rules
 settings(rules=[("7895555", "https://beta-resolver.example.net", "path", True)])

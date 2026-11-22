@@ -23,6 +23,26 @@ logger = logging.getLogger(__name__)
 # and the like. An answer made from an exception carries "# own message" when its text is this code's own.
 INTERNAL_ERROR = "Internal server error: see the resolver's log"
 
+# The records' database could not be read (web_db answered 5xx): 503 with Retry-After, the page that asks to try again,
+# never the answer for a code nobody registered and never the resolver of last resort (finding F-031;
+# Documentation/adr/0051-records-unavailable.md). The official code read web_db's 500 like its 404: during an outage
+# every scan was "no information registered", counted as an unknown code and sent to the resolver of last resort.
+RECORDS_UNAVAILABLE = "The resolver cannot read its records at the moment: try again later"
+RECORDS_RETRY_AFTER = '30'
+
+
+class RecordsUnavailable(Exception):
+    """web_db could not read the records' database (it logged the cause): the resolver answers 503 (try again)."""
+
+
+def _read(anchor: str) -> dict[str, Any]:
+    """web_db.read_document(), its answer when the database answered (200, or 404 for no document); RecordsUnavailable
+    when it could not be read (5xx), so that no caller takes an outage for a missing document."""
+    result = web_db.read_document(anchor)
+    if result.get('response_status', 500) >= 500:
+        raise RecordsUnavailable(anchor)
+    return result
+
 # Pattern for validating GS1 Digital Link path segments (AI codes + values).
 # Allows alphanumeric characters, hyphens, dots, underscores, percent-encoded bytes, and parentheses;
 # also '?', '=' and '&' for the query string of a GS1 Digital Link decoded from an EPC binary string.
@@ -328,7 +348,7 @@ def _process_serialised_identifier(identifier: str) -> dict[str, Any] | None:
     lo, hi = min_len + 1, max_len
     while lo <= hi:
         mid = (lo + hi) // 2
-        result = web_db.read_document(identifier[:mid])
+        result = _read(identifier[:mid])
         if result['response_status'] == 200:
             longest_found = mid
             lo = mid + 1  # try longer
@@ -340,10 +360,7 @@ def _process_serialised_identifier(identifier: str) -> dict[str, Any] | None:
 
     # From the longest found match, scan downward looking for template variables
     for i in range(longest_found, min_len, -1):
-        if i == longest_found:
-            wanted_db_document = web_db.read_document(identifier[:i])
-        else:
-            wanted_db_document = web_db.read_document(identifier[:i])
+        wanted_db_document = _read(identifier[:i])
         if wanted_db_document['response_status'] != 200:
             continue
 
@@ -373,7 +390,8 @@ def _validate_and_fetch_document(identifier: str, qualifier_path: str | None, do
     :param qualifier_path: The qualifier path of the digital link, if any (e.g., '/22/455') only used to validate syntax
     :param doc_id: The document ID to look up in the database.
     :return: the wanted_db_document from trying to read the document with the given doc_id
-             from the database - or an error message if the document is not found.
+             from the database - or an error message if the document is not found (404, _outcome "unknown"),
+             or 503 (RECORDS_UNAVAILABLE) when the database could not be read (finding F-031).
     """
     try:
         # Concatenate the identifiers and qualifier_path to form the complete digital link
@@ -389,7 +407,7 @@ def _validate_and_fetch_document(identifier: str, qualifier_path: str | None, do
 
         # If the link syntax is valid, attempt to fetch the corresponding document from the database.
         logger.debug('identifier: %s', identifier)
-        wanted_db_document = web_db.read_document(doc_id)
+        wanted_db_document = _read(doc_id)
 
         if wanted_db_document['response_status'] == 200:
             # document found - there is nothing more we need to do here.
@@ -416,6 +434,9 @@ def _validate_and_fetch_document(identifier: str, qualifier_path: str | None, do
 
     except ToolkitBusy:
         raise
+    except RecordsUnavailable:
+        # web_db logged the cause; never a 404 'unknown' (finding F-031)
+        return {"response_status": 503, "error": RECORDS_UNAVAILABLE}
     except ValueError as e:
         logger.warning('_validate_and_fetch_document ValueError: %s', e)
         return {"response_status": 400, "error": "Invalid identifiers or qualifier path"}

@@ -901,7 +901,9 @@ prefixes, who created it and when, its expiry, its last use and its state (*Acti
 its operations. This is the way for your systems to reach the records: the resolver's older data entry API (`/api`)
 is closed to the internet unless the server's operator opens it to listed addresses. When it is open, it accepts a key
 only as `/AI/value` (one of the keys the portal offers and its value, with the qualifiers sent apart) and keeps a
-value's `_` as it is ([ADR 0049](adr/0049-data-entry-anchors.md)).
+value's `_` as it is ([ADR 0049](adr/0049-data-entry-anchors.md)). Its error answers, like the resolver's, never
+repeat the internal cause of a failure: the server's operator finds it in the service's log
+([ADR 0050](adr/0050-error-answers.md)).
 
 **When a request is refused.** Answers carry a code your developers can look up in the technical description. A body
 that is not one JSON object is refused with `request.jsonInvalid`; a field holding a value of another kind than the API

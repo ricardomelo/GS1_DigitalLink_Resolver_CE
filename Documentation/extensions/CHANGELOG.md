@@ -13,6 +13,23 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Error answers without the exception's text; no editor in the images (session 65)
+- **Changed: error answers of the resolver and the data entry API carry a fixed text**
+  ([ADR 0050](../adr/0050-error-answers.md); a deliberate change to the official code). The official code answered a
+  failure with the exception's text — `Database error: ` followed by PyMongo's message, which names the database's
+  host and port, `Internal Server Error - …`, `Duplicate key error: …`, `Unexpected error occurred. Details: …` — and a
+  body that was neither an object nor a list with the body itself. These answers now say `Database error: see the data
+  entry service's log`, `Internal server error: see the resolver's log` and the like, with the same status; the
+  exception and its traceback go to the service's log (`docker compose logs resolver-service` or `dataentry-service`).
+  A document written by another request between the check and the insert answers 409 naming the document. The code's
+  own refusals (registration rules, targets, anchors, values, EPC binary strings) keep their texts.
+- **Changed: the resolver's and the data entry API's images install no editor.** The official images installed
+  `nano`; the final stage of both now installs no package from Debian's repository (`docker compose cp` copies a file
+  in or out of a container).
+- **Integrators:** a system that read the cause of a 500 out of the answer finds it in the service's log; statuses
+  are unchanged.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`. Commit `6653986`.
+
 ### Anchors of one shape and one document id per anchor in the data entry API (session 64)
 - **Changed: the official data entry API accepts anchors of one shape only**
   ([ADR 0049](../adr/0049-data-entry-anchors.md); a deliberate change to the official code). Every anchor sent to

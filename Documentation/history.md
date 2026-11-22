@@ -1810,3 +1810,15 @@ its first `_`, in the data entry API and in the resolver, so stored documents ke
 kept. A new id format, escaping `_`, removing the documents written before under other shapes and letting the portal
 accept `_` in key values were weighed and not taken. `test_data_entry_api.py` gained 35 checks, `test_mock_parity.py`
 4, `test_resolver.py` 3; 15 mutations, all caught.
+
+## Session 65 — error answers without the exception's text; no editor in the images
+
+Finding U-006 of the security assessment, in code and images that came from the official project, in one code commit
+(`6653986`; [ADR 0050](adr/0050-error-answers.md)). Earlier findings had already fixed most of U-006 (non-root users,
+Node.js without a piped script, ports on the loopback address); two things were left. The official resolver and data
+entry API answered failures with the exception's text — PyMongo's messages name the database's host and port — and
+repeated a body they could not use; every such answer now carries a fixed text pointing to the service's log, where the
+exception goes with its traceback, and the statuses are unchanged. The two images no longer install `nano`. A debug
+switch putting the exception back, an error identifier in every answer and one global error handler were weighed and
+not taken. `test_data_entry_api.py` gained 16 checks, `test_resolver.py` 4, `test_least_privilege.py` 3; 16 mutations,
+all caught.

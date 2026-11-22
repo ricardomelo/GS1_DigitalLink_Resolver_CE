@@ -138,8 +138,8 @@ class NewDocOperations(TokenResource):
 @data_entry_namespace.route('/validate')
 @data_entry_namespace.doc(security='BearerAuth', responses={401: 'Missing Authorization Header', 403: 'Token is invalid.'})
 class ValidateOperations(TokenResource):
-    @data_entry_namespace.doc(description="Checks one or more v3 entries as POST /new would (registration rules and "
-                                          "values) and stores nothing: {\"problems\": [{\"item\", \"error\"}]}")
+    @data_entry_namespace.doc(description="Checks one or more v3 entries as POST /new would (registration rules, "
+                                          "targets and values) and stores nothing: {\"problems\": [{\"item\", \"error\"}]}")
     def post(self) -> tuple[Any, int] | Response:
         token_result = self.is_auth_token_ok()
         if not token_result['result'] and token_result['message'] == "Missing Authorization Header":

@@ -550,6 +550,128 @@ if ENGINE:
 else:
     print("SKIP values checked by the GS1 Barcode Syntax Engine (set GS1_SYNTAX_ENGINE)")
 
+# ---- Target addresses (finding U-003, ADR 0048) ----
+# The official API stored any href (javascript:, data:, http:, an address inside the operator's network) and the
+# resolver redirected to it. Every target sent to POST /new, PUT and POST /validate now follows the portal's rule
+# (ADR 0037): https, a public host name, no user information, no IP address; a target the key's document already holds
+# is accepted as it is, so records saved before keep working and the portal's rewrites of them are not refused.
+TKEY, TANCHOR = "01_09506000134369", "/01/09506000134369"
+
+
+def target_entry(href, anchor=TANCHOR, **extra):
+    return {"anchor": anchor, "itemDescription": "t", "defaultLinktype": "gs1:pip",
+            "links": [{"linktype": "gs1:pip", "href": "https://example.com/ok", "title": "Ok", "hreflang": ["en"]},
+                      {"linktype": "gs1:epil", "href": href, "title": "T", "hreflang": ["en"]}], **extra}
+
+
+BAD_TARGETS = [
+    ("javascript:", "javascript:alert(document.cookie)", "https address"),
+    ("data:", "data:text/html,<script>alert(1)</script>", "https address"),
+    ("http:", "http://example.com/p", "https address"),
+    ("no scheme", "//example.com/p", "https address"),
+    ("a port that is not a number", "https://example.com:abc/p", "numeric port"),
+    ("user information", "https://user:pass@example.com/p", "user or password"),
+    ("an IPv4 address", "https://127.0.0.1/p", "IP address"),
+    ("an IPv4 address as one number", "https://2130706433/p", "IP address"),
+    ("an IPv6 address", "https://[::1]/p", "IP address"),
+    ("localhost", "https://localhost/p", "public host"),
+    ("a name without a dot", "https://intranet/p", "public host"),
+    ("a .internal name", "https://db.internal/p", "public host"),
+    ("a .home.arpa name", "https://router.home.arpa/p", "public host"),
+    ("a percent sign in the host", "https://ex%61mple.com/p", "public host"),
+    ("a space", "https://exa mple.com/p", "control or invisible"),
+    ("a line break", "https://example.com/p\r\nX-Injected: 1", "control or invisible"),
+    ("an empty target", "", "needs a target"),
+    ("a target that is not text", 123, "needs a target"),
+]
+for name, href, reason in BAD_TARGETS:
+    STORE.pop(TKEY, None)
+    r = post(target_entry(href))
+    error = (r.get_json() or {}).get("error", "")
+    check(f"targets: POST /new refuses {name} → 400 naming link 2 and why, nothing stored", r.status_code == 400
+          and error.startswith("link 2 (") and reason in error and TKEY not in STORE, (r.status_code, error))
+r = post([target_entry("https://example.com/a", "/01/09506000134376"), target_entry("http://example.com/b")])
+check("targets: POST /new with a list refuses the whole list for one target, naming the item", r.status_code == 400
+      and "Item 2: link 2" in r.get_json().get("error", "") and "01_09506000134376" not in STORE and TKEY not in STORE,
+      r.get_data(as_text=True))
+V2 = {"identificationKeyType": "01", "identificationKey": "09506000134369", "itemDescription": "v2",
+      "qualifierPath": "/", "responses": [{"linkType": "gs1:pip", "targetUrl": "http://example.com/v2",
+                                            "linkTitle": "v2", "mimeType": "text/html", "ianaLanguage": "en",
+                                            "defaultLinkType": True}]}
+r = post(V2)
+check("targets: a v2 entry's targetUrl follows the same rule → 400", r.status_code == 400
+      and "link 1 ('http://example.com/v2')" in r.get_json().get("error", "") and TKEY not in STORE,
+      r.get_data(as_text=True))
+for name, href in [("a path", "https://example.com/p?x=1#f"), ("a port", "https://example.com:8443/p"),
+                   ("an internationalised name", "https://exämple.com.br/p"),
+                   ("a template in the path", "https://example.com/p/{gtin}")]:
+    STORE.pop(TKEY, None)
+    r = post(target_entry(href))
+    check(f"targets: POST /new accepts {name}", r.status_code in (200, 201) and TKEY in STORE, r.get_data(as_text=True))
+
+# PUT: a new target follows the rule; the document is not changed
+before = copy.deepcopy(STORE)
+r = client.put("/api" + TANCHOR, json={"links": [{"linktype": "gs1:smpc", "href": "https://10.0.0.5/admin", "title": "x",
+                                         "hreflang": ["en"]}]}, headers=AUTH)
+check("targets: PUT refuses a new target outside the rule → 400, the document unchanged", r.status_code == 400
+      and "IP address" in r.get_json().get("error", "") and STORE == before, r.get_data(as_text=True))
+
+# A target the key's document already holds (stored before the rule) is accepted as it is
+STORE.pop(TKEY, None)
+check("targets: (setup) a record written with a valid target", post(target_entry("https://example.com/b")).status_code == 201)
+STORE[TKEY]["data"][0]["linkset"][0]["https://gs1.org/voc/epil"][0]["href"] = "http://legacy.example.com/leaflet"
+r = client.put("/api" + TANCHOR, json={"itemDescription": "renamed", "links": [
+    {"linktype": "gs1:epil", "href": "http://legacy.example.com/leaflet", "title": "T", "hreflang": ["en"]}]},
+    headers=AUTH)
+check("targets: PUT keeping a target the document already holds → 200", r.status_code == 200
+      and STORE[TKEY]["data"][0]["linkset"][0]["itemDescription"] == "renamed", r.get_data(as_text=True))
+r = post(target_entry("http://legacy.example.com/leaflet", qualifiers=[{"10": "L1"}]))
+check("targets: POST /new of another record of the key with that target → accepted (the portal's rewrites)",
+      r.status_code in (200, 201) and len(STORE[TKEY]["data"]) == 2, r.get_data(as_text=True))
+r = client.post("/api/validate", json=[target_entry("http://legacy.example.com/leaflet", qualifiers=[{"21": "S9"}]),
+                                       target_entry("http://legacy.example.com/leaflet", "/01/09506000134383")],
+                headers=AUTH)
+problems = (r.get_json() or {}).get("problems")
+check("targets: POST /validate accepts the target its key holds and names it for another key", r.status_code == 200
+      and [p["item"] for p in problems] == [2] and "https address" in problems[0]["error"], r.get_json())
+r = client.put("/api" + TANCHOR, json={"links": [{"linktype": "gs1:smpc", "href": "http://legacy.example.com/other",
+                                         "title": "x", "hreflang": ["en"]}]}, headers=AUTH)
+check("targets: …but not another http target on the same key → 400", r.status_code == 400, r.get_data(as_text=True))
+
+# The same rule as the portal's (portal/gs1.py normalise_url, ADR 0037), address by address
+sys.path.append(os.path.join(REPO, "portal"))
+import gs1 as portal_gs1  # noqa: E402
+import target_rule  # noqa: E402
+SAME = ["https://example.com/p", "http://example.com/p", "javascript:alert(1)", "data:,x", "ftp://example.com/p",
+        "https://user@example.com/p", "https://:@example.com/p", "https://example.com:x/p", "https://example.com:8443/",
+        "https://127.0.0.1/", "https://127.1/", "https://0x7f.1/", "https://0177.0.0.1/", "https://2130706433/",
+        "https://[::1]/", "https://[fe80::1]/", "https://localhost/", "https://localhost./", "https://a.localhost/",
+        "https://printer.local/", "https://x.localdomain/", "https://x.internal/", "https://x.intranet/",
+        "https://x.lan/", "https://router.home.arpa/", "https://x.corp/", "https://x.test/", "https://x.onion/",
+        "https://x.alt/", "https://intranet/", "https://a..b.com/", "https://%31%32%37.0.0.1/", "https://ex_ample.com/",
+        "https://exämple.com/", "https://１２７.0.0.1/", "https://127。0。0。1/", "https://example.example/",
+        "https://example.invalid/", "https://exa mple.com/", "https://example.com/\u200b", "https://example.com\\@x.com/",
+        "https://example.com/p\tq", "https:///p", "https://example.com/{gtin}", "https://{host}.example.com/",
+        "https://xn--exmple-cua.com/", "https://example.com./p"]
+
+
+def portal_code(url):
+    try:
+        portal_gs1.normalise_url(url, 1)
+        return None
+    except portal_gs1.ValidationError as error:
+        return error.code
+
+
+differ = [(u, portal_code(u), target_rule.target_problem(u)) for u in SAME
+          if portal_code(u) != (None if target_rule.target_problem(u) is None else "link." + target_rule.target_problem(u))]
+check(f"targets: the API's rule refuses the {len(SAME)} sample addresses as the portal's does, with the same codes",
+      not differ, differ)
+check("targets: …the same private top-level names", target_rule.PRIVATE_TOP_NAMES == portal_gs1.PRIVATE_TOP_NAMES,
+      target_rule.PRIVATE_TOP_NAMES ^ portal_gs1.PRIVATE_TOP_NAMES)
+check("targets: …a target with spaces around it refused, not trimmed (the portal trims what a person typed)",
+      target_rule.target_problem(" https://example.com/p") == "urlChars")
+
 # ---- The browser's rules (ADR 0038, finding F-021) ----
 r = client.get("/api/docs")
 csp = r.headers.get("Content-Security-Policy", "")

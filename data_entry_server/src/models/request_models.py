@@ -10,7 +10,9 @@ def register_request_models(namespace: Namespace) -> tuple[Model, Model]:
       ),
       'href': fields.String(
           required=True,
-          description='Target URL that the Digital Link should resolve to.',
+          description=('Target URL that the Digital Link should resolve to: an https address with a public host name '
+                       '(no user information, IP address or private name such as localhost or .internal; ADR 0048). '
+                       'A target the key already holds is accepted as it is.'),
           example='https://example.com/products/09506000134369'
       ),
       'title': fields.String(

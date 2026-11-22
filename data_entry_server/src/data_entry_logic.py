@@ -8,6 +8,7 @@ import subprocess
 from typing import Any
 
 import data_entry_db
+import target_rule
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +193,39 @@ def value_problem(entry: dict[str, Any]) -> str | None:
     return None
 
 
+def _sent_hrefs(entry: dict[str, Any]) -> list:
+    """The targets an entry sends, in order: a v3 entry's links (or a PUT body's), a v2 entry's responses."""
+    if 'identificationKeyType' in entry:
+        items, field = entry.get('responses'), 'targetUrl'
+    else:
+        items, field = entry.get('links'), 'href'
+    return [item.get(field) if isinstance(item, dict) else None for item in items] if isinstance(items, list) else []
+
+
+def _stored_hrefs(entry: dict[str, Any]) -> set[str]:
+    """The targets already stored in the document of the entry's key (none for a new key or an entry without one)."""
+    try:
+        if 'identificationKeyType' in entry:
+            anchor = f"/{entry['identificationKeyType']}/{entry['identificationKey']}"
+        else:
+            anchor = entry['anchor']
+        result = data_entry_db.read_document(convert_path_to_document_id(anchor))
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return set()
+    return target_rule.document_hrefs(result.get('data')) if result.get('response_status') == 200 else set()
+
+
+def target_problem(entry: dict[str, Any], stored: set[str] | None = None) -> str | None:
+    """Why a target of the entry cannot be stored (Documentation/adr/0048-data-entry-target-rule.md), or None: every
+    target must be an https address with a public host name, as the portal's (ADR 0037), unless the key's document
+    already holds it (stored; read when not given). The official API stored any href: javascript:, data:, http:,
+    addresses inside the operator's network (finding U-003)."""
+    sent = _sent_hrefs(entry)
+    if not sent:
+        return None
+    return target_rule.hrefs_problem(sent, _stored_hrefs(entry) if stored is None else stored)
+
+
 def validate_documents(data: dict[str, Any] | list[dict[str, Any]]) -> dict[str, Any]:
     """What POST /new would refuse in these entries, without storing anything: {"problems": [{"item", "error"}]}
     (item counted from 1). Clients that rewrite a whole document (the API deletes documents only) ask first, so
@@ -202,7 +236,7 @@ def validate_documents(data: dict[str, Any] | list[dict[str, Any]]) -> dict[str,
         if not isinstance(item, dict):
             problems.append({"item": position, "error": "not an object"})
             continue
-        problem = registration_problem(item) or value_problem(item)
+        problem = registration_problem(item) or target_problem(item) or value_problem(item)
         if problem:
             problems.append({"item": position, "error": problem})
     return {"response_status": 200, "problems": problems}
@@ -613,7 +647,8 @@ def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[s
             create_results_list = []  # Initialize a list to store results
 
             for position, item in enumerate(data, start=1):
-                problem = (registration_problem(item) or value_problem(item)) if isinstance(item, dict) else None
+                problem = (registration_problem(item) or target_problem(item) or value_problem(item)) \
+                    if isinstance(item, dict) else None
                 if problem:
                     return {"response_status": 400, "error": f"Item {position}: {problem}"}, 400
 
@@ -651,7 +686,7 @@ def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[s
 
             # If 'data' is a dictionary (i.e., a single entry and not a list)
         elif isinstance(data, dict):
-            problem = registration_problem(data) or value_problem(data)
+            problem = registration_problem(data) or target_problem(data) or value_problem(data)
             if problem:
                 return {"response_status": 400, "error": problem}, 400
             authored_linkset_doc = _author_db_linkset_document(data)
@@ -820,6 +855,11 @@ def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, A
             raise _Refused(_record_not_found(document_id, data.get('qualifiers', [])), 404)
 
         matched_v3 = existing_v3_list[matched_idx]
+
+        # The targets sent: the rule of every write (ADR 0048), those already in the document kept as they are
+        problem = target_problem(data, target_rule.document_hrefs(existing_db_doc))
+        if problem:
+            raise _Refused({"response_status": 400, "error": problem}, 400)
 
         # 4. Merge top-level scalar fields (preserve if absent from payload)
         for field in ['itemDescription', 'defaultLinktype', 'informativeQualifiers']:

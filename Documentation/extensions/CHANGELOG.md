@@ -11,6 +11,33 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Encrypted backups; single sign-on secrets sealed in the database (session 59)
+- **Changed: every backup archive is encrypted** with [age](https://age-encryption.org)
+  ([ADR 0044](../adr/0044-encrypted-backups-and-sealed-secrets.md)): `resolver-<time>.archive.gz.age` and
+  `portal-config-<time>.tar.gz.age`, encrypted as they are written, so neither the local archives nor the off-server
+  copy can be read — or changed unnoticed — without the **backup key**. The installer installs age and creates the key,
+  `/etc/resolver-backup.key`; on an installation upgraded without it, the first backup run does (`NOTICE` in its log).
+  **Keep a copy of that key off the server: without it no backup can be restored.** Without age the backup fails
+  (`ERROR`, an alert from the monitoring) rather than writing an unencrypted archive.
+- **Added: `BACKUP_RECIPIENTS`** (age public keys: the backups need only those, so the key can be kept off the server),
+  `BACKUP_KEY_FILE` (another place for the key) and `BACKUP_ENCRYPTION=off` (the former unencrypted archives, with a
+  warning, for a destination that encrypts by itself).
+- **Changed: the restore rehearsal decrypts** the newest archive with the backup key (`BACKUP_KEY_FILE` for a key kept
+  elsewhere); archives from before are restored as they are. The operator README gives the manual restore with
+  `age -d`.
+- **Changed: each organisation's single sign-on client secret is sealed in the database** (AES-256-GCM under the new
+  `PORTAL_DATA_KEY`, which the installer generates; without it a key of the portal's configuration volume): the
+  database or a dump of it no longer gives the secrets. Secrets stored before are sealed when the portal starts. A
+  secret that no longer opens (the key lost) is never sent: the sign-in stops and the *Organisation sign-in* screen says
+  *secret unreadable*, until an administrator enters it again.
+- **Added: `scripts/rotate-secrets.sh data`** (only when named): a new `PORTAL_DATA_KEY`, the former one kept as
+  `PORTAL_DATA_KEY_PREVIOUS` until the portal has sealed the secrets again.
+- **Operators:** after `git pull`: `sudo apt-get install age`; `grep -q '^PORTAL_DATA_KEY=' .env || printf
+  "PORTAL_DATA_KEY='%s'\n" "$(openssl rand -hex 32)" >> .env`; `docker compose up -d --build`; `sudo
+  scripts/resolver-backup.sh` (it creates `/etc/resolver-backup.key`); copy that key off the server; `sudo
+  scripts/restore-rehearsal.sh`. Archives written before stay unencrypted until the 14 days remove them; the off-server
+  destination keeps its own. Commit `513b9a5`.
+
 ### Access logs without the client's address or the query string (session 58)
 - **Changed: the front-end proxy's access log keeps no personal data by default**
   ([ADR 0043](../adr/0043-access-logs.md)). Each line holds the time, the method, the path's first segment (`/01`,

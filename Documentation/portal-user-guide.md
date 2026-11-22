@@ -870,6 +870,10 @@ your organisation (Microsoft Entra ID, Google Workspace, Okta, Keycloak — any 
    always sign in with a password and switch it back on, for example if your provider is down. It applies only to
    users whose e-mail domain is proved.
 
+The portal keeps the client secret sealed in its database. If the card says **secret unreadable** (the server's key
+was changed or lost, for example after a restore on another server), sign-in through the provider stops until you
+enter the client secret again and select **Save**.
+
 The card shows the last sign-in and the last failure (with its reason). A server administrator sees every
 organisation's configuration and sets up the operator's own; during support access the screen is read only.
 

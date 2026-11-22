@@ -1667,6 +1667,23 @@ the client's `Host` too: the installation's proxy now writes them as paths, and 
 redirects plain HTTP to its own name. Refusing unknown names with 421 was weighed and not taken. 9 mutations, all
 caught.
 
+## Session 59 — encrypted backups and sealed secrets
+
+Finding F-026 of the security assessment, in one code commit (`513b9a5`;
+[ADR 0044](adr/0044-encrypted-backups-and-sealed-secrets.md)). The nightly backup wrote gzip archives of every
+database — users with their password hashes and e-mail addresses, the organisations, the journal, the single sign-on
+configurations — readable by whoever held a copy, the off-server one included; and each organisation's OpenID Connect
+client secret, which the portal must send back to the provider and so cannot hash, was stored as text. Each archive is
+now encrypted with age as it is written, to the public key of a backup key the installer (or the first run) creates
+and to the public keys of `BACKUP_RECIPIENTS`, so that the server can even be left unable to read its own backups; age
+missing fails the run instead of writing in clear; the restore rehearsal decrypts. The client secrets are sealed with
+AES-256-GCM under `PORTAL_DATA_KEY` (or a key of the configuration volume), bound to their configuration; the portal
+seals earlier ones when it starts, opens those of an earlier key (`PORTAL_DATA_KEY_PREVIOUS`, written by
+`rotate-secrets.sh data`), and never sends one that no key opens — the screen asks for it again. A passphrase with
+`openssl` (no integrity) or `gpg` (the passphrase on the server), and a key derived from the session key (rotating it
+would lose every secret), were weighed and not taken. `test_deploy.py`, `test_install.sh` and `test_sso.py` gained the
+checks; 23 mutations, all caught. Two new interface texts, in the twelve languages.
+
 ## Session 58 — access logs
 
 Finding F-025 of the security assessment, in one code commit (`909b826`;

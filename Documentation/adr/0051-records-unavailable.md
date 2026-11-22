@@ -39,7 +39,9 @@ and SSCCs a search for a shorter stored prefix, whose binary search also read a 
    cannot know a code is unknown when it cannot read its records. Prefix rules still forward: they come from the
    portal's settings, read before the records and kept in the cache when that database fails (ADR 0018).
 4. **The item's page.** `/_click` answers 503 with `Retry-After` (`_records_unavailable()`), not 404.
-5. **The request log** counts the 503 as `error` (`request_log.outcome()`), as the toolkit's 503.
+5. **The request log** counts the 503 as `error` (`request_log.outcome()`), as the toolkit's 503, when it can still
+   be written: it lives in the same MongoDB, so during a whole outage its writer usually loses the events after three
+   attempts (a warning in the resolver's log), as it lost the `unknown` events before.
 6. **Unchanged.** An invalid code is still 400: the syntax is checked before the database. A 500 that is not the
    database's (a failure while choosing the link) is still 500 with its fixed text.
 
@@ -48,7 +50,8 @@ and SSCCs a search for a shorter stored prefix, whose binary search also read a 
 - During an outage, people are asked to try again and apps receive a status that says so (503 with `Retry-After`), the
   standard way to say the service is unavailable for a while; nothing changes when the database answers.
 - An operator who switched the resolver of last resort on no longer sends registered codes elsewhere during an outage;
-  the overview's errors rise instead of its unknown codes and fallbacks, which tells the operator what happened.
+  where the request log can still be written (a partial failure), the overview's errors rise instead of its unknown
+  codes and fallbacks.
 - No new text in the user interface: the page and its texts already existed in every language; the JSON text is in
   English, as the resolver's other messages.
 - The 30 seconds of `Retry-After` match PyMongo's default server selection timeout: a request made during the outage
@@ -61,6 +64,8 @@ and SSCCs a search for a shorter stored prefix, whose binary search also read a 
   sooner, at the risk of 503s on a slow but working database.
 - The resolver's caches of domains, forwarding rules, brands and the strict mode keep their last values while the
   portal's database is unreachable (threat model T-R6, H-15), as before.
+- During a whole outage of MongoDB the request log cannot be written either: the outage's scans are mostly missing
+  from *Requests* (the resolver's log warns of lost events); monitoring (`monitor.py`) is what tells the operator.
 - The data entry API already answered a database failure with 500 (and stops a write when the read before it fails,
   F-009); it is not changed.
 

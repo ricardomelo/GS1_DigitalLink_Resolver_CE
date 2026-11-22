@@ -20,7 +20,8 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
   answered 404 with the page *No information registered for this product*, counted in *Requests* as *Code not
   registered* and, with the resolver of last resort switched on, sent to that other resolver. It is now answered 503
   with `Retry-After: 30` — the page *The request could not be completed — Please try again in a moment* for a browser,
-  `The resolver cannot read its records at the moment: try again later` for an app — counted under *Error*, and never
+  `The resolver cannot read its records at the moment: try again later` for an app — counted under *Error* when the
+  request log can still be written (it uses the same database), and never
   sent to the resolver of last resort; a button of the item's page answers the same. Prefix rules still forward, an
   invalid code is still 400.
 - **Integrators:** an app can tell an outage (503, try again after `Retry-After`) from a code nobody registered (404).

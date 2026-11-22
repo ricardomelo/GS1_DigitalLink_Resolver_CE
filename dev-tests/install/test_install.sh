@@ -115,6 +115,7 @@ run_installer() {   # extra environment as arguments; answers (if any) on stdin
   env -i PATH="$SB/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME=/root TERM=dumb \
     INSTALL_LOG_FILE="$SB/state/install.log" INSTALL_NGINX_AVAILABLE="$SB/nginx/sites-available" \
     INSTALL_NGINX_ENABLED="$SB/nginx/sites-enabled" INSTALL_CRON_FILE="$SB/state/cron" \
+    INSTALL_BACKUP_KEY_FILE="$SB/state/keys/backup.key" \
     INSTALL_GEOIP_CRON_FILE="$SB/state/geoip-cron" INSTALL_DOMAINS_CRON_FILE="$SB/state/domains-cron" \
     INSTALL_OS_CODENAME=noble INSTALL_HEALTH_TIMEOUT=30 INSTALL_PROXY_RESTART_AFTER=5 INSTALL_WORKER_TIMEOUT=5 INSTALL_DOCKER_GROUP_USER= "$@" \
     bash "$SB/repo/scripts/install.sh" ${INSTALLER_ARGS:---non-interactive} > "$SB/state/out" 2>&1
@@ -167,8 +168,13 @@ check "A: the GeoIP database's monthly update scheduled from the repository" "gr
 check "A: its first download tried at once; a failure only a warning" "grep -q 'The GeoIP database was not downloaded' $SB/state/out && grep -q 'not downloaded' $SB/state/install.log"
 check "A: scan locations in the summary" "grep -q 'Scan locations *yes' $SB/state/out"
 check "A: the organisations' own domains applied every 5 minutes, quietly" "grep -q \"^\\*/5 \\* \\* \\* \\* root $SB/repo/scripts/custom-domains.sh apply --quiet\" $SB/state/domains-cron && [[ \$(stat -c %a $SB/state/domains-cron) == 644 ]]"
+check "A: age installed for the backups (ADR 0044)" "grep -q '^apt-get install -y nginx certbot python3-certbot-nginx age\$' $SB/state/calls"
+check "A: a backup key made with age-keygen, mode 600" "[[ \$(stat -c %a $SB/state/keys/backup.key 2>/dev/null) == 600 ]] && grep -q '^AGE-SECRET-KEY-1' $SB/state/keys/backup.key"
+check "A: the backup key named in the summary, with the advice to keep a copy off the server" "grep -q 'Backup key:  $SB/state/keys/backup.key' $SB/state/out && grep -q 'without it no backup can be restored' $SB/state/out"
+check "A: the portal's data key generated (64 hex; ADR 0044)" "[[ \$(envval PORTAL_DATA_KEY) =~ ^[0-9a-f]{64}$ && \$(envval PORTAL_DATA_KEY) != \$(envval PORTAL_JOURNAL_KEY) ]]"
 A_TOKEN=$(envval SESSION_TOKEN); A_PWD=$(envval MONGO_INITDB_ROOT_PASSWORD)
 A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY); A_RESOLVER_DB=$(envval RESOLVER_DB_PASSWORD)
+A_DATA_KEY=$(envval PORTAL_DATA_KEY); A_BACKUP_KEY=$(sha256sum < "$SB/state/keys/backup.key")
 
 # ------------------------------------------------------------------------------ B. re-run
 echo "--- B. second run on the same installation"
@@ -191,6 +197,7 @@ check "B: no setting written twice (the last line of .env would win)" "[[ -z \$(
 check "B: secrets kept" "[[ \$(envval SESSION_TOKEN) == $A_TOKEN && \$(envval MONGO_INITDB_ROOT_PASSWORD) == $A_PWD ]]"
 check "B: portal database password and session key kept" "[[ \$(envval PORTAL_DB_PASSWORD) == $A_PORTAL_DB && \$(envval PORTAL_SECRET_KEY) == $A_KEY ]]"
 check "B: the resolver's database password kept" "[[ \$(envval RESOLVER_DB_PASSWORD) == $A_RESOLVER_DB ]]"
+check "B: the data key and the backup key kept" "[[ \$(envval PORTAL_DATA_KEY) == $A_DATA_KEY && \$(sha256sum < $SB/state/keys/backup.key) == '$A_BACKUP_KEY' ]] && grep -q 'Backups encrypted with the key in $SB/state/keys/backup.key (kept)' $SB/state/out"
 check "B: settings kept from .env (operator)" "[[ \$(envval RESOLVER_ORG_NAME) == 'Example Org' ]]"
 check "B: a time zone taken from the environment" "[[ \$(envval PORTAL_TIME_ZONE) == America/Sao_Paulo ]]"
 check "B: unmanaged setting carried over" "grep -q \"^PORTAL_SESSION_IDLE_MINUTES='20'\" $SB/repo/.env"
@@ -223,6 +230,7 @@ DATA_ENTRY_DB_PASSWORD=resolver_data_entry
 FQDN=idhml.example.org
 RESOLVER_ORG_NAME="GS1 Example"
 RESOLVER_CONTACT_STREET="Av. Exemplo, 328 - Pinheiros"
+BACKUP_RECIPIENTS=age1lggyhqrw2nlhcxprm67z43rta597azn8gknawjehu9d9dl0jq3yqqvfafg
 EOF
 touch "$SB/state/volume-resolver-database-volume" "$SB/state/volume-resolver-portal-config"
 cat > "$SB/nginx/sites-available/gs1resolver" <<'EOF'
@@ -242,6 +250,7 @@ check "C: an installation from before the portal's database gets its password an
 check "C: an installation from before ADR 0030 gets the services' database passwords, the example one replaced" "[[ \$(envval RESOLVER_DB_PASSWORD) =~ ^[0-9a-f]{48}$ && \$(envval DATA_ENTRY_DB_PASSWORD) =~ ^[0-9a-f]{48}$ ]]"
 check "C: quoted values read correctly" "[[ \$(envval RESOLVER_CONTACT_STREET) == 'Av. Exemplo, 328 - Pinheiros' ]]"
 check "C: existing certificate site kept" "grep -q snakeoil $SB/nginx/sites-available/gs1resolver && ! grep -q '^certbot' $SB/state/calls"
+check "C: BACKUP_RECIPIENTS in .env: no backup key made on the server, the recipients kept" "[[ ! -e $SB/state/keys/backup.key ]] && grep -q 'Backups encrypted to BACKUP_RECIPIENTS of .env' $SB/state/out && ! grep -q 'Backup key:' $SB/state/out && [[ \$(envval BACKUP_RECIPIENTS) == age1lggyhqrw2nlhcxprm67z43rta597azn8gknawjehu9d9dl0jq3yqqvfafg ]]"
 check "C: Compose accepts the rewritten .env" "compose_cfg | grep -q 'MONGO_URI: mongodb://resolveradmin:p%40ss'"
 
 # ------------------------------------------------------------------------------ D. own certificate
@@ -271,6 +280,7 @@ check "E: database stays on 127.0.0.1" "compose_cfg | grep -B3 'published: \"270
 check "E: no cron when declined" "[[ ! -e $SB/state/cron ]]"
 check "E: no schedule for the organisations' domains behind an external proxy" "[[ ! -e $SB/state/domains-cron ]]"
 check "E: no GeoIP update when declined" "[[ ! -e $SB/state/geoip-cron ]] && grep -q 'Not recorded (no GeoIP database' $SB/state/out"
+check "E: age installed without nginx; the backup key made though the backup is not scheduled" "grep -q '^apt-get install -y age\$' $SB/state/calls && ! grep -q 'install -y.*nginx' $SB/state/calls && [[ -e $SB/state/keys/backup.key ]]"
 
 # ------------------------------------------------------------------------------ F. interactive
 echo "--- F. interactive answers"

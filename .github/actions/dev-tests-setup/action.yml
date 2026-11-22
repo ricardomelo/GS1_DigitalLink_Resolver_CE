@@ -155,11 +155,11 @@ runs:
         echo "GS1_WEB_VOCABULARY=$DEV_TOOLS/gs1-webvoc/v1.16/gs1Voc.jsonld" >> "$GITHUB_ENV"
 
     - if: inputs.nginx == 'true'
-      name: nginx
+      name: nginx (and age, which the backup's test encrypts with)
       shell: bash
       run: |
         sudo apt-get update -q
-        sudo apt-get install -y -q nginx
+        sudo apt-get install -y -q nginx age
         sudo systemctl stop nginx || true
 
     - if: inputs.nginx-org == 'true'

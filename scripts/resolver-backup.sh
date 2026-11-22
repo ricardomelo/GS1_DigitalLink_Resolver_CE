@@ -15,6 +15,12 @@
 # a copy that fails makes the run fail (ERROR, status 1, recorded for the monitoring), so that it is noticed. The
 # destination keeps what it receives: its own retention is the destination's business. scripts/restore-rehearsal.sh
 # checks that an archive restores.
+#
+# Encryption (Documentation/adr/0044-encrypted-backups-and-sealed-secrets.md): every archive is encrypted with age as it
+# is written (*.archive.gz.age, *.tar.gz.age), to the public key of the identity in BACKUP_KEY_FILE (default
+# /etc/resolver-backup.key) and to the public keys in BACKUP_RECIPIENTS. With neither, the first run creates the key
+# file: keep a copy of it off the server, since without it no backup can be restored. age missing is an ERROR (nothing
+# is written); BACKUP_ENCRYPTION=off writes the archives unencrypted, with a WARNING.
 set -euo pipefail
 
 # Repository root (where docker-compose.yml lives): by default the parent of this script's folder.
@@ -26,9 +32,15 @@ umask 077
 mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
 STAMP="$(date +%F_%H%M)"
 cd "$RESOLVER_DIR"
-if [ -z "${BACKUP_COPY_TO:-}" ]; then
-  BACKUP_COPY_TO="$(sed -n "s/^BACKUP_COPY_TO=['\"]\{0,1\}\([^'\"]*\)['\"]\{0,1\}$/\1/p" .env.example .env 2>/dev/null | tail -1 || true)"
-fi
+setting() {   # a setting from the environment, else from .env (else .env.example's default)
+  local value="${!1:-}"
+  [ -n "$value" ] || value="$(sed -n "s/^$1=['\"]\{0,1\}\([^'\"]*\)['\"]\{0,1\}$/\1/p" .env.example .env 2>/dev/null | tail -1 || true)"
+  printf '%s' "$value"
+}
+BACKUP_COPY_TO="$(setting BACKUP_COPY_TO)"
+BACKUP_ENCRYPTION="$(setting BACKUP_ENCRYPTION)"; BACKUP_ENCRYPTION="${BACKUP_ENCRYPTION:-age}"
+BACKUP_KEY_FILE="$(setting BACKUP_KEY_FILE)"; BACKUP_KEY_FILE="${BACKUP_KEY_FILE:-/etc/resolver-backup.key}"
+BACKUP_RECIPIENTS="$(setting BACKUP_RECIPIENTS)"
 
 # The result of each run, for the portal's monitoring (Documentation/adr/0008-monitoring-and-alerts.md): written as the
 # setting "backup.last" of the portal's database with mongosh inside the database container (the credentials stay in
@@ -48,13 +60,39 @@ record() {
     || echo "$(date -Is) WARNING: the result was not recorded for the portal's monitoring"
 }
 
+# Encryption: the recipients (age -r …), the key file created when there is none. ENCRYPT is the command each archive
+# goes through on its way to the disk; SUFFIX its file names' ending.
+fail() { echo "$(date -Is) ERROR: $1"; record 0 "" "" "$1"; exit 1; }
+if [ "$BACKUP_ENCRYPTION" = off ]; then
+  ENCRYPT=(cat); SUFFIX=""
+  echo "$(date -Is) WARNING: BACKUP_ENCRYPTION=off: the archives are written unencrypted (ADR 0044)"
+else
+  [ "$BACKUP_ENCRYPTION" = age ] || fail "BACKUP_ENCRYPTION must be age or off, not $BACKUP_ENCRYPTION"
+  command -v age >/dev/null 2>&1 && command -v age-keygen >/dev/null 2>&1 \
+    || fail "age is not installed (sudo apt-get install age): nothing was written"
+  RECIPIENTS=()
+  for recipient in ${BACKUP_RECIPIENTS//,/ }; do RECIPIENTS+=(-r "$recipient"); done
+  if [ ! -e "$BACKUP_KEY_FILE" ] && [ ${#RECIPIENTS[@]} -eq 0 ]; then
+    mkdir -p "$(dirname "$BACKUP_KEY_FILE")"
+    age-keygen -o "$BACKUP_KEY_FILE" 2>/dev/null || fail "the backup key $BACKUP_KEY_FILE could not be created"
+    chmod 600 "$BACKUP_KEY_FILE"
+    echo "$(date -Is) NOTICE: a backup key was created in $BACKUP_KEY_FILE: keep a copy of it off this server (a password manager); without it no backup can be restored"
+  fi
+  if [ -e "$BACKUP_KEY_FILE" ]; then
+    public="$(age-keygen -y "$BACKUP_KEY_FILE" 2>/dev/null)" || fail "the backup key $BACKUP_KEY_FILE cannot be read"
+    RECIPIENTS+=(-r "$public")
+  fi
+  ENCRYPT=(age "${RECIPIENTS[@]}"); SUFFIX=".age"
+fi
+
 # Database. Single quotes: the credentials are read from the container's own environment and
 # never appear on the host's command line.
-DB_ARCHIVE="$BACKUP_DIR/resolver-$STAMP.archive.gz"
+# pipefail: a dump or an encryption that fails fails the run.
+DB_ARCHIVE="$BACKUP_DIR/resolver-$STAMP.archive.gz$SUFFIX"
 if ! docker compose exec -T database-service sh -c \
   'mongodump -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --archive --gzip' \
-  > "$DB_ARCHIVE.tmp"; then
-  echo "$(date -Is) ERROR: database backup failed (mongodump's message above)"; rm -f "$DB_ARCHIVE.tmp"
+  | "${ENCRYPT[@]}" > "$DB_ARCHIVE.tmp"; then
+  echo "$(date -Is) ERROR: database backup failed (mongodump's or age's message above)"; rm -f "$DB_ARCHIVE.tmp"
   record 0 "" "" "the database dump failed"; exit 1
 fi
 [ -s "$DB_ARCHIVE.tmp" ] || { echo "$(date -Is) ERROR: empty database backup"; rm -f "$DB_ARCHIVE.tmp"
@@ -62,15 +100,18 @@ fi
 mv "$DB_ARCHIVE.tmp" "$DB_ARCHIVE"
 
 # Portal configuration (skipped when the portal service is not running).
-PORTAL_ARCHIVE="$BACKUP_DIR/portal-config-$STAMP.tar.gz"
+PORTAL_ARCHIVE="$BACKUP_DIR/portal-config-$STAMP.tar.gz$SUFFIX"
 if docker compose ps --status running --services 2>/dev/null | grep -qx portal-service; then
-  docker compose exec -T portal-service tar -czf - -C /app/config . > "$PORTAL_ARCHIVE.tmp"
+  if ! docker compose exec -T portal-service tar -czf - -C /app/config . | "${ENCRYPT[@]}" > "$PORTAL_ARCHIVE.tmp"; then
+    rm -f "$PORTAL_ARCHIVE.tmp"; fail "the portal configuration's archive failed (the database's $DB_ARCHIVE is kept)"
+  fi
   mv "$PORTAL_ARCHIVE.tmp" "$PORTAL_ARCHIVE"
 else
   PORTAL_ARCHIVE="(portal not running, skipped)"
 fi
 
-find "$BACKUP_DIR" \( -name 'resolver-*.archive.gz' -o -name 'portal-config-*.tar.gz' \) \
+find "$BACKUP_DIR" \( -name 'resolver-*.archive.gz' -o -name 'portal-config-*.tar.gz' \
+  -o -name 'resolver-*.archive.gz.age' -o -name 'portal-config-*.tar.gz.age' \) \
   -mtime +"$RETENTION_DAYS" -delete
 find "$BACKUP_DIR" -name '*.tmp' -mtime +1 -delete     # left by a run that was killed
 SIZE="$(du -h "$DB_ARCHIVE" | cut -f1)"

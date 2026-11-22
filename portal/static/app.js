@@ -3783,7 +3783,8 @@ function ssoCard(c) {
   head.append(el("strong", "domain-name", ssoScopeName(c.scope)));
   if (!c.blank) {
     head.append(el("span", "badge " + (c.enabled ? "badge-created" : "badge-unchanged"), t(c.enabled ? "sso.on" : "sso.off")));
-    head.append(el("span", "badge badge-update", t(c.secretSet ? "sso.secretSet" : "sso.secretMissing")));
+    head.append(el("span", "badge " + (c.secretUnreadable ? "badge-error" : "badge-update"),
+                   t(c.secretUnreadable ? "sso.secretUnreadableBadge" : c.secretSet ? "sso.secretSet" : "sso.secretMissing")));
     if (c.passwordOff) head.append(el("span", "badge badge-unchanged", t("sso.passwordOffBadge")));
   }
   card.append(head);

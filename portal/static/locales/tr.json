@@ -603,6 +603,8 @@
  "sso.confirmRemove": "Kuruluş oturum açma yapılandırması kaldırılsın mı? Kullanıcılar yeniden yalnızca parolayla oturum açar.",
  "sso.secretSet": "gizli anahtar kayıtlı",
  "sso.secretMissing": "gizli anahtar yok",
+ "sso.secretUnreadableBadge": "gizli anahtar okunamıyor — yeniden girin",
+ "sso.secretUnreadable": "Kuruluşunuzun tek oturum açma özelliği şu anda kullanılamıyor: bir yöneticinin istemci gizli anahtarını yeniden girmesi gerekiyor.",
  "sso.on": "Açık",
  "sso.off": "Kapalı",
  "sso.passwordOffBadge": "Yalnızca kuruluş hesabı",

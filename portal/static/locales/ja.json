@@ -603,6 +603,8 @@
  "sso.confirmRemove": "組織サインインの設定を削除しますか？ユーザーはパスワードのみでサインインする方式に戻ります。",
  "sso.secretSet": "シークレット保存済み",
  "sso.secretMissing": "シークレットなし",
+ "sso.secretUnreadableBadge": "シークレットを読み取れません — 再入力してください",
+ "sso.secretUnreadable": "組織のシングルサインオンは現在使用できません。管理者がクライアントシークレットを再入力する必要があります。",
  "sso.on": "有効",
  "sso.off": "無効",
  "sso.passwordOffBadge": "組織アカウントのみ",

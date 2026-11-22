@@ -603,6 +603,8 @@
  "sso.confirmRemove": "Konfiguration der Organisationsanmeldung entfernen? Die Benutzer melden sich dann wieder nur mit Passwort an.",
  "sso.secretSet": "Secret gespeichert",
  "sso.secretMissing": "kein Secret",
+ "sso.secretUnreadableBadge": "Secret nicht lesbar – bitte erneut eingeben",
+ "sso.secretUnreadable": "Die einmalige Anmeldung Ihrer Organisation kann derzeit nicht verwendet werden: Ein Administrator muss das Client-Secret erneut eingeben.",
  "sso.on": "Ein",
  "sso.off": "Aus",
  "sso.passwordOffBadge": "Nur Organisationskonto",

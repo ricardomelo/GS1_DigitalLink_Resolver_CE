@@ -60,6 +60,7 @@ import resolution
 import safety
 import sheet
 import sessions
+import sealed
 import sso
 import store
 import syntax
@@ -136,36 +137,11 @@ PRIVATE_ASSETS = {"app.js", "requests-map.js", "d3.min.js", "topojson-client.min
 def _secret_key() -> bytes:
     """PORTAL_SECRET_KEY if set (the installer writes one to .env; every replica must share it); otherwise a
     random key created once in the config volume, which serves the portal's processes and replicas on one
-    Docker host (they share the volume).
-
-    Several processes start at once (gunicorn's workers, replicas), so the file appears complete or not at
-    all: the key is written to a file of this process's own and then linked to the final name, which fails
-    for every process but the first. Reading a file another process had created but not yet written would
-    sign sessions with an empty key."""
+    Docker host (they share the volume). Created so that processes starting at once all read the same, complete
+    key (sealed.key_file)."""
     if os.environ.get("PORTAL_SECRET_KEY"):
         return os.environ["PORTAL_SECRET_KEY"].encode()
-    path = os.path.join(CONFIG_DIR, "secret.key")
-    if not os.path.exists(path):
-        draft = f"{path}.{os.getpid()}.{secrets.token_hex(4)}"
-        try:
-            fd = os.open(draft, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, "w") as fh:
-                fh.write(secrets.token_hex(32))
-            try:
-                os.link(draft, path)
-            except FileExistsError:
-                pass                                   # another process was first: use its key
-            finally:
-                os.unlink(draft)
-        except OSError as exc:
-            raise RuntimeError(f"Cannot create {path} ({exc}). "
-                               "/app/config must be writable by uid 10001 (the portal-config volume).") from exc
-    with open(path, encoding="utf-8") as fh:
-        key = fh.read().strip()
-    if not key:
-        raise RuntimeError(f"{path} is empty: delete it (a new key is made at the next start) "
-                           "or set PORTAL_SECRET_KEY in .env.")
-    return key.encode()
+    return sealed.key_file(os.path.join(CONFIG_DIR, "secret.key"), "PORTAL_SECRET_KEY").encode()
 
 
 app = Flask(__name__, static_folder=None)
@@ -233,6 +209,12 @@ if domains.upgrade():                 # domains saved before ADR 0035: names sto
 if sso.upgrade():                     # configurations saved before ADR 0025: their domains count as proved
     log.warning("Single sign-on: e-mail domains of earlier configurations were accepted without proof; "
                 "replace them with a DNS proof on the Single sign-on screen (Documentation/adr/0025).")
+if sso.seal_stored():                 # client secrets stored in clear, or sealed with an earlier key (ADR 0044)
+    log.info("Single sign-on: client secrets sealed with the current data key (Documentation/adr/0044).")
+if not os.environ.get(sealed.VARIABLE) and sso.has_secrets():
+    log.warning("%s is not set: the secrets the portal stores are sealed with %s, which works only while every "
+                "portal process shares that volume (one Docker host).", sealed.VARIABLE,
+                os.path.join(CONFIG_DIR, sealed.FILE_NAME))
 _bootstrap_admin()
 
 

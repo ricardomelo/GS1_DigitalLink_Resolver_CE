@@ -11,12 +11,13 @@
 #   2. asks for the domain (FQDN), how TLS is handled, the operator's details and the first portal
 #      user, keeping the values of an earlier installation as defaults;
 #   3. installs Docker Engine with the Compose plugin (official Docker repository) if needed, plus
-#      nginx and Certbot when the host terminates TLS;
+#      nginx and Certbot when the host terminates TLS, and age (which encrypts the backups);
 #   4. writes .env (mode 600) with generated secrets: MongoDB password, API token;
 #   5. configures the host nginx as reverse proxy (checking that ports 80/443 are free) and obtains
 #      a Let's Encrypt certificate, or uses an existing certificate, or leaves TLS to an external proxy;
 #   6. builds and starts the services and waits until they answer;
-#   7. schedules the daily backup, the monthly update of the GeoIP database (the approximate location of scans in the
+#   7. makes the backup key (/etc/resolver-backup.key, unless one is there or .env names BACKUP_RECIPIENTS: keep a copy
+#      off the server) and schedules the daily backup, the monthly update of the GeoIP database (the approximate location of scans in the
 #      request log) and, with Let's Encrypt, the organisations' own domains every 5 minutes, and prints a summary.
 #
 # Running it again is safe: existing secrets, users and data are kept. Options:
@@ -55,6 +56,8 @@ LOG_FILE="${INSTALL_LOG_FILE:-/var/log/gs1-resolver-install.log}"
 NGINX_AVAILABLE="${INSTALL_NGINX_AVAILABLE:-/etc/nginx/sites-available}"
 NGINX_ENABLED="${INSTALL_NGINX_ENABLED:-/etc/nginx/sites-enabled}"
 CRON_FILE="${INSTALL_CRON_FILE:-/etc/cron.d/resolver-backup}"
+BACKUP_KEY_FILE="${INSTALL_BACKUP_KEY_FILE:-/etc/resolver-backup.key}"   # unless .env names another (ADR 0044)
+BACKUP_KEY_SHOWN=""
 GEOIP_CRON_FILE="${INSTALL_GEOIP_CRON_FILE:-/etc/cron.d/resolver-geoip}"
 DOMAINS_CRON_FILE="${INSTALL_DOMAINS_CRON_FILE:-/etc/cron.d/resolver-domains}"
 SITE_NAME="gs1resolver"
@@ -235,7 +238,7 @@ EXISTING_ORDER=()
 MANAGED_KEYS=" MONGO_INITDB_ROOT_USERNAME MONGO_INITDB_ROOT_PASSWORD MONGO_URI SESSION_TOKEN FQDN
   RESOLVER_ORG_NAME RESOLVER_ORG_URL RESOLVER_CONTACT_STREET RESOLVER_CONTACT_LOCALITY RESOLVER_CONTACT_REGION
   RESOLVER_CONTACT_POSTCODE RESOLVER_CONTACT_COUNTRY RESOLVER_CONTACT_TELEPHONE PORTAL_ADMIN_USERNAME
-  PORTAL_ADMIN_PASSWORD PORTAL_DB_PASSWORD RESOLVER_DB_PASSWORD DATA_ENTRY_DB_PASSWORD PORTAL_SECRET_KEY PORTAL_JOURNAL_KEY PROXY_BIND_ADDRESS DATABASE_BIND_ADDRESS TLS_MODE
+  PORTAL_ADMIN_PASSWORD PORTAL_DB_PASSWORD RESOLVER_DB_PASSWORD DATA_ENTRY_DB_PASSWORD PORTAL_SECRET_KEY PORTAL_JOURNAL_KEY PORTAL_DATA_KEY PROXY_BIND_ADDRESS DATABASE_BIND_ADDRESS TLS_MODE
   CERTBOT_EMAIL TLS_CERT_FILE TLS_KEY_FILE WEB_SERVICE_REPLICAS DATA_ENTRY_SERVICE_REPLICAS
   PORTAL_SERVICE_REPLICAS PORTAL_WORKER_REPLICAS PORTAL_MAIL_HOST PORTAL_MAIL_PORT PORTAL_MAIL_SECURITY
   PORTAL_MAIL_USERNAME PORTAL_MAIL_PASSWORD PORTAL_MAIL_FROM PORTAL_TIME_ZONE "
@@ -294,11 +297,13 @@ write_env() {
     env_line PORTAL_ADMIN_USERNAME "$PORTAL_ADMIN_USERNAME"
     env_line PORTAL_ADMIN_PASSWORD "$PORTAL_ADMIN_PASSWORD"
     printf '\n# Portal: password of its own database user (portal-db-init applies it at every start)\n'
-    printf '# the key that signs its sessions and the key that seals its journal (shared by every portal replica;\n'
-    printf '# keep the journal key with the backups: Documentation/adr/0026-journal-integrity.md).\n'
+    printf '# the key that signs its sessions, the key that seals its journal and the key that seals the secrets it\n'
+    printf '# stores (shared by every portal replica; keep the journal and data keys with the backups:\n'
+    printf '# Documentation/adr/0026-journal-integrity.md, Documentation/adr/0044-encrypted-backups-and-sealed-secrets.md).\n'
     env_line PORTAL_DB_PASSWORD "$PORTAL_DB_PASSWORD"
     env_line PORTAL_SECRET_KEY "$PORTAL_SECRET_KEY"
     env_line PORTAL_JOURNAL_KEY "$PORTAL_JOURNAL_KEY"
+    env_line PORTAL_DATA_KEY "$PORTAL_DATA_KEY"
     printf '\n# Portal: e-mail relay (empty host: no e-mail; see .env.example and Documentation/adr/0004-e-mail.md)\n'
     env_line PORTAL_MAIL_HOST "$PORTAL_MAIL_HOST"
     env_line PORTAL_MAIL_PORT "$PORTAL_MAIL_PORT"
@@ -678,6 +683,7 @@ secrets() {
   DATA_ENTRY_DB_PASSWORD=$(existing DATA_ENTRY_DB_PASSWORD)
   PORTAL_SECRET_KEY=$(existing PORTAL_SECRET_KEY)
   PORTAL_JOURNAL_KEY=$(existing PORTAL_JOURNAL_KEY)
+  PORTAL_DATA_KEY=$(existing PORTAL_DATA_KEY)
   local db_exists=0
   command -v docker >/dev/null 2>&1 && volume_exists resolver-database-volume && db_exists=1
 
@@ -733,9 +739,15 @@ secrets() {
     PORTAL_JOURNAL_KEY=$(random_secret 32)
     info "A key that seals the portal's journal was generated."
   fi
+  # The data key seals the single sign-on client secrets in the database (ADR 0044); one already in .env is never
+  # replaced (scripts/rotate-secrets.sh data does that, keeping the former one to open what it sealed).
+  if [[ -z $PORTAL_DATA_KEY ]]; then
+    PORTAL_DATA_KEY=$(random_secret 32)
+    info "A key that seals the secrets the portal stores was generated."
+  fi
   local value
   for value in "$MONGO_PASSWORD" "$MONGO_URI" "$SESSION_TOKEN" "$PORTAL_DB_PASSWORD" "$RESOLVER_DB_PASSWORD" "$DATA_ENTRY_DB_PASSWORD" \
-      "$PORTAL_SECRET_KEY" "$PORTAL_JOURNAL_KEY"; do
+      "$PORTAL_SECRET_KEY" "$PORTAL_JOURNAL_KEY" "$PORTAL_DATA_KEY"; do
     [[ $value != *"'"* ]] || die "A secret in .env contains a single quote; replace it before running the installer."
   done
 }
@@ -781,17 +793,22 @@ install_prerequisites() {
     docker_ready || die "Docker was installed but Compose $MIN_COMPOSE_VERSION or later is not available."
     ok "Docker installed"
   fi
+  local packages=()
   if [[ $TLS_MODE != external ]]; then
-    local packages=(nginx)
+    packages+=(nginx)
     [[ $TLS_MODE == letsencrypt ]] && packages+=(certbot python3-certbot-nginx)
-    # installed or brought up to date: the host's nginx faces the Internet, and an nginx installed before (by hand or
-    # by an earlier run) would otherwise keep its version for ever (Documentation/adr/0042-host-nginx.md)
-    info "Installing or updating ${packages[*]}…"
-    run apt-get update
-    run apt-get install -y "${packages[@]}"
+  fi
+  packages+=(age)       # encrypts the backups (Documentation/adr/0044-encrypted-backups-and-sealed-secrets.md)
+  # installed or brought up to date: the host's nginx faces the Internet, and an nginx installed before (by hand or
+  # by an earlier run) would otherwise keep its version for ever (Documentation/adr/0042-host-nginx.md)
+  info "Installing or updating ${packages[*]}…"
+  run apt-get update
+  run apt-get install -y "${packages[@]}"
+  if [[ $TLS_MODE != external ]]; then
     ok "nginx$([[ $TLS_MODE == letsencrypt ]] && echo ' and Certbot')"
     check_host_nginx
   fi
+  ok "age (encrypts the backups)"
   if [[ -n $INSTALL_DOCKER_GROUP_USER ]] && ! id -nG "$INSTALL_DOCKER_GROUP_USER" | grep -qw docker; then
     run usermod -aG docker "$INSTALL_DOCKER_GROUP_USER"
     ok "$INSTALL_DOCKER_GROUP_USER added to the docker group (takes effect at the next login)"
@@ -864,6 +881,7 @@ configure_https() {
 
 schedule_backup() {
   step "Backup"
+  backup_key
   if [[ $INSTALL_BACKUP_CRON != yes ]]; then info "Not scheduled (run scripts/resolver-backup.sh manually)."; return; fi
   chmod 755 "$REPO_DIR/scripts/resolver-backup.sh"
   umask 022
@@ -871,6 +889,28 @@ schedule_backup() {
   chmod 644 "$CRON_FILE"
   umask 077
   ok "Daily at 02:30 → /var/backups/resolver (14 days); log /var/log/resolver-backup.log"
+}
+
+# The key the backups are encrypted to (Documentation/adr/0044-encrypted-backups-and-sealed-secrets.md): made with
+# age-keygen when there is neither a key file nor BACKUP_RECIPIENTS in .env; never replaced.
+backup_key() {
+  local file
+  file=$(existing BACKUP_KEY_FILE); file=${file:-$BACKUP_KEY_FILE}
+  BACKUP_KEY_SHOWN=$file
+  if [[ -e $file ]]; then ok "Backups encrypted with the key in $file (kept)"; return; fi
+  if [[ -n $(existing BACKUP_RECIPIENTS) ]]; then
+    BACKUP_KEY_SHOWN=""; ok "Backups encrypted to BACKUP_RECIPIENTS of .env (no key on this server)"; return
+  fi
+  if ! command -v age-keygen >/dev/null 2>&1; then
+    BACKUP_KEY_SHOWN=""; warn "age is not installed: the backups fail until it is (sudo apt-get install age)"; return
+  fi
+  mkdir -p "$(dirname "$file")"
+  if ! (umask 077; age-keygen -o "$file" >/dev/null 2>&1); then
+    BACKUP_KEY_SHOWN=""; warn "The backup key $file could not be created: the first backup creates it"; return
+  fi
+  chmod 600 "$file"
+  ok "Backup key created: $file"
+  warn "Keep a copy of $file off this server (a password manager): without it no backup can be restored."
 }
 
 # The GeoIP database of the request log (Documentation/adr/0006-resolver-request-log.md, section 8): the monthly update
@@ -952,6 +992,10 @@ summary_after() {
     printf '      This password is shown only now. Sign in and change it under Options.\n'
   elif (( ! PORTAL_HAS_USERS )); then
     printf '\n      First portal user: %s (password as typed). Change it under Options if others saw it.\n' "$PORTAL_ADMIN_USERNAME"
+  fi
+  if [[ -n $BACKUP_KEY_SHOWN ]]; then
+    printf '\n      %sBackup key:  %s%s\n' "$C_BOLD" "$BACKUP_KEY_SHOWN" "$C_OFF"
+    printf '      Keep a copy off this server (a password manager): without it no backup can be restored.\n'
   fi
   printf '\n      More users:  docker compose exec portal-service python create_user.py <name>\n'
   printf '      Update:      git pull && docker compose up -d --build\n'

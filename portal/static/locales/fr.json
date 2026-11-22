@@ -603,6 +603,8 @@
  "sso.confirmRemove": "Supprimer la configuration de connexion par l’organisation ? Les utilisateurs ne pourront de nouveau se connecter qu’avec un mot de passe.",
  "sso.secretSet": "secret enregistré",
  "sso.secretMissing": "aucun secret",
+ "sso.secretUnreadableBadge": "secret illisible — saisissez-le à nouveau",
+ "sso.secretUnreadable": "L’authentification unique de votre organisation ne peut pas être utilisée pour le moment : un administrateur doit saisir à nouveau le secret client.",
  "sso.on": "Activé",
  "sso.off": "Désactivé",
  "sso.passwordOffBadge": "Compte d’organisation uniquement",

@@ -1677,24 +1677,46 @@ runs imports with the same rules).
 record metadata, journal and daily request counts) and the request log `resolver_log`, through the database container so the credentials never appear on the host,
 and archives the portal's configuration volume, keeping 14 days in `/var/backups/resolver`. It finds the repository from its own location.
 
+**Encryption** ([ADR 0044](../adr/0044-encrypted-backups-and-sealed-secrets.md)). Every archive is encrypted with
+[age](https://age-encryption.org) as it is written (`resolver-<time>.archive.gz.age`, `portal-config-<time>.tar.gz.age`):
+nothing unencrypted reaches the disk or the off-server copy, and an archive changed by whoever holds it does not
+decrypt. The archives are encrypted to the public key of the **backup key**, `/etc/resolver-backup.key` (root, mode
+600; `BACKUP_KEY_FILE` in `.env` names another), which the installer — or, on an installation upgraded without it, the
+first run — creates. **Keep a copy of that key off the server** (a password manager, a printed copy in a safe): without
+it no backup can be restored, and a backup that survives the loss of the server is useless without it.
+```bash
+sudo apt-get install age                          # once, on an installation from before; the installer does it
+sudo scripts/resolver-backup.sh                   # NOTICE: a backup key was created in /etc/resolver-backup.key … OK …
+sudo cat /etc/resolver-backup.key                 # copy the three lines to the password manager
+```
+To keep the server unable to read its own backups, put the key's public part (`age-keygen -y /etc/resolver-backup.key`,
+`age1…`) in `BACKUP_RECIPIENTS` in `.env` (several separated by spaces) and move the key file off the server: the backup
+needs only the public keys. Without age the backup fails (`ERROR: age is not installed`, status 1, an alert from the
+portal's monitoring); `BACKUP_ENCRYPTION=off` in `.env` writes unencrypted archives, with a warning in each run, for a
+destination that encrypts by itself. Archives written before stay unencrypted until the 14 days remove them.
+
 ```bash
 sudo scripts/resolver-backup.sh                                     # test: prints OK and the sizes (ERROR and status 1 on a failure)
 sed "s|REPOSITORY|$PWD|" scripts/resolver-backup.cron | sudo tee /etc/cron.d/resolver-backup >/dev/null
 sudo chmod 644 /etc/cron.d/resolver-backup                          # daily at 02:30
 ```
 
-Restore the database (replaces the current one):
+Restore the database (replaces the current one); an encrypted archive is decrypted with the backup key on its way:
 ```bash
-docker compose exec -T database-service sh -c 'mongorestore -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --archive --gzip --drop' < /var/backups/resolver/ARCHIVE.archive.gz
+sudo age -d -i /etc/resolver-backup.key /var/backups/resolver/ARCHIVE.archive.gz.age | docker compose exec -T database-service sh -c 'mongorestore -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --archive --gzip --drop'
+# an archive from before encryption: … --archive --gzip --drop' < /var/backups/resolver/ARCHIVE.archive.gz
 ```
 Then run `docker compose up -d`: `portal-db-init` runs again and gives the portal's user the password in
 `.env`, whatever the restored database held.
 
-Restore the portal configuration (the fallback session key and the `*.migrated` copies; only needed when
-`PORTAL_SECRET_KEY` is not set):
+Restore the portal configuration (the fallback session key, the fallback data key `data.key` and the `*.migrated`
+copies; only needed when `PORTAL_SECRET_KEY` or `PORTAL_DATA_KEY` is not set):
 ```bash
-docker compose exec -T portal-service tar -xzf - -C /app/config < /var/backups/resolver/portal-config-ARCHIVE.tar.gz
+sudo age -d -i /etc/resolver-backup.key /var/backups/resolver/portal-config-ARCHIVE.tar.gz.age | docker compose exec -T portal-service tar -xzf - -C /app/config
 ```
+The organisations' single sign-on client secrets are sealed in the database with `PORTAL_DATA_KEY` (or `data.key`):
+restored on another server, they open only with that key — keep `.env` with the backup key; otherwise each
+organisation's administrator enters its secret again (the *Organisation sign-in* screen says *secret unreadable*).
 A backup taken before the portal used its database holds the portal's data in that archive (`users.json`,
 `records-meta.json`, `journal.jsonl`) and none in the database dump. To restore such a backup, restore both,
 remove the portal's database (`docker compose exec database-service sh -c 'mongosh -u
@@ -1715,7 +1737,9 @@ sudo scripts/resolver-backup.sh                    # … copied to backup@vault.
 **Restore rehearsal.** `scripts/restore-rehearsal.sh` restores an archive (the newest by default, or the one named)
 into a throw-away MongoDB container of the installation's own image, with no network and nothing shared with the
 running installation, prints each collection's documents next to the live database's, checks that the resolver's
-records and the portal's users are in it, and removes the container. Run it after the first backup and then from time
+records and the portal's users are in it, and removes the container. An encrypted archive is decrypted with the backup key
+(`BACKUP_KEY_FILE`; for a key kept elsewhere: `sudo BACKUP_KEY_FILE=/media/usb/resolver-backup.key
+scripts/restore-rehearsal.sh`). Run it after the first backup and then from time
 to time (monthly), and after an upgrade of MongoDB:
 ```bash
 sudo scripts/restore-rehearsal.sh
@@ -1739,6 +1763,7 @@ rotates all four; name some to rotate only those:
 | `portal-db` | `PORTAL_DB_PASSWORD` | Nothing: `portal-db-init` gives the portal's database user the new password on the start |
 | `resolver-db` | `RESOLVER_DB_PASSWORD` | Nothing: the same for the resolver's database user (ADR 0030) |
 | `data-entry-db` | `DATA_ENTRY_DB_PASSWORD` | Nothing: the same for the data entry API's database user |
+| `data` (only when named) | `PORTAL_DATA_KEY` | The former key is kept as `PORTAL_DATA_KEY_PREVIOUS`; the portal seals the stored single sign-on client secrets again with the new key when it starts (ADR 0044). Rotate it again only after that start |
 | `mongo` | `MONGO_INITDB_ROOT_PASSWORD`, `MONGO_URI` | Changed in MongoDB first (the new password given to `mongosh` on standard input); when the database refuses, `.env` keeps the old one and the script ends with status 1 |
 
 No secret is printed or put on a command line. The previous `.env` is kept as `.env.bak-<time>` (mode 600) for going

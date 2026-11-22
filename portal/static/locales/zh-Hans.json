@@ -603,6 +603,8 @@
  "sso.confirmRemove": "要删除组织登录配置吗？用户将恢复为仅使用密码登录。",
  "sso.secretSet": "已保存密钥",
  "sso.secretMissing": "无密钥",
+ "sso.secretUnreadableBadge": "密钥无法读取 — 请重新输入",
+ "sso.secretUnreadable": "贵组织的单点登录目前无法使用：需要管理员重新输入客户端密钥。",
  "sso.on": "已启用",
  "sso.off": "已关闭",
  "sso.passwordOffBadge": "仅限组织账户",

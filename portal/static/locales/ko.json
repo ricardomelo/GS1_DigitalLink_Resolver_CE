@@ -603,6 +603,8 @@
  "sso.confirmRemove": "조직 로그인 구성을 삭제하시겠습니까? 사용자는 다시 비밀번호로만 로그인하게 됩니다.",
  "sso.secretSet": "시크릿 저장됨",
  "sso.secretMissing": "시크릿 없음",
+ "sso.secretUnreadableBadge": "시크릿을 읽을 수 없음 — 다시 입력하십시오",
+ "sso.secretUnreadable": "조직의 통합 로그인을 지금 사용할 수 없습니다. 관리자가 클라이언트 시크릿을 다시 입력해야 합니다.",
  "sso.on": "켜짐",
  "sso.off": "꺼짐",
  "sso.passwordOffBadge": "조직 계정 전용",

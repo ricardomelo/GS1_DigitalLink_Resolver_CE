@@ -9,7 +9,9 @@ that does not match or is old or used twice, the provider refusing, its token en
 wrong nonce, audience, issuer, expiry, key or algorithm, no verified e-mail, an e-mail of another domain, no account
 or another organisation's, a disabled account or organisation); a new key of the provider; password sign-in off for
 the organisation (not for server administrators, nor password recovery); the temporary password not asked after
-single sign-on; the texts in both languages.
+single sign-on; the client secret sealed in the database with the data key (ADR 0044): in place of the text, opened
+only in its own configuration, sealed at the start when stored in clear, earlier keys, a lost key; the texts in both
+languages.
 
   pip install -r portal/requirements.txt mongomock
   python dev-tests/portal/test_sso.py
@@ -119,11 +121,11 @@ check("saved: domains tidied (case, @, repeats), the secret never given back", c
       and provider.client_secret not in r.get_data(as_text=True), r.get_json())
 r = ana.put(f"/portal/api/sso/{acme['id']}", json={"clientId": provider.client_id}, headers=ORIGIN)
 check("a change without a secret keeps it", r.get_json()["item"]["secretSet"]
-      and store.col("sso").find_one({"_id": acme["id"]})["clientSecret"] == provider.client_secret)
+      and sso.client_secret(store.col("sso").find_one({"_id": acme["id"]})) == provider.client_secret)
 check("…and nothing lists it", provider.client_secret not in ana.get("/portal/api/sso").get_data(as_text=True))
 ana.put(f"/portal/api/sso/{acme['id']}", json={"clientSecret": "", "clientId": provider.client_id}, headers=ORIGIN)
 check("an empty secret field (as the screen sends it) keeps the secret",
-      store.col("sso").find_one({"_id": acme["id"]})["clientSecret"] == provider.client_secret)
+      sso.client_secret(store.col("sso").find_one({"_id": acme["id"]})) == provider.client_secret)
 r = bia.put(f"/portal/api/sso/{acme['id']}", json=CONFIG, headers=ORIGIN)
 check("another organisation's administrator may not touch it", r.status_code == 403 and code(r) == "sso.scopeOutside")
 
@@ -523,6 +525,79 @@ actions = {e["action"] for e in store.col("journal").find({"action": {"$regex": 
 check("the journal: configurations saved and removed, domains proved", actions == {"sso-save", "sso-remove", "sso-domain"},
       actions)
 
+# ================================================================== the client secret sealed (ADR 0044)
+import sealed  # noqa: E402
+
+stored = store.col("sso").find_one({"_id": acme["id"]})["clientSecret"]
+everything = repr(list(store.col("sso").find()))
+check("the client secret is stored sealed (AES-GCM, a key id), never in clear in the collection",
+      isinstance(stored, dict) and stored.get("sealed") == 1 and len(stored.get("kid", "")) == 16
+      and provider.client_secret not in everything and len(stored.get("nonce", "")) == 16, stored)
+check("…and opens with the data key to the secret given", sso.client_secret(sso.get(acme["id"])) == provider.client_secret)
+check("…only in its own configuration (the place is its associated data)",
+      sso.client_secret({"_id": beta["id"], "clientSecret": stored}) is None)
+changed = dict(stored, data=stored["data"][:-4] + ("AAAA" if not stored["data"].endswith("AAAA") else "BBBB"))
+check("…and not once changed", sso.client_secret({"_id": acme["id"], "clientSecret": changed}) is None)
+check("the data key without PORTAL_DATA_KEY: a key file of the configuration volume, mode 600",
+      os.path.exists(os.path.join(os.environ["PORTAL_CONFIG_DIR"], "data.key"))
+      and oct(os.stat(os.path.join(os.environ["PORTAL_CONFIG_DIR"], "data.key")).st_mode & 0o777) == "0o600"
+      and sealed.key_id(sealed.keys()[0]) == stored["kid"])
+
+
+def sso_round(email="edu@acme.example"):
+    provider.reset()
+    provider.NEXT["email"] = email
+    before = len(provider.requests)
+    r, _ = sign_in(email)
+    tokens = [q for q in provider.requests[before:] if q["endpoint"] == "token"]
+    return landed(r), tokens
+
+
+# a secret stored in clear by an earlier version: sealed at the start, once
+store.col("sso").update_one({"_id": acme["id"]}, {"$set": {"clientSecret": provider.client_secret}})
+check("a secret stored in clear before still signs people in", sso_round()[0].endswith("/portal/#overview"))
+first, second = sso.seal_stored(), sso.seal_stored()
+stored = store.col("sso").find_one({"_id": acme["id"]})["clientSecret"]
+check("at the start, a secret stored in clear is sealed in place, once", first == 1 and second == 0
+      and sealed.is_sealed(stored) and sso.client_secret(sso.get(acme["id"])) == provider.client_secret, (first, second))
+app_source = open(os.path.join(PORTAL, "app.py"), encoding="utf-8").read()
+check("…which the portal does when it starts", re.search(r"^if sso\.seal_stored\(\):", app_source, re.M) is not None)
+where, tokens = sso_round()
+check("…and the sign-in sends the secret opened, as before", where.endswith("/portal/#overview")
+      and tokens and tokens[-1]["client_secret"] == provider.client_secret, where)
+
+# PORTAL_DATA_KEY set later: the key file's values still open and are sealed again with it
+os.environ["PORTAL_DATA_KEY"] = "a" * 64
+kid_before = stored["kid"]
+check("PORTAL_DATA_KEY set: a value of the key file still opens", sso.client_secret(sso.get(acme["id"])) == provider.client_secret)
+resealed = sso.seal_stored()
+stored = store.col("sso").find_one({"_id": acme["id"]})["clientSecret"]
+check("…and is sealed again with PORTAL_DATA_KEY at the start", resealed == 1 and stored["kid"] != kid_before
+      and stored["kid"] == sealed.key_id(sealed.keys()[0]) and sso.seal_stored() == 0, (resealed, stored["kid"]))
+
+# rotation (scripts/rotate-secrets.sh data): the former key as PORTAL_DATA_KEY_PREVIOUS
+os.environ["PORTAL_DATA_KEY_PREVIOUS"], os.environ["PORTAL_DATA_KEY"] = "a" * 64, "b" * 64
+check("rotated: the former key, as PORTAL_DATA_KEY_PREVIOUS, still opens", sso.client_secret(sso.get(acme["id"]))
+      == provider.client_secret and sso.seal_stored() == 1
+      and store.col("sso").find_one({"_id": acme["id"]})["clientSecret"]["kid"] == sealed.key_id(sealed.keys()[0]))
+
+# the key lost: never sent, the screen asks for it again
+os.environ["PORTAL_DATA_KEY"] = "c" * 64
+os.environ.pop("PORTAL_DATA_KEY_PREVIOUS")
+item = next(c for c in ana.get("/portal/api/sso").get_json()["configs"] if c["scope"] == acme["id"])
+check("a secret no known key opens: the screen says unreadable (still set)", item["secretUnreadable"] is True
+      and item["secretSet"] is True and sso.seal_stored() == 0, item)
+where, tokens = sso_round()
+doc = sso.get(acme["id"])
+check("…the sign-in stops before the token request, and the configuration's last error says why",
+      where.endswith("/portal/login?sso=secretUnreadable") and not tokens
+      and (doc.get("lastError") or {}).get("code") == "sso.secretUnreadable", (where, len(tokens), doc.get("lastError")))
+r = ana.put(f"/portal/api/sso/{acme['id']}", json={"clientSecret": provider.client_secret}, headers=ORIGIN)
+check("…until an administrator enters it again", code(r) == "sso.saved" and r.get_json()["item"]["secretUnreadable"] is False
+      and sso_round()[0].endswith("/portal/#overview"), r.get_json())
+os.environ.pop("PORTAL_DATA_KEY")
+ana.put(f"/portal/api/sso/{acme['id']}", json={"clientSecret": provider.client_secret}, headers=ORIGIN)
+
 # ================================================================== configurations from before ADR 0025
 store.col("sso").insert_one({"_id": beta["id"], "issuer": provider.issuer, "clientId": "c", "clientSecret": "s",
                              "domains": ["beta.example"], "enabled": True})
@@ -540,7 +615,7 @@ codes = set(re.findall(r'"(sso\.[A-Za-z]+)"', open(os.path.join(PORTAL, "sso.py"
                        + open(os.path.join(PORTAL, "app.py")).read()))
 codes |= {f"sso.{c}" for c in ("expired", "providerRefused", "tokenFailed", "tokenInvalid", "noEmail", "domainMismatch",
                                "noAccount", "accountDisabled", "tenantDisabled", "noProvider", "discoveryFailed")}
-codes |= {"auth.ssoRequired"}
+codes |= {"auth.ssoRequired", "sso.secretUnreadableBadge"}
 missing = sorted(c for c in codes if i18n.count(f'"{c}"') != 2)
 check(f"every single sign-on text in both languages ({len(codes)})", len(codes) > 25 and not missing, missing)
 

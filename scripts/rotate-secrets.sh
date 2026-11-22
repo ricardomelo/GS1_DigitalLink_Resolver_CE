@@ -16,6 +16,9 @@
 #                                           MONGO_URI; skipped (nothing changed) when the database refuses
 #   journal     PORTAL_JOURNAL_KEY          seals the journal (ADR 0026); only when named: the events sealed before keep
 #                                           their links checked, but their seal is then reported as made with another key
+#   data        PORTAL_DATA_KEY             seals the single sign-on client secrets (ADR 0044); only when named: the former
+#                                           key moves to PORTAL_DATA_KEY_PREVIOUS, and the portal seals the secrets again
+#                                           with the new one when it starts (a value made with an even older key is lost)
 #
 # The services are recreated at the end (docker compose up -d): about a minute without the resolver, so run it at a
 # quiet hour. Take a backup first (scripts/resolver-backup.sh). Exit status 0 when every secret asked was rotated.
@@ -25,7 +28,7 @@ RESOLVER_DIR="${RESOLVER_DIR:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 cd "$RESOLVER_DIR"
 ENV_FILE=.env
 ALL=(token session portal-db resolver-db data-entry-db mongo)
-KNOWN=("${ALL[@]}" journal)
+KNOWN=("${ALL[@]}" journal data)
 
 asked=("$@")
 (( ${#asked[@]} )) || asked=("${ALL[@]}")
@@ -63,6 +66,12 @@ for name in "${asked[@]}"; do
     resolver-db) put RESOLVER_DB_PASSWORD "$(random 24)"; rotated+=("RESOLVER_DB_PASSWORD") ;;
     data-entry-db) put DATA_ENTRY_DB_PASSWORD "$(random 24)"; rotated+=("DATA_ENTRY_DB_PASSWORD") ;;
     journal)   put PORTAL_JOURNAL_KEY "$(random 32)"; rotated+=("PORTAL_JOURNAL_KEY (events sealed before: another key)") ;;
+    data)
+      # the former key opens what it sealed until the portal has sealed it again (Documentation/adr/0044)
+      old="$(value PORTAL_DATA_KEY)"
+      [[ -n $old ]] && put PORTAL_DATA_KEY_PREVIOUS "$old"
+      put PORTAL_DATA_KEY "$(random 32)"
+      rotated+=("PORTAL_DATA_KEY (the former one kept as PORTAL_DATA_KEY_PREVIOUS; the portal seals the stored secrets again at its start)") ;;
     mongo)
       user="$(value MONGO_INITDB_ROOT_USERNAME)"; uri="$(value MONGO_URI)"
       if [[ -z $user || ! $uri =~ ^mongodb://[^:/@]+:[^@]*@ ]]; then

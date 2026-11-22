@@ -5,8 +5,12 @@
 # The running installation is only read. Proves that the backups can be restored before the day they are needed.
 #
 #   sudo scripts/restore-rehearsal.sh                       # the newest archive in /var/backups/resolver
-#   sudo scripts/restore-rehearsal.sh /path/to/resolver-2026-10-14_0230.archive.gz
+#   sudo scripts/restore-rehearsal.sh /path/to/resolver-2026-10-14_0230.archive.gz.age
+#   sudo BACKUP_KEY_FILE=/media/key/resolver-backup.key scripts/restore-rehearsal.sh   # the key kept elsewhere
 #
+# An encrypted archive (*.age, Documentation/adr/0044-encrypted-backups-and-sealed-secrets.md) is decrypted on its way
+# into the container with the identity in BACKUP_KEY_FILE (default /etc/resolver-backup.key); an archive written
+# before encryption (*.archive.gz) is restored as it is.
 # Exit status 0 when the archive restored and every database the installation needs is in it with documents (the
 # resolver's records, the portal's users); 1 otherwise. Settings can be overridden from the environment.
 set -euo pipefail
@@ -17,17 +21,27 @@ CONTAINER="${REHEARSAL_CONTAINER:-resolver-restore-rehearsal}"
 WAIT_SECONDS="${REHEARSAL_WAIT_SECONDS:-60}"
 cd "$RESOLVER_DIR"
 
+# The names the installation uses (from the environment, else .env, else .env.example's defaults)
+setting() {
+  local value="${!1:-}"
+  [[ -n $value ]] || value="$(sed -n "s/^$1=['\"]\{0,1\}\([^'\"]*\)['\"]\{0,1\}$/\1/p" .env.example .env 2>/dev/null | tail -1 || true)"
+  printf '%s' "$value"
+}
+
 archive="${1:-}"
 if [[ -z $archive ]]; then
-  archive="$(ls -1t "$BACKUP_DIR"/resolver-*.archive.gz 2>/dev/null | head -n 1 || true)"
+  archive="$(ls -1t "$BACKUP_DIR"/resolver-*.archive.gz "$BACKUP_DIR"/resolver-*.archive.gz.age 2>/dev/null | head -n 1 || true)"
   [[ -n $archive ]] || { echo "ERROR: no archive in $BACKUP_DIR (run scripts/resolver-backup.sh first)"; exit 1; }
 fi
 [[ -s $archive ]] || { echo "ERROR: $archive is missing or empty"; exit 1; }
-
-# The names the installation uses (from .env, else .env.example's defaults)
-setting() {
-  sed -n "s/^$1=['\"]\{0,1\}\([^'\"]*\)['\"]\{0,1\}$/\1/p" .env.example .env 2>/dev/null | tail -1 || true
-}
+# The command the archive goes through on its way to mongorestore: age -d for an encrypted one
+DECRYPT=(cat)
+if [[ $archive == *.age ]]; then
+  key="$(setting BACKUP_KEY_FILE)"; key="${key:-/etc/resolver-backup.key}"
+  command -v age >/dev/null 2>&1 || { echo "ERROR: the archive is encrypted and age is not installed (sudo apt-get install age)"; exit 1; }
+  [[ -r $key ]] || { echo "ERROR: the archive is encrypted and the backup key $key is not here: give its path with BACKUP_KEY_FILE (sudo BACKUP_KEY_FILE=/path/to/key $0)"; exit 1; }
+  DECRYPT=(age -d -i "$key")
+fi
 portal_db="$(setting PORTAL_DB_NAME)"; portal_db="${portal_db:-resolver_portal}"
 records_db="resolver_ce"
 
@@ -37,7 +51,7 @@ image="$(docker compose images -q database-service 2>/dev/null | head -n 1 || tr
 cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 cleanup
-echo "Archive:   $archive ($(du -h "$archive" | cut -f1))"
+echo "Archive:   $archive ($(du -h "$archive" | cut -f1)$([[ $archive == *.age ]] && echo ', encrypted'))"
 echo "Container: $CONTAINER (image $image, no network)"
 docker run -d --name "$CONTAINER" --network none "$image" >/dev/null
 
@@ -47,8 +61,8 @@ until docker exec "$CONTAINER" mongosh --quiet --eval 'db.runCommand({ping: 1}).
   sleep 2; waited=$(( waited + 2 ))
 done
 
-if ! docker exec -i "$CONTAINER" mongorestore --archive --gzip --quiet < "$archive"; then
-  echo "ERROR: mongorestore could not restore the archive"; exit 1
+if ! "${DECRYPT[@]}" < "$archive" | docker exec -i "$CONTAINER" mongorestore --archive --gzip --quiet; then
+  echo "ERROR: the archive could not be restored (age's or mongorestore's message above: another key, or a damaged archive)"; exit 1
 fi
 
 # Documents per database.collection, one "name count" line each (system and local databases left out)

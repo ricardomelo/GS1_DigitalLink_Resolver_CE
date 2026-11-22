@@ -111,12 +111,12 @@ if [[ ! -x "$DEV_TOOLS/bin/docker-compose" ]]; then
   chmod +x "$DEV_TOOLS/bin/docker-compose"
 fi
 
-# Ubuntu's nginx for the installer test (service stopped) and nginx 1.30 built from source for the proxy
+# Ubuntu's nginx for the installer test (service stopped), age for the backup's test (ADR 0044) and nginx 1.30 built from source for the proxy
 # test ("resolve" in upstream blocks needs 1.27.3 or later; Ubuntu 24.04 ships 1.24), with the modules of the proxy
 # image's nginx that nginx.conf uses (real_ip)
-if ! command -v nginx >/dev/null; then
+if ! command -v nginx >/dev/null || ! command -v age >/dev/null; then
   apt-get update -q >/dev/null
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -q nginx libpcre2-dev zlib1g-dev libssl-dev >/dev/null
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -q nginx age libpcre2-dev zlib1g-dev libssl-dev >/dev/null
   service nginx stop >/dev/null 2>&1 || true
 fi
 if ! "$DEV_TOOLS/nginx/sbin/nginx" -V 2>&1 | grep -q "nginx/$NGINX_VERSION" \

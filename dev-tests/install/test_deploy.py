@@ -25,7 +25,9 @@ Checks, without Docker:
     CI set-up action without a release of their own, and the one portal/gs1_dictionary.json was made from;
   * the daily backup (scripts/resolver-backup.sh) with a stand-in "docker": mongodump is given only options
     mongodump has (--nsExclude is mongorestore's: the backup failed on a server with it), a failed dump says
-    ERROR, exits with status 1 and leaves no partial file, a good one writes the archive and says OK;
+    ERROR, exits with status 1 and leaves no partial file, a good one writes the archive and says OK; every archive
+    encrypted with age as it is written (ADR 0044), the key made at the first run, BACKUP_RECIPIENTS, age missing,
+    BACKUP_ENCRYPTION=off; the restore rehearsal decrypting with BACKUP_KEY_FILE; rotate-secrets.sh data;
   * the GeoIP database's monthly update (scripts/geoip-update.sh) with a stand-in "curl": the month's DB-IP file, or the
     previous month's, or GEOIP_URL from .env (never printed with its query string), gzip-compressed or not, checked
     and put in place in one step; a download that is not an MMDB keeps the old file, says ERROR and exits 1; and the
@@ -124,7 +126,8 @@ def backup_checks() -> None:
         stand_in.chmod(0o755)
         run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60,
                              env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
-                                  "RESOLVER_DIR": str(work), "BACKUP_DIR": str(backups)})
+                                  "RESOLVER_DIR": str(work), "BACKUP_DIR": str(backups),
+                                  "BACKUP_KEY_FILE": str(work / "backup.key")})
         left = sorted(p.name for p in backups.iterdir()) if backups.exists() else []
         if outcome == "fails":
             check(run.returncode == 1 and "ERROR: database backup failed" in run.stdout and not left,
@@ -137,14 +140,145 @@ def backup_checks() -> None:
             check("WARNING: the result was not recorded" in run.stdout and run.returncode == 1,
                   "backup: a record that cannot be written is only a warning", run.stdout[-200:])
         else:
-            archives = [n for n in left if n.endswith(".archive.gz")]
+            archives = [n for n in left if n.endswith(".archive.gz.age")]
             check(run.returncode == 0 and " OK " in run.stdout and len(archives) == 1
-                  and (backups / archives[0]).read_text() == "ARCHIVE-BYTES" and not any(n.endswith(".tmp") for n in left),
+                  and decrypt(backups / archives[0], work / "backup.key") == b"ARCHIVE-BYTES"
+                  and not any(n.endswith(".tmp") for n in left),
                   "backup: a good dump writes the archive and says OK", (run.returncode, run.stdout[-200:], left))
             noted = recorded.read_text() if recorded.exists() else ""
             check("BACKUP_OK=1" in noted and f"BACKUP_FILE={backups / archives[0]}" in noted if archives else False,
                   "backup: a good run is recorded with its file", noted[:300])
         shutil.rmtree(work, ignore_errors=True)
+
+
+def decrypt(archive: Path, key: Path) -> bytes | None:
+    """An age archive decrypted with the identity in key; None when it does not decrypt (ADR 0044)."""
+    run = subprocess.run(["age", "-d", "-i", str(key), str(archive)], capture_output=True)
+    return run.stdout if run.returncode == 0 else None
+
+
+def backup_stand_ins(work: Path, dump: str = 'printf "ARCHIVE-BYTES"', portal: bool = True) -> Path:
+    """A bin folder with a stand-in docker: mongodump prints the archive's bytes (or fails), the portal is running
+    (or not) and its configuration archive is CONFIG-BYTES, mongosh's record is kept in work/recorded."""
+    bin_dir = work / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "docker").write_text(
+        "#!/bin/sh\ncase \"$*\" in *mongosh*) echo \"$*\" >> " + str(work / "recorded") + " ;; *mongodump*) " + dump
+        + " ;; *\"ps --status running\"*) " + ("echo portal-service" if portal else "exit 0")
+        + " ;; *\"tar -czf\"*) printf CONFIG-BYTES ;; *) exit 0 ;; esac\n")
+    (bin_dir / "docker").chmod(0o755)
+    return bin_dir
+
+
+def backup_encryption_checks() -> None:
+    """Every archive encrypted with age as it is written (Documentation/adr/0044-encrypted-backups-and-sealed-
+    secrets.md): the key file made at the first run, BACKUP_RECIPIENTS, age missing, a recipient age refuses,
+    BACKUP_ENCRYPTION=off, the retention of the encrypted names."""
+    script = REPO / "scripts" / "resolver-backup.sh"
+    if not shutil.which("age") or not shutil.which("age-keygen"):
+        check(False, "backup encryption: age and age-keygen are installed (sudo apt-get install age)")
+        return
+
+    def run_backup(work: Path, bin_dir: Path, path: str | None = None, **extra) -> subprocess.CompletedProcess:
+        env = {**os.environ, "PATH": path or f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
+               "BACKUP_DIR": str(work / "backups"), "BACKUP_KEY_FILE": str(work / "keys" / "backup.key"), **extra}
+        for name in ("BACKUP_COPY_TO", "BACKUP_RECIPIENTS", "BACKUP_ENCRYPTION"):
+            if name not in extra:
+                env.pop(name, None)
+        return subprocess.run([shutil.which("bash"), str(script)], capture_output=True, text=True, timeout=60, env=env)
+
+    def files(work: Path) -> list[str]:
+        backups = work / "backups"
+        return sorted(p.name for p in backups.iterdir()) if backups.exists() else []
+
+    # the first run: a key made, both archives encrypted to it, nothing in clear on the disk
+    work = Path(tempfile.mkdtemp(prefix="backup-age-test-"))
+    bin_dir, key = backup_stand_ins(work), work / "keys" / "backup.key"
+    first = run_backup(work, bin_dir)
+    left = files(work)
+    db = [n for n in left if n.startswith("resolver-") and n.endswith(".archive.gz.age")]
+    config = [n for n in left if n.startswith("portal-config-") and n.endswith(".tar.gz.age")]
+    check(first.returncode == 0 and key.exists() and (key.stat().st_mode & 0o777) == 0o600
+          and f"NOTICE: a backup key was created in {key}" in first.stdout and "off this server" in first.stdout,
+          "backup encryption: the first run creates the key (mode 600) and says to keep a copy off the server",
+          (first.returncode, first.stdout[-300:]))
+    check(len(db) == 1 and len(config) == 1 and len(left) == 2,
+          "backup encryption: the database's and the configuration's archives are written encrypted (.age), nothing else",
+          left)
+    raw = b"".join((work / "backups" / n).read_bytes() for n in left)
+    check(left and b"ARCHIVE-BYTES" not in raw and b"CONFIG-BYTES" not in raw
+          and raw.startswith(b"age-encryption.org/v1"),
+          "backup encryption: no archive holds its bytes in clear", raw[:60])
+    check(db and decrypt(work / "backups" / db[0], key) == b"ARCHIVE-BYTES"
+          and config and decrypt(work / "backups" / config[0], key) == b"CONFIG-BYTES",
+          "backup encryption: the key decrypts both archives to what was dumped")
+    # a second run keeps the key; a key that is not the file's does not decrypt
+    made = key.read_bytes()
+    shutil.rmtree(work / "backups")
+    second = run_backup(work, bin_dir)
+    other = work / "other.key"
+    subprocess.run(["age-keygen", "-o", str(other)], capture_output=True)
+    left = files(work)
+    check(second.returncode == 0 and "NOTICE" not in second.stdout and key.read_bytes() == made
+          and left and decrypt(work / "backups" / left[0], key) is not None
+          and decrypt(work / "backups" / left[0], other) is None,
+          "backup encryption: a later run keeps the key; another key does not decrypt", (second.stdout[-200:], left))
+    # BACKUP_RECIPIENTS alone (from .env): no key file made, the archive opens with the recipient's own identity
+    shutil.rmtree(work / "backups")
+    key.unlink()
+    public = subprocess.run(["age-keygen", "-y", str(other)], capture_output=True, text=True).stdout.strip()
+    (work / ".env").write_text(f"BACKUP_RECIPIENTS='{public}'\n")
+    third = run_backup(work, bin_dir)
+    left = files(work)
+    check(third.returncode == 0 and not key.exists() and "NOTICE" not in third.stdout
+          and left and all(decrypt(work / "backups" / n, other) is not None for n in left),
+          "backup encryption: BACKUP_RECIPIENTS in .env encrypts to its keys, with no key file on the server",
+          (third.returncode, third.stdout[-200:], left))
+    # a recipient age refuses: ERROR, status 1, no file left, the failure recorded
+    shutil.rmtree(work / "backups")
+    (work / "recorded").unlink(missing_ok=True)
+    (work / ".env").write_text("BACKUP_RECIPIENTS='age1notakey'\n")
+    bad = run_backup(work, bin_dir)
+    noted = (work / "recorded").read_text() if (work / "recorded").exists() else ""
+    check(bad.returncode == 1 and "ERROR" in bad.stdout and not files(work) and "BACKUP_OK=0" in noted,
+          "backup encryption: an encryption that fails fails the run, leaves no file and is recorded",
+          (bad.returncode, bad.stdout[-200:], files(work)))
+    (work / ".env").unlink()
+    # BACKUP_ENCRYPTION=off: the former archives, with a warning
+    shutil.rmtree(work / "backups")
+    off = run_backup(work, bin_dir, BACKUP_ENCRYPTION="off")
+    left = files(work)
+    check(off.returncode == 0 and "WARNING: BACKUP_ENCRYPTION=off" in off.stdout and not key.exists()
+          and any(n.endswith(".archive.gz") for n in left) and not any(n.endswith(".age") for n in left)
+          and (work / "backups" / [n for n in left if n.endswith(".archive.gz")][0]).read_text() == "ARCHIVE-BYTES",
+          "backup encryption: BACKUP_ENCRYPTION=off writes them unencrypted and warns", (off.stdout[-200:], left))
+    wrong = run_backup(work, bin_dir, BACKUP_ENCRYPTION="gpg")
+    check(wrong.returncode == 1 and "BACKUP_ENCRYPTION must be age or off" in wrong.stdout,
+          "backup encryption: another BACKUP_ENCRYPTION is refused", wrong.stdout[-200:])
+    # age missing: ERROR, status 1, nothing written, recorded (a PATH with only what the script needs before age)
+    shutil.rmtree(work / "backups")
+    (work / "recorded").unlink(missing_ok=True)
+    lean = work / "lean"
+    lean.mkdir()
+    for tool in ("readlink", "dirname", "mkdir", "chmod", "date", "sed", "tail", "sh", "cat"):
+        (lean / tool).symlink_to(shutil.which(tool))
+    (lean / "docker").symlink_to(bin_dir / "docker")
+    missing = run_backup(work, bin_dir, path=str(lean))
+    noted = (work / "recorded").read_text() if (work / "recorded").exists() else ""
+    check(missing.returncode == 1 and "ERROR: age is not installed (sudo apt-get install age)" in missing.stdout
+          and not files(work) and "BACKUP_OK=0" in noted and "age is not installed" in noted,
+          "backup encryption: without age the run fails, writes nothing and is recorded", (missing.stdout[-300:], noted))
+    # retention: encrypted archives older than RETENTION_DAYS go, the newer stay
+    (work / "backups").mkdir(exist_ok=True)
+    old = work / "backups" / "resolver-2026-01-01_0230.archive.gz.age"
+    old_config = work / "backups" / "portal-config-2026-01-01_0230.tar.gz.age"
+    for f in (old, old_config):
+        f.write_text("x")
+        os.utime(f, (1, 1))
+    kept = run_backup(work, bin_dir)
+    check(kept.returncode == 0 and not old.exists() and not old_config.exists() and len(files(work)) == 2,
+          "backup encryption: the retention removes encrypted archives too", files(work))
+    shutil.rmtree(work, ignore_errors=True)
 
 
 def backup_copy_checks() -> None:
@@ -161,7 +295,7 @@ def backup_copy_checks() -> None:
         for f in bin_dir.iterdir():
             f.chmod(0o755)
         env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
-               "BACKUP_DIR": str(backups)}
+               "BACKUP_DIR": str(backups), "BACKUP_KEY_FILE": str(work / "backup.key")}
         env.pop("BACKUP_COPY_TO", None)
         if outcome in ("copied", "copy fails"):
             env["BACKUP_COPY_TO"] = "backup@vault.example.org:/srv/resolver/"
@@ -170,7 +304,7 @@ def backup_copy_checks() -> None:
         run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60, env=env)
         calls = copied.read_text() if copied.exists() else ""
         noted = recorded.read_text() if recorded.exists() else ""
-        archives = sorted(backups.glob("resolver-*.archive.gz"))
+        archives = sorted(backups.glob("resolver-*.archive.gz.age"))
         if outcome == "copied":
             check(run.returncode == 0 and " OK " in run.stdout and archives and str(archives[0]) in calls
                   and calls.strip().endswith("backup@vault.example.org:/srv/resolver/") and "--chmod=F600" in calls,
@@ -274,8 +408,14 @@ def rehearsal_checks() -> None:
         check(bool(found), "rehearsal: the counting script is found")
     restored_ok = "resolver_ce.gs1resolver 120\nresolver_portal.users 4\nresolver_portal.journal 900"
     live = "resolver_ce.gs1resolver 125\nresolver_portal.users 4\nresolver_portal.journal 950\nresolver_log.requests 10"
+    key, other = Path(tempfile.mkdtemp()) / "backup.key", Path(tempfile.mkdtemp()) / "other.key"
+    for k in (key, other):
+        subprocess.run(["age-keygen", "-o", str(k)], capture_output=True)
+    public = subprocess.run(["age-keygen", "-y", str(key)], capture_output=True, text=True).stdout.strip()
     for case, restored, restore_exit in (("good", restored_ok, 0), ("no users", "resolver_ce.gs1resolver 120", 0),
-                                         ("restore fails", restored_ok, 1), ("no archive", restored_ok, 0)):
+                                         ("restore fails", restored_ok, 1), ("no archive", restored_ok, 0),
+                                         ("encrypted", restored_ok, 0), ("encrypted, no key", restored_ok, 0),
+                                         ("encrypted, another key", restored_ok, 0)):
         work = Path(tempfile.mkdtemp(prefix="rehearsal-test-"))
         bin_dir, backups, calls, given = work / "bin", work / "backups", work / "calls", work / "stdin"
         bin_dir.mkdir()
@@ -296,12 +436,17 @@ esac
         (work / "live").write_text(live + "\n")
         if case != "no archive":
             (backups / "resolver-2026-10-13_0230.archive.gz").write_text("OLDER")
-            newest = backups / "resolver-2026-10-14_0230.archive.gz"
-            newest.write_text("NEWEST-ARCHIVE")
             os.utime(backups / "resolver-2026-10-13_0230.archive.gz", (1, 1))
-        run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60,
-                             env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
-                                  "BACKUP_DIR": str(backups), "REHEARSAL_WAIT_SECONDS": "4"})
+            if case.startswith("encrypted"):     # the newest is encrypted (ADR 0044), the older one from before
+                subprocess.run(["age", "-r", public, "-o", str(backups / "resolver-2026-10-14_0230.archive.gz.age")],
+                               input=b"NEWEST-ENCRYPTED", capture_output=True)
+            else:
+                (backups / "resolver-2026-10-14_0230.archive.gz").write_text("NEWEST-ARCHIVE")
+        env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
+               "BACKUP_DIR": str(backups), "REHEARSAL_WAIT_SECONDS": "4",
+               "BACKUP_KEY_FILE": str({"encrypted, no key": work / "absent.key",
+                                       "encrypted, another key": other}.get(case, key))}
+        run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60, env=env)
         log = calls.read_text() if calls.exists() else ""
         if case == "good":
             check(run.returncode == 0 and "OK: the archive restores" in run.stdout,
@@ -318,12 +463,27 @@ esac
             check(run.returncode == 1 and "MISSING: resolver_portal.users" in run.stdout,
                   "rehearsal: an archive without the portal's users fails", (run.returncode, run.stdout[-300:]))
         elif case == "restore fails":
-            check(run.returncode == 1 and "ERROR: mongorestore could not restore" in run.stdout
+            check(run.returncode == 1 and "ERROR: the archive could not be restored" in run.stdout
                   and "rm -f resolver-restore-rehearsal" in log.strip().splitlines()[-1],
                   "rehearsal: a failed restore fails, the container still removed", (run.returncode, run.stdout[-300:]))
-        else:
+        elif case == "no archive":
             check(run.returncode == 1 and "ERROR: no archive" in run.stdout and "run -d" not in log,
                   "rehearsal: no archive, no container", (run.returncode, run.stdout[-300:]))
+        elif case == "encrypted":
+            check(run.returncode == 0 and "OK: the archive restores" in run.stdout and ", encrypted)" in run.stdout
+                  and given.exists() and given.read_bytes() == b"NEWEST-ENCRYPTED",
+                  "rehearsal: the newest archive, encrypted, decrypted with BACKUP_KEY_FILE on its way to mongorestore",
+                  (run.returncode, run.stdout[-300:]))
+        elif case == "encrypted, no key":
+            check(run.returncode == 1 and f"the backup key {work / 'absent.key'} is not here" in run.stdout
+                  and "BACKUP_KEY_FILE" in run.stdout and "run -d" not in log,
+                  "rehearsal: an encrypted archive without its key: an error naming BACKUP_KEY_FILE, no container",
+                  (run.returncode, run.stdout[-300:]))
+        else:
+            check(run.returncode == 1 and "ERROR: the archive could not be restored" in run.stdout
+                  and "rm -f resolver-restore-rehearsal" in log.strip().splitlines()[-1],
+                  "rehearsal: another key does not decrypt: the rehearsal fails, the container removed",
+                  (run.returncode, run.stdout[-300:]))
         shutil.rmtree(work, ignore_errors=True)
 
 
@@ -523,6 +683,22 @@ esac
           "rotation: the database refusing the change leaves .env's password alone (status 1)",
           (run.returncode, run.stdout[-300:]))
     shutil.rmtree(work, ignore_errors=True)
+    # the data key (ADR 0044): only when named, the former one kept as PORTAL_DATA_KEY_PREVIOUS
+    env_text_all = env_text
+    env_text = env_text_all + "PORTAL_DATA_KEY='" + "f" * 64 + "'\n"
+    run, new, backups, calls, given, work = rotate([])
+    check(run.returncode == 0 and new["PORTAL_DATA_KEY"] == "f" * 64 and "PORTAL_DATA_KEY_PREVIOUS" not in new,
+          "rotation: the data key is not rotated unless named", run.stdout[-200:])
+    shutil.rmtree(work, ignore_errors=True)
+    run, new, backups, calls, given, work = rotate(["data"])
+    check(run.returncode == 0 and re.fullmatch(r"[0-9a-f]{64}", new["PORTAL_DATA_KEY"]) and new["PORTAL_DATA_KEY"] != "f" * 64
+          and new.get("PORTAL_DATA_KEY_PREVIOUS") == "f" * 64 and new["SESSION_TOKEN"] == old["SESSION_TOKEN"]
+          and "f" * 64 not in run.stdout + run.stderr and new["PORTAL_DATA_KEY"] not in run.stdout + run.stderr
+          and calls.strip().splitlines()[-1] == "compose up -d",
+          "rotation: data gives a new data key, keeps the former as PORTAL_DATA_KEY_PREVIOUS, prints neither",
+          run.stdout[-300:])
+    shutil.rmtree(work, ignore_errors=True)
+    env_text = env_text_all
     run, new, backups, calls, given, work = rotate(["everything"])
     check(run.returncode == 2 and not backups and new["SESSION_TOKEN"] == old["SESSION_TOKEN"],
           "rotation: an unknown name refused before anything changes", run.stdout[-200:])
@@ -1103,6 +1279,7 @@ def main() -> int:
         return 1
     compose_checks()
     backup_checks()
+    backup_encryption_checks()
     backup_copy_checks()
     geoip_checks()
     rehearsal_checks()

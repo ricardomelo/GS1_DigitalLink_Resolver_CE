@@ -4,10 +4,15 @@ Single sign-on per organisation with OpenID Connect (Documentation/adr/0012-sing
 One configuration per organisation and one for the operator, in the collection "sso":
 
     {"_id": "t-…" | "operator", "issuer": "https://login.example.com/tenant/v2.0", "clientId": "…",
-     "clientSecret": "…" (never sent to a browser), "domains": ["acme.example"], "enabled": true, "passwordOff": false,
+     "clientSecret": <sealed> (never sent to a browser), "domains": ["acme.example"], "enabled": true, "passwordOff": false,
      "emailVerifiedOptional": false, "token": "<32 hex>",
      "proofs": [{"domain": "acme.example", "how": "dns" | "admin" | "upgrade", "at", "by", "seenAt", "lapsedAt"}],
      "updated", "updatedBy", "lastLogin", "lastError": {"at", "code", "detail"}}
+
+The client secret is sealed with the data key (sealed.py, Documentation/adr/0044-encrypted-backups-and-sealed-
+secrets.md): the database alone, or a dump of it, does not give it. client_secret() opens it for the token request; a
+secret that no known key opens is never sent (sso.secretUnreadable). seal_stored() seals, at the portal's start, the
+secrets stored in clear by earlier versions and those sealed with an earlier key.
 
 A listed domain signs people in only once proved (Documentation/adr/0025-sso-domain-proof-and-subject.md): a DNS TXT
 record "_gs1resolver.<domain>" holding "gs1resolver-sso=<token>", or a server administrator's approval; a domain is
@@ -36,6 +41,7 @@ import requests
 import domains as domain_proof
 import linkcheck
 import outbound
+import sealed
 import store
 import users
 from users import UserError
@@ -85,7 +91,9 @@ def public(doc: dict) -> dict:
     proofs = {p["domain"]: p for p in doc.get("proofs") or []}
     token = doc.get("token") or ""
     return {"scope": doc["_id"], "issuer": doc.get("issuer") or "", "clientId": doc.get("clientId") or "",
-            "secretSet": bool(doc.get("clientSecret")), "domains": doc.get("domains") or [],
+            "secretSet": bool(doc.get("clientSecret")),
+            "secretUnreadable": bool(doc.get("clientSecret")) and client_secret(doc) is None,
+            "domains": doc.get("domains") or [],
             "domainStates": [{"domain": d, "proof": proofs[d]["how"] if d in proofs else None,
                               "provedAt": store.iso(proofs[d].get("at")) if d in proofs else None,
                               "provedBy": proofs[d].get("by") if d in proofs else None,
@@ -275,6 +283,41 @@ def upgrade() -> int:
     return changed
 
 
+def _place(scope: str) -> str:
+    """The associated data of a configuration's sealed secret: it opens only in that configuration."""
+    return f"sso:{scope}:clientSecret"
+
+
+def client_secret(doc: dict) -> str | None:
+    """The configuration's client secret in clear; "" when it has none; None when it does not open (another key)."""
+    stored = doc.get("clientSecret")
+    if not stored:
+        return ""
+    return sealed.open_value(stored, _place(doc["_id"]))
+
+
+def has_secrets() -> bool:
+    return _col().count_documents({"clientSecret": {"$nin": [None, ""]}}) > 0
+
+
+def seal_stored() -> int:
+    """Seals the secrets stored in clear (earlier versions) and those sealed with an earlier key, each only where the
+    stored value is still the one read. Idempotent; returns the configurations changed. A secret that does not open
+    is left as it is (the screen asks for it again)."""
+    changed = 0
+    for doc in _col().find({"clientSecret": {"$nin": [None, ""]}}):
+        stored = doc["clientSecret"]
+        if not sealed.needs_resealing(stored):
+            continue
+        text = client_secret(doc)
+        if text is None:
+            continue
+        result = _col().update_one({"_id": doc["_id"], "clientSecret": stored},
+                                   {"$set": {"clientSecret": sealed.seal(text, _place(doc["_id"]))}})
+        changed += result.modified_count
+    return changed
+
+
 def save(scope: str, data: dict, by: str) -> dict:
     """Creates or changes a configuration; "clientSecret" replaces the secret when given (not empty), keeps it
     otherwise. Switched on, it needs an issuer, a client ID, a secret and a domain."""
@@ -298,7 +341,7 @@ def save(scope: str, data: dict, by: str) -> dict:
         if isinstance(secret, str) and secret.strip():
             if len(secret) > 500 or not secret.isprintable():
                 raise UserError("sso.secretInvalid")
-            change["clientSecret"] = secret.strip()
+            change["clientSecret"] = sealed.seal(secret.strip(), _place(scope))
         if enabled:
             missing = [name for name, value in (("issuer", issuer), ("clientId", client_id),
                                                 ("clientSecret", change.get("clientSecret") or doc.get("clientSecret")),
@@ -492,13 +535,16 @@ def finish(args, redirect_uri: str, session) -> tuple[str, dict, dict]:
     code = str(args.get("code") or "")
     if not code:
         raise SsoError("sso.expired")
+    secret = client_secret(doc)
+    if secret is None:                      # sealed with a key this installation no longer has (ADR 0044)
+        raise SsoError("sso.secretUnreadable", "the client secret does not open with the data key")
     meta = discovery(doc["issuer"])
     try:
         check_url(meta["token_endpoint"], "sso.discoveryFailed")
         answer = _send("POST", meta["token_endpoint"],
                        headers={"Accept": "application/json", "User-Agent": linkcheck.USER_AGENT},
                        data={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri,
-                             "client_id": doc["clientId"], "client_secret": doc.get("clientSecret", ""),
+                             "client_id": doc["clientId"], "client_secret": secret,
                              "code_verifier": flow["verifier"]})
     except UserError as exc:
         raise SsoError(exc.code, meta.get("token_endpoint", ""))

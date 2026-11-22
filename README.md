@@ -820,7 +820,7 @@ docker compose exec portal-service python create_user.py maria --role editor   #
 # who changed what: user menu → Audit trail (administrators), or the container log:
 docker compose logs -f portal-service | grep portal.audit
 docker compose logs --tail=60 portal-worker                      # imports and link checks (background jobs)
-sudo scripts/resolver-backup.sh                                  # backup now (every database + portal volume)
+sudo scripts/resolver-backup.sh                                  # backup now (every database + portal volume, encrypted)
 sudo scripts/restore-rehearsal.sh                                # prove the newest backup restores (a throw-away container)
 sudo scripts/rotate-secrets.sh                                   # new secrets in .env and in MongoDB; services recreated
 # more replicas: change e.g. WEB_SERVICE_REPLICAS=2 in .env, then
@@ -833,8 +833,10 @@ Set the number of replicas in `.env`, not with `docker compose up --scale`: the 
 (every update) goes back to the numbers in `.env`. The logs of a service show every replica, each line
 prefixed with its container's name.
 
-Backups go to `/var/backups/resolver` (14 days). Restore the database with
-`mongorestore … --archive --gzip --drop` through `docker compose exec -T database-service`, then run
+Backups go to `/var/backups/resolver` (14 days), encrypted with age to the backup key `/etc/resolver-backup.key`:
+**keep a copy of that key off the server**, without it no backup can be restored. Restore the database with
+`age -d -i /etc/resolver-backup.key ARCHIVE.archive.gz.age | … mongorestore … --archive --gzip --drop` through
+`docker compose exec -T database-service`, then run
 `docker compose up -d` (the portal's database user gets the password in `.env` again); the portal's volume
 holds only the fallback session key and copies of older files. The exact commands are in
 [Documentation/extensions/README.md](Documentation/extensions/README.md#daily-backup). Set `BACKUP_COPY_TO` to keep

@@ -603,6 +603,8 @@
  "sso.confirmRemove": "Rimuovere la configurazione di accesso con l'organizzazione? Gli utenti torneranno ad accedere solo con password.",
  "sso.secretSet": "segreto memorizzato",
  "sso.secretMissing": "nessun segreto",
+ "sso.secretUnreadableBadge": "segreto illeggibile — inserirlo di nuovo",
+ "sso.secretUnreadable": "L'accesso unico della Sua organizzazione non può essere usato ora: un amministratore deve inserire di nuovo il segreto del client.",
  "sso.on": "Attivo",
  "sso.off": "Non attivo",
  "sso.passwordOffBadge": "Solo account dell'organizzazione",

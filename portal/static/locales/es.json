@@ -603,6 +603,8 @@
  "sso.confirmRemove": "¿Eliminar la configuración de inicio de sesión de la organización? Los usuarios volverán a iniciar sesión solo con contraseña.",
  "sso.secretSet": "secreto guardado",
  "sso.secretMissing": "sin secreto",
+ "sso.secretUnreadableBadge": "secreto ilegible: introdúzcalo de nuevo",
+ "sso.secretUnreadable": "El inicio de sesión único de su organización no se puede usar ahora: un administrador debe volver a introducir el secreto del cliente.",
  "sso.on": "Activado",
  "sso.off": "Desactivado",
  "sso.passwordOffBadge": "Solo cuenta de la organización",

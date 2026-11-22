@@ -1061,13 +1061,16 @@ resolver's address (GS1 Digital Link URI Syntax 4.11). A server administrator ma
 sees every domain of the installation with its organisation; during support access the list is read only.
 
 **Add a domain**: its name, an optional path stem (one to three parts; a part of only 2 to 4 digits is refused,
-because it would read as a GS1 Application Identifier) and **how it reaches the resolver**:
+because it would read as a GS1 Application Identifier, and so is a first part the server uses for something else —
+`api…`, `swaggerui…`, `portal`, `home`, `.well-known`) and **how it reaches the resolver**:
 
 - **Points at this server** — in DNS, a CNAME (or A/AAAA) record from the domain to the resolver's address. Once the
   domain is verified, the server sets up its site and HTTPS certificate by itself within about 5 minutes; the card says
   *Certificate pending*, then *Served over HTTPS* with the certificate's end date, or *Certificate failed* with the
   reason and the next attempt (usually the DNS does not point here yet; the server tries again, waiting longer each
-  time). The resolver answers on the domain only for your organisation's codes.
+  time). The resolver answers on the domain only for your organisation's codes, and the domain serves nothing else:
+  the portal stays on the installation's address (a link to the portal on your domain leads there) and the official
+  data entry API is not offered on it.
 - **My server redirects** — your own web server answers each scan with a redirect to the resolver, keeping the path
   (without the stem) and the query string. *How to set up each mode* shows the rule for nginx and Apache.
 

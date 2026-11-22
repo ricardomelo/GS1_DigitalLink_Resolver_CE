@@ -11,6 +11,29 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Only the resolver on an organisation's own domain (session 60)
+- **Changed: an organisation's own domain serves its codes and nothing else**
+  ([ADR 0045](../adr/0045-organisation-domains-resolver-only.md)). The host's sites that `scripts/custom-domains.sh`
+  writes for organisations' domains include a rule it writes too (`/etc/nginx/snippets/gs1resolver-domain-paths.conf`):
+  the portal's addresses (`/portal`, `/portal/…`) answer **302** to the same address on the installation's own name
+  (`PORTAL_ORIGIN`, else `RESOLVER_PUBLIC_URL`, else `https://FQDN`), and the official data entry API (`/api…`,
+  `/swaggerui…`) answers **404**. Before, the domain also showed the operator's portal — a sign-in page under a name
+  the organisation controls — and offered the data entry API to the addresses allowed. Codes (with or without the
+  domain's stem), `/.well-known/gs1resolver` and the home page answer as before.
+- **Changed: sites written before are changed by the next run** of `custom-domains.sh` (the installer's cron: within
+  5 minutes of the update): the include put before each `location /`, nginx tested first, a site nginx refuses put back
+  as it was (`ERROR`, shown on the domain cards). `list` names a site without the rule; a site without `location /` is
+  reported and left alone.
+- **Changed: path stems that could never resolve are refused** (`domains.stemInvalid`): a first segment the
+  installation's proxy gives to something other than the resolver — `api…`, `swaggerui…`, `portal`, `home` — or
+  `.well-known`, in any case; the message says so, in the twelve languages. A domain saved before with such a stem
+  keeps it.
+- **Integrators:** the tenant API and the data entry API are called on the installation's name, not on an
+  organisation's domain.
+- **Operators:** after `git pull`: `docker compose up -d --build` (the portal's stem rule); the sites of organisations'
+  domains change by themselves within 5 minutes, or at once with `sudo scripts/custom-domains.sh apply`; check with
+  `sudo scripts/custom-domains.sh list`. Nothing for `.env`. Commit `f6054b0`.
+
 ### Encrypted backups; single sign-on secrets sealed in the database (session 59)
 - **Changed: every backup archive is encrypted** with [age](https://age-encryption.org)
   ([ADR 0044](../adr/0044-encrypted-backups-and-sealed-secrets.md)): `resolver-<time>.archive.gz.age` and

@@ -1667,6 +1667,20 @@ the client's `Host` too: the installation's proxy now writes them as paths, and 
 redirects plain HTTP to its own name. Refusing unknown names with 421 was weighed and not taken. 9 mutations, all
 caught.
 
+## Session 60 — only the resolver on an organisation's domain
+
+Finding F-027 of the security assessment, in one code commit (`f6054b0`;
+[ADR 0045](adr/0045-organisation-domains-resolver-only.md)). The host's site of an organisation's own domain was written
+from the installer's template, which passes every path to the installation: the domain served the operator's portal —
+a sign-in page under a name the organisation controls — and the official data entry API as well as its codes.
+`custom-domains.sh` now writes a rule file that answers the portal's addresses with a redirect to the installation's
+portal and the data entry API with 404, includes it in every organisation's site, and gives it to the sites written
+before at its next run, nginx tested first and a refused site put back. While fixing it, stems such as `/portal` or
+`/api…` turned out to be accepted although codes printed under them could never resolve: the portal refuses them now.
+A list of the names allowed to reach the portal, in the installation's proxy, and a plain 404 for the portal's
+addresses were weighed and not taken. `test_deploy.py` (with a real nginx) and `test_domains.py` gained the checks; 18
+mutations, all caught. The message of a refused stem names the words now, in the twelve languages.
+
 ## Session 59 — encrypted backups and sealed secrets
 
 Finding F-026 of the security assessment, in one code commit (`513b9a5`;

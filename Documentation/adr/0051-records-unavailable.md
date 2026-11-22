@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (22 November 2026) |
+| Status | **Accepted** (22 November 2026); decision 2 and the first residual amended by [ADR 0052](0052-database-time-budget.md) on 22 November 2026 (one time budget for a request's database reads; `Retry-After` follows it) |
 | Backlog item | 10.1, the security assessment ([ADR 0020](0020-security-assessment.md)); the hazards *Unknown codes go to another resolver* (H-14) and *Resolution is unavailable* (H-17) of the [threat model](../threat-model.md); finding F-031 (seen while fixing U-006, [ADR 0050](0050-error-answers.md)) |
 | Decided by | the owner's standing instruction for the assessment's findings, the owner away: the recommended option taken — when the records' database cannot be read, the resolver answers 503 with `Retry-After` and the page that asks to try again, never the answer for a code nobody registered and never the resolver of last resort; the request log counts an error. Not taken: an outcome of its own in the request log (`unavailable`: a new value in the portal's filters, overview and twelve languages, while `error` already says that the resolver failed, and the toolkit's 503 of [ADR 0047](0047-toolkit-processes.md) counts as `error` too); sending the request to the resolver of last resort during an outage (it would answer registered codes with whatever another resolver holds); a cached copy of recent answers served during an outage (a recall withdrawn just before the outage could be served again; a separate item if wanted) |
 | Amends | the official resolver (`web_server/src/web_logic.py`), deliberately, and the fork's [ADR 0018](0018-forwarding.md) (the resolver of last resort); recorded in the CHANGELOG |
@@ -31,7 +31,8 @@ and SSCCs a search for a shorter stored prefix, whose binary search also read a 
    serialised key's stored prefix) goes through it. `_validate_and_fetch_document()` answers it with 503 and
    `RECORDS_UNAVAILABLE` (*The resolver cannot read its records at the moment: try again later*). `web_db` has already
    logged the exception with its traceback ([ADR 0050](0050-error-answers.md)).
-2. **The answer.** `web_namespace._process_response()` adds `Retry-After: 30` (`RECORDS_RETRY_AFTER`) to a 503; a browser
+2. **The answer.** `web_namespace._process_response()` adds `Retry-After: 30` (`RECORDS_RETRY_AFTER`; since
+   [ADR 0052](0052-database-time-budget.md) the request's time budget, 5 by default) to a 503; a browser
    receives the resolver's page *The request could not be completed — Please try again in a moment* (`error.other`,
    already in the twelve languages and used for the toolkit's 503), an app the JSON body with the fixed text. The status
    is the same for a redirect, a linkset, a HEAD request, a compressed link and an EPC binary string.
@@ -61,7 +62,9 @@ and SSCCs a search for a shorter stored prefix, whose binary search also read a 
 
 - Each request during an outage still waits for PyMongo's server selection timeout (30 s by default) before its 503,
   holding one of the server's threads for that time; a shorter timeout for the resolver's connection would answer
-  sooner, at the risk of 503s on a slow but working database.
+  sooner, at the risk of 503s on a slow but working database. *Amended by [ADR 0052](0052-database-time-budget.md)
+  (finding F-032): measured, one request waited for six reads in turn, 180 seconds; every read of a request now shares
+  one time budget, `RESOLVER_DB_TIMEOUT_MS`, 5 seconds by default.*
 - The resolver's caches of domains, forwarding rules, brands and the strict mode keep their last values while the
   portal's database is unreachable (threat model T-R6, H-15), as before.
 - During a whole outage of MongoDB the request log cannot be written either: the outage's scans are mostly missing

@@ -777,14 +777,14 @@ def failing_read(anchor):
 web_db.read_document = failing_read
 r = get(G)
 check("records' database down: a registered code → 503 with Retry-After, not 404", r.status_code == 503
-      and r.headers.get("Retry-After") == web_logic.RECORDS_RETRY_AFTER and int(web_logic.RECORDS_RETRY_AFTER) > 0,
+      and r.headers.get("Retry-After") == web_logic.records_retry_after() == "5", 
       (r.status_code, dict(r.headers)))
 check("…JSON: the fixed text that asks to try again, not 'No document found'", (r.get_json() or {}).get("error")
       == web_logic.RECORDS_UNAVAILABLE and "No document" not in r.get_data(as_text=True), r.get_data(as_text=True)[:200])
 r = get(G + "/10/123", accept="text/html")
 html = r.get_data(as_text=True)
 check("…a browser: the page that asks to try again (error.other), not 'no information registered'",
-      r.status_code == 503 and r.headers.get("Retry-After") == web_logic.RECORDS_RETRY_AFTER
+      r.status_code == 503 and r.headers.get("Retry-After") == web_logic.records_retry_after()
       and PAGE_TEXTS["pt-BR"]["pages"]["error.other.title"] in html
       and PAGE_TEXTS["pt-BR"]["pages"]["error.404.title"] not in html, (r.status_code, html[:300]))
 r = get(G + "?linkType=linkset", accept="application/linkset+json")
@@ -833,6 +833,86 @@ r = get(G)
 check("records' database back: the same code redirected again", r.status_code == 307, r.status_code)
 r = get("/_click?a=" + G + "&l=0&i=0&t=instructions", accept="text/html")
 check("…and the item page's button too", r.status_code == 302, r.status_code)
+
+# ---------------------------------------------------------------- one time budget for the database (ADR 0052, F-032)
+# Every database read of a request shares RESOLVER_DB_TIMEOUT_MS (db_budget.py). Without it each read waited for
+# PyMongo's server selection timeout (30 s) in turn: a GET read six times while MongoDB was unreachable and answered its
+# 503 after three minutes. Run here with the real PyMongo client and nothing listening on the database's address.
+import db_budget  # noqa: E402
+import subprocess  # noqa: E402
+
+saved = os.environ.pop(db_budget.SETTING, None)
+check("time budget: 5 s by default, and Retry-After the same", db_budget.seconds() == 5.0
+      and web_logic.records_retry_after() == "5" and not db_budget.invalid(), db_budget.seconds())
+budgets = {}
+for value in ("2500", "500", "60000", "499", "60001", "0", "-1", "abc", "5s", "2.5", ""):
+    os.environ[db_budget.SETTING] = value
+    budgets[value] = (db_budget.seconds(), web_logic.records_retry_after(), db_budget.invalid())
+check("…RESOLVER_DB_TIMEOUT_MS in milliseconds, Retry-After rounded up to whole seconds",
+      budgets["2500"] == (2.5, "3", False) and budgets["500"] == (0.5, "1", False)
+      and budgets["60000"] == (60.0, "60", False), budgets)
+check("…a value outside 500 to 60000 or not a whole number: the default, and said to be invalid",
+      all(budgets[v] == (5.0, "5", True) for v in ("499", "60001", "0", "-1", "abc", "5s", "2.5"))
+      and budgets[""] == (5.0, "5", False), budgets)
+os.environ.pop(db_budget.SETTING, None)
+if saved is not None:
+    os.environ[db_budget.SETTING] = saved
+check("…the budget wraps the whole application, the domains' middleware included",
+      isinstance(client.application.wsgi_app, db_budget.Budget)
+      and type(client.application.wsgi_app.app).__name__ == "Middleware", type(client.application.wsgi_app))
+
+OUTAGE = r"""
+import json, logging, os, sys, time
+sys.path.insert(0, os.getcwd())
+logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+from __init__ import create_app
+client = create_app().test_client()
+answers = []
+for accept in ("*/*", "text/html", "*/*"):
+    start = time.monotonic()
+    r = client.get("/api/01/09506000134376", headers={"Accept": accept})
+    answers.append([r.status_code, r.headers.get("Retry-After"), r.mimetype, round(time.monotonic() - start, 2),
+                    r.get_data(as_text=True)])
+print(json.dumps(answers))
+"""
+
+
+def outage(budget_ms):
+    """A GET three times with the real resolver and PyMongo, nothing listening on the database's address."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("RESOLVER_DB_", "MONGO_", "DATA_ENTRY_DB_"))}
+    env.update({"RESOLVER_DB_USERNAME": "resolver_web", "RESOLVER_DB_PASSWORD": "pw-of-its-own",
+                "RESOLVER_DB_HOST": "127.0.0.1:9", "FQDN": "id.example.org", "RESOLVER_DB_TIMEOUT_MS": budget_ms})
+    try:
+        run = subprocess.run([sys.executable, "-c", OUTAGE], cwd=os.path.join(REPO, "web_server", "src"), env=env,
+                             capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return None, "more than 60 s"
+    try:
+        return json.loads(run.stdout.strip().splitlines()[-1]), run.stderr
+    except (ValueError, IndexError):
+        return None, run.stderr[-500:]
+
+
+answers, log_text = outage("500")
+first = answers[0] if answers else [None] * 5
+check("MongoDB unreachable (the real PyMongo client, a 0.5 s budget): 503 within the budget, not after each read's 30 s",
+      answers is not None and first[0] == 503 and first[3] is not None and first[3] < 2.5,
+      [a[:4] for a in answers] if answers else log_text)
+check("…JSON: the text that asks to try again, Retry-After of the budget in whole seconds (1)",
+      answers is not None and first[1] == "1" and web_logic.RECORDS_UNAVAILABLE in first[4], first)
+TRY_AGAIN = {texts["pages"]["error.other.title"] for texts in PAGE_TEXTS.values()}
+check("…a browser: the page that asks to try again, within the budget too", answers is not None
+      and answers[1][0] == 503 and answers[1][2] == "text/html" and answers[1][1] == "1" and answers[1][3] < 2.5
+      and any(title in answers[1][4] for title in TRY_AGAIN), answers and answers[1][:4])
+check("…the next request: within the budget as well (the caches keep their last values)", answers is not None
+      and answers[2][0] == 503 and answers[2][3] < 2.5, answers)
+check("…the budget written in the resolver's log at start", "A request may spend 0.5 s reading MongoDB" in log_text,
+      log_text[-300:])
+answers, log_text = outage("abc")
+check("…an invalid RESOLVER_DB_TIMEOUT_MS: a warning at start and the default of 5 s",
+      "RESOLVER_DB_TIMEOUT_MS must be a whole number of milliseconds from 500 to 60000: 5000 is used" in log_text
+      and "A request may spend 5.0 s reading MongoDB" in log_text and answers is not None
+      and answers[0][0] == 503 and answers[0][1] == "5" and 4.5 < answers[0][3] < 8, (answers, log_text[-300:]))
 
 # ---------------------------------------------------------------- the engine in the resolver's process (gs1_syntax.py)
 ENGINE_DIR = os.environ.get("GS1_SYNTAX_ENGINE_DIR")

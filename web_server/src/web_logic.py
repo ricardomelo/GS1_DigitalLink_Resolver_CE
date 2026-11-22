@@ -1,6 +1,7 @@
 import functools
 import json
 import logging
+import math
 import os
 import re
 import subprocess
@@ -10,6 +11,7 @@ from urllib.parse import quote, unquote
 
 from flask import has_request_context, request
 
+import db_budget
 import domains
 
 import gs1_syntax
@@ -28,7 +30,12 @@ INTERNAL_ERROR = "Internal server error: see the resolver's log"
 # Documentation/adr/0051-records-unavailable.md). The official code read web_db's 500 like its 404: during an outage
 # every scan was "no information registered", counted as an unknown code and sent to the resolver of last resort.
 RECORDS_UNAVAILABLE = "The resolver cannot read its records at the moment: try again later"
-RECORDS_RETRY_AFTER = '30'
+
+
+def records_retry_after() -> str:
+    """Retry-After of that 503: the request's time budget for the database in whole seconds (finding F-032,
+    Documentation/adr/0052-database-time-budget.md), as long as the request has already waited for it."""
+    return str(max(1, math.ceil(db_budget.seconds())))
 
 
 class RecordsUnavailable(Exception):

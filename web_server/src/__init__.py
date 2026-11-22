@@ -5,6 +5,7 @@ from flask_cors import CORS
 import logging
 import os
 from typing import Any
+import db_budget
 import domains
 import example_secrets
 import forwarding
@@ -49,6 +50,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     # initialise the MongoDB connection
     init_mongo(app)
     logger.info("MongoDB connection initialised")
+    # the time a request may spend reading MongoDB (finding F-032, Documentation/adr/0052-database-time-budget.md)
+    if db_budget.invalid():
+        logger.warning("%s must be a whole number of milliseconds from %d to %d: %d is used.", db_budget.SETTING,
+                       db_budget.MIN_MS, db_budget.MAX_MS, db_budget.DEFAULT_MS)
+    logger.info("A request may spend %.1f s reading MongoDB", db_budget.seconds())
 
     with app.app_context():
         # setting up a blueprint for your API routes
@@ -93,6 +99,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     if domains.MAP.database is None:
         domains.MAP.database = lambda: mongo.cx[domains.portal_db_name()]
     app.wsgi_app = domains.Middleware(app.wsgi_app)
+    # every database read of a request, the domains' above included, within one time budget (finding F-032,
+    # Documentation/adr/0052-database-time-budget.md)
+    app.wsgi_app = db_budget.Budget(app.wsgi_app)
     # The brands of the item's page (Documentation/adr/0011-item-page.md), from the same database
     if landing.BRANDS.database is None:
         landing.BRANDS.database = lambda: mongo.cx[domains.portal_db_name()]

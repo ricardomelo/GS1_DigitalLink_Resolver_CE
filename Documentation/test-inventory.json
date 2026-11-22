@@ -213,7 +213,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_37101b2e718…)",
+    "a wrong key is refused (rk_0d57dd0a33d…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -1116,9 +1116,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (272 features)",
+    "features.md: every table has a Checks column (273 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (607 references)",
+    "…each reference names a program of the inventory (612 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (82)",
     "…and the inventory holds no program that no longer exists",
@@ -1129,8 +1129,8 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (51)",
-    "every relative link of the documents leads to a file (67 documents)"
+    "…and every decision record (52)",
+    "every relative link of the documents leads to a file (68 documents)"
    ],
    "count": 15,
    "ciOnly": false
@@ -3743,7 +3743,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:46735/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:42429/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",
@@ -5989,6 +5989,16 @@
     "…an invalid code: still 400 (the syntax is checked before the database)",
     "records' database back: the same code redirected again",
     "…and the item page's button too",
+    "time budget: 5 s by default, and Retry-After the same",
+    "…RESOLVER_DB_TIMEOUT_MS in milliseconds, Retry-After rounded up to whole seconds",
+    "…a value outside 500 to 60000 or not a whole number: the default, and said to be invalid",
+    "…the budget wraps the whole application, the domains' middleware included",
+    "MongoDB unreachable (the real PyMongo client, a 0.5 s budget): 503 within the budget, not after each read's 30 s",
+    "…JSON: the text that asks to try again, Retry-After of the budget in whole seconds (1)",
+    "…a browser: the page that asks to try again, within the budget too",
+    "…the next request: within the budget as well (the caches keep their last values)",
+    "…the budget written in the resolver's log at start",
+    "…an invalid RESOLVER_DB_TIMEOUT_MS: a warning at start and the default of 5 s",
     "the GS1 Barcode Syntax Engine loads in the resolver's process",
     "in-process answers equal Node.js's for 19 URIs, valid and invalid",
     "…and for element strings",
@@ -6022,7 +6032,7 @@
     "…an EPC binary string too",
     "…and a compression asked for answers 503 in its body"
    ],
-   "count": 289,
+   "count": 299,
    "ciOnly": false
   },
   "safety_warnings": {

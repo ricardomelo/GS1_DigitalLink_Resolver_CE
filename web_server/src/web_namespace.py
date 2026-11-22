@@ -335,7 +335,7 @@ def _unavailable(path: str, reason: Exception) -> Response | tuple[Any, int]:
 def _records_unavailable(path: str) -> Response | tuple[Any, int]:
     """503 with Retry-After when the records' database could not be read (finding F-031,
     Documentation/adr/0051-records-unavailable.md): the page that asks to try again, or JSON; web_db logged the cause."""
-    headers = {'Retry-After': web_logic.RECORDS_RETRY_AFTER}
+    headers = {'Retry-After': web_logic.records_retry_after()}
     if _wants_html():
         return Response(web_pages.render_error(503, path, None, None, None), status=503, mimetype='text/html',
                         headers=headers)
@@ -513,7 +513,7 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
     if status == 503:
         # the records' database could not be read: try again, never "unknown", never the resolver of last resort; the
         # request log counts an error (finding F-031, Documentation/adr/0051-records-unavailable.md)
-        headers['Retry-After'] = web_logic.RECORDS_RETRY_AFTER
+        headers['Retry-After'] = web_logic.records_retry_after()
     # the request's path and the level that answered (or holds the withheld link), for the notice on the pages
     # (ADR 0022, sections 2.3 and 2.4)
     walked = (web_logic._encoded_identifier(identifiers) + (qualifier_path or '').rstrip('/'), answered) \

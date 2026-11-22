@@ -192,7 +192,8 @@ switched off): the resolver not answering, a daily backup that failed or is late
 expire, and spikes of scans of codes nobody registered (an organisation's administrators receive these for its codes
 only); an organisation's administrators also receive, under the same choice, the DNS record of one of its domains gone
 missing and a forwarding rule of the server administrators that starts or stops sending its codes to another resolver
-(the message names the prefix, the destination and the organisation's prefixes covered). Select **Save preferences**.
+(the message names the prefix, the destination and the organisation's prefixes covered), or that already sends the
+codes of a prefix the organisation has just been given. Select **Save preferences**.
 
 ## 4. The editor at a glance
 
@@ -1056,7 +1057,10 @@ answer itself ([ADR 0018](adr/0018-forwarding.md)):
   Each change that sends an organisation's codes elsewhere, or stops doing so (a rule added or removed while on,
   switched on or off, given another destination or way of sending), is recorded in that organisation's own audit
   trail and its administrators receive an alert by e-mail
-  ([ADR 0046](adr/0046-forwarding-tells-organisations.md)); changing only the note tells nobody.
+  ([ADR 0046](adr/0046-forwarding-tells-organisations.md)); changing only the note tells nobody. Likewise, when
+  a server administrator gives an organisation (in **Organisations**) a prefix that a rule switched on already covers,
+  the event *Prefix covered by a forwarding rule* is recorded in its audit trail and its administrators receive an
+  alert naming the rule ([ADR 0054](adr/0054-forwarding-tells-new-prefixes.md)).
 - **When the resolver cannot read these settings.** The resolver reads them again every 30 seconds. If it cannot read
   them for 15 minutes (the operator's setting `RESOLVER_SETTINGS_MAX_AGE_S`), it no longer forwards anything — no
   rule, no resolver of last resort — and shows the item's pages without the organisations' brands, until it reads them

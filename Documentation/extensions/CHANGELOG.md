@@ -13,6 +13,21 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### An organisation given a prefix a forwarding rule covers is told (session 69)
+- **Changed: an organisation learns that a prefix it has just been given is already forwarded**
+  ([ADR 0054](../adr/0054-forwarding-tells-new-prefixes.md), completing session 61's change). Since session 61 an
+  organisation is told when a forwarding rule starts or stops sending its codes elsewhere; it was not told when a
+  server administrator gave it, in *Organisations*, a prefix that a rule switched on already covers, so its
+  administrators could keep records no scan would reach. Now, when an organisation is created or its prefixes change,
+  each such rule is an event *Prefix covered by a forwarding rule* in its own audit trail (by the operator) and an
+  e-mail alert to its administrators, *A forwarding rule sends codes of prefix … to another resolver* (the prefixes
+  given, the destination, when). The same prefixes saved again, prefixes taken away, or a rule that is off tell
+  nobody.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`; the message needs e-mail set up.
+  Commit `3941d91`.
+- **Translators:** one new e-mail message (`forwarding-covered`) and one text (`audit.action.forwarding-covered`),
+  drafts in ten languages.
+
 ### Settings the resolver cannot read again expire after 15 minutes (session 68)
 - **Fixed: settings the resolver cannot read again no longer apply for ever**
   ([ADR 0053](../adr/0053-settings-age.md); a deliberate change to the official resolver's heartbeat, which gains a

@@ -1857,3 +1857,14 @@ appearance stop and the domains, strict mode and retention are kept, with an err
 heartbeat and a new alert of the portal's monitor (two messages in twelve languages). Dropping every cache, only
 alerting and answering 503 to every scan were weighed and not taken. New program `test_settings_age.py` (38 checks);
 `test_monitor.py` gained 14; 20 mutations, 18 caught and 2 equivalent.
+
+## Session 69 — an organisation given a prefix a forwarding rule covers is told
+
+Residual (3) of the order proposed in session 66, the first residual of finding F-028 (session 61), in one code commit
+(`3941d91`; [ADR 0054](adr/0054-forwarding-tells-new-prefixes.md), amending ADR 0046). Checked first in the code: the
+routes that create an organisation or change its prefixes wrote only `tenant-create` / `tenant-update`, so an
+organisation given a prefix that a rule switched on already covered was told nothing. Now each such rule is the event
+`forwarding-covered` in its own trail, by the operator, and an alert to its administrators (one message in twelve
+languages); the same prefixes saved again, prefixes taken away and rules switched off tell nobody. Refusing such a
+prefix and a confirmation step on the *Organisations* screen were weighed and not taken. `test_forwarding.py` 75 → 90;
+11 mutations, all caught.

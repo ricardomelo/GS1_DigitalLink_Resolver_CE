@@ -1667,6 +1667,21 @@ the client's `Host` too: the installation's proxy now writes them as paths, and 
 redirects plain HTTP to its own name. Refusing unknown names with 421 was weighed and not taken. 9 mutations, all
 caught.
 
+## Session 57 — a queued import and its account
+
+Finding F-024 of the security assessment, in one code commit (`4bb4928`;
+[ADR 0041](adr/0041-queued-import-account.md)). An import is applied in the browser and written later by the worker,
+which set the scope once, when it took the job, from the account as it then was — or from an empty account when it had
+been removed, which is the operator's scope with every prefix. An administrator who removed, disabled or demoted the
+person, or disabled the organisation, after *Apply* did not stop the records being written in that person's name. The
+worker now reads the account before each record, as every request does, and stops the import (`import.accountChanged`,
+journalled as `import-refused` in the organisation's trail with the reason and the counts) when the account was
+removed, made again under the same name (the job keeps the organisation and creation date of the account that prepared
+it), disabled, its organisation disabled, or it is no longer an editor; prefixes taken meanwhile fail the next records.
+Cancelling queued imports from every place that changes an account, and keeping the role of the moment of *Apply*,
+were weighed and not taken. `test_jobs.py` 100 → 116 checks; 13 mutations, all caught. Two new texts in the twelve
+languages.
+
 ## Session 56 — malformed request bodies
 
 Findings F-023 and F-029 of the security assessment, in one code commit (`eda6315`;

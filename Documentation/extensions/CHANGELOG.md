@@ -11,6 +11,18 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### A queued import stops when its account may no longer write (session 57)
+- **Changed: a queued import writes only while its account may.** The worker reads the account again before each
+  record, as every request does: when an administrator removes or disables the account, disables its organisation or
+  makes it a reader after *Apply*, the import stops before the next record (*The import stopped: the account that
+  applied it was removed or disabled…*, `import.accountChanged`); the records written before stay. An account removed
+  and made again under the same name is another account. A prefix taken from the user while the import runs fails the
+  next records one by one, instead of only the next import ([ADR 0041](../adr/0041-queued-import-account.md)).
+- **New in the audit trail: *Import stopped: the account could no longer write*** (`import-refused`), in the trail of
+  the organisation the import was for, with the reason and how many records were written and left.
+- **Fixed:** a removed account's queued import ran as an empty account, in the operator's scope.
+- Corrects finding F-024 of the security assessment. Commit `4bb4928`.
+
 ### Malformed request bodies refused before the route (session 56)
 - **Changed: a malformed body is answered with what is wrong, never with an error 500.** Every write to the portal's
   API, the organisations' API included, must send one JSON object; anything else — an array, a text, a number, `null`,

@@ -722,6 +722,13 @@ while it runs. The records already written stay, and the dialog lists them with 
 (*Import stopped. Created: 3 · Updated: 0 · Failed: 0 · Not imported: 5*). Importing the same file again later
 completes it: the records already there are updated, not duplicated.
 
+The import is written in the name of the person who applied it, with what that person may do at each record. If an
+administrator removes or disables the account, disables the organisation, or makes the person a reader before the
+import ends, it stops before the next record: *The import stopped: the account that applied it was removed or
+disabled, its organisation was disabled, or it may no longer change records.* The records written before stay, and
+the audit trail shows *Import stopped: the account could no longer write* with how many were written and left. A
+GS1 Company Prefix taken from the person meanwhile fails the remaining records of that prefix, one by one.
+
 A serial number is written as in the label — `(22)V1(10)B42(21)S1` — and imported the same way: the
 record is the serial number's, and the variant and batch are kept with it as information. When an import
 changes the batch of an existing serial number, the preview shows the one it had (*before: …*).

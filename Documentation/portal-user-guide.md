@@ -1057,6 +1057,11 @@ answer itself ([ADR 0018](adr/0018-forwarding.md)):
   switched on or off, given another destination or way of sending), is recorded in that organisation's own audit
   trail and its administrators receive an alert by e-mail
   ([ADR 0046](adr/0046-forwarding-tells-organisations.md)); changing only the note tells nobody.
+- **When the resolver cannot read these settings.** The resolver reads them again every 30 seconds. If it cannot read
+  them for 15 minutes (the operator's setting `RESOLVER_SETTINGS_MAX_AGE_S`), it no longer forwards anything — no
+  rule, no resolver of last resort — and shows the item's pages without the organisations' brands, until it reads them
+  again; the server administrators receive the alert *Resolver's settings* by e-mail
+  ([ADR 0053](adr/0053-settings-age.md)).
 
 A destination is never this installation or one of its organisations' domains (the requests would come back). Every
 change is in the audit trail and reaches the resolver within 30 seconds. The overview shows how many requests each
@@ -1315,8 +1320,9 @@ organisation's users see its spikes of codes nobody registered).
 
 **Operation** (server administrator only). Whether the job worker runs, whether e-mail is on, up to which day the
 daily counts are complete, the installation's active alerts and the state of each check of the monitoring: the
-resolver through the proxy, the daily backup, the HTTPS certificate, the request log's space, the GCP length table
-(the date and age of GS1's list in use) and the audit trail's integrity (when its chains were last verified). The server administrator can also choose an
+resolver through the proxy, the resolver's settings (whether it can still read what this portal sets), the daily
+backup, the HTTPS certificate, the request log's space, the GCP length table (the date and age of GS1's list in use)
+and the audit trail's integrity (when its chains were last verified). The server administrator can also choose an
 **Organisation** at the top of the page: the figures are then that organisation's, as its administrators see them (or
 the operator's codes); Operation stays the installation's.
 

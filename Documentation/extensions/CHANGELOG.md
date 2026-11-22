@@ -13,6 +13,25 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### Settings the resolver cannot read again expire after 15 minutes (session 68)
+- **Fixed: settings the resolver cannot read again no longer apply for ever**
+  ([ADR 0053](../adr/0053-settings-age.md); a deliberate change to the official resolver's heartbeat, which gains a
+  field). The resolver keeps what the portal sets (forwarding, the organisations' domains and brands, the strict mode,
+  the appearance, the request log's retention) and reads it again every 30 to 60 seconds; when it could not read it,
+  it went on with the last values for as long as it ran, telling nobody, so that a forwarding rule or the resolver of
+  last resort switched off in the portal could keep sending scans to another resolver. Now, after 15 minutes without
+  reading them, it applies no forwarding rule and no resolver of last resort (the scan is answered by this resolver's
+  records) and shows the item's pages without the organisations' brands and with the original appearance, until it
+  reads them again; it keeps the domains, the strict mode and the retention, whose absence would loosen what it
+  answers. Its log has an error line, `GET /heartbeat` answers `"settings": "stale"` (else `"current"`), and the
+  portal's server administrators receive the alert *Resolver's settings* by e-mail (new check in the overview's
+  Operation and in *Alerts*), with a message when it reads them again.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`: the optional setting
+  `RESOLVER_SETTINGS_MAX_AGE_S` (seconds, 60 to 86400, default 900) changes the limit; the resolver's log says it at
+  start. Commit `5df16ce`.
+- **Translators:** two new e-mail messages (`alert-settings-stale`, `alert-settings-current`) and three texts
+  (`alerts.kind.settings`, `overview.alert.settings`, `overview.check.settings`), drafts in ten languages.
+
 ### An outage of the database answered within seconds (session 67)
 - **Fixed: while the resolver cannot reach MongoDB, each scan is answered within 5 seconds**
   ([ADR 0052](../adr/0052-database-time-budget.md); a deliberate change to the official resolver's connection). A

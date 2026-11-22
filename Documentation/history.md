@@ -1845,3 +1845,15 @@ selection timeout, where F-031 had counted one. All the reads of a request now s
 (`RESOLVER_DB_TIMEOUT_MS`, 5 seconds by default, `pymongo.timeout()` around the whole application), and the 503's
 `Retry-After` follows it. A shorter server selection timeout alone, a circuit breaker and the same budget for the data
 entry API were weighed and not taken. `test_resolver.py` gained 10 checks; 10 mutations, all caught.
+
+## Session 68 — settings the resolver cannot read again expire
+
+Finding F-033 of the security assessment (the threat model's T-R6 and H-15, residual (2) of the order proposed in
+session 66), in one code commit (`5df16ce`; [ADR 0053](adr/0053-settings-age.md)). Run first: a forwarding rule and the
+resolver of last resort read once, then every read of the portal's database failing and the rule disabled there, were
+still applied after thirty days. Each of the six caches of the portal's settings now notes its last good read
+(`settings_age.py`); after `RESOLVER_SETTINGS_MAX_AGE_S` (15 minutes) of failed reads, forwarding, brands and
+appearance stop and the domains, strict mode and retention are kept, with an error line in the log, `settings` in the
+heartbeat and a new alert of the portal's monitor (two messages in twelve languages). Dropping every cache, only
+alerting and answering 503 to every scan were weighed and not taken. New program `test_settings_age.py` (38 checks);
+`test_monitor.py` gained 14; 20 mutations, 18 caught and 2 equivalent.

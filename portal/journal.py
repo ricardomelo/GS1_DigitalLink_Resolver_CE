@@ -9,7 +9,8 @@ daily backup with the rest of the database. Queries use indexes on the date, the
 Event: {"at", "user", "action", "category", "tenant"?, "byOperator"?, "anchor"?, "qpath"?, "doc"?, "detail"?,
         "expiresAt"?}
   record actions: create, update, delete (doc = the record after the change, or before a deletion),
-  import (detail = counts); others: login, login-failed, login-refused, logout, password-change, user-create,
+  import (detail = counts); others: import-refused (a queued import stopped because its account may no longer write,
+  ADR 0041), login, login-failed, login-refused, logout, password-change, user-create,
   user-update, user-reset, user-remove, user-create-refused (an organisation's administrator tried a user name
   held by another organisation; in the operator's trail, ADR 0036), export, tenant-create, tenant-update, tenant-remove, support-open,
   support-close, and with e-mail (Documentation/adr/0004-e-mail.md) password-recovery (a recovery link was

@@ -25,7 +25,9 @@ the browser use it to tell "waiting in the queue" from "no worker is running".
 Document of a job:
   {_id: token, type: "import" | "linkcheck" | "mail", user, state, created, queuedAt, startedAt, finishedAt,
    heartbeat, worker, attempts, done, total, expiresAt, error, notBefore, cancelRequested, ...the fields of its type}
-  import:    plan, keyRecords, results (one per record written, in plan order: len(results) == done)
+  import:    plan, keyRecords, results (one per record written, in plan order: len(results) == done), tenant and
+             accountCreated (the organisation and creation date of the account that prepared it: the worker writes
+             only while the account is still that one, Documentation/adr/0041-queued-import-account.md)
   linkcheck: scope ("all" | "list"), urls ([{url, records: [record keys]}]), problems,
              records ([{record, problems}], scope "all")
   mail:      to, subject, text, html, template, tries, lastError (Documentation/adr/0004-e-mail.md,

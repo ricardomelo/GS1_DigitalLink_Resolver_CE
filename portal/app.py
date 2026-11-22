@@ -2209,8 +2209,10 @@ def import_preview():
         anchor = gs1.anchor_for(item["key"], item["value"]) if item.get("action") in ("create", "update") else None
         if anchor in key_records:
             item["noKeyRecord"] = True
+    # the account that prepared it: the worker writes only while it is still this account, able to (F-024, ADR 0041)
     token = jobs.create("import", g.user, "prepared", len(plan), plan=_storable_plan(plan),
-                        keyRecords=_storable_plan(key_records.values()), results=[])
+                        keyRecords=_storable_plan(key_records.values()), results=[],
+                        tenant=g.account_tenant, accountCreated=(users.get(g.user) or {}).get("created"))
     counts = {action: sum(1 for i in report if i["action"] == action)
               for action in ("create", "update", "unchanged", "error")}
     errors.sort(key=lambda e: e["row"])
@@ -2227,10 +2229,33 @@ def _storable_plan(plan) -> list[dict]:
     return [{**item, "pairs": [list(p) for p in item["pairs"]]} for item in plan]
 
 
+def import_refusal(job: dict, account: dict | None) -> str | None:
+    """Why the account of a queued import may no longer write its records (ADR 0041), or None: "removed" (no
+    account), "replaced" (an account of the same name made after the preview, or of another organisation),
+    "disabled", "organisation" (its organisation disabled or removed) or "role" (below editor). Jobs prepared
+    before the job kept the account's organisation and date are compared on what they have."""
+    if account is None:
+        return "removed"
+    if ("accountCreated" in job and account.get("created") != job["accountCreated"]
+            or "tenant" in job and account.get("tenant") != job["tenant"]):
+        return "replaced"
+    if account.get("disabled"):
+        return "disabled"
+    if tenant_blocked(account):
+        return "organisation"
+    if users.ROLES.index(account.get("role", "reader")) < users.ROLES.index("editor"):
+        return "role"
+    return None
+
+
 def run_import_job(job: dict, reporter: "jobs.Reporter") -> None:
     """Worker: writes the records of a confirmed import one by one with the editor's call sequence, from the
     first one not yet done (a job interrupted by a worker that stopped continues where it was; writing a
     record again is safe: the data entry API ends in the same state). Logs the import when done.
+
+    Before each record the account is read again, as a request would read it (ADR 0041): its role, organisation
+    and prefixes as they are now. An account removed, replaced, disabled, of a disabled organisation or no longer an
+    editor stops the import (failed, import.accountChanged); the records written before stay.
     """
     user = job["user"]
     plan = job["plan"]
@@ -2243,10 +2268,25 @@ def run_import_job(job: dict, reporter: "jobs.Reporter") -> None:
         log_event("import", detail=detail)
         return counts
 
+    def refused(reason: str, account: dict | None) -> None:
+        counts = {a: sum(1 for r in results if r["action"] == a) for a in ("created", "updated", "failed")}
+        detail = " ".join(f"{k}={v}" for k, v in {"reason": reason, **counts, "left": len(plan) - len(results)}.items())
+        audit.warning("user=%s action=import-refused %s", user, detail)
+        # in the trail of the organisation the import was for, whatever the account is now
+        trail = job["tenant"] if "tenant" in job else (account or {}).get("tenant")
+        log_event("import-refused", tenant=trail, actor_tenant=trail, user=user, detail=detail)
+        reporter.give_up("import.accountChanged")
+
     with app.test_request_context():
-        set_scope(user, users.get(user) or {})          # store_record logs and records who changed it
         for index in range(len(results), len(plan)):
             reporter.check_stop()                       # between records: a stopping worker hands the job back
+            # read again before each record: the role, organisation and prefixes a request would see now
+            account = users.get(user)
+            reason = import_refusal(job, account)
+            if reason:
+                refused(reason, account)
+                return
+            set_scope(user, account)                    # store_record logs and records who changed it
             item = plan[index]
             pairs = [tuple(p) for p in item["pairs"]]
             ai, value = gs1.split_anchor(item["anchor"])

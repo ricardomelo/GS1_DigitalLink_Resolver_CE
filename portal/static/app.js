@@ -5202,7 +5202,7 @@ async function pollImport() {
   if (status.state === "failed") {
     clearInterval(importState.polling);
     stop.hidden = true;
-    importStatus("error", status.error || "job.failed");
+    importStatus("error", status.error || "job.failed", { done: status.done, total: status.total });
     return;
   }
   if (status.state !== "finished" && status.state !== "cancelled") {

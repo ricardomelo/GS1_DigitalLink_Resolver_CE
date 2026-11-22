@@ -425,6 +425,184 @@ status = web.get(f"/portal/api/import/status?token={p['token']}").get_json()
 check("an unexpected error: status failed with job.failed", status["state"] == "failed" and status["error"] == "job.failed",
       status)
 
+# ------------------------------------------------------------------ the account read again before each record (F-024)
+# Documentation/adr/0041-queued-import-account.md: a queued import writes only while its account is still the one that
+# prepared it, enabled, of an enabled organisation and an editor; its role, organisation and prefixes as they are now.
+import tenants  # noqa: E402
+
+
+def gtin_of(prefix, n):
+    body = f"{prefix}{n:05d}"
+    total = sum(int(d) * (3 if i % 2 == 0 else 1) for i, d in enumerate(reversed(body)))
+    return "0" + body + str((10 - total % 10) % 10)
+
+
+def sheet_of(prefix, first, count):
+    return HEADER + "".join(f"01;{gtin_of(prefix, n)};;Item {n};gs1:pip;https://example.org/item/{n};en\n"
+                            for n in range(first, first + count))
+
+
+def signed_in(name, password="a-long-test-password"):
+    c = portal.app.test_client()
+    r = c.post("/portal/api/login", json={"username": name, "password": password})
+    assert r.status_code == 200, r.get_json()
+    return c
+
+
+def applied(c, text):
+    p = c.post("/portal/api/import/preview", json={"filename": "x.csv", "labels": {},
+                                                   "content": base64.b64encode(text.encode()).decode()}).get_json()
+    r = c.post("/portal/api/import/apply", json={"token": p["token"]})
+    assert r.status_code == 202, r.get_json()
+    return p["token"]
+
+
+def written(prefix, first, count):
+    return [f"01_{gtin_of(prefix, n)}" in mock_data_entry.DB for n in range(first, first + count)]
+
+
+def refusals():
+    return list(store.col("journal").find({"action": "import-refused"}).sort("at", 1))
+
+
+def refused_as(token, done):
+    doc = job(token)
+    return doc["state"] == "failed" and doc["error"] == "import.accountChanged" and doc["done"] == done
+
+
+users.create("edda", "a-long-test-password", "editor", must_change=False)
+edda = signed_in("edda")
+token = applied(edda, sheet_of("9506001", 1, 3))
+doc = job(token)
+check("F-024: the job keeps the organisation and creation date of the account that prepared it",
+      doc.get("tenant", "absent") is None and doc.get("accountCreated") == users.get("edda")["created"], doc)
+
+users.update("edda", role="reader")
+w.run_once()
+check("F-024: an editor made a reader after Apply: the import stops before its first record (failed, accountChanged)",
+      refused_as(token, 0) and written("9506001", 1, 3) == [False] * 3, job(token))
+check("F-024: the refusal is in the journal under the user, in the operator's trail, with the reason and what was left",
+      [(e["user"], e.get("tenant"), e["detail"]) for e in refusals()]
+      == [("edda", None, "reason=role created=0 updated=0 failed=0 left=3")], refusals())
+r = edda.get(f"/portal/api/import/status?token={token}")
+check("F-024: as a reader the user no longer reads the import (access.role)", r.status_code == 403, r.get_json())
+users.update("edda", role="editor")
+status = edda.get(f"/portal/api/import/status?token={token}").get_json()
+check("F-024: the status says failed with import.accountChanged and what was done",
+      status["state"] == "failed" and status["error"] == "import.accountChanged" and status["done"] == 0, status)
+
+# the role lowered while the import runs: the records written before stay, the next ones are not written
+token = applied(edda, sheet_of("9506001", 10, 4))
+calls = {"n": 0}
+
+
+def demoting_store_record(*args):
+    calls["n"] += 1
+    result = real_store_record(*args)
+    if calls["n"] == 2:
+        users.update("edda", role="reader")
+    return result
+
+
+portal.store_record = demoting_store_record
+w.run_once()
+portal.store_record = real_store_record
+check("F-024: a reader since the second record: two written and kept, the other two not written",
+      refused_as(token, 2) and written("9506001", 10, 4) == [True, True, False, False]
+      and [x["action"] for x in job(token)["results"]] == ["created", "created"], job(token))
+check("F-024: the journal counts what was written and what was left",
+      refusals()[-1]["detail"] == "reason=role created=2 updated=0 failed=0 left=2", refusals()[-1])
+users.update("edda", role="editor")
+
+token = applied(edda, sheet_of("9506001", 20, 2))
+users.update("edda", disabled=True)
+w.run_once()
+check("F-024: a disabled account: nothing written", refused_as(token, 0) and written("9506001", 20, 2) == [False] * 2
+      and refusals()[-1]["detail"].startswith("reason=disabled "), (job(token), refusals()[-1]))
+users.update("edda", disabled=False)
+
+edda = signed_in("edda")
+token = applied(edda, sheet_of("9506001", 30, 2))
+users.remove("edda")
+w.run_once()
+check("F-024: a removed account: nothing written (it used to run as an empty account, in the operator's scope)",
+      refused_as(token, 0) and written("9506001", 30, 2) == [False] * 2
+      and refusals()[-1]["detail"].startswith("reason=removed ") and refusals()[-1]["user"] == "edda",
+      (job(token), refusals()[-1]))
+
+users.create("edda", "a-long-test-password", "editor", must_change=False)
+edda = signed_in("edda")
+token = applied(edda, sheet_of("9506001", 40, 2))
+users.remove("edda")
+time.sleep(1.1)                                 # creation dates are kept to the second
+users.create("edda", "a-long-test-password", "admin", must_change=False)
+w.run_once()
+check("F-024: an account of the same name made after the preview is another account: nothing written",
+      refused_as(token, 0) and written("9506001", 40, 2) == [False] * 2
+      and refusals()[-1]["detail"].startswith("reason=replaced "), (job(token), refusals()[-1]))
+
+# an organisation's user
+acme = tenants.create("Acme jobs", ["9507001"], "maria")
+users.create("tina", "a-long-test-password", "editor", tenant=acme["id"], must_change=False)
+tina = signed_in("tina")
+token = applied(tina, sheet_of("9507001", 1, 2))
+check("F-024: an organisation's import keeps its organisation", job(token).get("tenant") == acme["id"], job(token))
+tenants.update(acme["id"], disabled=True)
+w.run_once()
+check("F-024: the organisation disabled after Apply: nothing written, journalled in the organisation's own trail",
+      refused_as(token, 0) and written("9507001", 1, 2) == [False] * 2
+      and refusals()[-1]["detail"].startswith("reason=organisation ") and refusals()[-1].get("tenant") == acme["id"],
+      (job(token), refusals()[-1]))
+tenants.update(acme["id"], disabled=False)
+tina = signed_in("tina")
+token = applied(tina, sheet_of("9507001", 10, 2))
+users.remove("tina")
+w.run_once()
+check("F-024: an organisation's account removed: nothing written; the refusal stays in the organisation's trail",
+      refused_as(token, 0) and written("9507001", 10, 2) == [False] * 2
+      and refusals()[-1]["detail"].startswith("reason=removed ") and refusals()[-1].get("tenant") == acme["id"],
+      (job(token), refusals()[-1]))
+
+# prefixes read again before each record, not once when the worker took the job
+users.create("pia", "a-long-test-password", "editor", prefixes=["9506002", "9506003"], must_change=False)
+pia = signed_in("pia")
+token = applied(pia, sheet_of("9506002", 1, 4))
+calls = {"n": 0}
+
+
+def narrowing_store_record(*args):
+    calls["n"] += 1
+    result = real_store_record(*args)
+    if calls["n"] == 2:
+        users.update("pia", prefixes=["9506003"])
+    return result
+
+
+portal.store_record = narrowing_store_record
+w.run_once()
+portal.store_record = real_store_record
+status = pia.get(f"/portal/api/import/status?token={token}").get_json()
+check("F-024: a prefix taken from the user during the import: the next records fail one by one (access.prefix)",
+      status["state"] == "finished" and [x["action"] for x in status["results"]] == ["created", "created", "failed", "failed"]
+      and {x.get("code") for x in status["results"][2:]} == {"access.prefix"}
+      and written("9506002", 1, 4) == [True, True, False, False], status)
+
+# a job queued before the job kept its account's organisation and date still runs
+users.update("pia", prefixes=["9506002", "9506003"])
+token = applied(pia, sheet_of("9506003", 1, 2))
+store.col("jobs").update_one({"_id": token}, {"$unset": {"tenant": "", "accountCreated": ""}})
+w.run_once()
+check("F-024: a job queued before this change (without the account's organisation and date) still runs",
+      job(token)["state"] == "finished" and written("9506003", 1, 2) == [True, True], job(token))
+before = len(refusals())
+token = applied(pia, sheet_of("9506003", 10, 2))
+store.col("jobs").update_one({"_id": token}, {"$unset": {"tenant": "", "accountCreated": ""}})
+users.update("pia", role="reader")
+w.run_once()
+check("F-024: ... and is refused like the others when its account may no longer write",
+      refused_as(token, 0) and len(refusals()) == before + 1, job(token))
+users.update("pia", role="editor")
+
 # ------------------------------------------------------------------ link checks through the API
 HITS = {"count": 0}
 

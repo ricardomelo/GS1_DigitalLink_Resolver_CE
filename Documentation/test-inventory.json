@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-21",
+ "generated": "2026-11-22",
  "programs": {
   "about": {
    "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
@@ -213,7 +213,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_ecfface1127…)",
+    "a wrong key is refused (rk_f6a1d144276…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -994,10 +994,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (260 features)",
+    "features.md: every table has a Checks column (261 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (546 references)",
-    "…and words found in one of its checks",
+    "…each reference names a program of the inventory (550 references)",
     "every test program is in the inventory (82)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
@@ -1007,10 +1006,10 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (40)",
-    "every relative link of the documents leads to a file (56 documents)"
+    "…and every decision record (41)",
+    "every relative link of the documents leads to a file (57 documents)"
    ],
-   "count": 15,
+   "count": 14,
    "ciOnly": false
   },
   "domains": {
@@ -1594,7 +1593,7 @@
     "each refusal is in the journal with the role, the rows and the limit",
     "each change of an organisation's limits is in its journal",
     "each change of the maximum is in the operator's journal",
-    "every journal action has its label in both languages (50)",
+    "every journal action has its label in both languages (51)",
     "the export texts in both languages"
    ],
    "count": 69,
@@ -2853,6 +2852,22 @@
     "crash: two minutes later another worker takes the job back and finishes it, every record created once",
     "crash after a write: the record is written again (updated) and stays one record with its link",
     "an unexpected error: status failed with job.failed",
+    "F-024: the job keeps the organisation and creation date of the account that prepared it",
+    "F-024: an editor made a reader after Apply: the import stops before its first record (failed, accountChanged)",
+    "F-024: the refusal is in the journal under the user, in the operator's trail, with the reason and what was left",
+    "F-024: as a reader the user no longer reads the import (access.role)",
+    "F-024: the status says failed with import.accountChanged and what was done",
+    "F-024: a reader since the second record: two written and kept, the other two not written",
+    "F-024: the journal counts what was written and what was left",
+    "F-024: a disabled account: nothing written",
+    "F-024: a removed account: nothing written (it used to run as an empty account, in the operator's scope)",
+    "F-024: an account of the same name made after the preview is another account: nothing written",
+    "F-024: an organisation's import keeps its organisation",
+    "F-024: the organisation disabled after Apply: nothing written, journalled in the organisation's own trail",
+    "F-024: an organisation's account removed: nothing written; the refusal stays in the organisation's trail",
+    "F-024: a prefix taken from the user during the import: the next records fail one by one (access.prefix)",
+    "F-024: a job queued before this change (without the account's organisation and date) still runs",
+    "F-024: ... and is refused like the others when its account may no longer write",
     "check every record: a queued linkcheck job, each address with its records",
     "link job status while queued",
     "a second link check of the same organisation (another user) is refused while one is queued: linkcheck.busy",
@@ -2892,7 +2907,7 @@
     "link cancel: seen at the next progress write; the addresses not started are not requested (not all 200)",
     "link cancel while queued: cancelled at once"
    ],
-   "count": 100,
+   "count": 116,
    "ciOnly": false
   },
   "journal": {
@@ -3508,7 +3523,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:39273/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:45487/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",
@@ -5740,7 +5755,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)"
+    "an uncached check takes well under a millisecond (0.003 ms; Node.js: tens of ms)"
    ],
    "count": 248,
    "ciOnly": false

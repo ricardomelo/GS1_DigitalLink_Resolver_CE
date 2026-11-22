@@ -355,6 +355,7 @@
  "audit.action.forwarding-rule-create": "전달 규칙 추가",
  "audit.action.forwarding-rule-update": "전달 규칙 변경",
  "audit.action.forwarding-rule-remove": "전달 규칙 삭제",
+ "audit.action.forwarding-covered": "접두사가 전달 규칙에 포함됨",
  "audit.action.appearance-save": "모양 변경",
  "audit.action.appearance-reset": "원래 모양 복원",
  "menu.requests": "요청",

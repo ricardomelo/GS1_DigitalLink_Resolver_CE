@@ -355,6 +355,7 @@
  "audit.action.forwarding-rule-create": "Regola di inoltro aggiunta",
  "audit.action.forwarding-rule-update": "Regola di inoltro modificata",
  "audit.action.forwarding-rule-remove": "Regola di inoltro rimossa",
+ "audit.action.forwarding-covered": "Prefisso compreso in una regola di inoltro",
  "audit.action.appearance-save": "Aspetto modificato",
  "audit.action.appearance-reset": "Aspetto originale ripristinato",
  "menu.requests": "Richieste",

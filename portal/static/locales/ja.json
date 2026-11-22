@@ -355,6 +355,7 @@
  "audit.action.forwarding-rule-create": "転送ルールを追加",
  "audit.action.forwarding-rule-update": "転送ルールを変更",
  "audit.action.forwarding-rule-remove": "転送ルールを削除",
+ "audit.action.forwarding-covered": "プレフィックスが転送ルールの対象",
  "audit.action.appearance-save": "外観を変更",
  "audit.action.appearance-reset": "元の外観に戻しました",
  "menu.requests": "アクセス",

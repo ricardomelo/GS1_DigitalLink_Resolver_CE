@@ -355,6 +355,7 @@
  "audit.action.forwarding-rule-create": "Weiterleitungsregel hinzugefügt",
  "audit.action.forwarding-rule-update": "Weiterleitungsregel geändert",
  "audit.action.forwarding-rule-remove": "Weiterleitungsregel entfernt",
+ "audit.action.forwarding-covered": "Präfix von einer Weiterleitungsregel umfasst",
  "audit.action.appearance-save": "Erscheinungsbild geändert",
  "audit.action.appearance-reset": "Ursprüngliches Erscheinungsbild wiederhergestellt",
  "menu.requests": "Anfragen",

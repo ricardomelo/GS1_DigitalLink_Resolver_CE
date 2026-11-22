@@ -355,6 +355,7 @@
  "audit.action.forwarding-rule-create": "Yönlendirme kuralı eklendi",
  "audit.action.forwarding-rule-update": "Yönlendirme kuralı değiştirildi",
  "audit.action.forwarding-rule-remove": "Yönlendirme kuralı kaldırıldı",
+ "audit.action.forwarding-covered": "Önek bir yönlendirme kuralının kapsamında",
  "audit.action.appearance-save": "Görünüm değiştirildi",
  "audit.action.appearance-reset": "Özgün görünüm geri yüklendi",
  "menu.requests": "İstekler",

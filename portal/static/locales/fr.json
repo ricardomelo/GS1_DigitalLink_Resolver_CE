@@ -355,6 +355,7 @@
  "audit.action.forwarding-rule-create": "Règle de redirection ajoutée",
  "audit.action.forwarding-rule-update": "Règle de redirection modifiée",
  "audit.action.forwarding-rule-remove": "Règle de redirection supprimée",
+ "audit.action.forwarding-covered": "Préfixe couvert par une règle de redirection",
  "audit.action.appearance-save": "Apparence modifiée",
  "audit.action.appearance-reset": "Apparence d’origine rétablie",
  "menu.requests": "Requêtes",

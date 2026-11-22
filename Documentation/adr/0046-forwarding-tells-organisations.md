@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (22 November 2026) |
+| Status | **Accepted** (22 November 2026); amended by [ADR 0054](0054-forwarding-tells-new-prefixes.md) (a change of an organisation's prefixes told too) |
 | Backlog item | 10.1, the security assessment ([ADR 0020](0020-security-assessment.md)); hazard H-13 and gap G-21 of the [threat model](../threat-model.md); finding F-028 |
 | Decided by | the owner's standing instruction for the assessment's findings, the owner away: the recommended option taken. Not taken: an approval by the organisation before a rule covering its prefixes takes effect (forwarding is the operator's decision, often for a move the organisation is not part of, and a rule that waits cannot answer an emergency); refusing rules that overlap an organisation's prefixes (the case ADR 0018 was made for); a message for every change, a note included (noise that teaches administrators to ignore the message); the *security* category, always sent (it is for the account's own credentials; the change is in the organisation's trail whatever its administrators chose) |
 | Amends | [ADR 0018](0018-forwarding.md) §2.4 (who is told of a rule) |
@@ -47,7 +47,7 @@ information.
 ## 4. Residuals
 
 - An organisation given a prefix that an enabled rule already covers (its prefixes changed by a server administrator)
-  is not told; the screen names it beside the rule.
+  is not told; the screen names it beside the rule. Done in [ADR 0054](0054-forwarding-tells-new-prefixes.md).
 - The message for one rule does not say whether another rule (shorter or longer) also covers the codes; the longest
   prefix wins.
 - No confirmation with the number of records concerned before saving (H-13's second suggestion); support access is

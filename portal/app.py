@@ -1073,6 +1073,20 @@ def tell_forwarded(action: str, detail: str, before: dict | None, after: dict | 
     return sorted(told)
 
 
+def tell_covered(tenant: dict, previous: list[str]) -> list[str]:
+    """An organisation given prefixes that an enabled forwarding rule already covers (finding F-028, ADR 0054): for
+    each such rule, the event forwarding-covered in that organisation's own audit trail, by the operator, and the
+    message forwarding-covered to its administrators. Returns the prefixes of the rules concerned."""
+    found = forwarding.newly_covered(previous, tenant)
+    for rule, prefixes in found:
+        log_event("forwarding-covered", tenant=tenant["id"],
+                  detail=f'prefix={rule["prefix"]} target={rule["target"]} prefixes={",".join(prefixes)}')
+        for user in monitor.recipients(tenant["id"]):
+            notify.send(user, "forwarding-covered", prefix=rule["prefix"], target=rule["target"],
+                        organisation=tenant["name"], prefixes=", ".join(prefixes), at=notify.now_text() + " UTC")
+    return [rule["prefix"] for rule, _ in found]
+
+
 def forwarding_writable():
     """None, or the refusal during support access."""
     return message("forwarding.readOnly", 403) if g.support else None
@@ -2838,6 +2852,7 @@ def create_tenant():
     tenant = tenants.create(data.get("name"), data.get("prefixes") or [], g.user)
     audit.info("user=%s action=tenant-create tenant=%s prefixes=%s", g.user, tenant["id"], ",".join(tenant["prefixes"]))
     log_event("tenant-create", tenant=tenant["id"], detail=f'{tenant["name"]} prefixes={",".join(tenant["prefixes"])}')
+    tell_covered(tenant, [])
     return message("tenants.created", 201, params={"name": tenant["name"]}, tenant=tenant)
 
 
@@ -2853,6 +2868,8 @@ def update_tenant(tenant_id):
                for field in ("name", "prefixes", "disabled") if before[field] != after[field]]
     audit.info("user=%s action=tenant-update tenant=%s %s", g.user, tenant_id, " ".join(changes))
     log_event("tenant-update", tenant=tenant_id, detail=" ".join(changes) or None)
+    if before["prefixes"] != after["prefixes"]:
+        tell_covered(after, before["prefixes"])
     return message("tenants.updated", 200, params={"name": after["name"]})
 
 

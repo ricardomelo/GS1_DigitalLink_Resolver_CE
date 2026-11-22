@@ -355,6 +355,7 @@
  "audit.action.forwarding-rule-create": "अग्रेषण नियम जोड़ा गया",
  "audit.action.forwarding-rule-update": "अग्रेषण नियम बदला गया",
  "audit.action.forwarding-rule-remove": "अग्रेषण नियम हटाया गया",
+ "audit.action.forwarding-covered": "प्रीफ़िक्स अग्रेषण नियम में शामिल",
  "audit.action.appearance-save": "रूप-रंग बदला गया",
  "audit.action.appearance-reset": "मूल रूप-रंग बहाल किया गया",
  "menu.requests": "अनुरोध",

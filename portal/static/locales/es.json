@@ -355,6 +355,7 @@
  "audit.action.forwarding-rule-create": "Regla de reenvío creada",
  "audit.action.forwarding-rule-update": "Regla de reenvío cambiada",
  "audit.action.forwarding-rule-remove": "Regla de reenvío eliminada",
+ "audit.action.forwarding-covered": "Prefijo abarcado por una regla de reenvío",
  "audit.action.appearance-save": "Apariencia cambiada",
  "audit.action.appearance-reset": "Apariencia original restablecida",
  "menu.requests": "Accesos",

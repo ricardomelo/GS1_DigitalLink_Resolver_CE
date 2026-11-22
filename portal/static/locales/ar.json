@@ -355,6 +355,7 @@
  "audit.action.forwarding-rule-create": "تمت إضافة قاعدة إعادة توجيه",
  "audit.action.forwarding-rule-update": "تم تغيير قاعدة إعادة توجيه",
  "audit.action.forwarding-rule-remove": "تمت إزالة قاعدة إعادة توجيه",
+ "audit.action.forwarding-covered": "بادئة تشملها قاعدة إعادة توجيه",
  "audit.action.appearance-save": "تم تغيير المظهر",
  "audit.action.appearance-reset": "تمت استعادة المظهر الأصلي",
  "menu.requests": "الطلبات",

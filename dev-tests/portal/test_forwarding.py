@@ -291,9 +291,72 @@ check("a rule over no organisation's prefix: nobody told, only the installation'
       and store.col("journal").count_documents({"action": "forwarding-rule-create", "detail": {"$regex": "^prefix=950 "}})
       == 1)
 root.delete("/portal/api/forwarding/rules/950", headers=ORIGIN)
+# An organisation given a prefix that a rule switched on already covers is told too (ADR 0054): the rule did not
+# change, the organisation's prefixes did.
+told()
+root.post("/portal/api/forwarding/rules", json={"prefix": "78966", "target": "https://moved.example"}, headers=ORIGIN)
+root.post("/portal/api/forwarding/rules", json={"prefix": "78977", "target": "https://off.example", "enabled": False},
+          headers=ORIGIN)
+check("rules over no organisation's prefix yet: nobody told", told() == [])
+r = root.put(f"/portal/api/tenants/{beta['id']}", json={"prefixes": ["7895555", "7896612"]}, headers=ORIGIN)
+got = told()
+check("an organisation given a prefix a rule switched on covers: its administrator told (forwarding-covered, the rule's "
+      "prefix, its destination, the prefixes given that it covers, when)", r.status_code == 200
+      and [(u, t) for u, t, _ in got] == [("bia", "forwarding-covered")]
+      and {k: got[0][2].get(k) for k in ("prefix", "target", "organisation", "prefixes")}
+      == {"prefix": "78966", "target": "https://moved.example", "organisation": "Beta Drinks", "prefixes": "7896612"}
+      and got[0][2]["at"].endswith(" UTC"), (r.status_code, got))
+entries = list(store.col("journal").find({"action": "forwarding-covered", "tenant": beta["id"]}))
+check("…in the organisation's own audit trail, by the operator, with the rule and the prefixes", len(entries) == 1
+      and entries[0]["user"] == "root" and entries[0].get("byOperator") is True
+      and entries[0]["detail"] == "prefix=78966 target=https://moved.example prefixes=7896612", entries)
+check("…beside the operator's event of the change itself", store.col("journal").count_documents(
+      {"action": "tenant-update", "tenant": beta["id"], "detail": "prefixes=7895555,7896612"}) == 1)
+check("…not in another organisation's trail, nor told to anyone else", not list(store.col("journal").find(
+      {"action": "forwarding-covered", "tenant": acme["id"]})) and all(u == "bia" for u, _, _ in got))
+seen_by_bia = [e for e in client("bia", "bia-password-long").get("/portal/api/audit").get_json()["events"]
+               if e["action"] == "forwarding-covered"]
+check("…the organisation's administrator sees it in Audit trail", len(seen_by_bia) == 1
+      and seen_by_bia[0]["detail"].startswith("prefix=78966 "), seen_by_bia)
+root.put(f"/portal/api/tenants/{beta['id']}", json={"name": "Beta Drinks", "prefixes": ["7895555", "7896612"]},
+         headers=ORIGIN)
+check("the same prefixes saved again: nobody told again", told() == []
+      and store.col("journal").count_documents({"action": "forwarding-covered", "tenant": beta["id"]}) == 1)
+root.put(f"/portal/api/tenants/{beta['id']}", json={"prefixes": ["7895555", "7896612", "5609876"]}, headers=ORIGIN)
+check("another prefix no rule covers added: nobody told for the one already covered", told() == [])
+root.put(f"/portal/api/tenants/{beta['id']}", json={"prefixes": ["7895555"]}, headers=ORIGIN)
+check("prefixes taken away: nobody told", told() == [])
+root.put(f"/portal/api/tenants/{beta['id']}", json={"prefixes": ["7895555", "7897712"]}, headers=ORIGIN)
+check("a prefix that only a rule switched off covers: nobody told", told() == [])
+root.put(f"/portal/api/tenants/{beta['id']}", json={"prefixes": ["7895555", "7896"]}, headers=ORIGIN)
+got = told()
+check("a prefix shorter than the rule's (some of its codes go elsewhere): told", [(u, p["prefix"], p["prefixes"])
+      for u, _, p in got] == [("bia", "78966", "7896")], got)
+root.put(f"/portal/api/tenants/{beta['id']}", json={"prefixes": ["7895555", "7896601", "7896699"]}, headers=ORIGIN)
+got = told()
+check("two prefixes given that one rule covers: told once, with both",
+      [(u, p["prefix"], p["prefixes"]) for u, _, p in got] == [("bia", "78966", "7896601, 7896699")], got)
+root.put(f"/portal/api/tenants/{beta['id']}", json={"prefixes": ["7895555"]}, headers=ORIGIN)
+root.post("/portal/api/forwarding/rules", json={"prefix": "7896612", "target": "https://longer.example"}, headers=ORIGIN)
+told()
+root.put(f"/portal/api/tenants/{beta['id']}", json={"prefixes": ["7895555", "7896612"]}, headers=ORIGIN)
+check("a prefix two rules cover: told once for each rule", sorted((p["prefix"], p["target"]) for _, _, p in told())
+      == [("78966", "https://moved.example"), ("7896612", "https://longer.example")])
+root.put(f"/portal/api/tenants/{beta['id']}", json={"prefixes": ["7895555"]}, headers=ORIGIN)
+told()
+r = root.post("/portal/api/tenants", json={"name": "Gamma Foods", "prefixes": ["7896655"]}, headers=ORIGIN)
+gamma = r.get_json()["tenant"]
+check("an organisation created with a prefix a rule covers: in its trail, no message (no administrator yet)",
+      r.status_code == 201 and told() == [] and [e["detail"] for e in store.col("journal").find(
+          {"action": "forwarding-covered", "tenant": gamma["id"]})] == ["prefix=78966 target=https://moved.example prefixes=7896655"])
+root.delete(f"/portal/api/tenants/{gamma['id']}", headers=ORIGIN)
+for prefix in ("78966", "78977", "7896612"):
+    root.delete(f"/portal/api/forwarding/rules/{prefix}", headers=ORIGIN)
+told()
 portal.notify.send = real_send
 for template, params in (("forwarding-on", {"target": "https://acme-new.example"}),
-                         ("forwarding-off", {"target": "https://acme-new.example"})):
+                         ("forwarding-off", {"target": "https://acme-new.example"}),
+                         ("forwarding-covered", {"target": "https://acme-new.example"})):
     bad = []
     for lang in mailtexts.LANGUAGES:
         subject, text, _html = mailtexts.compose(template, lang, operator="Operator", prefix="7891234",
@@ -305,9 +368,10 @@ for template, params in (("forwarding-on", {"target": "https://acme-new.example"
             bad.append(lang)
     check(f"the message {template} in every language: the prefix, the destination, the organisation and when", not bad
           and len(mailtexts.LANGUAGES) == 12, bad)
-check("…both alerts: on by default, an administrator may switch them off (Options → E-mail)",
-      (portal.notify.TEMPLATES.get("forwarding-on"), portal.notify.TEMPLATES.get("forwarding-off")) == ("alerts", "alerts")
-      and portal.notify.wants({}, "forwarding-on") and not portal.notify.wants({"notify": {"alerts": False}}, "forwarding-off"))
+check("…the three alerts: on by default, an administrator may switch them off (Options → E-mail)",
+      tuple(portal.notify.TEMPLATES.get(t) for t in ("forwarding-on", "forwarding-off", "forwarding-covered"))
+      == ("alerts", "alerts", "alerts") and portal.notify.wants({}, "forwarding-covered")
+      and not portal.notify.wants({"notify": {"alerts": False}}, "forwarding-covered"))
 check("the rules as they were before this section", [x["prefix"] for x in forwarding.rules()] == ["9521234"])
 
 # ================================================================== the request log and the overview

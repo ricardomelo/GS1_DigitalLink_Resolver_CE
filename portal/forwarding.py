@@ -170,6 +170,20 @@ def changes_destination(before: dict | None, after: dict | None) -> bool:
     return destination(before) != destination(after)
 
 
+def newly_covered(previous: list[str], tenant: dict) -> list[tuple[dict, list[str]]]:
+    """The rules switched on that cover prefixes an organisation has now and did not have before (its prefixes
+    changed; finding F-028, ADR 0054): [(rule, the new prefixes it covers)], by rule prefix."""
+    before = {"prefixes": previous or []}
+    found = []
+    for r in rules():
+        if not destination(r):
+            continue
+        new = [p for p in covered(r["prefix"], tenant) if p not in covered(r["prefix"], before)]
+        if new:
+            found.append((r, new))
+    return found
+
+
 def rule_of(ai: str, value: str, every: list[dict]) -> str | None:
     """The prefix of the rule that matches a key now (the longest), or None."""
     part = company_part(ai, value)

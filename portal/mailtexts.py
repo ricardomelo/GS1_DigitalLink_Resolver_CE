@@ -439,6 +439,18 @@ TEXTS = {
                   "Salvo se outra regra os abranger, as requisições desses códigos voltam a ser respondidas pelos registros que vocês mantêm neste portal: confira se estão atualizados. A mudança está na sua trilha de auditoria.\n\n"
                   "Você recebe esta mensagem como administrador; pode desligar os alertas em Opções → E-mail."),
     },
+    "forwarding-covered": {
+        "en-GB": ("A forwarding rule sends codes of prefix {prefix} to another resolver",
+                  "Hello,\n\n"
+                  "On {at}, a server administrator of {operator} gave {organisation} these GS1 Company Prefixes: {prefixes}. A forwarding rule already sends every code whose GS1 Company Prefix starts with {prefix} to {target}.\n\n"
+                  "Requests for those codes do not reach the records you keep in this portal: while the rule is on, what you save for them is not what a scan finds. If you did not expect this, contact the operator of the portal. The change is in your audit trail.\n\n"
+                  "You receive this message as an administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Uma regra de encaminhamento envia os códigos do prefixo {prefix} a outro resolver",
+                  "Olá,\n\n"
+                  "Em {at}, um administrador do servidor de {operator} deu a {organisation} estes prefixos de empresa GS1: {prefixes}. Uma regra de encaminhamento já envia a {target} todo código cujo prefixo de empresa GS1 começa com {prefix}.\n\n"
+                  "As requisições desses códigos não chegam aos registros que vocês mantêm neste portal: enquanto a regra estiver ligada, o que vocês salvarem para eles não é o que a leitura encontra. Se vocês não esperavam por isso, procurem o operador do portal. A mudança está na sua trilha de auditoria.\n\n"
+                  "Você recebe esta mensagem como administrador; pode desligar os alertas em Opções → E-mail."),
+    },
     "test": {
         "en-GB": ("Test message from the link management portal",
                   "Hello,\n\n"

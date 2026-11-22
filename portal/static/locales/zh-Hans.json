@@ -355,6 +355,7 @@
  "audit.action.forwarding-rule-create": "已添加转发规则",
  "audit.action.forwarding-rule-update": "已更改转发规则",
  "audit.action.forwarding-rule-remove": "已删除转发规则",
+ "audit.action.forwarding-covered": "前缀被转发规则涵盖",
  "audit.action.appearance-save": "已更改外观",
  "audit.action.appearance-reset": "已恢复原始外观",
  "menu.requests": "请求记录",

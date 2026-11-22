@@ -45,7 +45,7 @@ TEMPLATES = {
     "alert-gcp-table": "alerts", "alert-gcp-table-ok": "alerts",
     "alert-journal": "alerts", "alert-journal-ok": "alerts", "alert-domain-lapsed": "alerts",
     "alert-settings-stale": "alerts", "alert-settings-current": "alerts",
-    "forwarding-on": "alerts", "forwarding-off": "alerts",
+    "forwarding-on": "alerts", "forwarding-off": "alerts", "forwarding-covered": "alerts",
 }
 # Waits before each new try after a temporary failure, in minutes; after the last, the message has failed.
 RETRY_MINUTES = (1, 5, 15, 60, 120)

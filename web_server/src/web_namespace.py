@@ -132,7 +132,10 @@ class DocOperationsNonGS1DigitalLinkRequest(Resource):
         # the request log keeps the path only when no key can be read from it (ADR 0006)
         request_log.note(path='/' + non_gs1dl_request, query=_extract_query_strings(request))
         if epc_binary.COMPRESSED_EPC.fullmatch(non_gs1dl_request):
-            return _resolve_compressed_epc(non_gs1dl_request)
+            try:
+                return _resolve_compressed_epc(non_gs1dl_request)
+            except web_logic.ToolkitBusy as e:
+                return _unavailable('/' + non_gs1dl_request, e)
         try:
             logger.info('Non-GS1DL request received')
             decompress_result = web_logic.uncompress_gs1_digital_link(non_gs1dl_request)
@@ -155,6 +158,8 @@ class DocOperationsNonGS1DigitalLinkRequest(Resource):
             # asks for a request that is not a valid GS1 Digital Link URI (was 500)
             return _bad_request('/' + non_gs1dl_request, decompress_result.get('error', 'Not a GS1 Digital Link'))
 
+        except web_logic.ToolkitBusy as e:
+            return _unavailable('/' + non_gs1dl_request, e)
         except Exception as e:
             logger.warning('Error getting document: %s', e)
             return _bad_request('/' + non_gs1dl_request, 'Not a GS1 Digital Link')
@@ -171,6 +176,8 @@ class DocOperationsIdentifiersOnly(Resource):
 
             return _resolve_path(anchor_ai_code, [anchor_ai_code, anchor_ai])
 
+        except web_logic.ToolkitBusy as e:
+            return _unavailable(f'/{anchor_ai_code}/{anchor_ai}', e)
         except Exception as e:
             logger.warning('Error getting document: %s', e)
             abort(500, description="Error getting document")
@@ -203,6 +210,8 @@ class DocOperationsResource(Resource):
             logger.debug("Extra segments: %s", extra_segments)
             return _resolve_path(anchor_ai_code, [anchor_ai_code, anchor_ai, *(extra_segments or '').split('/')])
 
+        except web_logic.ToolkitBusy as e:
+            return _unavailable(f'/{anchor_ai_code}/{anchor_ai}/{extra_segments}', e)
         except Exception as e:
             logger.warning('Error getting document: %s', e)
             abort(500, description="Error getting document")
@@ -299,6 +308,17 @@ def _bad_request(path: str, error: str) -> Response | tuple[Any, int]:
     if _wants_html():
         return Response(web_pages.render_error(400, path, None, None, None), status=400, mimetype='text/html')
     return {'response_status': 400, 'error': error}, 400
+
+
+def _unavailable(path: str, reason: Exception) -> Response | tuple[Any, int]:
+    """503 with Retry-After when the GS1 Digital Link Toolkit's Node.js process could not answer in time (U-002,
+    Documentation/adr/0047-toolkit-processes.md): the request may be valid, so not 400; HTML page or JSON."""
+    logger.warning('GS1 Digital Link Toolkit unavailable: %s', reason)
+    headers = {'Retry-After': '1'}
+    if _wants_html():
+        return Response(web_pages.render_error(503, path, None, None, None), status=503, mimetype='text/html',
+                        headers=headers)
+    return {'response_status': 503, 'error': 'The resolver is busy: try again in a moment'}, 503, headers
 
 
 def _resolver_description() -> Response:

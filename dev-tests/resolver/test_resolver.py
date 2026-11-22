@@ -705,7 +705,7 @@ if ENGINE_DIR:
     class FakeProcess:
         returncode = 1
 
-        def communicate(self):
+        def communicate(self, timeout=None):
             return b"", b"Error: refused"
     web_logic.subprocess.Popen = lambda args, **k: started.append(args) or FakeProcess()
     loaded = gs1_syntax._module
@@ -748,6 +748,136 @@ if ENGINE_DIR:
           per_check)
 else:
     print("SKIP the engine in the resolver's process (set GS1_SYNTAX_ENGINE_DIR, see dev-tests/README.md)")
+
+# ---------------------------------------------------------------- the toolkit's Node.js processes (ADR 0047)
+# A one-segment path that may be a compressed GS1 Digital Link is decompressed by the GS1 Digital Link Toolkit in a
+# Node.js process: refused by pattern first, at most TOOLKIT_PROCESSES at once, killed after TOOLKIT_TIMEOUT, 503.
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+import threading  # noqa: E402
+NODE = shutil.which("node")
+if NODE:
+    real_popen = web_logic.subprocess.Popen
+    started = []
+
+    def counting_popen(args, **kwargs):
+        process = real_popen(args, **kwargs)
+        started.append((args, process))
+        return process
+    web_logic.subprocess.Popen = counting_popen
+    web_logic.NODE_PATH = NODE
+    web_logic.TOOLKIT_DIR = os.path.join(REPO, "web_server", "src", "gs1-digitallink-toolkit")
+    getattr(web_logic._uncompressed, "cache_clear", lambda: None)()
+
+    for segment in ("wp-login.php", "a%20b", "config.bak", "abc", "A" * 1025, "x~y", "a(b)"):
+        r = get("/" + segment)
+        check(f"one-segment path that cannot be a compressed GS1 Digital Link ({segment[:20]}): 400, no Node.js process",
+              r.status_code == 400 and not started, (r.status_code, len(started)))
+    expected = location_of("/01/09506000134352")
+    check("a compressed GS1 Digital Link (/ARFKk4XBoA) is decompressed by the toolkit and resolves as /01/09506000134352",
+          location_of("/ARFKk4XBoA") == expected and expected[0] == 307 and len(started) == 1
+          and started[0][0][1].endswith("callGS1toolkit.js") and started[0][0][2:] == ["ARFKk4XBoA", "uncompress"],
+          (location_of("/ARFKk4XBoA"), [a for a, _ in started]))
+    location_of("/ARFKk4XBoA")
+    check("…the same code again starts no other process (recent answers kept)", len(started) == 1, len(started))
+    r = get("/ABCDabcd0123-_")
+    check("a base64url segment that does not decompress: 400, its answer kept too",
+          r.status_code == 400 and len(started) == 2 and get("/ABCDabcd0123-_").status_code == 400 and len(started) == 2,
+          (r.status_code, len(started)))
+    check("…and the toolkit's own error text is not sent to the client",
+          (r.get_json(force=True) or {}).get("error") == "Not a GS1 Digital Link", r.get_data(as_text=True)[:200])
+    check("every toolkit process has ended", all(p.poll() is not None for _, p in started), [p.poll() for _, p in started])
+
+    # a process that does not finish: killed, 503 with Retry-After, the slot given back
+    slow = tempfile.mkdtemp()
+    with open(os.path.join(slow, "callGS1toolkit.js"), "w") as fh:
+        fh.write("setTimeout(() => {}, 30000);\n")
+    web_logic.TOOLKIT_DIR, saved_timeout = slow, web_logic.TOOLKIT_TIMEOUT
+    web_logic.TOOLKIT_TIMEOUT = 0.5
+    import time  # noqa: E402
+    began = time.monotonic()
+    r = get("/SLOWabcd0123")
+    took = time.monotonic() - began
+    check(f"a toolkit process still running after TOOLKIT_TIMEOUT: 503 with Retry-After within the limit ({took:.1f} s)",
+          r.status_code == 503 and r.headers.get("Retry-After") == "1" and took < 3
+          and (r.get_json(force=True) or {}).get("response_status") == 503, (r.status_code, dict(r.headers), took))
+    check("…and that process was killed", started[-1][1].poll() is not None, started[-1][1].poll())
+    r = client.get("/api/SLOWabcd0124", headers={"Accept": "text/html"})
+    check("…as an HTML page for a browser (try again in a moment)", r.status_code == 503 and r.mimetype == "text/html"
+          and r.headers.get("Retry-After") == "1", (r.status_code, r.mimetype))
+    r = get("/SLOWabcd0123")
+    check("…a timeout is not kept as the code's answer (the toolkit is asked again)", r.status_code == 503
+          and sum(1 for a, _ in started if a[2] == "SLOWabcd0123") == 2, [a[2] for a, _ in started])
+    check("…and every slot is given back", web_logic._toolkit_slots._value == web_logic.TOOLKIT_PROCESSES,
+          web_logic._toolkit_slots._value)
+    web_logic.TOOLKIT_TIMEOUT = saved_timeout
+
+    # every slot taken: the request waits TOOLKIT_WAIT for a turn, then 503 without starting a process
+    saved_wait, web_logic.TOOLKIT_WAIT = web_logic.TOOLKIT_WAIT, 0.2
+    for _ in range(web_logic.TOOLKIT_PROCESSES):
+        web_logic._toolkit_slots.acquire()
+    count = len(started)
+    r = get("/BUSYabcd0123")
+    check(f"{web_logic.TOOLKIT_PROCESSES} toolkit processes already running: 503 with Retry-After, no other process",
+          r.status_code == 503 and r.headers.get("Retry-After") == "1" and len(started) == count, (r.status_code, len(started)))
+    for _ in range(web_logic.TOOLKIT_PROCESSES):
+        web_logic._toolkit_slots.release()
+    web_logic.TOOLKIT_WAIT = saved_wait
+
+    # many requests at once never run more than TOOLKIT_PROCESSES processes
+    web_logic.TOOLKIT_DIR = os.path.join(REPO, "web_server", "src", "gs1-digitallink-toolkit")
+    running, peak, lock = [0], [0], threading.Lock()
+
+    def peak_popen(args, **kwargs):
+        with lock:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        process = real_popen(args, **kwargs)
+        real_communicate = process.communicate
+
+        def communicate(timeout=None):
+            try:
+                return real_communicate(timeout=timeout)
+            finally:
+                with lock:
+                    running[0] -= 1
+        process.communicate = communicate
+        return process
+    web_logic.subprocess.Popen = peak_popen
+    answers = []
+
+    def many(i):
+        answers.append(web_logic.uncompress_gs1_digital_link(f"MANYabcd{i:04d}").get("SUCCESS"))
+    threads = [threading.Thread(target=many, args=(i,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    check(f"eight requests at once: at most {web_logic.TOOLKIT_PROCESSES} toolkit processes running (peak {peak[0]})",
+          0 < peak[0] <= web_logic.TOOLKIT_PROCESSES and len(answers) == 8, (peak[0], answers))
+
+    # the syntax check's fallback (the engine's library missing) answers 503 when the toolkit is busy, not 400
+    import gs1_syntax  # noqa: E402
+    web_logic.subprocess.Popen = real_popen
+    web_logic._call_gs1_toolkit, saved_check = REAL_TOOLKIT, gs1_syntax.check
+    gs1_syntax.check = lambda s: None
+    web_logic.TOOLKIT_WAIT = 0.05
+    for _ in range(web_logic.TOOLKIT_PROCESSES):
+        web_logic._toolkit_slots.acquire()
+    r = get(G + "/10/ABC")
+    e = get(EPCB_EH)
+    c = get(G + "?compress=true").get_json(force=True) or {}
+    for _ in range(web_logic.TOOLKIT_PROCESSES):
+        web_logic._toolkit_slots.release()
+    gs1_syntax.check, web_logic._call_gs1_toolkit, web_logic.TOOLKIT_WAIT = saved_check, (lambda s: True), saved_wait
+    check("without the engine's library, a busy toolkit makes a resolution 503 (not 400: the code may be valid)",
+          r.status_code == 503 and r.headers.get("Retry-After") == "1", r.status_code)
+    check("…an EPC binary string too", e.status_code == 503 and e.headers.get("Retry-After") == "1", e.status_code)
+    check("…and a compression asked for answers 503 in its body", c.get("response_status") == 503, c)
+    web_logic.subprocess.Popen = real_popen
+else:
+    print("SKIP the toolkit's Node.js processes (node not found)")
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

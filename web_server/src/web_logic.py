@@ -1,8 +1,10 @@
+import functools
 import json
 import logging
 import os
 import re
 import subprocess
+import threading
 from typing import Any
 from urllib.parse import quote, unquote
 
@@ -29,6 +31,48 @@ def _validate_gs1_input(value: str) -> str:
     return value
 
 
+# The GS1 Digital Link Toolkit and its Node.js process (U-002; deliberate change to the official code, which started a
+# process for every one-segment path, whatever it held, and waited for it without a time limit: a request for
+# /favicon.ico or /wp-login.php cost a Node.js start-up, tens of milliseconds of CPU, and a stuck process held its
+# server thread for ever; Documentation/adr/0047-toolkit-processes.md).
+NODE_PATH = "/usr/bin/node"
+TOOLKIT_DIR = "/app/gs1-digitallink-toolkit"
+# A compressed GS1 Digital Link is one path segment in the URI-safe base64 alphabet (URI Syntax 1.7, section 6):
+# anything else is refused without starting Node.js. The shortest key compresses to 7 characters; the bound above
+# is far beyond any GS1 Digital Link and below what the proxies let through.
+COMPRESSED_DL = re.compile(r'[A-Za-z0-9_-]{4,1024}')
+# At most TOOLKIT_PROCESSES Node.js processes at once in each server process (gunicorn's WEB_CONCURRENCY of them,
+# 8 threads each): a request waits up to TOOLKIT_WAIT seconds for a turn, and a process still running after
+# TOOLKIT_TIMEOUT seconds (they answer in about 40 ms) is killed; either way the answer is 503 with Retry-After.
+TOOLKIT_PROCESSES = 2
+TOOLKIT_WAIT = 1.0
+TOOLKIT_TIMEOUT = 3.0
+_toolkit_slots = threading.BoundedSemaphore(TOOLKIT_PROCESSES)
+
+
+class ToolkitBusy(Exception):
+    """No Node.js process could be started, or finished, in time: the resolver answers 503 (try again)."""
+
+
+def _run_toolkit(script: str, *args: str) -> tuple[int, bytes, bytes]:
+    """Runs one of the toolkit's scripts with Node.js, within the limits above: (return code, stdout, stderr)."""
+    if not _toolkit_slots.acquire(timeout=TOOLKIT_WAIT):
+        raise ToolkitBusy(f'no free Node.js slot within {TOOLKIT_WAIT} s')
+    try:
+        process = subprocess.Popen([NODE_PATH, os.path.join(TOOLKIT_DIR, script), *args],
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        try:
+            stdout, stderr = process.communicate(timeout=TOOLKIT_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            raise ToolkitBusy(f'{script} still running after {TOOLKIT_TIMEOUT} s: killed')
+        return process.returncode, stdout, stderr
+    finally:
+        _toolkit_slots.release()
+
+
 def _call_gs1_toolkit(ai_data_string: str) -> bool:
     """
     This function calls the GS1 Digital Link Toolkit to validate the syntax of a GS1 Digital Link URL.
@@ -41,16 +85,9 @@ def _call_gs1_toolkit(ai_data_string: str) -> bool:
     verdict = gs1_syntax.check(ai_data_string)
     if verdict is not None:
         return verdict
-    node_path = "/usr/bin/node"
-    toolkit_path = "/app/gs1-digitallink-toolkit/callGS1encoder.js"
+    returncode, stdout, stderr = _run_toolkit("callGS1encoder.js", ai_data_string)
 
-    process = subprocess.Popen([node_path, toolkit_path, ai_data_string],
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-
-    stdout, stderr = process.communicate()
-
-    if process.returncode != 0:
+    if returncode != 0:
         logger.warning("_call_gs1_toolkit error: %s", stderr.decode('utf-8'))
         return False
 
@@ -61,24 +98,27 @@ def uncompress_gs1_digital_link(compressed_link: str) -> dict[str, Any]:
     """
     This function checks if the AI data string is a compressed GS1 Digital link.
     The only library that does this id the GS1 Digital Link Toolkit GS1DigitalLinkToolkit.js
+    A segment that cannot be a compressed GS1 Digital Link (COMPRESSED_DL) is refused without Node.js, and the answers
+    for recent segments are kept: the same code scanned again does not start another process.
     :param compressed_link: The compressed link to check
     :return: The uncompressed GS1 Digital Link if the AI data string is compressed, otherwise a failure message.
     """
-    _validate_gs1_input(compressed_link)
-    node_path = "/usr/bin/node"
-    toolkit_path = "/app/gs1-digitallink-toolkit/callGS1toolkit.js"
-    process = subprocess.Popen([node_path, toolkit_path, compressed_link, 'uncompress'],
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
+    if not COMPRESSED_DL.fullmatch(compressed_link):
+        return {'SUCCESS': False, 'error': 'Not a GS1 Digital Link'}
+    return json.loads(_uncompressed(compressed_link))
 
-    stdout, stderr = process.communicate()
 
-    if process.returncode != 0:
+@functools.lru_cache(maxsize=4096)
+def _uncompressed(compressed_link: str) -> str:
+    """The toolkit's answer for a compressed GS1 Digital Link, as JSON text (kept per process; ToolkitBusy is not)."""
+    returncode, stdout, stderr = _run_toolkit("callGS1toolkit.js", compressed_link, 'uncompress')
+
+    if returncode != 0:
         logger.warning("uncompress_gs1_digital_link error: %s", stderr.decode('utf-8'))
-        return {'result': False, 'error': stderr.decode('utf-8')}
+        return json.dumps({'SUCCESS': False, 'error': 'Not a GS1 Digital Link'})
 
     logger.debug('Decompression stdout: %s', stdout)
-    return json.loads(stdout)
+    return stdout.decode('utf-8')
 
 
 def compress_gs1_digital_link(uncompressed_link: str) -> dict[str, Any]:
@@ -89,16 +129,9 @@ def compress_gs1_digital_link(uncompressed_link: str) -> dict[str, Any]:
     :return: The compressed GS1 Digital Link URL if successful, otherwise a failure message.
     """
     _validate_gs1_input(uncompressed_link)
-    node_path = "/usr/bin/node"
-    toolkit_path = "/app/gs1-digitallink-toolkit/callGS1toolkit.js"
+    returncode, stdout, stderr = _run_toolkit("callGS1toolkit.js", uncompressed_link, 'compress')
 
-    process = subprocess.Popen([node_path, toolkit_path, uncompressed_link, 'compress'],
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-
-    stdout, stderr = process.communicate()
-
-    if process.returncode != 0:
+    if returncode != 0:
         logger.warning("compress_gs1_digital_link error: %s", stderr.decode('utf-8'))
         return {'result': False, 'error': stderr.decode('utf-8')}
 
@@ -147,6 +180,8 @@ def _test_gs1_digital_link_syntax(url: str) -> bool:
             return False
         return _call_gs1_toolkit('https://id.gs1.org' + url)
 
+    except ToolkitBusy:
+        raise                                       # 503, not 400: the link may well be valid
     except IndexError as e:
         logger.warning("URL is missing expected segments: %s", e)
         return False
@@ -374,6 +409,8 @@ def _validate_and_fetch_document(identifier: str, qualifier_path: str | None, do
         # (_outcome: for the request log only, removed by web_namespace before answering; ADR 0006)
         return {"response_status": 404, "error": f"No document found for anchor: {doc_id}", "_outcome": "unknown"}
 
+    except ToolkitBusy:
+        raise
     except ValueError as e:
         logger.warning('_validate_and_fetch_document ValueError: %s', e)
         return {"response_status": 400,
@@ -736,6 +773,9 @@ def get_compressed_link(uncompressed_link: str) -> dict[str, Any]:
         return {'response_status': 400,
                 'error': 'Compression failed. Check GS1 Digital Link syntax is correct before compressing'}
 
+    except ToolkitBusy as e:
+        logger.warning('get_compressed_link: %s', e)
+        return {'response_status': 503, 'error': 'The resolver is busy: try again in a moment'}
     except Exception as e:
         logger.warning('get_compressed_link error: %s', e)
         return {'response_status': 400,
@@ -920,6 +960,8 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
 
         return last_result or {"response_status": 404, "error": "No link found", "_outcome": "noLink"}, None
 
+    except ToolkitBusy:
+        raise
     except Exception as e:
         logger.error('read_document: Internal Server Error', exc_info=True)
         return {"response_status": 500, "error": "Internal Server Error: " + str(e)}, None

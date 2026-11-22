@@ -294,8 +294,11 @@ def npm_checks() -> None:
                             body, re.M),
               f"{path}: node and the locked package copied from the stage 'node'")
     logic = text("web_server/src/web_logic.py")
-    check(re.findall(r'node_path = "([^"]+)"', logic) and set(re.findall(r'node_path = "([^"]+)"', logic)) == {"/usr/bin/node"},
+    check(re.findall(r'^NODE_PATH = "([^"]+)"$', logic, re.M) == ["/usr/bin/node"] and "node_path" not in logic,
           "web_logic.py starts node where the image puts it (/usr/bin/node)")
+    check(re.findall(r'^TOOLKIT_DIR = "([^"]+)"$', logic, re.M) == ["/app/gs1-digitallink-toolkit"]
+          and "ADD src/gs1-digitallink-toolkit /app/gs1-digitallink-toolkit" in text("web_server/Dockerfile"),
+          "web_logic.py runs the toolkit's scripts where the image puts them (/app/gs1-digitallink-toolkit)")
 
 
 # ----------------------------------------------------------------------------------------------- updates and policy

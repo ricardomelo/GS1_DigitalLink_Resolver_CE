@@ -907,7 +907,7 @@
  "domains.checkRedirect": "{domain} hat nicht unter Beibehaltung des Pfads zum Resolver weitergeleitet: {detail}",
  "domains.nameInvalid": "Geben Sie einen Domainnamen ein, etwa id.yourbrand.com.",
  "domains.installationName": "Das ist die eigene Adresse des Resolvers.",
- "domains.stemInvalid": "Ein Pfadpräfix hat bis zu 3 Teile aus Buchstaben, Ziffern, - . _ ~ (keiner nur aus 2 bis 4 Ziffern).",
+ "domains.stemInvalid": "Ein Pfadpräfix hat bis zu 3 Teile aus Buchstaben, Ziffern, - . _ ~ (keiner nur aus 2 bis 4 Ziffern) und beginnt nicht mit api, swaggerui, portal, home oder .well-known.",
  "domains.modeInvalid": "Wählen Sie, wie die Domain den Resolver erreicht.",
  "domains.unknown": "Unbekannte Domain.",
  "domains.exists": "Diese Domain ist auf der Installation bereits erfasst.",

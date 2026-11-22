@@ -907,7 +907,7 @@
  "domains.checkRedirect": "{domain} no redirigió al resolver manteniendo la ruta: {detail}",
  "domains.nameInvalid": "Escriba un nombre de dominio, como id.yourbrand.com.",
  "domains.installationName": "Esa es la dirección propia del resolver.",
- "domains.stemInvalid": "Un prefijo de ruta tiene hasta 3 partes de letras, dígitos, - . _ ~ (ninguna formada solo por 2 a 4 dígitos).",
+ "domains.stemInvalid": "Un prefijo de ruta tiene hasta 3 partes de letras, dígitos, - . _ ~ (ninguna formada solo por 2 a 4 dígitos) y no empieza por api, swaggerui, portal, home ni .well-known.",
  "domains.modeInvalid": "Elija cómo llega el dominio al resolver.",
  "domains.unknown": "Dominio desconocido.",
  "domains.exists": "Ese dominio ya está registrado en la instalación.",

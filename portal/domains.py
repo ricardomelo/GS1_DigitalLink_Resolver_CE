@@ -49,6 +49,10 @@ TXT_PREFIX = "gs1resolver-verify="
 MODES = ("direct", "redirect")
 LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 STEM_SEGMENT = re.compile(r"^[A-Za-z0-9._~-]{1,40}$")
+# A stem's first segment the installation's proxy would give to something other than the resolver
+# (frontend_proxy_server/nginx.conf: /api…, /swaggerui…, /portal/, /home/) or that the resolver answers itself
+# (/.well-known/), so that codes printed under it would never resolve (ADR 0045)
+RESERVED_STEM = re.compile(r"^(?:api|swaggerui)|^(?:portal|home|\.well-known)$", re.IGNORECASE)
 RECHECK = timedelta(days=1)
 PENDING = timedelta(days=7)                # an unverified claim is deleted this long after it was made
 LAPSE = timedelta(days=7)                  # a verified domain whose record is missing this long is lapsed
@@ -87,7 +91,8 @@ def clean_stem(value) -> str:
     if not text:
         return ""
     segments = text.split("/")
-    if len(segments) > 3 or not all(STEM_SEGMENT.match(s) and not re.fullmatch(r"\d{2,4}", s) for s in segments):
+    if len(segments) > 3 or not all(STEM_SEGMENT.match(s) and not re.fullmatch(r"\d{2,4}", s) for s in segments) \
+            or RESERVED_STEM.search(segments[0]):
         raise UserError("domains.stemInvalid")
     return "/" + "/".join(segments)
 

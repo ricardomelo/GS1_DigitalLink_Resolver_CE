@@ -907,7 +907,7 @@
  "domains.checkRedirect": "{domain} ने पाथ को बनाए रखते हुए रिज़ॉल्वर पर रीडायरेक्ट नहीं किया: {detail}",
  "domains.nameInvalid": "डोमेन नाम लिखें, जैसे id.yourbrand.com।",
  "domains.installationName": "वह रिज़ॉल्वर का अपना पता है।",
- "domains.stemInvalid": "पाथ स्टेम में अक्षरों, अंकों, - . _ ~ के अधिकतम 3 भाग होते हैं (कोई भी भाग केवल 2 से 4 अंकों का नहीं)।",
+ "domains.stemInvalid": "पाथ स्टेम में अक्षरों, अंकों, - . _ ~ के अधिकतम 3 भाग होते हैं (कोई भी भाग केवल 2 से 4 अंकों का नहीं) और यह api, swaggerui, portal, home या .well-known से शुरू नहीं होता।",
  "domains.modeInvalid": "चुनें कि डोमेन रिज़ॉल्वर तक कैसे पहुँचता है।",
  "domains.unknown": "अज्ञात डोमेन।",
  "domains.exists": "वह डोमेन इंस्टॉलेशन पर पहले से पंजीकृत है।",

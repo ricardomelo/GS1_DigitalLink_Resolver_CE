@@ -35,6 +35,9 @@ Checks, without Docker:
   * the upgrade of an official installation (scripts/upgrade-from-official.sh) with a stand-in "docker" and local
     repositories: a backup before anything changes, the branch switched in place, the credentials kept, the records
     compared, and refusals that change nothing;
+  * only the resolver on an organisation's domain (ADR 0045): custom-domains.sh's rule file and its include in every
+    organisation's site, sites written before given it, a site nginx refuses put back; through a real nginx, the
+    portal's addresses redirected to the installation's name, the data entry API refused, codes passed on;
   * the portal image's files: the portal server is started from a folder assembled by the COPY instructions
     of portal/Dockerfile (not from the source folder), and every module and data file of portal/ is in it,
     so a file left out of the image fails here rather than on a server.
@@ -846,6 +849,234 @@ def domains_script_checks() -> None:
     shutil.rmtree(work, ignore_errors=True)
 
 
+
+def domain_rule_checks() -> None:
+    """Only the resolver on an organisation's domain (finding F-027, ADR 0045): scripts/custom-domains.sh writes a rule
+    file that redirects the portal's addresses to the installation's own name (PORTAL_ORIGIN, else RESOLVER_PUBLIC_URL,
+    else https://FQDN) and refuses the official data entry API, includes it in every organisation's site (new ones,
+    and those written before at the next run, once, before each "location /"), puts a site back when nginx refuses
+    it, reports a site it cannot change; and, through a real nginx, the paths each kind of request reaches."""
+    import http.server
+    import threading
+    script = REPO / "scripts" / "custom-domains.sh"
+    work = Path(tempfile.mkdtemp(prefix="domain-rule-test-"))
+    bin_dir, available, enabled, snippets = work / "bin", work / "available", work / "enabled", work / "snippets"
+    calls, listing, nginx_fails = work / "calls", work / "domains.tsv", work / "nginx-fails"
+    rule = snippets / "gs1resolver-domain-paths.conf"
+    include = f"include {rule};"
+    for folder in (bin_dir, available, enabled, work / "scripts" / "templates"):
+        folder.mkdir(parents=True)
+    shutil.copy(REPO / "scripts" / "templates" / "nginx-site-http.conf", work / "scripts" / "templates")
+    stand_ins = {
+        "docker": f'case "$*" in *"db.domains.find("*) cat {listing} ;; esac',
+        "nginx": f'echo "nginx $*" >> {calls}; [ ! -e {nginx_fails} ]',
+        "systemctl": f'echo "systemctl $*" >> {calls}',
+        # the certificate's line Certbot adds, so that a domain is served after its first run
+        "certbot": f'echo "certbot $*" >> {calls}; d=$(echo "$*" | sed -n "s/.*-d \\([^ ]*\\).*/\\1/p"); '
+                   f'echo "    ssl_certificate {work}/none.pem;" >> {available}/gs1resolver-domain-$d',
+    }
+    for name, body in stand_ins.items():
+        (bin_dir / name).write_text("#!/bin/bash\n" + body + "\n")
+        (bin_dir / name).chmod(0o755)
+    stub = socket.socket()
+    stub.bind(("127.0.0.1", 0))
+    stub_port = stub.getsockname()[1]
+    stub.close()
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
+           "NGINX_AVAILABLE": str(available), "NGINX_ENABLED": str(enabled), "NGINX_SNIPPETS": str(snippets),
+           "LOCK_FILE": str(work / "lock"), "PROXY_PORT": str(stub_port)}
+    for name in ("CERTBOT_EMAIL", "PORTAL_ORIGIN", "RESOLVER_PUBLIC_URL", "FQDN"):
+        env.pop(name, None)
+    dotenv = work / ".env"
+    dotenv.write_text("CERTBOT_EMAIL=ops@example.org\nFQDN=Resolver.Example.ORG\n")
+
+    def run(*args):
+        if calls.exists():
+            calls.unlink()
+        done = subprocess.run(["bash", str(script), *args], capture_output=True, text=True, timeout=60, env=env)
+        return done, calls.read_text() if calls.exists() else ""
+
+    def site(name: str) -> Path:
+        return available / f"gs1resolver-domain-{name}"
+
+    def rule_text() -> str:
+        return rule.read_text() if rule.exists() else ""
+
+    def before_each_location(text: str) -> bool:
+        """The include once, right before every "location / {" (a blank line between)."""
+        return (text.count(include) == text.count("location / {") > 0
+                and all(re.search(r"\n(\s*)" + re.escape(include) + r"\n\n\1location / \{", "\n" + part + "location / {")
+                        for part in text.split("location / {")[:-1]))
+
+    # a new domain: the rule written, the site including it before its location
+    listing.write_text("id.acme.example\t0\t0\t\t0\n")
+    result, log = run("apply")
+    text_rule = rule_text()
+    check(text_rule.count("location ") == 4
+          and "location = /portal { return 302 https://resolver.example.org/portal/; }" in text_rule
+          and "location ^~ /portal/ { return 302 https://resolver.example.org$request_uri; }" in text_rule
+          and "location ^~ /api { return 404; }" in text_rule and "location ^~ /swaggerui { return 404; }" in text_rule
+          and "adr/0045" in text_rule,
+          "domain rule: the portal's addresses redirected to https://FQDN (lower case), /api and /swaggerui refused, the "
+          "prefixes of the installation's proxy", text_rule)
+    new = site("id.acme.example").read_text() if site("id.acme.example").exists() else ""
+    check(before_each_location(new) and "server_name id.acme.example;" in new,
+          "domain rule: a new organisation's site includes the rule before its location", new[-500:])
+    check(result.returncode == 0 and "systemctl reload nginx" in log and log.index("nginx -t") < log.index("reload"),
+          "domain rule: the first rule tested by nginx and loaded", (result.stdout[-300:], log))
+    installer = (REPO / "scripts" / "templates" / "nginx-site-http.conf").read_text() \
+        + (REPO / "scripts" / "templates" / "nginx-site-https.conf").read_text()
+    check("gs1resolver-domain-paths" not in installer and "/portal" not in installer,
+          "domain rule: the installation's own name keeps the portal (the installer's templates do not include the rule)")
+
+    # sites written before: given the include once, before each location (the template's server and an HTTPS one with
+    # Certbot's certificate)
+    old_template = (REPO / "scripts" / "templates" / "nginx-site-http.conf").read_text()
+    old = old_template.replace("@FQDN@", "old.example").replace("@PROXY_PORT@", str(stub_port)) \
+        + "server {\n    listen 8443 ssl;\n    server_name old.example;\n" \
+          f"    ssl_certificate {work}/none.pem; # managed by Certbot\n    location / {{\n" \
+          f"        proxy_pass http://127.0.0.1:{stub_port};\n    }}\n}}\n"
+    site("old.example").write_text(old)
+    site("handmade.example").write_text("server {\n    listen 80;\n    server_name handmade.example;\n"
+                                        "    return 404;\n}\n")
+    listing.write_text(f"id.acme.example\t0\t0\tserved\t0\nold.example\t0\t0\tserved\t0\n")
+    result, _ = run("list")
+    check("old.example: the site still serves the portal and the data entry API (run apply)" in result.stdout
+          and "id.acme.example: the site still serves" not in result.stdout,
+          "domain rule: list names a site written before the rule", result.stdout)
+    result, log = run("apply")
+    migrated = site("old.example").read_text()
+    check(before_each_location(migrated) and migrated.count(include) == 2
+          and migrated.replace(include + "\n\n    ", "") == old,
+          "domain rule: a site written before gets the include before each of its locations, nothing else changed",
+          migrated)
+    check("old.example: only the resolver answers on this domain now" in result.stdout
+          and "systemctl reload nginx" in log and "nginx -t" in log,
+          "domain rule: the change said, nginx tested and reloaded", (result.stdout, log))
+    check("WARNING: the site of handmade.example has no 'location /'" in result.stdout
+          and site("handmade.example").read_text().count("include") == 0,
+          "domain rule: a site without 'location /' reported and left alone", result.stdout)
+    result, log = run("apply")
+    check(site("old.example").read_text() == migrated and "reload" not in log and "only the resolver" not in result.stdout,
+          "domain rule: a second run adds nothing and reloads nothing", (result.stdout, log))
+
+    # nginx refusing the migrated sites: each put back byte for byte, the run failing
+    refused = old.replace("old.example", "refused.example")
+    site("refused.example").write_text(refused)
+    nginx_fails.touch()
+    result, log = run("apply")
+    nginx_fails.unlink()
+    check(site("refused.example").read_text() == refused and result.returncode == 1
+          and "ERROR: nginx rejected the sites with the resolver-only rule; put back as they were: refused.example"
+          in result.stdout and "reload" not in log,
+          "domain rule: a site nginx refuses with the rule is put back as it was, the run fails", (result.stdout, log))
+    site("refused.example").unlink()
+
+    # the portal's address: PORTAL_ORIGIN, then RESOLVER_PUBLIC_URL; a value that is not an origin never reaches nginx
+    dotenv.write_text("CERTBOT_EMAIL=ops@example.org\nFQDN=resolver.example.org\n"
+                      "RESOLVER_PUBLIC_URL=http://localhost:8080/\n")
+    result, log = run("apply")
+    check("return 302 http://localhost:8080/portal/;" in rule_text() and "systemctl reload nginx" in log,
+          "domain rule: RESOLVER_PUBLIC_URL before FQDN; a changed rule loaded again", rule_text())
+    dotenv.write_text(dotenv.read_text() + "PORTAL_ORIGIN='https://Portal.Example.org'\n")
+    run("apply")
+    check("return 302 https://portal.example.org$request_uri;" in rule_text(),
+          "domain rule: PORTAL_ORIGIN first, as the portal reads it", rule_text())
+    dotenv.write_text("CERTBOT_EMAIL=ops@example.org\nPORTAL_ORIGIN=https://x.example/; return 302 https://evil\n")
+    result, _ = run("apply")
+    check("evil" not in rule_text() and "location ^~ /portal/ { return 404; }" in rule_text()
+          and "WARNING" in result.stderr,
+          "domain rule: an address that is not an origin refuses the portal instead, with a warning",
+          (rule_text(), result.stderr))
+
+    # through a real nginx: what each path of an organisation's domain reaches
+    dotenv.write_text("CERTBOT_EMAIL=ops@example.org\nFQDN=resolver.example.org\n")
+    run("apply")
+    nginx = shutil.which("nginx") or ("/usr/sbin/nginx" if Path("/usr/sbin/nginx").exists() else "")
+    if not nginx:
+        check(False, "domain rule: nginx is needed for the real nginx's checks")
+        shutil.rmtree(work, ignore_errors=True)
+        return
+    seen: list[str] = []
+
+    class Stub(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - the name http.server calls
+            seen.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"installation")
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", stub_port), Stub)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = free_port()
+    served = site("id.acme.example").read_text().replace("listen 80;", f"listen 127.0.0.1:{port};") \
+        .replace("listen [::]:80;", "")
+    served = "\n".join(line for line in served.splitlines() if "ssl_certificate" not in line)
+    (work / "site.conf").write_text(served)
+    (work / "logs").mkdir()
+    (work / "nginx.conf").write_text(f"pid {work}/nginx.pid;\nerror_log {work}/error.log;\nevents {{}}\nhttp {{\n"
+                                     f"  client_body_temp_path {work}/body;\n  proxy_temp_path {work}/proxy;\n"
+                                     f"  fastcgi_temp_path {work}/fastcgi;\n  uwsgi_temp_path {work}/uwsgi;\n"
+                                     f"  scgi_temp_path {work}/scgi;\n  include {work}/site.conf;\n}}\n")
+    proc = subprocess.Popen([nginx, "-e", str(work / "error.log"), "-c", str(work / "nginx.conf"), "-p", str(work),
+                             "-g", "daemon off;"], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
+
+    def ask(path: str) -> tuple[int, str]:
+        seen.clear()
+        request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers={"Host": "id.acme.example"})
+        for _ in range(50):
+            try:
+                with opener.open(request, timeout=5) as response:
+                    return response.status, ""
+            except urllib.error.HTTPError as error:
+                return error.code, error.headers.get("Location") or ""
+            except OSError:
+                time.sleep(0.1)
+        return 0, ""
+
+    try:
+        portal = {path: ask(path) for path in ("/portal", "/portal/", "/portal/api/login?next=%2Fportal%2F",
+                                                "/portal/api/v1/records")}
+        check(portal == {"/portal": (302, "https://resolver.example.org/portal/"),
+                         "/portal/": (302, "https://resolver.example.org/portal/"),
+                         "/portal/api/login?next=%2Fportal%2F":
+                             (302, "https://resolver.example.org/portal/api/login?next=%2Fportal%2F"),
+                         "/portal/api/v1/records": (302, "https://resolver.example.org/portal/api/v1/records")}
+              and not seen,
+              "domain rule (real nginx): the portal's pages and API sent to the installation's name, never passed on",
+              portal)
+        refused_paths = {path: ask(path)[0] for path in ("/api", "/api/new", "/api/index", "/apidocs", "/swaggerui",
+                                                         "/swaggerui/index.html")}
+        check(set(refused_paths.values()) == {404} and not seen,
+              "domain rule (real nginx): the data entry API and its Swagger UI refused with 404, never passed on",
+              refused_paths)
+        passed = {}
+        for path in ("/01/09506000134352", "/gs1/01/09506000134352/10/ABC%2F1?linkType=all", "/.well-known/gs1resolver",
+                     "/", "/home/home.js", "/portalx/01/09506000134352"):
+            status, _ = ask(path)
+            passed[path] = (status, list(seen))
+        check(all(status == 200 and seen_paths == [path] for path, (status, seen_paths) in passed.items()),
+              "domain rule (real nginx): codes (with a stem and %2F), the description file and the home page passed on "
+              "unchanged", passed)
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        server.shutdown()
+    shutil.rmtree(work, ignore_errors=True)
+
+
 # --------------------------------------------------------------------------- docker-compose.yml
 def compose_config(env_lines: list[str]) -> tuple[dict | None, str]:
     """The configuration as Compose resolves it, with these lines as the installation's .env (and
@@ -1286,6 +1517,7 @@ def main() -> int:
     upgrade_checks()
     rotation_checks()
     domains_script_checks()
+    domain_rule_checks()
     release_checks()
     logging_checks()
     proxy_checks()

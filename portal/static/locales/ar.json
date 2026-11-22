@@ -907,7 +907,7 @@
  "domains.checkRedirect": "لم يُعِد {domain} التوجيه إلى المحلِّل مع الإبقاء على المسار: {detail}",
  "domains.nameInvalid": "اكتب اسم نطاق، مثل id.yourbrand.com.",
  "domains.installationName": "هذا هو العنوان الخاص بالمحلِّل نفسه.",
- "domains.stemInvalid": "تتكوّن بادئة المسار من 3 أجزاء كحد أقصى من الأحرف والأرقام و- . _ ~ (لا يتكوّن أيٌّ منها من رقمين إلى 4 أرقام فقط).",
+ "domains.stemInvalid": "تتكوّن بادئة المسار من 3 أجزاء كحد أقصى من الأحرف والأرقام و- . _ ~ (لا يتكوّن أيٌّ منها من رقمين إلى 4 أرقام فقط) ولا تبدأ بـ api أو swaggerui أو portal أو home أو .well-known.",
  "domains.modeInvalid": "اختر كيف يصل النطاق إلى المحلِّل.",
  "domains.unknown": "نطاق غير معروف.",
  "domains.exists": "هذا النطاق مسجَّل بالفعل في التثبيت.",

@@ -907,7 +907,7 @@
  "domains.checkRedirect": "{domain}未在保留路径的情况下重定向到解析器：{detail}",
  "domains.nameInvalid": "请输入域名，例如 id.yourbrand.com。",
  "domains.installationName": "这是解析器自身的地址。",
- "domains.stemInvalid": "路径前缀最多由3段组成，每段可包含字母、数字及 - . _ ~（不能有仅由2到4位数字组成的段）。",
+ "domains.stemInvalid": "路径前缀最多由3段组成，每段可包含字母、数字及 - . _ ~（不能有仅由2到4位数字组成的段），且不能以 api、swaggerui、portal、home 或 .well-known 开头。",
  "domains.modeInvalid": "请选择该域名到达解析器的方式。",
  "domains.unknown": "未知域名。",
  "domains.exists": "该域名已在此安装中注册。",

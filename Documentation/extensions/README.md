@@ -952,7 +952,8 @@ or, with a path stem, `https://id.acme.example/gs1/01/…`.
 **In the portal** (user menu → **Domains**, administrators): an organisation's administrators add its domains, a server
 administrator the operator's (and sees every domain); at most 10 per organisation. A name is a lower-case host name
 (internationalised names in Punycode), never the installation's own; a stem has one to three
-segments, none of 2 to 4 digits. Each domain is proved by a DNS TXT record `_gs1resolver.<domain>` =
+segments, none of 2 to 4 digits, and does not begin with a segment the installation's proxy gives to something other
+than the resolver (`api…`, `swaggerui…`, `portal`, `home`, `.well-known`). Each domain is proved by a DNS TXT record `_gs1resolver.<domain>` =
 `gs1resolver-verify=<token>` (**Verify**). Until then it is a claim, deleted after 7 days: several organisations may
 claim the same name and the first to verify it keeps it ([ADR 0035](../adr/0035-domain-claims-and-lapsed-proofs.md)).
 The worker looks at the record of each verified domain once a day; missing for 7 days, the domain *lapses*: still
@@ -985,6 +986,17 @@ hour per name); a run holds a lock (`/run/lock/gs1resolver-domains.lock`). With 
 proxy the installer does not schedule it: with Certbot and `CERTBOT_EMAIL`, install `scripts/custom-domains.cron` as
 `/etc/cron.d/resolver-domains` after replacing `REPOSITORY`. Sites of domains removed in the portal are listed and
 deleted by hand.
+
+**Only the resolver on an organisation's domain** ([ADR 0045](../adr/0045-organisation-domains-resolver-only.md)).
+Every site the script writes includes `/etc/nginx/snippets/gs1resolver-domain-paths.conf`, which it writes too: the
+portal's addresses (`/portal`, `/portal/…`) answer **302** to the same address on the installation's portal
+(`PORTAL_ORIGIN`, else `RESOLVER_PUBLIC_URL`, else `https://FQDN`), and the official data entry API (`/api…`,
+`/swaggerui…`) answers **404**, whatever `DATA_ENTRY_API_ALLOW` lists; codes, `/.well-known/gs1resolver` and the home
+page are passed on as before. Sites written by an earlier version get the include at the next run (scheduled: within
+5 minutes of the update; by hand: `sudo scripts/custom-domains.sh apply`), nginx tested first and each site put back
+as it was when nginx refuses it. `list` names a site that does not include it yet; a site without `location /` (edited
+by hand) is reported and left alone: add `include /etc/nginx/snippets/gs1resolver-domain-paths.conf;` to its server
+blocks yourself. Integrations call the tenant API and the data entry API on the installation's name.
 
 **Testing a failure** (no second domain needed). A domain never verified stays *Waiting for DNS* and the scheduled
 run does not try it, so a failure is tested with a name under the installation's own domain that does not exist in

@@ -907,7 +907,7 @@
  "domains.checkRedirect": "{domain} yolu koruyarak çözümleyiciye yönlendirmedi: {detail}",
  "domains.nameInvalid": "id.yourbrand.com gibi bir alan adı yazın.",
  "domains.installationName": "Bu, çözümleyicinin kendi adresi.",
- "domains.stemInvalid": "Bir yol önekinin harf, rakam, - . _ ~ içeren en fazla 3 parçası olur (hiçbiri yalnızca 2 ila 4 rakamdan oluşamaz).",
+ "domains.stemInvalid": "Bir yol önekinin harf, rakam, - . _ ~ içeren en fazla 3 parçası olur (hiçbiri yalnızca 2 ila 4 rakamdan oluşamaz) ve api, swaggerui, portal, home ya da .well-known ile başlayamaz.",
  "domains.modeInvalid": "Alan adının çözümleyiciye nasıl ulaşacağını seçin.",
  "domains.unknown": "Bilinmeyen alan adı.",
  "domains.exists": "Bu alan adı kurulumda zaten kayıtlı.",

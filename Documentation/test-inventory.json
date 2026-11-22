@@ -213,7 +213,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_2becd3d559d…)",
+    "a wrong key is refused (rk_71a32ebc274…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -895,6 +895,22 @@
     "custom domains: list reports sites of domains no longer verified",
     "custom domains: the mongosh scripts are valid JavaScript",
     "custom domains: scheduled every 5 minutes as root by its cron file, quiet",
+    "domain rule: the portal's addresses redirected to https://FQDN (lower case), /api and /swaggerui refused, the prefixes of the installation's proxy",
+    "domain rule: a new organisation's site includes the rule before its location",
+    "domain rule: the first rule tested by nginx and loaded",
+    "domain rule: the installation's own name keeps the portal (the installer's templates do not include the rule)",
+    "domain rule: list names a site written before the rule",
+    "domain rule: a site written before gets the include before each of its locations, nothing else changed",
+    "domain rule: the change said, nginx tested and reloaded",
+    "domain rule: a site without 'location /' reported and left alone",
+    "domain rule: a second run adds nothing and reloads nothing",
+    "domain rule: a site nginx refuses with the rule is put back as it was, the run fails",
+    "domain rule: RESOLVER_PUBLIC_URL before FQDN; a changed rule loaded again",
+    "domain rule: PORTAL_ORIGIN first, as the portal reads it",
+    "domain rule: an address that is not an origin refuses the portal instead, with a warning",
+    "domain rule (real nginx): the portal's pages and API sent to the installation's name, never passed on",
+    "domain rule (real nginx): the data entry API and its Swagger UI refused with 404, never passed on",
+    "domain rule (real nginx): codes (with a stem and %2F), the description file and the home page passed on unchanged",
     "engine release 1.4.1: the build argument of every service that checks GS1 data",
     "engine release: web_server/Dockerfile installs gs1encoder from a lock of the build argument's release",
     "engine release: data_entry_server/Dockerfile installs gs1encoder from a lock of the build argument's release",
@@ -973,7 +989,7 @@
     "resolver: connects as its own user, logging the host and never the password",
     "data entry API: connects as its own user, logging the host and never the password"
    ],
-   "count": 188,
+   "count": 204,
    "ciOnly": false
   },
   "dictionary": {
@@ -1016,9 +1032,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (264 features)",
+    "features.md: every table has a Checks column (265 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (561 references)",
+    "…each reference names a program of the inventory (570 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (82)",
     "…and the inventory holds no program that no longer exists",
@@ -1029,8 +1045,8 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (44)",
-    "every relative link of the documents leads to a file (60 documents)"
+    "…and every decision record (45)",
+    "every relative link of the documents leads to a file (61 documents)"
    ],
    "count": 15,
    "ciOnly": false
@@ -1058,6 +1074,8 @@
     "refused: {'domain': 'y.acme.example', 'stem': '/a/b/c/d'} → domains.stemInvalid",
     "refused: {'domain': 'y.acme.example', 'stem': '/a b'} → domains.stemInvalid",
     "refused: {'domain': 'y.acme.example', 'mode': 'proxy'} → domains.modeInvalid",
+    "refused: a stem whose first segment goes elsewhere at the proxy (/portal, /api…, /swaggerui, /home, /.well-known; any case) → domains.stemInvalid (ADR 0045)",
+    "…but the same words further in or longer are a stem like any other",
     "a claim does not reserve the name: another organisation claims it too (ADR 0035)",
     "…each claim under its own key (the name and the scope); neither is the domain yet",
     "…each organisation sees its own claim only",
@@ -1143,7 +1161,7 @@
     "…which the portal runs at start",
     "every domains text in both languages (43)"
    ],
-   "count": 104,
+   "count": 106,
    "ciOnly": false
   },
   "domains_e2e": {
@@ -3611,7 +3629,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:44719/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:45193/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",
@@ -4878,7 +4896,7 @@
     "record created",
     "default link type = first target",
     "no query-string option: nothing about fwqs stored (always passed on, Resolver 2.12)",
-    "live language switch",
+    "live language switch2026-11-22 04:49:08,637 INFO werkzeug 127.0.0.1 - - [22/Nov/2026 04:49:08] \"GET /portal/api/qrcode?key=01&value=07898357410015&hri=full&version=auto&ecl=m&env=retail HTTP/1.1\" 200 -",
     "English wording",
     "no GS1 branding option",
     "png download",
@@ -4903,7 +4921,7 @@
     "export: languages outside the menu kept",
     "export: CSV file",
     "import dialog shows the limits of every format",
-    "limits follow the language",
+    "limits follow the language2026-11-22 04:49:13,786 INFO werkzeug 127.0.0.1 - - [22/Nov/2026 04:49:13] \"GET /portal/api/qrcode?key=01&value=07898357410015&hri=full&version=auto&ecl=m&env=retail HTTP/1.1\" 200 -",
     "file picker offers .txt",
     "CSV above its size limit refused in the browser",
     "import preview counts",

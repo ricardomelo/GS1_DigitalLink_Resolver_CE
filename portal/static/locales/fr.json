@@ -907,7 +907,7 @@
  "domains.checkRedirect": "{domain} n’a pas redirigé vers le résolveur en conservant le chemin : {detail}",
  "domains.nameInvalid": "Saisissez un nom de domaine, par exemple id.yourbrand.com.",
  "domains.installationName": "Il s’agit de l’adresse propre du résolveur.",
- "domains.stemInvalid": "Un préfixe de chemin comporte jusqu’à 3 parties composées de lettres, chiffres, - . _ ~ (aucune ne doit être formée uniquement de 2 à 4 chiffres).",
+ "domains.stemInvalid": "Un préfixe de chemin comporte jusqu’à 3 parties composées de lettres, chiffres, - . _ ~ (aucune ne doit être formée uniquement de 2 à 4 chiffres) et ne commence pas par api, swaggerui, portal, home ou .well-known.",
  "domains.modeInvalid": "Choisissez comment le domaine atteint le résolveur.",
  "domains.unknown": "Domaine inconnu.",
  "domains.exists": "Ce domaine est déjà enregistré sur l’installation.",

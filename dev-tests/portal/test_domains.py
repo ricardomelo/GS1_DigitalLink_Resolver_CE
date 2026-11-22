@@ -121,6 +121,23 @@ for payload, expected in [({"domain": "localhost"}, "domains.nameInvalid"),
                           ({"domain": "y.acme.example", "mode": "proxy"}, "domains.modeInvalid")]:
     r = ana.post("/portal/api/domains", json=payload, headers=ORIGIN)
     check(f"refused: {payload} → {expected}", r.status_code == 422 and code(r) == expected, (r.status_code, code(r)))
+# a stem the installation's proxy would give to the portal, the data entry API or the home page (ADR 0045)
+reserved = {stem: code(ana.post("/portal/api/domains", json={"domain": "y.acme.example", "stem": stem}, headers=ORIGIN))
+            for stem in ("/portal", "/api", "/apiary/x", "/swaggerui", "/home/x", "/.well-known", "/PORTAL", "/Api")}
+check("refused: a stem whose first segment goes elsewhere at the proxy (/portal, /api…, /swaggerui, /home, /.well-known;"
+      " any case) → domains.stemInvalid (ADR 0045)", set(reserved.values()) == {"domains.stemInvalid"}, reserved)
+
+
+def stem_or_code(stem: str) -> str:
+    try:
+        return domains.clean_stem(stem)
+    except users.UserError as error:
+        return str(error)
+
+
+kept = [stem_or_code(s) for s in ("/portalx", "/gs1/api", "/homes", "/my-api")]
+check("…but the same words further in or longer are a stem like any other",
+      kept == ["/portalx", "/gs1/api", "/homes", "/my-api"], kept)
 r = bia.post("/portal/api/domains", json={"domain": "id.acme.example"}, headers=ORIGIN)
 check("a claim does not reserve the name: another organisation claims it too (ADR 0035)", r.status_code == 201
       and not r.get_json()["item"]["verified"] and r.get_json()["item"]["domain"] == "id.acme.example", r.get_json())

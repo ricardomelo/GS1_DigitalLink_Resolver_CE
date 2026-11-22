@@ -907,7 +907,7 @@
  "domains.checkRedirect": "{domain} はパスを保ったままリゾルバーへリダイレクトしませんでした：{detail}",
  "domains.nameInvalid": "id.yourbrand.com のようなドメイン名を入力してください。",
  "domains.installationName": "それはリゾルバー自身のアドレスです。",
- "domains.stemInvalid": "パスのステムは、英字、数字、- . _ ~ からなる最大3つの部分で構成します（2～4桁の数字のみの部分は不可）。",
+ "domains.stemInvalid": "パスのステムは、英字、数字、- . _ ~ からなる最大3つの部分で構成します（2～4桁の数字のみの部分は不可）。api、swaggerui、portal、home、.well-known で始めることはできません。",
  "domains.modeInvalid": "ドメインからリゾルバーへの到達方法を選択してください。",
  "domains.unknown": "不明なドメインです。",
  "domains.exists": "そのドメインはすでにインストール環境に登録されています。",

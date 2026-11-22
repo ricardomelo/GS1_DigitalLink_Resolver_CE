@@ -1756,3 +1756,18 @@ already check every value keep their own messages. The seeded sweep, kept as a t
 write route of the application's own table of routes, then found one more fault: an XLSX export failing on a control
 character in its column titles. A schema per route, a catch-all turning exceptions into 400, and refusing unknown
 fields were weighed and not taken. 15 mutations, all caught.
+
+## Session 61 — a forwarding rule told to the organisations it concerns
+
+Finding F-028 of the security assessment, in one code commit (`8d27572`;
+[ADR 0046](adr/0046-forwarding-tells-organisations.md)). A prefix rule answers every code of its prefix before this
+resolver's records, so a rule over an organisation's prefixes bypasses the records — the leaflets — it keeps up to date;
+the Forwarding screen named the organisations to the server administrator, but the event went to the operator's trail
+only and the organisation was never told. Now each change that changes where an organisation's codes go is journalled
+in its own trail, by the operator, and sent to its administrators as an alert (`forwarding-on`, `forwarding-off`, new
+messages in the twelve languages); a note, or a rule that stays off, tells nobody. An approval by the organisation,
+refusing overlapping rules and an always-sent message were weighed and not taken. `test_forwarding.py` gained 21
+checks; 16 mutations, all caught. The Forwarding screen's hint says so, in the twelve languages. The guide's screenshot
+tool, stopped by the portal's Content-Security-Policy since session 54, takes its pictures again (`5d261c8`); only the
+Forwarding screen's image is renewed.
+

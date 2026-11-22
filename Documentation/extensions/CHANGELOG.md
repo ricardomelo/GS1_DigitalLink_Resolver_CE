@@ -11,6 +11,20 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### A forwarding rule told to the organisations it concerns (session 61)
+- **Changed: an organisation learns when a forwarding rule sends its codes elsewhere**
+  ([ADR 0046](../adr/0046-forwarding-tells-organisations.md)). A prefix rule of the server administrators
+  ([ADR 0018](../adr/0018-forwarding.md)) answers every code of its prefix before this resolver's records, an
+  organisation's records included; before, only the operator's audit trail recorded it. Now each change that changes
+  where an organisation's codes go — a rule added or removed while on, switched on or off, given another destination
+  or way of sending — is also an event in that organisation's own audit trail (by the operator) and an e-mail alert to
+  its administrators: *Codes of prefix … are now sent to another resolver* (the destination, the organisation's
+  prefixes covered, when) or *… are no longer sent to another resolver* (to check the records that answer again).
+  Changing only a rule's note, or a rule that stays off, tells nobody. The messages are alerts (Options → E-mail, on
+  by default), in the twelve languages; the *Forwarding* screen says so beside the rules.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`; the messages need e-mail set up.
+  Commit `8d27572`.
+
 ### Only the resolver on an organisation's own domain (session 60)
 - **Changed: an organisation's own domain serves its codes and nothing else**
   ([ADR 0045](../adr/0045-organisation-domains-resolver-only.md)). The host's sites that `scripts/custom-domains.sh`

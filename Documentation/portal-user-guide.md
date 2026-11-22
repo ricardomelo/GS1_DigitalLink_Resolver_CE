@@ -190,7 +190,9 @@ Security notices are always sent; **When an import or link check I started has f
 long imports and for **Check every record's links**. Administrators also choose **Monitoring alerts** (on until
 switched off): the resolver not answering, a daily backup that failed or is late, the HTTPS certificate about to
 expire, and spikes of scans of codes nobody registered (an organisation's administrators receive these for its codes
-only). Select **Save preferences**.
+only); an organisation's administrators also receive, under the same choice, the DNS record of one of its domains gone
+missing and a forwarding rule of the server administrators that starts or stops sending its codes to another resolver
+(the message names the prefix, the destination and the organisation's prefixes covered). Select **Save preferences**.
 
 ## 4. The editor at a glance
 
@@ -1046,6 +1048,10 @@ answer itself ([ADR 0018](adr/0018-forwarding.md)):
   page. Add a rule with the fields and **Add rule**; **Edit** fills the fields again (the prefix stays); the switch in
   the list turns a rule on and off without removing it; **Remove** asks first. When a rule's prefix overlaps an
   organisation's prefixes, the list names the organisations: their codes of that prefix are answered elsewhere.
+  Each change that sends an organisation's codes elsewhere, or stops doing so (a rule added or removed while on,
+  switched on or off, given another destination or way of sending), is recorded in that organisation's own audit
+  trail and its administrators receive an alert by e-mail
+  ([ADR 0046](adr/0046-forwarding-tells-organisations.md)); changing only the note tells nobody.
 
 A destination is never this installation or one of its organisations' domains (the requests would come back). Every
 change is in the audit trail and reaches the resolver within 30 seconds. The overview shows how many requests each

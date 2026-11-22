@@ -403,6 +403,30 @@ TEXTS = {
                   "Se ainda usam o domínio, publique o registro de novo (o valor está em Domínios ou em Login único) e clique em Verificar. Se não o usam mais, remova-o.\n\n"
                   "Você recebe esta mensagem como administrador; pode desligar os alertas em Opções → E-mail."),
     },
+    "forwarding-on": {
+        "en-GB": ("Codes of prefix {prefix} are now sent to another resolver",
+                  "Hello,\n\n"
+                  "Since {at}, the resolver of {operator} sends every code whose GS1 Company Prefix starts with {prefix} to {target}: a server administrator set this forwarding rule. It covers these prefixes of {organisation}: {prefixes}.\n\n"
+                  "Requests for those codes no longer reach the records you keep in this portal; the records themselves have not changed. If you did not expect this, contact the operator of the portal. The change is in your audit trail.\n\n"
+                  "You receive this message as an administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Os códigos do prefixo {prefix} agora vão para outro resolver",
+                  "Olá,\n\n"
+                  "Desde {at}, o resolver de {operator} envia a {target} todo código cujo prefixo de empresa GS1 começa com {prefix}: um administrador do servidor definiu essa regra de encaminhamento. Ela abrange estes prefixos de {organisation}: {prefixes}.\n\n"
+                  "As requisições desses códigos não chegam mais aos registros que vocês mantêm neste portal; os registros em si não mudaram. Se vocês não esperavam por isso, procurem o operador do portal. A mudança está na sua trilha de auditoria.\n\n"
+                  "Você recebe esta mensagem como administrador; pode desligar os alertas em Opções → E-mail."),
+    },
+    "forwarding-off": {
+        "en-GB": ("Codes of prefix {prefix} are no longer sent to another resolver",
+                  "Hello,\n\n"
+                  "Since {at}, the resolver of {operator} no longer sends codes whose GS1 Company Prefix starts with {prefix} to {target}: a server administrator switched off or removed the forwarding rule. It covered these prefixes of {organisation}: {prefixes}.\n\n"
+                  "Unless another rule covers them, requests for those codes are answered again from the records you keep in this portal: check that they are up to date. The change is in your audit trail.\n\n"
+                  "You receive this message as an administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Os códigos do prefixo {prefix} não vão mais para outro resolver",
+                  "Olá,\n\n"
+                  "Desde {at}, o resolver de {operator} não envia mais a {target} os códigos cujo prefixo de empresa GS1 começa com {prefix}: um administrador do servidor desligou ou removeu a regra de encaminhamento. Ela abrangia estes prefixos de {organisation}: {prefixes}.\n\n"
+                  "Salvo se outra regra os abranger, as requisições desses códigos voltam a ser respondidas pelos registros que vocês mantêm neste portal: confira se estão atualizados. A mudança está na sua trilha de auditoria.\n\n"
+                  "Você recebe esta mensagem como administrador; pode desligar os alertas em Opções → E-mail."),
+    },
     "test": {
         "en-GB": ("Test message from the link management portal",
                   "Hello,\n\n"

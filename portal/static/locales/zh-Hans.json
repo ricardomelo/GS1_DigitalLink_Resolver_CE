@@ -827,7 +827,7 @@
  "forwarding.fallbackOnState": "已开启：此处未登记的代码发送到 {url}。",
  "forwarding.fallbackOffState": "已关闭：此处未登记的代码将显示“未找到”页面。",
  "forwarding.rulesTitle": "按前缀转发",
- "forwarding.rulesHint": "凡 GS1 厂商识别代码以该前缀开头的代码都会发送到目标，即使已在此处登记。最长的前缀优先。更改在 30 秒内生效。",
+ "forwarding.rulesHint": "凡 GS1 厂商识别代码以该前缀开头的代码都会发送到目标，即使已在此处登记。最长的前缀优先。更改在 30 秒内生效。将某个组织的代码转发到别处或停止转发的每项变更，都会记入该组织的审计日志，并通过电子邮件告知其管理员。",
  "forwarding.prefix": "前缀（3 至 12 位数字）",
  "forwarding.target": "目标（https://…）",
  "forwarding.mode": "方式",

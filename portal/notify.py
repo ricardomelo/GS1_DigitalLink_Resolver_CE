@@ -11,8 +11,9 @@ Categories (TEMPLATES maps each message to one):
   security    the password or the e-mail address was changed, the account was locked: always
   jobs        an import or a link check the user started has finished: optional, off by default
   alerts      monitoring (Documentation/adr/0008-monitoring-and-alerts.md): the resolver down, the backup, the
-              certificate, the request log's space, the GCP length table's age, spikes of 404 — to administrators:
-              optional, on by default
+              certificate, the request log's space, the GCP length table's age, spikes of 404 — to administrators,
+              and a forwarding rule that sends an organisation's codes elsewhere or stops (ADR 0046) — to that
+              organisation's administrators: optional, on by default
 """
 import logging
 import os
@@ -43,6 +44,7 @@ TEMPLATES = {
     "alert-404-spike": "alerts", "alert-log-space": "alerts", "alert-log-space-ok": "alerts",
     "alert-gcp-table": "alerts", "alert-gcp-table-ok": "alerts",
     "alert-journal": "alerts", "alert-journal-ok": "alerts", "alert-domain-lapsed": "alerts",
+    "forwarding-on": "alerts", "forwarding-off": "alerts",
 }
 # Waits before each new try after a temporary failure, in minutes; after the last, the message has failed.
 RETRY_MINUTES = (1, 5, 15, 60, 120)

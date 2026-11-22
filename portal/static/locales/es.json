@@ -827,7 +827,7 @@
  "forwarding.fallbackOnState": "Activado: los códigos no registrados aquí van a {url}.",
  "forwarding.fallbackOffState": "Desactivado: los códigos no registrados aquí reciben una página de «no encontrado».",
  "forwarding.rulesTitle": "Reenvío por prefijo",
- "forwarding.rulesHint": "Todo código cuyo prefijo de empresa GS1 empieza por el prefijo se envía al destino, incluso los registrados aquí. Prevalece el prefijo más largo. Los cambios se aplican en 30 segundos como máximo.",
+ "forwarding.rulesHint": "Todo código cuyo prefijo de empresa GS1 empieza por el prefijo se envía al destino, incluso los registrados aquí. Prevalece el prefijo más largo. Los cambios se aplican en 30 segundos como máximo. Cada cambio que envíe los códigos de una organización a otro lugar, o deje de hacerlo, queda registrado en su pista de auditoría y se comunica por correo electrónico a sus administradores.",
  "forwarding.prefix": "Prefijo (3 a 12 dígitos)",
  "forwarding.target": "Destino (https://…)",
  "forwarding.mode": "Cómo enviar",

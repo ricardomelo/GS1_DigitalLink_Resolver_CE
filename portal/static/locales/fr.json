@@ -827,7 +827,7 @@
  "forwarding.fallbackOnState": "Activé : les codes non enregistrés ici vont vers {url}.",
  "forwarding.fallbackOffState": "Désactivé : les codes non enregistrés ici reçoivent une page « introuvable ».",
  "forwarding.rulesTitle": "Redirection par préfixe",
- "forwarding.rulesHint": "Tout code dont le préfixe d’entreprise GS1 commence par le préfixe est envoyé à la destination, même ceux enregistrés ici. Le préfixe le plus long l’emporte. Les changements s’appliquent en 30 secondes au plus.",
+ "forwarding.rulesHint": "Tout code dont le préfixe d’entreprise GS1 commence par le préfixe est envoyé à la destination, même ceux enregistrés ici. Le préfixe le plus long l’emporte. Les changements s’appliquent en 30 secondes au plus. Chaque changement qui envoie ailleurs les codes d’une organisation, ou cesse de le faire, est inscrit dans son journal d’audit et signalé par e-mail à ses administrateurs.",
  "forwarding.prefix": "Préfixe (3 à 12 chiffres)",
  "forwarding.target": "Destination (https://…)",
  "forwarding.mode": "Comment envoyer",

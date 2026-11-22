@@ -827,7 +827,7 @@
  "forwarding.fallbackOnState": "Açık: burada kayıtlı olmayan kodlar {url} adresine gider.",
  "forwarding.fallbackOffState": "Kapalı: burada kayıtlı olmayan kodlar “bulunamadı” sayfası alır.",
  "forwarding.rulesTitle": "Öneke göre yönlendirme",
- "forwarding.rulesHint": "GS1 firma öneki bu önekle başlayan her kod, burada kayıtlı olsa bile hedefe gönderilir. En uzun önek geçerlidir. Değişiklikler en geç 30 saniyede uygulanır.",
+ "forwarding.rulesHint": "GS1 firma öneki bu önekle başlayan her kod, burada kayıtlı olsa bile hedefe gönderilir. En uzun önek geçerlidir. Değişiklikler en geç 30 saniyede uygulanır. Bir kuruluşun kodlarını başka yere gönderen ya da göndermeyi bırakan her değişiklik, o kuruluşun denetim kaydına yazılır ve yöneticilerine e-postayla bildirilir.",
  "forwarding.prefix": "Önek (3–12 basamak)",
  "forwarding.target": "Hedef (https://…)",
  "forwarding.mode": "Nasıl",

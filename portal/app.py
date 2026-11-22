@@ -1050,6 +1050,29 @@ def forwarding_view() -> dict:
             "readOnly": bool(g.support)}
 
 
+def tell_forwarded(action: str, detail: str, before: dict | None, after: dict | None) -> list[str]:
+    """A rule change that changes where codes go (forwarding.changes_destination()), for each organisation whose
+    prefixes the rule overlaps (finding F-028, ADR 0046): the event in that organisation's own audit trail, by the
+    operator, and a message to its administrators (forwarding-on: its codes now go to the rule's destination;
+    forwarding-off: the rule no longer sends them). Returns the names of the organisations concerned."""
+    if not forwarding.changes_destination(before, after):
+        return []
+    prefix = (after or before)["prefix"]
+    going = forwarding.destination(after)
+    told = []
+    for tenant in tenants.load():
+        prefixes = forwarding.covered(prefix, tenant)
+        if not prefixes:
+            continue
+        log_event(action, tenant=tenant["id"], detail=detail)
+        for user in monitor.recipients(tenant["id"]):
+            notify.send(user, "forwarding-on" if going else "forwarding-off", prefix=prefix,
+                        target=(going or forwarding.destination(before))[0], organisation=tenant["name"],
+                        prefixes=", ".join(prefixes), at=notify.now_text() + " UTC")
+        told.append(tenant["name"])
+    return sorted(told)
+
+
 def forwarding_writable():
     """None, or the refusal during support access."""
     return message("forwarding.readOnly", 403) if g.support else None
@@ -1090,8 +1113,9 @@ def post_forwarding_rule():
     data = request.get_json(silent=True) or {}
     found, _ = forwarding.save_rule(data.get("prefix"), data, g.user, forwarding_own_hosts(), new=True)
     audit.info("user=%s action=forwarding-rule-create prefix=%s", g.user, found["prefix"])
-    log_event("forwarding-rule-create", tenant=None,
-              detail=f'prefix={found["prefix"]} target={found["target"]} enabled={str(found["enabled"]).lower()}')
+    detail = f'prefix={found["prefix"]} target={found["target"]} enabled={str(found["enabled"]).lower()}'
+    log_event("forwarding-rule-create", tenant=None, detail=detail)
+    tell_forwarded("forwarding-rule-create", detail, None, found)
     return message("forwarding.ruleSaved", 200, params={"prefix": found["prefix"]}, **forwarding_view())
 
 
@@ -1104,10 +1128,11 @@ def put_forwarding_rule(prefix):
     if refused:
         return refused
     data = request.get_json(silent=True) or {}
-    found, _ = forwarding.save_rule(prefix, data, g.user, forwarding_own_hosts(), new=False)
+    found, before = forwarding.save_rule(prefix, data, g.user, forwarding_own_hosts(), new=False)
     audit.info("user=%s action=forwarding-rule-update prefix=%s", g.user, found["prefix"])
-    log_event("forwarding-rule-update", tenant=None,
-              detail=f'prefix={found["prefix"]} target={found["target"]} enabled={str(found["enabled"]).lower()}')
+    detail = f'prefix={found["prefix"]} target={found["target"]} enabled={str(found["enabled"]).lower()}'
+    log_event("forwarding-rule-update", tenant=None, detail=detail)
+    tell_forwarded("forwarding-rule-update", detail, before, found)
     return message("forwarding.ruleSaved", 200, params={"prefix": found["prefix"]}, **forwarding_view())
 
 
@@ -1121,7 +1146,9 @@ def delete_forwarding_rule(prefix):
         return refused
     found = forwarding.remove_rule(prefix)
     audit.info("user=%s action=forwarding-rule-remove prefix=%s", g.user, found["prefix"])
-    log_event("forwarding-rule-remove", tenant=None, detail=f'prefix={found["prefix"]} target={found["target"]}')
+    detail = f'prefix={found["prefix"]} target={found["target"]}'
+    log_event("forwarding-rule-remove", tenant=None, detail=detail)
+    tell_forwarded("forwarding-rule-remove", detail, found, None)
     return message("forwarding.ruleRemoved", 200, params={"prefix": found["prefix"]}, **forwarding_view())
 
 

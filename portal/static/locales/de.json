@@ -827,7 +827,7 @@
  "forwarding.fallbackOnState": "Ein: hier nicht registrierte Codes gehen an {url}.",
  "forwarding.fallbackOffState": "Aus: hier nicht registrierte Codes erhalten eine „Nicht gefunden“-Seite.",
  "forwarding.rulesTitle": "Weiterleitung nach Präfix",
- "forwarding.rulesHint": "Jeder Code, dessen GS1-Basisnummer mit dem Präfix beginnt, wird an das Ziel gesendet, auch hier registrierte Codes. Das längste Präfix gewinnt. Änderungen gelten nach spätestens 30 Sekunden.",
+ "forwarding.rulesHint": "Jeder Code, dessen GS1-Basisnummer mit dem Präfix beginnt, wird an das Ziel gesendet, auch hier registrierte Codes. Das längste Präfix gewinnt. Änderungen gelten nach spätestens 30 Sekunden. Jede Änderung, die die Codes einer Organisation anderswohin sendet oder damit aufhört, wird in deren Aktivitätsprotokoll festgehalten und ihren Administratoren per E-Mail mitgeteilt.",
  "forwarding.prefix": "Präfix (3 bis 12 Ziffern)",
  "forwarding.target": "Ziel (https://…)",
  "forwarding.mode": "Wie senden",

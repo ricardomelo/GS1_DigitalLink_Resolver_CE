@@ -1044,7 +1044,8 @@ answer itself ([ADR 0018](adr/0018-forwarding.md)):
   code nobody registered here is no longer answered with a "not found" page but sent, with its path and query string,
   to that address — GS1's global resolver, `https://id.gs1.org`, unless you type another `https://` address. A code
   that is registered here but lacks the link type asked, and a request that is not a valid GS1 Digital Link, are
-  answered here as before. Untick and save to switch it off; the address is kept.
+  answered here as before; while the resolver cannot read its records' database nothing is sent there (the scan is
+  answered *Please try again in a moment*). Untick and save to switch it off; the address is kept.
 - **Forwarding by prefix.** A rule sends **every** code whose GS1 Company Prefix starts with its prefix (3 to 12
   digits: a country's GS1 prefix, a company prefix or a range of it) to its destination, even codes registered here;
   the longest matching prefix wins. *Keep the code's path* suits another resolver
@@ -1203,7 +1204,9 @@ nobody registered, or a link type the record does not have. The line above the b
 by machines — search engine crawlers, link previews, monitors, command-line tools — are counted apart and left out
 of the bars. A compressed link (one part of letters, digits, `-` and `_` after the resolver's name) is opened by a
 separate program, a few at a time: when too many arrive at once the scan is answered *Please try again in a moment*
-(counted under *Error*) and the next attempt normally succeeds; other forms of the link are not affected.
+(counted under *Error*) and the next attempt normally succeeds; other forms of the link are not affected. While the
+resolver cannot read its records' database, every scan is answered *Please try again in a moment* too, also counted
+under *Error* — never as *Code not registered* ([ADR 0051](adr/0051-records-unavailable.md)).
 
 **Latest requests.** The newest first, 200 at a time (**Show more** for the next ones). Each row shows when, the
 **Code** (the identifier and the qualifiers in the scan: a serial number appears only as `/21/*`; `?17` means the QR

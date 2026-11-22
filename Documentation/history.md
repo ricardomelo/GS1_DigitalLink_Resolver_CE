@@ -1822,3 +1822,15 @@ exception goes with its traceback, and the statuses are unchanged. The two image
 switch putting the exception back, an error identifier in every answer and one global error handler were weighed and
 not taken. `test_data_entry_api.py` gained 16 checks, `test_resolver.py` 4, `test_least_privilege.py` 3; 16 mutations,
 all caught.
+
+## Session 66 — a failure of the records' database answered "try again", never "not registered"
+
+Finding F-031 of the security assessment, seen in session 65 while fixing U-006, in one code commit (`98c083b`;
+[ADR 0051](adr/0051-records-unavailable.md)). The resolver read a failure of its records' database like a missing
+document, as the official code did: during an outage every scan was told that nothing was registered for the product,
+the request log counted unknown codes and, with the resolver of last resort on, registered codes were sent to another
+resolver. Such a scan is now answered 503 with `Retry-After` and the page that already asked to try again in twelve
+languages, counted as an error, never sent to the last resort; the serialised keys' search and the item page's buttons
+stop the same way. An outcome of its own in the request log, sending to the last resort during an outage and serving
+cached answers were weighed and not taken. `test_resolver.py` gained 12 checks, `test_forwarding_resolver.py` 6;
+12 mutations, all caught.

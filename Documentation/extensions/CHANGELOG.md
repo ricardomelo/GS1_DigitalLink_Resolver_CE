@@ -13,6 +13,19 @@ Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSW
 `.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
 (session 45, below).
 
+### A failure of the records' database answered "try again", never "not registered" (session 66)
+- **Fixed: while the resolver cannot read its records' database, a scan is answered 503 with `Retry-After`**
+  ([ADR 0051](../adr/0051-records-unavailable.md); a deliberate change to the official code). The official code read
+  the database's failure like a missing document: during an outage of MongoDB every scan, of registered codes too, was
+  answered 404 with the page *No information registered for this product*, counted in *Requests* as *Code not
+  registered* and, with the resolver of last resort switched on, sent to that other resolver. It is now answered 503
+  with `Retry-After: 30` — the page *The request could not be completed — Please try again in a moment* for a browser,
+  `The resolver cannot read its records at the moment: try again later` for an app — counted under *Error*, and never
+  sent to the resolver of last resort; a button of the item's page answers the same. Prefix rules still forward, an
+  invalid code is still 400.
+- **Integrators:** an app can tell an outage (503, try again after `Retry-After`) from a code nobody registered (404).
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`. Commit `98c083b`.
+
 ### Error answers without the exception's text; no editor in the images (session 65)
 - **Changed: error answers of the resolver and the data entry API carry a fixed text**
   ([ADR 0050](../adr/0050-error-answers.md); a deliberate change to the official code). The official code answered a

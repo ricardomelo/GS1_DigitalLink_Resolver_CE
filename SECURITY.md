@@ -31,6 +31,11 @@ The resolver, the data entry API and the database service started as the officia
 weakness found in that code is corrected here and, with your agreement, reported to the official project's maintainers
 as well.
 
+## What has been assessed
+
+The security and resilience assessment — its scope, its method and every finding fixed, with the ADR, the commit and
+the release — is in [`Documentation/security-assessment.md`](Documentation/security-assessment.md).
+
 ## How the supply chain is protected
 
 Every Python package is installed from a lock file with its file hashes, every npm package from `package-lock.json`,

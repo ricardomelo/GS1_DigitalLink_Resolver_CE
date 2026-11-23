@@ -62,7 +62,9 @@ between sessions and is not for the public. The README's *Open backlog* is the r
 - An ADR (`Documentation/adr/`) records deviations in the same delivery; a large item starts with its ADR.
 - `Documentation/threat-model.md` changes with a route, role, service, stored collection, external party or security
   control (ADR 0020). A live weakness is never described in a public document: it goes into the private findings
-  register in the maintainer's Drive folder until it is fixed.
+  register in the maintainer's Drive folder until it is fixed. A fix of a finding, or of a residual, adds or updates
+  its row in `Documentation/security-assessment.md` in the same delivery, with a neutral title (ADR 0055); open
+  residuals appear there only as categories.
 - The README's *Open backlog* loses an item when it is done or dropped; `Documentation/history.md` records each
   session.
 - A new e-mail message needs every language (`mailtexts.py`, `mail_languages.json`) and a category in

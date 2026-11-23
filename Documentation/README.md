@@ -44,6 +44,7 @@ development tests' checks that prove it; the whole list of checks is the [invent
 | [Developer guide](developer-guide.md) | services, source files, request flows, the portal's API, its data, the tests with their counts, how to extend |
 | [Development tests](../dev-tests/README.md) | every test program, how to set up and run them |
 | [Inventory of features](test-inventory.md) | every check of every test program, grouped by area |
+| [Security and resilience assessment](security-assessment.md) | what the security and resilience assessment covered, its method, every finding fixed with its ADR, commit and release, the resilience work and advice for operators |
 | [Threat model](threat-model.md) | the services and their trust boundaries, the assets ranked by their effect on patient safety, actors, entry points, threats with the controls that answer them, hazards that are not attacks, gaps and the plan of the security review |
 | [History](history.md) | how the project evolved session by session, decisions, lessons, open items |
 | [Translation guide](translation-glossary.md) | the rules and glossary for the texts of the twelve interface languages, and how to contribute corrections |
@@ -107,6 +108,7 @@ development tests' checks that prove it; the whole list of checks is the [invent
 | [ADR 0052](adr/0052-database-time-budget.md) | one time budget for the database reads of a resolver request (finding F-032): `RESOLVER_DB_TIMEOUT_MS`, 5 seconds by default; during an outage of MongoDB each scan is answered 503 within it instead of after up to six waits of 30 seconds, with a `Retry-After` of the budget |
 | [ADR 0053](adr/0053-settings-age.md) | a limit on the age of the portal's settings in the resolver (finding F-033): after `RESOLVER_SETTINGS_MAX_AGE_S` (15 minutes) without reading them, forwarding, brands and appearance stop, domains, strict mode and retention are kept; an error in the log, `settings` in the heartbeat and the portal's alert *Resolver's settings* |
 | [ADR 0054](adr/0054-forwarding-tells-new-prefixes.md) | an organisation given a prefix that a forwarding rule already covers is told (a residual of finding F-028): when a server administrator creates an organisation or changes its prefixes, each rule switched on that covers a prefix it did not have before is an event in its own trail and an alert to its administrators (`forwarding-covered`) |
+| [ADR 0055](adr/0055-public-assessment-record.md) | a public record of the security and resilience assessment ([security-assessment.md](security-assessment.md)): scope, method, a table of the fixed findings with neutral titles, area, severity, ADR, commit and release, the resilience work; never a weakness not yet fixed (amends ADR 0020 §2.3) |
 
 The documentation is written in British English only; readers of other languages can use the translation built into
 their browser. The software itself — the portal, its e-mails, the resolver's pages, the item's page and the home page —

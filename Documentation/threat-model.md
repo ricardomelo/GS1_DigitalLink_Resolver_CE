@@ -2,7 +2,8 @@
 
 The system's assets, the parties that may harm them, the ways in, the controls that exist — each with the place in
 the code that proves it — and the controls that are missing. Written as Phase 0 of the security assessment
-([ADR 0020](adr/0020-security-assessment.md)) on 14 November 2026.
+([ADR 0020](adr/0020-security-assessment.md)) on 14 November 2026. What the assessment then found and fixed is in the
+[security and resilience assessment](security-assessment.md).
 
 ## Contents
 

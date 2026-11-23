@@ -52,7 +52,9 @@ to the official maintainers about the public `GET /api/index` (29 October 2026) 
    to its maintainers privately first. *Changed by the owner on 14 November 2026:* such weaknesses are fixed in the fork
    and published with their fix, like the fork's own, without a private notice first; the notice about `GET /api/index`
    of 29 October had no answer, and fixing quickly matters more than waiting. Weaknesses not yet fixed stay out of the
-   public documents, wherever the code came from.
+   public documents, wherever the code came from. *Amended by [ADR 0055](0055-public-assessment-record.md) (23 November
+   2026):* findings once fixed are listed in a public record, `Documentation/security-assessment.md`, with neutral
+   titles and no reproduction.
 4. **Every finding is proved by a development test** that fails on the code before the fix and passes after it (the
    project's mutation rule); the test stays in the suite as a security regression test.
 5. **Controls that change the product** — a second factor, approval by a second person for safety-critical link types,

@@ -13,13 +13,20 @@ checks, through Flask's test client:
   * POST /new on a record that exists merges its links as PUT does, and a list writes every record of a key (a
     record sent twice merged); PUT and a DELETE of links with qualifiers no record of the key has answer 404 and
     change nothing;
+  * a DELETE with {"removeRecord": true, "qualifiers": [...]} removes one record and keeps the key's others in one
+    conditional write of the document (ADR 0023), read again when another writer changed it; the database layer's
+    conditional write on mongomock;
+  * the browser's rules (ADR 0038): the Swagger UI's policy (this origin only, never framed) and the policy of every
+    other answer (nothing at all); the Swagger UI opened in Chromium starts and the policy refuses nothing;
   * a body that is not JSON (or, for PUT and DELETE, not an object) and a record without a link of its default link
     type answer 400 and change nothing.
 
   pip install -r data_entry_server/src/requirements.txt
   python dev-tests/resolver/test_data_entry_api.py
 """
+import glob
 import json
+import re
 import os
 import sys
 import types
@@ -90,8 +97,22 @@ import data_entry_logic  # noqa: E402
 STORE = {}
 db.read_document = lambda document_id: ({"response_status": 200, "data": copy.deepcopy(STORE[document_id])}
                                         if document_id in STORE else {"response_status": 404, "error": "not found"})
-db.create_document = lambda doc: (STORE.__setitem__(doc["_id"], copy.deepcopy(doc)), {"response_status": 201})[1]
-db.update_document = lambda doc: (STORE.__setitem__(doc["_id"], copy.deepcopy(doc)), {"response_status": 200})[1]
+db.create_document = lambda doc: ({"response_status": 409, "error": "exists"} if doc["_id"] in STORE else
+                                  (STORE.__setitem__(doc["_id"], copy.deepcopy(doc)), {"response_status": 201})[1])
+
+
+def stored_write(doc, expected):
+    """data_entry_db.write_document_if_unchanged() on STORE: written only while the stored document is the one read."""
+    if STORE.get(doc["_id"]) != expected:
+        return {"response_status": 409, "error": "changed"}
+    if doc["data"]:
+        STORE[doc["_id"]] = copy.deepcopy(doc)
+    else:
+        STORE.pop(doc["_id"])
+    return {"response_status": 200}
+
+
+db.write_document_if_unchanged = stored_write
 db.read_all_documents = lambda: {"response_status": 200, "data": copy.deepcopy(list(STORE.values()))}
 data_entry_logic.data_entry_db = db
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -289,6 +310,213 @@ r = client.post("/api/validate", json=entry(), headers=AUTH)
 check("…one entry, valid: no problem", r.status_code == 200 and r.get_json()["problems"] == [], r.get_json())
 check("…needs the token", client.post("/api/validate", json=entry()).status_code == 401)
 
+# ---------------------------------------------------------------- one record removed, the key's others kept (ADR 0023)
+# The official API deleted whole documents only, so its callers deleted the key and wrote the other records back: a
+# window in which every code of the key answered 404, for good when the second call failed. DELETE with
+# {"removeRecord": true, "qualifiers": [...]} removes one record in one write of the document, provided the document is
+# still the one read (write_document_if_unchanged); a document changed in between is read again.
+WRITES = []
+
+
+def write_if_unchanged(doc, expected):
+    WRITES.append(doc["_id"])
+    return stored_write(doc, expected)
+
+
+db.write_document_if_unchanged = write_if_unchanged
+WHOLE = []
+db.delete_document = lambda document_id: (WHOLE.append(document_id), STORE.pop(document_id, None),
+                                          {"response_status": 200})[2]
+STORE.clear()
+post([entry(), entry(qualifiers=[{"10": "R1"}]), entry(qualifiers=[{"10": "R2"}]),
+      entry(qualifiers=[{"21": "S1"}], informativeQualifiers=[{"10": "R1"}])])
+KEY = "01_09506000134352"
+quals = lambda: [e["qualifiers"] for e in STORE[KEY]["data"]]
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": [{"10": "R1"}]}, headers=AUTH)
+check("DELETE with removeRecord removes the batch's record → 200, removed 1, 3 remaining", r.status_code == 200
+      and r.get_json().get("removed") == 1 and r.get_json().get("remaining") == 3, r.get_data(as_text=True))
+check("…in one conditional write of the document, never a whole delete", WRITES == [KEY] and not WHOLE, (WRITES, WHOLE))
+check("…the key's other records kept, the serial number's informative batch too",
+      quals() == [[], [{"10": "R2"}], [{"21": "S1"}]]
+      and STORE[KEY]["data"][2].get("informativeQualifiers") == [{"10": "R1"}], STORE[KEY]["data"])
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": [{"10": "R9"}]}, headers=AUTH)
+check("…a record the key does not have → 404 naming it, nothing changed", r.status_code == 404
+      and "/10/R9" in r.get_json().get("error", "") and len(quals()) == 3, r.get_data(as_text=True))
+r = client.delete("/api/01/09506000134999", json={"removeRecord": True, "qualifiers": []}, headers=AUTH)
+check("…a key without a document → 404", r.status_code == 404, r.status_code)
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True}, headers=AUTH)
+check("…no qualifiers: the key's own record removed, its batch and serial kept", r.status_code == 200
+      and quals() == [[{"10": "R2"}], [{"21": "S1"}]], quals())
+for body in ({"removeRecord": False, "qualifiers": [{"10": "R2"}]}, {"removeRecord": "yes", "qualifiers": [{"10": "R2"}]},
+             {"removeRecord": True, "qualifiers": [{"10": "R2"}], "links": PIP},
+             {"removeRecord": True, "qualifiers": {"10": "R2"}}, {"removeRecord": True, "qualifiers": [{"10": 2}]},
+             {"removeRecord": True, "qualifiers": [{"10": "R2", "21": "S1"}]}):
+    r = client.delete("/api/01/09506000134352", json=body, headers=AUTH)
+    check(f"…a malformed record delete ({json.dumps(body)[:48]}) → 400, nothing removed", r.status_code == 400
+          and "removeRecord" in r.get_json().get("error", "") and len(quals()) == 2, (r.status_code, quals()))
+# another writer changes the document between the read and the write: read again, its change kept
+real_read, raced = db.read_document, []
+
+
+def racing_read(document_id):
+    answer = real_read(document_id)
+    if not raced:
+        raced.append(1)
+        STORE[KEY]["data"].append(copy.deepcopy(STORE[KEY]["data"][0]) | {"qualifiers": [{"10": "R3"}]})
+    return answer
+
+
+db.read_document = racing_read
+WRITES.clear()
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": [{"10": "R2"}]}, headers=AUTH)
+db.read_document = real_read
+check("…a document changed by another writer in between: read again, removed, the other writer's record kept",
+      r.status_code == 200 and len(WRITES) == 2 and quals() == [[{"21": "S1"}], [{"10": "R3"}]], (WRITES, quals()))
+db.write_document_if_unchanged = lambda doc, expected: {"response_status": 409, "error": "changed"}
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": [{"10": "R3"}]}, headers=AUTH)
+check("…a document that keeps changing → 409 after three attempts, nothing removed", r.status_code == 409
+      and len(quals()) == 2, (r.status_code, quals()))
+db.write_document_if_unchanged = write_if_unchanged
+for q in ([{"21": "S1"}], [{"10": "R3"}]):
+    r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": q}, headers=AUTH)
+check("…the last record removed: the document goes with it", r.status_code == 200 and KEY not in STORE
+      and not WHOLE, (r.status_code, STORE.get(KEY)))
+
+# ---------------------------------------------------------------- every write conditional: no lost update (F-009, ADR 0027)
+# The official code read a key's document, changed it in memory and replaced it by its _id: of two writers that read
+# the same document the second undid the first, and both were answered 200. Every write now goes through
+# write_document_if_unchanged() (or create_document(), which refuses an _id created in the meantime); a refusal reads
+# the document again and applies the change on top of the other writer's.
+LEAFLET = [{"linktype": "gs1:epil", "href": "https://example.com/leaflet", "title": "Leaflet", "hreflang": ["en"]}]
+SAFETY = [{"linktype": "gs1:safetyInfo", "href": "https://example.com/safety", "title": "Safety", "hreflang": ["en"]}]
+
+
+def racing(other_writer, times=1):
+    """read_document that lets another writer change the store right after the first `times` reads."""
+    seen = []
+
+    def read(document_id):
+        answer = real_read(document_id)
+        if len(seen) < times:
+            seen.append(1)
+            other_writer()
+        return answer
+    return read
+
+
+def linktypes(key, qualifiers):
+    for item in data_entry_logic._convert_mongo_linkset_to_v3(STORE[key]) if key in STORE else []:
+        if data_entry_logic._do_qualifiers_match(item.get("qualifiers") or [], qualifiers):
+            return sorted(l["linktype"] for l in item.get("links") or [])
+    return None
+
+
+def other_put(qualifiers, links):
+    """Another writer's PUT, straight through the logic (as a second replica of the API would do it)."""
+    return lambda: data_entry_logic.update_document(KEY, {"qualifiers": qualifiers, "links": links})
+
+
+STORE.clear()
+post([entry(), entry(qualifiers=[{"10": "L1"}])])
+WRITES.clear()
+db.read_document = racing(other_put([{"10": "L1"}], LEAFLET))
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY}, headers=AUTH)
+db.read_document = real_read
+check("PUT racing another writer's PUT on another record of the key → 200, read again and written on top",
+      r.status_code == 200 and WRITES.count(KEY) == 3, (r.status_code, WRITES))
+check("…the other writer's link kept (the official code lost it), this one written too",
+      linktypes(KEY, [{"10": "L1"}]) == ["gs1:epil", "gs1:pip"] and linktypes(KEY, []) == ["gs1:pip", "gs1:safetyInfo"],
+      STORE[KEY]["data"])
+
+db.read_document = racing(other_put([], LEAFLET))
+r = post(entry(qualifiers=[{"10": "L2"}]))
+db.read_document = real_read
+check("POST /new adding a record while another writer changes the key → 200, both changes kept",
+      r.status_code == 200 and linktypes(KEY, [{"10": "L2"}]) == ["gs1:pip"]
+      and "gs1:epil" in linktypes(KEY, []), (r.status_code, STORE[KEY]["data"]))
+
+db.read_document = racing(other_put([{"10": "L2"}], LEAFLET))
+r = client.delete("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY}, headers=AUTH)
+db.read_document = real_read
+check("DELETE of links racing another writer → 200, the links removed and the other writer's link kept",
+      r.status_code == 200 and "gs1:safetyInfo" not in linktypes(KEY, [])
+      and linktypes(KEY, [{"10": "L2"}]) == ["gs1:epil", "gs1:pip"], (r.status_code, STORE[KEY]["data"]))
+
+NEW_KEY = "01_09521234000013"
+db.read_document = racing(lambda: data_entry_logic.create_document(entry("/01/09521234000013", qualifiers=[{"10": "X1"}])))
+r = post(entry("/01/09521234000013", qualifiers=[{"10": "X2"}]))
+db.read_document = real_read
+check("POST /new creating a key another writer creates at the same moment → read again, both records kept",
+      r.status_code == 200 and [e["qualifiers"] for e in STORE[NEW_KEY]["data"]] == [[{"10": "X1"}], [{"10": "X2"}]],
+      (r.status_code, STORE.get(NEW_KEY)))
+
+before = copy.deepcopy(STORE)
+db.write_document_if_unchanged = lambda doc, expected: {"response_status": 409, "error": "changed"}
+answers = [client.put("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY}, headers=AUTH),
+           post(entry(qualifiers=[{"10": "L3"}])),
+           client.delete("/api/01/09506000134352", json={"qualifiers": [{"10": "L2"}], "links": LEAFLET}, headers=AUTH)]
+db.write_document_if_unchanged = write_if_unchanged
+check("a key that keeps changing → 409 for PUT, POST /new and DELETE of links, nothing written",
+      [a.status_code for a in answers] == [409, 409, 409] and STORE == before,
+      [(a.status_code, a.get_data(as_text=True)[:80]) for a in answers])
+db.write_document_if_unchanged = lambda doc, expected: {"response_status": 409, "error": "changed"}
+r = post([entry("/01/09521234000020"), entry(qualifiers=[{"10": "L4"}])])
+db.write_document_if_unchanged = write_if_unchanged
+check("…a list sent to POST /new stops at the item not written: 409 naming it, the written ones listed",
+      r.status_code == 409 and "09506000134352" in r.get_json().get("error", "")
+      and len(r.get_json().get("written", [])) == 1 and "01_09521234000020" in STORE, r.get_data(as_text=True)[:300])
+db.write_document_if_unchanged = lambda doc, expected: {"response_status": 500, "error": "Database error: down"}
+r = post(entry(qualifiers=[{"10": "L5"}]))
+db.write_document_if_unchanged = write_if_unchanged
+check("…a failed write of an existing key → its error status (the official code answered 200)", r.status_code == 500,
+      (r.status_code, r.get_data(as_text=True)[:120]))
+
+# the database layer itself (data_entry_db.write_document_if_unchanged) on mongomock: one conditional operation
+import importlib.util  # noqa: E402
+try:
+    import mongomock  # noqa: E402
+except ImportError:
+    mongomock = None
+if mongomock:
+    spec = importlib.util.spec_from_file_location("real_data_entry_db",
+                                                  os.path.join(REPO, "data_entry_server", "src", "data_entry_db.py"))
+    real_db = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(real_db)
+    coll = mongomock.MongoClient()["resolver_ce"]["gs1resolver"]
+    real_db._resolver_collection = coll
+    one, two = {"qualifiers": [], "linkset": {"a": 1}}, {"qualifiers": [{"10": "B"}], "linkset": {"a": 2}}
+    coll.insert_one({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one, two]})
+    read = lambda: coll.find_one({"_id": "01_1"})
+    stale = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one]},
+                                                {"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [two]})
+    check("database layer: records no longer the ones read → 409, the document untouched",
+          stale["response_status"] == 409 and read()["data"] == [one, two], stale)
+    stale = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one]},
+                                                {**read(), "defaultLinktype": "gs1:epil"})
+    check("database layer: the key's default link type no longer the one read → 409, the document untouched",
+          stale["response_status"] == 409 and read()["data"] == [one, two], stale)
+    done = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": [one]}, read())
+    check("database layer: the document still the one read → replaced without the record", done["response_status"] == 200
+          and read()["data"] == [one], done)
+    check("database layer: no unconditional replace left (update_document gone)", not hasattr(real_db, "update_document"))
+    done = real_db.write_document_if_unchanged({"_id": "01_1", "defaultLinktype": "gs1:pip", "data": []}, read())
+    check("database layer: no record left → the document deleted", done["response_status"] == 200
+          and read() is None, done)
+    gone = real_db.write_document_if_unchanged({"_id": "01_1", "data": []}, {"_id": "01_1", "data": [one]})
+    check("database layer: a document already gone → 409", gone["response_status"] == 409, gone)
+    # document ids (ADR 0049, finding U-004): the slash after the AI only, a value's own "_" kept both ways
+    check("database layer: an anchor's id and back, a value's '_' kept",
+          [real_db._reformat_id_for_db(a) for a in ("/8004/A_B", "8004_A_B", "/01/09506000134352", "/8004/A/B")]
+          == ["8004_A_B", "8004_A_B", "01_09506000134352", "8004_A/B"]
+          and [real_db._reformat_id_for_external_use(i) for i in ("8004_A_B", "/8004/A_B")] == ["/8004/A_B"] * 2)
+    coll.insert_one({"_id": "8004_A_B", "defaultLinktype": "gs1:pip", "data": [one]})
+    check("database layer: /8004/A_B reads its document", real_db.read_document("/8004/A_B")["response_status"] == 200)
+    missing = real_db.read_document("8004_A_C")
+    check("database layer: a missing document named by its own anchor", missing["response_status"] == 404
+          and "/8004/A_C" in missing["error"] and "/8004/A/C" not in missing["error"], missing)
+else:
+    print("SKIP the database layer on mongomock (pip install mongomock)")
+
 # ---------------------------------------------------------------- values checked by the GS1 Barcode Syntax Engine (F11)
 ENGINE = os.environ.get("GS1_SYNTAX_ENGINE")
 if ENGINE:
@@ -333,6 +561,378 @@ if ENGINE:
     check("without the engine (no script): values not checked, as before", r.status_code in (200, 201), r.status_code)
 else:
     print("SKIP values checked by the GS1 Barcode Syntax Engine (set GS1_SYNTAX_ENGINE)")
+
+# ---- Target addresses (finding U-003, ADR 0048) ----
+# The official API stored any href (javascript:, data:, http:, an address inside the operator's network) and the
+# resolver redirected to it. Every target sent to POST /new, PUT and POST /validate now follows the portal's rule
+# (ADR 0037): https, a public host name, no user information, no IP address; a target the key's document already holds
+# is accepted as it is, so records saved before keep working and the portal's rewrites of them are not refused.
+TKEY, TANCHOR = "01_09506000134369", "/01/09506000134369"
+
+
+def target_entry(href, anchor=TANCHOR, **extra):
+    return {"anchor": anchor, "itemDescription": "t", "defaultLinktype": "gs1:pip",
+            "links": [{"linktype": "gs1:pip", "href": "https://example.com/ok", "title": "Ok", "hreflang": ["en"]},
+                      {"linktype": "gs1:epil", "href": href, "title": "T", "hreflang": ["en"]}], **extra}
+
+
+BAD_TARGETS = [
+    ("javascript:", "javascript:alert(document.cookie)", "https address"),
+    ("data:", "data:text/html,<script>alert(1)</script>", "https address"),
+    ("http:", "http://example.com/p", "https address"),
+    ("no scheme", "//example.com/p", "https address"),
+    ("a port that is not a number", "https://example.com:abc/p", "numeric port"),
+    ("user information", "https://user:pass@example.com/p", "user or password"),
+    ("an IPv4 address", "https://127.0.0.1/p", "IP address"),
+    ("an IPv4 address as one number", "https://2130706433/p", "IP address"),
+    ("an IPv6 address", "https://[::1]/p", "IP address"),
+    ("localhost", "https://localhost/p", "public host"),
+    ("a name without a dot", "https://intranet/p", "public host"),
+    ("a .internal name", "https://db.internal/p", "public host"),
+    ("a .home.arpa name", "https://router.home.arpa/p", "public host"),
+    ("a percent sign in the host", "https://ex%61mple.com/p", "public host"),
+    ("a space", "https://exa mple.com/p", "control or invisible"),
+    ("a line break", "https://example.com/p\r\nX-Injected: 1", "control or invisible"),
+    ("an empty target", "", "needs a target"),
+    ("a target that is not text", 123, "needs a target"),
+]
+for name, href, reason in BAD_TARGETS:
+    STORE.pop(TKEY, None)
+    r = post(target_entry(href))
+    error = (r.get_json() or {}).get("error", "")
+    check(f"targets: POST /new refuses {name} → 400 naming link 2 and why, nothing stored", r.status_code == 400
+          and error.startswith("link 2 (") and reason in error and TKEY not in STORE, (r.status_code, error))
+r = post([target_entry("https://example.com/a", "/01/09506000134376"), target_entry("http://example.com/b")])
+check("targets: POST /new with a list refuses the whole list for one target, naming the item", r.status_code == 400
+      and "Item 2: link 2" in r.get_json().get("error", "") and "01_09506000134376" not in STORE and TKEY not in STORE,
+      r.get_data(as_text=True))
+V2 = {"identificationKeyType": "01", "identificationKey": "09506000134369", "itemDescription": "v2",
+      "qualifierPath": "/", "responses": [{"linkType": "gs1:pip", "targetUrl": "http://example.com/v2",
+                                            "linkTitle": "v2", "mimeType": "text/html", "ianaLanguage": "en",
+                                            "defaultLinkType": True}]}
+r = post(V2)
+check("targets: a v2 entry's targetUrl follows the same rule → 400", r.status_code == 400
+      and "link 1 ('http://example.com/v2')" in r.get_json().get("error", "") and TKEY not in STORE,
+      r.get_data(as_text=True))
+for name, href in [("a path", "https://example.com/p?x=1#f"), ("a port", "https://example.com:8443/p"),
+                   ("an internationalised name", "https://exämple.com.br/p"),
+                   ("a template in the path", "https://example.com/p/{gtin}")]:
+    STORE.pop(TKEY, None)
+    r = post(target_entry(href))
+    check(f"targets: POST /new accepts {name}", r.status_code in (200, 201) and TKEY in STORE, r.get_data(as_text=True))
+
+# PUT: a new target follows the rule; the document is not changed
+before = copy.deepcopy(STORE)
+r = client.put("/api" + TANCHOR, json={"links": [{"linktype": "gs1:smpc", "href": "https://10.0.0.5/admin", "title": "x",
+                                         "hreflang": ["en"]}]}, headers=AUTH)
+check("targets: PUT refuses a new target outside the rule → 400, the document unchanged", r.status_code == 400
+      and "IP address" in r.get_json().get("error", "") and STORE == before, r.get_data(as_text=True))
+
+# A target the key's document already holds (stored before the rule) is accepted as it is
+STORE.pop(TKEY, None)
+check("targets: (setup) a record written with a valid target", post(target_entry("https://example.com/b")).status_code == 201)
+STORE[TKEY]["data"][0]["linkset"][0]["https://gs1.org/voc/epil"][0]["href"] = "http://legacy.example.com/leaflet"
+r = client.put("/api" + TANCHOR, json={"itemDescription": "renamed", "links": [
+    {"linktype": "gs1:epil", "href": "http://legacy.example.com/leaflet", "title": "T", "hreflang": ["en"]}]},
+    headers=AUTH)
+check("targets: PUT keeping a target the document already holds → 200", r.status_code == 200
+      and STORE[TKEY]["data"][0]["linkset"][0]["itemDescription"] == "renamed", r.get_data(as_text=True))
+r = post(target_entry("http://legacy.example.com/leaflet", qualifiers=[{"10": "L1"}]))
+check("targets: POST /new of another record of the key with that target → accepted (the portal's rewrites)",
+      r.status_code in (200, 201) and len(STORE[TKEY]["data"]) == 2, r.get_data(as_text=True))
+r = client.post("/api/validate", json=[target_entry("http://legacy.example.com/leaflet", qualifiers=[{"21": "S9"}]),
+                                       target_entry("http://legacy.example.com/leaflet", "/01/09506000134383")],
+                headers=AUTH)
+problems = (r.get_json() or {}).get("problems")
+check("targets: POST /validate accepts the target its key holds and names it for another key", r.status_code == 200
+      and [p["item"] for p in problems] == [2] and "https address" in problems[0]["error"], r.get_json())
+r = client.put("/api" + TANCHOR, json={"links": [{"linktype": "gs1:smpc", "href": "http://legacy.example.com/other",
+                                         "title": "x", "hreflang": ["en"]}]}, headers=AUTH)
+check("targets: …but not another http target on the same key → 400", r.status_code == 400, r.get_data(as_text=True))
+
+# The same rule as the portal's (portal/gs1.py normalise_url, ADR 0037), address by address
+sys.path.append(os.path.join(REPO, "portal"))
+import gs1 as portal_gs1  # noqa: E402
+import target_rule  # noqa: E402
+SAME = ["https://example.com/p", "http://example.com/p", "javascript:alert(1)", "data:,x", "ftp://example.com/p",
+        "https://user@example.com/p", "https://:@example.com/p", "https://example.com:x/p", "https://example.com:8443/",
+        "https://127.0.0.1/", "https://127.1/", "https://0x7f.1/", "https://0177.0.0.1/", "https://2130706433/",
+        "https://[::1]/", "https://[fe80::1]/", "https://localhost/", "https://localhost./", "https://a.localhost/",
+        "https://printer.local/", "https://x.localdomain/", "https://x.internal/", "https://x.intranet/",
+        "https://x.lan/", "https://router.home.arpa/", "https://x.corp/", "https://x.test/", "https://x.onion/",
+        "https://x.alt/", "https://intranet/", "https://a..b.com/", "https://%31%32%37.0.0.1/", "https://ex_ample.com/",
+        "https://exämple.com/", "https://１２７.0.0.1/", "https://127。0。0。1/", "https://example.example/",
+        "https://example.invalid/", "https://exa mple.com/", "https://example.com/\u200b", "https://example.com\\@x.com/",
+        "https://example.com/p\tq", "https:///p", "https://example.com/{gtin}", "https://{host}.example.com/",
+        "https://xn--exmple-cua.com/", "https://example.com./p"]
+
+
+def portal_code(url):
+    try:
+        portal_gs1.normalise_url(url, 1)
+        return None
+    except portal_gs1.ValidationError as error:
+        return error.code
+
+
+differ = [(u, portal_code(u), target_rule.target_problem(u)) for u in SAME
+          if portal_code(u) != (None if target_rule.target_problem(u) is None else "link." + target_rule.target_problem(u))]
+check(f"targets: the API's rule refuses the {len(SAME)} sample addresses as the portal's does, with the same codes",
+      not differ, differ)
+check("targets: …the same private top-level names", target_rule.PRIVATE_TOP_NAMES == portal_gs1.PRIVATE_TOP_NAMES,
+      target_rule.PRIVATE_TOP_NAMES ^ portal_gs1.PRIVATE_TOP_NAMES)
+check("targets: …a target with spaces around it refused, not trimmed (the portal trims what a person typed)",
+      target_rule.target_problem(" https://example.com/p") == "urlChars")
+
+# ---- Anchors and document ids (ADR 0049, finding U-004) ----
+# The official API stored an anchor of any shape under an id with every "/" turned into "_", skipped the registration
+# and value checks for anything but two slashes, and read every "_" back as "/": a key value with "_" came back under
+# another anchor, and /8004/A/B and /8004/A_B were one document.
+STORE.clear()
+BAD_ANCHORS = [
+    ("three slashes (a qualifier in the anchor)", "/01/09506000134352/10/ABC"),
+    ("one slash", "/01"), ("no leading slash", "01/09506000134352"), ("a doubled slash", "//01/09506000134352"),
+    ("an empty value", "/01/"), ("an AI that is not a primary key (17)", "/17/261231"), ("an unknown AI", "/99/X"),
+    ("an AI that is not digits", "/gtin/09506000134352"), ("a space in the value", "/8004/9506000AB 12"),
+    ("a character outside ASCII", "/8004/9506000ABÄ"), ("a control character", "/8004/9506000AB\x01"),
+    ("a trailing slash", "/01/09506000134352/"),
+]
+for name, anchor in BAD_ANCHORS:
+    r = post(entry(anchor))
+    check(f"anchors: POST /new refuses {name} → 400 naming the anchor, nothing stored", r.status_code == 400
+          and "an anchor is /AI/value" in r.get_json().get("error", "") and not STORE, r.get_data(as_text=True))
+r = post(entry(None))
+check("anchors: POST /new without an anchor → 400", r.status_code == 400 and not STORE, r.get_data(as_text=True))
+r = post({"identificationKeyType": "01", "identificationKey": "09506000134352/10/X", "itemDescription": "x",
+          "qualifierPath": "/", "responses": [{"linkType": "gs1:pip", "targetUrl": "https://example.com/p",
+                                               "linkTitle": "P", "mimeType": "text/html", "ianaLanguage": "en",
+                                               "defaultLinkType": True}]})
+check("anchors: a v2 entry whose key has a slash → 400, nothing stored", r.status_code == 400
+      and "an anchor is /AI/value" in r.get_json().get("error", "") and not STORE, r.get_data(as_text=True))
+V2 = {"identificationKeyType": "01", "identificationKey": "09506000134352", "itemDescription": "x", "qualifierPath": "/",
+      "responses": [{"linkType": "gs1:pip", "targetUrl": "https://example.com/p", "linkTitle": "P",
+                     "mimeType": "text/html", "ianaLanguage": "en", "defaultLinkType": True}]}
+r = post(V2)
+check("anchors: a v2 entry with a valid key accepted", r.status_code == 201 and list(STORE) == ["01_09506000134352"],
+      r.get_data(as_text=True))
+STORE.clear()
+r = post([entry(), entry("/01/09506000134352/21/S1")])
+check("anchors: a list with one malformed anchor refused whole, naming the item", r.status_code == 400
+      and r.get_json().get("error", "").startswith("Item 2: anchor") and not STORE, r.get_data(as_text=True))
+r = client.post("/api/validate", json=[entry(), entry("/99/X")], headers=AUTH)
+check("anchors: POST /validate names the malformed anchor", r.status_code == 200
+      and [p["item"] for p in r.get_json()["problems"]] == [2], r.get_json())
+check("anchors: the API's primary keys are the portal's", data_entry_logic.KEY_AIS == set(portal_gs1.PRIMARY_KEYS),
+      data_entry_logic.KEY_AIS ^ set(portal_gs1.PRIMARY_KEYS))
+
+GIAI = "/8004/9506000AB_12"
+r = post(entry(GIAI))
+check("anchors: a key value with '_' accepted, stored under one id", r.status_code == 201
+      and list(STORE) == ["8004_9506000AB_12"], (r.get_data(as_text=True), list(STORE)))
+r = client.get("/api/8004/9506000AB_12", headers=AUTH)
+check("anchors: …read back under its own anchor (the official code answered /8004/9506000AB/12)", r.status_code == 200
+      and [e["anchor"] for e in r.get_json()["data"]] == [GIAI], r.get_json())
+lines = client.get("/api/summary", headers=AUTH).get_json().get("data", [])
+check("anchors: …listed in /summary under its own anchor", [l["anchor"] for l in lines] == [GIAI], lines)
+db.read_index = lambda: {"response_status": 200, "data": list(STORE)}
+r = client.get("/api/index", headers=AUTH)
+check("anchors: …and in /index", r.get_json().get("data") == [GIAI], r.get_json())
+r = client.put("/api/8004/9506000AB_12", json={"itemDescription": "renamed"}, headers=AUTH)
+data = client.get("/api/8004/9506000AB_12", headers=AUTH).get_json()["data"]
+check("anchors: …changed by PUT (its anchor passes the rule)", r.status_code == 200
+      and [e["itemDescription"] for e in data] == ["renamed"], (r.get_data(as_text=True), data))
+before = copy.deepcopy(STORE)
+for method in ("get", "put", "delete"):
+    r = getattr(client, method)("/api/8004_9506000AB/12", json={"itemDescription": "x"} if method == "put" else None,
+                                headers=AUTH)
+    check(f"anchors: {method.upper()} /api/8004_9506000AB/12 (an AI part with '_') → 400, not the document of "
+          f"{GIAI}", r.status_code == 400 and STORE == before, (r.status_code, r.get_data(as_text=True)[:120]))
+r = client.get("/api/8004/9506000AB/12", headers=AUTH)
+check("anchors: GET of a path with more segments → 400, not the document of " + GIAI, r.status_code == 400
+      and "9506000AB_12" not in r.get_data(as_text=True), r.get_data(as_text=True)[:200])
+check("anchors: an anchor's document id and back, one to one",
+      data_entry_logic.convert_path_to_document_id(GIAI) == "8004_9506000AB_12"
+      and data_entry_logic.document_id_to_anchor("8004_9506000AB_12") == GIAI)
+try:
+    data_entry_logic.convert_path_to_document_id("/8004/9506000AB/12")
+    check("anchors: no document id for /8004/9506000AB/12 (the official code gave it the id of " + GIAI + ")", False)
+except ValueError:
+    check("anchors: no document id for /8004/9506000AB/12 (the official code gave it the id of " + GIAI + ")", True)
+
+# documents written by the official code from anchors of other shapes: readable and removable, never written again
+STORE["01_09506000134352_10_X"] = {"_id": "01_09506000134352_10_X", "defaultLinktype": "gs1:pip",
+                                   "data": copy.deepcopy(STORE["8004_9506000AB_12"]["data"])}
+STORE["gtin_1"] = {"_id": "gtin_1", "defaultLinktype": "gs1:pip", "data": copy.deepcopy(STORE["8004_9506000AB_12"]["data"])}
+lines = client.get("/api/summary", headers=AUTH).get_json().get("data", [])
+check("anchors: an old document of another shape listed in /summary under the anchor its id now reads",
+      sorted(l["anchor"] for l in lines) == sorted([GIAI, "/01/09506000134352_10_X", "/gtin/1"]), lines)
+old = copy.deepcopy(STORE["gtin_1"])
+r = client.put("/api/gtin/1", json={"itemDescription": "x"}, headers=AUTH)
+check("anchors: …PUT of an old document whose anchor breaks the rule → 400, unchanged", r.status_code == 400
+      and "an anchor is /AI/value" in r.get_json().get("error", "") and STORE["gtin_1"] == old, r.get_data(as_text=True))
+r = client.delete("/api/gtin/1", headers=AUTH)
+check("anchors: …DELETE of it removes it", r.status_code == 200 and "gtin_1" not in STORE, r.get_data(as_text=True))
+
+# ---- Error answers without the exception's text (ADR 0050, finding U-006) ----
+import ast  # noqa: E402
+import logging  # noqa: E402
+
+SECRET = "db-host.internal:27017 (secret detail)"
+
+
+def answers_from_exception(folder):
+    """Every return or abort() inside an 'except ... as e' block whose value uses e: an answer built from the
+    exception's text (the official code answered 'Database error: ' + str(e) and the like). A line marked
+    '# own message' (on it or just above) answers a refusal whose text the service's own code wrote; '# log only'
+    passes the exception to a function that only logs it."""
+    found = []
+    for path in sorted(glob.glob(os.path.join(REPO, folder, "*.py"))):
+        with open(path, encoding="utf-8") as fh:
+            source = fh.read()
+        tree, lines = ast.parse(source), [""] + source.splitlines()
+        for handler in ast.walk(tree):
+            if not isinstance(handler, ast.ExceptHandler) or not handler.name:
+                continue
+            for node in ast.walk(handler):
+                value = node.value if isinstance(node, ast.Return) else node if isinstance(node, ast.Call) \
+                    and getattr(node.func, "id", getattr(node.func, "attr", "")) == "abort" else None
+                if value is not None and any(isinstance(n, ast.Name) and n.id == handler.name for n in ast.walk(value)) \
+                        and not re.search("# (own message|log only)", lines[node.lineno] + lines[node.lineno - 1]):
+                    found.append(f"{os.path.basename(path)}:{node.lineno}")
+    return found
+
+
+class LogLines(logging.Handler):
+    """The service's log as an operator reads it, tracebacks included."""
+    def __init__(self):
+        super().__init__()
+        self.lines = []
+        self.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
+
+    def emit(self, record):
+        self.lines.append(self.format(record))
+
+    def text(self):
+        return "\n".join(self.lines)
+
+
+def secret_free(answer):
+    return SECRET not in json.dumps(answer) and "secret detail" not in json.dumps(answer)
+
+
+found = answers_from_exception(os.path.join("data_entry_server", "src"))
+check("error answers: no answer of the data entry API built from an exception's text", not found, found)
+log = LogLines()
+logging.getLogger().addHandler(log)
+real_read = db.read_document
+
+
+def failing_read(document_id):
+    raise RuntimeError(SECRET)
+
+
+db.read_document = failing_read
+requests = {"POST /new": lambda: post(entry(qualifiers=[{"10": "E1"}])),
+            "PUT": lambda: client.put("/api/01/09506000134352", json={"itemDescription": "y"}, headers=AUTH),
+            "DELETE of links": lambda: client.delete("/api/01/09506000134352", json={"links": PIP}, headers=AUTH),
+            "DELETE of a record": lambda: client.delete("/api/01/09506000134352", headers=AUTH,
+                                                        json={"removeRecord": True, "qualifiers": [{"10": "E1"}]})}
+for name, send in requests.items():
+    log.lines.clear()
+    r = send()
+    check(f"error answers: {name} on a failure → 500 with a fixed text, not the exception's",
+          r.status_code == 500 and secret_free(r.get_data(as_text=True)) and "log" in r.get_json().get("error", ""),
+          (r.status_code, r.get_data(as_text=True)[:200]))
+    check(f"error answers: …the exception's text and its traceback in the service's log ({name})",
+          SECRET in log.text() and "Traceback" in log.text(), log.text()[-300:])
+db.read_document = real_read
+real_write = db.create_document
+db.create_document = failing_read
+log.lines.clear()
+r = post(entry("/01/09521234000099"))
+db.create_document = real_write
+check("error answers: POST /new whose write fails → 500 with a fixed text, the traceback in the service's log",
+      r.status_code == 500 and secret_free(r.get_data(as_text=True)) and SECRET in log.text()
+      and "Traceback" in log.text(), (r.status_code, r.get_data(as_text=True)[:200], log.text()[-300:]))
+real_create = data_entry_logic.create_document
+data_entry_logic.create_document = failing_read
+r = post(entry())
+data_entry_logic.create_document = real_create
+check("error answers: a failure outside the data entry logic (the route's own abort) → 500 without the text",
+      r.status_code == 500 and secret_free(r.get_data(as_text=True)), (r.status_code, r.get_data(as_text=True)[:200]))
+r = client.post("/api/new", data="5", content_type="application/json", headers=AUTH)
+check("error answers: a body neither an object nor a list → 400 that does not repeat the body",
+      r.status_code == 400 and not r.get_json().get("error", "").rstrip().endswith("5"), r.get_data(as_text=True))
+if mongomock:
+    from pymongo import errors as pymongo_errors  # noqa: E402
+    from bson import errors as bson_errors  # noqa: E402
+
+    class FailingCollection:
+        """A database that fails every operation with a message naming its host, as PyMongo's errors do."""
+        def __init__(self, error=pymongo_errors.ServerSelectionTimeoutError):
+            self.error = error
+
+        def _fail(self, *args, **kwargs):
+            raise self.error(SECRET)
+        find_one = insert_one = find = replace_one = delete_one = _fail
+
+    log.lines.clear()
+    real_db._resolver_collection = FailingCollection()
+    layer = {"create": real_db.create_document({"_id": "01_1", "data": [{}]}),
+             "read": real_db.read_document("/01/1"), "index": real_db.read_index(),
+             "summary": real_db.read_all_documents(), "conditional write":
+             real_db.write_document_if_unchanged({"_id": "01_1", "data": [{}]}, {"_id": "01_1", "data": []}),
+             "delete": real_db.delete_document("/01/1")}
+    check("database layer: a database that fails → 500 with a fixed text in every operation, never its message",
+          all(a["response_status"] == 500 and secret_free(a) for a in layer.values()), layer)
+    check("database layer: …its message in the log, once per operation", log.text().count(SECRET) >= 6,
+          log.text()[-400:])
+    real_db._resolver_collection = FailingCollection(bson_errors.InvalidId)
+    invalid = [real_db.read_document("/01/1"), real_db.read_index(), real_db.delete_document("/01/1")]
+    check("database layer: an invalid id → 400 with a fixed text", all(a["response_status"] == 400 and secret_free(a)
+                                                                         for a in invalid), invalid)
+    duplicate = FailingCollection(pymongo_errors.DuplicateKeyError)
+    duplicate.find_one = lambda *a, **k: None
+    real_db._resolver_collection = duplicate
+    twice = real_db.create_document({"_id": "01_1", "data": [{}]})
+    check("database layer: a document written in between (duplicate key) → 409 naming the document, not the index",
+          twice["response_status"] == 409 and "01_1" in twice["error"] and secret_free(twice), twice)
+    real_db._resolver_collection = coll
+logging.getLogger().removeHandler(log)
+
+# ---- The browser's rules (ADR 0038, finding F-021) ----
+r = client.get("/api/docs")
+csp = r.headers.get("Content-Security-Policy", "")
+check("CSP: the Swagger UI calls and loads nothing outside this origin, and nothing frames it",
+      "default-src 'self'" in csp and "connect-src 'self'" in csp and "frame-ancestors 'none'" in csp
+      and "object-src 'none'" in csp and "base-uri 'none'" in csp and "https:" not in csp, csp)
+check("…no type guessed", r.headers.get("X-Content-Type-Options") == "nosniff", dict(r.headers))
+for path, headers in [("/api/index", AUTH), ("/api/swagger.json", {}), ("/api/heartbeat", {})]:
+    r = client.get(path, headers=headers)
+    check(f"CSP: GET {path} may load nothing", r.headers.get("Content-Security-Policy") ==
+          "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+          and r.headers.get("X-Content-Type-Options") == "nosniff", (r.status_code, r.headers.get("Content-Security-Policy")))
+try:
+    import threading
+    from playwright.sync_api import sync_playwright
+    from werkzeug.serving import make_server
+    server = make_server("127.0.0.1", 0, client.application, threaded=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        refused = []
+        page.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
+        page.goto(f"http://127.0.0.1:{server.server_port}/api/docs")
+        page.wait_for_selector(".swagger-ui .info .title", timeout=15000)
+        check("Chromium: the Swagger UI starts under its policy and reads the description",
+              "GS1 Resolver Community Edition API" in page.inner_text(".swagger-ui .info .title")
+              and page.locator(".opblock-tag").count() > 0, page.inner_text(".swagger-ui .info"))
+        check("Chromium: the policy refused nothing on the Swagger UI", not refused, refused[:3])
+        browser.close()
+    server.shutdown()
+except Exception as exc:  # noqa: BLE001  (a browser that cannot start is a failure, not a skip)
+    check("Chromium: the Swagger UI under its policy", False, repr(exc))
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

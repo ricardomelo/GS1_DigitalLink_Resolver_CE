@@ -11,6 +11,7 @@ import base64
 import copy
 import glob
 import importlib
+import importlib.util
 import json
 import os
 import re
@@ -49,11 +50,15 @@ def author(doc):
 sys.path.pop(0)
 sys.modules.pop("data_entry_logic")
 sys.path.insert(0, os.path.join(REPO, "web_server", "src"))
+# the real mapping of an anchor to a document id (web_db._reformat_id), on a dictionary instead of MongoDB
+_spec = importlib.util.spec_from_file_location("real_web_db", os.path.join(REPO, "web_server", "src", "web_db.py"))
+real_web_db = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(real_web_db)
 web_db = types.ModuleType("web_db")
 
 
 def read_document(anchor):
-    key = anchor.replace("/", "_").lstrip("_")
+    key = real_web_db._reformat_id(anchor)
     return {"response_status": 200, "data": copy.deepcopy(DB[key])} if key in DB else {"response_status": 404, "error": "nf"}
 
 
@@ -186,7 +191,7 @@ for language, cookie, expected in cases:
     r = get(G + "?linkType=gs1:recallStatus", "text/html", language, cookie)
     html = r.get_data(as_text=True)
     check(f"HTML 404 lang={language} cookie={cookie}", r.status_code == 404 and f'<html lang="{expected}"' in html
-          and "GS1 Resolver Community Edition" in html and 'id="lang"' in html, r.status_code)
+          and "GS1 Digital Link Resolver Suite" in html and 'id="lang"' in html, r.status_code)
 r = get(G + "?linkType=linkset", "text/html")
 check("HTML linkset page", r.status_code == 200 and r.content_type.startswith("text/html"))
 html = r.get_data(as_text=True)
@@ -432,6 +437,87 @@ r = client.get("/api" + X + "?linkType=gs1:pip", headers={"Accept": "text/html",
 html300 = r.get_data(as_text=True)
 check("300 for a browser: an HTML page listing both links", r.status_code == 300 and "text/html" in r.content_type
       and "example.com/en/defaultPage" in html300 and "example.com/fr/defaultPage" in html300)
+
+# ---------------------------------------------------------------- the level that answered (ADR 0022, section 2.2)
+ROOT = "https://" + os.environ["FQDN"]
+
+
+def resolution(path, accept="*/*", language="en"):
+    r = client.get("/api" + path, headers={"Accept": accept, "Accept-Language": language})
+    return r.status_code, r.headers.get("Resolution-Anchor"), r.headers.get("Resolution-Match")
+
+
+for path, level, match in [
+        (Q, Q, "exact"),                                                   # the product, asked as the product
+        (Q + "/22/V1", Q + "/22/V1", "exact"),
+        (Q + "/22/V1/10/L1", Q + "/22/V1/10/L1", "exact"),
+        (Q + "/22/V1/10/L2", Q + "/22/V1", "walk-up"),                      # a batch with no record of its own
+        (Q + "/10/L1", Q, "walk-up"),                                       # the batch's record needs its variant
+        (Q + "/22/V1/10/L1/21/S1", Q + "/22/V1/10/L1", "walk-up"),          # a serial within a registered batch
+        (U + "/22/V1/10/B42/21/S1", U + "/21/S1", "exact"),                 # a unit's record covers batch and variant
+        (U + "/10/OTHER/21/S1", U + "/21/S1", "exact"),
+        (U + "/10/B42/21/S2", U + "/10/B42", "walk-up"),
+        (U + "/21/S9", U, "walk-up"),                                       # a serial nobody registered
+        (G + "/10/123?linkType=pip", G, "walk-up"),                        # the batch's record has no gs1:pip
+        (G + "/10/123?linkType=gs1:instructions", G + "/10/123", "exact")]:
+    got = resolution(path)
+    check(f"Resolution-Anchor and -Match of {path}: {level} ({match})", got == (307, ROOT + level, match), got)
+got = resolution(X + "?linkType=gs1:pip", language="vi")
+check("300: Resolution-Anchor names the level whose links are offered", got == (300, ROOT + X, "exact"), got)
+got = resolution(X + "?linkType=gs1:pip", "text/html", "vi")
+check("300 for a browser: the same headers", got == (300, ROOT + X, "exact"), got)
+check("no Resolution headers on a linkset (its anchors name the levels)",
+      resolution(Q + "/22/V1/10/L2?linkType=linkset", "application/linkset+json") == (200, None, None))
+check("no Resolution headers on a 404", resolution(Q + "?linkType=gs1:epil") == (404, None, None))
+check("no Resolution headers on an unknown key", resolution("/01/09506000999906") == (404, None, None))
+os.environ["FQDN_ALIASES"] = "id.brand.example"      # another of the installation's names (ADR 0039)
+r = client.get("/api" + Q + "/10/L1", headers={"Accept": "*/*", "X-Forwarded-Host": "id.brand.example"})
+check("Resolution-Anchor on the name the request was made on, like the linkset's anchors",
+      r.headers.get("Resolution-Anchor") == "https://id.brand.example" + Q, r.headers.get("Resolution-Anchor"))
+del os.environ["FQDN_ALIASES"]
+r = client.get("/api" + Q + "/10/L1", headers={"Accept": "*/*", "X-Forwarded-Host": "id.brand.example"})
+check("…on the installation's name when that name is not one of its names (ADR 0039)",
+      r.headers.get("Resolution-Anchor") == ROOT + Q, r.headers.get("Resolution-Anchor"))
+# ---------------------------------------------------------------- the notice on the pages (ADR 0022, section 2.3)
+def page_of(path, language="en-GB,en;q=0.9"):
+    r = client.get("/api" + path, headers={"Accept": "text/html", "Accept-Language": language})
+    return r.status_code, r.get_data(as_text=True)
+
+
+status, html = page_of(Q + "/22/V1/10/L2?linkType=linkset")
+check("item's page of a batch without a record: a notice naming the batch and the level whose links are shown",
+      status == 200 and 'class="level-notice"' in html and "Batch/lot L2 has no information of its own" in html
+      and "The links below belong to this level: Variant V1." in html, html[html.find("<main"):][:600])
+check("…above the links", html.find('class="level-notice"') < html.find("example.org/variant"))
+status, html = page_of(Q + "/22/V1/10/L2?linkType=linkset", "pt-BR,pt;q=0.9")
+check("…in the visitor's language (pt-BR)", "Lote L2 não tem informações próprias" in html
+      and "Os links abaixo são deste nível: Variante V1." in html, html[html.find("<main"):][:600])
+status, html = page_of(U + "/21/S9?linkType=linkset")
+check("…a serial nobody registered: its unit named, the product's level shown",
+      "Item (serial S9) has no information of its own" in html and "this level: Product (every unit)." in html)
+for path in (Q + "/22/V1/10/L1?linkType=linkset", Q + "?linkType=linkset", U + "/22/V1/10/B42/21/S1?linkType=linkset"):
+    status, html = page_of(path)
+    check(f"no notice when the request's own level answers: {path}", status == 200 and "level-notice" not in html,
+          html[html.find("<main"):][:300])
+status, html = page_of(X + "/10/ZZ9?linkType=gs1:pip", "vi")
+check("choice page (300) of a batch without a record: the notice too",
+      status == 300 and "Batch/lot ZZ9 has no information of its own" in html, (status, html[html.find("<main"):][:400]))
+status, html = page_of(X + "?linkType=gs1:pip", "vi")
+check("…not when the choice is the request's own level", status == 300 and "has no information of its own" not in html)
+check("…but the notice of a language not served (ADR 0028): Vietnamese asked, none of the links in it",
+      "in your language" in html, html[html.find("<main"):][:400])
+status, html = page_of(Q + "/10/" + "%3Ci%3EX" + "?linkType=linkset")
+notice = html[html.find('class="level-notice"'):][:900]
+check("a batch value with markup is shown as text in the notice, decoded",
+      status == 200 and "Batch/lot &lt;i&gt;X has no information" in notice and "<i>X" not in html,
+      html[html.find("<main"):][:400])
+r = client.get("/api" + Q + "/22/V1/10/L2?linkType=linkset", headers={"Accept": "application/linkset+json"})
+check("the linkset itself is unchanged: no private key of the notice in it",
+      r.status_code == 200 and "_match" not in r.get_data(as_text=True) and "_anchor" not in r.get_data(as_text=True))
+
+expose = get(Q).headers.get("Access-Control-Expose-Headers") or ""
+check("CORS exposes Resolution-Anchor and Resolution-Match",
+      "Resolution-Anchor" in expose and "Resolution-Match" in expose, expose)
 body = client.get("/api" + X + "?linkType=linkset", headers={"Accept": "application/linkset+json"}).get_json(force=True)
 item = body["linkset"][0]
 check("linkset: gs1:defaultLink is the first default-type link; gs1:defaultLinkMulti lists both (2.5.8)",
@@ -539,6 +625,295 @@ if ENGINE:
 else:
     print("SKIP real syntax engine checks (set GS1_SYNTAX_ENGINE, see dev-tests/portal/test_keys.py)")
 
+# ---------------------------------------------------------------- template records (official code; U-001)
+# A record whose qualifier is a template ({lot}) answers any value, which goes into its links. The value comes from the
+# request: it must stay data inside the address registered, percent-encoded, never able to change the linkset's
+# structure (the official code replaced it in the linkset's JSON text and parsed that again, so a value with quotes
+# could replace the target). The same holds for the {0}/{1} templates of a serialised key (GIAI, GRAI…).
+from urllib.parse import quote, unquote, urlsplit  # noqa: E402
+T = "/01/09506000777719"
+author({"anchor": T, "itemDescription": "Template", "defaultLinktype": "gs1:pip", "qualifiers": [{"10": "{lot}"}],
+        "links": [{"linktype": "gs1:pip", "href": "https://brand.example/lot/{lot}?ref=dl", "title": "Lot {lot}",
+                   "type": "text/html", "hreflang": ["en"]}]})
+r = get(T + "/10/ABC123")
+check("template record: the batch's value goes into the target", r.status_code == 307
+      and r.headers.get("Location", "").startswith("https://brand.example/lot/ABC123?ref=dl"), r.headers.get("Location"))
+# every value below is in GS1's character set 82, so the resolver accepts it as a batch number
+for label, value in (("quotes that close the string and add an href", '","href":"//ab.cd'),
+                     ("a single quote, parentheses and a comma", "A'(B),C"), ("a slash and a question mark", "A/B?x=1"),
+                     ("a colon, a semicolon and an equals sign", "x:1;y=2"), ("a percent sign and an ampersand", "5%&6")):
+    r = get(T + "/10/" + quote(value, safe=""))
+    location = r.headers.get("Location", "")
+    parts = urlsplit(location)
+    check(f"template record, a value with {label}: the registered host and path, the value encoded in one segment",
+          r.status_code == 307 and parts.hostname == "brand.example" and parts.path.startswith("/lot/")
+          and unquote(parts.path[len("/lot/"):]) == value and parts.query.startswith("ref=dl"), f"{r.status_code} {location}")
+r = get(T + "/10/" + quote('","href":"//ab.cd', safe="") + "?linkType=linkset", accept="application/linkset+json")
+links = [link for item in (r.get_json(silent=True) or {}).get("linkset", []) for key, value in item.items()
+         if key.startswith("https://ref.gs1.org/voc/") for link in value]
+check("template record, injected value in the linkset: every link to the registered host, the title showing the value as text",
+      r.status_code == 200 and links and all(urlsplit(link["href"]).hostname == "brand.example"
+                                             and link["title"] == 'Lot ","href":"//ab.cd' for link in links), links)
+GI = "/8004/0950600013430"
+author({"anchor": GI, "itemDescription": "Assets", "defaultLinktype": "gs1:pip",
+        "links": [{"linktype": "gs1:pip", "href": "https://brand.example/asset/{0}/{1}", "title": "Asset {1}",
+                   "type": "text/html", "hreflang": ["en"]}]})
+# the official search for the longest stored prefix is a binary search: with this anchor it finds it for a rest of
+# seven or eight characters
+r = get(GI + "7777777")
+check("serialised key template ({0}/{1}): the key's prefix and the rest go into the target", r.status_code == 307
+      and r.headers.get("Location", "").startswith("https://brand.example/asset/0950600013430/7777777"),
+      r.headers.get("Location"))
+r = get(GI + quote('7","x":"', safe=""))
+location = r.headers.get("Location", "")
+check("serialised key template, a rest with quotes: the registered host, the rest encoded in one segment",
+      r.status_code == 307 and urlsplit(location).hostname == "brand.example"
+      and unquote(urlsplit(location).path) == '/asset/0950600013430/7","x":"', f"{r.status_code} {location}")
+
+# Document ids (ADR 0049, finding U-004): a value's own "_" kept, a %2F in a value never read as the slash after the AI
+UNDER = "/8004/0950600013A_B"
+author({"anchor": UNDER, "itemDescription": "Asset", "defaultLinktype": "gs1:pip",
+        "links": [{"linktype": "gs1:pip", "href": "https://brand.example/a_b", "title": "A_B", "type": "text/html",
+                   "hreflang": ["en"]}]})
+r = get(UNDER)
+check("a key value with '_' resolves to its own record", r.status_code == 307
+      and r.headers.get("Location") == "https://brand.example/a_b", f"{r.status_code} {r.headers.get('Location')}")
+r = get("/8004/0950600013A%2FB")
+check("…the value A/B (a %2F) does not read the record of A_B (the official code turned every '/' into '_')",
+      r.status_code != 307 and "brand.example/a_b" not in r.headers.get("Location", ""),
+      f"{r.status_code} {r.headers.get('Location')}")
+check("web_db: an anchor's id keeps the value's '_' and turns only the slash after the AI",
+      [real_web_db._reformat_id(a) for a in ("/01/09506000134352", "01/09506000134352", "8004_A_B", "/8004/A_B",
+                                             "8004_A/B", "/8004/A/B")]
+      == ["01_09506000134352", "01_09506000134352", "8004_A_B", "8004_A_B", "8004_A/B", "8004_A/B"])
+
+# Error answers without the exception's text (ADR 0050, finding U-006)
+import ast  # noqa: E402
+import logging  # noqa: E402
+from pymongo import errors as pymongo_errors  # noqa: E402
+
+SECRET = "db-host.internal:27017 (secret detail)"
+
+
+def answers_from_exception(folder):
+    """Every return or abort() inside an 'except ... as e' block whose value uses e: an answer built from the
+    exception's text (the official code answered 'Unexpected error occurred. Details: ' + str(e) and the like). A
+    line marked '# own message' (on it or just above) answers a refusal whose text the service's own code wrote;
+    '# log only' passes the exception to a function that only logs it."""
+    found = []
+    for path in sorted(glob.glob(os.path.join(REPO, folder, "*.py"))):
+        with open(path, encoding="utf-8") as fh:
+            source = fh.read()
+        tree, lines = ast.parse(source), [""] + source.splitlines()
+        for handler in ast.walk(tree):
+            if not isinstance(handler, ast.ExceptHandler) or not handler.name:
+                continue
+            for node in ast.walk(handler):
+                value = node.value if isinstance(node, ast.Return) else node if isinstance(node, ast.Call) \
+                    and getattr(node.func, "id", getattr(node.func, "attr", "")) == "abort" else None
+                if value is not None and any(isinstance(n, ast.Name) and n.id == handler.name for n in ast.walk(value)) \
+                        and not re.search("# (own message|log only)", lines[node.lineno] + lines[node.lineno - 1]):
+                    found.append(f"{os.path.basename(path)}:{node.lineno}")
+    return found
+
+
+class LogLines(logging.Handler):
+    """The service's log as an operator reads it, tracebacks included."""
+    def __init__(self):
+        super().__init__()
+        self.lines = []
+        self.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
+
+    def emit(self, record):
+        self.lines.append(self.format(record))
+
+
+found = answers_from_exception(os.path.join("web_server", "src"))
+check("error answers: no answer of the resolver built from an exception's text", not found, found)
+log = LogLines()
+logging.getLogger().addHandler(log)
+
+
+class FailingCollection:
+    def find_one(self, *args, **kwargs):
+        raise pymongo_errors.ServerSelectionTimeoutError(SECRET)
+
+
+real_web_db._resolver_collection = FailingCollection()
+failed = real_web_db.read_document(UNDER)
+real_web_db._resolver_collection = None
+check("error answers: web_db on a database that fails → 500 with a fixed text, not its message (host and port)",
+      failed["response_status"] == 500 and SECRET not in json.dumps(failed) and "log" in failed["error"], failed)
+real_unserved = web_logic.unserved
+
+
+def failing_unserved(*args, **kwargs):
+    raise RuntimeError(SECRET)
+
+
+web_logic.unserved = failing_unserved
+r = get(UNDER)
+web_logic.unserved = real_unserved
+check("error answers: a failure while choosing the link → 500 with a fixed text, not the exception's",
+      r.status_code == 500 and SECRET not in r.get_data(as_text=True)
+      and "log" in (r.get_json() or {}).get("error", ""), (r.status_code, r.get_data(as_text=True)[:200]))
+text = "\n".join(log.lines)
+check("error answers: …both in the resolver's log, with the traceback", text.count(SECRET) >= 2 and "Traceback" in text,
+      text[-400:])
+logging.getLogger().removeHandler(log)
+
+# ---------------------------------------------------------------- a records' database that fails (ADR 0051, F-031)
+# web_db answers 500 when MongoDB cannot be read (above). The official code read that like a missing document: 404, the
+# page "no information registered for this product", the request log's "unknown", the resolver of last resort.
+PAGE_TEXTS = json.load(open(os.path.join(REPO, "web_server", "src", "page_texts.json"), encoding="utf-8"))
+reads = []
+
+
+def failing_read(anchor):
+    reads.append(anchor)
+    return {"response_status": 500, "error": "Database error: see the resolver's log"}
+
+
+web_db.read_document = failing_read
+r = get(G)
+check("records' database down: a registered code → 503 with Retry-After, not 404", r.status_code == 503
+      and r.headers.get("Retry-After") == web_logic.records_retry_after() == "5", 
+      (r.status_code, dict(r.headers)))
+check("…JSON: the fixed text that asks to try again, not 'No document found'", (r.get_json() or {}).get("error")
+      == web_logic.RECORDS_UNAVAILABLE and "No document" not in r.get_data(as_text=True), r.get_data(as_text=True)[:200])
+r = get(G + "/10/123", accept="text/html")
+html = r.get_data(as_text=True)
+check("…a browser: the page that asks to try again (error.other), not 'no information registered'",
+      r.status_code == 503 and r.headers.get("Retry-After") == web_logic.records_retry_after()
+      and PAGE_TEXTS["pt-BR"]["pages"]["error.other.title"] in html
+      and PAGE_TEXTS["pt-BR"]["pages"]["error.404.title"] not in html, (r.status_code, html[:300]))
+r = get(G + "?linkType=linkset", accept="application/linkset+json")
+check("…a linkset asked for: 503", r.status_code == 503 and r.headers.get("Retry-After"), r.status_code)
+r = client.head("/api" + G, headers={"Accept": "*/*"})
+check("…HEAD: 503 with Retry-After", r.status_code == 503 and r.headers.get("Retry-After"), r.status_code)
+reads.clear()
+r = get(GI + "7777777")
+check("…a serialised key: 503 after the first read, no search for a shorter stored prefix",
+      r.status_code == 503 and len(reads) == 1, (r.status_code, reads))
+
+
+def failing_after(count):
+    """The database answers the first count reads (from the dictionary), then fails."""
+    def read(anchor):
+        if len(reads) >= count:
+            return failing_read(anchor)
+        reads.append(anchor)
+        return read_document(anchor)
+    return read
+
+
+reads.clear()
+web_db.read_document = failing_after(2)
+r = get(GI + "7777777")
+check("…the database failing during the search for a serialised key's prefix: 503, not 404 nor a shorter prefix",
+      r.status_code == 503 and len(reads) == 3, (r.status_code, reads))
+reads.clear()
+web_db.read_document = failing_after(100)
+get(GI + "7777777")
+searched = len(reads)                     # the reads of the whole search: the exact key, the binary search, the scan
+reads.clear()
+web_db.read_document = failing_after(searched - 1)
+r = get(GI + "7777777")
+check("…and while reading the longest prefix found again (its last read): 503", r.status_code == 503
+      and searched > 3, (r.status_code, searched))
+web_db.read_document = failing_read
+r = get("/_click?a=" + G + "&l=0&i=0&t=instructions", accept="text/html")
+check("…an item page's button: 503 with Retry-After, not 404 'Not a link of this item'",
+      r.status_code == 503 and r.headers.get("Retry-After") and "Not a link" not in r.get_data(as_text=True),
+      (r.status_code, r.get_data(as_text=True)[:200]))
+r = get("/01/0789835741001X")
+check("…an invalid code: still 400 (the syntax is checked before the database)", r.status_code == 400, r.status_code)
+web_db.read_document = read_document
+r = get(G)
+check("records' database back: the same code redirected again", r.status_code == 307, r.status_code)
+r = get("/_click?a=" + G + "&l=0&i=0&t=instructions", accept="text/html")
+check("…and the item page's button too", r.status_code == 302, r.status_code)
+
+# ---------------------------------------------------------------- one time budget for the database (ADR 0052, F-032)
+# Every database read of a request shares RESOLVER_DB_TIMEOUT_MS (db_budget.py). Without it each read waited for
+# PyMongo's server selection timeout (30 s) in turn: a GET read six times while MongoDB was unreachable and answered its
+# 503 after three minutes. Run here with the real PyMongo client and nothing listening on the database's address.
+import db_budget  # noqa: E402
+import subprocess  # noqa: E402
+
+saved = os.environ.pop(db_budget.SETTING, None)
+check("time budget: 5 s by default, and Retry-After the same", db_budget.seconds() == 5.0
+      and web_logic.records_retry_after() == "5" and not db_budget.invalid(), db_budget.seconds())
+budgets = {}
+for value in ("2500", "500", "60000", "499", "60001", "0", "-1", "abc", "5s", "2.5", ""):
+    os.environ[db_budget.SETTING] = value
+    budgets[value] = (db_budget.seconds(), web_logic.records_retry_after(), db_budget.invalid())
+check("…RESOLVER_DB_TIMEOUT_MS in milliseconds, Retry-After rounded up to whole seconds",
+      budgets["2500"] == (2.5, "3", False) and budgets["500"] == (0.5, "1", False)
+      and budgets["60000"] == (60.0, "60", False), budgets)
+check("…a value outside 500 to 60000 or not a whole number: the default, and said to be invalid",
+      all(budgets[v] == (5.0, "5", True) for v in ("499", "60001", "0", "-1", "abc", "5s", "2.5"))
+      and budgets[""] == (5.0, "5", False), budgets)
+os.environ.pop(db_budget.SETTING, None)
+if saved is not None:
+    os.environ[db_budget.SETTING] = saved
+check("…the budget wraps the whole application, the domains' middleware included",
+      isinstance(client.application.wsgi_app, db_budget.Budget)
+      and type(client.application.wsgi_app.app).__name__ == "Middleware", type(client.application.wsgi_app))
+
+OUTAGE = r"""
+import json, logging, os, sys, time
+sys.path.insert(0, os.getcwd())
+logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+from __init__ import create_app
+client = create_app().test_client()
+answers = []
+for accept in ("*/*", "text/html", "*/*"):
+    start = time.monotonic()
+    r = client.get("/api/01/09506000134376", headers={"Accept": accept})
+    answers.append([r.status_code, r.headers.get("Retry-After"), r.mimetype, round(time.monotonic() - start, 2),
+                    r.get_data(as_text=True)])
+print(json.dumps(answers))
+"""
+
+
+def outage(budget_ms):
+    """A GET three times with the real resolver and PyMongo, nothing listening on the database's address."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("RESOLVER_DB_", "MONGO_", "DATA_ENTRY_DB_"))}
+    env.update({"RESOLVER_DB_USERNAME": "resolver_web", "RESOLVER_DB_PASSWORD": "pw-of-its-own",
+                "RESOLVER_DB_HOST": "127.0.0.1:9", "FQDN": "id.example.org", "RESOLVER_DB_TIMEOUT_MS": budget_ms})
+    try:
+        run = subprocess.run([sys.executable, "-c", OUTAGE], cwd=os.path.join(REPO, "web_server", "src"), env=env,
+                             capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return None, "more than 60 s"
+    try:
+        return json.loads(run.stdout.strip().splitlines()[-1]), run.stderr
+    except (ValueError, IndexError):
+        return None, run.stderr[-500:]
+
+
+answers, log_text = outage("500")
+first = answers[0] if answers else [None] * 5
+check("MongoDB unreachable (the real PyMongo client, a 0.5 s budget): 503 within the budget, not after each read's 30 s",
+      answers is not None and first[0] == 503 and first[3] is not None and first[3] < 2.5,
+      [a[:4] for a in answers] if answers else log_text)
+check("…JSON: the text that asks to try again, Retry-After of the budget in whole seconds (1)",
+      answers is not None and first[1] == "1" and web_logic.RECORDS_UNAVAILABLE in first[4], first)
+TRY_AGAIN = {texts["pages"]["error.other.title"] for texts in PAGE_TEXTS.values()}
+check("…a browser: the page that asks to try again, within the budget too", answers is not None
+      and answers[1][0] == 503 and answers[1][2] == "text/html" and answers[1][1] == "1" and answers[1][3] < 2.5
+      and any(title in answers[1][4] for title in TRY_AGAIN), answers and answers[1][:4])
+check("…the next request: within the budget as well (the caches keep their last values)", answers is not None
+      and answers[2][0] == 503 and answers[2][3] < 2.5, answers)
+check("…the budget written in the resolver's log at start", "A request may spend 0.5 s reading MongoDB" in log_text,
+      log_text[-300:])
+answers, log_text = outage("abc")
+check("…an invalid RESOLVER_DB_TIMEOUT_MS: a warning at start and the default of 5 s",
+      "RESOLVER_DB_TIMEOUT_MS must be a whole number of milliseconds from 500 to 60000: 5000 is used" in log_text
+      and "A request may spend 5.0 s reading MongoDB" in log_text and answers is not None
+      and answers[0][0] == 503 and answers[0][1] == "5" and 4.5 < answers[0][3] < 8, (answers, log_text[-300:]))
+
 # ---------------------------------------------------------------- the engine in the resolver's process (gs1_syntax.py)
 ENGINE_DIR = os.environ.get("GS1_SYNTAX_ENGINE_DIR")
 if ENGINE_DIR:
@@ -579,7 +954,7 @@ if ENGINE_DIR:
     class FakeProcess:
         returncode = 1
 
-        def communicate(self):
+        def communicate(self, timeout=None):
             return b"", b"Error: refused"
     web_logic.subprocess.Popen = lambda args, **k: started.append(args) or FakeProcess()
     loaded = gs1_syntax._module
@@ -622,6 +997,136 @@ if ENGINE_DIR:
           per_check)
 else:
     print("SKIP the engine in the resolver's process (set GS1_SYNTAX_ENGINE_DIR, see dev-tests/README.md)")
+
+# ---------------------------------------------------------------- the toolkit's Node.js processes (ADR 0047)
+# A one-segment path that may be a compressed GS1 Digital Link is decompressed by the GS1 Digital Link Toolkit in a
+# Node.js process: refused by pattern first, at most TOOLKIT_PROCESSES at once, killed after TOOLKIT_TIMEOUT, 503.
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+import threading  # noqa: E402
+NODE = shutil.which("node")
+if NODE:
+    real_popen = web_logic.subprocess.Popen
+    started = []
+
+    def counting_popen(args, **kwargs):
+        process = real_popen(args, **kwargs)
+        started.append((args, process))
+        return process
+    web_logic.subprocess.Popen = counting_popen
+    web_logic.NODE_PATH = NODE
+    web_logic.TOOLKIT_DIR = os.path.join(REPO, "web_server", "src", "gs1-digitallink-toolkit")
+    getattr(web_logic._uncompressed, "cache_clear", lambda: None)()
+
+    for segment in ("wp-login.php", "a%20b", "config.bak", "abc", "A" * 1025, "x~y", "a(b)"):
+        r = get("/" + segment)
+        check(f"one-segment path that cannot be a compressed GS1 Digital Link ({segment[:20]}): 400, no Node.js process",
+              r.status_code == 400 and not started, (r.status_code, len(started)))
+    expected = location_of("/01/09506000134352")
+    check("a compressed GS1 Digital Link (/ARFKk4XBoA) is decompressed by the toolkit and resolves as /01/09506000134352",
+          location_of("/ARFKk4XBoA") == expected and expected[0] == 307 and len(started) == 1
+          and started[0][0][1].endswith("callGS1toolkit.js") and started[0][0][2:] == ["ARFKk4XBoA", "uncompress"],
+          (location_of("/ARFKk4XBoA"), [a for a, _ in started]))
+    location_of("/ARFKk4XBoA")
+    check("…the same code again starts no other process (recent answers kept)", len(started) == 1, len(started))
+    r = get("/ABCDabcd0123-_")
+    check("a base64url segment that does not decompress: 400, its answer kept too",
+          r.status_code == 400 and len(started) == 2 and get("/ABCDabcd0123-_").status_code == 400 and len(started) == 2,
+          (r.status_code, len(started)))
+    check("…and the toolkit's own error text is not sent to the client",
+          (r.get_json(force=True) or {}).get("error") == "Not a GS1 Digital Link", r.get_data(as_text=True)[:200])
+    check("every toolkit process has ended", all(p.poll() is not None for _, p in started), [p.poll() for _, p in started])
+
+    # a process that does not finish: killed, 503 with Retry-After, the slot given back
+    slow = tempfile.mkdtemp()
+    with open(os.path.join(slow, "callGS1toolkit.js"), "w") as fh:
+        fh.write("setTimeout(() => {}, 30000);\n")
+    web_logic.TOOLKIT_DIR, saved_timeout = slow, web_logic.TOOLKIT_TIMEOUT
+    web_logic.TOOLKIT_TIMEOUT = 0.5
+    import time  # noqa: E402
+    began = time.monotonic()
+    r = get("/SLOWabcd0123")
+    took = time.monotonic() - began
+    check(f"a toolkit process still running after TOOLKIT_TIMEOUT: 503 with Retry-After within the limit ({took:.1f} s)",
+          r.status_code == 503 and r.headers.get("Retry-After") == "1" and took < 3
+          and (r.get_json(force=True) or {}).get("response_status") == 503, (r.status_code, dict(r.headers), took))
+    check("…and that process was killed", started[-1][1].poll() is not None, started[-1][1].poll())
+    r = client.get("/api/SLOWabcd0124", headers={"Accept": "text/html"})
+    check("…as an HTML page for a browser (try again in a moment)", r.status_code == 503 and r.mimetype == "text/html"
+          and r.headers.get("Retry-After") == "1", (r.status_code, r.mimetype))
+    r = get("/SLOWabcd0123")
+    check("…a timeout is not kept as the code's answer (the toolkit is asked again)", r.status_code == 503
+          and sum(1 for a, _ in started if a[2] == "SLOWabcd0123") == 2, [a[2] for a, _ in started])
+    check("…and every slot is given back", web_logic._toolkit_slots._value == web_logic.TOOLKIT_PROCESSES,
+          web_logic._toolkit_slots._value)
+    web_logic.TOOLKIT_TIMEOUT = saved_timeout
+
+    # every slot taken: the request waits TOOLKIT_WAIT for a turn, then 503 without starting a process
+    saved_wait, web_logic.TOOLKIT_WAIT = web_logic.TOOLKIT_WAIT, 0.2
+    for _ in range(web_logic.TOOLKIT_PROCESSES):
+        web_logic._toolkit_slots.acquire()
+    count = len(started)
+    r = get("/BUSYabcd0123")
+    check(f"{web_logic.TOOLKIT_PROCESSES} toolkit processes already running: 503 with Retry-After, no other process",
+          r.status_code == 503 and r.headers.get("Retry-After") == "1" and len(started) == count, (r.status_code, len(started)))
+    for _ in range(web_logic.TOOLKIT_PROCESSES):
+        web_logic._toolkit_slots.release()
+    web_logic.TOOLKIT_WAIT = saved_wait
+
+    # many requests at once never run more than TOOLKIT_PROCESSES processes
+    web_logic.TOOLKIT_DIR = os.path.join(REPO, "web_server", "src", "gs1-digitallink-toolkit")
+    running, peak, lock = [0], [0], threading.Lock()
+
+    def peak_popen(args, **kwargs):
+        with lock:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        process = real_popen(args, **kwargs)
+        real_communicate = process.communicate
+
+        def communicate(timeout=None):
+            try:
+                return real_communicate(timeout=timeout)
+            finally:
+                with lock:
+                    running[0] -= 1
+        process.communicate = communicate
+        return process
+    web_logic.subprocess.Popen = peak_popen
+    answers = []
+
+    def many(i):
+        answers.append(web_logic.uncompress_gs1_digital_link(f"MANYabcd{i:04d}").get("SUCCESS"))
+    threads = [threading.Thread(target=many, args=(i,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    check(f"eight requests at once: at most {web_logic.TOOLKIT_PROCESSES} toolkit processes running (peak {peak[0]})",
+          0 < peak[0] <= web_logic.TOOLKIT_PROCESSES and len(answers) == 8, (peak[0], answers))
+
+    # the syntax check's fallback (the engine's library missing) answers 503 when the toolkit is busy, not 400
+    import gs1_syntax  # noqa: E402
+    web_logic.subprocess.Popen = real_popen
+    web_logic._call_gs1_toolkit, saved_check = REAL_TOOLKIT, gs1_syntax.check
+    gs1_syntax.check = lambda s: None
+    web_logic.TOOLKIT_WAIT = 0.05
+    for _ in range(web_logic.TOOLKIT_PROCESSES):
+        web_logic._toolkit_slots.acquire()
+    r = get(G + "/10/ABC")
+    e = get(EPCB_EH)
+    c = get(G + "?compress=true").get_json(force=True) or {}
+    for _ in range(web_logic.TOOLKIT_PROCESSES):
+        web_logic._toolkit_slots.release()
+    gs1_syntax.check, web_logic._call_gs1_toolkit, web_logic.TOOLKIT_WAIT = saved_check, (lambda s: True), saved_wait
+    check("without the engine's library, a busy toolkit makes a resolution 503 (not 400: the code may be valid)",
+          r.status_code == 503 and r.headers.get("Retry-After") == "1", r.status_code)
+    check("…an EPC binary string too", e.status_code == 503 and e.headers.get("Retry-After") == "1", e.status_code)
+    check("…and a compression asked for answers 503 in its body", c.get("response_status") == 503, c)
+    web_logic.subprocess.Popen = real_popen
+else:
+    print("SKIP the toolkit's Node.js processes (node not found)")
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

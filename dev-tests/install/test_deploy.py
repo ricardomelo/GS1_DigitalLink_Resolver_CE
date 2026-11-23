@@ -14,12 +14,20 @@ Checks, without Docker:
     and stops cleanly on SIGTERM within Docker's stop period;
   * the portal's fallback session key (secret.key, when PORTAL_SECRET_KEY is not set): processes starting
     at the same moment all end up with the same, complete key;
+  * the example secrets of .env.example (ADR 0021): the data entry API and the portal refuse to start with the example
+    token or the portal's example database password while FQDN names a real host, naming the setting; the data entry
+    API and the resolver warn about MongoDB's example password and start; they start with the examples on localhost
+    and with values of their own; the three copies of example_secrets.py are the same file; the resolver and the data
+    entry API connect as their own database users (ADR 0030), refuse the example passwords of those users on a real
+    domain and never log a password;
   * one GS1 Barcode Syntax Engine release (ADR 0003): written once in docker-compose.yml, given to every image
     that checks GS1 data as a build argument, used by their Dockerfiles, the portal's build script and the
     CI set-up action without a release of their own, and the one portal/gs1_dictionary.json was made from;
   * the daily backup (scripts/resolver-backup.sh) with a stand-in "docker": mongodump is given only options
     mongodump has (--nsExclude is mongorestore's: the backup failed on a server with it), a failed dump says
-    ERROR, exits with status 1 and leaves no partial file, a good one writes the archive and says OK;
+    ERROR, exits with status 1 and leaves no partial file, a good one writes the archive and says OK; every archive
+    encrypted with age as it is written (ADR 0044), the key made at the first run, BACKUP_RECIPIENTS, age missing,
+    BACKUP_ENCRYPTION=off; the restore rehearsal decrypting with BACKUP_KEY_FILE; rotate-secrets.sh data;
   * the GeoIP database's monthly update (scripts/geoip-update.sh) with a stand-in "curl": the month's DB-IP file, or the
     previous month's, or GEOIP_URL from .env (never printed with its query string), gzip-compressed or not, checked
     and put in place in one step; a download that is not an MMDB keeps the old file, says ERROR and exits 1; and the
@@ -27,6 +35,9 @@ Checks, without Docker:
   * the upgrade of an official installation (scripts/upgrade-from-official.sh) with a stand-in "docker" and local
     repositories: a backup before anything changes, the branch switched in place, the credentials kept, the records
     compared, and refusals that change nothing;
+  * only the resolver on an organisation's domain (ADR 0045): custom-domains.sh's rule file and its include in every
+    organisation's site, sites written before given it, a site nginx refuses put back; through a real nginx, the
+    portal's addresses redirected to the installation's name, the data entry API refused, codes passed on;
   * the portal image's files: the portal server is started from a folder assembled by the COPY instructions
     of portal/Dockerfile (not from the source folder), and every module and data file of portal/ is in it,
     so a file left out of the image fails here rather than on a server.
@@ -118,7 +129,8 @@ def backup_checks() -> None:
         stand_in.chmod(0o755)
         run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60,
                              env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
-                                  "RESOLVER_DIR": str(work), "BACKUP_DIR": str(backups)})
+                                  "RESOLVER_DIR": str(work), "BACKUP_DIR": str(backups),
+                                  "BACKUP_KEY_FILE": str(work / "backup.key")})
         left = sorted(p.name for p in backups.iterdir()) if backups.exists() else []
         if outcome == "fails":
             check(run.returncode == 1 and "ERROR: database backup failed" in run.stdout and not left,
@@ -131,14 +143,145 @@ def backup_checks() -> None:
             check("WARNING: the result was not recorded" in run.stdout and run.returncode == 1,
                   "backup: a record that cannot be written is only a warning", run.stdout[-200:])
         else:
-            archives = [n for n in left if n.endswith(".archive.gz")]
+            archives = [n for n in left if n.endswith(".archive.gz.age")]
             check(run.returncode == 0 and " OK " in run.stdout and len(archives) == 1
-                  and (backups / archives[0]).read_text() == "ARCHIVE-BYTES" and not any(n.endswith(".tmp") for n in left),
+                  and decrypt(backups / archives[0], work / "backup.key") == b"ARCHIVE-BYTES"
+                  and not any(n.endswith(".tmp") for n in left),
                   "backup: a good dump writes the archive and says OK", (run.returncode, run.stdout[-200:], left))
             noted = recorded.read_text() if recorded.exists() else ""
             check("BACKUP_OK=1" in noted and f"BACKUP_FILE={backups / archives[0]}" in noted if archives else False,
                   "backup: a good run is recorded with its file", noted[:300])
         shutil.rmtree(work, ignore_errors=True)
+
+
+def decrypt(archive: Path, key: Path) -> bytes | None:
+    """An age archive decrypted with the identity in key; None when it does not decrypt (ADR 0044)."""
+    run = subprocess.run(["age", "-d", "-i", str(key), str(archive)], capture_output=True)
+    return run.stdout if run.returncode == 0 else None
+
+
+def backup_stand_ins(work: Path, dump: str = 'printf "ARCHIVE-BYTES"', portal: bool = True) -> Path:
+    """A bin folder with a stand-in docker: mongodump prints the archive's bytes (or fails), the portal is running
+    (or not) and its configuration archive is CONFIG-BYTES, mongosh's record is kept in work/recorded."""
+    bin_dir = work / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "docker").write_text(
+        "#!/bin/sh\ncase \"$*\" in *mongosh*) echo \"$*\" >> " + str(work / "recorded") + " ;; *mongodump*) " + dump
+        + " ;; *\"ps --status running\"*) " + ("echo portal-service" if portal else "exit 0")
+        + " ;; *\"tar -czf\"*) printf CONFIG-BYTES ;; *) exit 0 ;; esac\n")
+    (bin_dir / "docker").chmod(0o755)
+    return bin_dir
+
+
+def backup_encryption_checks() -> None:
+    """Every archive encrypted with age as it is written (Documentation/adr/0044-encrypted-backups-and-sealed-
+    secrets.md): the key file made at the first run, BACKUP_RECIPIENTS, age missing, a recipient age refuses,
+    BACKUP_ENCRYPTION=off, the retention of the encrypted names."""
+    script = REPO / "scripts" / "resolver-backup.sh"
+    if not shutil.which("age") or not shutil.which("age-keygen"):
+        check(False, "backup encryption: age and age-keygen are installed (sudo apt-get install age)")
+        return
+
+    def run_backup(work: Path, bin_dir: Path, path: str | None = None, **extra) -> subprocess.CompletedProcess:
+        env = {**os.environ, "PATH": path or f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
+               "BACKUP_DIR": str(work / "backups"), "BACKUP_KEY_FILE": str(work / "keys" / "backup.key"), **extra}
+        for name in ("BACKUP_COPY_TO", "BACKUP_RECIPIENTS", "BACKUP_ENCRYPTION"):
+            if name not in extra:
+                env.pop(name, None)
+        return subprocess.run([shutil.which("bash"), str(script)], capture_output=True, text=True, timeout=60, env=env)
+
+    def files(work: Path) -> list[str]:
+        backups = work / "backups"
+        return sorted(p.name for p in backups.iterdir()) if backups.exists() else []
+
+    # the first run: a key made, both archives encrypted to it, nothing in clear on the disk
+    work = Path(tempfile.mkdtemp(prefix="backup-age-test-"))
+    bin_dir, key = backup_stand_ins(work), work / "keys" / "backup.key"
+    first = run_backup(work, bin_dir)
+    left = files(work)
+    db = [n for n in left if n.startswith("resolver-") and n.endswith(".archive.gz.age")]
+    config = [n for n in left if n.startswith("portal-config-") and n.endswith(".tar.gz.age")]
+    check(first.returncode == 0 and key.exists() and (key.stat().st_mode & 0o777) == 0o600
+          and f"NOTICE: a backup key was created in {key}" in first.stdout and "off this server" in first.stdout,
+          "backup encryption: the first run creates the key (mode 600) and says to keep a copy off the server",
+          (first.returncode, first.stdout[-300:]))
+    check(len(db) == 1 and len(config) == 1 and len(left) == 2,
+          "backup encryption: the database's and the configuration's archives are written encrypted (.age), nothing else",
+          left)
+    raw = b"".join((work / "backups" / n).read_bytes() for n in left)
+    check(left and b"ARCHIVE-BYTES" not in raw and b"CONFIG-BYTES" not in raw
+          and raw.startswith(b"age-encryption.org/v1"),
+          "backup encryption: no archive holds its bytes in clear", raw[:60])
+    check(db and decrypt(work / "backups" / db[0], key) == b"ARCHIVE-BYTES"
+          and config and decrypt(work / "backups" / config[0], key) == b"CONFIG-BYTES",
+          "backup encryption: the key decrypts both archives to what was dumped")
+    # a second run keeps the key; a key that is not the file's does not decrypt
+    made = key.read_bytes()
+    shutil.rmtree(work / "backups")
+    second = run_backup(work, bin_dir)
+    other = work / "other.key"
+    subprocess.run(["age-keygen", "-o", str(other)], capture_output=True)
+    left = files(work)
+    check(second.returncode == 0 and "NOTICE" not in second.stdout and key.read_bytes() == made
+          and left and decrypt(work / "backups" / left[0], key) is not None
+          and decrypt(work / "backups" / left[0], other) is None,
+          "backup encryption: a later run keeps the key; another key does not decrypt", (second.stdout[-200:], left))
+    # BACKUP_RECIPIENTS alone (from .env): no key file made, the archive opens with the recipient's own identity
+    shutil.rmtree(work / "backups")
+    key.unlink()
+    public = subprocess.run(["age-keygen", "-y", str(other)], capture_output=True, text=True).stdout.strip()
+    (work / ".env").write_text(f"BACKUP_RECIPIENTS='{public}'\n")
+    third = run_backup(work, bin_dir)
+    left = files(work)
+    check(third.returncode == 0 and not key.exists() and "NOTICE" not in third.stdout
+          and left and all(decrypt(work / "backups" / n, other) is not None for n in left),
+          "backup encryption: BACKUP_RECIPIENTS in .env encrypts to its keys, with no key file on the server",
+          (third.returncode, third.stdout[-200:], left))
+    # a recipient age refuses: ERROR, status 1, no file left, the failure recorded
+    shutil.rmtree(work / "backups")
+    (work / "recorded").unlink(missing_ok=True)
+    (work / ".env").write_text("BACKUP_RECIPIENTS='age1notakey'\n")
+    bad = run_backup(work, bin_dir)
+    noted = (work / "recorded").read_text() if (work / "recorded").exists() else ""
+    check(bad.returncode == 1 and "ERROR" in bad.stdout and not files(work) and "BACKUP_OK=0" in noted,
+          "backup encryption: an encryption that fails fails the run, leaves no file and is recorded",
+          (bad.returncode, bad.stdout[-200:], files(work)))
+    (work / ".env").unlink()
+    # BACKUP_ENCRYPTION=off: the former archives, with a warning
+    shutil.rmtree(work / "backups")
+    off = run_backup(work, bin_dir, BACKUP_ENCRYPTION="off")
+    left = files(work)
+    check(off.returncode == 0 and "WARNING: BACKUP_ENCRYPTION=off" in off.stdout and not key.exists()
+          and any(n.endswith(".archive.gz") for n in left) and not any(n.endswith(".age") for n in left)
+          and (work / "backups" / [n for n in left if n.endswith(".archive.gz")][0]).read_text() == "ARCHIVE-BYTES",
+          "backup encryption: BACKUP_ENCRYPTION=off writes them unencrypted and warns", (off.stdout[-200:], left))
+    wrong = run_backup(work, bin_dir, BACKUP_ENCRYPTION="gpg")
+    check(wrong.returncode == 1 and "BACKUP_ENCRYPTION must be age or off" in wrong.stdout,
+          "backup encryption: another BACKUP_ENCRYPTION is refused", wrong.stdout[-200:])
+    # age missing: ERROR, status 1, nothing written, recorded (a PATH with only what the script needs before age)
+    shutil.rmtree(work / "backups")
+    (work / "recorded").unlink(missing_ok=True)
+    lean = work / "lean"
+    lean.mkdir()
+    for tool in ("readlink", "dirname", "mkdir", "chmod", "date", "sed", "tail", "sh", "cat"):
+        (lean / tool).symlink_to(shutil.which(tool))
+    (lean / "docker").symlink_to(bin_dir / "docker")
+    missing = run_backup(work, bin_dir, path=str(lean))
+    noted = (work / "recorded").read_text() if (work / "recorded").exists() else ""
+    check(missing.returncode == 1 and "ERROR: age is not installed (sudo apt-get install age)" in missing.stdout
+          and not files(work) and "BACKUP_OK=0" in noted and "age is not installed" in noted,
+          "backup encryption: without age the run fails, writes nothing and is recorded", (missing.stdout[-300:], noted))
+    # retention: encrypted archives older than RETENTION_DAYS go, the newer stay
+    (work / "backups").mkdir(exist_ok=True)
+    old = work / "backups" / "resolver-2026-01-01_0230.archive.gz.age"
+    old_config = work / "backups" / "portal-config-2026-01-01_0230.tar.gz.age"
+    for f in (old, old_config):
+        f.write_text("x")
+        os.utime(f, (1, 1))
+    kept = run_backup(work, bin_dir)
+    check(kept.returncode == 0 and not old.exists() and not old_config.exists() and len(files(work)) == 2,
+          "backup encryption: the retention removes encrypted archives too", files(work))
+    shutil.rmtree(work, ignore_errors=True)
 
 
 def backup_copy_checks() -> None:
@@ -155,7 +298,7 @@ def backup_copy_checks() -> None:
         for f in bin_dir.iterdir():
             f.chmod(0o755)
         env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
-               "BACKUP_DIR": str(backups)}
+               "BACKUP_DIR": str(backups), "BACKUP_KEY_FILE": str(work / "backup.key")}
         env.pop("BACKUP_COPY_TO", None)
         if outcome in ("copied", "copy fails"):
             env["BACKUP_COPY_TO"] = "backup@vault.example.org:/srv/resolver/"
@@ -164,7 +307,7 @@ def backup_copy_checks() -> None:
         run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60, env=env)
         calls = copied.read_text() if copied.exists() else ""
         noted = recorded.read_text() if recorded.exists() else ""
-        archives = sorted(backups.glob("resolver-*.archive.gz"))
+        archives = sorted(backups.glob("resolver-*.archive.gz.age"))
         if outcome == "copied":
             check(run.returncode == 0 and " OK " in run.stdout and archives and str(archives[0]) in calls
                   and calls.strip().endswith("backup@vault.example.org:/srv/resolver/") and "--chmod=F600" in calls,
@@ -268,8 +411,14 @@ def rehearsal_checks() -> None:
         check(bool(found), "rehearsal: the counting script is found")
     restored_ok = "resolver_ce.gs1resolver 120\nresolver_portal.users 4\nresolver_portal.journal 900"
     live = "resolver_ce.gs1resolver 125\nresolver_portal.users 4\nresolver_portal.journal 950\nresolver_log.requests 10"
+    key, other = Path(tempfile.mkdtemp()) / "backup.key", Path(tempfile.mkdtemp()) / "other.key"
+    for k in (key, other):
+        subprocess.run(["age-keygen", "-o", str(k)], capture_output=True)
+    public = subprocess.run(["age-keygen", "-y", str(key)], capture_output=True, text=True).stdout.strip()
     for case, restored, restore_exit in (("good", restored_ok, 0), ("no users", "resolver_ce.gs1resolver 120", 0),
-                                         ("restore fails", restored_ok, 1), ("no archive", restored_ok, 0)):
+                                         ("restore fails", restored_ok, 1), ("no archive", restored_ok, 0),
+                                         ("encrypted", restored_ok, 0), ("encrypted, no key", restored_ok, 0),
+                                         ("encrypted, another key", restored_ok, 0)):
         work = Path(tempfile.mkdtemp(prefix="rehearsal-test-"))
         bin_dir, backups, calls, given = work / "bin", work / "backups", work / "calls", work / "stdin"
         bin_dir.mkdir()
@@ -290,12 +439,17 @@ esac
         (work / "live").write_text(live + "\n")
         if case != "no archive":
             (backups / "resolver-2026-10-13_0230.archive.gz").write_text("OLDER")
-            newest = backups / "resolver-2026-10-14_0230.archive.gz"
-            newest.write_text("NEWEST-ARCHIVE")
             os.utime(backups / "resolver-2026-10-13_0230.archive.gz", (1, 1))
-        run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60,
-                             env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
-                                  "BACKUP_DIR": str(backups), "REHEARSAL_WAIT_SECONDS": "4"})
+            if case.startswith("encrypted"):     # the newest is encrypted (ADR 0044), the older one from before
+                subprocess.run(["age", "-r", public, "-o", str(backups / "resolver-2026-10-14_0230.archive.gz.age")],
+                               input=b"NEWEST-ENCRYPTED", capture_output=True)
+            else:
+                (backups / "resolver-2026-10-14_0230.archive.gz").write_text("NEWEST-ARCHIVE")
+        env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
+               "BACKUP_DIR": str(backups), "REHEARSAL_WAIT_SECONDS": "4",
+               "BACKUP_KEY_FILE": str({"encrypted, no key": work / "absent.key",
+                                       "encrypted, another key": other}.get(case, key))}
+        run = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60, env=env)
         log = calls.read_text() if calls.exists() else ""
         if case == "good":
             check(run.returncode == 0 and "OK: the archive restores" in run.stdout,
@@ -312,17 +466,32 @@ esac
             check(run.returncode == 1 and "MISSING: resolver_portal.users" in run.stdout,
                   "rehearsal: an archive without the portal's users fails", (run.returncode, run.stdout[-300:]))
         elif case == "restore fails":
-            check(run.returncode == 1 and "ERROR: mongorestore could not restore" in run.stdout
+            check(run.returncode == 1 and "ERROR: the archive could not be restored" in run.stdout
                   and "rm -f resolver-restore-rehearsal" in log.strip().splitlines()[-1],
                   "rehearsal: a failed restore fails, the container still removed", (run.returncode, run.stdout[-300:]))
-        else:
+        elif case == "no archive":
             check(run.returncode == 1 and "ERROR: no archive" in run.stdout and "run -d" not in log,
                   "rehearsal: no archive, no container", (run.returncode, run.stdout[-300:]))
+        elif case == "encrypted":
+            check(run.returncode == 0 and "OK: the archive restores" in run.stdout and ", encrypted)" in run.stdout
+                  and given.exists() and given.read_bytes() == b"NEWEST-ENCRYPTED",
+                  "rehearsal: the newest archive, encrypted, decrypted with BACKUP_KEY_FILE on its way to mongorestore",
+                  (run.returncode, run.stdout[-300:]))
+        elif case == "encrypted, no key":
+            check(run.returncode == 1 and f"the backup key {work / 'absent.key'} is not here" in run.stdout
+                  and "BACKUP_KEY_FILE" in run.stdout and "run -d" not in log,
+                  "rehearsal: an encrypted archive without its key: an error naming BACKUP_KEY_FILE, no container",
+                  (run.returncode, run.stdout[-300:]))
+        else:
+            check(run.returncode == 1 and "ERROR: the archive could not be restored" in run.stdout
+                  and "rm -f resolver-restore-rehearsal" in log.strip().splitlines()[-1],
+                  "rehearsal: another key does not decrypt: the rehearsal fails, the container removed",
+                  (run.returncode, run.stdout[-300:]))
         shutil.rmtree(work, ignore_errors=True)
 
 
 def upgrade_checks() -> None:
-    """scripts/upgrade-from-official.sh with a stand-in docker, an official clone and the Expansion Pack's branch in a
+    """scripts/upgrade-from-official.sh with a stand-in docker, an official clone and the GS1 Digital Link Resolver Suite's branch in a
     local repository: checks first, the backup before anything changes, the containers stopped, the branch switched in
     the same folder (the official one kept), the credentials and token kept in .env for the installer, the records
     counted before and after; refusals that change nothing."""
@@ -349,7 +518,7 @@ def upgrade_checks() -> None:
         calls, backups = work / "calls", work / "backups"
         for folder in (official, expansion, bin_dir):
             folder.mkdir()
-        # the Expansion Pack's branch, with a stand-in installer that records its call
+        # the GS1 Digital Link Resolver Suite's branch, with a stand-in installer that records its call
         (expansion / "docker-compose.yml").write_text(official_compose + "  portal-service: {}\n")
         (expansion / "scripts").mkdir()
         (expansion / "scripts" / "install.sh").write_text(f"echo \"install $*\" >> {calls}; touch {work / 'installed'}\n")
@@ -403,7 +572,7 @@ esac
     check(order[0] >= 0 and order == sorted(order) and "compose down --remove-orphans" in calls and " -v" not in calls,
           "upgrade: backup, then the official containers stopped (volume kept), then the installer", lines)
     check(branch == "master" and "main" in git(official, "branch").stdout,
-          "upgrade: the Expansion Pack's branch in the same folder, the official branch kept", branch)
+          "upgrade: the GS1 Digital Link Resolver Suite's branch in the same folder, the official branch kept", branch)
     env = (official / ".env").read_text()
     check("MONGO_INITDB_ROOT_PASSWORD='gs1resolver'" in env and "SESSION_TOKEN='secret'" in env
           and "MONGO_URI='mongodb://gs1resolver:gs1resolver@database-service:27017'" in env
@@ -427,7 +596,7 @@ esac
           "upgrade: an .env of its own kept as it is (a copy aside), no rotation advised", (env, run.stdout[-300:]))
     shutil.rmtree(work, ignore_errors=True)
 
-    for case, message in (("already", "already runs the Expansion Pack"), ("changed", "commit or put them aside"),
+    for case, message in (("already", "already runs the GS1 Digital Link Resolver Suite"), ("changed", "commit or put them aside"),
                           ("stopped", "database service is not running"), ("refused", "did not accept the credentials"),
                           ("dump fails", "mongodump failed")):
         run, work, official, branch, calls, backups = upgrade(case)
@@ -448,12 +617,14 @@ def rotation_checks() -> None:
     MongoDB root password changed in the database first and given on standard input, nothing secret printed."""
     script = REPO / "scripts" / "rotate-secrets.sh"
     old = {"SESSION_TOKEN": "a" * 64, "PORTAL_SECRET_KEY": "b" * 64, "PORTAL_DB_PASSWORD": "c" * 48,
+           "RESOLVER_DB_PASSWORD": "d" * 48, "DATA_ENTRY_DB_PASSWORD": "e" * 48,
            "MONGO_INITDB_ROOT_PASSWORD": "p@ss:w0rd!xyz"}
     env_text = ("MONGO_INITDB_ROOT_USERNAME=resolveradmin\n"
                 f"MONGO_INITDB_ROOT_PASSWORD='{old['MONGO_INITDB_ROOT_PASSWORD']}'\n"
                 "MONGO_URI='mongodb://resolveradmin:p%40ss%3Aw0rd%21xyz@database-service:27017'\n"
                 f"SESSION_TOKEN='{old['SESSION_TOKEN']}'\nPORTAL_SECRET_KEY='{old['PORTAL_SECRET_KEY']}'\n"
-                f"PORTAL_DB_PASSWORD='{old['PORTAL_DB_PASSWORD']}'\nFQDN='id.example.org'\n")
+                f"PORTAL_DB_PASSWORD='{old['PORTAL_DB_PASSWORD']}'\nFQDN='id.example.org'\n"
+                f"RESOLVER_DB_PASSWORD='{old['RESOLVER_DB_PASSWORD']}'\nDATA_ENTRY_DB_PASSWORD='{old['DATA_ENTRY_DB_PASSWORD']}'\n")
 
     def rotate(args, database_accepts=True):
         work = Path(tempfile.mkdtemp(prefix="rotate-test-"))
@@ -483,6 +654,8 @@ esac
           "rotation: every secret gets a new value", (run.returncode, run.stdout[-300:]))
     check(re.fullmatch(r"[0-9a-f]{64}", new["SESSION_TOKEN"]) and re.fullmatch(r"[0-9a-f]{64}", new["PORTAL_SECRET_KEY"])
           and re.fullmatch(r"[0-9a-f]{48}", new["PORTAL_DB_PASSWORD"])
+          and re.fullmatch(r"[0-9a-f]{48}", new["RESOLVER_DB_PASSWORD"])
+          and re.fullmatch(r"[0-9a-f]{48}", new["DATA_ENTRY_DB_PASSWORD"])
           and re.fullmatch(r"[0-9a-f]{48}", new["MONGO_INITDB_ROOT_PASSWORD"]),
           "rotation: the installer's lengths (64 and 48 hexadecimal digits)")
     check(new["MONGO_URI"] == f"mongodb://resolveradmin:{new['MONGO_INITDB_ROOT_PASSWORD']}@database-service:27017",
@@ -503,6 +676,7 @@ esac
     run, new, backups, calls, given, work = rotate(["token", "session"])
     check(run.returncode == 0 and new["SESSION_TOKEN"] != old["SESSION_TOKEN"]
           and new["PORTAL_DB_PASSWORD"] == old["PORTAL_DB_PASSWORD"]
+          and new["RESOLVER_DB_PASSWORD"] == old["RESOLVER_DB_PASSWORD"]
           and new["MONGO_INITDB_ROOT_PASSWORD"] == old["MONGO_INITDB_ROOT_PASSWORD"] and "changeUserPassword" not in calls,
           "rotation: only the secrets named", run.stdout[-300:])
     shutil.rmtree(work, ignore_errors=True)
@@ -512,6 +686,22 @@ esac
           "rotation: the database refusing the change leaves .env's password alone (status 1)",
           (run.returncode, run.stdout[-300:]))
     shutil.rmtree(work, ignore_errors=True)
+    # the data key (ADR 0044): only when named, the former one kept as PORTAL_DATA_KEY_PREVIOUS
+    env_text_all = env_text
+    env_text = env_text_all + "PORTAL_DATA_KEY='" + "f" * 64 + "'\n"
+    run, new, backups, calls, given, work = rotate([])
+    check(run.returncode == 0 and new["PORTAL_DATA_KEY"] == "f" * 64 and "PORTAL_DATA_KEY_PREVIOUS" not in new,
+          "rotation: the data key is not rotated unless named", run.stdout[-200:])
+    shutil.rmtree(work, ignore_errors=True)
+    run, new, backups, calls, given, work = rotate(["data"])
+    check(run.returncode == 0 and re.fullmatch(r"[0-9a-f]{64}", new["PORTAL_DATA_KEY"]) and new["PORTAL_DATA_KEY"] != "f" * 64
+          and new.get("PORTAL_DATA_KEY_PREVIOUS") == "f" * 64 and new["SESSION_TOKEN"] == old["SESSION_TOKEN"]
+          and "f" * 64 not in run.stdout + run.stderr and new["PORTAL_DATA_KEY"] not in run.stdout + run.stderr
+          and calls.strip().splitlines()[-1] == "compose up -d",
+          "rotation: data gives a new data key, keeps the former as PORTAL_DATA_KEY_PREVIOUS, prints neither",
+          run.stdout[-300:])
+    shutil.rmtree(work, ignore_errors=True)
+    env_text = env_text_all
     run, new, backups, calls, given, work = rotate(["everything"])
     check(run.returncode == 2 and not backups and new["SESSION_TOKEN"] == old["SESSION_TOKEN"],
           "rotation: an unknown name refused before anything changes", run.stdout[-200:])
@@ -592,6 +782,8 @@ def domains_script_checks() -> None:
     check("server_name id.acme.example;" in text and "proxy_pass http://127.0.0.1:8080;" in text
           and "proxy_set_header Host $host;" in text and (enabled / "gs1resolver-domain-id.acme.example").is_symlink(),
           "custom domains: apply writes a site from the installer's template and enables it", (result.stdout, text[:300]))
+    check(re.search(r"server_name id\.acme\.example;\n(?:\s*#[^\n]*\n)*\s*access_log off;", text),
+          "custom domains: the site keeps no access log (ADR 0043)", text[:400])
     check("certbot --nginx -d id.acme.example --non-interactive --agree-tos -m ops@example.org" in log
           and "certbot --nginx -d shop.beta.example" in log and "nginx -t" in log and "systemctl reload nginx" in log,
           "custom domains: nginx checked and reloaded, Certbot asked for each certificate", log[-600:])
@@ -657,6 +849,234 @@ def domains_script_checks() -> None:
     shutil.rmtree(work, ignore_errors=True)
 
 
+
+def domain_rule_checks() -> None:
+    """Only the resolver on an organisation's domain (finding F-027, ADR 0045): scripts/custom-domains.sh writes a rule
+    file that redirects the portal's addresses to the installation's own name (PORTAL_ORIGIN, else RESOLVER_PUBLIC_URL,
+    else https://FQDN) and refuses the official data entry API, includes it in every organisation's site (new ones,
+    and those written before at the next run, once, before each "location /"), puts a site back when nginx refuses
+    it, reports a site it cannot change; and, through a real nginx, the paths each kind of request reaches."""
+    import http.server
+    import threading
+    script = REPO / "scripts" / "custom-domains.sh"
+    work = Path(tempfile.mkdtemp(prefix="domain-rule-test-"))
+    bin_dir, available, enabled, snippets = work / "bin", work / "available", work / "enabled", work / "snippets"
+    calls, listing, nginx_fails = work / "calls", work / "domains.tsv", work / "nginx-fails"
+    rule = snippets / "gs1resolver-domain-paths.conf"
+    include = f"include {rule};"
+    for folder in (bin_dir, available, enabled, work / "scripts" / "templates"):
+        folder.mkdir(parents=True)
+    shutil.copy(REPO / "scripts" / "templates" / "nginx-site-http.conf", work / "scripts" / "templates")
+    stand_ins = {
+        "docker": f'case "$*" in *"db.domains.find("*) cat {listing} ;; esac',
+        "nginx": f'echo "nginx $*" >> {calls}; [ ! -e {nginx_fails} ]',
+        "systemctl": f'echo "systemctl $*" >> {calls}',
+        # the certificate's line Certbot adds, so that a domain is served after its first run
+        "certbot": f'echo "certbot $*" >> {calls}; d=$(echo "$*" | sed -n "s/.*-d \\([^ ]*\\).*/\\1/p"); '
+                   f'echo "    ssl_certificate {work}/none.pem;" >> {available}/gs1resolver-domain-$d',
+    }
+    for name, body in stand_ins.items():
+        (bin_dir / name).write_text("#!/bin/bash\n" + body + "\n")
+        (bin_dir / name).chmod(0o755)
+    stub = socket.socket()
+    stub.bind(("127.0.0.1", 0))
+    stub_port = stub.getsockname()[1]
+    stub.close()
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RESOLVER_DIR": str(work),
+           "NGINX_AVAILABLE": str(available), "NGINX_ENABLED": str(enabled), "NGINX_SNIPPETS": str(snippets),
+           "LOCK_FILE": str(work / "lock"), "PROXY_PORT": str(stub_port)}
+    for name in ("CERTBOT_EMAIL", "PORTAL_ORIGIN", "RESOLVER_PUBLIC_URL", "FQDN"):
+        env.pop(name, None)
+    dotenv = work / ".env"
+    dotenv.write_text("CERTBOT_EMAIL=ops@example.org\nFQDN=Resolver.Example.ORG\n")
+
+    def run(*args):
+        if calls.exists():
+            calls.unlink()
+        done = subprocess.run(["bash", str(script), *args], capture_output=True, text=True, timeout=60, env=env)
+        return done, calls.read_text() if calls.exists() else ""
+
+    def site(name: str) -> Path:
+        return available / f"gs1resolver-domain-{name}"
+
+    def rule_text() -> str:
+        return rule.read_text() if rule.exists() else ""
+
+    def before_each_location(text: str) -> bool:
+        """The include once, right before every "location / {" (a blank line between)."""
+        return (text.count(include) == text.count("location / {") > 0
+                and all(re.search(r"\n(\s*)" + re.escape(include) + r"\n\n\1location / \{", "\n" + part + "location / {")
+                        for part in text.split("location / {")[:-1]))
+
+    # a new domain: the rule written, the site including it before its location
+    listing.write_text("id.acme.example\t0\t0\t\t0\n")
+    result, log = run("apply")
+    text_rule = rule_text()
+    check(text_rule.count("location ") == 4
+          and "location = /portal { return 302 https://resolver.example.org/portal/; }" in text_rule
+          and "location ^~ /portal/ { return 302 https://resolver.example.org$request_uri; }" in text_rule
+          and "location ^~ /api { return 404; }" in text_rule and "location ^~ /swaggerui { return 404; }" in text_rule
+          and "adr/0045" in text_rule,
+          "domain rule: the portal's addresses redirected to https://FQDN (lower case), /api and /swaggerui refused, the "
+          "prefixes of the installation's proxy", text_rule)
+    new = site("id.acme.example").read_text() if site("id.acme.example").exists() else ""
+    check(before_each_location(new) and "server_name id.acme.example;" in new,
+          "domain rule: a new organisation's site includes the rule before its location", new[-500:])
+    check(result.returncode == 0 and "systemctl reload nginx" in log and log.index("nginx -t") < log.index("reload"),
+          "domain rule: the first rule tested by nginx and loaded", (result.stdout[-300:], log))
+    installer = (REPO / "scripts" / "templates" / "nginx-site-http.conf").read_text() \
+        + (REPO / "scripts" / "templates" / "nginx-site-https.conf").read_text()
+    check("gs1resolver-domain-paths" not in installer and "/portal" not in installer,
+          "domain rule: the installation's own name keeps the portal (the installer's templates do not include the rule)")
+
+    # sites written before: given the include once, before each location (the template's server and an HTTPS one with
+    # Certbot's certificate)
+    old_template = (REPO / "scripts" / "templates" / "nginx-site-http.conf").read_text()
+    old = old_template.replace("@FQDN@", "old.example").replace("@PROXY_PORT@", str(stub_port)) \
+        + "server {\n    listen 8443 ssl;\n    server_name old.example;\n" \
+          f"    ssl_certificate {work}/none.pem; # managed by Certbot\n    location / {{\n" \
+          f"        proxy_pass http://127.0.0.1:{stub_port};\n    }}\n}}\n"
+    site("old.example").write_text(old)
+    site("handmade.example").write_text("server {\n    listen 80;\n    server_name handmade.example;\n"
+                                        "    return 404;\n}\n")
+    listing.write_text(f"id.acme.example\t0\t0\tserved\t0\nold.example\t0\t0\tserved\t0\n")
+    result, _ = run("list")
+    check("old.example: the site still serves the portal and the data entry API (run apply)" in result.stdout
+          and "id.acme.example: the site still serves" not in result.stdout,
+          "domain rule: list names a site written before the rule", result.stdout)
+    result, log = run("apply")
+    migrated = site("old.example").read_text()
+    check(before_each_location(migrated) and migrated.count(include) == 2
+          and migrated.replace(include + "\n\n    ", "") == old,
+          "domain rule: a site written before gets the include before each of its locations, nothing else changed",
+          migrated)
+    check("old.example: only the resolver answers on this domain now" in result.stdout
+          and "systemctl reload nginx" in log and "nginx -t" in log,
+          "domain rule: the change said, nginx tested and reloaded", (result.stdout, log))
+    check("WARNING: the site of handmade.example has no 'location /'" in result.stdout
+          and site("handmade.example").read_text().count("include") == 0,
+          "domain rule: a site without 'location /' reported and left alone", result.stdout)
+    result, log = run("apply")
+    check(site("old.example").read_text() == migrated and "reload" not in log and "only the resolver" not in result.stdout,
+          "domain rule: a second run adds nothing and reloads nothing", (result.stdout, log))
+
+    # nginx refusing the migrated sites: each put back byte for byte, the run failing
+    refused = old.replace("old.example", "refused.example")
+    site("refused.example").write_text(refused)
+    nginx_fails.touch()
+    result, log = run("apply")
+    nginx_fails.unlink()
+    check(site("refused.example").read_text() == refused and result.returncode == 1
+          and "ERROR: nginx rejected the sites with the resolver-only rule; put back as they were: refused.example"
+          in result.stdout and "reload" not in log,
+          "domain rule: a site nginx refuses with the rule is put back as it was, the run fails", (result.stdout, log))
+    site("refused.example").unlink()
+
+    # the portal's address: PORTAL_ORIGIN, then RESOLVER_PUBLIC_URL; a value that is not an origin never reaches nginx
+    dotenv.write_text("CERTBOT_EMAIL=ops@example.org\nFQDN=resolver.example.org\n"
+                      "RESOLVER_PUBLIC_URL=http://localhost:8080/\n")
+    result, log = run("apply")
+    check("return 302 http://localhost:8080/portal/;" in rule_text() and "systemctl reload nginx" in log,
+          "domain rule: RESOLVER_PUBLIC_URL before FQDN; a changed rule loaded again", rule_text())
+    dotenv.write_text(dotenv.read_text() + "PORTAL_ORIGIN='https://Portal.Example.org'\n")
+    run("apply")
+    check("return 302 https://portal.example.org$request_uri;" in rule_text(),
+          "domain rule: PORTAL_ORIGIN first, as the portal reads it", rule_text())
+    dotenv.write_text("CERTBOT_EMAIL=ops@example.org\nPORTAL_ORIGIN=https://x.example/; return 302 https://evil\n")
+    result, _ = run("apply")
+    check("evil" not in rule_text() and "location ^~ /portal/ { return 404; }" in rule_text()
+          and "WARNING" in result.stderr,
+          "domain rule: an address that is not an origin refuses the portal instead, with a warning",
+          (rule_text(), result.stderr))
+
+    # through a real nginx: what each path of an organisation's domain reaches
+    dotenv.write_text("CERTBOT_EMAIL=ops@example.org\nFQDN=resolver.example.org\n")
+    run("apply")
+    nginx = shutil.which("nginx") or ("/usr/sbin/nginx" if Path("/usr/sbin/nginx").exists() else "")
+    if not nginx:
+        check(False, "domain rule: nginx is needed for the real nginx's checks")
+        shutil.rmtree(work, ignore_errors=True)
+        return
+    seen: list[str] = []
+
+    class Stub(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - the name http.server calls
+            seen.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"installation")
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", stub_port), Stub)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = free_port()
+    served = site("id.acme.example").read_text().replace("listen 80;", f"listen 127.0.0.1:{port};") \
+        .replace("listen [::]:80;", "")
+    served = "\n".join(line for line in served.splitlines() if "ssl_certificate" not in line)
+    (work / "site.conf").write_text(served)
+    (work / "logs").mkdir()
+    (work / "nginx.conf").write_text(f"pid {work}/nginx.pid;\nerror_log {work}/error.log;\nevents {{}}\nhttp {{\n"
+                                     f"  client_body_temp_path {work}/body;\n  proxy_temp_path {work}/proxy;\n"
+                                     f"  fastcgi_temp_path {work}/fastcgi;\n  uwsgi_temp_path {work}/uwsgi;\n"
+                                     f"  scgi_temp_path {work}/scgi;\n  include {work}/site.conf;\n}}\n")
+    proc = subprocess.Popen([nginx, "-e", str(work / "error.log"), "-c", str(work / "nginx.conf"), "-p", str(work),
+                             "-g", "daemon off;"], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
+
+    def ask(path: str) -> tuple[int, str]:
+        seen.clear()
+        request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers={"Host": "id.acme.example"})
+        for _ in range(50):
+            try:
+                with opener.open(request, timeout=5) as response:
+                    return response.status, ""
+            except urllib.error.HTTPError as error:
+                return error.code, error.headers.get("Location") or ""
+            except OSError:
+                time.sleep(0.1)
+        return 0, ""
+
+    try:
+        portal = {path: ask(path) for path in ("/portal", "/portal/", "/portal/api/login?next=%2Fportal%2F",
+                                                "/portal/api/v1/records")}
+        check(portal == {"/portal": (302, "https://resolver.example.org/portal/"),
+                         "/portal/": (302, "https://resolver.example.org/portal/"),
+                         "/portal/api/login?next=%2Fportal%2F":
+                             (302, "https://resolver.example.org/portal/api/login?next=%2Fportal%2F"),
+                         "/portal/api/v1/records": (302, "https://resolver.example.org/portal/api/v1/records")}
+              and not seen,
+              "domain rule (real nginx): the portal's pages and API sent to the installation's name, never passed on",
+              portal)
+        refused_paths = {path: ask(path)[0] for path in ("/api", "/api/new", "/api/index", "/apidocs", "/swaggerui",
+                                                         "/swaggerui/index.html")}
+        check(set(refused_paths.values()) == {404} and not seen,
+              "domain rule (real nginx): the data entry API and its Swagger UI refused with 404, never passed on",
+              refused_paths)
+        passed = {}
+        for path in ("/01/09506000134352", "/gs1/01/09506000134352/10/ABC%2F1?linkType=all", "/.well-known/gs1resolver",
+                     "/", "/home/home.js", "/portalx/01/09506000134352"):
+            status, _ = ask(path)
+            passed[path] = (status, list(seen))
+        check(all(status == 200 and seen_paths == [path] for path, (status, seen_paths) in passed.items()),
+              "domain rule (real nginx): codes (with a stem and %2F), the description file and the home page passed on "
+              "unchanged", passed)
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        server.shutdown()
+    shutil.rmtree(work, ignore_errors=True)
+
+
 # --------------------------------------------------------------------------- docker-compose.yml
 def compose_config(env_lines: list[str]) -> tuple[dict | None, str]:
     """The configuration as Compose resolves it, with these lines as the installation's .env (and
@@ -671,6 +1091,28 @@ def compose_config(env_lines: list[str]) -> tuple[dict | None, str]:
     if run.returncode:
         return None, run.stderr
     return json.loads(run.stdout), run.stderr
+
+
+def logging_checks() -> None:
+    """Each container's output kept in a bounded number of files of a bounded size (ADR 0043, finding F-025), from
+    .env; and the proxy given PROXY_ACCESS_LOG."""
+    for lines, size, files in (([], "10m", "5"), (["LOG_MAX_SIZE=50m", "LOG_MAX_FILES=2", "PROXY_ACCESS_LOG=off"], "50m", "2")):
+        config, err = compose_config(lines)
+        services = (config or {}).get("services", {})
+        logging = {name: service.get("logging") for name, service in services.items()}
+        check(len(services) >= 7 and all(entry == {"driver": "json-file", "options": {"max-size": size, "max-file": files}}
+                                         for entry in logging.values()),
+              f"every service keeps at most {files} log files of {size} ({'.env' if lines else 'the defaults'})",
+              logging or err)
+        proxy = services.get("frontend-proxy-service", {}).get("environment", {})
+        if not lines:
+            text = (REPO / "docker-compose.yml").read_text().split("\nservices:\n", 1)[1].split("\nvolumes:\n", 1)[0]
+            names = re.findall(r"^  ([a-z][a-z-]*):\n", text, re.M)
+            blocks = re.split(r"^  [a-z][a-z-]*:\n", text, flags=re.M)[1:]
+            check(names and all("    logging: *logging\n" in block for block in blocks),
+                  f"…those of an optional profile too ({len(names)} services in the file)", names)
+        check(proxy.get("PROXY_ACCESS_LOG", None) == ("off" if lines else ""),
+              f"the proxy is given PROXY_ACCESS_LOG ({proxy.get('PROXY_ACCESS_LOG')!r})")
 
 
 ENGINE_SERVICES = ("web-service", "data-entry-service", "portal-service", "portal-worker", "portal-db-init")
@@ -688,9 +1130,9 @@ def release_checks() -> None:
           f"engine release {release}: the build argument of every service that checks GS1 data", args or err)
     for folder in ("web_server", "data_entry_server"):
         text = (REPO / folder / "Dockerfile").read_text()
-        check("ARG GS1_SYNTAX_ENGINE_RELEASE\n" in text and 'gs1encoder@$GS1_SYNTAX_ENGINE_RELEASE' in text
-              and not re.search(r"npm install[^\n]*gs1encoder(\s|$)", text),
-              f"engine release: {folder}/Dockerfile installs gs1encoder at the build argument's release")
+        check("ARG GS1_SYNTAX_ENGINE_RELEASE\n" in text and '"$locked" != "$GS1_SYNTAX_ENGINE_RELEASE"' in text
+              and "npm ci " in text and not re.search(r"npm install[^\n]*gs1encoder(\s|$)", text),
+              f"engine release: {folder}/Dockerfile installs gs1encoder from a lock of the build argument's release")
     portal = (REPO / "portal" / "Dockerfile").read_text()
     check("ARG GS1_SYNTAX_ENGINE_RELEASE" in portal and 'build-syntax-engine.sh /opt/gs1-syntax-engine "$GS1_SYNTAX_ENGINE_RELEASE"' in portal,
           "engine release: portal/Dockerfile builds the engine at the build argument's release")
@@ -706,6 +1148,19 @@ def release_checks() -> None:
           and Path(contexts.get("engine-tools", "/nonexistent")).resolve() == (REPO / "portal" / "tools").resolve(),
           "engine release: web_server/Dockerfile builds the engine for the resolver's process with the portal's script",
           contexts)
+    # the About page's version (ADR 0024, section 2.4): every build of the portal's image receives the checkout's .git
+    # as the context git-dir, a separate stage writes version.json from it, the final image takes that file alone
+    git_dirs = {name: (((config or {}).get("services", {}).get(name, {}).get("build") or {})
+                       .get("additional_contexts") or {}).get("git-dir")
+                for name in ("portal-db-init", "portal-service", "portal-worker")}
+    check(all(d and Path(d).resolve() == (REPO / ".git").resolve() for d in git_dirs.values()),
+          "version: the portal's three builds receive the checkout's .git as the context git-dir", git_dirs)
+    stage = re.split(r"FROM python:3\.12-slim-bookworm(?:@sha256:[0-9a-f]{64})? AS version", portal, maxsplit=1)[-1].split("\nFROM ", 1)[0]
+    final = portal.rsplit("\nFROM ", 1)[-1]
+    check("COPY --from=git-dir . /src/.git" in stage and "about.py write /version.json" in stage
+          and "COPY --from=version /version.json ./version.json" in final
+          and "git-dir" not in final and not re.search(r"apt-get install[^\n]* git\b", final),
+          "version: a separate stage runs git and writes version.json; the final image copies that file alone")
     script = (REPO / "portal" / "tools" / "build-syntax-engine.sh").read_text()
     action = (REPO / ".github" / "actions" / "dev-tests-setup" / "action.yml").read_text()
     pinned = re.compile(r"(RELEASE=\$\{2:-\d|GS1ENCODER_VERSION=\d)")
@@ -788,6 +1243,8 @@ def image_tree(dockerfile: Path, context: Path) -> Path:
     text = re.sub(r"\\\n\s*", " ", dockerfile.read_text())
     tree = Path(tempfile.mkdtemp(prefix="deploy-image-"))
     for line in text.splitlines():
+        if not line.strip().startswith("COPY "):
+            continue
         parts = shlex.split(line.strip())
         if not parts or parts[0] != "COPY" or any(p.startswith("--from") for p in parts):
             continue
@@ -848,7 +1305,9 @@ def children(pid: int) -> list[int]:
     return [int(x) for x in run.stdout.split()]
 
 
-def server_checks(label: str, dockerfile: Path, workdir: Path, path: str, expect, env_extra: dict[str, str]) -> None:
+def server_checks(label: str, dockerfile: Path, workdir: Path, path: str, expect, env_extra: dict[str, str],
+                  more: tuple = ()) -> None:
+    """more: (path, expect, label) of further GET requests checked while the server runs."""
     cmd, image_env = image_command(dockerfile)
     check(cmd[:1] == ["gunicorn"] and "--threads" in cmd and "--workers" not in cmd,
           f"{label}: the image runs gunicorn, with the process count left to WEB_CONCURRENCY")
@@ -871,6 +1330,13 @@ def server_checks(label: str, dockerfile: Path, workdir: Path, path: str, expect
                 break
             time.sleep(0.3)
         check(status == 200 and expect(body), f"{label}: answers GET {path} under gunicorn", (status, body[:200]))
+        for other, expect_other, what in more:
+            status, body = get(f"http://127.0.0.1:{port}{other}")
+            try:
+                ok = status == 200 and expect_other(body)
+            except (ValueError, KeyError, TypeError):
+                ok = False
+            check(ok, f"{label}: {what}", (status, body[:200]))
         time.sleep(0.5)
         workers = children(proc.pid)
         check(len(workers) == 3, f"{label}: WEB_CONCURRENCY=3 → three server processes", workers)
@@ -882,7 +1348,9 @@ def server_checks(label: str, dockerfile: Path, workdir: Path, path: str, expect
         check(code == 0, f"{label}: stops cleanly on SIGTERM within Docker's {STOP_PERIOD}-second stop period", code)
         log.seek(0)
         output = log.read().decode("utf-8", "replace")
-        check(f'"GET {path} HTTP/1.1" 200' in output, f"{label}: requests are logged (docker compose logs)")
+        check("--access-logfile" not in cmd and f"GET {path}" not in output,
+              f"{label}: no access log (ADR 0043: the proxy logs each request, without the address or query string)",
+              output[-300:])
         check("Control socket listening" not in output, f"{label}: no gunicorn control socket", output[-300:])
     finally:
         if proc.poll() is None:
@@ -948,19 +1416,110 @@ def secret_key_checks() -> None:
     shutil.rmtree(config, ignore_errors=True)
 
 
+def example_secrets_checks() -> None:
+    """The example secrets of .env.example refused outside development (ADR 0021)."""
+    copies = {path: path.read_bytes() for path in (REPO / "portal" / "example_secrets.py",
+                                                   REPO / "web_server" / "src" / "example_secrets.py",
+                                                   REPO / "data_entry_server" / "src" / "example_secrets.py")}
+    check(len(set(copies.values())) == 1, "example_secrets.py: the same file in the portal, the resolver and the data entry API")
+    example_uri = "mongodb://gs1resolver:gs1resolver@127.0.0.1:9/?serverSelectionTimeoutMS=300"
+    own_uri = "mongodb://resolveradmin:9f8e7d6c5b4a@127.0.0.1:9/?serverSelectionTimeoutMS=300"
+    factory = "from __init__ import create_app; create_app(); print('STARTED')"
+    portal_env = {"PORTAL_CONFIG_DIR": tempfile.mkdtemp(prefix="deploy-examples-"), "PORTAL_SECRET_KEY": "k",
+                  "PORTAL_DB_NAME": f"devtest_examples_{os.getpid()}", "DATA_ENTRY_URL": "http://127.0.0.1:9/api",
+                  "RESOLVER_PUBLIC_URL": "https://id.example.org"}
+    entry_own = {"DATA_ENTRY_DB_USERNAME": "resolver_data_entry", "DATA_ENTRY_DB_PASSWORD": "pw-of-its-own",
+                 "DATA_ENTRY_DB_HOST": "127.0.0.1:9"}
+    resolver_own = {"RESOLVER_DB_USERNAME": "resolver_web", "RESOLVER_DB_PASSWORD": "pw-of-its-own",
+                    "RESOLVER_DB_HOST": "127.0.0.1:9"}
+    services = {
+        "data entry API": (REPO / "data_entry_server" / "src", factory,
+                           {"SESSION_TOKEN": "tok-of-its-own", "MONGO_URI": own_uri},
+                           [("SESSION_TOKEN", "secret")]),
+        # its own MongoDB user (ADR 0030), no MONGO_URI at all
+        "data entry API (its own database user)": (REPO / "data_entry_server" / "src", factory,
+                           {"SESSION_TOKEN": "tok-of-its-own", **entry_own},
+                           [("DATA_ENTRY_DB_PASSWORD", "resolver_data_entry")]),
+        "resolver (its own database user)": (REPO / "web_server" / "src", factory, resolver_own,
+                           [("RESOLVER_DB_PASSWORD", "resolver_web")]),
+        "portal": (REPO / "portal", "import app; print('STARTED')",
+                   {**portal_env, "SESSION_TOKEN": "tok-of-its-own", "PORTAL_DB_URI": "mongomock://"},
+                   [("SESSION_TOKEN", "secret")]),
+        # no database answers: the portal stops at its connection, after the check (PASSED_CHECK below)
+        "portal (its database by password)": (REPO / "portal", "import app; print('STARTED')",
+                   {**portal_env, "SESSION_TOKEN": "tok-of-its-own", "PORTAL_DB_PASSWORD": "pw-of-its-own",
+                    "PORTAL_DB_HOST": "127.0.0.1:9", "PORTAL_DB_TIMEOUT_MS": "300"},
+                   [("PORTAL_DB_PASSWORD", "resolver_portal")]),
+    }
+
+    def passed_check(label: str, run: subprocess.CompletedProcess) -> bool:
+        if "STARTED" in run.stdout:
+            return True
+        return label.endswith("by password)") and "Refusing to start" not in run.stderr and "127.0.0.1:9" in run.stderr
+
+    def start(folder: Path, code: str, settings: dict[str, str]) -> subprocess.CompletedProcess:
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith(("PORTAL_", "RESOLVER_", "DATA_ENTRY_", "MONGO_", "SESSION_TOKEN", "FQDN"))}
+        env.update(settings)
+        return subprocess.run([sys.executable, "-c", code], cwd=folder, env=env, capture_output=True, text=True,
+                              timeout=120)
+
+    for label, (folder, code, own, examples) in services.items():
+        run = start(folder, code, {**own, "FQDN": "id.example.org"})
+        check(passed_check(label, run), f"{label}: starts with values of its own on id.example.org", run.stderr[-300:])
+        for name, value in examples:
+            run = start(folder, code, {**own, name: value, "FQDN": "id.example.org"})
+            check(run.returncode != 0 and "STARTED" not in run.stdout and "Refusing to start" in run.stderr
+                  and name in run.stderr and "id.example.org" in run.stderr,
+                  f"{label}: refuses to start with the example {name} on id.example.org, naming it", run.stderr[-300:])
+            for host in ("localhost", ""):
+                run = start(folder, code, {**own, name: value, "FQDN": host})
+                check(passed_check(label, run), f"{label}: starts with the example {name} when FQDN is "
+                      f"{host or 'not set'} (development)", run.stderr[-300:])
+    # MongoDB's example root password: the installer keeps it for a database created with it, so it is warned about
+    for label, folder in (("data entry API", REPO / "data_entry_server" / "src"), ("resolver", REPO / "web_server" / "src")):
+        own = {"SESSION_TOKEN": "tok-of-its-own"} if label == "data entry API" else {}
+        run = start(folder, factory, {**own, "MONGO_URI": example_uri, "FQDN": "id.example.org"})
+        check("STARTED" in run.stdout and "MONGO_URI holds the example password" in run.stderr
+              and "gs1resolver:gs1resolver" not in run.stderr,
+              f"{label}: starts with MongoDB's example password on id.example.org, with a warning that names the setting "
+              "and not the password", run.stderr[-300:])
+        for settings in ({"MONGO_URI": example_uri, "FQDN": "localhost"}, {"MONGO_URI": own_uri, "FQDN": "id.example.org"}):
+            run = start(folder, factory, {**own, **settings})
+            check("STARTED" in run.stdout and "example password" not in run.stderr,
+                  f"{label}: no warning with {'its own password' if settings['MONGO_URI'] == own_uri else 'the example on localhost'}",
+                  run.stderr[-300:])
+    # the connection logged by host, never with the service's password (ADR 0030)
+    for label, folder, own in (("resolver", REPO / "web_server" / "src", resolver_own),
+                               ("data entry API", REPO / "data_entry_server" / "src",
+                                {"SESSION_TOKEN": "tok-of-its-own", **entry_own})):
+        user = own.get("RESOLVER_DB_USERNAME") or own.get("DATA_ENTRY_DB_USERNAME")
+        code = ("import logging; logging.basicConfig(level=logging.INFO); from __init__ import create_app; "
+                "print('STARTED', create_app().config['MONGO_URI'])")
+        run = start(folder, code, {**own, "FQDN": "id.example.org"})
+        check(f"STARTED mongodb://{user}:pw-of-its-own@127.0.0.1:9/?authSource=admin" in run.stdout
+              and "127.0.0.1:9/?authSource=admin" in run.stderr and "pw-of-its-own" not in run.stderr
+              and "root user" not in run.stderr,
+              f"{label}: connects as its own user, logging the host and never the password", run.stderr[-300:])
+    shutil.rmtree(portal_env["PORTAL_CONFIG_DIR"], ignore_errors=True)
+
+
 def main() -> int:
     if not COMPOSE or not Path(COMPOSE).exists():
         print("FAIL COMPOSE_BIN is not set to a Docker Compose v2 binary")
         return 1
     compose_checks()
     backup_checks()
+    backup_encryption_checks()
     backup_copy_checks()
     geoip_checks()
     rehearsal_checks()
     upgrade_checks()
     rotation_checks()
     domains_script_checks()
+    domain_rule_checks()
     release_checks()
+    logging_checks()
     proxy_checks()
     no_db = "mongodb://127.0.0.1:9/?serverSelectionTimeoutMS=300"
     server_checks("web-service", REPO / "web_server" / "Dockerfile", REPO / "web_server" / "src",
@@ -978,10 +1537,17 @@ def main() -> int:
                   {"SESSION_TOKEN": "tok", "FQDN": "id.example.org", "PORTAL_CONFIG_DIR": config,
                    "PORTAL_DB_URI": os.environ.get("PORTAL_DB_URI") or "mongomock://",
                    "PORTAL_DB_NAME": f"devtest_deploy_portal_{os.getpid()}",
-                   "PORTAL_SECRET_KEY": "deploy-test-key", "DATA_ENTRY_URL": "http://127.0.0.1:9/api"})
+                   "PORTAL_SECRET_KEY": "deploy-test-key", "DATA_ENTRY_URL": "http://127.0.0.1:9/api"},
+                  more=(("/portal/api/about", lambda body: json.loads(body)["commit"] is None
+                         and json.loads(body)["version"] is None
+                         and json.loads(body)["repository"] == "https://github.com/gs1/GS1_DigitalLink_Resolver_CE"
+                         and len(json.loads(body)["components"]) > 30,
+                         "starts without version.json or Git data: the About page's version is unknown, the "
+                         "official repository is linked (ADR 0024)"),))
     shutil.rmtree(config, ignore_errors=True)
     shutil.rmtree(portal_tree, ignore_errors=True)
     secret_key_checks()
+    example_secrets_checks()
     failed = [label for ok, label in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} checks passed")
     return 1 if failed else 0

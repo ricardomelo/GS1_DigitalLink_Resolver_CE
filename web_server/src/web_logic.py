@@ -1,19 +1,54 @@
+import functools
 import json
 import logging
+import math
 import os
 import re
 import subprocess
+import threading
 from typing import Any
 from urllib.parse import quote, unquote
 
 from flask import has_request_context, request
 
+import db_budget
 import domains
 
 import gs1_syntax
+import resolution
 import web_db
 
 logger = logging.getLogger(__name__)
+
+# A failure is answered with a fixed text; the exception and its traceback go to the resolver's log (finding U-006;
+# Documentation/adr/0050-error-answers.md). The official code answered "Unexpected error occurred. Details: " + str(e)
+# and the like. An answer made from an exception carries "# own message" when its text is this code's own.
+INTERNAL_ERROR = "Internal server error: see the resolver's log"
+
+# The records' database could not be read (web_db answered 5xx): 503 with Retry-After, the page that asks to try again,
+# never the answer for a code nobody registered and never the resolver of last resort (finding F-031;
+# Documentation/adr/0051-records-unavailable.md). The official code read web_db's 500 like its 404: during an outage
+# every scan was "no information registered", counted as an unknown code and sent to the resolver of last resort.
+RECORDS_UNAVAILABLE = "The resolver cannot read its records at the moment: try again later"
+
+
+def records_retry_after() -> str:
+    """Retry-After of that 503: the request's time budget for the database in whole seconds (finding F-032,
+    Documentation/adr/0052-database-time-budget.md), as long as the request has already waited for it."""
+    return str(max(1, math.ceil(db_budget.seconds())))
+
+
+class RecordsUnavailable(Exception):
+    """web_db could not read the records' database (it logged the cause): the resolver answers 503 (try again)."""
+
+
+def _read(anchor: str) -> dict[str, Any]:
+    """web_db.read_document(), its answer when the database answered (200, or 404 for no document); RecordsUnavailable
+    when it could not be read (5xx), so that no caller takes an outage for a missing document."""
+    result = web_db.read_document(anchor)
+    if result.get('response_status', 500) >= 500:
+        raise RecordsUnavailable(anchor)
+    return result
 
 # Pattern for validating GS1 Digital Link path segments (AI codes + values).
 # Allows alphanumeric characters, hyphens, dots, underscores, percent-encoded bytes, and parentheses;
@@ -28,6 +63,48 @@ def _validate_gs1_input(value: str) -> str:
     return value
 
 
+# The GS1 Digital Link Toolkit and its Node.js process (U-002; deliberate change to the official code, which started a
+# process for every one-segment path, whatever it held, and waited for it without a time limit: a request for
+# /favicon.ico or /wp-login.php cost a Node.js start-up, tens of milliseconds of CPU, and a stuck process held its
+# server thread for ever; Documentation/adr/0047-toolkit-processes.md).
+NODE_PATH = "/usr/bin/node"
+TOOLKIT_DIR = "/app/gs1-digitallink-toolkit"
+# A compressed GS1 Digital Link is one path segment in the URI-safe base64 alphabet (URI Syntax 1.7, section 6):
+# anything else is refused without starting Node.js. The shortest key compresses to 7 characters; the bound above
+# is far beyond any GS1 Digital Link and below what the proxies let through.
+COMPRESSED_DL = re.compile(r'[A-Za-z0-9_-]{4,1024}')
+# At most TOOLKIT_PROCESSES Node.js processes at once in each server process (gunicorn's WEB_CONCURRENCY of them,
+# 8 threads each): a request waits up to TOOLKIT_WAIT seconds for a turn, and a process still running after
+# TOOLKIT_TIMEOUT seconds (they answer in about 40 ms) is killed; either way the answer is 503 with Retry-After.
+TOOLKIT_PROCESSES = 2
+TOOLKIT_WAIT = 1.0
+TOOLKIT_TIMEOUT = 3.0
+_toolkit_slots = threading.BoundedSemaphore(TOOLKIT_PROCESSES)
+
+
+class ToolkitBusy(Exception):
+    """No Node.js process could be started, or finished, in time: the resolver answers 503 (try again)."""
+
+
+def _run_toolkit(script: str, *args: str) -> tuple[int, bytes, bytes]:
+    """Runs one of the toolkit's scripts with Node.js, within the limits above: (return code, stdout, stderr)."""
+    if not _toolkit_slots.acquire(timeout=TOOLKIT_WAIT):
+        raise ToolkitBusy(f'no free Node.js slot within {TOOLKIT_WAIT} s')
+    try:
+        process = subprocess.Popen([NODE_PATH, os.path.join(TOOLKIT_DIR, script), *args],
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        try:
+            stdout, stderr = process.communicate(timeout=TOOLKIT_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            raise ToolkitBusy(f'{script} still running after {TOOLKIT_TIMEOUT} s: killed')
+        return process.returncode, stdout, stderr
+    finally:
+        _toolkit_slots.release()
+
+
 def _call_gs1_toolkit(ai_data_string: str) -> bool:
     """
     This function calls the GS1 Digital Link Toolkit to validate the syntax of a GS1 Digital Link URL.
@@ -40,16 +117,9 @@ def _call_gs1_toolkit(ai_data_string: str) -> bool:
     verdict = gs1_syntax.check(ai_data_string)
     if verdict is not None:
         return verdict
-    node_path = "/usr/bin/node"
-    toolkit_path = "/app/gs1-digitallink-toolkit/callGS1encoder.js"
+    returncode, stdout, stderr = _run_toolkit("callGS1encoder.js", ai_data_string)
 
-    process = subprocess.Popen([node_path, toolkit_path, ai_data_string],
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-
-    stdout, stderr = process.communicate()
-
-    if process.returncode != 0:
+    if returncode != 0:
         logger.warning("_call_gs1_toolkit error: %s", stderr.decode('utf-8'))
         return False
 
@@ -60,24 +130,27 @@ def uncompress_gs1_digital_link(compressed_link: str) -> dict[str, Any]:
     """
     This function checks if the AI data string is a compressed GS1 Digital link.
     The only library that does this id the GS1 Digital Link Toolkit GS1DigitalLinkToolkit.js
+    A segment that cannot be a compressed GS1 Digital Link (COMPRESSED_DL) is refused without Node.js, and the answers
+    for recent segments are kept: the same code scanned again does not start another process.
     :param compressed_link: The compressed link to check
     :return: The uncompressed GS1 Digital Link if the AI data string is compressed, otherwise a failure message.
     """
-    _validate_gs1_input(compressed_link)
-    node_path = "/usr/bin/node"
-    toolkit_path = "/app/gs1-digitallink-toolkit/callGS1toolkit.js"
-    process = subprocess.Popen([node_path, toolkit_path, compressed_link, 'uncompress'],
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
+    if not COMPRESSED_DL.fullmatch(compressed_link):
+        return {'SUCCESS': False, 'error': 'Not a GS1 Digital Link'}
+    return json.loads(_uncompressed(compressed_link))
 
-    stdout, stderr = process.communicate()
 
-    if process.returncode != 0:
+@functools.lru_cache(maxsize=4096)
+def _uncompressed(compressed_link: str) -> str:
+    """The toolkit's answer for a compressed GS1 Digital Link, as JSON text (kept per process; ToolkitBusy is not)."""
+    returncode, stdout, stderr = _run_toolkit("callGS1toolkit.js", compressed_link, 'uncompress')
+
+    if returncode != 0:
         logger.warning("uncompress_gs1_digital_link error: %s", stderr.decode('utf-8'))
-        return {'result': False, 'error': stderr.decode('utf-8')}
+        return json.dumps({'SUCCESS': False, 'error': 'Not a GS1 Digital Link'})
 
     logger.debug('Decompression stdout: %s', stdout)
-    return json.loads(stdout)
+    return stdout.decode('utf-8')
 
 
 def compress_gs1_digital_link(uncompressed_link: str) -> dict[str, Any]:
@@ -88,16 +161,9 @@ def compress_gs1_digital_link(uncompressed_link: str) -> dict[str, Any]:
     :return: The compressed GS1 Digital Link URL if successful, otherwise a failure message.
     """
     _validate_gs1_input(uncompressed_link)
-    node_path = "/usr/bin/node"
-    toolkit_path = "/app/gs1-digitallink-toolkit/callGS1toolkit.js"
+    returncode, stdout, stderr = _run_toolkit("callGS1toolkit.js", uncompressed_link, 'compress')
 
-    process = subprocess.Popen([node_path, toolkit_path, uncompressed_link, 'compress'],
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-
-    stdout, stderr = process.communicate()
-
-    if process.returncode != 0:
+    if returncode != 0:
         logger.warning("compress_gs1_digital_link error: %s", stderr.decode('utf-8'))
         return {'result': False, 'error': stderr.decode('utf-8')}
 
@@ -107,6 +173,23 @@ def compress_gs1_digital_link(uncompressed_link: str) -> dict[str, Any]:
 def _encode(value: str) -> str:
     """A path segment value, percent-encoded (every reserved character, '/' included)."""
     return quote(value, safe='')
+
+
+def _substituted(node: Any, replacements: list[tuple[str, str]], key: str | None = None) -> Any:
+    """A copy of a stored structure (a linkset, a document) with its template variables ({lotnumber}, {0}) replaced by the
+    request's values, string by string: in an address (an "href") the value goes in percent-encoded, every reserved
+    character included, so that it stays one piece of data inside the address registered; elsewhere (a title) as it
+    is. The official code replaced them in the structure dumped to JSON and parsed it again, so a value with quotes
+    could add or replace members — the target's host among them."""
+    if isinstance(node, dict):
+        return {k: _substituted(v, replacements, k) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_substituted(v, replacements, key) for v in node]
+    if isinstance(node, str):
+        for template, value in replacements:
+            if template in node:
+                node = node.replace(template, _encode(value) if key == 'href' else value)
+    return node
 
 
 def _encoded_identifier(identifier: str) -> str:
@@ -129,6 +212,8 @@ def _test_gs1_digital_link_syntax(url: str) -> bool:
             return False
         return _call_gs1_toolkit('https://id.gs1.org' + url)
 
+    except ToolkitBusy:
+        raise                                       # 503, not 400: the link may well be valid
     except IndexError as e:
         logger.warning("URL is missing expected segments: %s", e)
         return False
@@ -215,13 +300,13 @@ def _do_qualifiers_match(qualifier_path: str | None, doc_qualifiers: list[dict[s
 
     except KeyError as e:
         logger.warning('_do_qualifiers_match KeyError: %s', e)
-        return False, [f"KeyError occurred. Details: {str(e)}"]
+        return False, ["KeyError occurred"]
     except TypeError as e:
         logger.warning('_do_qualifiers_match TypeError: %s', e)
-        return False, [f"TypeError occurred. Expected list or dictionary-like object. Details: {str(e)}"]
-    except Exception as e:
-        logger.warning('_do_qualifiers_match error: %s', e)
-        return False, [f"Unexpected error occurred. Details: {str(e)}"]
+        return False, ["TypeError occurred. Expected list or dictionary-like object"]
+    except Exception:
+        logger.warning('_do_qualifiers_match error', exc_info=True)
+        return False, [INTERNAL_ERROR]
 
 
 def public_root() -> str:
@@ -270,7 +355,7 @@ def _process_serialised_identifier(identifier: str) -> dict[str, Any] | None:
     lo, hi = min_len + 1, max_len
     while lo <= hi:
         mid = (lo + hi) // 2
-        result = web_db.read_document(identifier[:mid])
+        result = _read(identifier[:mid])
         if result['response_status'] == 200:
             longest_found = mid
             lo = mid + 1  # try longer
@@ -282,10 +367,7 @@ def _process_serialised_identifier(identifier: str) -> dict[str, Any] | None:
 
     # From the longest found match, scan downward looking for template variables
     for i in range(longest_found, min_len, -1):
-        if i == longest_found:
-            wanted_db_document = web_db.read_document(identifier[:i])
-        else:
-            wanted_db_document = web_db.read_document(identifier[:i])
+        wanted_db_document = _read(identifier[:i])
         if wanted_db_document['response_status'] != 200:
             continue
 
@@ -298,11 +380,9 @@ def _process_serialised_identifier(identifier: str) -> dict[str, Any] | None:
         ai_value = identifier[:i].split('/')[2]
         ai_partial_value = identifier.split('/')[2].replace(ai_value, '')
 
-        # Replace template variables with actual values
-        wanted_json = wanted_json.replace('{0}', ai_value)
-        wanted_json = wanted_json.replace('{1}', ai_partial_value)
-
-        wanted_db_document['data'] = json.loads(wanted_json)
+        # Replace template variables with actual values, in the structure (never in its JSON text)
+        wanted_db_document['data'] = _substituted(wanted_db_document['data'],
+                                                  [('{0}', ai_value), ('{1}', ai_partial_value)])
         return wanted_db_document
 
     return None
@@ -317,7 +397,8 @@ def _validate_and_fetch_document(identifier: str, qualifier_path: str | None, do
     :param qualifier_path: The qualifier path of the digital link, if any (e.g., '/22/455') only used to validate syntax
     :param doc_id: The document ID to look up in the database.
     :return: the wanted_db_document from trying to read the document with the given doc_id
-             from the database - or an error message if the document is not found.
+             from the database - or an error message if the document is not found (404, _outcome "unknown"),
+             or 503 (RECORDS_UNAVAILABLE) when the database could not be read (finding F-031).
     """
     try:
         # Concatenate the identifiers and qualifier_path to form the complete digital link
@@ -333,7 +414,7 @@ def _validate_and_fetch_document(identifier: str, qualifier_path: str | None, do
 
         # If the link syntax is valid, attempt to fetch the corresponding document from the database.
         logger.debug('identifier: %s', identifier)
-        wanted_db_document = web_db.read_document(doc_id)
+        wanted_db_document = _read(doc_id)
 
         if wanted_db_document['response_status'] == 200:
             # document found - there is nothing more we need to do here.
@@ -358,19 +439,22 @@ def _validate_and_fetch_document(identifier: str, qualifier_path: str | None, do
         # (_outcome: for the request log only, removed by web_namespace before answering; ADR 0006)
         return {"response_status": 404, "error": f"No document found for anchor: {doc_id}", "_outcome": "unknown"}
 
+    except ToolkitBusy:
+        raise
+    except RecordsUnavailable:
+        # web_db logged the cause; never a 404 'unknown' (finding F-031)
+        return {"response_status": 503, "error": RECORDS_UNAVAILABLE}
     except ValueError as e:
         logger.warning('_validate_and_fetch_document ValueError: %s', e)
-        return {"response_status": 400,
-                "error": f"ValueError occurred. Possibly invalid identifiers or qualifier_path. Details: {str(e)}"}
+        return {"response_status": 400, "error": "Invalid identifiers or qualifier path"}
 
     except TypeError as e:
         logger.warning('_validate_and_fetch_document TypeError: %s', e)
-        return {"response_status": 400,
-                "error": f"TypeError occurred. Expected string-like object. Details: {str(e)}"}
+        return {"response_status": 400, "error": "Invalid identifiers or qualifier path"}
 
-    except Exception as e:
-        logger.error('_validate_and_fetch_document error: %s', e)
-        return {"response_status": 500, "error": f"Unexpected error occurred. Details: {str(e)}"}
+    except Exception:
+        logger.error('_validate_and_fetch_document error', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}
 
 
 def _replace_linkset_template_variables(linkset: list[dict[str, Any]], template_variables_list: list[dict[str, str]]) -> list[dict[str, Any]] | dict[str, Any]:
@@ -385,28 +469,16 @@ def _replace_linkset_template_variables(linkset: list[dict[str, Any]], template_
     """
     try:
         if len(template_variables_list) > 0:
-            linkset_json = json.dumps(linkset)
-            for template_variable in template_variables_list:
-                linkset_json = linkset_json.replace(template_variable['template_variable'],
-                                                    template_variable['value'])
-            linkset = json.loads(linkset_json)
+            linkset = _substituted(linkset, [(t['template_variable'], t['value']) for t in template_variables_list])
         return linkset
 
-    except KeyError as e:
-        return {"response_status": 400, "error": f"KeyError occurred - {str(e)}"}
+    except (KeyError, TypeError, json.JSONDecodeError):
+        logger.warning('replace_linkset_template_variables: the record\'s template could not be filled', exc_info=True)
+        return {"response_status": 400, "error": "The record's template variables could not be replaced"}
 
-    except TypeError as e:
-        logger.warning('replace_linkset_template_variables TypeError: %s', e)
-        return {"response_status": 400,
-                "error": f"TypeError occurred. Expected list or dictionary-like object - {str(e)}"}
-
-    except json.JSONDecodeError as e:
-        logger.warning('replace_linkset_template_variables JSONDecodeError: %s', e)
-        return {"response_status": 400, "error": f"JSONDecodeError occurred. Invalid JSON format - {str(e)}"}
-
-    except Exception as e:
-        logger.error('replace_linkset_template_variables error: %s', e)
-        return {"response_status": 500, "error": f"Unexpected error - {str(e)}"}
+    except Exception:
+        logger.error('replace_linkset_template_variables error', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}
 
 
 
@@ -464,6 +536,20 @@ def _entry_applies(path_qualifiers: list[dict[str, str]], doc_qualifiers: list[d
             elif value != path_map[key]:
                 return False, []
     return True, template_variables
+
+
+def answering_match(path_qualifiers: list[dict[str, str]], doc_qualifiers: list[dict[str, str]]) -> str:
+    """
+    'exact' when the record that answers names every key qualifier of the request, or names the request's serial
+    number (a unit's record covers its batch and variant: GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2);
+    'walk-up' when a less specific record answers (sections 2.5.9 and 2.5.10). The record applies to the request
+    (_entry_applies), so comparing the qualifiers' names is enough. ADR 0022, section 2.2.
+    """
+    asked = {k for q in path_qualifiers for k in q}
+    named = {k for q in doc_qualifiers for k in q}
+    if asked <= named or asked & named & _UNIT_QUALIFIERS:
+        return 'exact'
+    return 'walk-up'
 
 
 def _qualifier_path_from(doc_qualifiers: list[dict[str, str]], template_variables: list[dict[str, str]]) -> str:
@@ -565,6 +651,46 @@ def choose_links(links: list[dict[str, Any]], ranges: list[str], context: str | 
     return pool, decided
 
 
+def _declared(link: dict[str, Any], field: str) -> list[str]:
+    """The languages (hreflang, without 'und') or contexts a link declares, as a list."""
+    values = link.get(field) or []
+    if isinstance(values, str):
+        values = [values]
+    return [str(v) for v in values if v and not (field == 'hreflang' and str(v).lower() == 'und')]
+
+
+def unserved(links: list[dict[str, Any]], ranges: list[str], context: str | None) -> list[str]:
+    """
+    Which of the request's preferences the links chosen do not serve (ADR 0028): 'language' when the request named
+    languages, none of them '*', and every link chosen declares a language none of them matches; 'context' when the
+    request named a context and every link chosen declares contexts other than it. A link that declares no language
+    (or no context) serves every one: the organisation said nothing to the contrary.
+    """
+    found = []
+    ranges = [r for r in ranges if r != 'und']        # no Accept-Language: 'und' (web_namespace)
+    if links and ranges and '*' not in ranges and all(_declared(link, 'hreflang') for link in links) \
+            and _language_match(links, ranges) is None:
+        found.append('language')
+    if links and context and all(_declared(link, 'context') and context not in _declared(link, 'context')
+                                 for link in links):
+        found.append('context')
+    return found
+
+
+def _described(item: dict[str, Any], default_linktype: str | None, link: dict[str, Any]) -> dict[str, Any]:
+    """The default link with its languages and contexts: gs1:defaultLink is stored as href and title only, so the
+    link of the key's default link type with the same target describes it (ADR 0028)."""
+    if link.get('hreflang') or link.get('context'):
+        return link
+    for key in (_find_linktype_key(item, normalise_linktype(default_linktype) or ''),
+                _find_linktype_key(item, 'defaultLinkMulti')):
+        links = item.get(key) if key else None
+        for candidate in (links if isinstance(links, list) else [links] if isinstance(links, dict) else []):
+            if isinstance(candidate, dict) and candidate.get('href') == link.get('href'):
+                return candidate
+    return link
+
+
 def with_default_multi(item: dict[str, Any], default_linktype: str | None) -> dict[str, Any]:
     """
     The linkset item with gs1:defaultLinkMulti (section 2.5.8) when its links of the key's default link type
@@ -586,12 +712,39 @@ def with_default_multi(item: dict[str, Any], default_linktype: str | None) -> di
 
 
 def _handle_link_type(linktype: str | None, default_linktype: str, linkset: list[dict[str, Any]], accept_language_list: list[str], context: str | None, media_types_list: list[str] | None,
-                      linkset_requested: bool = False) -> dict[str, Any]:
+                      linkset_requested: bool = False, offer_choice: bool = False) -> dict[str, Any]:
     """
     One level of the record: the response for the requested link type, or for no link type the default
     (GS1-Conformant Resolver 1.2.1, sections 2.6.1 to 2.6.3). 307 with the link, 300 with the links of that
     type when the request cannot decide among them, 404 when this level has nothing of that type.
+    A 307 or 300 carries "_fallback" (ADR 0028): the preferences of the request its links do not serve. offer_choice
+    (a browser): a safety-critical link type answered by a link that does not serve the request's language or
+    context becomes a 300 offering every link of that type at this level, so that a person sees the choice.
     """
+    try:
+        result = _answer_link_type(linktype, default_linktype, linkset, accept_language_list, context,
+                                   media_types_list, linkset_requested)
+        if result.get('_fallback') and offer_choice and result['response_status'] == 307:
+            answered = normalise_linktype(linktype) if linktype else normalise_linktype(default_linktype)
+            item = with_default_multi(linkset[0], default_linktype)
+            key = _find_linktype_key(item, answered or '') if answered in resolution.SAFETY_CRITICAL else None
+            if key is None and answered in resolution.SAFETY_CRITICAL and linktype is None:
+                key = _find_linktype_key(item, 'defaultLinkMulti') or _find_linktype_key(item, 'defaultLink')
+            if key:
+                links = item[key] if isinstance(item[key], list) else [item[key]]
+                return {"response_status": 300, "data": [link for link in links if isinstance(link, dict)],
+                        "linktype_key": key, "_fallback": result['_fallback']}
+        return result
+
+    except Exception:
+        logger.error('handle_link_type error', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}
+
+
+def _answer_link_type(linktype: str | None, default_linktype: str, linkset: list[dict[str, Any]],
+                      accept_language_list: list[str], context: str | None, media_types_list: list[str] | None,
+                      linkset_requested: bool = False) -> dict[str, Any]:
+    """The answer of _handle_link_type() before the choice for a browser."""
     try:
         if linkset_requested or linktype in ['all', 'linkset']:
             return {"response_status": 200, "data": linkset}
@@ -610,12 +763,13 @@ def _handle_link_type(linktype: str | None, default_linktype: str, linkset: list
                 pool, decided = choose_links(item[multi_key], ranges, context, media_types_list)
                 if decided and pool:
                     hrefs = [link.get('href') for link in pool]
-                    if default_link and default_link.get('href') in hrefs:
-                        return {"response_status": 307, "data": default_link}
-                    return {"response_status": 307, "data": pool[0]}
+                    chosen = default_link if default_link and default_link.get('href') in hrefs else pool[0]
+                    return {"response_status": 307, "data": chosen,
+                            "_fallback": unserved([_described(item, default_linktype, chosen)], ranges, context)}
             if not default_link:
                 return {"response_status": 404, "error": "No default link at this level", "_outcome": "noLink"}
-            return {"response_status": 307, "data": default_link}
+            return {"response_status": 307, "data": default_link,
+                    "_fallback": unserved([_described(item, default_linktype, default_link)], ranges, context)}
 
         key = _find_linktype_key(item, normalise_linktype(linktype))
         if key is None:
@@ -625,13 +779,13 @@ def _handle_link_type(linktype: str | None, default_linktype: str, linkset: list
         if not pool:
             return {"response_status": 404, "error": f"No link found for linktype: {linktype}", "_outcome": "noLink"}
         if len(pool) == 1:
-            return {"response_status": 307, "data": pool[0]}
+            return {"response_status": 307, "data": pool[0], "_fallback": unserved(pool, ranges, context)}
         # Section 2.6.3, step 7: no best match among links of the same type (example 11)
-        return {"response_status": 300, "data": pool, "linktype_key": key}
+        return {"response_status": 300, "data": pool, "linktype_key": key, "_fallback": unserved(pool, ranges, context)}
 
-    except Exception as e:
-        logger.error('handle_link_type error: %s', e)
-        return {"response_status": 500, "error": f"Unexpected error occurred. Details: {str(e)}"}
+    except Exception:
+        logger.error('_answer_link_type error', exc_info=True)
+        return {"response_status": 500, "error": INTERNAL_ERROR}
 
 
 def get_compressed_link(uncompressed_link: str) -> dict[str, Any]:
@@ -642,6 +796,9 @@ def get_compressed_link(uncompressed_link: str) -> dict[str, Any]:
         return {'response_status': 400,
                 'error': 'Compression failed. Check GS1 Digital Link syntax is correct before compressing'}
 
+    except ToolkitBusy as e:
+        logger.warning('get_compressed_link: %s', e)
+        return {'response_status': 503, 'error': 'The resolver is busy: try again in a moment'}
     except Exception as e:
         logger.warning('get_compressed_link error: %s', e)
         return {'response_status': 400,
@@ -737,12 +894,19 @@ def format_linkset_for_external_use(response_data: dict[str, Any], identifiers: 
 
 
 def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None = '/', linktype: str | None = None, accept_language_list: list[str] | None = None, context: str | None = None,
-                  media_types_list: list[str] | None = None, linkset_requested: bool = False) -> tuple[dict[str, Any], str | None]:
+                  media_types_list: list[str] | None = None, linkset_requested: bool = False,
+                  strict: bool = False, offer_choice: bool = False) -> tuple[dict[str, Any], str | None]:
     """
     Resolves the request by walking the GTIN hierarchy (GS1-Conformant Resolver Standard 2.5.9/2.5.10):
     entries that apply to the requested path are evaluated from the most specific (e.g. batch/lot) to the
     least specific (GTIN). Redirection: the first level holding the requested link wins; if none does,
     404 (section 2.6.2). Linkset: gathers the links of every applicable level, each with its own anchor.
+    strict: the strict mode is on for the key's organisation (ADR 0022, section 2.4): a safety-critical link type
+    asked with a batch or serial number is answered only by a record naming it; a link held only by a less specific
+    level is withheld (404, _outcome and _match "withheld", _anchor the level that holds it).
+    offer_choice: the request comes from a browser; a safety-critical link that does not serve the request's language
+    or context is offered as a choice (300) instead of a redirect (ADR 0028). A 307 or 300 carries "_fallback", the
+    preferences its links do not serve.
     Always returns the tuple (response, Link header).
     """
     try:
@@ -788,17 +952,30 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
                     item = dict(item)
                     item['anchor'] = identifier + entry['_qualifier_path']
                     merged.append(item)
-            return {"response_status": 200, "data": merged}, pointer
+            # the most specific level that applies, for the notice on the item's page (ADR 0022, section 2.3)
+            return {"response_status": 200, "data": merged,
+                    "_anchor": identifier + applicable[0]['_qualifier_path'],
+                    "_match": answering_match(path_qualifiers, applicable[0].get('qualifiers') or [])}, pointer
 
         last_result = None
+        stops = strict and resolution.applies(normalise_linktype(linktype), path_qualifiers)
         for entry in applicable:
             result = _handle_link_type(linktype, default_linktype, entry['linkset'],
-                                       accept_language_list, context, media_types_list)
+                                       accept_language_list, context, media_types_list, offer_choice=offer_choice)
+            if stops and result['response_status'] in (300, 307) \
+                    and not resolution.may_answer(path_qualifiers, entry.get('qualifiers') or []):
+                # the strict mode: a less specific level holds the link; nobody receives it as the batch's
+                return {"response_status": 404, "error": f"No link registered at this level for linktype: {linktype}",
+                        "_outcome": "withheld", "_match": "withheld",
+                        "_anchor": identifier + entry['_qualifier_path']}, None
             if result['response_status'] == 300:
                 result['anchor'] = identifier + entry['_qualifier_path']   # the level whose links are offered
             if result['response_status'] in (300, 307):
-                # the level that answered, for the request log only (removed before answering; ADR 0006)
+                # the level that answered, for the request log (ADR 0006) and the Resolution-* headers (ADR 0022);
+                # web_namespace removes these keys before answering
                 result['_level'] = entry['_qualifier_path']
+                result['_anchor'] = identifier + entry['_qualifier_path']
+                result['_match'] = answering_match(path_qualifiers, entry.get('qualifiers') or [])
                 return result, pointer
             if result['response_status'] >= 500:
                 return result, None
@@ -806,6 +983,8 @@ def read_document(gs1dl_identifier: str, doc_id: str, qualifier_path: str | None
 
         return last_result or {"response_status": 404, "error": "No link found", "_outcome": "noLink"}, None
 
-    except Exception as e:
+    except ToolkitBusy:
+        raise
+    except Exception:
         logger.error('read_document: Internal Server Error', exc_info=True)
-        return {"response_status": 500, "error": "Internal Server Error: " + str(e)}, None
+        return {"response_status": 500, "error": INTERNAL_ERROR}, None

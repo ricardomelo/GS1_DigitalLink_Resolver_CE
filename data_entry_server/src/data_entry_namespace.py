@@ -49,6 +49,17 @@ def _names_links(data: dict[str, Any]) -> bool:
     return isinstance(links, list) and bool(links) and all(isinstance(link, dict) for link in links)
 
 
+def _record_qualifiers(data: dict[str, Any]) -> list[dict[str, str]] | None:
+    """The qualifiers of a DELETE that removes one record ({"removeRecord": true, "qualifiers": [...]}, ADR 0023): a
+    list of objects of one AI and its value each, [] (or absent) for the key's own record; None when malformed."""
+    qualifiers = data.get('qualifiers', [])
+    if not isinstance(qualifiers, list) or not all(
+            isinstance(q, dict) and len(q) == 1 and all(isinstance(k, str) and isinstance(v, str) for k, v in q.items())
+            for q in qualifiers):
+        return None
+    return qualifiers
+
+
 class TokenResource(Resource):
     @staticmethod
     def is_auth_token_ok() -> dict[str, bool | str]:
@@ -63,6 +74,19 @@ class TokenResource(Resource):
             return {'result': True, 'message': "Token is valid"}
 
         return {'result': False, 'message': "Token is invalid"}
+
+
+# The document id of /{anchor_ai_code}/{anchor_ai}: '8004' and 'A_B' -> '8004_A_B'. The first '_' of an id ends the
+# AI (Documentation/adr/0049-data-entry-anchors.md), so a path whose AI part has a '_' would name another anchor's
+# document (/8004_A/B is /8004/A_B): it is refused, as a path with more segments is (finding U-004).
+ANCHOR_PATH_ERROR = {"response_status": 400,
+                     "error": "The path is /{AI}/{value}: the AI without '_', the value without '/'"}
+
+
+def _document_id(anchor_ai_code: str, anchor_ai: str) -> str | None:
+    if not anchor_ai_code or '_' in anchor_ai_code or not anchor_ai:
+        return None
+    return f'{anchor_ai_code}_{anchor_ai}'
 
 
 @data_entry_namespace.route('/heartbeat')
@@ -119,16 +143,17 @@ class NewDocOperations(TokenResource):
             response_data, http_response_status = data_entry_logic.create_document(data)
             return response_data, http_response_status
 
-        except Exception as e:
-            logger.warning('Error creating document: %s', e)
-            abort(500, description="Error creating document:" + str(e))
+        except Exception:
+            # the exception to the log, a fixed text to the caller (finding U-006, ADR 0050)
+            logger.error('Error creating document', exc_info=True)
+            abort(500, description="Error creating document: see the data entry service's log")
 
 
 @data_entry_namespace.route('/validate')
 @data_entry_namespace.doc(security='BearerAuth', responses={401: 'Missing Authorization Header', 403: 'Token is invalid.'})
 class ValidateOperations(TokenResource):
-    @data_entry_namespace.doc(description="Checks one or more v3 entries as POST /new would (registration rules and "
-                                          "values) and stores nothing: {\"problems\": [{\"item\", \"error\"}]}")
+    @data_entry_namespace.doc(description="Checks one or more v3 entries as POST /new would (registration rules, "
+                                          "targets and values) and stores nothing: {\"problems\": [{\"item\", \"error\"}]}")
     def post(self) -> tuple[Any, int] | Response:
         token_result = self.is_auth_token_ok()
         if not token_result['result'] and token_result['message'] == "Missing Authorization Header":
@@ -202,7 +227,9 @@ class DocOperations(TokenResource):
             elif not token_result['result']:
                 return token_result['message'], 403
 
-            document_id = f'{anchor_ai_code}_{anchor_ai}'
+            document_id = _document_id(anchor_ai_code, anchor_ai)
+            if document_id is None:
+                return ANCHOR_PATH_ERROR, 400
             response_data = data_entry_logic.read_document(document_id)
             return response_data, response_data['response_status']
 
@@ -226,19 +253,25 @@ class DocOperations(TokenResource):
             data, refusal = _json_body(object_only=True)
             if refusal:
                 return refusal
-            document_id = f'{anchor_ai_code}_{anchor_ai}'
+            document_id = _document_id(anchor_ai_code, anchor_ai)
+            if document_id is None:
+                return ANCHOR_PATH_ERROR, 400
             response_data, http_response_status = data_entry_logic.update_document(document_id, data)
             return response_data, http_response_status
 
-        except Exception as e:
-            logger.warning('Error updating document: %s', e)
-            abort(500, description="Error updating document:" + str(e))
+        except Exception:
+            # the exception to the log, a fixed text to the caller (finding U-006, ADR 0050)
+            logger.error('Error updating document', exc_info=True)
+            abort(500, description="Error updating document: see the data entry service's log")
 
     @data_entry_namespace.doc(description="Delete a document or remove specific links from it using its anchor. "
                          "If a JSON body with a 'links' list is provided, only the matching links "
                          "are removed (matched by linktype, hreflang and context). "
+                         "A body {\"removeRecord\": true, \"qualifiers\": [...]} removes one record (the one "
+                         "with those qualifiers; none for the key's own record) and keeps the others, in one atomic "
+                         "write; the document goes with its last record (404 when there is no such record). "
                          "If no body is provided, the entire document is deleted; a body that names no link "
-                         "(no 'links', an empty list) is refused with 400.",
+                         "(no 'links', an empty list) and does not remove a record is refused with 400.",
              params={'anchor': 'The anchor of the document to delete or modify'})
     def delete(self, anchor_ai_code: str, anchor_ai: str) -> tuple[Any, int] | Response:
         try:
@@ -248,7 +281,9 @@ class DocOperations(TokenResource):
             elif not token_result['result']:
                 return token_result['message'], 403
 
-            document_id = f'{anchor_ai_code}_{anchor_ai}'
+            document_id = _document_id(anchor_ai_code, anchor_ai)
+            if document_id is None:
+                return ANCHOR_PATH_ERROR, 400
 
             # A JSON body removes the links it names (a partial delete); without a body the whole document is
             # deleted. A body that cannot be read, or names no link, is refused, never taken for no body.
@@ -256,6 +291,15 @@ class DocOperations(TokenResource):
                 data, refusal = _json_body(object_only=True)
                 if refusal:
                     return refusal
+                if 'removeRecord' in data:
+                    qualifiers = _record_qualifiers(data)
+                    if data['removeRecord'] is not True or 'links' in data or qualifiers is None:
+                        return {"response_status": 400,
+                                "error": "A DELETE that removes a record has 'removeRecord': true, the record's "
+                                         "'qualifiers' (a list of {AI: value}; none for the key's own record) and "
+                                         "no 'links'"}, 400
+                    response_data, http_response_status = data_entry_logic.delete_record(document_id, qualifiers)
+                    return response_data, http_response_status
                 if not _names_links(data):
                     return {"response_status": 400,
                             "error": "A DELETE with a body removes the links it names: 'links' must be a non-empty "
@@ -274,7 +318,8 @@ class DocOperations(TokenResource):
 @data_entry_namespace.route('/<anchor_ai_code>/<anchor_ai>/<path:extra_segments>')
 @data_entry_namespace.doc(security='BearerAuth')
 class DocOperationsQualified(TokenResource):
-    @data_entry_namespace.doc(description="Retrieve a document using its anchor")
+    @data_entry_namespace.doc(description="Answers 400: an anchor is /{AI}/{value}, and a record's qualifiers are "
+                                          "read with GET /{AI}/{value}")
     def get(self, anchor_ai_code: str, anchor_ai: str, extra_segments: str) -> tuple[Any, int] | Response:
         try:
             token_result = self.is_auth_token_ok()
@@ -283,9 +328,9 @@ class DocOperationsQualified(TokenResource):
             elif not token_result['result']:
                 return token_result['message'], 403
 
-            document_id = data_entry_logic.convert_path_to_document_id(f"/{anchor_ai_code}/{anchor_ai}/{extra_segments}")
-            response_data = data_entry_logic.read_document(document_id)
-            return response_data, response_data['response_status']
+            # An anchor is /AI/value (ADR 0049). The official route read /01/X/10/Y as the document 01_X_10_Y, which
+            # only a malformed anchor could write; such a document is now read as /01/X_10_Y (finding U-004)
+            return ANCHOR_PATH_ERROR, 400
 
         except Exception as e:
             logger.warning('Error getting document %s', e)

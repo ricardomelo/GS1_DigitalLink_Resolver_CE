@@ -34,7 +34,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/dev-tests-setup
         with:
           npm: "true"
@@ -50,7 +52,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/dev-tests-setup
         with:
           npm: "true"
@@ -70,7 +74,7 @@ jobs:
     continue-on-error: true
     services:
       mongodb:
-        image: mongo:7
+        image: mongo:7@sha256:41e8195b2791692695e1dc9bd21cd51d0a3af05fff8ace9304a5c1acf94f1ae1
         env:
           MONGO_INITDB_ROOT_USERNAME: devtests
           MONGO_INITDB_ROOT_PASSWORD: devtests-only
@@ -83,7 +87,9 @@ jobs:
       PORTAL_TEST_MONGO_URI: mongodb://devtests:devtests-only@localhost:27017/?authSource=admin
       PORTAL_DB_URI: mongodb://devtests:devtests-only@localhost:27017/?authSource=admin
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/dev-tests-setup
         with:
           npm: "true"
@@ -98,7 +104,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/dev-tests-setup
         with:
           syntax-engine: "true"
@@ -112,7 +120,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/dev-tests-setup
         with:
           playwright: "true"
@@ -126,7 +136,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/dev-tests-setup
         with:
           nginx: "true"

@@ -1,7 +1,7 @@
 # Link management portal — user guide
 
-This guide explains how to use the link management portal of the GS1 Digital Link Resolver CE —
-Expansion Pack, task by task. It is written for the people who register products, places, documents and
+This guide explains how to use the link management portal of the GS1 Digital Link Resolver Suite,
+task by task. It is written for the people who register products, places, documents and
 other identified items, and for the administrators who manage their accounts. No technical knowledge is
 needed. The portal is available in Brazilian Portuguese and British English; the screenshots show the
 English version.
@@ -94,18 +94,33 @@ below); otherwise ask the administrator for a new temporary password.
 - **Organisation account (single sign-on).** When your organisation has set it up, **Sign in with your
   organisation's account** asks for your work e-mail and takes you to your organisation's sign-in page (Microsoft,
   Google…); you come back signed in. Your portal user must already exist with that e-mail — ask your administrator
-  otherwise. If your organisation has switched password sign-in off, the portal tells you to use this button.
+  otherwise. If the portal says your user is bound to another account at the provider, ask your administrator to
+  forget it. If your organisation has switched password sign-in off, the portal tells you to use this button.
 - **Temporary password.** A new account, or one whose password an administrator has reset, starts with a
   temporary password. After signing in the portal asks you to set your own password before going on.
 - **Show the password.** The eye button inside a password field shows what you typed; it hides again when
   the form is sent.
-- **Too many attempts.** After 5 wrong passwords the account (and the computer they came from) waits
-  15 minutes before trying again.
+- **Too many attempts.** After 3 wrong passwords for a user name, the computer they came from waits
+  15 seconds before trying that user name again, then 30, 60 and so on, up to 15 minutes; the page says how long.
+  The account itself is never locked: you can still sign in from another computer. A computer that collects 20
+  wrong passwords in 15 minutes, whatever the user names, waits 15 minutes.
+- **Too many requests.** The installation also limits how many requests one address may send (sign-in and password
+  recovery: 60 a minute by default; the rest of the portal: 30 a second). Beyond that the page says *Too many requests
+  from your address. Wait a moment and try again.* People behind one office address share it; if they see the message
+  often, the operator can raise the limit.
 - **Session.** The session ends after 30 minutes without use, and 12 hours after you signed in in any case
   (the administrator can change both). Typing, clicking and scrolling count as use, even before you save.
   Two minutes before the end a window counts down: choose **Stay signed in** to carry on, or **Sign out**.
   Near the 12-hour limit the window cannot extend the session: save your work and sign in again. When the
   session ends the portal asks you to sign in again; other tabs of the portal share the same session.
+  **Sign out** ends the session on the server, not only in this browser: a copy of it taken elsewhere stops
+  working too. Changing your password signs out every other browser where you are signed in (this one stays
+  signed in); an administrator resetting your password or disabling your account or organisation signs you out
+  everywhere.
+- **Browser protections.** The portal and the resolver's pages tell your browser to run only their own code, to call
+  only the installation and never to show them inside another site's page; once your browser has opened the portal
+  over HTTPS, it uses only HTTPS for that address for a year, even if you type `http://`. Nothing changes in how you
+  use the portal; a browser extension that adds its own code or styles to pages may not work on it.
 - **Language.** The language menu at the top right switches at once, without losing what you typed, among
   twelve languages, each named in itself — first those written in the Latin alphabet, alphabetically: Deutsch,
   English (UK), Español, Français, Italiano, Português (Brasil), Türkçe; then العربية (written right to left), हिन्दी,
@@ -122,7 +137,8 @@ below); otherwise ask the administrator for a new temporary password.
 When the installation sends e-mail, the sign-in page shows **Forgotten your password?**. Enter your **user name
 or e-mail address** and select **Send the link**. The page always gives the same answer, whether or not an
 account matched, so it does not tell anyone who has an account here. If your account has an e-mail address, a
-message arrives with a link valid for 60 minutes (check the spam folder). Only the newest link works, once.
+message arrives with a link valid for 60 minutes (check the spam folder); an address used in several organisations
+receives a link for each of its accounts, each naming the user. Only the newest link works, once.
 After three requests for the same name the page asks you to wait 15 minutes.
 
 ![Choose your password](images/guide/choose-password.png)
@@ -135,8 +151,8 @@ for 72 hours. If the page says the link is no longer valid, it has expired, has 
 ask for a new one. If someone else is signed in in the same browser when you open a link, that session ends first.
 
 The portal also writes to you, always, when your password or your e-mail address is changed (to the old and the
-new address) and when your account is locked after five wrong passwords: if you did not do it, use **Forgotten
-your password?** at once and tell your administrator.
+new address) and when your account has five wrong passwords in 15 minutes, from any computer (it is not locked):
+if you did not do it, use **Forgotten your password?** at once and tell your administrator.
 
 ### The user menu
 
@@ -147,7 +163,7 @@ home page), **Overview** (section 17), **Link editor** (sections 4 to 10), **Reg
 **Requests** (section 16), **Users**, **API keys** and **Audit
 trail**, **Organisation management** and **Alerts** (administrators only; **Organisations**, **Forwarding**,
 **Appearance** and **Privacy notice** for server administrators),
-**Options** and **Sign out**. On a wide screen (1,100 pixels or more) the same screens are also in a **side menu** on
+**About**, **Options** and **Sign out**. On a wide screen (1,100 pixels or more) the same screens are also in a **side menu** on
 the left, the current one marked; the button at its top folds it to its icons and opens it again (the browser
 remembers the choice). The screens use up to 1,536 pixels of a wide monitor (96rem); the list of requests fits a
 1,280-pixel screen with the side menu open. On a phone every screen fits the width; wide tables scroll sideways inside
@@ -174,7 +190,10 @@ Security notices are always sent; **When an import or link check I started has f
 long imports and for **Check every record's links**. Administrators also choose **Monitoring alerts** (on until
 switched off): the resolver not answering, a daily backup that failed or is late, the HTTPS certificate about to
 expire, and spikes of scans of codes nobody registered (an organisation's administrators receive these for its codes
-only). Select **Save preferences**.
+only); an organisation's administrators also receive, under the same choice, the DNS record of one of its domains gone
+missing and a forwarding rule of the server administrators that starts or stops sending its codes to another resolver
+(the message names the prefix, the destination and the organisation's prefixes covered), or that already sends the
+codes of a prefix the organisation has just been given. Select **Save preferences**.
 
 ## 4. The editor at a glance
 
@@ -282,7 +301,10 @@ Each target is one web page or document. For each target fill in:
   sends each person to the version in their browser's language. Someone whose language has no version
   gets the default target (the first one).
 - **Address (URL)** — the full address, starting with `https://`. Copy it from the browser's address bar;
-  spaces, line breaks and invisible characters are refused.
+  spaces, line breaks and invisible characters are refused, and so are a user name or password before the site's
+  name (`https://name@…`), an IP address instead of the name, and names that only work inside a network
+  (`localhost`, a name without a dot, `.local`, `.internal`…). If the organisation lists the hosts its links may
+  point to (section 14, *Targets*), the address must be on one of them.
 - **Title** (optional) — a short name shown in lists of links and on the item's page. Left empty, the link gets its
   type's name in the link's language (Portuguese or English) — and a new one if you change the language later.
 
@@ -301,6 +323,33 @@ the ones in the form) or **Replace the targets**. Nothing is saved until you sel
 
 **Check targets** asks each address whether it answers (section 13); it never stops you from saving.
 
+**Warnings on safety-critical links** ([ADR 0022](adr/0022-answering-level.md) §2.5). Five link types are
+safety-critical: *Recall status*, *Safety information*, the patient leaflet, the summary of product characteristics and
+the electronic instructions for use. While you edit, the portal warns, in an orange box, where a scan could receive a
+link that was not meant for it; a warning never stops you from saving:
+
+- **This record lacks safety-critical links that a broader record holds**, under the targets of a batch or serial
+  number: a request for one of the listed types for this batch receives the link of the product (or of the batch,
+  for a serial number), which may say *not recalled* or be the general leaflet. If that information applies to the
+  batch, nothing to do; if not, add the batch's own links. The box says what happens with the organisation's strict
+  mode on (section 14, *Resolution*): the request receives *not available for this batch* instead. The box follows the
+  form: add a recall link and the recall leaves the list, before you save.
+- **Batches without a record of their own receive these links**, under the targets of the product, when it holds
+  safety-critical links and the identifier has batch or serial records: the box names them and the types, and whether
+  the strict mode is on.
+- **Safety-critical links without a language**, under the targets, when a safety-critical link's language is *und*
+  (undetermined): the resolver gives it to a person asking in any language without telling them it may be in another
+  one. Choose the language the document is written in ([ADR 0028](adr/0028-language-fallback.md)).
+- **Safety-critical links missing in the record's languages**, under the targets, when other links of the record are
+  in a language the safety-critical ones are not (*Patient information leaflet: missing in pt-BR*): a person whose
+  phone asks for that language receives the leaflet in another language. Since session 43 the resolver tells them so,
+  and in a browser shows the versions that exist to choose from, but if a version in that language exists, add it.
+- **Batch LOTA already exists for this key**, under the qualifiers, when the batch or serial number typed differs from
+  an existing one only in capitals, spaces, hyphens, dots, slashes, or O and I for 0 and 1 (*lota*, *L0TA*,
+  *LOT-A*): GS1 values are exact, so a code printed with one does not find the other. Check the value on the pack.
+
+The same warnings come with each record saved through the tenant API (`warnings`) and in the import's preview.
+
 **Default target: the item's page.** Tick this option (above the targets) when the code should open a page with
 **all** the targets instead of only the first one: the resolver makes that page — mobile first, one large button with an
 icon for each type of target, in the language of the phone when the target exists in it, otherwise in the best
@@ -309,7 +358,13 @@ batch's and the product's targets when a batch is scanned, and the brand of your
 page's icon in the browser's tab — and colours, set by an administrator under **Item page**, section 14). With the
 option no target is marked as the default. **Each record chooses for itself**: the product can open its page while a
 batch or serial number goes to its own first target, or the other way round. A scan of the GTIN alone, or of a batch
-that has no record, follows the product's choice. Above the targets the editor lists how the identifier's other
+that has no record, follows the product's choice. When a batch or serial number that has no record of its own is
+scanned, the page says so above the buttons — *Batch/lot L2 has no information of its own*, and whose targets it shows
+instead — so that nobody takes the product's recall notice or leaflet for the batch's
+([ADR 0022](adr/0022-answering-level.md)); register the batch, or at least the targets that differ, to answer for it.
+With the organisation's strict mode on (section 14, *Resolution*), such a batch receives no recall status, safety
+information, leaflet or instructions for use of the product at all: the page says the information is not available
+for it and lists the product's links under the same notice. Above the targets the editor lists how the identifier's other
 records do it (*Using the item's page: …*, *Going to their own default target: …*), and a new batch starts with the
 product's choice. Behind the scenes each record then carries its own default link (`gs1:defaultLink`); the portal
 writes it and does not show it, and nothing changes for the other records' targets. The page counts its **views** and the **clicks** on its buttons (section 16);
@@ -344,6 +399,14 @@ After saving, the portal also checks that the targets answer and warns under any
 (section 13); the record is saved either way. If something is wrong, the message says what and where (for instance *Enter the address (URL) of target
 2.*). The label block shows **Published** once the record exists on the resolver.
 
+**Someone else changing the same identifier.** Two people (or a spreadsheet import, or an organisation's system) may
+change records of the same identifier at the same moment: each change is applied on top of the other, and none is
+lost. Should the identifier keep changing while the portal saves, nothing of your change is saved and the portal says
+*The records of this key were being changed by someone else at the same moment, and the resolver did not apply this
+change. Open the record again, check it and repeat the change.* The same applies to deleting a record and to fixing
+serial numbers. Two people saving the *same* record one after the other still leave the last one's version; the
+earlier one stays in the record's history (section 8).
+
 ## 6. Other records of the same identifier
 
 ![Other records of the same GTIN](images/guide/other-records.png)
@@ -370,6 +433,9 @@ deleting the record without qualifiers keeps the batches and serial numbers. Aft
 no longer leads to those targets — a scan of a batch then uses the product's targets, if the product has
 a record.
 
+The deletion removes that record in one step: the identifier's other records keep answering throughout, and if the
+resolver cannot delete it (*The resolver could not delete the record.*) nothing is removed, so you can simply try
+again. An identifier holding an old record that today's rules would refuse does not stop you deleting another one.
 The deletion is kept in the history and in the audit trail, so the record can be recreated from there.
 
 ## 8. History of a record
@@ -636,12 +702,16 @@ record; the **Default** column marks the target that opens first.
 
 1. **Import spreadsheet** (editors and administrators) opens the dialog. Choose the file: Excel (.xlsx),
    CSV or text (.csv, .txt). The dialog shows the limits per file (5,000 data rows and 700 KB for each
-   format); split larger files.
+   format); split larger files. Only the first 64 columns of the first sheet are read, and an Excel file whose
+   contents unpack into more than 32 MB is refused (*Once unpacked, the file holds more than 32 MB…*); a spreadsheet
+   with the import's columns never comes near either.
 2. Optionally tick **Also check that the addresses answer** (section 13).
 3. The portal checks every row with the editor's rules and shows a **preview** — *New*, *Changed*,
    *Unchanged*, *With errors* — and, for every wrong row, the row number and the reason (an invalid
-   identifier, an address without `https://`, an unknown language, two default targets…). Nothing has
-   been written yet.
+   identifier, an address without `https://`, an unknown language, two default targets…). A record with a
+   **warning** on safety-critical links or a near-duplicate batch value (section 4, *Warnings on safety-critical
+   links*) is marked ⚠ in its row with the reason, and the number of such records is shown above the table; it is
+   imported all the same. Nothing has been written yet.
 4. **Import records (n)** writes the valid records; records with errors are skipped. Correct the
    spreadsheet and import it again to include them.
 
@@ -654,6 +724,13 @@ is back. If the processor is restarted in the middle, the import continues where
 while it runs. The records already written stay, and the dialog lists them with the number not imported
 (*Import stopped. Created: 3 · Updated: 0 · Failed: 0 · Not imported: 5*). Importing the same file again later
 completes it: the records already there are updated, not duplicated.
+
+The import is written in the name of the person who applied it, with what that person may do at each record. If an
+administrator removes or disables the account, disables the organisation, or makes the person a reader before the
+import ends, it stops before the next record: *The import stopped: the account that applied it was removed or
+disabled, its organisation was disabled, or it may no longer change records.* The records written before stay, and
+the audit trail shows *Import stopped: the account could no longer write* with how many were written and left. A
+GS1 Company Prefix taken from the person meanwhile fails the remaining records of that prefix, one by one.
 
 A serial number is written as in the label — `(22)V1(10)B42(21)S1` — and imported the same way: the
 record is the serial number's, and the variant and batch are kept with it as information. When an import
@@ -684,9 +761,16 @@ The link checker asks each address whether it answers, without changing anything
 - **Import preview** — the option in the import dialog, with its own **Stop**: the import itself is still
   possible.
 
+One check of many addresses runs at a time for each organisation: while one is in the queue or running, **Check
+links** or the import preview's check by anyone of the same organisation says *Another link check of your
+organisation is already under way. Wait for it to finish or stop it.* The checker never sends more than two
+requests to one site at once, so a check of every record may take longer when most targets are on one site.
+
 Problems reported: an error answer (404, 500…), a site that refuses automatic checks (open the address
-in a browser to confirm), a site that does not answer, a redirect to a page without HTTPS, more than 5
-redirects, an internal network address (never contacted) or an invalid address. Some sites answer
+in a browser to confirm), a site that does not answer, a redirect to a page without HTTPS, an address without
+HTTPS (*the address does not use HTTPS and was not checked*: the portal saves HTTPS targets only, but records written
+through the official API may hold others), more than 5 redirects, an internal network address (never contacted) or
+an invalid address. Some sites answer
 “page not found” with a normal page; the checker cannot detect those.
 
 ## 14. Administration: users, organisations and settings
@@ -699,6 +783,8 @@ task is:
 | Create, change, disable, remove users; their roles and prefixes; invitations | their organisation's users | every user | *Users*, below |
 | See everything about one organisation in one place | their own | any organisation, and the operator's | [An organisation's page](#an-organisations-page-administrators) |
 | Limit exports per role (readers, editors, API keys) | their own | any organisation, and the operator's users | the organisation's page, *Exports* |
+| The strict mode for safety-critical link types | their own | any organisation, and the codes no organisation holds | the organisation's page, *Resolution* |
+| The hosts the links may point to | their own | any organisation, and the codes no organisation holds | the organisation's page, *Targets* |
 | The most rows per export in every organisation | — | yes | [Organisations](#organisations-server-administrators) |
 | Create, rename, disable, remove organisations; their GS1 Company Prefixes | — | yes | [Organisations](#organisations-server-administrators) and the organisation's page |
 | Upload GS1's GCP length table | — | yes | [Organisations](#organisations-server-administrators) |
@@ -740,10 +826,19 @@ temporary password to be changed*, *Invited — waiting for the password*) and l
 - **Reset password** — the user's password stops working at once and the open sessions end; with e-mail and
   an address, the user receives a link to choose a new one; otherwise a new temporary password is shown once;
 - **Disable** / **Enable** — a disabled user cannot sign in, and keeps the account;
+- **Forget organisation account** — shown for a user marked *bound to the organisation's account* (pointing at it
+  shows the provider and the person's identity there): the portal accepts that user's organisation sign-in only from
+  the provider account first used. When the person's account at your provider is recreated, forget it; the next
+  organisation sign-in binds the account used. Changing the user's e-mail forgets it too;
 - **Remove** — deletes the account; the user's changes stay in the history and audit trail.
 
-Each user may have an **E-mail** address (optional, unique), where invitations, recovery links and security
-notices go; changing it tells both the old and the new address. You cannot disable, demote or remove
+Each user may have an **E-mail** address (optional, unique within the organisation), where invitations, recovery
+links and security notices go; changing it tells both the old and the new address. Another organisation may give the
+same address to a user of its own (someone who works with both); a recovery by that address sends a link for each
+account. **User names** are unique in the whole installation, because they are what people type to sign in: when the
+portal answers that a user already exists, choose another name. An organisation's administrator who meets five names
+already taken within 15 minutes is asked to wait 15 minutes before creating users, and a name that belongs to another
+organisation is recorded in the server administrators' audit trail (*User name of another organisation tried*). You cannot disable, demote or remove
 your own user, and the portal always keeps at least one active server administrator. Users created before roles
 existed are administrators.
 
@@ -762,11 +857,25 @@ your organisation (Microsoft Entra ID, Google Workspace, Okta, Keycloak — any 
 1. At your provider, register the portal as a web application with the **return address** the screen shows.
 2. Here, enter the provider's **Issuer**, the **Client ID** and the **Client secret** it gave you, and your
    organisation's **E-mail domains** (for example `company.com`). Tick **On** and select **Save**; then **Test the
-   provider**. The secret is never shown again: leave the field empty to keep it.
-3. Each user signs in with **Sign in with your organisation's account** and their work e-mail. Only people who already
-   have a portal user with that e-mail get in, with the role and prefixes you gave them.
-4. Once it works, you may tick **Switch password sign-in off for the organisation's users**. A server administrator can
-   always sign in with a password and switch it back on, for example if your provider is down.
+   provider**. The secret is never shown again: leave the field empty to keep it. Tick **The provider does not send
+   email_verified** only if your provider never sends it (Microsoft Entra ID, by default).
+3. **Prove each domain.** Under the form each domain shows its state. *Waiting for proof*: publish the TXT record shown
+   (name `_gs1resolver.<domain>`, value `gs1resolver-sso=…`) in the domain's DNS and select **Verify**; or ask a server
+   administrator, who can **Approve without DNS**. Until a domain is proved, nobody with an address there signs in
+   through the provider. A domain shown as *accepted at the upgrade, without proof* was set up before this check
+   existed: verify it too. Keep the record: the portal looks at it every day, and a DNS proof whose record is missing
+   for 7 days is shown as *Lapsed* — it still signs people in, but another organisation that proves the domain takes
+   it over, and the administrators receive an alert. Publish the record again and select **Verify**.
+4. Each user signs in with **Sign in with your organisation's account** and their work e-mail. Only people who already
+   have a portal user with that e-mail get in, with the role and prefixes you gave them. The first sign-in ties the
+   portal user to the person's account at the provider; see *Forget organisation account* under [Users](#users).
+5. Once it works, you may tick **Switch password sign-in off for the organisation's users**. A server administrator can
+   always sign in with a password and switch it back on, for example if your provider is down. It applies only to
+   users whose e-mail domain is proved.
+
+The portal keeps the client secret sealed in its database. If the card says **secret unreadable** (the server's key
+was changed or lost, for example after a restore on another server), sign-in through the provider stops until you
+enter the client secret again and select **Save**.
 
 The card shows the last sign-in and the last failure (with its reason). A server administrator sees every
 organisation's configuration and sets up the operator's own; during support access the screen is read only.
@@ -790,7 +899,17 @@ lost, revoke it and create another. You receive an e-mail when a key is created 
 prefixes, who created it and when, its expiry, its last use and its state (*Active*, *Expired*, *Revoked by …*).
 **Revoke** stops a key at once. Changes made with a key appear in the history and the audit trail with the user
 `api:<id>`. The technical description of the API is linked under the list (`openapi.json`); the README describes
-its operations.
+its operations. This is the way for your systems to reach the records: the resolver's older data entry API (`/api`)
+is closed to the internet unless the server's operator opens it to listed addresses. When it is open, it accepts a key
+only as `/AI/value` (one of the keys the portal offers and its value, with the qualifiers sent apart) and keeps a
+value's `_` as it is ([ADR 0049](adr/0049-data-entry-anchors.md)). Its error answers, like the resolver's, never
+repeat the internal cause of a failure: the server's operator finds it in the service's log
+([ADR 0050](adr/0050-error-answers.md)).
+
+**When a request is refused.** Answers carry a code your developers can look up in the technical description. A body
+that is not one JSON object is refused with `request.jsonInvalid`; a field holding a value of another kind than the API
+expects (a number where a text goes, a link that is not an object) with `request.fieldInvalid`, which names the field,
+such as `links.2.url` for the address of the second link. Nothing is saved in either case.
 
 ### Organisations (server administrators)
 
@@ -836,7 +955,7 @@ without changing them, only through support access.
 **Organisation management** (user menu; the page is titled with the organisation's name) gathers an organisation's
 settings in one place, each in a tab: its **Prefixes**, its
 **Users** with their prefixes, its **Domains**, its **Item page** brands, its **Organisation sign-in**, its **API
-keys**, its **Exports** and its **Alerts**. Each tab links to the screen that changes it. An organisation's
+keys**, its **Exports**, its **Alerts**, its **Resolution** and its **Targets**. Each tab links to the screen that changes it. An organisation's
 administrators see their own; the server administrator opens any organisation from **Organisations** (**Open**),
 changes its prefixes on the **Prefixes** tab, and reaches another organisation's brands and API keys through support
 access; without choosing an organisation, the page shows the operator's own settings.
@@ -849,13 +968,50 @@ a maximum lowered later says that the maximum applies. **Save limits** records t
 exports are there too (*Export refused*). On the operator's page the same tab limits the operator's users, without a
 maximum above them; server administrators have no limit. In support access the tab is read only.
 
+**Resolution** holds the **strict mode for safety-critical link types**, also changed on the tab itself
+([ADR 0022](adr/0022-answering-level.md)). Five link types are safety-critical: *Recall status*, *Safety information*,
+the patient leaflet (`gs1:epil`), the summary of product characteristics (`gs1:smpc`) and the electronic instructions
+for use (`gs1:eifu`). When a scan asks for one of them for a batch or serial number that has no such link of its own,
+the GS1 standard answers with the product's link (it cannot know which batches exist), so a batch nobody registered —
+or registered with its value typed differently — can receive the product's *not recalled* page. With the strict mode
+on, the batch or serial number must hold its own link of that type (a serial within a batch may use the batch's);
+otherwise the resolver answers that the information is not available for that batch (404) and, in a browser, shows
+the product's links under a notice that they may not apply to it. Other link types, a plain scan without a link type
+and the item's page are not affected. The table on the tab shows four requests with the mode off and on. Tick
+**Switch on the strict mode for this organisation**, confirm, and **Save**; the resolver applies the change within a
+minute, and the audit trail records it (*Strict mode changed*). Before switching it on, register a record (or at least
+these links) for every batch that should answer; *Requests* then shows the requests kept back as *Withheld by the
+strict mode*. On the operator's page the same tab sets it for the codes no organisation holds. Off by default; read
+only in support access. Under the table the tab counts the **batch or serial records that lack a safety-critical
+link** a broader record of their identifier holds, and lists the first ten with the types each lacks: those are the
+requests the strict mode would withhold, and the records to open in the editor before switching it on.
+
+**Targets** lists the **hosts the organisation's links may point to**, also changed on the tab itself
+([ADR 0037](adr/0037-target-addresses.md)). Empty, as it starts, any public site is accepted. Type the sites one per
+line — the name only, such as `example.com`, without `https://`, a path or a port — and **Save hosts**: from then on a
+record is saved only when each of its links points to one of them or to a name under one (`shop.example.com` is under
+`example.com`; `example.com.other.net` is not). It applies in the editor, imports (each refused row is named), the
+tenant API and when a version is restored; records saved before do not change until they are edited, and the item's
+page is never refused. The audit trail records each change (*Link hosts changed*). On the operator's page the same tab
+sets the list for the codes no organisation holds; read only in support access. Whatever the list, no organisation's
+link may carry a user name or password, an IP address or a name that only exists inside a network. The server's older data entry API, when the operator opens it to a system, refuses the same addresses for every new link ([ADR 0048](adr/0048-data-entry-target-rule.md)).
+
 ### Alerts (administrators)
 
 **Alerts** (user menu) lists every alert the monitoring raised (section 17): when it started, when it ended (or
-*Ongoing*), its kind (resolver down, backup, certificate, request log space, GCP length table, spike of unregistered
-codes) and its detail, filtered by
+*Ongoing*), its kind (resolver down, backup, certificate, request log space, GCP length table, audit trail integrity,
+spike of unregistered codes) and its detail, filtered by
 kind and dates and, for the server administrator, by organisation. An organisation's administrators see their
 organisation's spikes. Alerts are listed from this version on (kept 400 days); earlier ones were not recorded.
+
+### About
+
+**About** in the user menu (also a link at the foot of the sign-in page and of the resolver's home page) opens a page
+anyone can read, signed in or not: what the software is (the *GS1 Digital Link Resolver Suite*) and who operates this installation, the **version** running
+(its commit, linked to the code, and the date), where the source code is and its licence (Apache 2.0), the manuals
+for exactly that version, where the software comes from (the official GS1 Digital Link Resolver CE), every component
+and data source it is made of with its licence, and the trademark notice. *Version unknown* means the installation
+was built without its Git data: the operator updates it with `git pull` and `docker compose up -d --build`.
 
 ### Privacy notice (server administrators)
 
@@ -873,6 +1029,11 @@ and makes it the notice in force at once. Every publication is a new numbered ve
 and an optional note on what changed; earlier versions stay readable from the page's list and are never changed. Adapt
 the default to your organisation (contact, legal basis, the law that applies) before going to production.
 
+The default notice says that a scanner's address is not kept. The servers' technical logs keep it no more than the
+request log does: one line per request with the time, the first part of the path, the status and the time taken, and
+no address, query string or browser identification (the operator's setting `PROXY_ACCESS_LOG`). If the operator turns
+the full access log on for a diagnosis, it holds addresses for as long as it is on: say so in the notice meanwhile.
+
 ### Forwarding (server administrators)
 
 ![Forwarding](images/guide/forwarding.png)
@@ -884,7 +1045,8 @@ answer itself ([ADR 0018](adr/0018-forwarding.md)):
   code nobody registered here is no longer answered with a "not found" page but sent, with its path and query string,
   to that address — GS1's global resolver, `https://id.gs1.org`, unless you type another `https://` address. A code
   that is registered here but lacks the link type asked, and a request that is not a valid GS1 Digital Link, are
-  answered here as before. Untick and save to switch it off; the address is kept.
+  answered here as before; while the resolver cannot read its records' database nothing is sent there (the scan is
+  answered *Please try again in a moment*). Untick and save to switch it off; the address is kept.
 - **Forwarding by prefix.** A rule sends **every** code whose GS1 Company Prefix starts with its prefix (3 to 12
   digits: a country's GS1 prefix, a company prefix or a range of it) to its destination, even codes registered here;
   the longest matching prefix wins. *Keep the code's path* suits another resolver
@@ -892,6 +1054,18 @@ answer itself ([ADR 0018](adr/0018-forwarding.md)):
   page. Add a rule with the fields and **Add rule**; **Edit** fills the fields again (the prefix stays); the switch in
   the list turns a rule on and off without removing it; **Remove** asks first. When a rule's prefix overlaps an
   organisation's prefixes, the list names the organisations: their codes of that prefix are answered elsewhere.
+  Each change that sends an organisation's codes elsewhere, or stops doing so (a rule added or removed while on,
+  switched on or off, given another destination or way of sending), is recorded in that organisation's own audit
+  trail and its administrators receive an alert by e-mail
+  ([ADR 0046](adr/0046-forwarding-tells-organisations.md)); changing only the note tells nobody. Likewise, when
+  a server administrator gives an organisation (in **Organisations**) a prefix that a rule switched on already covers,
+  the event *Prefix covered by a forwarding rule* is recorded in its audit trail and its administrators receive an
+  alert naming the rule ([ADR 0054](adr/0054-forwarding-tells-new-prefixes.md)).
+- **When the resolver cannot read these settings.** The resolver reads them again every 30 seconds. If it cannot read
+  them for 15 minutes (the operator's setting `RESOLVER_SETTINGS_MAX_AGE_S`), it no longer forwards anything — no
+  rule, no resolver of last resort — and shows the item's pages without the organisations' brands, until it reads them
+  again; the server administrators receive the alert *Resolver's settings* by e-mail
+  ([ADR 0053](adr/0053-settings-age.md)).
 
 A destination is never this installation or one of its organisations' domains (the requests would come back). Every
 change is in the audit trail and reaches the resolver within 30 seconds. The overview shows how many requests each
@@ -907,19 +1081,28 @@ resolver's address (GS1 Digital Link URI Syntax 4.11). A server administrator ma
 sees every domain of the installation with its organisation; during support access the list is read only.
 
 **Add a domain**: its name, an optional path stem (one to three parts; a part of only 2 to 4 digits is refused,
-because it would read as a GS1 Application Identifier) and **how it reaches the resolver**:
+because it would read as a GS1 Application Identifier, and so is a first part the server uses for something else —
+`api…`, `swaggerui…`, `portal`, `home`, `.well-known`) and **how it reaches the resolver**:
 
 - **Points at this server** — in DNS, a CNAME (or A/AAAA) record from the domain to the resolver's address. Once the
   domain is verified, the server sets up its site and HTTPS certificate by itself within about 5 minutes; the card says
   *Certificate pending*, then *Served over HTTPS* with the certificate's end date, or *Certificate failed* with the
   reason and the next attempt (usually the DNS does not point here yet; the server tries again, waiting longer each
-  time). The resolver answers on the domain only for your organisation's codes.
+  time). The resolver answers on the domain only for your organisation's codes, and the domain serves nothing else:
+  the portal stays on the installation's address (a link to the portal on your domain leads there) and the official
+  data entry API is not offered on it.
 - **My server redirects** — your own web server answers each scan with a redirect to the resolver, keeping the path
   (without the stem) and the query string. *How to set up each mode* shows the rule for nginx and Apache.
 
 **Prove it is yours**: the card shows a TXT record (`_gs1resolver.<domain>` = `gs1resolver-verify=…`); create it in
-the domain's DNS and select **Verify**. A verified domain stays verified even if the record is removed later (printed
-codes keep working); the card shows when it was last seen. **Default for the prefixes**: the GS1 Company Prefixes
+the domain's DNS and select **Verify**. Until then the domain is only a claim, deleted after 7 days (the card shows the
+day); another organisation may claim the same domain, and whoever verifies it first keeps it. Until it is verified,
+the addresses the resolver writes in its answers on the domain (the linkset's anchors, the description file) carry the
+installation's name, not the domain. Keep the record in DNS:
+the portal looks at it every day and the card shows when it was last seen. If it is missing for 7 days the domain is
+*Lapsed*: it is still served (printed codes keep working while the domain points here), but new labels no longer carry
+it, the administrators receive an alert by e-mail, and another organisation that proves the domain takes it over.
+Publish the record again and select **Verify** to end the lapse. **Default for the prefixes**: the GS1 Company Prefixes
 whose QR codes carry this domain by default (one domain per prefix). **Test** requests through the domain — the
 resolver's description file, or a redirect of one of your codes — and shows the result. **Remove** deletes the domain
 from the portal: labels already printed with it keep working only while the domain still reaches the resolver.
@@ -947,7 +1130,7 @@ minute. During support access the list is read only.
 ![Appearance](images/guide/appearance.png)
 
 **Appearance** (user menu, server administrators) gives the whole installation its operator's look
-([ADR 0019](adr/0019-appearance.md)): a **title** in place of *GS1 Resolver Community Edition* (up to 60 characters; it
+([ADR 0019](adr/0019-appearance.md)): a **title** in place of *GS1 Digital Link Resolver Suite* (up to 60 characters; it
 also replaces the product's name in the browsers' tab titles), a **logo** (PNG, JPEG or WebP, up to 200 KB; SVG is not
 accepted), an **icon for the browsers' tabs** (the favicon, also in bookmarks: a square image, preferably 32 × 32 or
 64 × 64 pixels, in the same formats) and three colours: the **main colour** of the header's title, the coloured band under it, the headings and
@@ -958,6 +1141,9 @@ sign-in page and privacy notice too) and the home page, and within 30 seconds to
 page (each brand keeps its own colours in the item's page content, and its logo as the item's page icon). *Use the
 original logo* and *Use the original icon* go back to the project's and keep the rest. **Restore the original** asks for
 confirmation and brings back the original title, logo, icon and colours everywhere. Every change is in the audit trail; during support access the screen is read only.
+The original title was *GS1 Resolver Community Edition* until the project took its own name
+([ADR 0024](adr/0024-name-and-about.md)): an appearance saved before then with the title left empty shows the new name,
+with its colours, logo and icon kept; a title of your own is never changed.
 
 ### Support access
 
@@ -990,6 +1176,31 @@ administrator did to the organisation (its users, its prefixes, support access) 
 *operator*. The server administrator sees the operator's trail, with an **Organisation** column and everything
 the operator's users did to organisations; an organisation's whole trail only during support access.
 
+A wrong password for an existing account is shown at once, in the account's organisation's trail, with the address
+it came from. Failed sign-ins with a user name that matches no account — the kind a script sends by the thousand —
+are counted instead: once an hour, the operator's trail gets one event by *-* saying how many there were in the past
+hour and from which addresses (the first ten), and the overview counts each of them. The event appears up to two
+hours after the attempts.
+
+A change to a record is written to the audit trail before it is made. If the trail cannot be written (the portal's
+database is unavailable), the portal refuses the change — *The audit journal could not be written* — and nothing is
+changed; try again in a moment. When the resolver then refuses a change, the trail shows *Change not completed* after
+the attempt, and the record's history leaves the attempt out.
+
+**Verify integrity.** Every event is sealed in a chain: one per organisation and kind of event (*Sign-ins*, *Records*,
+*Administration*), each event bound to the one before it with a key that is not kept in the database, so an event
+changed, removed or added afterwards — even directly in the database or in a backup — breaks its chain. **Verify
+integrity** shows one line per chain: its events, *Intact* or *Broken* with the problem and the event where it starts,
+and its **head (receipt)**, a text such as `t-…/record:128:9f2c…`. Copy the heads now and then and keep them outside the
+server (a ticket, an e-mail to yourself): paste one later under **Check a receipt** to confirm that nothing up to it
+has changed. A broken chain, or a warning that the journal key is not set, is for the server administrator; the
+portal also checks every chain once a day and records each head in its log. When that daily check, or anyone's
+**Verify integrity**, finds a chain broken, the server administrators receive an alert by e-mail (*Alert: … broken
+chain(s) in the audit trail*, again every day while it lasts, and *Resolved* once every chain is whole again), and
+the overview shows it under Operation. The journal is kept in a database of its own, where the portal itself may add
+events but never change or delete them, so even someone who obtains the portal's database password cannot quietly
+rewrite the trail.
+
 ## 16. Requests to the resolver
 
 ![Requests](images/guide/requests.png)
@@ -1000,12 +1211,18 @@ answered — a QR code read by a phone, a link opened, an app asking for the lin
 **Last 30 days.** One bar per day: in blue the requests answered, in orange those **not found** (404) — a code that
 nobody registered, or a link type the record does not have. The line above the bars gives the totals. Requests made
 by machines — search engine crawlers, link previews, monitors, command-line tools — are counted apart and left out
-of the bars.
+of the bars. A compressed link (one part of letters, digits, `-` and `_` after the resolver's name) is opened by a
+separate program, a few at a time: when too many arrive at once the scan is answered *Please try again in a moment*
+(counted under *Error*) and the next attempt normally succeeds; other forms of the link are not affected. While the
+resolver cannot read its records' database, every scan is answered *Please try again in a moment* too, counted under
+*Error* — never as *Code not registered* — when the request log can still be written; it uses the same database, so
+during a complete outage those scans are mostly missing here ([ADR 0051](adr/0051-records-unavailable.md)). Such a
+scan is answered within a few seconds (5 by default; [ADR 0052](adr/0052-database-time-budget.md)).
 
 **Latest requests.** The newest first, 200 at a time (**Show more** for the next ones). Each row shows when, the
 **Code** (the identifier and the qualifiers in the scan: a serial number appears only as `/21/*`; `?17` means the QR
 code carried an expiry date, whose value is not kept), the **Outcome** (*Redirected*, *Code not registered*, *No link
-of that type*, *Choice of links*, *Linkset*, *Invalid request*, *Item page* — a view of the item's page reached by a
+of that type*, *Withheld by the strict mode* (section 14, *Resolution*), *Choice of links*, *Linkset*, *Invalid request*, *Item page* — a view of the item's page reached by a
 scan —, *Click on the item page*…), the **Answer** (the link type asked, the level of the
 record that answered — the key's or a batch's — and the site the person was sent to), the **Device** class (phone,
 tablet, computer, automated) with the **browser** (Chrome, Safari, Firefox, Edge, Samsung Internet, Opera, *App* for
@@ -1013,7 +1230,7 @@ scanner apps and the browsers inside apps such as Instagram's) and the site the 
 the phone, the **Approximate location** (city, region — a state or province — and country; the city opens Google Maps
 on that city) and the time
 the resolver took, in milliseconds. Filter by date (**From**, **To**), **Code** (a GTIN, a GS1 Company Prefix or a
-Digital Link path such as `/01/…`), **Outcome** (*Not found (404)* gathers both kinds of 404), **Device**,
+Digital Link path such as `/01/…`), **Outcome** (*Not found (404)* gathers every kind of 404), **Device**,
 **Browser** and **Country** (two letters, such as `BR`). **Export CSV** downloads what the filters show, up to 50,000
 requests, for Excel. The list holds people's requests with a GS1 code, valid or not: requests from automated clients
 (crawlers, scripts, command-line tools) and requests without a GS1 code (probes such as `/wp-login.php`) are counted —
@@ -1042,7 +1259,9 @@ invalid requests that have no code; during support access, the organisation's.
 
 **Tenant API** (administrators). The second tab lists the calls the organisation's systems made with API keys
 (section 14): when, which key, the operation, the answer's status and the time taken — never the records or data
-they sent.
+they sent. Calls made without a valid key (anyone on the internet, a key typed wrong, revoked or expired) are counted
+rather than listed one by one: one row per minute, operation and status, *no valid key — N calls in this minute*,
+with the average time; a server administrator sees them.
 
 **Retention** (administrators). The third tab says how long requests are kept. The server administrator sets the
 days of the whole installation (1 to 3,650; the server's default, `RESOLVER_LOG_DAYS`, is shown below the field) and
@@ -1089,7 +1308,8 @@ administrator chose.
 registered them — the codes **without a link of the type asked**, invalid requests, the resolver's errors and the
 average answer time (for the server administrator also the 95th percentile of the slowest day); when the server
 administrator turned forwarding on (section 14, *Forwarding*), the requests **forwarded by prefix rules** and those
-**sent to the resolver of last resort**, each apart. These count every request with a GS1 code, automated ones
+**sent to the resolver of last resort**, each apart; when a strict mode is on (section 14, *Resolution*) and kept
+requests back, the requests **withheld by the strict mode (404)**. These count every request with a GS1 code, automated ones
 included. **Scanned codes nobody registered** lists them, most scanned first: **Register**
 opens the editor on the code so that the next scan leads somewhere; *the key has other records* means the code's key
 is registered but not for the batch or serial scanned.
@@ -1104,8 +1324,9 @@ organisation's users see its spikes of codes nobody registered).
 
 **Operation** (server administrator only). Whether the job worker runs, whether e-mail is on, up to which day the
 daily counts are complete, the installation's active alerts and the state of each check of the monitoring: the
-resolver through the proxy, the daily backup, the HTTPS certificate, the request log's space and the GCP length table
-(the date and age of GS1's list in use). The server administrator can also choose an
+resolver through the proxy, the resolver's settings (whether it can still read what this portal sets), the daily
+backup, the HTTPS certificate, the request log's space, the GCP length table (the date and age of GS1's list in use)
+and the audit trail's integrity (when its chains were last verified). The server administrator can also choose an
 **Organisation** at the top of the page: the figures are then that organisation's, as its administrators see them (or
 the operator's codes); Operation stays the installation's.
 
@@ -1135,12 +1356,15 @@ the tenant API (`GET /portal/api/v1/stats`, API keys with the scope *Read statis
 | *Targets N and M have the same type and language.* | Change the language of one of them, or remove one. |
 | *This identifier is outside what your user can reach (its organisation or GS1 Company Prefixes).* | The identifier belongs to another organisation, or to a prefix your user is not given: ask an administrator. |
 | *Your user's organisation is disabled. Contact the server administrator.* | The organisation was disabled by the server administrator. |
+| *Too many user names already in use were tried. Try again in 15 minute(s).* | An organisation's administrator met five user names already taken within 15 minutes; wait, then choose names nobody uses (user names are unique in the installation). |
 | *Prefix N overlaps M, which belongs to the organisation X.* | Each prefix belongs to one organisation only: check the prefix with GS1. |
 | *Your role does not allow this action.* | Ask an administrator for the editor role. |
 | *The content does not fit version N with correction L.* | Choose a higher version or *Automatic*, a lower correction, or fewer attributes. |
 | *The resolver did not respond.* | Try again in a few minutes; if it persists, tell the administrator. |
 | *Your session has ended. Please sign in again.* | Sign in; unsaved changes in the form are lost. |
 | *Too many unsuccessful attempts. Try again in N minute(s).* | Wait, or ask an administrator to reset your password. |
+| *Once unpacked, the file holds more than 32 MB, the limit for an import.* | The spreadsheet holds far more than its rows need (often a very large cell, image or hidden sheet): save only the import's columns in a new file, or split it. |
+| *Too many requests from your address. Wait a moment and try again.* | Wait a few seconds; if it happens often for everyone in your office, tell the operator (the limit per address can be raised). |
 | *If there is an account with this user name or e-mail address, a message … has been sent.* | Check your mailbox and its spam folder; nothing arrives if the account has no address: ask an administrator. |
 | *This link is no longer valid…* | Ask for a new one (**Forgotten your password?**, or the administrator for an invitation); only the newest link works, once. |
 

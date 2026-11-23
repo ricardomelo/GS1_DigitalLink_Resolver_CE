@@ -31,7 +31,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Pinned and latest releases
         id: releases
@@ -125,6 +127,8 @@ jobs:
             echo "(\`portal/tools/build-syntax-engine.sh\`), regenerate \`portal/gs1_dictionary.json\` with"
             echo "\`portal/tools/gen_dictionary.py\` and \`portal/engine_messages.json\` with"
             echo "\`portal/tools/gen_engine_messages.py\`, translate the messages listed above in \`portal/static/i18n.js\`,"
+            echo "lock the new gs1encoder in both toolkits (\`npm install --package-lock-only --save-exact gs1encoder@$LATEST\` in"
+            echo "\`web_server/src/gs1-digitallink-toolkit\` and \`data_entry_server/src/gs1-digitallink-toolkit\`, ADR 0033),"
             echo "run every development test, then \`docker compose up -d --build\`."
             echo "See Documentation/adr/0003-gs1-rules-from-the-dictionary.md. Opened by the weekly update check ($RUN_URL)."
           } > "$RUNNER_TEMP/issue.md"

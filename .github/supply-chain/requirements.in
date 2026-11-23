@@ -1,0 +1,5 @@
+# The Python tools of the supply-chain workflow (.github/workflows/supply-chain.yml; Documentation/adr/0033-supply-chain.md):
+# locked with every file's hash into requirements.txt by dev-tests/lock-dependencies.sh and installed with
+# --require-hashes, as everything else. They never reach an image.
+pip-audit==2.10.1   # known vulnerabilities of the four Python lock files (PyPI's advisory database and OSV)
+pyyaml              # reads the list of accepted vulnerabilities (audit.py)

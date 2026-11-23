@@ -164,8 +164,17 @@ check("stored under the clean GTIN, description and title in NFC without line br
       stored and stored[0]["itemDescription"] == "Café torrado" and stored[0]["links"][0]["title"] == "Informações", stored)
 
 anonymous = portal.app.test_client()
-for typed in ["=cmd|' /C calc'!A0", "evil\nuser=root action=login", "x" * 5000]:
+typed_names = ["=cmd|' /C calc'!A0", "evil\nuser=root action=login", "x" * 5000]
+for typed in typed_names:
     anonymous.post("/portal/api/login", json={"username": typed, "password": "wrong"})
+audit_csv = admin.get("/portal/api/audit.csv").get_data().decode("utf-8-sig")
+names = [row[1] for row in csv.reader(io.StringIO(audit_csv), delimiter=";")][1:]
+check("audit trail: names of no account typed at sign-in are counted, never stored (ADR 0031)",
+      not any(n.startswith(("'=cmd", "=cmd", "evil", "xxxx")) for n in names), names)
+# a name the provider sent is still journalled as typed (single sign-on refusals): shown_username() and the CSV
+import journal  # noqa: E402
+for typed in typed_names:
+    journal.append("login-failed", portal.shown_username(typed), detail="test")
 audit_csv = admin.get("/portal/api/audit.csv").get_data().decode("utf-8-sig")
 names = [row[1] for row in csv.reader(io.StringIO(audit_csv), delimiter=";")][1:]
 check("audit CSV: a typed name starting with = does not become a formula", "'=cmd|' /C calc'!A0" in names, names)

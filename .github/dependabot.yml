@@ -1,0 +1,46 @@
+# Update proposals for everything the installation and the CI fetch by version, digest or commit
+# (Documentation/adr/0033-supply-chain.md). Dependabot opens pull requests against master, grouped
+# per ecosystem, once a week; a proposal is merged like any change: after every development test passes. The lock
+# files' hashes come with the proposal; when one changes a package the development tests' lock
+# (dev-tests/requirements.txt) also holds, run dev-tests/lock-dependencies.sh on the branch: test_supply_chain.py
+# fails while the locks disagree. The GS1 Barcode Syntax Engine (gs1encoder) is left to its own weekly check
+# (.github/workflows/engine-update.yml), because docker-compose.yml names its release for every service.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directories: ["/portal", "/web_server/src", "/data_entry_server/src", "/dev-tests", "/.github/supply-chain"]
+    target-branch: master
+    schedule: {interval: weekly, day: monday, time: "06:17"}
+    groups:
+      python: {patterns: ["*"]}
+
+  - package-ecosystem: npm
+    directories: ["/web_server/src/gs1-digitallink-toolkit", "/data_entry_server/src/gs1-digitallink-toolkit"]
+    target-branch: master
+    schedule: {interval: weekly, day: monday, time: "06:17"}
+    ignore:
+      - dependency-name: gs1encoder
+
+  # The images keep their tag (the release line the ADRs chose); only the digest moves, with the line's security
+  # releases. A new line (Python 3.13, nginx 1.32, MongoDB 8, Node.js 26) is a deliberate change, not a proposal.
+  - package-ecosystem: docker
+    directories: ["/web_server", "/data_entry_server", "/portal", "/frontend_proxy_server", "/database_server"]
+    target-branch: master
+    schedule: {interval: weekly, day: monday, time: "06:17"}
+    groups:
+      images: {patterns: ["*"]}
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  - package-ecosystem: docker-compose
+    directory: "/"
+    target-branch: master
+    schedule: {interval: weekly, day: monday, time: "06:17"}
+
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/dev-tests-setup"]
+    target-branch: master
+    schedule: {interval: weekly, day: monday, time: "06:17"}
+    groups:
+      actions: {patterns: ["*"]}

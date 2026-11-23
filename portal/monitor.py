@@ -4,7 +4,8 @@ Monitoring and alerts by e-mail (Documentation/adr/0008-monitoring-and-alerts.md
 The job worker calls run() every PORTAL_MONITOR_MINUTES (app.MONITORING, worker.py); one replica at a time does the
 checks (the "monitor" lock, not waited for). Each check keeps a document in the portal's collection "alerts":
 
-    {_id: "resolver" | "backup" | "certificate" | "logspace" | "gcptable" | "404:*" | "404:<tenant id>",
+    {_id: "resolver" | "settings" | "backup" | "certificate" | "logspace" | "gcptable" | "journal" | "404:*" |
+          "404:<tenant id>",
      state: "ok" | "alert" | "unknown", since, checkedAt, failures, detail, notifiedAt, notifiedLevel, tenant}
 
 Each alert raised is also recorded in "alert_history" (Documentation/adr/0013-administration-and-navigation.md):
@@ -18,6 +19,10 @@ request log's space (Documentation/adr/0006-resolver-request-log.md, section 9) 
 limit, with a message at each step of SPACE_STEP points it reaches (80, 85, 90, 95, 100) instead of daily reminders.
 GS1's GCP length table in use (Documentation/adr/0015-gcp-length-table.md) is an alert from PORTAL_MONITOR_GCP_DAYS
 days after the date GS1 gave it, reminded every GCP_REMIND_DAYS days.
+The journal's hash chains (Documentation/adr/0026-journal-integrity.md, section 2.5) are an alert while the last
+verification (the worker's daily one, or an administrator's) found a chain broken.
+The resolver's caches of the portal's settings (finding F-033, Documentation/adr/0053-settings-age.md) are an alert
+while the resolver's heartbeat, through the proxy, says "settings": "stale".
 Server administrators receive the installation's alerts; an organisation's administrators its spikes of 404.
 
 Settings (section 3.4 of the ADR):
@@ -41,6 +46,7 @@ import requests
 from pymongo.errors import PyMongoError
 
 import gcp
+import journal
 import notify
 import requestlog
 import store
@@ -61,7 +67,7 @@ TOP_CODES = 5
 DEFAULT_URL = "http://frontend-proxy-service/.well-known/gs1resolver"
 SPACE_ALERT = 80
 SPACE_STEP = 5
-CHECKS = ("resolver", "backup", "certificate", "logspace", "gcptable")
+CHECKS = ("resolver", "settings", "backup", "certificate", "logspace", "gcptable", "journal")
 GCP_REMIND_DAYS = 7
 HISTORY = "alert_history"
 HISTORY_DAYS = 400
@@ -150,6 +156,28 @@ def check_resolver() -> tuple[bool, dict]:
     return True, {"url": url, "probe": probe or None}
 
 
+def heartbeat_url() -> str:
+    """The resolver's heartbeat through the proxy: the host of PORTAL_MONITOR_URL, path /heartbeat."""
+    url = monitor_url()
+    return url.split("://", 1)[0] + "://" + url.split("://", 1)[-1].split("/", 1)[0] + "/heartbeat"
+
+
+def check_settings() -> tuple[str, dict]:
+    """("alert" | "ok" | "unknown", detail) from the resolver's heartbeat (finding F-033,
+    Documentation/adr/0053-settings-age.md): an alert while it says "settings": "stale" (a cache of the portal's
+    settings could not be read for longer than RESOLVER_SETTINGS_MAX_AGE_S); unknown when it does not answer (the check
+    "resolver" covers that) or says nothing about them (a resolver older than the finding)."""
+    url = heartbeat_url()
+    try:
+        answer = requests.get(url, timeout=TIMEOUT_SECONDS, allow_redirects=False)
+        found = answer.json() if answer.status_code == 200 else None
+    except (requests.RequestException, ValueError):
+        return "unknown", {"url": url}
+    settings = found.get("settings") if isinstance(found, dict) else None
+    state = {"stale": "alert", "current": "ok"}.get(settings, "unknown")
+    return state, {"url": url}
+
+
 def check_backup(now: datetime) -> tuple[str, dict]:
     """("ok" | "alert" | "unknown", detail) from the backup script's record (setting backup.last)."""
     last = store.get_setting(BACKUP_SETTING)
@@ -229,6 +257,18 @@ def check_gcp_table(now: datetime) -> tuple[str, dict]:
     if age is None:
         return "unknown", {"reason": "none"}
     return ("alert" if age["old"] else "ok"), {"date": age["date"], "days": age["days"], "max": age["maxDays"]}
+
+
+def check_journal() -> tuple[str, dict]:
+    """("alert" | "ok" | "unknown", detail) from the last verification of the journal's chains (journal.checkpoint(),
+    once a day, or an administrator's): an alert while a chain is broken; unknown before the first verification.
+    detail: at, chains (how many were verified), count and broken ([{chain, kind, seq}], the first ten)."""
+    found = journal.last_verification()
+    if not found or not found.get("at"):
+        return "unknown", {"reason": "notVerified"}
+    broken = list(found.get("broken") or [])
+    detail = {"at": store.iso(found["at"]), "chains": found.get("chains"), "count": len(broken), "broken": broken[:10]}
+    return ("alert" if broken else "ok"), detail
 
 
 def _megabytes(n) -> str:
@@ -417,6 +457,10 @@ def _run(now: datetime) -> dict:
     found["resolver"] = _update("resolver", state, detail, now, ("alert-resolver-down", "alert-resolver-up"),
                                 params={"url": detail.get("url"), "problem": detail.get("error") or detail.get("status") or ""},
                                 failures=failures)
+    # the resolver's caches of the portal's settings (F-033)
+    state, detail = check_settings()
+    found["settings"] = _update("settings", state, detail, now, ("alert-settings-stale", "alert-settings-current"),
+                                params={"url": detail.get("url") or ""})
     # backup
     state, detail = check_backup(now)
     found["backup"] = _update("backup", state, detail, now, ("alert-backup-failed", "alert-backup-ok"),
@@ -438,6 +482,13 @@ def _run(now: datetime) -> dict:
                                 params={"date": (detail.get("date") or "")[:10], "days": detail.get("days", ""),
                                         "max": detail.get("max", "")},
                                 remind_hours=GCP_REMIND_DAYS * 24)
+    # the journal's hash chains (ADR 0026)
+    state, detail = check_journal()
+    found["journal"] = _update("journal", state, detail, now, ("alert-journal", "alert-journal-ok"),
+                               params={"count": detail.get("count", 0), "at": detail.get("at") or "",
+                                       "chains": "\n".join(f"  {b['chain']}: {b['kind']}"
+                                                           + (f" #{b['seq']}" if b.get("seq") else "")
+                                                           for b in detail.get("broken") or []) or "-"})
     # spikes of 404 per scope
     tenant_list = tenants.load()
     for scope, entry in spikes(now, tenant_list).items():

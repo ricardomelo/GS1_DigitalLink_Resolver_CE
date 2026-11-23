@@ -5,7 +5,8 @@ behind stand-ins that did more than the real component (session 14 of the fork's
 the data entry stand-in honest. It covers what the portal relies on: POST /new (a new key, a new record of a key, a
 record that exists, a list of a key's records),
 PUT (links merged by type, language and context; the shared default link type;
-informative qualifiers; 404 for a record the key does not have), DELETE of some links (404 likewise), GET and GET /summary with links — with and without links of type
+informative qualifiers; 404 for a record the key does not have), DELETE of some links (404 likewise), DELETE of one
+record (removeRecord, ADR 0023), GET and GET /summary with links — with and without links of type
 gs1:defaultLink (Documentation/adr/0011-item-page.md, amendment of 17 October 2026).
 
 No Docker, no MongoDB: the real data entry application with its database layer replaced by a dictionary, as in
@@ -34,11 +35,26 @@ STORE = {}
 db = types.ModuleType("data_entry_db")
 db.read_document = lambda document_id: ({"response_status": 200, "data": copy.deepcopy(STORE[document_id])}
                                         if document_id in STORE else {"response_status": 404, "error": "not found"})
-db.create_document = lambda doc: (STORE.__setitem__(doc["_id"], copy.deepcopy(doc)), {"response_status": 201})[1]
-db.update_document = lambda doc: (STORE.__setitem__(doc["_id"], copy.deepcopy(doc)), {"response_status": 200})[1]
+db.create_document = lambda doc: ({"response_status": 409, "error": "exists"} if doc["_id"] in STORE else
+                                  (STORE.__setitem__(doc["_id"], copy.deepcopy(doc)), {"response_status": 201})[1])
+
+
+def stored_write(doc, expected):
+    """data_entry_db.write_document_if_unchanged() on STORE: written only while the stored document is the one read."""
+    if STORE.get(doc["_id"]) != expected:
+        return {"response_status": 409, "error": "changed"}
+    if doc["data"]:
+        STORE[doc["_id"]] = copy.deepcopy(doc)
+    else:
+        STORE.pop(doc["_id"])
+    return {"response_status": 200}
+
+
+db.write_document_if_unchanged = stored_write
 db.read_all_documents = lambda: {"response_status": 200, "data": copy.deepcopy(list(STORE.values()))}
 db.read_index = lambda: {"response_status": 200, "data": list(STORE)}
 db.delete_document = lambda document_id: (STORE.pop(document_id, None), {"response_status": 200})[1]
+
 sys.modules["data_entry_db"] = db
 
 sys.path.insert(0, os.path.join(REPO, "data_entry_server", "src"))
@@ -200,6 +216,29 @@ for body in ({"qualifiers": [{"10": "B1"}]}, {"links": []}):
           real.status_code == mock.status_code == 400, (real.status_code, mock.status_code))
 same("after a DELETE whose body names no link")
 
+# The record-level delete (ADR 0023): one record removed, the key's others kept; 404 for a record the key does not
+# have; 400 for a malformed body; the document goes with its last record
+real, mock = both("delete", OTHER, {"removeRecord": True, "qualifiers": [{"10": "L1"}]})
+check("DELETE with removeRecord of a batch: both accept", real.status_code == mock.status_code == 200
+      and real.get_json().get("remaining") == mock.get_json().get("remaining") == 2,
+      (real.status_code, mock.status_code, real.get_json(), mock.get_json()))
+same("after a record-level delete", OTHER)
+real, mock = both("delete", OTHER, {"removeRecord": True, "qualifiers": [{"10": "L9"}]})
+check("DELETE with removeRecord of a record the key does not have: both answer 404",
+      real.status_code == mock.status_code == 404, (real.status_code, mock.status_code))
+for body in ({"removeRecord": False, "qualifiers": [{"10": "L2"}]},
+             {"removeRecord": True, "qualifiers": [{"10": "L2"}], "links": [link("gs1:pip", "https://b.example/l2")]},
+             {"removeRecord": True, "qualifiers": {"10": "L2"}}):
+    real, mock = both("delete", OTHER, body)
+    check(f"a malformed record delete ({json.dumps(body)[:40]}): both answer 400",
+          real.status_code == mock.status_code == 400, (real.status_code, mock.status_code))
+same("after the refused record deletes", OTHER)
+for q in ([], [{"10": "L2"}]):
+    real, mock = both("delete", OTHER, {"removeRecord": True, "qualifiers": q})
+real, mock = both("get", OTHER)
+check("the last record removed: both answer 404 for the key", real.status_code == mock.status_code == 404,
+      (real.status_code, mock.status_code))
+
 real, mock = both("get", "/summary?links=true")
 check("GET /summary with links gives the same lines", normal(real.get_json()) == normal(mock.get_json()),
       f"real {normal(real.get_json())}\n      stand-in {normal(mock.get_json())}")
@@ -209,6 +248,15 @@ check("DELETE of the whole key: both accept", real.status_code == mock.status_co
       (real.status_code, mock.status_code))
 real, mock = both("get", "/01/09506000134352")
 check("after the DELETE both answer 404", real.status_code == mock.status_code == 404, (real.status_code, mock.status_code))
+
+# Anchors (ADR 0049, finding U-004): /AI/value only, and no AI part with "_" in a path
+for anchor in ("/01/09506000134352/10/L1", "/99/X", "01/09506000134352"):
+    real, mock = both("post", "/new", {**record([link("gs1:pip", "https://a.example/p")], "gs1:pip"), "anchor": anchor})
+    check(f"POST /new with the anchor {anchor!r}: both answer 400", real.status_code == mock.status_code == 400,
+          (real.status_code, mock.status_code))
+real, mock = both("get", "/8004_0950600013/A")
+check("GET of a path whose AI part has '_': both answer 400", real.status_code == mock.status_code == 400,
+      (real.status_code, mock.status_code))
 
 print(f"\n{'FAILED' if failures else 'PASSED'}: {len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

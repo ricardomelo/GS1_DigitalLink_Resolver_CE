@@ -507,6 +507,14 @@ dialog::backdrop { background: rgba(0, 30, 74, .45); }
 .scope-card ul { margin: .4rem 0 0; padding-inline-start: 1.1rem; }
 .scope-card li { margin-top: .2rem; }
 .field-msg.is-warn { color: #9A5B00; }
+/* Warnings on safety-critical links and near-duplicate values (ADR 0022, section 2.5): never block a save */
+.safety-warn { max-width: 52rem; margin: 1rem 0; padding: .8rem 1rem; border: 1px solid #F0D09A;
+  border-inline-start: 4px solid var(--gs1-orange); border-radius: 6px; background: #FFF8EC; color: var(--ink); }
+.safety-warn .safety-item + .safety-item { margin-top: .9rem; padding-top: .9rem; border-top: 1px solid #F0D09A; }
+.safety-warn .safety-title { margin: 0 0 .3rem; color: #7A4800; font-weight: 600; }
+.safety-warn p { margin: .3rem 0 0; font-size: .9375rem; }
+.safety-warn ul { margin: .3rem 0 0; padding-inline-start: 1.1rem; }
+.import-warning { display: block; margin-top: .2rem; color: #9A5B00; font-size: .875rem; }
 
 /* ---------------------------------------------------------------- roles and governance */
 body[data-role="reader"] .needs-editor { display: none !important; }
@@ -544,6 +552,10 @@ body:not([data-operator-view="true"]) .audit-tenant-col { display: none !importa
 .users-table .user-actions .btn { min-height: 2rem; padding: .25rem .7rem; font-size: .8125rem; }
 .users-table tr.is-disabled td:not(:last-child) { opacity: .55; }
 .audit-table td { font-size: .875rem; }
+.audit-verify { margin: 1rem 0 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.audit-verify h2 { font-size: 1.05rem; margin: 0 0 .25rem; }
+.audit-chain-head { font-size: .75rem; word-break: break-all; max-width: 32rem; user-select: all; }
+.audit-chain-note { display: block; margin-top: .25rem; color: var(--muted); }
 .audit-table .by-operator { display: inline-block; margin-inline-start: .35rem; padding: 0 .4rem; border-radius: 999px;
                             background: #E8EEF7; color: var(--gs1-blue); font-size: .75rem; font-weight: 600; }
 
@@ -689,7 +701,7 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .overview-map .map-side { order: 1; max-height: 16rem; }
 .requests-outcome.is-redirect, .requests-outcome.is-linkset, .requests-outcome.is-choice,
 .requests-outcome.is-compressed { background: #E7F4EC; color: var(--ok); }
-.requests-outcome.is-unknown, .requests-outcome.is-noLink { background: #FFF4E0; color: #9A5B00; }
+.requests-outcome.is-unknown, .requests-outcome.is-noLink, .requests-outcome.is-withheld { background: #FFF4E0; color: #9A5B00; }
 .requests-outcome.is-invalid, .requests-outcome.is-error { background: #FDECEA; color: var(--err); }
 .requests-outcome.is-page, .requests-outcome.is-click { background: #E8F0FB; color: var(--link); }
 .requests-outcome.is-forwarded, .requests-outcome.is-fallback { background: #EDEAFB; color: #4B3A9A; }
@@ -760,6 +772,10 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .domain-field { display: flex; flex-direction: column; gap: .2rem; font-weight: 500; font-size: .875rem; }
 .domain-field input, .domain-field select { width: auto; min-width: 12rem; }
 .domains-help { margin-top: 1.5rem; }
+.sso-proofs { margin-top: .8rem; display: grid; gap: .6rem; }
+.sso-proof { border-inline-start: 3px solid var(--gs1-orange); padding: .3rem 0 .3rem .8rem; }
+.sso-proof.is-proved { border-inline-start-color: var(--ok); }
+.sso-proof strong.code { font-family: var(--mono); color: var(--gs1-blue); overflow-wrap: anywhere; }
 .domains-help summary { cursor: pointer; color: var(--gs1-blue); font-weight: 600; }
 .opt-domain select { max-width: 100%; }
 .domain-card .user-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
@@ -858,6 +874,18 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .forwarding-row-actions { white-space: nowrap; }
 #forwarding-view h2 + .hint, #fallback-state { margin-top: 0; }
 
+/* ---------------------------------------------------------------- the About page (ADR 0024) */
+.about-sheet { max-width: 60rem; line-height: 1.6; }
+.about-sheet h2 { margin: 1.75rem 0 .5rem; font-size: 1.125rem; color: var(--gs1-blue); }
+.about-sheet h2:first-of-type { margin-top: 0; }
+.about-sheet a { color: var(--link); overflow-wrap: anywhere; }
+.about-docs { padding-inline-start: 1.25rem; margin: 0; }
+.about-components { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: .5rem 2rem; }
+.about-group h3 { margin: .5rem 0 .25rem; font-size: 1rem; }
+.about-group ul { list-style: none; padding: 0; margin: 0; }
+.about-group li { padding: .1rem 0; }
+.about-licence { color: var(--muted, #555); font-size: .875rem; }
+
 /* ---------------------------------------------------------------- the privacy notice (ADR 0017) */
 .footer-links { margin: 0 0 .5rem; }
 .footer-links a { color: var(--link); }
@@ -913,7 +941,11 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 .org-tabs [role="tab"][hidden] { display: none; }
 .org-manage { margin-top: 1rem; }
 .org-export-limit { width: 9rem; }
+.org-target-hosts { display: block; width: 100%; max-width: 32rem; font-family: ui-monospace, monospace; margin: 0.25rem 0 0.5rem; }
 .org-exports-maximum { display: block; }
+.resolution-types { margin: .25rem 0 1rem; padding-inline-start: 1.25rem; }
+.resolution-types code { font-size: .85em; }
+.resolution-switch { margin-top: 1rem; }
 .gcp-warnings { font-family: inherit; margin-top: .35rem; }
 .gcp-warnings .field-msg { margin: .1rem 0; }
 .gcp-form { margin-top: .5rem; }

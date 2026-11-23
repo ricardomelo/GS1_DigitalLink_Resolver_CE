@@ -31,6 +31,7 @@ os.environ.setdefault("PORTAL_DB_URI", "mongomock://")
 os.environ["PORTAL_WORKER"] = "embedded"
 sys.path[:0] = [HERE, PORTAL, os.path.join(PORTAL, "tools")]
 
+import csp_guard  # noqa: E402,F401  (fails the program on a Content-Security-Policy violation: ADR 0038)
 import mock_data_entry  # noqa: E402
 import users  # noqa: E402
 import app as portal  # noqa: E402

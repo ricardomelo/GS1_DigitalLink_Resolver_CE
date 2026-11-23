@@ -1,0 +1,12 @@
+flask>=3.1,<4
+requests>=2.32,<3
+gunicorn>=26.2,<27
+segno>=1.6,<2
+zint-bindings>=1.2,<2   # Data Matrix and GS1 DataMatrix on labels (libzint, label.py; ADR 0010, section 7)
+fonttools>=4.50,<5
+pillow>=13.0,<14
+openpyxl>=3.1,<4
+pymongo>=4.19,<5
+dnspython>=2.6,<3   # the DNS proof of the organisations' own domains (domains.py)
+pyjwt[crypto]>=2.8,<3   # single sign-on: ID tokens verified with the provider's keys (sso.py)
+tzdata>=2024.1   # time zones for the daily request counts (PORTAL_TIME_ZONE), whatever the image holds

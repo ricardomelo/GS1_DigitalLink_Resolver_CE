@@ -5,8 +5,18 @@
 # issue and a test run: portal/gs1_dictionary.json must be generated again from the new release.
 x-gs1-syntax-engine: &gs1-syntax-engine "1.4.1"
 
+# The containers' output (Documentation/adr/0043-access-logs.md): Docker's json-file driver keeps it until the container
+# is removed, with no limit of its own; here each container keeps at most LOG_MAX_FILES files of LOG_MAX_SIZE (from
+# .env; 10m and 5 by default), the oldest dropped first. Read it with "docker compose logs <service>".
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILES:-5}
+
 services:
   database-service:
+    logging: *logging
     build: './database_server'
     container_name: database-server
     restart: always
@@ -16,7 +26,8 @@ services:
       - path: .env          # installation values; overrides .env.example (never committed)
         required: false
     ports:
-      - "${DATABASE_BIND_ADDRESS:-0.0.0.0}:27017:27017"
+      # the host's loopback address unless .env says otherwise (Documentation/adr/0030-least-privilege-services.md)
+      - "${DATABASE_BIND_ADDRESS:-127.0.0.1}:27017:27017"
     volumes:
       - resolver-database-volume:/data/db
     networks:
@@ -27,6 +38,7 @@ services:
   # (default 2). They keep no state of their own, so they have no fixed container_name (Compose cannot
   # replicate a service with one); the proxy finds every replica through Docker's DNS (nginx.conf).
   data-entry-service:
+    logging: *logging
     build:
       context: './data_entry_server'
       args:
@@ -38,15 +50,21 @@ services:
         required: false
     environment:
       WEB_CONCURRENCY: ${DATA_ENTRY_SERVICE_PROCESSES:-2}   # gunicorn processes in each container
+      # Its own MongoDB user (DATA_ENTRY_DB_*: the records only), never the root one (ADR 0030)
+      MONGO_URI: ""
+      MONGO_INITDB_ROOT_USERNAME: ""
+      MONGO_INITDB_ROOT_PASSWORD: ""
     deploy:
       replicas: ${DATA_ENTRY_SERVICE_REPLICAS:-1}
     depends_on:
-      - database-service
+      portal-db-init:
+        condition: service_completed_successfully   # its own MongoDB user, made or brought up to date
     restart: always
     networks:
       - resolver-internal-network
 
   web-service:
+    logging: *logging
     build:
       context: './web_server'
       additional_contexts:
@@ -60,6 +78,11 @@ services:
         required: false
     environment:
       WEB_CONCURRENCY: ${WEB_SERVICE_PROCESSES:-2}   # gunicorn processes in each container
+      # Its own MongoDB user (RESOLVER_DB_*: reads records and the portal's settings, writes the request log), never
+      # the root one (ADR 0030)
+      MONGO_URI: ""
+      MONGO_INITDB_ROOT_USERNAME: ""
+      MONGO_INITDB_ROOT_PASSWORD: ""
     volumes:
       # the GeoIP database of the request log (scripts/geoip-update.sh; Documentation/adr/0006-resolver-request-log.md,
       # section 8), read only; without a file there requests are logged without a location
@@ -67,16 +90,21 @@ services:
     deploy:
       replicas: ${WEB_SERVICE_REPLICAS:-1}
     depends_on:
-      - database-service
+      portal-db-init:
+        condition: service_completed_successfully   # its own MongoDB user, made or brought up to date
     restart: always
     networks:
       - resolver-internal-network
 
   portal-db-init:
-    # One-shot: creates the portal's own MongoDB user (readWrite on PORTAL_DB_NAME only), or brings its
-    # password and roles up to date, then exits. It alone receives the root MONGO_URI on the portal's side.
+    logging: *logging
+    # One-shot: creates the MongoDB users of the portal, the resolver and the data entry API, each with the least
+    # privileges it needs, or brings their passwords and roles up to date, then exits; the other services start
+    # after it. It alone receives the root MONGO_URI (Documentation/adr/0030-least-privilege-services.md).
     build:
       context: './portal'
+      additional_contexts:
+        git-dir: './.git'   # the version the About page shows, written at the build (ADR 0024)
       args:
         GS1_SYNTAX_ENGINE_RELEASE: *gs1-syntax-engine
     command: ["python", "db_init.py"]
@@ -92,9 +120,12 @@ services:
       - resolver-internal-network
 
   portal-service:
+    logging: *logging
     # Link management portal for non-technical users (served at /portal/ by the proxy)
     build:
       context: './portal'
+      additional_contexts:
+        git-dir: './.git'   # the version the About page shows, written at the build (ADR 0024)
       args:
         GS1_SYNTAX_ENGINE_RELEASE: *gs1-syntax-engine
     env_file:
@@ -124,12 +155,15 @@ services:
       - resolver-internal-network
 
   portal-worker:
+    logging: *logging
     # Runs the portal's background jobs (spreadsheet imports, link checks) from the jobs collection of the
     # portal's database; same image and settings as the portal, another command. It finishes the record in
     # hand, hands its job back to the queue and stops on "docker compose stop" (stop_grace_period). Each
     # replica runs one job at a time; more replicas run more jobs in parallel.
     build:
       context: './portal'
+      additional_contexts:
+        git-dir: './.git'   # the version the About page shows, written at the build (ADR 0024)
       args:
         GS1_SYNTAX_ENGINE_RELEASE: *gs1-syntax-engine
     command: ["python", "worker.py"]
@@ -159,6 +193,7 @@ services:
       - resolver-internal-network
 
   frontend-proxy-service:
+    logging: *logging
     build: './frontend_proxy_server'
     container_name: frontend-proxy-server
     # nginx asks Docker's DNS for the addresses of these services every 10 seconds ("resolve" in
@@ -168,18 +203,34 @@ services:
       - data-entry-service
       - portal-service
     restart: always
+    # Who may use the official data entry API through the proxy (/api, /swaggerui; ADR 0021): read from .env by
+    # Compose; empty, closed to every address. The proxy is given these settings only, none of the secrets.
+    environment:
+      DATA_ENTRY_API_ALLOW: ${DATA_ENTRY_API_ALLOW:-}
+      PROXY_TRUSTED_PROXIES: ${PROXY_TRUSTED_PROXIES:-}
+      PROXY_BIND_ADDRESS: ${PROXY_BIND_ADDRESS:-127.0.0.1}
+      # request limits per client address (ADR 0031); empty, the defaults of api-access.sh
+      PROXY_LIMIT_RESOLVE: ${PROXY_LIMIT_RESOLVE:-}
+      PROXY_LIMIT_PORTAL: ${PROXY_LIMIT_PORTAL:-}
+      PROXY_LIMIT_SIGNIN: ${PROXY_LIMIT_SIGNIN:-}
+      PROXY_LIMIT_CONNECTIONS: ${PROXY_LIMIT_CONNECTIONS:-}
+      PROXY_LIMIT_EXEMPT: ${PROXY_LIMIT_EXEMPT:-}
+      # what the access log keeps (ADR 0043): minimal (the default), full or off
+      PROXY_ACCESS_LOG: ${PROXY_ACCESS_LOG:-}
+    # the host's loopback address unless .env says otherwise (ADR 0030): the installer writes PROXY_BIND_ADDRESS
     ports:
-      - "${PROXY_BIND_ADDRESS:-0.0.0.0}:8080:80"
+      - "${PROXY_BIND_ADDRESS:-127.0.0.1}:8080:80"
     networks:
       - resolver-internal-network
 
   mailpit:
+    logging: *logging
     # Only for trying the portal's e-mail on a test installation before a real relay exists
     # (Documentation/adr/0004-e-mail.md, decision 9); never in production. Not started by "docker compose up":
     # "docker compose --profile mail-test up -d mailpit" starts it. It accepts every message on port 1025
     # (PORTAL_MAIL_HOST=mailpit, PORTAL_MAIL_PORT=1025, PORTAL_MAIL_SECURITY=none) and shows them, with its API,
     # on port 8025 of the host's loopback address only.
-    image: axllent/mailpit:v1.31.5
+    image: axllent/mailpit:v1.31.5@sha256:94f6b70c1436defae6799d9ac7ff0eeff9540465b842026d5cdb018f1c0234ea
     profiles: ["mail-test"]
     environment:
       MP_MAX_MESSAGES: 500

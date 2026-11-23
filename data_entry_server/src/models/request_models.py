@@ -10,7 +10,9 @@ def register_request_models(namespace: Namespace) -> tuple[Model, Model]:
       ),
       'href': fields.String(
           required=True,
-          description='Target URL that the Digital Link should resolve to.',
+          description=('Target URL that the Digital Link should resolve to: an https address with a public host name '
+                       '(no user information, IP address or private name such as localhost or .internal; ADR 0048). '
+                       'A target the key already holds is accepted as it is.'),
           example='https://example.com/products/09506000134369'
       ),
       'title': fields.String(
@@ -41,7 +43,9 @@ def register_request_models(namespace: Namespace) -> tuple[Model, Model]:
       'anchor': fields.String(
           required=True,
           description=(
-              'GS1 Digital Link path for the primary identifier and optional qualifiers. The value MUST start with "/".'
+              'The primary key as /AI/value: a GS1 Digital Link primary key (00, 01, 253, 255, 401, 402, 414, 415, '
+              '417, 8003, 8004, 8006, 8010, 8013, 8017, 8018) and its value, printable ASCII without "/" or spaces. '
+              'Qualifiers go in "qualifiers", never in the anchor; any other anchor is refused with 400.'
           ),
           example='/01/09506000134369'
       ),

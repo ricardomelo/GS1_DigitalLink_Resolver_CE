@@ -32,6 +32,7 @@ os.environ.update(DATA_ENTRY_URL=f"http://127.0.0.1:{DATA_ENTRY_PORT}/api", SESS
 os.environ.setdefault("PORTAL_DB_URI", "mongomock://")   # a real MongoDB when PORTAL_DB_URI is set
 sys.path[:0] = [HERE, PORTAL]
 
+import csp_guard  # noqa: E402,F401  (fails the program on a Content-Security-Policy violation: ADR 0038)
 import mock_data_entry  # noqa: E402
 import users  # noqa: E402
 users.set_password("tester", "a-long-test-password")
@@ -95,6 +96,272 @@ time.sleep(IDLE * 0.6)
 check("idle limit counts from the last call: renewed session still open",
       renewed.get("/portal/api/config").status_code == 200)
 check("idle limit: a session without calls for longer is refused", idle.get("/portal/api/config").status_code == 401)
+
+
+# ---------------------------------------------------------------- server-side session records (finding F-016, ADR 0034)
+# The cookie names a session record in the portal's database; signing out, a password change or reset, disabling or
+# removing the account and disabling its organisation end the records, so a copy of the cookie stops working too.
+import sessions  # noqa: E402
+import store  # noqa: E402
+import tenants  # noqa: E402
+
+COOKIE = portal.app.config["SESSION_COOKIE_NAME"]
+
+
+def copy_of(client):
+    """A second browser holding a copy of the client's session cookie (as a thief would)."""
+    other = portal.app.test_client()
+    other.set_cookie(COOKIE, client.get_cookie(COOKIE, path="/portal").value, path="/portal")
+    return other
+
+
+def session_of(client) -> dict:
+    with client.session_transaction("/portal/api/config") as s:
+        return dict(s)
+
+
+owner = signed_in_client()
+thief = copy_of(owner)
+check("a copied cookie works while its session is open", thief.get("/portal/api/config").status_code == 200)
+owner.post("/portal/api/logout", json={}, headers=ORIGIN)
+answer = thief.get("/portal/api/config")
+check("signing out ends the session for a copied cookie too", answer.status_code == 401
+      and answer.get_json().get("code") == "auth.required", answer.status_code)
+check("…and a copied cookie's page goes to the sign-in page", thief.get("/portal/").status_code == 302)
+
+owner = signed_in_client()
+sid = session_of(owner).get("sid", "")
+record = store.col("sessions").find_one({"_id": sessions.digest(sid)}) if sid else None
+check("the cookie carries a random session id of at least 256 bits", len(sid) >= 43, sid)
+check("the database keeps the id's SHA-256, never the id", record is not None and record["_id"] != sid
+      and store.col("sessions").count_documents({"_id": sid}) == 0, record)
+check("…with the user, how it was opened and when it ends", record and record["user"] == "tester"
+      and record.get("via") == "password" and record["expiresAt"] > store.now(), record)
+check("…which is at most the absolute limit after the sign-in",
+      record and record["expiresAt"] <= record["created"] + portal.timedelta(hours=portal.SESSION_MAX_HOURS), record)
+check("the records expire by themselves (TTL index on expiresAt)",
+      ([("expiresAt", 1)], {"expireAfterSeconds": 0}) in store.INDEXES.get("sessions", []))
+seen = record["seen"] if record else None
+owner.get("/portal/api/config")
+owner.get("/portal/api/config")
+check("calls within a few seconds do not write the record each time",
+      (store.col("sessions").find_one({"_id": sessions.digest(sid)}) or {}).get("seen") == seen)
+store.col("sessions").update_one({"_id": sessions.digest(sid)},
+                                 {"$set": {"seen": store.now() - portal.timedelta(seconds=IDLE)}})
+owner.get("/portal/api/config")
+renewed_record = store.col("sessions").find_one({"_id": sessions.digest(sid)}) or {}
+check("a call after a while renews the record's end (sliding, never past the absolute limit)",
+      renewed_record.get("seen", store.now()) > store.now() - portal.timedelta(seconds=5)
+      and renewed_record.get("expiresAt", store.now()) > store.now() + portal.timedelta(seconds=IDLE), renewed_record)
+capped = store.col("sessions").find_one({"_id": sessions.digest(sessions.open_record("capped", "sso", 600, 60))})
+check("a record never outlives the absolute limit, whatever the idle limit",
+      capped and capped["via"] == "sso" and capped["expiresAt"] == capped["created"] + portal.timedelta(seconds=60), capped)
+store.col("sessions").delete_one({"_id": sessions.digest(sid)})
+check("a valid cookie whose record is gone is refused", owner.get("/portal/api/config").status_code == 401)
+
+owner = signed_in_client()
+store.col("sessions").update_one({"_id": sessions.digest(session_of(owner)["sid"])}, {"$set": {"user": "newcomer"}})
+check("a record of another user does not open the session", owner.get("/portal/api/config").status_code == 401)
+
+owner = signed_in_client()
+with owner.session_transaction("/portal/api/config") as s:      # a cookie signed before the records existed
+    s.pop("sid")
+check("a session opened before the records existed ends (sign in again)",
+      owner.get("/portal/api/config").status_code == 401)
+check("…with the reason on the sign-in page", owner.get("/portal/").headers.get("Location", "").endswith("?reason=expired"))
+
+owner = signed_in_client()
+thief = copy_of(owner)
+old_sid = session_of(owner)["sid"]
+changed = owner.post("/portal/api/password", json={"currentPassword": "a-long-test-password",
+                                                   "newPassword": "another-long-test-password"}, headers=ORIGIN)
+check("a password change keeps this browser signed in", changed.status_code == 200
+      and owner.get("/portal/api/config").status_code == 200, changed.get_json())
+check("…under a new session id", session_of(owner).get("sid") not in (None, old_sid))
+check("…and ends the copy of the cookie taken before it", thief.get("/portal/api/config").status_code == 401)
+users.set_password("tester", "a-long-test-password")            # back, for the checks below
+
+users.create("victim", "a-long-victim-password", "editor", must_change=False)
+victim = signed_in_client("victim", "a-long-victim-password")
+thief = copy_of(victim)
+admin = signed_in_client()
+admin.put("/portal/api/users/victim", json={"disabled": True}, headers=ORIGIN)
+admin.put("/portal/api/users/victim", json={"disabled": False}, headers=ORIGIN)
+check("disabling an account ends its sessions, even after it is enabled again",
+      thief.get("/portal/api/config").status_code == 401 and victim.get("/portal/api/config").status_code == 401)
+check("…its records are gone", store.col("sessions").count_documents({"user": "victim"}) == 0)
+victim = signed_in_client("victim", "a-long-victim-password")
+admin.post("/portal/api/users/victim/reset", json={}, headers=ORIGIN)
+check("an administrator's password reset ends the user's sessions",
+      store.col("sessions").count_documents({"user": "victim"}) == 0
+      and victim.get("/portal/api/config").status_code == 401)
+users.set_password("victim", "a-long-victim-password")
+victim = signed_in_client("victim", "a-long-victim-password")
+users.clear_password("victim")                                  # an administrator's reset by link (mail on)
+check("a password removed for a reset by link ends the user's sessions",
+      store.col("sessions").count_documents({"user": "victim"}) == 0)
+
+organisation = tenants.create("Copied cookies Ltd", ["7890123"], by="tester")
+users.create("member", "a-long-member-password", "editor", must_change=False, tenant=organisation["id"])
+member = signed_in_client("member", "a-long-member-password")
+thief = copy_of(member)
+admin.put(f"/portal/api/tenants/{organisation['id']}", json={"disabled": True}, headers=ORIGIN)
+admin.put(f"/portal/api/tenants/{organisation['id']}", json={"disabled": False}, headers=ORIGIN)
+check("disabling an organisation ends its users' sessions, even after it is enabled again",
+      thief.get("/portal/api/config").status_code == 401
+      and store.col("sessions").count_documents({"user": "member"}) == 0)
+member = signed_in_client("member", "a-long-member-password")
+admin.delete("/portal/api/users/member", headers=ORIGIN)
+check("removing an account ends its sessions", store.col("sessions").count_documents({"user": "member"}) == 0)
+check("an administrator's own session survives what it did to others", admin.get("/portal/api/config").status_code == 200)
+
+
+# ---------------------------------------------------------------- the client's address (finding F-004)
+# The installation's proxy sets X-Forwarded-For to the one client address it resolved through its trusted proxies
+# (frontend_proxy_server/nginx.conf); what a client wrote before it reaches the portal only when nginx is bypassed or
+# misconfigured, and must never be the address the throttle counts or the audit trail records.
+import store  # noqa: E402
+from datetime import timedelta  # noqa: E402
+
+portal.FAILURE_PAUSE = 0                                 # the half second after each wrong password, not tested here
+anonymous = portal.app.test_client()
+for n in range(portal.MAX_ADDRESS_FAILURES):            # a first address rotated at every attempt, as a forger would
+    anonymous.post("/portal/api/login", json={"username": f"nobody{n}", "password": "wrong"},
+                   headers={**ORIGIN, "X-Forwarded-For": f"10.9.8.{n}, 198.51.100.7"})
+answer = anonymous.post("/portal/api/login", json={"username": "tester", "password": "a-long-test-password"},
+                        headers={**ORIGIN, "X-Forwarded-For": "10.9.8.250, 198.51.100.7"})
+check("throttle per address: a forged first X-Forwarded-For address rotated at every attempt does not escape it",
+      answer.status_code == 429 and answer.get_json().get("code") == "auth.locked", answer.status_code)
+for n in range(portal.MAX_ADDRESS_FAILURES):            # failures from 198.51.100.8 naming a victim's address first
+    anonymous.post("/portal/api/login", json={"username": f"nobody{n}", "password": "wrong"},
+                   headers={**ORIGIN, "X-Forwarded-For": "203.0.113.20, 198.51.100.8"})
+answer = portal.app.test_client().post("/portal/api/login", json={"username": "tester", "password": "a-long-test-password"},
+                                       headers={**ORIGIN, "X-Forwarded-For": "203.0.113.20"})
+check("…and failures cannot be charged to another address by writing it first", answer.status_code == 200,
+      answer.status_code)
+store.col("login_failures").delete_many({})
+anonymous.post("/portal/api/login", json={"username": "tester", "password": "wrong"},
+               headers={**ORIGIN, "X-Forwarded-For": "10.9.8.7, 203.0.113.21"})
+traced = store.col("journal").find_one({"action": "login-failed", "user": "tester"}) or {}
+check("the audit trail records the address the proxy set, not the one the client wrote",
+      traced.get("detail") == "203.0.113.21", traced.get("detail"))
+store.col("login_failures").delete_many({})
+
+# ---------------------------------------------------------------- failed sign-ins naming no account (ADR 0031 §2.3)
+# Counted per hour, one journal event per finished hour; a failure naming an account is journalled at once (above).
+import failcount  # noqa: E402
+import journal  # noqa: E402
+
+failcount._counters().delete_many({})
+events_before = store.col("journal").count_documents({"action": "login-failed"})
+for n, address in enumerate(["203.0.113.40", "203.0.113.41", "203.0.113.40", "203.0.113.42"]):
+    anonymous.post("/portal/api/login", json={"username": f"ghost{n}", "password": "wrong"},
+                   headers={**ORIGIN, "X-Forwarded-For": address})
+anonymous.post("/portal/api/login", json={"username": "", "password": "x"}, headers={**ORIGIN, "X-Forwarded-For": "203.0.113.43"})
+counters = list(failcount._counters().find({}))
+check("failed sign-ins naming no account write no journal event each",
+      store.col("journal").count_documents({"action": "login-failed"}) == events_before,
+      store.col("journal").count_documents({"action": "login-failed"}) - events_before)
+check("…they are counted in one document of the hour, with the addresses seen (an empty name too)",
+      len(counters) == 1 and counters[0]["n"] == 5 and counters[0]["kind"] == "sign-in"
+      and sorted(counters[0]["addrs"]) == ["203.0.113.40", "203.0.113.41", "203.0.113.42", "203.0.113.43"]
+      and counters[0]["hour"].minute == 0 and counters[0]["journaled"] is False
+      and counters[0]["expiresAt"] > counters[0]["hour"] + timedelta(days=failcount.KEEP_DAYS), counters)
+check("…the sign-in throttle still counts them per address",
+      store.col("login_failures").count_documents({"key": "addr:203.0.113.40"}) == 2)
+for n in range(failcount.SAMPLE + 5):
+    failcount.note("sign-in", f"198.51.100.{100 + n}")
+counter = failcount._counters().find_one({})
+check(f"…at most {failcount.SAMPLE} addresses kept, whatever the crowd", counter["n"] == 5 + failcount.SAMPLE + 5
+      and len(counter["addrs"]) == failcount.SAMPLE, counter)
+check("the hour in progress is not journalled yet", failcount.journal_closed_hours() == 0
+      and store.col("journal").count_documents({"action": "login-failed"}) == events_before)
+check("the worker's hourly housekeeping runs it", failcount.journal_closed_hours in portal.HOUSEKEEPING)
+_real_now = store.now
+store.now = lambda: _real_now() + timedelta(hours=1)
+_real_append = journal.append
+journal.append = lambda *a, **k: (_ for _ in ()).throw(OSError("journal unreachable"))
+try:
+    try:
+        failcount.journal_closed_hours()
+        refused = False
+    except OSError:
+        refused = True
+    check("a journal that cannot be written gives the counter back, for the next run",
+          refused and failcount._counters().find_one({})["journaled"] is False)
+    journal.append = _real_append
+    written = failcount.journal_closed_hours()
+    again = failcount.journal_closed_hours()
+finally:
+    journal.append = _real_append
+    store.now = _real_now
+summary = store.col("journal").find_one({"action": "login-failed", "count": {"$exists": True}}) or {}
+check("after the hour: one journal event, once, however many workers run", written == 1 and again == 0
+      and store.col("journal").count_documents({"action": "login-failed"}) == events_before + 1, (written, again))
+check("…by '-' in the operator's trail, sealed, with the count, the hour and the first addresses",
+      summary.get("user") == "-" and "tenant" not in summary and summary.get("count") == counter["n"]
+      and summary.get("seq") is not None and f'{counter["n"]} failed sign-ins with a user name of no account' in summary.get("detail", "")
+      and f'{counter["hour"]:%Y-%m-%d %H:00} and' in summary.get("detail", "") and "203.0.113.41" in summary.get("detail", "")
+      and summary.get("detail", "").endswith("and others"), summary)
+_actions, _ = journal.counts(journal.scope_query(None, operator_view=True), counter["hour"],
+                             counter["hour"] + timedelta(hours=3))
+check("…the overview counts the failures it stands for", _actions.get("login-failed", 0) >= counter["n"], _actions)
+failcount._counters().delete_many({})
+store.col("login_failures").delete_many({})
+
+
+# ---------------------------------------------------------------- no lock by user name alone (finding F-005)
+# Wrong passwords for a user name delay that user name from that address only, more after each failure; an address
+# is limited whatever the user names it tries; the owner signs in from elsewhere.
+def sign_in_from(address, password, username="tester"):
+    return portal.app.test_client().post("/portal/api/login", json={"username": username, "password": password},
+                                         headers={**ORIGIN, "X-Forwarded-For": address})
+
+
+answers = [sign_in_from("198.51.100.30", "wrong") for _ in range(portal.MAX_LOGIN_FAILURES + 3)]
+check("five and more wrong passwords from one address: 401, then a wait from that address",
+      [a.status_code for a in answers[:portal.FREE_FAILURES]] == [401] * portal.FREE_FAILURES
+      and all(a.status_code == 429 for a in answers[portal.FREE_FAILURES:]), [a.status_code for a in answers])
+for _ in range(portal.FREE_FAILURES):                    # a second guessing address: the user name counts six failures
+    sign_in_from("198.51.100.31", "wrong")
+check("the account's owner still signs in from another address (six failures of the user name from two addresses)",
+      portal.throttle.count("user:tester") >= portal.MAX_LOGIN_FAILURES
+      and sign_in_from("203.0.113.31", "a-long-test-password").status_code == 200)
+waiting = sign_in_from("198.51.100.30", "a-long-test-password")
+body = waiting.get_json() or {}
+check("from the guessing address even the right password waits: 429 auth.wait with seconds and Retry-After",
+      waiting.status_code == 429 and body.get("code") == "auth.wait"
+      and 0 < body.get("params", {}).get("seconds", 0) <= portal.FIRST_DELAY_SECONDS
+      and waiting.headers.get("Retry-After") == str(body["params"]["seconds"]), (waiting.status_code, body))
+check("the wait is not a failure: the address's own count did not grow while it waited",
+      portal.throttle.count("user-addr:tester|198.51.100.30") == portal.FREE_FAILURES)
+store.col("login_failures").update_many({"key": "user-addr:tester|198.51.100.30"},
+                                        {"$set": {"at": store.now() - timedelta(seconds=portal.FIRST_DELAY_SECONDS + 1)}})
+check("once the wait has passed, the right password signs in from that address too",
+      sign_in_from("198.51.100.30", "a-long-test-password").status_code == 200)
+check("…and a sign-in forgets the user name's failures from that address",
+      portal.throttle.count("user-addr:tester|198.51.100.30") == 0)
+for n in range(portal.MAX_ADDRESS_FAILURES - 1):         # one address trying many user names (password spraying)
+    sign_in_from("198.51.100.40", "wrong", username=f"sprayed{n}")
+check("one address may try many user names up to its limit", sign_in_from("198.51.100.40", "a-long-test-password").status_code == 200)
+sign_in_from("198.51.100.40", "wrong", username="sprayed-last")
+answer = sign_in_from("198.51.100.40", "a-long-test-password")
+check("then the address waits 15 minutes whatever the user name (auth.locked in minutes)",
+      answer.status_code == 429 and (answer.get_json() or {}).get("code") == "auth.locked"
+      and (answer.get_json() or {}).get("params", {}).get("minutes") == 15, answer.get_json())
+check("a sign-in of one's own does not reset the address's count",
+      portal.throttle.count("addr:198.51.100.40") == portal.MAX_ADDRESS_FAILURES)
+signed_in = portal.app.test_client()
+signed_in.post("/portal/api/login", json={"username": "tester", "password": "a-long-test-password"},
+               headers={**ORIGIN, "X-Forwarded-For": "203.0.113.32"})
+for n in range(portal.MAX_LOGIN_FAILURES):              # after the owner signed in: wrong passwords from elsewhere
+    sign_in_from(f"198.51.100.5{n}", "wrong")
+changed = signed_in.post("/portal/api/password", json={"currentPassword": "wrong", "newPassword": "another-long-password"},
+                         headers={**ORIGIN, "X-Forwarded-For": "203.0.113.32"})
+check("others' wrong sign-in passwords do not lock the owner's password change",
+      changed.status_code != 429 and (changed.get_json() or {}).get("code") == "password.currentWrong",
+      (changed.status_code, changed.get_json()))
+store.col("login_failures").delete_many({})
 
 
 # ---------------------------------------------------------------- the page (Chromium)

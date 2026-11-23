@@ -1,6 +1,6 @@
 """
 In-memory stand-in for the Resolver CE data-entry API, used by the portal end-to-end test.
-It reproduces the behaviours the portal must cope with: POST /new on an existing entry and PUT both merge by (linktype, hreflang, context), DELETE removes links or the whole document;
+It reproduces the behaviours the portal must cope with: POST /new on an existing entry and PUT both merge by (linktype, hreflang, context), DELETE removes links, one record (removeRecord, ADR 0023) or the whole document;
 PUT and a DELETE of links with qualifiers no record of the key has answer 404;
 informativeQualifiers are kept like the real API does, and a registration with AI 21 plus AI 22 or
 AI 10 is refused (GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2).
@@ -8,6 +8,7 @@ Bearer token: "tok".
 """
 # Stands in for the Resolver CE data entry API (what matters: upsert and PUT merge links, partial DELETE)
 import copy
+import re
 from flask import Flask, request, jsonify
 app = Flask(__name__)
 DB = {}
@@ -19,7 +20,7 @@ def auth():
 def v3(did):
     d=DB[did]; out=[]
     for e in d["entries"]:
-        it={"anchor":"/"+did.replace("_","/"),"itemDescription":e["itemDescription"],"defaultLinktype":d["default"],"links":copy.deepcopy(e["links"])}
+        it={"anchor":"/"+did.replace("_","/",1),"itemDescription":e["itemDescription"],"defaultLinktype":d["default"],"links":copy.deepcopy(e["links"])}
         if e["qualifiers"]: it["qualifiers"]=e["qualifiers"]
         if e.get("informative"): it["informativeQualifiers"]=copy.deepcopy(e["informative"])
         out.append(it)
@@ -27,6 +28,10 @@ def v3(did):
 def rule2(qualifiers):
     ais={k for i in (qualifiers or []) for k in i}
     return "21" in ais and bool(ais & {"22","10"})
+KEYS={"00","01","253","255","401","402","414","415","417","8003","8004","8006","8010","8013","8017","8018"}
+def bad_anchor(doc):   # ADR 0049: /AI/value, a primary key, printable ASCII without "/" or space
+    m=re.fullmatch(r"/([0-9]{2,4})/([!-.0-~]+)",doc.get("anchor") or "") if isinstance(doc,dict) else None
+    return not m or m.group(1) not in KEYS
 def upsert(doc):
     did=doc["anchor"].split("/")[-2]+"_"+doc["anchor"].split("/")[-1]
     assert not rule2(doc.get("qualifiers")), "rule 2 of section 2.5.9"
@@ -50,24 +55,31 @@ def new():
     if not auth(): return "no",403
     d=request.json
     if isinstance(d,list):
+        if any(bad_anchor(x) for x in d): return jsonify(response_status=400,error="anchor"),400
         if any(rule2(x.get("qualifiers")) for x in d): return jsonify(response_status=400,error="rule 2"),400
         for x in d: upsert(x)
         return jsonify([{"ok":1}]),201
+    if bad_anchor(d): return jsonify(response_status=400,error="anchor"),400
     if rule2(d.get("qualifiers")): return jsonify(response_status=400,error="rule 2"),400
     s=upsert(d); return jsonify({"entry":"x","result":{"response_status":s}}),s
 @app.route("/api/<c>/<v>",methods=["GET","PUT","DELETE"])
 def doc(c,v):
     if not auth(): return "no",403
+    if "_" in c: return jsonify(response_status=400,error="path"),400
     did=f"{c}_{v}"
     d=request.get_json(silent=True)
-    if request.method=="DELETE" and isinstance(d,dict) and request.content_length and not (
+    remove=request.method=="DELETE" and isinstance(d,dict) and "removeRecord" in d
+    if remove and not (d["removeRecord"] is True and "links" not in d and isinstance(d.get("qualifiers",[]),list)
+            and all(isinstance(q,dict) and len(q)==1 and all(isinstance(v,str) for v in q.values()) for q in d.get("qualifiers",[]))):
+        return jsonify(response_status=400,error="removeRecord: true, qualifiers, no links"),400
+    if request.method=="DELETE" and isinstance(d,dict) and request.content_length and not remove and not (
             isinstance(d.get("links"),list) and d["links"] and all(isinstance(l,dict) for l in d["links"])):
         return jsonify(response_status=400,error="a DELETE body must name links"),400
     if did not in DB: return jsonify(response_status=404,error="nf"),404
     if request.method=="GET": return jsonify(data=v3(did),response_status=200)
     ents=DB[did]["entries"]
     idx=next((i for i,e in enumerate(ents) if qm(e["qualifiers"],(d or {}).get("qualifiers",[]))),None)
-    if idx is None and (request.method=="PUT" or (d and d.get("links"))):
+    if idx is None and (request.method=="PUT" or remove or (d and d.get("links"))):
         return jsonify(response_status=404,error="Record not found"),404
     if request.method=="PUT":
         e=ents[idx]
@@ -79,6 +91,10 @@ def doc(c,v):
             if m: e["links"][m[0]].update(nl)
             else: e["links"].append(nl)
         return jsonify(response_status=200)
+    if remove:                     # one record removed, the key's others kept; the document goes with its last
+        ents.pop(idx)
+        if not ents: del DB[did]
+        return jsonify(response_status=200,removed=1,remaining=len(ents))
     if d and d.get("links"):
         e=ents[idx]; n=0
         for rl in d["links"]:

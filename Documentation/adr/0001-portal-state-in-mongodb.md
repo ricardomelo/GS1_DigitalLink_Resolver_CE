@@ -86,6 +86,11 @@ built-in server (`python -m main` → `app.run()`), and every service in `docker
   password, and changing `PORTAL_DB_PASSWORD` in `.env` takes effect at the next `up -d`.
   (MongoDB's own `/docker-entrypoint-initdb.d` scripts run only on an empty volume, so they cannot serve
   existing installations.)
+- *Note (17 November 2026, [ADR 0026](0026-journal-integrity.md) §2.5.2):* the journal (`journal`, `journal_heads`)
+  lives in a database of its own, `<PORTAL_DB_NAME>_journal`, where the portal's user holds the role `journalAppend`
+  (read and insert events; heads may move forward) and nothing else: no event can be changed or deleted and no index
+  made with it. `portal-db-init` makes the indexes, moves the journal of an earlier version there once, and applies
+  retention changes and the sealing of old events with the root user.
 - The portal builds its connection from these variables and `PORTAL_DB_HOST` (default
   `database-service:27017`), with `authSource=resolver_portal`. `MONGO_URI` stays blank for the portal.
 - `portal/store.py` holds the client (one per process, `pymongo` connection pool), creates the indexes at
@@ -99,7 +104,7 @@ built-in server (`python -m main` → `app.run()`), and every service in `docker
 | `users` | user name | `hash`, `role`, `prefixes`, `disabled`, `mustChange`, `created`, `lastLogin` | — |
 | `record_meta` | record key (`meta.key()`) | `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | — |
 | `journal` | ObjectId (`jsonl-<line>` when migrated) | `at` (date), `user`, `action`, `category`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt` | `{at: -1}`; `{anchor, qpath, at: -1}`; `{user, at: -1}`; `{category}`; TTL on `expiresAt` |
-| `login_failures` | ObjectId | `key` (user name or address), `at` (date) | `{key, at}`; TTL on `at`, 15 minutes |
+| `login_failures` | ObjectId | `key` (user name and address, address, user name, …: see the developer guide), `at` (date) | `{key, at}`; TTL on `at`, 15 minutes |
 | `jobs` | token | `type` (`import`, `linkcheck`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `error`, `expiresAt`; imports `plan`, `keyRecords`, `results`; link checks `scope`, `urls`, `problems`, `records` | `{state, created}`; TTL on `expiresAt` |
 | `workers` (step 3) | worker name (`host:pid:mode`) | `seen`, `mode`, `job` | TTL on `seen`, 10 minutes |
 | `linkcheck_cache` | address | `result`, `expiresAt` | TTL on `expiresAt` |
@@ -204,6 +209,11 @@ journal (under a lock, so replicas do it once). The daily backup keeps what expi
 for its own retention (`RETENTION_DAYS`, 14 days by default). A record's history lives in the journal, so a
 limit on `PORTAL_JOURNAL_RECORD_DAYS` also limits how far back a record can be restored; the configuration
 documents say so.
+
+*Amended on 16 November 2026 ([ADR 0026](0026-journal-integrity.md), finding F-008):* every event is sealed in a hash
+chain per audit trail and retention category, so that retention, which deletes a category's oldest events first, only
+removes a chain's beginning; a record change is journalled before the data entry API is called and refused when its
+event cannot be written.
 
 ### 3.6 Migration of existing installations
 

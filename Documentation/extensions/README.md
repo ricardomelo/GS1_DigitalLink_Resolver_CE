@@ -48,6 +48,7 @@ British English, for operators and developers. People who register records read 
 - [What each action does on the API](#what-each-action-does-on-the-api)
 - [QR code label](#qr-code-label)
 - [GS1 Digital Link data attributes](#gs1-digital-link-data-attributes)
+- [Supply chain](#supply-chain)
 - [Resolver CE changes](#resolver-ce-changes)
 - [Operations](#operations)
 - [Hardening](#hardening)
@@ -108,7 +109,9 @@ Every service loads `.env.example` and then `.env` if it exists; a value in `.en
 | Variable | Used by | Development default | For a server |
 |---|---|---|---|
 | `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD` | database (first start only), backup | `gs1resolver` / `gs1resolver` | new password |
-| `MONGO_URI` | web, data entry | matches the above | same credentials as above |
+| `MONGO_URI` | portal-db-init only (the root connection; ADR 0030) | matches the above | same credentials as above |
+| `RESOLVER_DB_USERNAME`, `RESOLVER_DB_PASSWORD` | resolver, portal-db-init (the resolver's own database user) | `resolver_web` (both) | random password (installer); the example refused on a real domain |
+| `DATA_ENTRY_DB_USERNAME`, `DATA_ENTRY_DB_PASSWORD` | data entry API, portal-db-init (its own database user) | `resolver_data_entry` (both) | random password (installer); the example refused on a real domain |
 | `SESSION_TOKEN` | data entry API, portal | `secret` | long random value |
 | `FQDN` | web (linksets, description file), portal | `localhost` | the resolver's domain |
 | `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | description file `contact` (`RESOLVER_ORG_URL` as `hasURL`), footer of the home page and of the resolver pages (name linked to `RESOLVER_ORG_URL`) | `My Organisation` | the operator |
@@ -119,7 +122,7 @@ Every service loads `.env.example` and then `.env` if it exists; a value in `.en
 | `PORTAL_JOURNAL_SESSION_DAYS`, `PORTAL_JOURNAL_RECORD_DAYS`, `PORTAL_JOURNAL_ADMIN_DAYS` | portal (journal retention) | 180, 0, 0 (0 = for ever) | as the operator's policy requires |
 | `PORTAL_MAIL_HOST`, `PORTAL_MAIL_PORT`, `PORTAL_MAIL_SECURITY`, `PORTAL_MAIL_USERNAME`, `PORTAL_MAIL_PASSWORD`, `PORTAL_MAIL_FROM` (and the optional `PORTAL_MAIL_REPLY_TO`, `PORTAL_MAIL_CA_FILE`, `PORTAL_MAIL_TIMEOUT`, `PORTAL_INVITE_HOURS`, `PORTAL_RESET_MINUTES`) | portal and its worker (e-mail, see *E-mail* below) | empty host: e-mail off | the organisation's relay (installer); the password only in `.env` |
 | `PORTAL_WORKER` | portal (where background jobs run) | `external` (the `portal-worker` service) | `external`; `embedded` (a thread of the portal) only for a set-up without `portal-worker` |
-| `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Docker Compose (**only from `.env`**) | `0.0.0.0` | `127.0.0.1` behind a TLS proxy |
+| `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Docker Compose (**only from `.env`**) | `127.0.0.1` (ADR 0030) | `127.0.0.1` behind a TLS proxy on the same host; `0.0.0.0` for a proxy on another machine |
 | `WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`, `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS` | Docker Compose (**only from `.env`**): containers of each service | 1 | as the load requires (1 to 20; the installer writes them) |
 | `WEB_SERVICE_PROCESSES`, `DATA_ENTRY_SERVICE_PROCESSES`, `PORTAL_SERVICE_PROCESSES` | Docker Compose (**only from `.env`**): gunicorn processes per container (`WEB_CONCURRENCY`) | 2 | about two per CPU core the service may use (gunicorn advises 2 × cores + 1 in all) |
 
@@ -304,7 +307,7 @@ Roles (checked by the server on every call; the interface hides what a role cann
 | reader | consult, list, export, labels |
 
 - The `users` collection holds, per user: password hash, role, GS1 Company Prefixes, tenant (none for the
-  operator's users), e-mail address (optional, unique), disabled, must-change flag, creation and last sign-in.
+  operator's users), e-mail address (optional, unique within the organisation or among the operator's users, ADR 0036), disabled, must-change flag, creation and last sign-in.
   Users of a `users.json` from before roles (`{"name": "<hash>"}`) are imported as administrators. Changes to
   users are serialised by a lock shared by every portal replica, so the last enabled server administrator can
   never be removed or demoted.
@@ -476,6 +479,12 @@ The file is sent base64-encoded inside a JSON request, which the portal (`MAX_CO
 XLSX (compressed, repeated texts stored once) but 900–1 800 KB in CSV, so a CSV reaches 700 KB at about
 2 000–3 900 rows. Raising the size limit needs the three request limits raised together.
 
+What a file holds is bounded too ([ADR 0032](../adr/0032-spreadsheet-reading-limits.md)): rows are read one at a
+time and reading stops at the first data row past the limit; only the first 64 columns (`MAX_COLUMNS`) of a row are
+read; an XLSX file whose parts unpack into more than 32 MB (`MAX_UNPACKED_MB`, measured by unpacking, not by what the
+archive declares) is refused with *import.unpackedTooBig*, as are parts compressed otherwise than stored or deflate.
+An honest file at the size limit unpacks into 4–15 MB.
+
 The default link type is shared by all the records of a key, so an import cannot change it while the key
 has other records.
 
@@ -541,6 +550,12 @@ the checker cannot be used to probe the server's own network.
     (`PERMANENT_SESSION_LIFETIME`). Absolute limit: the session keeps its sign-in time (`since`); a request
     after the limit clears it (audit log line `action=session-limit`). Sessions opened before the limit
     existed start counting at their next request.
+  - Session records ([ADR 0034](../adr/0034-session-records.md)): the cookie carries a random session id; the
+    portal's database keeps its SHA-256 in the `sessions` collection, with the user and the session's end. Signing
+    out, a password change or reset, and disabling or removing the account or disabling its organisation remove
+    the records, so a copy of the cookie stops working too, and stays dead if the account or organisation is
+    enabled again. After the update that brought the records, everyone signs in once more (older cookies carry no
+    id).
   - The page mirrors both limits (`SessionClock` in `static/app.js`, from `session` in
     `GET /portal/api/config`, with relative seconds so the browser's clock does not matter). Every answered
     call renews the idle limit; key presses, clicks, scrolling and touches without server calls count as
@@ -553,9 +568,13 @@ the checker cannot be used to probe the server's own network.
   (`static/password.js`, `aria-pressed`, labelled in the user's language). The field is hidden again when
   its form is submitted, so password managers still see a password field. The script is one of the few
   files served without a session (`PUBLIC_ASSETS`), because the sign-in page needs it.
-- After five failed attempts a username (and, separately, a client address) is locked for 15 minutes.
-  The failures are kept in the portal's database (`login_failures`, emptied by MongoDB after 15 minutes),
-  so the lock holds across every replica of the portal and across restarts.
+- Wrong passwords delay the next attempt of that username **from that client address**: three are free, then
+  15 seconds, doubling with each further failure up to 15 minutes (`429 auth.wait` / `auth.locked` with
+  `Retry-After`). A client address that collects 20 failures in 15 minutes, whatever the usernames, waits
+  15 minutes. No username is ever locked from every address, so nobody can keep its owner out (finding F-005;
+  the official project had no throttle). Five failures of one account in 15 minutes, from any addresses, send
+  its owner one security message. The failures are kept in the portal's database (`login_failures`, emptied by
+  MongoDB after 15 minutes), so the limits hold across every replica of the portal and across restarts.
 - The user icon on the right of the header opens a menu (on hover with a mouse, or on click/keyboard)
   showing the username, **Options** and **Sign out**. Options lets users change their own password
   (current password required, at least 12 characters). Changing the password signs out every other
@@ -661,7 +680,8 @@ message, links included.
 ## Single sign-on
 
 Each organisation can let its people sign in with the account they already have — Microsoft Entra ID, Google
-Workspace, Okta, Keycloak or any OpenID Connect provider ([ADR 0012](../adr/0012-single-sign-on.md)).
+Workspace, Okta, Keycloak or any OpenID Connect provider ([ADR 0012](../adr/0012-single-sign-on.md),
+[ADR 0025](../adr/0025-sso-domain-proof-and-subject.md)).
 
 **At the provider**: register a web application with the return address shown on the portal's screen
 (`https://<FQDN>/portal/sso/callback`), the scopes `openid email profile`, and note the issuer, the client ID and the
@@ -669,23 +689,34 @@ client secret. Examples of issuers: Entra ID `https://login.microsoftonline.com/
 `https://accounts.google.com`, Keycloak `https://<host>/realms/<realm>`, Okta `https://<domain>.okta.com`.
 
 **In the portal** (user menu → **Organisation sign-in**, administrators): the issuer, client ID and secret (the secret
-is write-only: leave the field empty to keep it), the organisation's **e-mail domains** (each domain belongs to one
-configuration in the installation), **On**, then **Test the provider** (reads the discovery document and the keys).
+is write-only: leave the field empty to keep it), the organisation's **e-mail domains**, **On**, then **Test the
+provider** (reads the discovery document and the keys). Tick **The provider does not send email_verified** only for a
+provider that never sends that claim (Microsoft Entra ID, by default); an address marked unverified is always refused.
 A server administrator sees every organisation's configuration and the operator's own.
+
+**Proving each domain**: a listed domain signs nobody in until it is proved. Publish the TXT record the screen shows —
+name `_gs1resolver.<domain>`, value `gs1resolver-sso=<token>` (the same name as a QR code domain's record, another
+value: both can live there) — and click **Verify**; or ask a server administrator to **Approve without DNS** (refused
+when accounts of another organisation use the domain). A domain is proved in one configuration at most. Configurations
+saved before this version show their domains as *accepted at the upgrade, without proof*: publish the record and click
+**Verify**, or remove the domains that are not the organisation's.
 
 **Signing in**: *Sign in with your organisation's account* on the sign-in page asks for the e-mail address; its
 domain chooses the provider; after the provider, the portal signs in the account **with that e-mail in that
-organisation** (the provider's `email`, not marked unverified). Nobody is created: administrators still create or
-invite the users and choose their roles and prefixes. A temporary password is not asked for after single sign-on.
+organisation** (the provider's `email`, verified, at a proved domain). The first sign-in binds the account to the
+provider's identity (its issuer and subject); a later sign-in with another identity for that address is refused. When
+a person's account at the provider is recreated, an administrator clicks **Forget organisation account** on the
+*Users* screen; a new e-mail address forgets it too. Nobody is created: administrators still create or invite the
+users and choose their roles and prefixes. A temporary password is not asked for after single sign-on.
 
 **Password sign-in off**: once single sign-on works, the organisation can switch password sign-in off for its users
 (their passwords are kept and work again if it is switched back on); password recovery then sends them nothing. It
-never applies to server administrators, who can always sign in and switch it off — for example when the
+applies only to accounts whose e-mail domain is proved, and never to server administrators, who can always sign in and switch it off — for example when the
 organisation's provider is down.
 
 The provider's addresses must be `https` on public addresses; `PORTAL_SSO_ALLOW_INSECURE=1` accepts `http` and private
 addresses (tests, or a provider on the operator's own network). The journal records each sign-in through a provider
-and each refusal with its reason; the screen shows the last sign-in and the last failure.
+with the provider's subject, each refusal with its reason, and each domain proved or approved; the screen shows the last sign-in and the last failure.
 
 ## Limits on exports
 
@@ -798,7 +829,8 @@ operator's own notice before going to production.
 ## The installation's appearance
 
 [ADR 0019](../adr/0019-appearance.md). Server administrators set, on *Appearance* in the portal, the title shown in place
-of *GS1 Resolver Community Edition*, a logo and an icon for the browsers' tabs (PNG, JPEG or WebP, at most 200 KB
+of *GS1 Digital Link Resolver Suite* (ADR 0024; before it, *GS1 Resolver Community Edition*, which a stored
+appearance from then still names is read as the new name), a logo and an icon for the browsers' tabs (PNG, JPEG or WebP, at most 200 KB
 each) and three colours (main, action,
 highlight; white text must keep a contrast of 4.5:1 on the first two). Nothing is set in `.env`: the setting
 `appearance` in the portal's database (`settings`, part of the backup) holds them, and **Restore the original** removes
@@ -919,10 +951,15 @@ or, with a path stem, `https://id.acme.example/gs1/01/…`.
 
 **In the portal** (user menu → **Domains**, administrators): an organisation's administrators add its domains, a server
 administrator the operator's (and sees every domain); at most 10 per organisation. A name is a lower-case host name
-(internationalised names in Punycode), never the installation's own, unique in the installation; a stem has one to three
-segments, none of 2 to 4 digits. Each domain is proved by a DNS TXT record `_gs1resolver.<domain>` =
-`gs1resolver-verify=<token>` (**Verify**); it stays verified afterwards, the worker looking at the record once a day to
-show when it was last seen. **Default for the prefixes** makes it the default of the labels of those prefixes (the
+(internationalised names in Punycode), never the installation's own; a stem has one to three
+segments, none of 2 to 4 digits, and does not begin with a segment the installation's proxy gives to something other
+than the resolver (`api…`, `swaggerui…`, `portal`, `home`, `.well-known`). Each domain is proved by a DNS TXT record `_gs1resolver.<domain>` =
+`gs1resolver-verify=<token>` (**Verify**). Until then it is a claim, deleted after 7 days: several organisations may
+claim the same name and the first to verify it keeps it ([ADR 0035](../adr/0035-domain-claims-and-lapsed-proofs.md)).
+The worker looks at the record of each verified domain once a day; missing for 7 days, the domain *lapses*: still
+served, so printed codes keep working, but no longer offered for new labels, its administrators are told by e-mail
+(alert), and another organisation that proves it takes it over. **Verify** with the record back ends the lapse. Single
+sign-on's DNS proofs are looked at the same way; a lapsed proof still signs people in. **Default for the prefixes** makes it the default of the labels of those prefixes (the
 longest prefix wins); the label panel's *Domain in the QR code* chooses another for one label. The record's
 `digitalLink`, the editor's preview, the label and the tenant API's labels (`domain=`) follow the same rule.
 **Test** requests through the domain (public addresses only).
@@ -949,6 +986,17 @@ hour per name); a run holds a lock (`/run/lock/gs1resolver-domains.lock`). With 
 proxy the installer does not schedule it: with Certbot and `CERTBOT_EMAIL`, install `scripts/custom-domains.cron` as
 `/etc/cron.d/resolver-domains` after replacing `REPOSITORY`. Sites of domains removed in the portal are listed and
 deleted by hand.
+
+**Only the resolver on an organisation's domain** ([ADR 0045](../adr/0045-organisation-domains-resolver-only.md)).
+Every site the script writes includes `/etc/nginx/snippets/gs1resolver-domain-paths.conf`, which it writes too: the
+portal's addresses (`/portal`, `/portal/…`) answer **302** to the same address on the installation's portal
+(`PORTAL_ORIGIN`, else `RESOLVER_PUBLIC_URL`, else `https://FQDN`), and the official data entry API (`/api…`,
+`/swaggerui…`) answers **404**, whatever `DATA_ENTRY_API_ALLOW` lists; codes, `/.well-known/gs1resolver` and the home
+page are passed on as before. Sites written by an earlier version get the include at the next run (scheduled: within
+5 minutes of the update; by hand: `sudo scripts/custom-domains.sh apply`), nginx tested first and each site put back
+as it was when nginx refuses it. `list` names a site that does not include it yet; a site without `location /` (edited
+by hand) is reported and left alone: add `include /etc/nginx/snippets/gs1resolver-domain-paths.conf;` to its server
+blocks yourself. Integrations call the tenant API and the data entry API on the installation's name.
 
 **Testing a failure** (no second domain needed). A domain never verified stays *Waiting for DNS* and the scheduled
 run does not try it, so a failure is tested with a name under the installation's own domain that does not exist in
@@ -1048,12 +1096,12 @@ docker compose exec database-service sh -c 'mongosh -u "$MONGO_INITDB_ROOT_USERN
 | Menu entry | Target |
 |---|---|
 | Manage links / Cadastro de links | `/portal/` |
-| Resolver API / API do Resolver | `/api/docs` (Swagger UI, the page previously shown at `/`) |
 | GS1 Digital Link standard | https://ref.gs1.org/standards/digital-link/ |
 | GS1 Global | https://www.gs1.org/ |
 | Source code (GitHub) | https://github.com/gs1/GS1_DigitalLink_Resolver_CE |
 
-Below the menu: cards for the portal and the resolver API, and GS1 references. The footer names the
+Below the menu: a card for the portal, and GS1 references (the menu entry and the card for the data entry API's
+documentation were removed when `/api` was closed by default, ADR 0021). The footer names the
 operator and carries the community notice (the software is maintained by its community, not by GS1 or any
 GS1 Member Organisation; whoever operates the installation is responsible for its use). The box that
 showed the shape of a GS1 Digital Link was removed in session 8.
@@ -1061,7 +1109,7 @@ showed the shape of a GS1 Digital Link was removed in session 8.
 **Way back.** The GS1 logo on the portal and on the resolver's pages, and the portal's user menu ("Home
 page"), lead back to `/`.
 
-**Domain independent.** Links to this installation are root-relative (`/portal/`, `/api/docs`,
+**Domain independent.** Links to this installation are root-relative (`/portal/`,
 `/.well-known/gs1resolver`), and the operator's name in the footer comes from `contact.fn` in the
 resolver description file, linked to `contact.hasURL` (`RESOLVER_ORG_URL`) when that is an `http(s)`
 address, as in the footer of the resolver's pages; any other address leaves the name as plain text. Nothing
@@ -1070,8 +1118,7 @@ in the page names a domain or an organisation, so another installation needs no 
 **What `/` showed before.** Upstream, the proxy sends `/` to the web server's API root, which is
 flask-restx's Swagger UI; that page loads `/api/swagger.json`, which the proxy routes to the data entry
 service, so it displayed exactly the data entry API documentation that `/api/docs` serves. The menu
-therefore links to `/api/docs`. If `/api` is later restricted at the edge (see "Hardening"), that menu
-entry will need the same exception or removal.
+linked to `/api/docs` until `/api` was closed by default (ADR 0021, "Hardening").
 
 **How it is served.** The front-end proxy (nginx) answers `location = /` and `location ^~ /home/` from
 `frontend_proxy_server/home`, copied into the proxy image; `/home` and `/home/` redirect to `/`.
@@ -1092,7 +1139,7 @@ in `index.html` is shown when JavaScript is off.
 ## Look and feel
 
 Both the portal and the resolver's own pages follow gs1.org: white header with the project's logo and the
-product name "GS1 Resolver Community Edition", a GS1 blue band with the page title, white panels on a pale
+product name "GS1 Digital Link Resolver Suite" (ADR 0024), a GS1 blue band with the page title, white panels on a pale
 blue-grey page, GS1 orange for the main action and teal links. gs1.org uses the licensed Gotham SSm
 typeface; these pages use Montserrat, the closest free match, with Verdana as the same fallback. The logo
 is the project's own (`logo.svg`), not GS1's. The operator can replace the title, the logo and the three main colours
@@ -1361,6 +1408,40 @@ chosen version and error correction level, and the label says when the content d
 opens for date fields on phones. AI titles are GS1's data titles, which are
 language-neutral on labels.
 
+## Supply chain
+
+What an installation builds is fixed by content, not by name ([ADR 0033](../adr/0033-supply-chain.md)):
+
+- **Python packages** come from each service's `requirements.txt`, which lists every package at one version with the
+  hashes of its files; the build fails if PyPI serves anything else. The portal's direct dependencies, ranges in
+  `portal/requirements.in`, no longer move at each build: they change only when the repository's lock files do.
+- **Base images** are named by tag and digest (`python:3.12-slim-bookworm@sha256:…`, `nginx:1.30-alpine@sha256:…`,
+  `mongo:7-jammy@sha256:…`, `node:24-bookworm-slim@sha256:…`, and the test relay's `axllent/mailpit`). `docker compose
+  build --pull` no longer brings a newer image of the same tag: the line's security releases arrive as a new digest in
+  the repository, then `git pull` and `docker compose up -d --build`.
+- **Node.js** in the resolver and the data entry API is the official Node.js image's binary, and `gs1encoder` comes
+  from `package-lock.json` with its integrity hash; the images no longer run NodeSource's setup script nor
+  `npm init es6`, and no longer contain npm or curl (`docker compose exec web-service curl …` no longer works; use
+  `python3 -c` or the host's curl).
+- **Updates** are proposed every Monday by Dependabot as pull requests against `master` (lock files,
+  image digests within their tag, GitHub Actions) and merged after the development tests pass; a release carries
+  them. For an installation that follows the development branch, `git pull` and `docker compose up -d --build` after
+  each merged update; for one that follows releases, the next release.
+- **Known vulnerabilities** are looked for by the *Supply chain* workflow (`.github/workflows/supply-chain.yml`) on
+  every change of a lock file, a Dockerfile or a workflow, and every Monday: pip-audit and npm audit read the lock
+  files, and Trivy scans the five images it builds. A vulnerability with a correction available turns it red (in
+  the images, HIGH and CRITICAL ones) until the update is merged; accepted exceptions, each with its reason and an
+  expiry within 90 days, are in `.github/supply-chain/accepted.yaml` (at present only files of the official MongoDB
+  image that its maintainers have yet to rebuild). The proxy image now also takes Alpine's security updates at each
+  build (`apk upgrade`), as the database image takes Ubuntu's. Read a red run in the repository's *Actions*
+  tab (the run's summary and the artefact *image-sboms-and-reports*).
+- **SBOM**: each GitHub release carries a CycloneDX SBOM of each image (`resolver-<tag>-<service>.cdx.json`), the
+  list of every package it contains, for an inventory or a scanner of your own.
+- **Reporting a weakness**: `SECURITY.md` (GitHub's private vulnerability reporting).
+
+The build needs outbound HTTPS to PyPI (`pypi.org`, `files.pythonhosted.org`), the npm registry, Docker Hub and
+GitHub (the syntax engine's source), as before.
+
 ## Resolver CE changes
 
 | Before | After | Standard reference |
@@ -1482,8 +1563,9 @@ docker compose ps                          # …-web-service-1, …-web-service-
   container), `docker compose exec portal-service …` runs in the first replica (`--index 2` for another).
 - **Session key.** With several portal replicas on one host the fallback `secret.key` is shared through the
   volume; on several hosts set `PORTAL_SECRET_KEY` (the installer always does).
-- **The proxy image** follows nginx's 1.30 branch (`nginx:1.30-alpine`); `docker compose build --pull
-  frontend-proxy-service && docker compose up -d` takes its latest security release.
+- **The proxy image** follows nginx's 1.30 branch (`nginx:1.30-alpine`), named by digest: a new security release of
+  the branch arrives as a new digest in the repository ([Supply chain](#supply-chain)); `git pull` and
+  `docker compose up -d --build` take it.
 
 ### Load test and scale-out rehearsal
 
@@ -1554,14 +1636,48 @@ runs imports with the same rules).
   and `/api/summary`. In `/api/docs`, click **Authorize** and enter `Bearer <SESSION_TOKEN>`; the value
   stays only in that browser tab (nothing is stored) and is sent with every protected operation.
 
-- Behind a TLS reverse proxy on the same host set `PROXY_BIND_ADDRESS=127.0.0.1` and
-  `DATABASE_BIND_ADDRESS=127.0.0.1` in `.env`: plain HTTP (port 8080) and MongoDB (27017) then stay off the
-  network. Docker publishes ports past the host firewall (ufw/iptables), so this setting matters.
-- With the portal live, restrict `/api` and `/swaggerui` at the edge proxy to the integrations that
-  genuinely need them.
-- The portal is given no root database credentials: its MongoDB user may read and write the portal's own
-  database only (`readWrite` on `PORTAL_DB_NAME`); only the one-shot `portal-db-init` service receives
-  `MONGO_URI`.
+- Plain HTTP (port 8080) and MongoDB (27017) are published on `127.0.0.1` unless `.env` says otherwise
+  (`PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS`; ADR 0030): behind a TLS reverse proxy on the same host they stay off
+  the network. Docker publishes ports past the host firewall (ufw/iptables), so set `0.0.0.0` only for a proxy on
+  another machine, and limit who reaches the port there.
+- `/api` and `/swaggerui`, the official data entry API, are closed at the front-end proxy to every address
+  (403) unless `DATA_ENTRY_API_ALLOW` in `.env` lists it: addresses or networks separated by spaces or commas, or
+  `all` ([ADR 0021](../adr/0021-data-entry-api-closed.md)). The portal is not affected. Organisations' systems use
+  the tenant API with their own keys instead. Behind the host's nginx (`PROXY_BIND_ADDRESS=127.0.0.1`) the client's
+  address is the one it names; behind another proxy (an external load balancer, a CDN) list that proxy's addresses or
+  networks in `PROXY_TRUSTED_PROXIES`. The same address serves the portal's sign-in limits per address, its audit
+  trail and the resolver's approximate location: behind a proxy not listed, every client shares its address. After a
+  change: `docker compose up -d frontend-proxy-service`; the proxy's log says to whom
+  the API is open (`docker compose logs frontend-proxy-service | grep api-access`).
+- The front-end proxy limits requests per client address ([ADR 0031](../adr/0031-request-limits.md)), the address
+  found as above (an IPv6 address counts with the rest of its `/64`): resolution and the home page 50 a second
+  (`PROXY_LIMIT_RESOLVE`, bursts of 100), the portal, its API and the tenant API 30 a second (`PROXY_LIMIT_PORTAL`,
+  bursts of 90), sign-in, password recovery and single sign-on 60 a minute (`PROXY_LIMIT_SIGNIN`, bursts of 30), and
+  100 connections at once (`PROXY_LIMIT_CONNECTIONS`). Beyond them the proxy answers 429 with `Retry-After`. `0` turns
+  one off; list your monitoring and any integrator that resolves in bulk from known servers in `PROXY_LIMIT_EXEMPT`
+  (addresses or networks). The official data entry API has no rate, only the connection limit. After a change:
+  `docker compose up -d frontend-proxy-service`; the proxy's log shows the limits in force
+  (`docker compose logs frontend-proxy-service | grep 'request limits'`) and each refusal as a line with status 429
+  (with `PROXY_ACCESS_LOG=full`, also as a warning, `limiting requests`, naming the client).
+- The logs keep no scanner's address ([ADR 0043](../adr/0043-access-logs.md)). The front-end proxy writes one line per
+  request with the time, the method, the path's first segment (`/01`, `/portal`; `/...` for anything else, such as a
+  compressed link), the status, the size and the time taken: never the client's address, the rest of the path, the
+  query string, the User-Agent or the referrer. `PROXY_ACCESS_LOG=full` writes the former line with all of them, for a
+  diagnosis (personal data: say so in the privacy notice while it lasts); `off` writes nothing. The resolver, the data
+  entry API and the portal write no access log, and the installer's nginx sites keep none (`access_log off;`); for a
+  site written before, the installer prints the command that turns its log off. Each container keeps at most
+  `LOG_MAX_FILES` files (5) of `LOG_MAX_SIZE` (10m) of output, the oldest dropped first. After a change:
+  `docker compose up -d`; `docker compose logs frontend-proxy-service | grep 'access log'` shows the choice in force.
+- No service that answers requests is given the root database credentials
+  ([ADR 0030](../adr/0030-least-privilege-services.md)): the one-shot `portal-db-init` service alone receives
+  `MONGO_URI` and makes, at every start, a user per service with the least privileges it needs — the portal's own
+  database (`readWrite` on `PORTAL_DB_NAME`, read on the request log, insert-only on the journal), the resolver's
+  (reads the records and the portal settings it serves from, writes the request log) and the data entry API's (the
+  records only). The resolver, the data entry API and the portal run as unprivileged users in their containers.
+  **Updating an installation from before this change:** add the two new passwords to `.env` first, or run the
+  installer again, otherwise the resolver and the data entry API refuse to start on a real domain:
+  `grep -q '^RESOLVER_DB_PASSWORD=' .env || printf "RESOLVER_DB_PASSWORD='%s'\n" "$(openssl rand -hex 24)" >> .env`, the same
+  with `DATA_ENTRY_DB_PASSWORD`, then `docker compose up -d --build`.
 - For many users, switch on single sign-on per organisation (*Organisation sign-in*, below) and, once it works,
   password sign-in off for that organisation.
 - Set an export maximum for the organisations (*Organisations*) and limits per role on each organisation's page
@@ -1573,24 +1689,46 @@ runs imports with the same rules).
 record metadata, journal and daily request counts) and the request log `resolver_log`, through the database container so the credentials never appear on the host,
 and archives the portal's configuration volume, keeping 14 days in `/var/backups/resolver`. It finds the repository from its own location.
 
+**Encryption** ([ADR 0044](../adr/0044-encrypted-backups-and-sealed-secrets.md)). Every archive is encrypted with
+[age](https://age-encryption.org) as it is written (`resolver-<time>.archive.gz.age`, `portal-config-<time>.tar.gz.age`):
+nothing unencrypted reaches the disk or the off-server copy, and an archive changed by whoever holds it does not
+decrypt. The archives are encrypted to the public key of the **backup key**, `/etc/resolver-backup.key` (root, mode
+600; `BACKUP_KEY_FILE` in `.env` names another), which the installer — or, on an installation upgraded without it, the
+first run — creates. **Keep a copy of that key off the server** (a password manager, a printed copy in a safe): without
+it no backup can be restored, and a backup that survives the loss of the server is useless without it.
+```bash
+sudo apt-get install age                          # once, on an installation from before; the installer does it
+sudo scripts/resolver-backup.sh                   # NOTICE: a backup key was created in /etc/resolver-backup.key … OK …
+sudo cat /etc/resolver-backup.key                 # copy the three lines to the password manager
+```
+To keep the server unable to read its own backups, put the key's public part (`age-keygen -y /etc/resolver-backup.key`,
+`age1…`) in `BACKUP_RECIPIENTS` in `.env` (several separated by spaces) and move the key file off the server: the backup
+needs only the public keys. Without age the backup fails (`ERROR: age is not installed`, status 1, an alert from the
+portal's monitoring); `BACKUP_ENCRYPTION=off` in `.env` writes unencrypted archives, with a warning in each run, for a
+destination that encrypts by itself. Archives written before stay unencrypted until the 14 days remove them.
+
 ```bash
 sudo scripts/resolver-backup.sh                                     # test: prints OK and the sizes (ERROR and status 1 on a failure)
 sed "s|REPOSITORY|$PWD|" scripts/resolver-backup.cron | sudo tee /etc/cron.d/resolver-backup >/dev/null
 sudo chmod 644 /etc/cron.d/resolver-backup                          # daily at 02:30
 ```
 
-Restore the database (replaces the current one):
+Restore the database (replaces the current one); an encrypted archive is decrypted with the backup key on its way:
 ```bash
-docker compose exec -T database-service sh -c 'mongorestore -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --archive --gzip --drop' < /var/backups/resolver/ARCHIVE.archive.gz
+sudo age -d -i /etc/resolver-backup.key /var/backups/resolver/ARCHIVE.archive.gz.age | docker compose exec -T database-service sh -c 'mongorestore -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --archive --gzip --drop'
+# an archive from before encryption: … --archive --gzip --drop' < /var/backups/resolver/ARCHIVE.archive.gz
 ```
 Then run `docker compose up -d`: `portal-db-init` runs again and gives the portal's user the password in
 `.env`, whatever the restored database held.
 
-Restore the portal configuration (the fallback session key and the `*.migrated` copies; only needed when
-`PORTAL_SECRET_KEY` is not set):
+Restore the portal configuration (the fallback session key, the fallback data key `data.key` and the `*.migrated`
+copies; only needed when `PORTAL_SECRET_KEY` or `PORTAL_DATA_KEY` is not set):
 ```bash
-docker compose exec -T portal-service tar -xzf - -C /app/config < /var/backups/resolver/portal-config-ARCHIVE.tar.gz
+sudo age -d -i /etc/resolver-backup.key /var/backups/resolver/portal-config-ARCHIVE.tar.gz.age | docker compose exec -T portal-service tar -xzf - -C /app/config
 ```
+The organisations' single sign-on client secrets are sealed in the database with `PORTAL_DATA_KEY` (or `data.key`):
+restored on another server, they open only with that key — keep `.env` with the backup key; otherwise each
+organisation's administrator enters its secret again (the *Organisation sign-in* screen says *secret unreadable*).
 A backup taken before the portal used its database holds the portal's data in that archive (`users.json`,
 `records-meta.json`, `journal.jsonl`) and none in the database dump. To restore such a backup, restore both,
 remove the portal's database (`docker compose exec database-service sh -c 'mongosh -u
@@ -1611,7 +1749,9 @@ sudo scripts/resolver-backup.sh                    # … copied to backup@vault.
 **Restore rehearsal.** `scripts/restore-rehearsal.sh` restores an archive (the newest by default, or the one named)
 into a throw-away MongoDB container of the installation's own image, with no network and nothing shared with the
 running installation, prints each collection's documents next to the live database's, checks that the resolver's
-records and the portal's users are in it, and removes the container. Run it after the first backup and then from time
+records and the portal's users are in it, and removes the container. An encrypted archive is decrypted with the backup key
+(`BACKUP_KEY_FILE`; for a key kept elsewhere: `sudo BACKUP_KEY_FILE=/media/usb/resolver-backup.key
+scripts/restore-rehearsal.sh`). Run it after the first backup and then from time
 to time (monthly), and after an upgrade of MongoDB:
 ```bash
 sudo scripts/restore-rehearsal.sh
@@ -1633,6 +1773,9 @@ rotates all four; name some to rotate only those:
 | `token` | `SESSION_TOKEN` | Systems that call the data entry API (`/api`) need the new token |
 | `session` | `PORTAL_SECRET_KEY` | Every portal user is signed out |
 | `portal-db` | `PORTAL_DB_PASSWORD` | Nothing: `portal-db-init` gives the portal's database user the new password on the start |
+| `resolver-db` | `RESOLVER_DB_PASSWORD` | Nothing: the same for the resolver's database user (ADR 0030) |
+| `data-entry-db` | `DATA_ENTRY_DB_PASSWORD` | Nothing: the same for the data entry API's database user |
+| `data` (only when named) | `PORTAL_DATA_KEY` | The former key is kept as `PORTAL_DATA_KEY_PREVIOUS`; the portal seals the stored single sign-on client secrets again with the new key when it starts (ADR 0044). Rotate it again only after that start |
 | `mongo` | `MONGO_INITDB_ROOT_PASSWORD`, `MONGO_URI` | Changed in MongoDB first (the new password given to `mongosh` on standard input); when the database refuses, `.env` keeps the old one and the script ends with status 1 |
 
 No secret is printed or put on a command line. The previous `.env` is kept as `.env.bak-<time>` (mode 600) for going
@@ -1646,7 +1789,7 @@ curl -s http://127.0.0.1:8080/portal/healthz       # {"portal":"ok","resolver":"
 
 An installation of the official GS1 Resolver CE v3 (the four services of its `docker-compose.yml`, the records in the
 database `resolver_ce` of the volume `resolver-database-volume`) is upgraded in its own folder by
-`scripts/upgrade-from-official.sh`; the Expansion Pack keeps the same database image (MongoDB 7), the same database and
+`scripts/upgrade-from-official.sh`; the GS1 Digital Link Resolver Suite keeps the same database image (MongoDB 7), the same database and
 the same document format, so the records need no conversion. The folder matters: Docker Compose names the volume after
 it, and a clone elsewhere would start with an empty database.
 
@@ -1665,7 +1808,7 @@ The log is `/var/log/gs1-resolver-upgrade.log`. The way back, printed at the end
 were — `mongorestore --archive --gzip --drop` of the backup. After an upgrade with the official default password,
 rotate it (`sudo scripts/rotate-secrets.sh mongo`); a data entry token that was the default `secret` is replaced by the
 installer, so systems that call `/api` need the new one (`SESSION_TOKEN` in `.env`). The official installation published
-the database's port 27017 and the proxy's 8080 on every interface; the Expansion Pack binds both to `127.0.0.1` and puts
+the database's port 27017 and the proxy's 8080 on every interface; the GS1 Digital Link Resolver Suite binds both to `127.0.0.1` and puts
 nginx with HTTPS in front (or your own proxy: the installer's HTTPS mode `external`).
 
 ## Going to production

@@ -5,11 +5,16 @@ from flask_cors import CORS
 import logging
 import os
 from typing import Any
+import db_budget
 import domains
+import example_secrets
 import forwarding
 import gs1_syntax
 import landing
 import request_log
+import resolution
+import service_db
+import settings_age
 import web_pages
 from web_namespace import web_namespace
 from mongo_db_init import mongo, init_mongo
@@ -34,18 +39,29 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     server_description = f"The web server is running at https://{os.getenv('FQDN', 'set-domain-name-in-env-variable-FQDN.com')}"
     logger.info(server_description)
 
-    mongo_url = os.getenv('MONGO_URI')
-    if not mongo_url:
-        raise RuntimeError("MONGO_URI environment variable is not set")
+    # the resolver's own MongoDB user, never the root one (ADR 0030); its example password refused outside development
+    example_secrets.refuse(['RESOLVER_DB_PASSWORD'])
+    example_secrets.warn(['MONGO_URI'], logger)
+    mongo_url = service_db.uri('RESOLVER', logger)
     # Log the host only — do not log credentials
-    mongo_host = mongo_url.split('@')[-1] if '@' in mongo_url else mongo_url
-    logger.info("Connecting to MongoDB at %s", mongo_host)
+    logger.info("Connecting to MongoDB at %s", service_db.host_of(mongo_url))
     app.config["MONGO_URI"] = mongo_url
     app.config["MONGO_DBNAME"] = "resolver_ce"
 
     # initialise the MongoDB connection
     init_mongo(app)
     logger.info("MongoDB connection initialised")
+    # the time a request may spend reading MongoDB (finding F-032, Documentation/adr/0052-database-time-budget.md)
+    if db_budget.invalid():
+        logger.warning("%s must be a whole number of milliseconds from %d to %d: %d is used.", db_budget.SETTING,
+                       db_budget.MIN_MS, db_budget.MAX_MS, db_budget.DEFAULT_MS)
+    logger.info("A request may spend %.1f s reading MongoDB", db_budget.seconds())
+    # how long the caches may go on with the portal's settings they cannot read again (finding F-033,
+    # Documentation/adr/0053-settings-age.md)
+    if settings_age.invalid():
+        logger.warning("%s must be a whole number of seconds from %d to %d: %d is used.", settings_age.SETTING,
+                       settings_age.MIN_S, settings_age.MAX_S, settings_age.DEFAULT_S)
+    logger.info("The portal's settings are used for %d s at most when they cannot be read again", settings_age.limit())
 
     with app.app_context():
         # setting up a blueprint for your API routes
@@ -90,12 +106,18 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     if domains.MAP.database is None:
         domains.MAP.database = lambda: mongo.cx[domains.portal_db_name()]
     app.wsgi_app = domains.Middleware(app.wsgi_app)
+    # every database read of a request, the domains' above included, within one time budget (finding F-032,
+    # Documentation/adr/0052-database-time-budget.md)
+    app.wsgi_app = db_budget.Budget(app.wsgi_app)
     # The brands of the item's page (Documentation/adr/0011-item-page.md), from the same database
     if landing.BRANDS.database is None:
         landing.BRANDS.database = lambda: mongo.cx[domains.portal_db_name()]
     # Forwarding by prefix and the resolver of last resort (Documentation/adr/0018-forwarding.md), from the same database
     if forwarding.FORWARDING.database is None:
         forwarding.FORWARDING.database = lambda: mongo.cx[domains.portal_db_name()]
+    # The strict mode for safety-critical link types (Documentation/adr/0022-answering-level.md), from the same database
+    if resolution.STRICT.database is None:
+        resolution.STRICT.database = lambda: mongo.cx[domains.portal_db_name()]
     # The installation's appearance (Documentation/adr/0019-appearance.md): title, logo and colours of its pages
     if web_pages.APPEARANCE.database is None:
         web_pages.APPEARANCE.database = lambda: mongo.cx[domains.portal_db_name()]
@@ -103,7 +125,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     @app.after_request
     def add_headers(response: Response) -> Response:
         response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
-        response.headers['Access-Control-Expose-Headers'] = 'Link, Location'
+        # Resolution-Anchor and Resolution-Match: the level that answered (ADR 0022); Resolution-Fallback: the
+        # language or context asked that the links given do not serve (ADR 0028)
+        response.headers['Access-Control-Expose-Headers'] = \
+            'Link, Location, Resolution-Anchor, Resolution-Match, Resolution-Fallback'
+        # the browser's rules (ADR 0038, finding F-021): a page runs and styles only its own elements, nothing frames
+        # it, no type is guessed, and the address of a scanned item goes to no other site
+        response.headers.setdefault('Content-Security-Policy', web_pages.content_security_policy())
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
         return response
 
     return app

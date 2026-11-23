@@ -229,20 +229,22 @@ codes |= set(re.findall(r'data-i18n="((?:org|alerts|prefixes|nav|dialog)\.[A-Za-
 codes |= {"menu.organisation", "menu.alerts", "tenants.open", "overview.organisation", "alerts.kind.resolver",
           "alerts.kind.backup", "alerts.kind.certificate", "alerts.kind.404", "alerts.kindUnknown", "alerts.dateInvalid",
           "org.tab.prefixes", "org.tab.users", "org.tab.domains", "org.tab.brands", "org.tab.sso", "org.tab.apikeys",
-          "org.tab.alerts"}
+          "org.tab.alerts", "org.tab.resolution"}
 codes = {c for c in codes if not c.endswith(".")}
 missing = sorted(c for c in codes if i18n.count(f'"{c}"') != 2)
 check(f"every new text in both languages ({len(codes)})", len(codes) > 60 and not missing, missing)
 code_only = re.sub(r"//.*", "", re.sub(r"/\*.*?\*/", "", script, flags=re.S))
 check("no confirmation through the browser's dialog left", "confirm(" not in code_only
-      and script.count("await ask(") == 19, script.count("await ask("))   # the fourteen, the organisation's prefixes,
+      and script.count("await ask(") == 21, script.count("await ask("))   # the fourteen, the organisation's prefixes,
                                                                             # an older GCP length table (item 9.9),
-                                                                            # a version of the privacy notice (ADR 0017)
+                                                                            # a version of the privacy notice (ADR 0017),
+                                                                            # a single sign-on binding (ADR 0025)
                                                                             # a forwarding rule removed (ADR 0018)
-                                                                            # and the original appearance (ADR 0019)
+                                                                            # the original appearance (ADR 0019)
+                                                                            # and the strict mode switched on (ADR 0022)
 check("the sidebar is built from the user menu's screens (one list)", script.count('".menu-panel a.nav-item"') == 1
-      and index.count("nav-item") == 17, index.count("nav-item"))     # with the privacy notice, forwarding and
-                                                                        # the appearance
+      and index.count("nav-item") == 18, index.count("nav-item"))     # with the privacy notice, forwarding,
+                                                                        # the appearance and About (ADR 0024)
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

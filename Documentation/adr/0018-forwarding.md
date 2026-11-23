@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (21 October 2026). Implemented in one delivery |
+| Status | **Accepted** (21 October 2026). Implemented in one delivery; decision 4 amended by [ADR 0046](0046-forwarding-tells-organisations.md) on 22 November 2026 (a change that sends an organisation's codes elsewhere, or stops, is in its own trail and told to its administrators) |
 | Backlog item | The owner's request of 21 October, before the staging tests of session 17 |
 | Decided by | the owner of the branch, who gave the requirements; the recommended option on the points they left open (section 4) |
 
@@ -51,6 +51,8 @@ The owner asked for:
    a journal event (`forwarding-fallback`, `forwarding-rule-create`, `-update`, `-remove`). A rule whose prefix
    overlaps an organisation's prefixes is allowed, with the organisations named beside it: their codes of that
    prefix are no longer answered here.
+   *Amended by [ADR 0046](0046-forwarding-tells-organisations.md) (finding F-028): each change that changes where an
+   organisation's codes go is also an event in that organisation's trail and a message to its administrators.*
 5. **Destinations are checked**: `https` only, at most 500 characters, never this installation's own address
    (`RESOLVER_PUBLIC_URL`) nor one of its organisations' verified domains — a request sent back here would go round
    in circles.

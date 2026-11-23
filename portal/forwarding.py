@@ -14,6 +14,7 @@ import re
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
+import gs1
 import store
 
 SETTING_FALLBACK = "forwarding.fallback"
@@ -62,6 +63,9 @@ def check_target(value, own_hosts: set[str]) -> str:
         raise ForwardingError("forwarding.urlInvalid") from None
     if parts.scheme != "https" or not host or any(c.isspace() for c in url) or parts.username or parts.password:
         raise ForwardingError("forwarding.urlInvalid")
+    problem = gs1.target_host_problem(url)             # an address literal or a private name (ADR 0037)
+    if problem:
+        raise ForwardingError(problem, url=url)
     if host in own_hosts:
         raise ForwardingError("forwarding.urlSelf", host=host)
     return url
@@ -145,10 +149,39 @@ def remove_rule(prefix) -> dict:
     return found
 
 
+def covered(prefix: str, tenant: dict) -> list[str]:
+    """The organisation's prefixes that overlap a rule's (some or all of their codes go where the rule says)."""
+    return [p for p in tenant.get("prefixes") or [] if p.startswith(prefix) or prefix.startswith(p)]
+
+
 def overlaps(prefix: str, tenant_list: list[dict]) -> list[str]:
     """The organisations whose prefixes overlap a rule's: their codes of that prefix are answered elsewhere."""
-    return sorted(t["name"] for t in tenant_list
-                  if any(p.startswith(prefix) or prefix.startswith(p) for p in t.get("prefixes") or []))
+    return sorted(t["name"] for t in tenant_list if covered(prefix, t))
+
+
+def destination(found: dict | None) -> tuple[str, str] | None:
+    """Where a rule sends its prefix's codes: (target, mode) while it is on; None when it is off or absent."""
+    return (found["target"], found["mode"]) if found and found.get("enabled") else None
+
+
+def changes_destination(before: dict | None, after: dict | None) -> bool:
+    """Whether a change of a rule (created: before None; removed: after None) changes where its codes go: switched
+    on or off, created or removed while on, or another destination or mode while on (a note never does)."""
+    return destination(before) != destination(after)
+
+
+def newly_covered(previous: list[str], tenant: dict) -> list[tuple[dict, list[str]]]:
+    """The rules switched on that cover prefixes an organisation has now and did not have before (its prefixes
+    changed; finding F-028, ADR 0054): [(rule, the new prefixes it covers)], by rule prefix."""
+    before = {"prefixes": previous or []}
+    found = []
+    for r in rules():
+        if not destination(r):
+            continue
+        new = [p for p in covered(r["prefix"], tenant) if p not in covered(r["prefix"], before)]
+        if new:
+            found.append((r, new))
+    return found
 
 
 def rule_of(ai: str, value: str, every: list[dict]) -> str | None:

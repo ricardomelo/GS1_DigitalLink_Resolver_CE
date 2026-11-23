@@ -1,0 +1,18 @@
+# The development tests' Python environment (dev-tests/README.md): the three services' direct dependencies and
+# the test tools, resolved together into dev-tests/requirements.txt with every file's hash, by
+# dev-tests/lock-dependencies.sh. The services' own lock files are then resolved inside this one, so that a
+# package has the same version everywhere (Documentation/adr/0033-supply-chain.md).
+-r ../portal/requirements.in
+-r ../web_server/src/requirements.in
+-r ../data_entry_server/src/requirements.in
+pytest
+jsonschema
+# the release whose Chromium build the cloud sessions have pre-installed
+playwright==1.56.0
+opencv-python-headless
+pypdf
+mongomock
+pyyaml                 # reads the workflows and the composition (test_supply_chain.py)
+packaging              # compares locked versions with the .in files' specifiers (test_supply_chain.py)
+zxing-cpp>=2.2,<4      # reads the labels' Data Matrix back (test_datamatrix.py)
+mmdb-writer>=0.2.7,<0.3   # writes the GeoIP database test_request_log.py looks addresses up in

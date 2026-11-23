@@ -1,9 +1,12 @@
 """
 Monitoring and alerts by e-mail (Documentation/adr/0008-monitoring-and-alerts.md): the settings; the resolver checked
 through a stand-in proxy (two failed rounds before an alert, a reminder a day, a message when it answers again, the
-probe of a registered code); the backup's record (unknown, late, failed, good again); the certificate (expiring,
+probe of a registered code); the resolver's settings by its heartbeat (finding F-033: an alert while it says they are
+stale, reminded daily, resolved; unknown when it does not answer or says nothing); the backup's record (unknown, late, failed, good again); the certificate (expiring,
 invalid, unreachable, once an hour); the request log's space against its limit (80 %, then every 5); the age of GS1's
-GCP length table (unknown without one, an alert from 90 days, reminded weekly, resolved by a newer list); spikes of 404 per scope against the usual hourly number; who receives what (server
+GCP length table (unknown without one, an alert from 90 days, reminded weekly, resolved by a newer list); the journal's
+hash chains (ADR 0026: unknown before the first verification, an alert when the daily or an administrator's
+verification finds a chain broken, reminded daily, resolved; a wrong receipt never alerts); spikes of 404 per scope against the usual hourly number; who receives what (server
 administrators, an organisation's administrators, the category switched off, disabled accounts); the lock and the
 switch; the worker's schedule; the overview's alerts per scope; the messages in both languages.
 
@@ -70,6 +73,15 @@ def check(name, condition, detail=""):
 # A stand-in proxy whose answers the test chooses
 proxy = Flask("proxy")
 ANSWER = {"/.well-known/gs1resolver": 200, "/01/09506000134352": 307}
+
+
+HEART = {"status": 200, "body": {"response_message": "Server is running!", "settings": "current"}}
+
+
+@proxy.route("/heartbeat")
+def heartbeat():
+    # the resolver's heartbeat, its settings' age (finding F-033)
+    return HEART["body"], HEART["status"]
 
 
 @proxy.route("/<path:path>")
@@ -170,6 +182,51 @@ os.environ["PORTAL_MONITOR_URL"] = "http://127.0.0.1:9/.well-known/gs1resolver"
 ok, detail = monitor.check_resolver()
 check("a proxy that does not answer: a failure with the error's name", not ok and detail.get("error"), detail)
 os.environ["PORTAL_MONITOR_URL"] = f"http://127.0.0.1:{PROXY_PORT}/.well-known/gs1resolver"
+
+# ================================================================== the resolver's settings (finding F-033, ADR 0053)
+clear()
+monitor._run(NOW)
+check("the resolver's settings: the heartbeat through the proxy says current: ok, no message",
+      state("settings") == "ok" and not sent()
+      and ALERTS.find_one({"_id": "settings"})["detail"] == {"url": f"http://127.0.0.1:{PROXY_PORT}/heartbeat"},
+      (state("settings"), sent(), ALERTS.find_one({"_id": "settings"})))
+HEART["body"] = {"response_message": "Server is running!", "settings": "stale"}
+monitor._run(NOW + timedelta(minutes=5))
+check("…stale: an alert at once (the resolver waited RESOLVER_SETTINGS_MAX_AGE_S already), a message to the server "
+      "administrators who want alerts", state("settings") == "alert" and sent() == [("root", "alert-settings-stale")],
+      sent())
+job = MAIL.find_one({"template": "alert-settings-stale"})
+check("…the message says what the resolver no longer applies, what it keeps and where to look",
+      job and job["subject"] == "Alert: the resolver cannot read the portal's settings"
+      and "/heartbeat" in job["text"] and "Example Operator" in job["text"] and "RESOLVER_SETTINGS_MAX_AGE_S" in job["text"]
+      and "resolver of last resort" in job["text"] and "docker compose logs --tail=100 web-service" in job["text"],
+      job and job["text"][:600])
+check("…in the alert history", store.col(monitor.HISTORY).find_one({"check": "settings", "endedAt": None}) is not None)
+monitor._run(NOW + timedelta(minutes=10))
+check("…no new message while it lasts", len(sent("alert-settings-stale")) == 1, sent())
+monitor._run(NOW + timedelta(hours=24, minutes=6))
+check("…a reminder after 24 hours", sent("alert-settings-stale") == [("root", "alert-settings-stale")] * 2, sent())
+HEART["status"] = 503
+monitor._run(NOW + timedelta(hours=24, minutes=11))
+check("…a heartbeat that does not answer: unknown, which resolves nothing and sends nothing (the check resolver covers "
+      "it)", state("settings") == "unknown" and not sent("alert-settings-current"), sent())
+HEART["status"] = 200
+HEART["body"] = {"response_message": "Server is running!"}
+check("…a heartbeat without settings (a resolver older than the finding): unknown", monitor.check_settings()[0]
+      == "unknown")
+HEART["body"] = "not JSON"
+check("…an answer that is not JSON: unknown", monitor.check_settings()[0] == "unknown")
+HEART["body"] = {"response_message": "Server is running!", "settings": "stale"}
+monitor._run(NOW + timedelta(hours=24, minutes=16))
+HEART["body"] = {"response_message": "Server is running!", "settings": "current"}
+monitor._run(NOW + timedelta(hours=24, minutes=21))
+check("…current again: resolved, a message", state("settings") == "ok"
+      and sent()[-1] == ("root", "alert-settings-current"), sent())
+job = MAIL.find_one({"template": "alert-settings-current"})
+check("…which names the date it was reported", job and job["subject"]
+      == "Resolved: the resolver reads the portal's settings again" and " UTC" in job["text"], job and job["text"][:300])
+check("the check among the installation's checks and the kinds of the alert history",
+      "settings" in monitor.CHECKS and "settings" in monitor.KINDS)
 
 # ================================================================== the backup's record
 clear()
@@ -412,6 +469,73 @@ gcp.forget()
 monitor._run(S + timedelta(days=10))
 clear()
 
+# ================================================================== the journal's hash chains (ADR 0026, section 2.5)
+import journal  # noqa: E402
+
+
+def journal_round(days_after=0):
+    return monitor._run(S + timedelta(days=11 + days_after, seconds=1))["journal"]
+
+
+def verify_all():
+    store.col("settings").delete_one({"_id": "journalCheckpoint"})      # checkpoint() acts once a day
+    return journal.checkpoint()
+
+
+clear()
+store.col("settings").delete_one({"_id": journal.VERIFIED_SETTING})
+journal_round()
+check("the journal: before the first verification, unknown and no message",
+      state("journal") == "unknown" and ALERTS.find_one({"_id": "journal"})["detail"] == {"reason": "notVerified"}
+      and not sent("alert-journal"), ALERTS.find_one({"_id": "journal"}))
+journal.append("settings", "root", detail="monitor test 1")
+journal.append("settings", "root", detail="monitor test 2")
+verify_all()
+detail = ALERTS.find_one({"_id": "journal"}) and journal_round() is None and ALERTS.find_one({"_id": "journal"})["detail"]
+check("…every chain whole after the daily verification: ok, with when and how many chains",
+      state("journal") == "ok" and detail["count"] == 0 and detail["chains"] >= 1 and detail["at"], detail)
+victim = store.col("journal").find_one({"detail": "monitor test 1"})
+store.col("journal").update_one({"_id": victim["_id"]}, {"$set": {"detail": "changed behind the portal's back"}})
+check("…an event changed in the database: nothing yet until a verification", journal_round() is None
+      and state("journal") == "ok")
+verify_all()
+check("…the next verification finds it: an alert, a message to the server administrators",
+      journal_round() == "alert" and state("journal") == "alert" and sent("alert-journal") == [("root", "alert-journal")],
+      sent())
+job = MAIL.find_one({"template": "alert-journal"})
+check("…the message names the chain, the problem and the event",
+      job and "1 broken chain" in job["subject"] and f"operator/admin: hash #{victim['seq']}" in job["text"],
+      job and (job["subject"], job["text"][:500]))
+check("…the alert in the history, with the broken chain",
+      store.col(monitor.HISTORY).find_one({"check": "journal", "endedAt": None})["detail"]["broken"][0]["chain"]
+      == "operator/admin")
+check("…no reminder the same day", journal_round(0.5) is None and len(sent("alert-journal")) == 1)
+check("…a reminder the next day", journal_round(1.01) == "reminder" and len(sent("alert-journal")) == 2, sent())
+root = client("root", "root-password-long")
+root.get("/portal/api/audit/verify")
+check("an administrator's verification keeps the broken chain (still broken)",
+      journal.last_verification()["broken"] == [{"chain": "operator/admin", "kind": "hash", "seq": victim["seq"]}],
+      journal.last_verification())
+store.col("journal").update_one({"_id": victim["_id"]}, {"$set": {"detail": "monitor test 1"}})
+answer_verify = root.get("/portal/api/audit/verify").get_json()
+check("…once the event is put back (a restore), the administrator's verification takes the chain out at once",
+      all(c["ok"] for c in answer_verify["chains"]) and journal.last_verification()["broken"] == [],
+      journal.last_verification())
+check("…and the next round resolves the alert with a message", journal_round(1.02) == "resolved"
+      and sent()[-1] == ("root", "alert-journal-ok"), sent()[-2:])
+head = answer_verify["chains"][0]["head"]
+chain, seq, digest = journal.parse_receipt(head)
+wrong = journal.receipt_text(chain, seq, "0" * 64)
+answer_wrong = root.get(f"/portal/api/audit/verify?receipt={wrong}").get_json()
+check("a wrong receipt typed by an administrator is shown to them, never stored as an alert",
+      any(c.get("problem", {}).get("kind") == "receipt" for c in answer_wrong["chains"])
+      and journal.last_verification()["broken"] == [] and journal_round(1.03) is None and state("journal") == "ok",
+      (answer_wrong, journal.last_verification()))
+os.environ["PORTAL_MONITOR_MINUTES"] = "0"
+check("monitoring off: the journal is not checked either", monitor.run() == {})
+del os.environ["PORTAL_MONITOR_MINUTES"]
+clear()
+
 # ================================================================== the overview shows the alerts
 ANSWER["/.well-known/gs1resolver"] = 503
 monitor._run(S + timedelta(minutes=10)); monitor._run(S + timedelta(minutes=15))
@@ -422,7 +546,7 @@ root = client("root", "root-password-long")
 op = root.get("/portal/api/overview").get_json()["operation"]
 check("overview of a server administrator: every active alert and the state of each check",
       sorted(a["kind"] for a in op["alerts"]) == ["404", "404", "backup", "resolver"]
-      and set(op["checks"]) == {"resolver", "backup", "certificate", "logspace", "gcptable"},
+      and set(op["checks"]) == {"resolver", "settings", "backup", "certificate", "logspace", "gcptable", "journal"},
       op.get("alerts"))
 # Operation is the server administrators' only (ADR 0013); everyone else's alerts come with record quality
 ana = client("ana", "ana-password-long")
@@ -470,7 +594,7 @@ monitor._run(S + timedelta(minutes=30))
 job = MAIL.find_one({"template": "alert-404-spike", "user": "ana"})
 check("…messages in the recipient's language", job and "códigos sem cadastro" in job["subject"], job and job["subject"])
 templates = [t for t in mailtexts.TEXTS if t.startswith("alert-")]
-check("eleven alert messages", len(templates) == 11, templates)
+check("sixteen alert messages", len(templates) == 16, templates)
 for template in templates:
     en, pt = mailtexts.TEXTS[template]["en-GB"], mailtexts.TEXTS[template]["pt-BR"]
     same = mailtexts.placeholders(en[0] + en[1]) == mailtexts.placeholders(pt[0] + pt[1])
@@ -479,9 +603,10 @@ i18n = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read()
 keys = ["prefs.alerts", "overview.op.alerts", "overview.op.noAlerts", "overview.alertSince", "overview.check.resolver",
         "overview.check.backup", "overview.check.certificate", "overview.check.backupAt", "overview.check.certExpires",
         "overview.state.ok", "overview.state.alert", "overview.state.unknown"] + \
-       [f"overview.alert.{k}" for k in ("resolver", "backup", "certificate", "404", "logspace", "gcptable")] + \
+       [f"overview.alert.{k}" for k in ("resolver", "backup", "certificate", "404", "logspace", "gcptable", "journal")] + \
        ["overview.check.logspace", "overview.check.spaceUse", "overview.check.noLimit", "alerts.kind.logspace",
-        "overview.check.gcptable", "overview.check.gcpAge", "overview.check.gcpNone", "alerts.kind.gcptable", "gcp.old"]
+        "overview.check.gcptable", "overview.check.gcpAge", "overview.check.gcpNone", "alerts.kind.gcptable", "gcp.old",
+        "overview.check.journal", "overview.check.journalAt", "overview.check.journalNone", "alerts.kind.journal"]
 missing = [k for k in keys if i18n.count(f'"{k}"') != 2]
 check("the screen's texts in both languages", not missing, missing)
 

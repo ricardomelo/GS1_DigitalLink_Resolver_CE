@@ -121,8 +121,38 @@ for payload, expected in [({"domain": "localhost"}, "domains.nameInvalid"),
                           ({"domain": "y.acme.example", "mode": "proxy"}, "domains.modeInvalid")]:
     r = ana.post("/portal/api/domains", json=payload, headers=ORIGIN)
     check(f"refused: {payload} → {expected}", r.status_code == 422 and code(r) == expected, (r.status_code, code(r)))
+# a stem the installation's proxy would give to the portal, the data entry API or the home page (ADR 0045)
+reserved = {stem: code(ana.post("/portal/api/domains", json={"domain": "y.acme.example", "stem": stem}, headers=ORIGIN))
+            for stem in ("/portal", "/api", "/apiary/x", "/swaggerui", "/home/x", "/.well-known", "/PORTAL", "/Api")}
+check("refused: a stem whose first segment goes elsewhere at the proxy (/portal, /api…, /swaggerui, /home, /.well-known;"
+      " any case) → domains.stemInvalid (ADR 0045)", set(reserved.values()) == {"domains.stemInvalid"}, reserved)
+
+
+def stem_or_code(stem: str) -> str:
+    try:
+        return domains.clean_stem(stem)
+    except users.UserError as error:
+        return str(error)
+
+
+kept = [stem_or_code(s) for s in ("/portalx", "/gs1/api", "/homes", "/my-api")]
+check("…but the same words further in or longer are a stem like any other",
+      kept == ["/portalx", "/gs1/api", "/homes", "/my-api"], kept)
 r = bia.post("/portal/api/domains", json={"domain": "id.acme.example"}, headers=ORIGIN)
-check("a name is unique in the installation (another organisation cannot claim it)", code(r) == "domains.exists")
+check("a claim does not reserve the name: another organisation claims it too (ADR 0035)", r.status_code == 201
+      and not r.get_json()["item"]["verified"] and r.get_json()["item"]["domain"] == "id.acme.example", r.get_json())
+claims = sorted(d["_id"] for d in store.col("domains").find({"name": "id.acme.example"}))
+check("…each claim under its own key (the name and the scope); neither is the domain yet",
+      claims == sorted([f"id.acme.example {acme['id']}", f"id.acme.example {beta['id']}"])
+      and store.col("domains").find_one({"_id": "id.acme.example"}) is None, claims)
+check("…each organisation sees its own claim only", [d["domain"] for d in bia.get("/portal/api/domains").get_json()["domains"]]
+      == ["id.acme.example"] and [d["domain"] for d in ana.get("/portal/api/domains").get_json()["domains"]]
+      == ["id.acme.example"])
+check("…which the same organisation cannot claim twice", code(ana.post("/portal/api/domains",
+      json={"domain": "id.acme.example"}, headers=ORIGIN)) == "domains.exists")
+r = bia.get("/portal/api/domains").get_json()["domains"][0]
+check("…a claim not verified is deleted after 7 days (shown on its card)", r["expiresAt"] and
+      abs((store.parse_iso(r["expiresAt"]) - store.parse_iso(r["created"])).total_seconds() - 7 * 86400) < 5, r)
 r = ana.post("/portal/api/domains", json={"domain": "açaí.acme.example"}, headers=ORIGIN)
 check("an internationalised name is kept in Punycode", r.status_code == 201
       and r.get_json()["item"]["domain"] == "açaí.acme.example".encode("idna").decode(), r.get_json())
@@ -141,19 +171,31 @@ TXT["_gs1resolver.id.acme.example"] = ["v=spf1 -all", item["txtValue"]]
 r = ana.post("/portal/api/domains/id.acme.example/verify", json={}, headers=ORIGIN)
 check("with it: verified", code(r) == "domains.verified" and r.get_json()["item"]["verified"]
       and r.get_json()["item"]["seenAt"], r.get_json())
+check("…the first claim proved becomes the domain (key: the name; no expiry) and the other claims go",
+      [(d["_id"], d.get("tenant"), "expiresAt" in d) for d in store.col("domains").find({"name": "id.acme.example"})]
+      == [("id.acme.example", acme["id"], False)], list(store.col("domains").find({"name": "id.acme.example"})))
+check("…then another organisation cannot claim it", code(bia.post("/portal/api/domains", json={"domain": "id.acme.example"},
+                                                                 headers=ORIGIN)) == "domains.exists"
+      and bia.get("/portal/api/domains").get_json()["domains"] == [])
 TXT.clear()
 r = ana.post("/portal/api/domains/id.acme.example/verify", json={}, headers=ORIGIN)
 check("the record removed later: still verified (printed codes keep working)", r.status_code == 200
       and r.get_json()["item"]["verified"], r.get_json())
 doc = store.col("domains").find_one({"_id": "id.acme.example"})
 store.col("domains").update_one({"_id": "id.acme.example"}, {"$set": {"seenAt": doc["seenAt"] - timedelta(days=2)}})
-check("the daily look again records nothing when the record is gone", domains.recheck_all() == 0
-      and store.col("domains").find_one({"_id": "id.acme.example"})["verified"])
+check("the daily look again records nothing when the record is gone (2 days: not lapsed yet)",
+      domains.recheck_all() == [] and store.col("domains").find_one({"_id": "id.acme.example"})["verified"]
+      and "lapsedAt" not in store.col("domains").find_one({"_id": "id.acme.example"}))
 TXT["_gs1resolver.id.acme.example"] = [item["txtValue"]]
-check("…and when it was last seen when it is there", domains.recheck_all() == 1
+check("…and when it was last seen when it is there", domains.recheck_all() == []
       and store.col("domains").find_one({"_id": "id.acme.example"})["seenAt"] > doc["seenAt"])
-check("…once a day", domains.recheck_all() == 0)
-check("the look again is part of the worker's housekeeping", domains.recheck_all in portal.HOUSEKEEPING)
+seen = store.col("domains").find_one({"_id": "id.acme.example"})["seenAt"]
+TXT.clear()
+domains.recheck_all()
+check("…once a day", store.col("domains").find_one({"_id": "id.acme.example"})["seenAt"] == seen)
+TXT["_gs1resolver.id.acme.example"] = [item["txtValue"]]
+check("the look again is part of the worker's housekeeping (QR code and single sign-on domains)",
+      portal.recheck_domains in portal.HOUSEKEEPING and domains.recheck_all not in portal.HOUSEKEEPING)
 
 # ================================================================== defaults and labels
 r = ana.put("/portal/api/domains/id.acme.example", json={"defaultFor": ["7895555"]}, headers=ORIGIN)
@@ -319,6 +361,127 @@ actions = {e["action"] for e in store.col("journal").find({"tenant": acme["id"]}
 check("the journal: added, verified, changed, removed", {"domain-create", "domain-verify", "domain-update",
                                                          "domain-remove"} <= actions, actions)
 
+# ================================================================== claims that expire, proofs that lapse (ADR 0035)
+check("claims expire by a TTL index on expiresAt", ([("expiresAt", 1)], {"expireAfterSeconds": 0})
+      in store.INDEXES["domains"] and ([("name", 1)], {}) in store.INDEXES["domains"])
+bia.post("/portal/api/domains", json={"domain": "late.acme.example"}, headers=ORIGIN)
+store.col("domains").update_one({"name": "late.acme.example"}, {"$set": {"expiresAt": store.now() - timedelta(seconds=1)}})
+check("a claim whose time is up is neither listed nor found (before the TTL deletes it)",
+      bia.get("/portal/api/domains").get_json()["domains"] == []
+      and code(bia.post("/portal/api/domains/late.acme.example/verify", json={}, headers=ORIGIN)) == "domains.unknown")
+past = store.now() - timedelta(seconds=1)
+check("…also when the database has not deleted it yet (the TTL monitor runs about once a minute)",
+      [d["_id"] for d in domains._live([{"_id": "a", "verified": False, "expiresAt": past}, {"_id": "b", "verified": True},
+                                        {"_id": "c", "verified": False, "expiresAt": past + timedelta(days=1)}])]
+      == ["b", "c"])
+r = ana.post("/portal/api/domains", json={"domain": "late.acme.example"}, headers=ORIGIN)
+r2 = bia.post("/portal/api/domains", json={"domain": "late.acme.example"}, headers=ORIGIN)
+check("…and keeps nobody from claiming the name, its own organisation included", r.status_code == 201
+      and r2.status_code == 201, (r.get_json(), r2.get_json()))
+ana.delete("/portal/api/domains/late.acme.example", headers=ORIGIN)
+bia.delete("/portal/api/domains/late.acme.example", headers=ORIGIN)
+check("removing a claim leaves the others", store.col("domains").count_documents({"name": "late.acme.example"}) == 0)
+
+lapse_doc = store.col("domains").find_one({"_id": "id.acme.example"})
+hosts_col = store.col("domain_hosts")
+hosts_col.replace_one({"_id": "id.acme.example"}, {"_id": "id.acme.example", "state": "served"}, upsert=True)
+r = bia.post("/portal/api/domains", json={"domain": "id.acme.example"}, headers=ORIGIN)
+check("a verified domain that has not lapsed cannot be claimed", code(r) == "domains.exists")
+TXT.clear()
+store.col("domains").update_one({"_id": "id.acme.example"}, {"$set": {"seenAt": store.now() - timedelta(days=6, hours=23)}})
+check("the record missing for less than 7 days: not lapsed", domains.recheck_all() == []
+      and "lapsedAt" not in store.col("domains").find_one({"_id": "id.acme.example"}))
+store.col("domains").update_one({"_id": "id.acme.example"}, {"$set": {"seenAt": store.now() - timedelta(days=7, hours=1)}})
+mails = []
+real_send = portal.notify.send
+portal.notify.send = lambda user, template, **params: mails.append((user, template, params)) or True
+lapsed_count = portal.recheck_domains()
+lapse_doc = store.col("domains").find_one({"_id": "id.acme.example"})
+check("missing for 7 days at the daily look: lapsed (still verified: the resolver keeps serving it)",
+      lapsed_count == 1 and lapse_doc.get("lapsedAt") and lapse_doc["verified"], lapse_doc)
+event = store.col("journal").find_one({"action": "domain-lapsed"})
+check("…journalled in the organisation's trail, by the housekeeping ('-')", event and event.get("tenant") == acme["id"]
+      and event["user"] == "-" and event["detail"].startswith("id.acme.example record missing since ")
+      and not event.get("byOperator"), event)
+check("…and its administrators told (alert-domain-lapsed, with the record and the days)",
+      [(u, t) for u, t, _ in mails] == [("ana", "alert-domain-lapsed")] and mails[0][2]["domain"] == "id.acme.example"
+      and mails[0][2]["record"] == "_gs1resolver.id.acme.example" and mails[0][2]["days"] == 7
+      and mails[0][2]["seen"].endswith(" UTC"), mails)
+store.col("domains").update_one({"_id": "id.acme.example"}, {"$set": {"seenAt": lapse_doc["seenAt"] - timedelta(days=2)}})
+check("…once (the next looks change nothing and tell nobody)", portal.recheck_domains() == 0 and len(mails) == 1
+      and store.col("journal").count_documents({"action": "domain-lapsed"}) == 1)
+portal.notify.send = real_send
+item_lapsed = next(d for d in ana.get("/portal/api/domains").get_json()["domains"] if d["domain"] == "id.acme.example")
+check("the screen shows when it lapsed", item_lapsed["lapsedAt"] and item_lapsed["verified"]
+      and item_lapsed["expiresAt"] is None, item_lapsed)
+check("a lapsed domain is no longer offered for labels: not the default, not in the label panel, not a choice",
+      preview(ana, ACME) == f"https://id.example.org/01/{ACME}"
+      and ana.get("/portal/api/config").get_json()["domains"]["verified"] == []
+      and preview(ana, ACME, domain="id.acme.example") == (422, "domains.unusable"), preview(ana, ACME))
+TXT["_gs1resolver.id.acme.example"] = [item["txtValue"]]
+r = ana.post("/portal/api/domains/id.acme.example/verify", json={}, headers=ORIGIN)
+check("the record published again and verified: no longer lapsed, journalled as verified again",
+      r.status_code == 200 and not r.get_json()["item"]["lapsedAt"]
+      and "lapsedAt" not in store.col("domains").find_one({"_id": "id.acme.example"})
+      and preview(ana, ACME) == f"https://id.acme.example/gs1/01/{ACME}"
+      and store.col("journal").count_documents({"action": "domain-verify", "tenant": acme["id"]}) == 2, r.get_json())
+store.col("domains").update_one({"_id": "id.acme.example"}, {"$set": {"lapsedAt": store.now(),
+                                                                      "seenAt": store.now() - timedelta(days=8)}})
+domains.recheck_all()
+check("…or seen again by the daily look", "lapsedAt" not in store.col("domains").find_one({"_id": "id.acme.example"}))
+TXT.clear()
+store.col("domains").update_one({"_id": "id.acme.example"}, {"$set": {"seenAt": store.now() - timedelta(days=8)}})
+domains.recheck_all()
+r = bia.post("/portal/api/domains", json={"domain": "id.acme.example"}, headers=ORIGIN)
+check("a lapsed domain can be claimed by another organisation", r.status_code == 201, r.get_json())
+bia_value = r.get_json()["item"]["txtValue"]
+TXT["_gs1resolver.id.acme.example"] = [item["txtValue"]]
+r = bia.post("/portal/api/domains/id.acme.example/verify", json={}, headers=ORIGIN)
+check("…which proves it with its own record only", code(r) == "domains.txtMissing", r.get_json())
+TXT["_gs1resolver.id.acme.example"] = [bia_value]
+r = bia.post("/portal/api/domains/id.acme.example/verify", json={}, headers=ORIGIN)
+taken = store.col("domains").find_one({"_id": "id.acme.example"})
+check("…and takes it over: the domain is now the other organisation's, verified, not lapsed",
+      code(r) == "domains.verified" and taken["tenant"] == beta["id"] and taken["verified"]
+      and "lapsedAt" not in taken and store.col("domains").count_documents({"name": "id.acme.example"}) == 1, taken)
+check("…the first organisation's domain and the host's report of it gone", "id.acme.example" not in
+      [d["domain"] for d in ana.get("/portal/api/domains").get_json()["domains"]] and hosts_col.count_documents({"_id": "id.acme.example"}) == 0)
+event = store.col("journal").find_one({"action": "domain-released"})
+check("…journalled in the first organisation's trail", event and event.get("tenant") == acme["id"]
+      and event["detail"] == "id.acme.example proved elsewhere", event)
+r = ana.post("/portal/api/domains", json={"domain": "id.acme.example"}, headers=ORIGIN)
+check("…and the first organisation cannot claim it back while it holds", code(r) == "domains.exists")
+store.col("domains").insert_one({"_id": f"id.acme.example {acme['id']}", "name": "id.acme.example", "tenant": acme["id"],
+                                 "mode": "direct", "stem": "", "defaultFor": [], "token": "c" * 32, "verified": False,
+                                 "created": store.now(), "expiresAt": store.now() + timedelta(days=1)})
+TXT["_gs1resolver.id.acme.example"] = ["gs1resolver-verify=" + "c" * 32]
+r = ana.post("/portal/api/domains/id.acme.example/verify", json={}, headers=ORIGIN)
+check("…a claim made before (kept by an earlier version) cannot take over a domain that has not lapsed",
+      code(r) == "domains.exists" and store.col("domains").find_one({"_id": "id.acme.example"})["tenant"] == beta["id"])
+hosts_col.replace_one({"_id": "id.acme.example"}, {"_id": "id.acme.example", "state": "served"}, upsert=True)
+ana.delete("/portal/api/domains/id.acme.example", headers=ORIGIN)
+check("…removing that claim leaves the domain and the host's report of it",
+      store.col("domains").find_one({"_id": "id.acme.example"})["tenant"] == beta["id"]
+      and hosts_col.count_documents({"_id": "id.acme.example"}) == 1)
+bia.delete("/portal/api/domains/id.acme.example", headers=ORIGIN)
+
+store.col("domains").insert_many([
+    {"_id": "old.acme.example", "tenant": acme["id"], "mode": "direct", "stem": "", "defaultFor": [],
+     "token": "a" * 32, "verified": False, "created": store.now()},
+    {"_id": "kept.acme.example", "tenant": acme["id"], "mode": "direct", "stem": "", "defaultFor": [],
+     "token": "b" * 32, "verified": True, "verifiedAt": store.now(), "created": store.now()}])
+changed = domains.upgrade()
+old = store.col("domains").find_one({"name": "old.acme.example"})
+check("the upgrade: an unverified domain of an earlier version becomes a claim (7 days from now)", changed == 2
+      and old["_id"] == f"old.acme.example {acme['id']}" and old["token"] == "a" * 32
+      and abs((old["expiresAt"] - store.now()).total_seconds() - 7 * 86400) < 5
+      and store.col("domains").find_one({"_id": "old.acme.example"}) is None, old)
+check("…a verified one gets its name and keeps its key", store.col("domains").find_one(
+      {"_id": "kept.acme.example"}).get("name") == "kept.acme.example")
+check("…and a second run changes nothing", domains.upgrade() == 0)
+check("…which the portal runs at start", "domains.upgrade()" in open(os.path.join(PORTAL, "app.py")).read())
+store.col("domains").delete_many({"name": {"$in": ["old.acme.example", "kept.acme.example"]}})
+
 # ================================================================== texts
 i18n = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read()
 codes = set(re.findall(r'"(domains\.[A-Za-z.]+)"', open(os.path.join(PORTAL, "domains.py")).read()
@@ -326,7 +489,8 @@ codes = set(re.findall(r'"(domains\.[A-Za-z.]+)"', open(os.path.join(PORTAL, "do
 codes |= {"menu.domains", "label.domain", "label.domainDefault", "domains.mode.direct", "domains.mode.redirect",
           "domains.cert.pending", "domains.cert.served", "domains.cert.failed", "domains.certPending", "domains.certServed",
           "domains.certServedUntil", "domains.certFailed", "domains.certError.certificate", "domains.certError.nginx",
-          "domains.hostRun", "domains.hostRunLate", "domains.hostRunNever"}
+          "domains.hostRun", "domains.hostRunLate", "domains.hostRunNever", "domains.lapsedBadge", "domains.lapsed",
+          "domains.pendingUntil", "audit.action.domain-lapsed", "audit.action.domain-released"}
 missing = sorted(c for c in codes if i18n.count(f'"{c}"') != 2)
 check(f"every domains text in both languages ({len(codes)})", not missing, missing)
 

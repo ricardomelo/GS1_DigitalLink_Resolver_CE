@@ -3,14 +3,22 @@
 # installer generated, the database's own passwords changed to match, and the services recreated with them. A secret
 # is never printed or put on a command line; the previous .env is kept as .env.bak-<time> (mode 600).
 #
-#   sudo scripts/rotate-secrets.sh                 # every secret below
+#   sudo scripts/rotate-secrets.sh                 # every secret below but journal
 #   sudo scripts/rotate-secrets.sh token session   # only those named
 #
 #   token       SESSION_TOKEN               the data entry API's bearer token: systems that call /api need the new one
 #   session     PORTAL_SECRET_KEY           signs the portal's sessions: everyone is signed out
 #   portal-db   PORTAL_DB_PASSWORD          the portal's MongoDB user (portal-db-init sets it on the next start)
+#   resolver-db RESOLVER_DB_PASSWORD        the resolver's MongoDB user (likewise; Documentation/adr/0030-least-privilege-
+#                                           services.md)
+#   data-entry-db DATA_ENTRY_DB_PASSWORD    the data entry API's MongoDB user (likewise)
 #   mongo       MONGO_INITDB_ROOT_PASSWORD  MongoDB's root user, changed in the database first, then in .env and in
 #                                           MONGO_URI; skipped (nothing changed) when the database refuses
+#   journal     PORTAL_JOURNAL_KEY          seals the journal (ADR 0026); only when named: the events sealed before keep
+#                                           their links checked, but their seal is then reported as made with another key
+#   data        PORTAL_DATA_KEY             seals the single sign-on client secrets (ADR 0044); only when named: the former
+#                                           key moves to PORTAL_DATA_KEY_PREVIOUS, and the portal seals the secrets again
+#                                           with the new one when it starts (a value made with an even older key is lost)
 #
 # The services are recreated at the end (docker compose up -d): about a minute without the resolver, so run it at a
 # quiet hour. Take a backup first (scripts/resolver-backup.sh). Exit status 0 when every secret asked was rotated.
@@ -19,12 +27,13 @@ set -euo pipefail
 RESOLVER_DIR="${RESOLVER_DIR:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}"
 cd "$RESOLVER_DIR"
 ENV_FILE=.env
-ALL=(token session portal-db mongo)
+ALL=(token session portal-db resolver-db data-entry-db mongo)
+KNOWN=("${ALL[@]}" journal data)
 
 asked=("$@")
 (( ${#asked[@]} )) || asked=("${ALL[@]}")
 for name in "${asked[@]}"; do
-  [[ " ${ALL[*]} " == *" $name "* ]] || { echo "Unknown secret: $name (one of: ${ALL[*]})"; exit 2; }
+  [[ " ${KNOWN[*]} " == *" $name "* ]] || { echo "Unknown secret: $name (one of: ${KNOWN[*]})"; exit 2; }
 done
 [[ -f $ENV_FILE ]] || { echo "ERROR: no .env here ($RESOLVER_DIR): nothing to rotate"; exit 1; }
 
@@ -54,6 +63,15 @@ for name in "${asked[@]}"; do
     token)     put SESSION_TOKEN "$(random 32)"; rotated+=("SESSION_TOKEN (systems calling /api need the new value)") ;;
     session)   put PORTAL_SECRET_KEY "$(random 32)"; rotated+=("PORTAL_SECRET_KEY (portal users sign in again)") ;;
     portal-db) put PORTAL_DB_PASSWORD "$(random 24)"; rotated+=("PORTAL_DB_PASSWORD") ;;
+    resolver-db) put RESOLVER_DB_PASSWORD "$(random 24)"; rotated+=("RESOLVER_DB_PASSWORD") ;;
+    data-entry-db) put DATA_ENTRY_DB_PASSWORD "$(random 24)"; rotated+=("DATA_ENTRY_DB_PASSWORD") ;;
+    journal)   put PORTAL_JOURNAL_KEY "$(random 32)"; rotated+=("PORTAL_JOURNAL_KEY (events sealed before: another key)") ;;
+    data)
+      # the former key opens what it sealed until the portal has sealed it again (Documentation/adr/0044)
+      old="$(value PORTAL_DATA_KEY)"
+      [[ -n $old ]] && put PORTAL_DATA_KEY_PREVIOUS "$old"
+      put PORTAL_DATA_KEY "$(random 32)"
+      rotated+=("PORTAL_DATA_KEY (the former one kept as PORTAL_DATA_KEY_PREVIOUS; the portal seals the stored secrets again at its start)") ;;
     mongo)
       user="$(value MONGO_INITDB_ROOT_USERNAME)"; uri="$(value MONGO_URI)"
       if [[ -z $user || ! $uri =~ ^mongodb://[^:/@]+:[^@]*@ ]]; then

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GS1 Resolver Community Edition</title>
-  <meta name="description" content="GS1 Digital Link resolver: GS1 Resolver Community Edition.">
+  <title>GS1 Digital Link Resolver Suite</title>
+  <meta name="description" content="GS1 Digital Link resolver: GS1 Digital Link Resolver Suite.">
   <link rel="icon" type="image/png" href="/home/favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,7 +14,7 @@
 </head>
 <!--
   Home page served by the resolver's front-end proxy at "/".
-  Every link to this installation is root-relative (/portal/, /api/docs, /.well-known/gs1resolver)
+  Every link to this installation is root-relative (/portal/, /.well-known/gs1resolver)
   and the resolver root is read from window.location, so the page works unchanged on any domain.
   Text is filled in by home.js from its message catalogue; the English text below is the fallback
   shown when JavaScript is unavailable.
@@ -26,7 +26,7 @@
     <div class="header-inner">
       <a class="brand" href="/">
         <img src="/home/logo.svg" alt="" width="44" height="44">
-        <span class="product">GS1 Resolver Community Edition</span>
+        <span class="product">GS1 Digital Link Resolver Suite</span>
       </a>
       <div class="header-tools">
         <label class="locale-picker">
@@ -45,7 +45,6 @@
     <nav class="site-nav" id="site-nav" data-i18n-attr="aria-label:nav.label" aria-label="Main menu">
       <ul class="nav-inner">
         <li><a href="/portal/" data-i18n="nav.portal">Manage links</a></li>
-        <li><a href="/api/docs" data-i18n="nav.api">Resolver API</a></li>
         <li class="nav-sep" aria-hidden="true"></li>
         <li><a class="ext" href="https://ref.gs1.org/standards/digital-link/"><span data-i18n="nav.standard">GS1 Digital Link standard</span><span class="visually-hidden" data-i18n="link.external">(external site)</span></a></li>
         <li><a class="ext" href="https://www.gs1.org/">GS1 Global<span class="visually-hidden" data-i18n="link.external">(external site)</span></a></li>
@@ -65,15 +64,11 @@
     <div class="sheet">
       <section aria-labelledby="here-title">
         <h2 id="here-title" data-i18n="here.title">On this resolver</h2>
-        <ul class="cards">
+        <ul class="cards cards-1">
           <li class="card card-main">
             <h3><a href="/portal/" data-i18n="card.portal.title">Link management portal</a></h3>
             <p data-i18n="card.portal.text">Register products, batches, serial numbers, locations, logistic units, documents and assets identified by GS1 keys and choose where each GS1 Digital Link QR code leads. Requires a username and password.</p>
             <a class="btn btn-primary" href="/portal/" data-i18n="card.portal.action" tabindex="-1" aria-hidden="true">Open the portal</a>
-          </li>
-          <li class="card">
-            <h3><a href="/api/docs" data-i18n="card.api.title">Resolver API (Swagger UI)</a></h3>
-            <p data-i18n="card.api.text">Interactive documentation of the Resolver CE data entry API, previously shown at the root of this address. For system integrations; writing requires an access token.</p>
           </li>
         </ul>
       </section>
@@ -100,10 +95,10 @@
 
   <footer class="site-footer">
     <p>
-      <span class="product">GS1 Resolver Community Edition</span>
+      <span class="product">GS1 Digital Link Resolver Suite</span>
       <span id="operator" hidden> · <span data-i18n="footer.operatedBy">Operated by</span> <span id="operator-name"></span></span>
     </p>
-    <p class="footer-links"><a href="/portal/privacy" data-i18n="footer.privacy">Privacy notice</a></p>
+    <p class="footer-links"><a href="/portal/about" data-i18n="footer.about">About</a> · <a href="/portal/privacy" data-i18n="footer.privacy">Privacy notice</a></p>
     <p class="notice" id="notice" data-i18n="footer.notice">Software maintained by its community, not by GS1 or any GS1 Member Organisation. Whoever operates this installation is responsible for its use.</p>
   </footer>
 </body>

@@ -326,6 +326,7 @@ api_client.get("/portal/api/v1/", headers=auth)
 api_client.get(f"/portal/api/v1/records/01/0{ACME_IN}?qualifiers=/10/SECRETBATCH", headers=auth)
 api_client.get("/portal/api/v1/records")                                     # no key
 calls = list(store.col("api_requests").find({}, {"_id": 0}).sort("t", 1))
+calls = [c for c in calls if "key" in c] + [c for c in calls if "key" not in c]   # the counted minute sorts first
 check("each call is recorded", len(calls) == 3, calls)
 check("…with the key and its organisation", calls[0].get("key") == key_id and calls[0].get("tenant") == acme["id"]
       and calls[0].get("op") == "/portal/api/v1/" and calls[0].get("s") == 200 and calls[0].get("m") == "GET", calls[0])
@@ -333,6 +334,20 @@ check("…the route's template, never the record or the query string",
       calls[1].get("op") == "/portal/api/v1/records/<key>/<path:value>" and ACME_IN not in json.dumps(calls, default=str)
       and "SECRETBATCH" not in json.dumps(calls, default=str), calls[1])
 check("…a call without a key: no key, its status", "key" not in calls[2] and calls[2].get("s") == 401, calls[2])
+# ADR 0031 §2.2: calls without a valid key are counted, one document per minute, method, operation and status
+check("…counted in the document of its minute (bucket, count, total time), not stored alone",
+      calls[2].get("n") == 1 and calls[2].get("b", "").endswith("|GET|/portal/api/v1/records|401")
+      and calls[2]["t"].second == 0 and calls[2]["t"].microsecond == 0 and "ms" in calls[2], calls[2])
+_minute = calls[2]["t"]
+store.col("api_requests").update_one({"b": calls[2]["b"]}, {"$set": {"ms": 0}})
+for _ in range(4):
+    api_client.get("/portal/api/v1/records")                                 # no key
+api_client.get("/portal/api/v1/records", headers={"Authorization": "Bearer gk_unknown"})   # a key that is not valid
+counted = list(store.col("api_requests").find({"key": {"$exists": False}}))
+_total = sum(d["n"] for d in counted)
+check("further calls without a valid key in that minute add to the same document",
+      _total == 6 and len(counted) == len({d["t"] for d in counted}), counted)   # a new minute may have begun
+
 check("…the key's secret appears nowhere", key[16:] not in json.dumps(calls, default=str))
 r = ana.get("/portal/api/requests/api")
 listed = (r.get_json() or {}).get("calls", [])
@@ -342,11 +357,63 @@ check("a user who is not an administrator cannot", leo.get("/portal/api/requests
 listed = root.get("/portal/api/requests/api").get_json()["calls"]
 check("a server administrator sees every call, with the organisation", len(listed) == 3
       and {c["organisation"] for c in listed} == {"Acme Foods", None}, listed)
+_anon = [c for c in listed if not c["key"]]
+check("…the counted minute as one row with its count and average time",
+      len(_anon) == len(counted) and sum(c["count"] for c in _anon) == 6 and _anon[-1]["status"] == 401
+      and _anon[-1]["ms"] == round(counted[0]["ms"] / counted[0]["n"])
+      and all(c["count"] == 1 for c in listed if c["key"]), listed)
+check("…the overview adds the counts up (requestlog.api_call_count)",
+      requestlog.api_call_count({}) == 2 + 6 and requestlog.api_call_count({"s": {"$gte": 400}}) == 7,
+      requestlog.api_call_count({}))
+_ov = root.get("/portal/api/overview?days=7").get_json() or {}
+_gov = ((_ov.get("governance") or {}).get("apiCalls")) or {}
+check("…in the overview's governance tiles", _gov.get("calls") == 2 + 6 and _gov.get("refused") == 7, _gov)
+_real_now = store.now
+store.now = lambda: _minute + timedelta(minutes=1, seconds=5)
+try:
+    requestlog.record_api_call(None, "GET", "/portal/api/v1/records", 401, 7)
+    requestlog.record_api_call(None, "GET", "/portal/api/v1/records", 429, 3)
+    requestlog.record_api_call(None, "PUT", "/portal/api/v1/records", 401, 2)
+finally:
+    store.now = _real_now
+_next = list(store.col("api_requests").find({"t": _minute + timedelta(minutes=1)}))
+check("…the next minute, another status or another method: a document of its own",
+      len(_next) == 3 and all(d["n"] == 1 for d in _next), _next)
+
+
+class _RacingCalls:
+    """api_requests as another replica makes the minute's document between our look and our insert."""
+    def __init__(self, real):
+        self.real, self.calls = real, []
+
+    def update_one(self, query, change, upsert=False):
+        self.calls.append(upsert)
+        if upsert:
+            from pymongo.errors import DuplicateKeyError
+            self.real.update_one(query, change, upsert=True)
+            raise DuplicateKeyError("E11000 duplicate key error")
+        return self.real.update_one(query, change)
+
+
+_racing = _RacingCalls(store.col("api_requests"))
+_real_calls = requestlog.api_calls
+requestlog.api_calls = lambda: _racing
+try:
+    requestlog.record_api_call(None, "DELETE", "/portal/api/v1/records", 401, 1)
+finally:
+    requestlog.api_calls = _real_calls
+_raced = store.col("api_requests").find_one({"m": "DELETE", "key": {"$exists": False}})
+check("…a replica that made the minute's document first: the call is added to it, not lost",
+      _racing.calls == [True, False] and _raced and _raced["n"] == 2, (_racing.calls, _raced))
+store.col("api_requests").delete_many({"t": {"$gte": _minute + timedelta(minutes=1)}})
+store.col("api_requests").delete_many({"m": "DELETE"})
 listed = root.get(f"/portal/api/requests/api?key={key_id}&limit=1").get_json()
 check("filter by key, pages", len(listed["calls"]) == 1 and listed["next"], listed)
 os.environ["RESOLVER_LOG_DAYS"] = "0"
 api_client.get("/portal/api/v1/", headers=auth)
 check("RESOLVER_LOG_DAYS=0: calls are not recorded", store.col("api_requests").count_documents({}) == 3)
+api_client.get("/portal/api/v1/records")
+check("…nor counted", requestlog.api_call_count({}) == 2 + 6)
 del os.environ["RESOLVER_LOG_DAYS"]
 
 # ================================================================== browser, location, retention (ADR 0006, section 8)
@@ -416,11 +483,15 @@ check("CSV: browser, region, city and the city's position after the country",
       head[head.index("country"):head.index("country") + 6] == ["country", "browser", "region", "city", "latitude",
                                                                  "longitude"]
       and any(r[head.index("city")] == "Campinas" and r[head.index("latitude")] == "-22.9" for r in table[1:]), head)
-requestlog.count_day(requestlog.today())
-doc = requestlog.daily().find_one({"_id": f"{requestlog.today().isoformat()}|01|0{ACME_IN}"}) or {}
+# the local day of the events (event()'s default time, five minutes before NOW), not today() nor NOW's: a run that starts
+# just before midnight local time ends on the next day, and one that starts in the first five minutes after it has its
+# events on the day before (CI run 44978787931 at 03:03 UTC, 00:03 in PORTAL_TIME_ZONE)
+NOW_DAY = (NOW - timedelta(minutes=5)).replace(tzinfo=UTC).astimezone(requestlog.zone()).date()
+requestlog.count_day(NOW_DAY)
+doc = requestlog.daily().find_one({"_id": f"{NOW_DAY.isoformat()}|01|0{ACME_IN}"}) or {}
 check("aggregates: browsers, countries and places per key", doc.get("browser") == {"chrome": 1, "safari": 1}
       and doc.get("country") == {"BR": 2} and doc.get("place") == [["BR|Sao Paulo|Campinas", 2]], doc)
-whole = requestlog.daily().find_one({"_id": f"{requestlog.today().isoformat()}|*"}) or {}
+whole = requestlog.daily().find_one({"_id": f"{NOW_DAY.isoformat()}|*"}) or {}
 check("…and for the installation", whole.get("browser") == {"chrome": 2, "safari": 1, "app": 1}
       and whole.get("country") == {"BR": 2, "PT": 1, "ZA": 1}
       and sorted(whole.get("place") or []) == [["BR|Sao Paulo|Campinas", 2], ["PT|Lisbon|Lisbon", 1]], whole)

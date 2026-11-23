@@ -5,7 +5,9 @@ any request is served:
 
   users.json         → users          (accounts written before roles existed become administrators)
   records-meta.json  → record_meta
-  journal.jsonl      → journal        (dates, categories and the retention of journal.py)
+  journal.jsonl      → journal        (dates, categories and the retention of journal.py; each event sealed in its
+                                       chain as it is inserted, since the portal's user may not update the
+                                       journal afterwards: ADR 0026 section 2.5.2)
 
 A file is imported only into an empty collection, then renamed "<name>.migrated" and left in the volume as a
 copy. Every document gets a fixed _id (user name, record key, "jsonl-<line>"), so a start that stops half
@@ -24,7 +26,6 @@ import store
 import users
 
 log = logging.getLogger("portal.migrate")
-BATCH = 1000
 
 
 def _sources(config_dir: str) -> list[tuple[str, str, str]]:
@@ -65,9 +66,10 @@ def _meta(path: str) -> list[dict]:
 
 
 def _journal(path: str, collection) -> tuple[int, int]:
-    """Imports journal.jsonl in batches; returns (events added, lines that could not be read)."""
+    """Imports journal.jsonl one event at a time, each sealed (journal.append_upgraded()); returns (events added,
+    lines that could not be read). collection is the journal's, kept for the caller's emptiness check."""
     days = journal.retention_days()
-    added, damaged, batch = 0, 0, []
+    added, damaged = 0, 0
     with open(path, encoding="utf-8", errors="replace") as fh:
         for number, line in enumerate(fh, 1):
             if not line.strip():
@@ -84,11 +86,7 @@ def _journal(path: str, collection) -> tuple[int, int]:
                 continue
             doc = journal.event_document(at, user, action, days, **event)
             doc["_id"] = f"jsonl-{number:09d}"
-            batch.append(doc)
-            if len(batch) >= BATCH:
-                added += _insert(collection, batch)
-                batch = []
-    added += _insert(collection, batch)
+            added += journal.append_upgraded(doc)
     return added, damaged
 
 

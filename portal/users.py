@@ -4,7 +4,8 @@ Portal user store: the "users" collection of the portal's database (store.py), o
     {"_id": "maria", "hash": "<werkzeug hash>", "role": "editor", "prefixes": ["7891234"],
      "tenant": "t-3f9a1c0b2e7d", "email": "maria@example.org",
      "disabled": false, "mustChange": false, "created": "…", "lastLogin": "…",
-     "invited": "…", "language": "pt-BR", "languageChosen": true, "notify": {"jobs": true}}
+     "invited": "…", "language": "pt-BR", "languageChosen": true, "notify": {"jobs": true},
+     "sso": {"iss": "https://login.example.com", "sub": "…", "at": "…"}}
 
 Roles, from least to most: reader (consults and exports), editor (also changes records), admin (also
 manages users and sees the audit trail). "tenant" is the organisation the user belongs to (tenants.py,
@@ -20,6 +21,10 @@ has no password of its own (an empty hash: no password signs in); "language" is 
 messages (taken from the page at each sign-in until "languageChosen"); "notify" holds the optional categories of
 messages the user switched on (notify.py).
 
+Single sign-on (Documentation/adr/0025-sso-domain-proof-and-subject.md): "sso" is the provider's issuer and subject the
+account was bound to at its first sign-in through single sign-on (bind_sso()); an administrator forgets it, and a new
+e-mail address drops it.
+
 Writes run under a lock shared by every replica (store.lock), so two administrators acting at the same
 moment cannot both remove the last enabled server administrator. Every lookup reads the database, so changes
 made from the command line (create_user.py) take effect at once.
@@ -34,6 +39,7 @@ from datetime import datetime, timezone
 from pymongo.errors import DuplicateKeyError, PyMongoError
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import sessions
 import store
 
 MIN_PASSWORD_LENGTH = 12
@@ -44,8 +50,8 @@ EMAIL = re.compile(r"^[^@\s\x00-\x1f\x7f]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}
                    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$")
 EMAIL_MAX = 254
 FIELDS = ("hash", "role", "prefixes", "tenant", "email", "disabled", "mustChange", "created", "lastLogin",
-          "invited", "language", "languageChosen", "notify")
-OPTIONAL_FIELDS = ("tenant", "email", "invited", "language", "languageChosen", "notify")   # absent when empty
+          "invited", "language", "languageChosen", "notify", "sso")
+OPTIONAL_FIELDS = ("tenant", "email", "invited", "language", "languageChosen", "notify", "sso")   # absent when empty
 # The languages of the interface and the e-mails (Documentation/adr/0014-interface-languages.md)
 LANGUAGES = ("en-GB", "pt-BR", "es", "fr", "de", "it", "tr", "zh-Hans", "ja", "ko", "hi", "ar")
 # Hash of a random password, checked when the username does not exist so that response
@@ -77,7 +83,7 @@ def _account(value) -> dict:
         value = {"hash": value, "role": "admin"}
     account = {"hash": "", "role": "admin", "prefixes": [], "tenant": None, "email": None, "disabled": False,
                "mustChange": False, "created": None, "lastLogin": None, "invited": None, "language": None,
-               "languageChosen": False, "notify": {}}
+               "languageChosen": False, "notify": {}, "sso": None}
     account.update({k: v for k, v in value.items() if k in FIELDS})
     if account["role"] not in ROLES:
         account["role"] = "reader"
@@ -111,7 +117,8 @@ def verify(username: str, password: str) -> bool:
 
 def fingerprint(username: str) -> str | None:
     """Short digest of the user's hash and state, stored in the session: changing the password,
-    disabling or removing the user signs out every other open session."""
+    disabling or removing the user signs out every other open session (the session records of sessions.py end
+    them too, and keep them ended when the account is enabled again)."""
     account = get(username)
     if not account or account["disabled"]:
         return None
@@ -166,9 +173,11 @@ def clean_email(value) -> str | None:
     return email
 
 
-def _check_email(username: str, email: str | None) -> None:
-    """Refuses an address another user already has (call under the lock)."""
-    if email and _users().find_one({"email": email, "_id": {"$ne": username}}, {"_id": 1}):
+def _check_email(username: str, email: str | None, tenant: str | None) -> None:
+    """Refuses an address another user of the same organisation (or of the operator) already has (call under the
+    lock). Addresses are unique per organisation, not in the installation, so that a refusal never tells an
+    administrator that a person has an account in another organisation (finding F-019, ADR 0036)."""
+    if email and _users().find_one({"email": email, "tenant": tenant or None, "_id": {"$ne": username}}, {"_id": 1}):
         raise UserError("users.emailExists")
 
 
@@ -204,6 +213,15 @@ def clean_prefixes(values) -> list[str]:
     return prefixes
 
 
+def _set_email(username: str, account: dict, email) -> None:
+    """A new e-mail address (checked: valid, unique); a changed one forgets the single sign-on binding."""
+    new_email = clean_email(email)
+    _check_email(username, new_email, account.get("tenant"))
+    if new_email != account["email"]:
+        account["sso"] = None
+    account["email"] = new_email
+
+
 def set_password(username: str, password: str, must_change: bool = False, role: str | None = None,
                  prefixes=None, tenant: str | None = None, email=None) -> None:
     """Sets the password, creating the account when needed (role admin unless given; the tenant only when
@@ -220,10 +238,10 @@ def set_password(username: str, password: str, must_change: bool = False, role: 
         if prefixes is not None:
             account["prefixes"] = clean_prefixes(prefixes)
         if email is not None:
-            account["email"] = clean_email(email)
-            _check_email(username, account["email"])
+            _set_email(username, account, email)
         _check_scope(account["tenant"], account["prefixes"])
         _save(username, account)
+    sessions.end_user(username)         # a new password ends every session of the account (ADR 0034)
 
 
 def create(username: str, password: str | None, role: str, prefixes=(), must_change: bool = True,
@@ -247,7 +265,7 @@ def create(username: str, password: str | None, role: str, prefixes=(), must_cha
         account["mustChange"] = must_change
     with locked():
         _check_scope(account["tenant"], prefixes)
-        _check_email(username, account["email"])
+        _check_email(username, account["email"], account["tenant"])
         try:
             _users().insert_one({"_id": username, **_stored(account)})
         except DuplicateKeyError:
@@ -255,9 +273,9 @@ def create(username: str, password: str | None, role: str, prefixes=(), must_cha
 
 
 def update(username: str, role: str | None = None, prefixes=None, disabled: bool | None = None,
-           email=None) -> dict:
-    """Changes role, prefixes, e-mail ("" removes it) or state; the last active server administrator cannot
-    lose that status. The tenant never changes."""
+           email=None, sso_forget: bool = False) -> dict:
+    """Changes role, prefixes, e-mail ("" removes it) or state, or forgets the single sign-on binding (a new e-mail
+    forgets it too); the last active server administrator cannot lose that status. The tenant never changes."""
     with locked():
         accounts = load()
         account = accounts.get(username)
@@ -272,13 +290,16 @@ def update(username: str, role: str | None = None, prefixes=None, disabled: bool
         if disabled is not None:
             account["disabled"] = bool(disabled)
         if email is not None:
-            account["email"] = clean_email(email)
-            _check_email(username, account["email"])
+            _set_email(username, account, email)
+        if sso_forget:
+            account["sso"] = None
         _check_scope(account["tenant"], account["prefixes"])
         if not _active_admins(accounts):
             raise UserError("users.lastAdmin")
         _save(username, account)
-        return account
+    if account["disabled"]:
+        sessions.end_user(username)     # enabling the account again does not revive them (ADR 0034)
+    return account
 
 
 def clear_password(username: str) -> None:
@@ -291,25 +312,26 @@ def clear_password(username: str) -> None:
         account["hash"] = ""
         account["mustChange"] = False
         _save(username, account)
+    sessions.end_user(username)
 
 
-def find_login(login: str) -> str | None:
-    """The user name an entry of the password recovery form means: a user name, or an e-mail address (case is
-    ignored for both)."""
+def find_logins(login: str) -> list[str]:
+    """The user names an entry of the password recovery form means: every account with that e-mail address (an
+    address may be used once per organisation, ADR 0036), or the one user name (case is ignored for both)."""
     text = str(login or "").strip()
     if not text or len(text) > EMAIL_MAX:
-        return None
+        return []
     if "@" in text:
-        doc = _users().find_one({"email": text.lower()}, {"_id": 1})
-        if doc:
-            return doc["_id"]
+        found = sorted(doc["_id"] for doc in _users().find({"email": text.lower()}, {"_id": 1}))
+        if found:
+            return found
     if get(text):
-        return text
+        return [text]
     if USERNAME.match(text):                       # user names are case-sensitive; recovery forgives case
         for doc in _users().find({}, {"_id": 1}):
             if doc["_id"].lower() == text.lower():
-                return doc["_id"]
-    return None
+                return [doc["_id"]]
+    return []
 
 
 def clean_language(value) -> str | None:
@@ -359,6 +381,7 @@ def remove(username: str) -> None:
         if not _active_admins(accounts):
             raise UserError("users.lastAdmin")
         _users().delete_one({"_id": username})
+    sessions.end_user(username)
 
 
 def touch_login(username: str) -> None:
@@ -369,8 +392,25 @@ def touch_login(username: str) -> None:
         pass
 
 
+def bind_sso(username: str, issuer: str, subject: str) -> str:
+    """Binds the account to a provider's subject at its first sign-in through single sign-on, or checks it later:
+    "bound" (just now), "same", "mismatch" (bound to another subject of this issuer) or "taken" (the subject is bound
+    to another account). A binding to another issuer is replaced (the configuration's issuer changed)."""
+    with locked():
+        if _users().find_one({"sso.iss": issuer, "sso.sub": subject, "_id": {"$ne": username}}, {"_id": 1}):
+            return "taken"
+        account = get(username)
+        bound = (account or {}).get("sso") or {}
+        if bound.get("iss") == issuer:
+            return "same" if bound.get("sub") == subject else "mismatch"
+        _users().update_one({"_id": username}, {"$set": {"sso": {"iss": issuer, "sub": subject, "at": _now()}}})
+        return "bound"
+
+
 def public(username: str, account: dict) -> dict:
-    """What the administration screen shows (never the hash)."""
+    """What the administration screen shows (never the hash); the single sign-on binding, if any."""
+    bound = account.get("sso") or None
     return {"username": username, **{k: account[k] for k in
                                      ("role", "prefixes", "tenant", "email", "disabled", "mustChange", "created",
-                                      "lastLogin", "invited")}}
+                                      "lastLogin", "invited")},
+            "sso": {"issuer": bound.get("iss"), "subject": bound.get("sub"), "at": bound.get("at")} if bound else None}

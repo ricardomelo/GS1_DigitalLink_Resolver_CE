@@ -42,6 +42,7 @@ from urllib.parse import unquote, urlsplit
 from flask import Response, g, request
 
 import geoip
+import settings_age
 
 log = logging.getLogger(__name__)
 
@@ -289,9 +290,10 @@ def event(noted: dict[str, Any], response: Response) -> dict[str, Any]:
 
 
 def outcome(status: int, noted: dict[str, Any]) -> str:
-    """redirect, choice, linkset, compressed, unknown, noLink, invalid or error; page and click for the item's page
+    """redirect, choice, linkset, compressed, unknown, noLink, withheld, invalid or error; page and click for the item's page
     (Documentation/adr/0011-item-page.md); forwarded (a prefix rule) and fallback (the resolver of last resort) for a
-    request sent to another resolver (Documentation/adr/0018-forwarding.md)."""
+    request sent to another resolver (Documentation/adr/0018-forwarding.md); withheld for a link held only by a less
+    specific level, kept back by the strict mode (Documentation/adr/0022-answering-level.md, section 2.4)."""
     if noted.get("outcome") in ("page", "click") and status < 400:
         return noted["outcome"]
     if noted.get("outcome") in ("forwarded", "fallback") and status == 307:
@@ -305,7 +307,9 @@ def outcome(status: int, noted: dict[str, Any]) -> str:
     if status < 300:
         return "linkset"
     if status == 404:
-        return "noLink" if noted.get("outcome") == "noLink" else "unknown"
+        if noted.get("outcome") in ("noLink", "withheld"):
+            return noted["outcome"]
+        return "unknown"
     if status < 500:
         return "invalid"
     return "error"
@@ -332,7 +336,8 @@ def count_of(doc: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 class Retention:
     """How long an event is kept, as the portal sets it (ADR 0006, section 8): the installation's days (the setting
     "requestLog.days"; RESOLVER_LOG_DAYS until one is set) and each organisation's, never longer. Read from the
-    portal's database at most every RETENTION_SECONDS; when it cannot be read the last values are kept."""
+    portal's database at most every RETENTION_SECONDS; when it cannot be read the last values are kept, also once they
+    are older than RESOLVER_SETTINGS_MAX_AGE_S (logged and alerted: finding F-033, ADR 0053)."""
 
     def __init__(self, database: Callable[[], Any] | None = None):
         self.database = database        # a function giving the portal's database (pymongo), set by create_app
@@ -340,6 +345,7 @@ class Retention:
         self._tenants: list[tuple[str, int]] = []      # (prefix, days), longest prefix first
         self._loaded = 0.0
         self._lock = threading.Lock()
+        self.age = settings_age.Age("Request log retention", "the last retention read is kept")
 
     @staticmethod
     def _valid(value) -> int | None:
@@ -361,7 +367,8 @@ class Retention:
         self._global = found
         self._tenants = sorted(tenants, key=lambda pd: -len(pd[0]))
 
-    def _fresh(self) -> None:
+    def refresh(self) -> None:
+        """Reads the settings again when RETENTION_SECONDS have passed; a failure keeps the last ones (settings_age)."""
         if self.database is None:
             return
         now = time.monotonic()
@@ -370,12 +377,14 @@ class Retention:
                 if now - self._loaded >= RETENTION_SECONDS:
                     try:
                         self._load()
+                        self.age.read(now)
                     except Exception as exc:          # noqa: BLE001 — the resolver keeps answering
                         log.warning("Request log retention not read (%s); the last values are kept.", exc)
+                        self.age.failed(now)
                     self._loaded = now
 
     def global_days(self) -> int:
-        self._fresh()
+        self.refresh()
         return self._global or days()
 
     def days_for(self, cp: str | None) -> int:

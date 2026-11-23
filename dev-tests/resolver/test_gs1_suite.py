@@ -75,6 +75,7 @@ def read_document(anchor):
 web_db.read_document = read_document
 sys.modules["web_db"] = web_db
 os.environ["FQDN"] = FQDN
+os.environ["FQDN_ALIASES"] = ALIAS                    # listed as another name of the installation (ADR 0039)
 os.environ.setdefault("MONGO_URI", "mongodb://unused")
 import web_logic  # noqa: E402
 

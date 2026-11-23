@@ -46,7 +46,7 @@ Scope `stats:read`. The figures of the portal's overview for the last 7, 30 or 9
 | 200 | The statistics — [Stats](#schema-stats) |
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
-| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
+| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 
 ### Operation: openapi
@@ -74,7 +74,7 @@ Scope `records:read`. Sorted by `id`; pass the `next` of an answer as `after` to
 | 200 | A page of records — [RecordList](#schema-recordlist) |
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
-| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
+| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 
 ### Operation: getRecord
@@ -95,14 +95,14 @@ Scope `records:read`.
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
 | 404 | No record with those qualifiers (record.notFound) — [Error](#schema-error) |
-| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
+| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 
 ### Operation: putRecord
 
 `PUT /portal/api/v1/records/{key}/{value}` — Creates or replaces one record
 
-Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed.
+Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed. The answer lists `warnings` about safety-critical link types and near-duplicate batch or serial values (ADR 0022, section 2.5); they never refuse the save.
 
 | Parameter | In | Required | Type | Meaning |
 |---|---|---|---|---|
@@ -118,8 +118,10 @@ Request body (required): [RecordInput](#schema-recordinput).
 | 201 | Created — [Saved](#schema-saved) |
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
-| 415 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
-| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
+| 400 | The body is not one JSON object: not JSON at all, nested past what the parser follows, or an array, a text, a number or null (request.jsonInvalid) — [Error](#schema-error) |
+| 409 | The key's records were being changed by other writers at the same moment, and the data entry API wrote nothing of this change (upstream.conflict; ADR 0027). Read the record again and repeat the change. — [Error](#schema-error) |
+| 415 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
+| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 | 502 | The resolver's data entry API failed or refused the change (upstream.*) — [Error](#schema-error) |
 
@@ -141,6 +143,7 @@ Scope `records:write`.
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
 | 404 | No record with those qualifiers (record.notFound) — [Error](#schema-error) |
+| 409 | The key's records were being changed by other writers at the same moment, and the data entry API wrote nothing of this change (upstream.conflict; ADR 0027). Read the record again and repeat the change. — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 | 502 | The resolver's data entry API failed or refused the change (upstream.*) — [Error](#schema-error) |
 
@@ -173,7 +176,7 @@ Scope `labels:read`. X-Symbol names the 2D symbol and X-Dimension its X-dimensio
 | 200 | The label |
 | 401 | No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid) — [Error](#schema-error) |
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
-| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit) — [Error](#schema-error) |
+| 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 
 ## Schemas
@@ -253,6 +256,16 @@ Scope `labels:read`. X-Symbol names the 2D symbol and X-Dimension its X-dimensio
 | `code` | yes | string (one of `save.created`, `save.updated`) |  |
 | `created` | yes | boolean |  |
 | `digitalLink` | yes | string |  |
+| `warnings` | yes | array of [Warning](#schema-warning) | What a request for the saved record would receive from another record of its key, and batch or serial values close to another of the key's. Never a refusal: the record is saved. |
+
+### Schema: Warning
+
+A warning on safety-critical link types (gs1:recallStatus, gs1:safetyInfo, gs1:epil, gs1:smpc, gs1:eifu) or a near-duplicate value. `warning.walkUp`: the record lacks `types` that the record of qualifiers `level` holds (`[]`: the key's own record); a request for this record receives that record's links or, when `strict` is true (the organisation's strict mode), a 404. `warning.productLevel`: the key's own record holds `types` while the key has `count` batch or serial records (`values`: the qualifiers of the first five); those without their own link of a type receive this one. `warning.nearDuplicate`: the value `value` of AI `ai` differs from the key's existing `existing` only in letter case, spaces, `-` `.` `/` or O/0 and I/1. `warning.noLanguage`: links of the safety-critical `types` declare no language (`hreflang`), so the resolver gives them to a request in any language without saying so. `warning.languageGap`: for each of `gaps`, the safety-critical `type` has no link in the languages `missing` that other links of the record have; a request in one of them receives the type in another language, with the header `Resolution-Fallback: language`.
+
+| Field | Required | Type | Meaning |
+|---|---|---|---|
+| `code` | yes | string (one of `warning.walkUp`, `warning.productLevel`, `warning.nearDuplicate`, `warning.noLanguage`, `warning.languageGap`) |  |
+| `params` | yes | object |  |
 
 ### Schema: Stats
 

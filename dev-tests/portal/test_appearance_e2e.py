@@ -32,6 +32,7 @@ os.environ["PORTAL_WORKER"] = "embedded"
 os.environ.pop("RESOLVER_LOG_DAYS", None)
 sys.path[:0] = [HERE, PORTAL]
 
+import csp_guard  # noqa: E402,F401  (fails the program on a Content-Security-Policy violation: ADR 0038)
 import mock_data_entry  # noqa: E402
 import store  # noqa: E402
 import users  # noqa: E402
@@ -92,15 +93,15 @@ with sync_playwright() as p:
           and page.inner_text("#hero-title") == "The installation's appearance"
           and page.inner_text("#appearance-state") == "Original appearance."
           and page.is_hidden("#appearance-reset"), page.inner_text("#appearance-state"))
-    check("…the hint names the original title", "“GS1 Resolver Community Edition”"
+    check("…the hint names the original title", "“GS1 Digital Link Resolver Suite”"
           in page.inner_text("#appearance-view"), page.inner_text("#appearance-view")[:300])
     check("…the form holds the original colours, the title empty with the original as placeholder",
           [page.input_value(f"#appearance-{f}") for f in ("colour", "action", "accent")]
           == ["#002c6c", "#ce3d0d", "#f26334"] and page.input_value("#appearance-name") == ""
-          and page.get_attribute("#appearance-name", "placeholder") == "GS1 Resolver Community Edition"
+          and page.get_attribute("#appearance-name", "placeholder") == "GS1 Digital Link Resolver Suite"
           and page.is_hidden("#appearance-logo-original"))
     check("…the preview: the original title and logo", page.inner_text("#appearance-preview-title")
-          == "GS1 Resolver Community Edition" and page.get_attribute("#appearance-preview-logo", "src") == "logo.svg")
+          == "GS1 Digital Link Resolver Suite" and page.get_attribute("#appearance-preview-logo", "src") == "logo.svg")
     shot(page, "1-original")
 
     page.fill("#appearance-name", "Acme Resolver")
@@ -120,7 +121,7 @@ with sync_playwright() as p:
           and page.evaluate("getComputedStyle(document.querySelector('.appearance-preview-tab')).borderBottomColor")
           == "rgb(232, 177, 0)", background(page, ".appearance-preview-band"))
     check("…nothing saved yet", store.get_setting("appearance") is None
-          and page.inner_text(".site-header .product") == "GS1 Resolver Community Edition")
+          and page.inner_text(".site-header .product") == "GS1 Digital Link Resolver Suite")
     shot(page, "2-preview")
 
     page.fill("#appearance-action", "#ffd700")
@@ -140,7 +141,7 @@ with sync_playwright() as p:
           and token(page, "--action") == "#8A1538" and token(page, "--gs1-orange") == "#E8B100"
           and background(page, ".hero") == "rgb(26, 61, 43)", (token(page, "--gs1-blue"), background(page, ".hero")))
     check("…the tab's title carries the new title", page.title().endswith("Acme Resolver")
-          and "GS1 Resolver Community Edition" not in page.title(), page.title())
+          and "GS1 Digital Link Resolver Suite" not in page.title(), page.title())
     check("…and the tab's icon (favicon)", page.locator("link[rel='icon']").count() == 1
           and "appearance/icon?v=" in page.get_attribute("link[rel='icon']", "href"),
           page.get_attribute("link[rel='icon']", "href"))
@@ -159,7 +160,7 @@ with sync_playwright() as p:
           page.inner_text("#appearance-state").startswith("Changed on") and "root" in page.inner_text("#appearance-state")
           and page.is_visible("#appearance-reset") and page.is_visible("#appearance-logo-original"),
           page.inner_text("#appearance-state"))
-    check("…the hint still names the original title (not replaced by the new one)", "“GS1 Resolver Community Edition”"
+    check("…the hint still names the original title (not replaced by the new one)", "“GS1 Digital Link Resolver Suite”"
           in page.inner_text("#appearance-view"), page.inner_text("#appearance-view")[:300])
     shot(page, "3-saved")
 
@@ -187,10 +188,10 @@ with sync_playwright() as p:
     check("…confirmed: the original back everywhere on the page",
           "Original appearance restored" in page.inner_text("#appearance-status")
           and store.get_setting("appearance") is None
-          and page.inner_text(".site-header .product") == "GS1 Resolver Community Edition"
+          and page.inner_text(".site-header .product") == "GS1 Digital Link Resolver Suite"
           and page.get_attribute(".site-header .brand img", "src") == "logo.svg"
           and page.get_attribute("link[rel='icon']", "href") == "favicon.png"
-          and token(page, "--gs1-blue").upper() == "#002C6C" and "GS1 Resolver Community Edition" in page.title()
+          and token(page, "--gs1-blue").upper() == "#002C6C" and "GS1 Digital Link Resolver Suite" in page.title()
           and page.inner_text("#appearance-state") == "Original appearance." and page.is_hidden("#appearance-reset"),
           (page.inner_text("#appearance-status"), page.inner_text(".site-header .product"), token(page, "--gs1-blue")))
     shot(page, "4-restored")
@@ -198,7 +199,7 @@ with sync_playwright() as p:
     page.select_option("#locale", "pt-BR"); page.wait_for_timeout(500)
     check("Portuguese", page.inner_text("#hero-title") == "Aparência da instalação"
           and page.inner_text("#appearance-reset") == "Voltar ao original"
-          and "“GS1 Resolver Community Edition”" in page.inner_text("#appearance-view"), page.inner_text("#hero-title"))
+          and "“GS1 Digital Link Resolver Suite”" in page.inner_text("#appearance-view"), page.inner_text("#hero-title"))
     page.select_option("#locale", "en-GB"); page.wait_for_timeout(300)
 
     ana = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 1000}).new_page()

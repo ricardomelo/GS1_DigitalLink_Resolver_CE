@@ -11,8 +11,9 @@ Categories (TEMPLATES maps each message to one):
   security    the password or the e-mail address was changed, the account was locked: always
   jobs        an import or a link check the user started has finished: optional, off by default
   alerts      monitoring (Documentation/adr/0008-monitoring-and-alerts.md): the resolver down, the backup, the
-              certificate, the request log's space, the GCP length table's age, spikes of 404 — to administrators:
-              optional, on by default
+              certificate, the request log's space, the GCP length table's age, spikes of 404 — to administrators,
+              and a forwarding rule that sends an organisation's codes elsewhere or stops (ADR 0046) — to that
+              organisation's administrators: optional, on by default
 """
 import logging
 import os
@@ -36,12 +37,15 @@ OPTIONAL = tuple(name for name, (optional, _) in CATEGORIES.items() if optional)
 TEMPLATES = {
     "invite": "account", "password-recovery": "account", "password-reset-admin": "account",
     "password-changed": "security", "email-changed-old": "security", "email-changed-new": "security",
-    "account-locked": "security", "api-key-created": "security", "api-key-expiring": "security",
+    "sign-in-failures": "security", "api-key-created": "security", "api-key-expiring": "security",
     "import-finished": "jobs", "linkcheck-finished": "jobs",
     "alert-resolver-down": "alerts", "alert-resolver-up": "alerts", "alert-backup-failed": "alerts",
     "alert-backup-ok": "alerts", "alert-certificate": "alerts", "alert-certificate-ok": "alerts",
     "alert-404-spike": "alerts", "alert-log-space": "alerts", "alert-log-space-ok": "alerts",
     "alert-gcp-table": "alerts", "alert-gcp-table-ok": "alerts",
+    "alert-journal": "alerts", "alert-journal-ok": "alerts", "alert-domain-lapsed": "alerts",
+    "alert-settings-stale": "alerts", "alert-settings-current": "alerts",
+    "forwarding-on": "alerts", "forwarding-off": "alerts", "forwarding-covered": "alerts",
 }
 # Waits before each new try after a temporary failure, in minutes; after the last, the message has failed.
 RETRY_MINUTES = (1, 5, 15, 60, 120)

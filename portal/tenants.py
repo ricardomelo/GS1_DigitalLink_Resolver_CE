@@ -21,6 +21,7 @@ import secrets
 from datetime import datetime, timezone
 
 import gs1
+import sessions
 import store
 import users
 from users import UserError
@@ -40,11 +41,13 @@ def _tenants():
 
 def _tenant(doc: dict) -> dict:
     """A tenant as the rest of the portal sees it: {"id", "name", "prefixes", "disabled", "created", "createdBy",
-    "logDays", "exportLimits"} (logDays: how long its requests are kept, None for the installation's; requestlog.py;
-    exportLimits: its own limits on exports per role, exportlimits.py)."""
+    "logDays", "exportLimits", "targetHosts"} (logDays: how long its requests are kept, None for the installation's;
+    requestlog.py; exportLimits: its own limits on exports per role, exportlimits.py; targetHosts: the hosts its targets
+    may point to, empty for any, targets.py)."""
     return {"id": doc["_id"], "name": doc.get("name", ""), "prefixes": list(doc.get("prefixes") or []),
             "disabled": bool(doc.get("disabled")), "created": doc.get("created"), "createdBy": doc.get("createdBy"),
-            "logDays": doc.get("logDays"), "exportLimits": dict(doc.get("exportLimits") or {})}
+            "logDays": doc.get("logDays"), "exportLimits": dict(doc.get("exportLimits") or {}),
+            "targetHosts": list(doc.get("targetHosts") or [])}
 
 
 def load() -> list[dict]:
@@ -154,6 +157,8 @@ def update(tenant_id: str, name=None, prefixes=None, disabled=None) -> tuple[dic
         if disabled is not None:
             after["disabled"] = bool(disabled)
         _tenants().update_one({"_id": tenant_id}, {"$set": {k: after[k] for k in ("name", "prefixes", "disabled")}})
+    if after["disabled"]:       # its users' sessions end, and stay ended if it is enabled again (ADR 0034)
+        sessions.end_users(name for name, account in users.load().items() if account.get("tenant") == tenant_id)
     return before, after
 
 

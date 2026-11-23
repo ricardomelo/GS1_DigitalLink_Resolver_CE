@@ -51,6 +51,7 @@ web_db.read_document = lambda anchor: (
     if anchor.replace("/", "_").lstrip("_") in DB else {"response_status": 404, "error": "nf"})
 sys.modules["web_db"] = web_db
 os.environ["FQDN"] = "id.example.org"
+os.environ["FQDN_ALIASES"] = " Alias.Example.NET. second.example.org:443 ,bad_name.example"   # ADR 0039
 os.environ["MONGO_URI"] = "mongodb://unused"
 os.environ.pop("PORTAL_DB_NAME", None)
 import web_logic  # noqa: E402
@@ -158,6 +159,9 @@ found, link = anchors(BETA, "alias.example.net")
 check("linkset on another name of the installation: the anchors are on that name",
       found == ["https://alias.example.net" + BETA], found)
 check("…and so is the Link header", link.startswith(f"<https://alias.example.net{BETA}?linkType=linkset>"), link)
+check("…a second name of the list (after a space, with a port, in FQDN_ALIASES)",
+      anchors(BETA, "second.example.org")[0] == ["https://second.example.org" + BETA])
+check("…a name with a final dot: the same name", anchors(BETA, "alias.example.net.")[0] == ["https://alias.example.net" + BETA])
 r, _ = ask(BETA, "alias.example.net")
 check("…the Link header of a redirect too", goes_to(r, "https://beta.example.com/")
       and r.headers.get("Link", "").startswith(f"<https://alias.example.net{BETA}?linkType=linkset>"),
@@ -181,6 +185,35 @@ for bad in ("bad_host.example", "evil.example/path", "a..b", "-x.example", "x" *
           found == ["https://id.example.org" + BETA] and link.startswith("<https://id.example.org/"), (found, link))
 r, _ = ask("/.well-known/gs1resolver", "bad_host.example")
 check("…in the description file too", json.loads(r.data)["resolverRoot"] == "https://id.example.org")
+
+# ---------------------------------------------------------------- a host nobody listed (ADR 0039, finding F-022)
+# A client chooses the Host it sends, and the host's proxy is the default site for any name: a valid name that is not
+# the installation's (FQDN, FQDN_ALIASES) nor a verified domain gets FQDN, so that a shared cache cannot keep an answer
+# that points at another name
+for other in ("evil.example", "alias.example.net.evil.example", "evilid.example.org", "example.org", "bad_name.example",
+              "pending.acme.example", "redir.acme.example"):
+    found, link = anchors(BETA, other)
+    check(f"a host nobody listed ({other}): the linkset's anchors and Link header on the installation's name",
+          found == ["https://id.example.org" + BETA] and link.startswith(f"<https://id.example.org{BETA}?"), (found, link))
+r, _ = ask(BETA, "evil.example")
+check("…the Link header of a redirect too", goes_to(r, "https://beta.example.com/")
+      and r.headers.get("Link", "").startswith(f"<https://id.example.org{BETA}?linkType=linkset>"), r.headers.get("Link"))
+r, _ = ask(BETA, "evil.example", accept="application/ld+json")
+body = json.loads(r.data or b"{}")
+check("…the JSON-LD linkset's @id and anchors too", body.get("@id") == "https://id.example.org" + BETA
+      and [i.get("anchor") for i in body.get("linkset", [])] == ["https://id.example.org" + BETA], body.get("@id"))
+r, _ = ask("/.well-known/gs1resolver", "evil.example")
+check("…and the description file's resolver root", json.loads(r.data)["resolverRoot"] == "https://id.example.org",
+      json.loads(r.data).get("resolverRoot"))
+r, _ = ask(BETA + "?linkType=gs1:pip", "evil.example")
+check("…the Resolution-Anchor header too, and no header names the host", r.headers.get("Resolution-Anchor")
+      == "https://id.example.org" + BETA and all("evil.example" not in v for v in r.headers.values()), dict(r.headers))
+saved_aliases = os.environ.pop("FQDN_ALIASES")
+check("without FQDN_ALIASES a second name gets the installation's name", anchors(BETA, "alias.example.net")[0]
+      == ["https://id.example.org" + BETA])
+os.environ["FQDN_ALIASES"] = saved_aliases
+check("the installation's names: FQDN and the valid names of FQDN_ALIASES, in lower case without port or final dot",
+      domains.known_names() == {"id.example.org", "alias.example.net", "second.example.org"}, domains.known_names())
 
 # ---------------------------------------------------------------- without a stem; how the host is read
 check("a domain without a stem resolves its codes", goes_to(ask(ACME, "go.acme.example")[0], "https://acme.example.com/"))
@@ -234,6 +267,10 @@ conf = open(os.path.join(REPO, "frontend_proxy_server", "nginx.conf"), encoding=
 resolver_block = conf[conf.index("location / {"):conf.index("}", conf.index("location / {"))]
 check("the proxy passes the public host to the resolver", "proxy_set_header X-Forwarded-Host $host;" in resolver_block,
       resolver_block)
+
+https_site = open(os.path.join(REPO, "scripts", "templates", "nginx-site-https.conf"), encoding="utf-8").read()
+check("the host's site sends plain HTTP to the installation's name, not to the Host the client sent",
+      "return 301 https://$server_name$request_uri;" in https_site and "https://$host" not in https_site, https_site[:400])
 
 request_log.WRITER.flush()
 print(f"\n{len(failures)} failure(s)")

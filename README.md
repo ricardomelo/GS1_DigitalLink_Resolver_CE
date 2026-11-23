@@ -1,4 +1,4 @@
-# GS1 Digital Link Resolver CE — Expansion Pack
+# GS1 Digital Link Resolver Suite
 
 [![Development tests](https://github.com/gs1/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml/badge.svg?branch=master)](https://github.com/gs1/GS1_DigitalLink_Resolver_CE/actions/workflows/dev-tests.yml)
 ![GS1-Conformant Resolver 1.2.1](https://img.shields.io/badge/GS1--Conformant%20Resolver-1.2.1-002c6c)
@@ -8,7 +8,7 @@
 ![Licence: Apache 2.0](https://img.shields.io/badge/licence-Apache%202.0-blue)
 
 **Run your own GS1 Digital Link resolver — and everything around it.** The official GS1 Resolver Community Edition
-resolves QR codes; this edition turns it into a complete platform that any organisation can put in front of its
+resolves QR codes; this suite, built on it under the Apache License 2.0, turns it into a complete platform that any organisation can put in front of its
 members, its brands and its partners: a portal where people register links without writing a line of JSON, labels
 ready for print, a branded page that shows every link of a product, live figures on how codes are scanned, an
 organisation's own domain in every QR code, forwarding to other resolvers — every code of a prefix, or GS1's global
@@ -280,7 +280,7 @@ The architecture is designed to **scale out** from the first install:
 | Everyone | [Features](Documentation/features.md): every feature, what it does, when it was added and the checks that prove it |
 | Server administrators and operators | [Operator's guide](Documentation/extensions/README.md) (installation, configuration, operation, production) · [Changelog](Documentation/extensions/CHANGELOG.md) |
 | Integrators | [Tenant API reference](Documentation/api-reference.md), generated from the API's OpenAPI description |
-| Developers and maintainers | [Developer guide](Documentation/developer-guide.md) · [Inventory of features](Documentation/test-inventory.md) (every check of every test) · [Conformance review](Documentation/conformance-review.md) · [Architecture decisions](Documentation/README.md#architecture-decision-records) (ADR 0001 to 0019) |
+| Developers and maintainers | [Developer guide](Documentation/developer-guide.md) · [Inventory of features](Documentation/test-inventory.md) (every check of every test) · [Conformance review](Documentation/conformance-review.md) · [Architecture decisions](Documentation/README.md#architecture-decision-records) (ADR 0001 to 0022) |
 
 This README covers the overview, the API, installation and operation. The index of every document is
 [Documentation/README.md](Documentation/README.md).
@@ -329,7 +329,7 @@ the official Postman collection is at
 |---|---|
 | **Portal** (`/portal/`) | Sign-in with per-user passwords (with a show/hide button); editor for any primary key and qualifiers, with live GS1 checks; targets by GS1 link type, language and title; default link; QR code labels (SVG, PNG, PDF, or all three in a ZIP) with the dimensions of the *QR Codes powered by GS1* guidelines, sizes from 80 to 200 %, an optional EAN-13, UPC-A, EAN-8 or UPC-E beside the QR code for the transition to 2D, a choice of QR version, error correction and human readable text, optionally with GS1 Digital Link data attributes (expiry, weight, price…); record list with search and filters by key type and qualifier; spreadsheet import/export (XLSX, CSV) with preview; link checker; for a serial number, its EPC (SGTIN-96 or SGTIN-198) and the compressed link (`eh…`, `ex…`) for RFID and NFC tags |
 | **Governance** | Roles (administrator, editor, reader); organisations (tenants) that own GS1 Company Prefixes, each with its own users and audit trail, and a server administrator with recorded, read-only support access; access limited to GS1 Company Prefixes per user; user administration screen with temporary passwords or, with an e-mail relay, invitations by e-mail; API keys for the organisations' own systems (tenant API); password recovery by e-mail; security notices; history of every record with restore; audit trail with filters and CSV export; single sign-on with each organisation's own identity provider (OpenID Connect), password sign-in off per organisation; per-role limits on exports ([ADR 0012](Documentation/adr/0012-single-sign-on.md)) |
-| **Own domains** | An organisation's own domain in its QR codes (URI Syntax §4.11), with an optional path stem: proved by a DNS TXT record, default per GS1 Company Prefix or chosen on the label; either pointing at the resolver (which then answers on it for that organisation's codes only, certificates by `scripts/custom-domains.sh`) or redirected by the organisation's own server ([ADR 0009](Documentation/adr/0009-tenant-domains.md)) |
+| **Own domains** | An organisation's own domain in its QR codes (URI Syntax §4.11), with an optional path stem: proved by a DNS TXT record, default per GS1 Company Prefix or chosen on the label; either pointing at the resolver (which then answers on it for that organisation's codes only and nothing else — the portal stays on the installation's name, [ADR 0045](Documentation/adr/0045-organisation-domains-resolver-only.md) — certificates by `scripts/custom-domains.sh`) or redirected by the organisation's own server ([ADR 0009](Documentation/adr/0009-tenant-domains.md)) |
 | **Item page** | A page of all the links of an item as the default target of its code: made by the resolver, mobile first, an icon per link type, the visitor's language first, the logo and colours of the brand of each GS1 Company Prefix (uploaded in the portal), page views and clicks counted apart from scans, and a link to Verified by GS1 for GTINs and GLNs when the installation switches it on ([ADR 0011](Documentation/adr/0011-item-page.md)) |
 | **Keys and qualifiers** | All 16 primary keys of URI Syntax §4.3 and all key qualifiers of §4.4, with the formats of §4.6, the path order and compound paths of §4.9, built from the GS1 Barcode Syntax Dictionary of the engine release every service uses |
 | **Data attributes** | Every data attribute of URI Syntax §4.10 in QR codes, validated by the GS1 Barcode Syntax Engine (formats, check digits, dates, code lists and the association rules of the General Specifications), its messages in the user's language; passed on by the resolver to the targets |
@@ -358,18 +358,18 @@ flowchart LR
     web --> db[("MongoDB<br/>database-service")]
     de --> db
     portal -->|"own user: users, history"| db
-    init["portal-db-init<br/>(one-shot)"] -.->|"creates the portal's user"| db
+    init["portal-db-init<br/>(one-shot)"] -.->|"creates each service's user"| db
     worker["portal-worker ×n<br/>imports, link checks"] -->|"jobs"| db
     worker -->|"bearer token"| de
 ```
 
 | Service | Containers | Role | Published |
 |---|---|---|---|
-| `frontend-proxy-service` | `frontend-proxy-server` | Routes `/`, `/api`, `/portal/` and every Digital Link to every replica of the services; serves the home page | `${PROXY_BIND_ADDRESS}:8080` |
+| `frontend-proxy-service` | `frontend-proxy-server` | Routes `/`, `/api`, `/portal/` and every Digital Link to every replica of the services; serves the home page; limits requests per client address ([ADR 0031](Documentation/adr/0031-request-limits.md)) | `${PROXY_BIND_ADDRESS}:8080` |
 | `web-service` | `WEB_SERVICE_REPLICAS` (1) | Resolves GS1 Digital Links (redirects, linksets, HTML pages) | internal |
 | `data-entry-service` | `DATA_ENTRY_SERVICE_REPLICAS` (1) | REST API to create, read, update and delete records | internal (via `/api`) |
 | `portal-service` | `PORTAL_SERVICE_REPLICAS` (1) | Link management portal (Flask + static front end) | internal (via `/portal/`) |
-| `portal-db-init` | one, at every start | Creates or updates the portal's database user, then exits | — |
+| `portal-db-init` | one, at every start | Creates or updates the database users of the portal, the resolver and the data entry API, each with the least privileges it needs ([ADR 0030](Documentation/adr/0030-least-privilege-services.md)), then exits; the only service given MongoDB's root user | — |
 | `portal-worker` | `PORTAL_WORKER_REPLICAS` (1) | Runs the portal's background jobs (spreadsheet imports, link checks, e-mail messages) from its database; the portal's image | — |
 | `mailpit` | none unless started (profile `mail-test`) | A test relay that keeps every e-mail, for trying the portal's e-mail before a real relay exists; never in production | `127.0.0.1:8025` |
 | `database-service` | `database-server` | MongoDB | `${DATABASE_BIND_ADDRESS}:27017` |
@@ -455,6 +455,8 @@ Whichever limit is reached first applies. 5 000 rows take about 200–300 KB in 
 counts there; in CSV each row takes about 180–370 bytes, so 700 KB is usually reached first, at about
 2 000–3 900 rows. Use XLSX or split the file for larger batches. The size limit follows from the portal's
 1 MB request limit (the file travels base64-encoded); the values are set in `FORMATS` in `portal/sheet.py`.
+Only the first 64 columns of a row are read, and an XLSX file that unpacks into more than 32 MB is refused
+(ADR 0032); a spreadsheet of the import's layout reaches neither.
 
 CSV and text files may be separated by `;`, `,` or tab and encoded in UTF-8, UTF-16 or Windows-1252. How
 the portal treats accents, invisible characters, line breaks and formulas is described in
@@ -573,8 +575,11 @@ The query string of the scan is passed on to the target exactly as it was sent (
 
 ### Data entry API (`/api`, bearer token)
 
-Every operation except `/api/heartbeat` requires `Authorization: Bearer <SESSION_TOKEN>`. Interactive
-documentation: `https://<FQDN>/api/docs` (**Authorize** with `Bearer <token>`).
+Every operation except `/api/heartbeat` requires `Authorization: Bearer <SESSION_TOKEN>`. The proxy keeps `/api`
+and `/swaggerui` closed to every address unless `DATA_ENTRY_API_ALLOW` in `.env` lists it
+([ADR 0021](Documentation/adr/0021-data-entry-api-closed.md)); the portal is not affected, and organisations' systems
+use the tenant API (`/portal/api/v1`) with their keys. From an allowed address, interactive documentation:
+`https://<FQDN>/api/docs` (**Authorize** with `Bearer <token>`).
 
 | Operation | Origin | Purpose |
 |---|---|---|
@@ -638,7 +643,7 @@ For an organisation's own systems (an ERP, a PIM, a shop): the same rules as the
 organisation's records ([ADR 0005](Documentation/adr/0005-tenant-api.md)). An administrator creates a key in the
 portal (user menu → **API keys**: scopes, optional prefixes, validity) and sees it once; every call sends it as
 `Authorization: Bearer rk_<id>.<secret>`. Every operation is in the [tenant API reference](Documentation/api-reference.md). The description is public: `GET /portal/api/v1/openapi.json`
-(OpenAPI 3.1). Requests are limited per key (120 a minute by default; then 429 with `Retry-After`).
+(OpenAPI 3.1). Requests are limited per key (120 a minute by default; then 429 with `Retry-After`), and per client address at the proxy with the rest of the portal (`PROXY_LIMIT_PORTAL`, [ADR 0031](Documentation/adr/0031-request-limits.md)).
 
 | Operation | Scope | Purpose |
 |---|---|---|
@@ -718,6 +723,11 @@ sudo FQDN=id.example.org TLS_MODE=letsencrypt CERTBOT_EMAIL=ops@example.org \
    MONGO_INITDB_ROOT_USERNAME='gs1resolver'
    MONGO_INITDB_ROOT_PASSWORD='$PASS'
    MONGO_URI='mongodb://gs1resolver:$PASS@database-service:27017'
+   PORTAL_DB_PASSWORD='$(openssl rand -hex 24)'
+   RESOLVER_DB_PASSWORD='$(openssl rand -hex 24)'
+   DATA_ENTRY_DB_PASSWORD='$(openssl rand -hex 24)'
+   PORTAL_SECRET_KEY='$(openssl rand -hex 32)'
+   PORTAL_JOURNAL_KEY='$(openssl rand -hex 32)'
    SESSION_TOKEN='$TOKEN'
    FQDN='id.example.org'
    RESOLVER_ORG_NAME='Example Org'
@@ -748,7 +758,7 @@ to `.env` to use the portal over plain HTTP, then open http://localhost:8080/.
 ### Upgrading an installation of the official GS1 Resolver CE v3
 
 An installation of the official project (`github.com/gs1/GS1_DigitalLink_Resolver_CE`, v3, run with
-`docker compose up`) becomes the Expansion Pack **in place**, in its own folder, so that its database volume and its
+`docker compose up`) becomes the GS1 Digital Link Resolver Suite **in place**, in its own folder, so that its database volume and its
 records stay: `scripts/upgrade-from-official.sh` checks the installation, backs up the database, stops the official
 containers (the volume is kept), checks out this branch beside the official one, keeps the database's credentials and
 the data entry API's token in `.env`, runs the installer and compares the number of records before and after.
@@ -775,7 +785,8 @@ never committed).
 | Variable | Purpose |
 |---|---|
 | `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD` | MongoDB root user (applied when the database volume is created) |
-| `MONGO_URI` | Connection string of the web and data entry services |
+| `MONGO_URI` | MongoDB's root connection string, given to `portal-db-init` only ([ADR 0030](Documentation/adr/0030-least-privilege-services.md)) |
+| `RESOLVER_DB_USERNAME`, `RESOLVER_DB_PASSWORD`, `DATA_ENTRY_DB_USERNAME`, `DATA_ENTRY_DB_PASSWORD` | The database users of the resolver and of the data entry API (created by `portal-db-init`); the installer generates the passwords, and the services refuse to start on a real domain with the examples of `.env.example` |
 | `SESSION_TOKEN` | Bearer token of the data entry API (also used by the portal) |
 | `FQDN` | Domain of the resolver; the resolver root is `https://FQDN` |
 | `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | Operator in the description file, on the home page and on the resolver's pages (name linked to `RESOLVER_ORG_URL`) |
@@ -795,7 +806,7 @@ never committed).
 | `PORTAL_WORKER` (`external`) | Where imports and link checks run: `external`, the `portal-worker` service; `embedded`, a thread of the portal, for a set-up without that service |
 | `PORTAL_SESSION_IDLE_MINUTES` (30), `PORTAL_SESSION_MAX_HOURS` (12), `PORTAL_COOKIE_SECURE` | Optional portal settings: minutes without use and hours after the sign-in before the session ends, Secure cookie |
 | `BACKUP_COPY_TO` | An rsync destination (`user@host:/path`, or a mounted folder) to which each daily backup is copied; empty: no copy ([Documentation/extensions/README.md](Documentation/extensions/README.md#daily-backup)) |
-| `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Host addresses of ports 8080 and 27017 (read by Compose from `.env` only) |
+| `PROXY_BIND_ADDRESS`, `DATABASE_BIND_ADDRESS` | Host addresses of ports 8080 and 27017 (read by Compose from `.env` only); default `127.0.0.1`, `0.0.0.0` for every interface |
 | `WEB_SERVICE_REPLICAS`, `DATA_ENTRY_SERVICE_REPLICAS`, `PORTAL_SERVICE_REPLICAS`, `PORTAL_WORKER_REPLICAS` (1) | Containers of each service, 1 to 20 (read by Compose from `.env` only; the installer writes them) |
 | `WEB_SERVICE_PROCESSES`, `DATA_ENTRY_SERVICE_PROCESSES`, `PORTAL_SERVICE_PROCESSES` (2) | gunicorn processes in each container of the three web services (read by Compose from `.env` only) |
 
@@ -809,21 +820,23 @@ docker compose exec portal-service python create_user.py maria --role editor   #
 # who changed what: user menu → Audit trail (administrators), or the container log:
 docker compose logs -f portal-service | grep portal.audit
 docker compose logs --tail=60 portal-worker                      # imports and link checks (background jobs)
-sudo scripts/resolver-backup.sh                                  # backup now (every database + portal volume)
+sudo scripts/resolver-backup.sh                                  # backup now (every database + portal volume, encrypted)
 sudo scripts/restore-rehearsal.sh                                # prove the newest backup restores (a throw-away container)
 sudo scripts/rotate-secrets.sh                                   # new secrets in .env and in MongoDB; services recreated
 # more replicas: change e.g. WEB_SERVICE_REPLICAS=2 in .env, then
 docker compose up -d                                             # adds or removes containers; the proxy follows within 10 s
 docker compose ps                                                # one line per container (…-web-service-1, …-web-service-2)
-docker compose build --pull frontend-proxy-service && docker compose up -d   # the latest nginx 1.30 security release
+git pull && docker compose up -d --build                         # updates, image digests included (ADR 0033)
 ```
 
 Set the number of replicas in `.env`, not with `docker compose up --scale`: the next `docker compose up`
 (every update) goes back to the numbers in `.env`. The logs of a service show every replica, each line
 prefixed with its container's name.
 
-Backups go to `/var/backups/resolver` (14 days). Restore the database with
-`mongorestore … --archive --gzip --drop` through `docker compose exec -T database-service`, then run
+Backups go to `/var/backups/resolver` (14 days), encrypted with age to the backup key `/etc/resolver-backup.key`:
+**keep a copy of that key off the server**, without it no backup can be restored. Restore the database with
+`age -d -i /etc/resolver-backup.key ARCHIVE.archive.gz.age | … mongorestore … --archive --gzip --drop` through
+`docker compose exec -T database-service`, then run
 `docker compose up -d` (the portal's database user gets the password in `.env` again); the portal's volume
 holds only the fallback session key and copies of older files. The exact commands are in
 [Documentation/extensions/README.md](Documentation/extensions/README.md#daily-backup). Set `BACKUP_COPY_TO` to keep
@@ -889,6 +902,9 @@ portal in Chromium and the installer started that way too and are required since
 runs on nginx 1.30 from nginx.org, as in the proxy image. The versions of Python, Node.js, the engines,
 GS1's suite, Docker Compose and nginx are pinned in `.github/actions/dev-tests-setup/action.yml`; engines,
 packages and the browser are cached. Each job's result, with its check counts, is on the run's summary page.
+A second workflow, `.github/workflows/supply-chain.yml`, looks for known vulnerabilities in the lock files (pip-audit,
+npm audit) and in the five images it builds (Trivy), on every change of a lock, a Dockerfile or a workflow and every
+Monday, and attaches a CycloneDX SBOM of each image to each release ([ADR 0033](Documentation/adr/0033-supply-chain.md)).
 
 The official integration test `tests/setup_test.py` needs the running stack and reads the token from
 `SESSION_TOKEN`. The screenshots of this README and of the user guide are produced by
@@ -944,6 +960,10 @@ know whose data they handle.
 
 | Phase | # | Item | Size | Depends on |
 |---|---|---|---|---|
+| Security | 10.1 | **Phase 1 of the security assessment: the code reviewed by area** ([ADR 0020](Documentation/adr/0020-security-assessment.md); the areas and questions of the [threat model](Documentation/threat-model.md), section 10), each finding of the private register fixed with a development test that fails before the fix, the most severe first | L | — |
+| | 10.2 | **Phase 2: adversarial verification**: a second pass that tries to refute each finding; an authorisation matrix (every route × role × organisation) and fuzzing of the resolver's paths as permanent development tests | M | 10.1 |
+| | 10.3 | **Controls for healthcare chosen by the owner** from the threat model's gaps (section 9) and answers (section 11) — for example a second factor, approval by a second person for safety-critical link types, allowed target domains per organisation, the answering level made visible, a tamper-evident audit trail — each with its own ADR | L | the owner's answers |
+| | 10.5 | **Phase 4: dynamic tests on staging** run by the owner with the steps given, and an **independent penetration test** before production | M | 10.1, 7.2 |
 | Production | 7.2 | **Later, when the owner decides (20 October 2026).** **Production readiness**, on the servers: an installation on a clean machine, the off-server copy set up, a restore rehearsal, the staging secrets rotated and the [production checklist](Documentation/extensions/README.md#going-to-production) worked through (the scripts and the installer's final check of a scan through the proxy are done) | S | — |
 | | 7.4 | **More exhaustive load tests before production** (one rehearsal done and written up; the tests recommended are listed in the [procedure](Documentation/extensions/README.md#load-test-and-scale-out-rehearsal)): target load agreed, several replicas of the resolver and the portal, MongoDB replica set if needed, results recorded | S | 2.3, with 7.2 |
 | Standards | 8.1 | **Errata and Work Requests to GS1** (drafted, and the material to send prepared on 20 October; to be reviewed and sent by the owner): E1–E12 of the [conformance review](Documentation/conformance-review.md), and an issue on GS1's resolver test suite for erratum E12 | S | — |
@@ -970,7 +990,8 @@ scripts/                        install.sh, templates/ (nginx), resolver-backup.
                                 custom-domains.sh (sites and certificates of organisations' own domains),
                                 restore-rehearsal.sh, rotate-secrets.sh, upgrade-from-official.sh
 dev-tests/                      development tests (see above)
-.github/                        workflows/dev-tests.yml (continuous integration), actions/dev-tests-setup/
+.github/                        workflows/dev-tests.yml (continuous integration), workflows/supply-chain.yml and
+                                supply-chain/ (known vulnerabilities, SBOMs), actions/dev-tests-setup/
 Documentation/                  README.md (index), portal-user-guide.md, features.md,
                                 developer-guide.md, extensions/ (detailed documentation, changelog),
                                 images/ (README), adr/ (architecture decision records),

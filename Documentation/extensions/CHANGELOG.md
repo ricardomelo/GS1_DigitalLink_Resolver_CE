@@ -1,8 +1,701 @@
 # Changelog
 
-## Unreleased (branch gs1br/develop)
+## 3.2.0 — 23 November 2026
 
-Nothing yet.
+The security and resilience assessment's release: everything below down to 3.1.1, from the threat model (session 27)
+to the last finding fixed (session 69). A minor release of v3, like 3.1.0: the same architecture, services, routes and
+stored data, an installation of 3.1.x upgraded in place. Each entry below says what operators must do; read the
+paragraphs that follow before updating.
+
+Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
+address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API. Its writes answer 409
+when a key keeps changing under other writers, and a list sent to `POST /new` answers the error of the first item not
+written instead of 201. Every target it is sent must be an `https:` address with a public host name (400 otherwise; a
+target the key already holds is accepted). Every anchor it is sent must be `/AI/value` with a GS1 primary key (400
+otherwise; qualifiers go in `qualifiers`).
+
+Before updating an existing installation with `git pull`, add `RESOLVER_DB_PASSWORD` and `DATA_ENTRY_DB_PASSWORD` to
+`.env` (or run the installer again): without them the resolver and the data entry API refuse to start on a real domain
+(session 45, below).
+
+### An organisation given a prefix a forwarding rule covers is told (session 69)
+- **Changed: an organisation learns that a prefix it has just been given is already forwarded**
+  ([ADR 0054](../adr/0054-forwarding-tells-new-prefixes.md), completing session 61's change). Since session 61 an
+  organisation is told when a forwarding rule starts or stops sending its codes elsewhere; it was not told when a
+  server administrator gave it, in *Organisations*, a prefix that a rule switched on already covers, so its
+  administrators could keep records no scan would reach. Now, when an organisation is created or its prefixes change,
+  each such rule is an event *Prefix covered by a forwarding rule* in its own audit trail (by the operator) and an
+  e-mail alert to its administrators, *A forwarding rule sends codes of prefix … to another resolver* (the prefixes
+  given, the destination, when). The same prefixes saved again, prefixes taken away, or a rule that is off tell
+  nobody.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`; the message needs e-mail set up.
+  Commit `3941d91`.
+- **Translators:** one new e-mail message (`forwarding-covered`) and one text (`audit.action.forwarding-covered`),
+  drafts in ten languages.
+
+### Settings the resolver cannot read again expire after 15 minutes (session 68)
+- **Fixed: settings the resolver cannot read again no longer apply for ever**
+  ([ADR 0053](../adr/0053-settings-age.md); a deliberate change to the official resolver's heartbeat, which gains a
+  field). The resolver keeps what the portal sets (forwarding, the organisations' domains and brands, the strict mode,
+  the appearance, the request log's retention) and reads it again every 30 to 60 seconds; when it could not read it,
+  it went on with the last values for as long as it ran, telling nobody, so that a forwarding rule or the resolver of
+  last resort switched off in the portal could keep sending scans to another resolver. Now, after 15 minutes without
+  reading them, it applies no forwarding rule and no resolver of last resort (the scan is answered by this resolver's
+  records) and shows the item's pages without the organisations' brands and with the original appearance, until it
+  reads them again; it keeps the domains, the strict mode and the retention, whose absence would loosen what it
+  answers. Its log has an error line, `GET /heartbeat` answers `"settings": "stale"` (else `"current"`), and the
+  portal's server administrators receive the alert *Resolver's settings* by e-mail (new check in the overview's
+  Operation and in *Alerts*), with a message when it reads them again.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`: the optional setting
+  `RESOLVER_SETTINGS_MAX_AGE_S` (seconds, 60 to 86400, default 900) changes the limit; the resolver's log says it at
+  start. Commit `5df16ce`.
+- **Translators:** two new e-mail messages (`alert-settings-stale`, `alert-settings-current`) and three texts
+  (`alerts.kind.settings`, `overview.alert.settings`, `overview.check.settings`), drafts in ten languages.
+
+### An outage of the database answered within seconds (session 67)
+- **Fixed: while the resolver cannot reach MongoDB, each scan is answered within 5 seconds**
+  ([ADR 0052](../adr/0052-database-time-budget.md); a deliberate change to the official resolver's connection). A
+  request reads the database up to six times (the organisations' domains, forwarding, the strict mode, the request
+  log's retention, the brands, the appearance and the record), and each read waited 30 seconds for an unreachable
+  database: one scan could wait three minutes before the *Please try again in a moment* of session 66, holding one of
+  the resolver's threads, so that other scans queued and timed out. All the reads of a request now share one time
+  budget: during an outage the scan is answered 503 within it, with `Retry-After` of the same number of seconds (5
+  instead of 30); a working database answers well within it.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`: the optional setting
+  `RESOLVER_DB_TIMEOUT_MS` (milliseconds, 500 to 60000, default 5000) raises the budget for a slow but working database;
+  the resolver's log says the budget at start. Commit `990b469`.
+
+### A failure of the records' database answered "try again", never "not registered" (session 66)
+- **Fixed: while the resolver cannot read its records' database, a scan is answered 503 with `Retry-After`**
+  ([ADR 0051](../adr/0051-records-unavailable.md); a deliberate change to the official code). The official code read
+  the database's failure like a missing document: during an outage of MongoDB every scan, of registered codes too, was
+  answered 404 with the page *No information registered for this product*, counted in *Requests* as *Code not
+  registered* and, with the resolver of last resort switched on, sent to that other resolver. It is now answered 503
+  with `Retry-After: 30` (5 since session 67) — the page *The request could not be completed — Please try again in a moment* for a browser,
+  `The resolver cannot read its records at the moment: try again later` for an app — counted under *Error* when the
+  request log can still be written (it uses the same database), and never
+  sent to the resolver of last resort; a button of the item's page answers the same. Prefix rules still forward, an
+  invalid code is still 400.
+- **Integrators:** an app can tell an outage (503, try again after `Retry-After`) from a code nobody registered (404).
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`. Commit `98c083b`.
+
+### Error answers without the exception's text; no editor in the images (session 65)
+- **Changed: error answers of the resolver and the data entry API carry a fixed text**
+  ([ADR 0050](../adr/0050-error-answers.md); a deliberate change to the official code). The official code answered a
+  failure with the exception's text — `Database error: ` followed by PyMongo's message, which names the database's
+  host and port, `Internal Server Error - …`, `Duplicate key error: …`, `Unexpected error occurred. Details: …` — and a
+  body that was neither an object nor a list with the body itself. These answers now say `Database error: see the data
+  entry service's log`, `Internal server error: see the resolver's log` and the like, with the same status; the
+  exception and its traceback go to the service's log (`docker compose logs resolver-service` or `dataentry-service`).
+  A document written by another request between the check and the insert answers 409 naming the document. The code's
+  own refusals (registration rules, targets, anchors, values, EPC binary strings) keep their texts.
+- **Changed: the resolver's and the data entry API's images install no editor.** The official images installed
+  `nano`; the final stage of both now installs no package from Debian's repository (`docker compose cp` copies a file
+  in or out of a container).
+- **Integrators:** a system that read the cause of a 500 out of the answer finds it in the service's log; statuses
+  are unchanged.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`. Commit `6653986`.
+
+### Anchors of one shape and one document id per anchor in the data entry API (session 64)
+- **Changed: the official data entry API accepts anchors of one shape only**
+  ([ADR 0049](../adr/0049-data-entry-anchors.md); a deliberate change to the official code). Every anchor sent to
+  `POST /new` (one entry, a list, or the legacy v2 key type and key), `PUT` and `POST /validate` must be `/AI/value`:
+  one of the sixteen GS1 Digital Link primary keys and its value, in printable ASCII, with no other slash and no
+  spaces. Anything else — an anchor carrying qualifiers (`/01/…/10/LOT`), another AI, a value with spaces or accents —
+  is answered **400** naming the anchor, with nothing written (a list is refused whole). The official API stored such
+  anchors without checking their qualifiers or values, under ids the resolver never reads.
+- **Fixed: a key value with `_` keeps its anchor.** The official API turned every `/` of an anchor into `_` in the
+  document's id and every `_` back into `/`: `/8004/9506000AB_12` was listed and answered as `/8004/9506000AB/12`, and
+  `/8004/A/B` and `/8004/A_B` were one document. An id now splits at its first `_` (the AI is digits only), in the data
+  entry API and in the resolver: a value's own `_` is kept, a `%2F` in a request never reads another key's record.
+  `GET`, `PUT` and `DELETE /api/{AI}/{value}` answer 400 when the AI part holds `_`, and `GET /api/{AI}/{value}/…`
+  (more segments) answers 400. Stored documents keep their ids; a document written before from an anchor of another
+  shape is listed in `/summary` under the anchor its id now gives (`/01/X_10_Y`) and can be removed with `DELETE`.
+  The portal's behaviour does not change.
+- **Integrators:** a system that writes through `/api` must send the key as `/AI/value` and its qualifiers in
+  `qualifiers`.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`. Commit `6527a49`.
+
+### Targets sent to the data entry API follow the portal's rule (session 63)
+- **Changed: the official data entry API refuses the targets the portal refuses**
+  ([ADR 0048](../adr/0048-data-entry-target-rule.md); a deliberate change to the official code). The official API
+  stored any `href` — `javascript:`, `data:`, `http:`, an IP address or a name inside the operator's network — and the
+  resolver then redirected whoever scanned the code to it. Every target sent to `POST /new` (one entry, a list, or
+  the legacy v2 `targetUrl`), `PUT` and `POST /validate` must now be an `https:` address with a public host name, as
+  in the portal ([ADR 0037](../adr/0037-target-addresses.md)): no user name or password before the host, no IP
+  address however written, no name such as `localhost`, `.local` or `.internal`, no spaces or control characters.
+  Anything else is answered **400** naming the link and the reason, with nothing written (a list is refused whole). A
+  target the key already holds is accepted as it is, so records saved before keep resolving and can still be
+  rewritten. The portal's own behaviour does not change: it already refused these targets.
+- **Integrators:** a system that writes through `/api` with `http:` targets, or targets on internal names, must send
+  `https:` addresses on public names after the update.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`. Commit `0067b4c`.
+
+### Compressed links decompressed within limits (session 62)
+- **Changed: a one-segment path starts the GS1 Digital Link Toolkit only when it can be a compressed GS1 Digital
+  Link** ([ADR 0047](../adr/0047-toolkit-processes.md); a deliberate change to the official code). The official
+  resolver started a Node.js process for every path of one segment — `/wp-login.php` as well as a compressed link —
+  and waited for it without a time limit. Now a segment that is not 4 to 1,024 letters, digits, `-` or `_` is
+  answered 400 at once; at most two toolkit processes run at a time in each server process, a process still running
+  after 3 seconds is stopped, and when none can answer in time the resolver answers **503 with `Retry-After: 1`**
+  (*Please try again in a moment*; JSON for applications), counted as an error in the request log. The answer for a
+  compressed link is remembered, so scanning the same code again starts nothing; the 400 for a segment that does not
+  decompress no longer carries the toolkit's own error text. Uncompressed links and EPC binary strings are not
+  affected.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`. Commit `642839d`.
+
+### A forwarding rule told to the organisations it concerns (session 61)
+- **Changed: an organisation learns when a forwarding rule sends its codes elsewhere**
+  ([ADR 0046](../adr/0046-forwarding-tells-organisations.md)). A prefix rule of the server administrators
+  ([ADR 0018](../adr/0018-forwarding.md)) answers every code of its prefix before this resolver's records, an
+  organisation's records included; before, only the operator's audit trail recorded it. Now each change that changes
+  where an organisation's codes go — a rule added or removed while on, switched on or off, given another destination
+  or way of sending — is also an event in that organisation's own audit trail (by the operator) and an e-mail alert to
+  its administrators: *Codes of prefix … are now sent to another resolver* (the destination, the organisation's
+  prefixes covered, when) or *… are no longer sent to another resolver* (to check the records that answer again).
+  Changing only a rule's note, or a rule that stays off, tells nobody. The messages are alerts (Options → E-mail, on
+  by default), in the twelve languages; the *Forwarding* screen says so beside the rules.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`; the messages need e-mail set up.
+  Commit `8d27572`.
+
+### Only the resolver on an organisation's own domain (session 60)
+- **Changed: an organisation's own domain serves its codes and nothing else**
+  ([ADR 0045](../adr/0045-organisation-domains-resolver-only.md)). The host's sites that `scripts/custom-domains.sh`
+  writes for organisations' domains include a rule it writes too (`/etc/nginx/snippets/gs1resolver-domain-paths.conf`):
+  the portal's addresses (`/portal`, `/portal/…`) answer **302** to the same address on the installation's own name
+  (`PORTAL_ORIGIN`, else `RESOLVER_PUBLIC_URL`, else `https://FQDN`), and the official data entry API (`/api…`,
+  `/swaggerui…`) answers **404**. Before, the domain also showed the operator's portal — a sign-in page under a name
+  the organisation controls — and offered the data entry API to the addresses allowed. Codes (with or without the
+  domain's stem), `/.well-known/gs1resolver` and the home page answer as before.
+- **Changed: sites written before are changed by the next run** of `custom-domains.sh` (the installer's cron: within
+  5 minutes of the update): the include put before each `location /`, nginx tested first, a site nginx refuses put back
+  as it was (`ERROR`, shown on the domain cards). `list` names a site without the rule; a site without `location /` is
+  reported and left alone.
+- **Changed: path stems that could never resolve are refused** (`domains.stemInvalid`): a first segment the
+  installation's proxy gives to something other than the resolver — `api…`, `swaggerui…`, `portal`, `home` — or
+  `.well-known`, in any case; the message says so, in the twelve languages. A domain saved before with such a stem
+  keeps it.
+- **Integrators:** the tenant API and the data entry API are called on the installation's name, not on an
+  organisation's domain.
+- **Operators:** after `git pull`: `docker compose up -d --build` (the portal's stem rule); the sites of organisations'
+  domains change by themselves within 5 minutes, or at once with `sudo scripts/custom-domains.sh apply`; check with
+  `sudo scripts/custom-domains.sh list`. Nothing for `.env`. Commit `f6054b0`.
+
+### Encrypted backups; single sign-on secrets sealed in the database (session 59)
+- **Changed: every backup archive is encrypted** with [age](https://age-encryption.org)
+  ([ADR 0044](../adr/0044-encrypted-backups-and-sealed-secrets.md)): `resolver-<time>.archive.gz.age` and
+  `portal-config-<time>.tar.gz.age`, encrypted as they are written, so neither the local archives nor the off-server
+  copy can be read — or changed unnoticed — without the **backup key**. The installer installs age and creates the key,
+  `/etc/resolver-backup.key`; on an installation upgraded without it, the first backup run does (`NOTICE` in its log).
+  **Keep a copy of that key off the server: without it no backup can be restored.** Without age the backup fails
+  (`ERROR`, an alert from the monitoring) rather than writing an unencrypted archive.
+- **Added: `BACKUP_RECIPIENTS`** (age public keys: the backups need only those, so the key can be kept off the server),
+  `BACKUP_KEY_FILE` (another place for the key) and `BACKUP_ENCRYPTION=off` (the former unencrypted archives, with a
+  warning, for a destination that encrypts by itself).
+- **Changed: the restore rehearsal decrypts** the newest archive with the backup key (`BACKUP_KEY_FILE` for a key kept
+  elsewhere); archives from before are restored as they are. The operator README gives the manual restore with
+  `age -d`.
+- **Changed: each organisation's single sign-on client secret is sealed in the database** (AES-256-GCM under the new
+  `PORTAL_DATA_KEY`, which the installer generates; without it a key of the portal's configuration volume): the
+  database or a dump of it no longer gives the secrets. Secrets stored before are sealed when the portal starts. A
+  secret that no longer opens (the key lost) is never sent: the sign-in stops and the *Organisation sign-in* screen says
+  *secret unreadable*, until an administrator enters it again.
+- **Added: `scripts/rotate-secrets.sh data`** (only when named): a new `PORTAL_DATA_KEY`, the former one kept as
+  `PORTAL_DATA_KEY_PREVIOUS` until the portal has sealed the secrets again.
+- **Operators:** after `git pull`: `sudo apt-get install age`; `grep -q '^PORTAL_DATA_KEY=' .env || printf
+  "PORTAL_DATA_KEY='%s'\n" "$(openssl rand -hex 32)" >> .env`; `docker compose up -d --build`; `sudo
+  scripts/resolver-backup.sh` (it creates `/etc/resolver-backup.key`); copy that key off the server; `sudo
+  scripts/restore-rehearsal.sh`. Archives written before stay unencrypted until the 14 days remove them; the off-server
+  destination keeps its own. Commit `513b9a5`.
+
+### Access logs without the client's address or the query string (session 58)
+- **Changed: the front-end proxy's access log keeps no personal data by default**
+  ([ADR 0043](../adr/0043-access-logs.md)). Each line holds the time, the method, the path's first segment (`/01`,
+  `/portal`; `/...` for anything else, such as a compressed link), the status, the size and the time taken: no longer
+  the client's address, the rest of the path, the query string, the User-Agent or the referrer, which the request log
+  never kept either. The request limits' refusals no longer write the client's address to the error log; they show in
+  the access log as status 429.
+- **Added: `PROXY_ACCESS_LOG`** in `.env`: `minimal` (the default), `full` (the former line, with the time taken: for
+  a diagnosis; personal data, to be stated in the privacy notice while it lasts) or `off`.
+- **Changed: the resolver, the data entry API and the portal write no access log** (gunicorn without
+  `--access-logfile`), and **the installer's nginx sites keep none** (`access_log off;`, for the organisations' domains
+  too). When the installer keeps a Let's Encrypt site that still logs, it prints the command that turns it off.
+- **Added: each container's output is bounded**: at most `LOG_MAX_FILES` (5) files of `LOG_MAX_SIZE` (10m), the
+  oldest dropped first (Docker kept it whole until the container was removed).
+- **Operators:** after `git pull`, `docker compose up -d --build`; then, for a site the installer kept,
+  `grep -c 'access_log off' /etc/nginx/sites-enabled/*` and the installer's command for any file that shows fewer
+  than its servers. A tool that read the proxy's former lines reads the new ones, or sets `PROXY_ACCESS_LOG=full`.
+  Commit `909b826`.
+
+### The host's nginx kept up to date, over HTTP/1.1 (session 57)
+- **Security: nginx's release of 18 November 2026** (CVE-2026-123007 and nine more, fixed in nginx 1.30.7 and 1.31.9;
+  the most serious needs HTTP/2 and has a public proof of concept). The front-end proxy already runs nginx 1.30.7 (its
+  image's digest of 21 November) and meets none of the flaws' conditions; the host's nginx, which ends TLS, is
+  Ubuntu's package ([ADR 0042](../adr/0042-host-nginx.md)).
+- **Changed: the installer installs or updates the host's nginx on every run** (and Certbot), instead of installing it
+  only when missing, and checks its version: a package older than the fixed ones (Ubuntu 24.04 1.24.0-2ubuntu7.20,
+  22.04 1.18.0-6ubuntu14.24, nginx.org 1.30.7 or 1.31.9) is reported with the command that updates it.
+- **Changed: the HTTPS site written for an existing certificate serves HTTP/1.1 only** (`listen 443 ssl;`). When the
+  installer keeps a Let's Encrypt site that serves HTTP/2, it says so and prints the command that turns it off.
+- **Operators:** update the host's nginx now — `sudo apt-get update && sudo apt-get install --only-upgrade nginx` —
+  or run the installer again. Commit `7c3bea5`.
+
+### A queued import stops when its account may no longer write (session 57)
+- **Changed: a queued import writes only while its account may.** The worker reads the account again before each
+  record, as every request does: when an administrator removes or disables the account, disables its organisation or
+  makes it a reader after *Apply*, the import stops before the next record (*The import stopped: the account that
+  applied it was removed or disabled…*, `import.accountChanged`); the records written before stay. An account removed
+  and made again under the same name is another account. A prefix taken from the user while the import runs fails the
+  next records one by one, instead of only the next import ([ADR 0041](../adr/0041-queued-import-account.md)).
+- **New in the audit trail: *Import stopped: the account could no longer write*** (`import-refused`), in the trail of
+  the organisation the import was for, with the reason and how many records were written and left.
+- **Fixed:** a removed account's queued import ran as an empty account, in the operator's scope.
+- Corrects finding F-024 of the security assessment. Commit `4bb4928`.
+
+### Malformed request bodies refused before the route (session 56)
+- **Changed: a malformed body is answered with what is wrong, never with an error 500.** Every write to the portal's
+  API, the organisations' API included, must send one JSON object; anything else — an array, a text, a number, `null`,
+  broken or deeply nested JSON — is answered **400 `request.jsonInvalid`**. A field holding a value of another kind
+  than the portal reads (a number for a text, an object for a user name or token, a row of `links` that is not an
+  object) is answered **422 `request.fieldInvalid`** with the field's path, such as `links.2.url`
+  ([ADR 0040](../adr/0040-request-bodies.md)). Before, 36 of the 60 write routes answered 500 to some such body.
+- **Change an integrator may notice:** the organisations' API (`PUT /portal/api/v1/records/…`) answers a body that is
+  not an object with 400 `request.jsonInvalid` (it was 422 `request.jsonRequired`, still given for an empty body), and
+  a row of `links` that is not an object or a language that is not a text with 422 `request.fieldInvalid` (they were
+  dropped silently). `openapi.json` describes both.
+- **Fixed:** an XLSX export (records or overview) failed when a translated column title carried a control character;
+  such characters are now left out of the workbook.
+- Corrects findings F-023 and F-029 of the security assessment. Commit `eda6315`.
+
+### The installation's own names only (session 55)
+- **Changed: the resolver writes only names the installation knows.** The linkset's anchors, its JSON-LD `@id`, the
+  `Link` and `Resolution-Anchor` headers and the description file's `resolverRoot` are on the name a request was made
+  on only when that name is `FQDN`, an organisation's verified domain, or one listed in the new setting
+  **`FQDN_ALIASES`** (other names of the installation, separated by commas); any other name a request gives — a forged
+  `Host`, a domain not verified yet — gets `FQDN` ([ADR 0039](../adr/0039-known-public-names.md), amending ADR 0009 §8).
+  A cache in front of the resolver can no longer keep an answer that points to a name an attacker chose.
+- **Changed: redirects without the client's host.** The installation's proxy writes its own redirects (`/portal` →
+  `/portal/`, `/home` → `/`) as a path, and the installer's site for an existing certificate redirects plain HTTP to
+  `https://FQDN`, never to the `Host` the client sent.
+- **Action for operators** whose installation answers on a second name of its own (a server block and certificate
+  on the host besides `FQDN`): list it, `printf 'FQDN_ALIASES=second.example.org\n' >> .env`, then
+  `docker compose up -d`; until then the linksets on that name carry `FQDN` and GS1's conformance suite fails there.
+  Organisations' verified domains need nothing. Installations using the installer's certificate template
+  (`nginx-site-https.conf`) get the new HTTP redirect when the installer is run again.
+- Corrects finding F-022 of the security assessment. Commit `e8e7a23`.
+
+### The browser's rules: Content-Security-Policy everywhere, HTTPS only (session 54)
+- **New: every answer of the portal, the resolver and the data entry API carries a Content-Security-Policy**
+  ([ADR 0038](../adr/0038-browser-hardening.md)). The portal's pages may run only the portal's own script files and
+  style sheets, load fonts from Google Fonts and images from the installation, call only the installation and never be
+  framed; the resolver's pages (a linkset or a choice in a browser, the error pages, the item's page) may run and style
+  only their own elements, by a code drawn for each answer, and the item's page loads nothing from other sites;
+  redirects, JSON answers and the description file may load nothing; the Swagger UI of the data entry API calls only
+  the installation. A script slipped into a record or a page by a flaw would be refused by the browser. The resolver's
+  answers also stop browsers guessing a type (`nosniff`) and state the referrer policy that keeps a scanned item's
+  address from the sites its links lead to; the portal adds `Cross-Origin-Opener-Policy: same-origin`.
+- **New: HTTPS only, for browsers.** Every answer to a request that came over HTTPS carries
+  `Strict-Transport-Security: max-age=31536000`, from the installation's proxy: a browser that has seen it uses only
+  HTTPS for that name (the installation's and each organisation's domain) for a year, even when someone types
+  `http://`. Not for other names under it and not preloaded; nothing over plain HTTP. It relies on the host's proxy
+  sending `X-Forwarded-Proto`, as the installer's and Certbot's configurations do.
+- The portal stays on the installation's name: a host name of its own was weighed and not taken (ADR 0038 §2.5).
+- Corrects finding F-021 of the security assessment. Nothing to add to `.env`; rebuild the services
+  (`docker compose up -d --build`). Commit `7447750`.
+
+### Target addresses (session 53)
+- **Changed: a target with a user name or password before the host, an IP address, or a name that only exists inside
+  a network is refused** ([ADR 0037](../adr/0037-target-addresses.md)). `https://www.brand.example@other.example/`
+  opens `other.example`; `https://10.0.0.5/`, `https://2130706433/` (an IPv4 address written as one number) and
+  `https://printer.local/` send the person who scans to a device on their own network. The editor, imports (with the
+  row), the tenant API (422) and a restored version refuse them with their own message (`link.urlUserInfo`,
+  `link.urlAddress`, `link.urlHost`; twelve languages), and forwarding destinations refuse them too. Ports, names
+  outside ASCII and a trailing dot are still accepted; records saved before keep their targets until edited.
+- **New: the hosts an organisation's links may point to.** On the organisation's page, tab *Targets*, its
+  administrators (and the server administrators, also for the codes no organisation holds) list host names, one per
+  line; with hosts listed, a record is saved only when each target is one of them or a name under one
+  (`link.urlNotAllowed`), the item's page excepted. Empty, as it starts, accepts any public host. Journalled as
+  *Link hosts changed* (`target-hosts`); `PUT /portal/api/targets/hosts`.
+- Corrects finding F-020 of the security assessment. Nothing to add to `.env`; rebuild the portal
+  (`docker compose up -d --build`). Commit `806ff42`.
+
+### User names and e-mail addresses of other organisations (session 52)
+- **Changed: an e-mail address is unique within an organisation, not in the whole installation**
+  ([ADR 0036](../adr/0036-names-and-addresses-across-organisations.md)). An organisation's administrator could learn
+  from the refusal *Another user already has this e-mail address* that a person had an account in another
+  organisation; now the same address may be given once in each organisation (the operator's users count as one).
+  Password recovery by an address sends a link to each account that has it; organisation sign-in looks for the account
+  only in the organisation of the provider's configuration.
+- **Changed: an organisation's administrator who tries user names already taken is slowed down.** User names stay
+  unique in the installation (they are what people type to sign in), so *The user … already exists* may still concern
+  another organisation; after five such answers within 15 minutes the administrator gets *Too many user names already
+  in use were tried* (twelve languages) and creates no user until 15 minutes have passed, and every name of another
+  organisation tried is journalled as `user-create-refused` in the operator's audit trail. Server administrators are
+  not limited.
+- Corrects finding F-019 of the security assessment. Nothing to add to `.env`; rebuild the portal
+  (`docker compose up -d --build`). Commit `0f432e2`.
+
+### Domain claims that expire, proofs that lapse (session 51)
+- **Changed: adding a QR code domain no longer reserves it** ([ADR 0035](../adr/0035-domain-claims-and-lapsed-proofs.md)).
+  Until it is verified a domain is a claim, deleted after 7 days; several organisations may claim the same name, and
+  the first to verify it keeps it (the other claims go). Before, an organisation could add another's domain without
+  ever proving it and keep the rightful owner out.
+- **Changed: a verified domain whose DNS record disappears lapses.** The worker looks at the record daily, as before;
+  missing for 7 days the domain is shown as *Lapsed*: still served, so printed codes keep working, but no longer the
+  default nor a choice for new labels, its administrators receive the new alert *the DNS record that proves the domain
+  is missing* (twelve languages), the event `domain-lapsed` goes into the audit trail, and another organisation that
+  proves the domain takes it over (`domain-released` in the first one's trail). *Verify* with the record back ends the
+  lapse.
+- **Changed: single sign-on's DNS proofs lapse the same way**: a lapsed proof still signs people in, but no longer keeps
+  another configuration from proving the domain. Approvals by a server administrator do not lapse.
+- At the first start after the update, domains added but never verified become claims, deleted 7 days later unless
+  verified. Corrects finding F-018 of the security assessment and F-006's residual. Nothing to add to `.env`; rebuild
+  the portal (`docker compose up -d --build`). Commit `5405e90`.
+
+### Signing out ends the session everywhere (session 50)
+- **Changed: the portal keeps a record of each open session** ([ADR 0034](../adr/0034-session-records.md)). The
+  session cookie now carries a random session id, and the portal's database keeps its SHA-256 (new collection
+  `sessions`, emptied by MongoDB as sessions end). Signing out removes the record, so a copy of the cookie (from a
+  shared computer, a browser profile or a log) stops working at once instead of living until the idle or absolute
+  limit. A password change ends every other session of the account and gives this browser a new id; a password set
+  through a link or reset by an administrator, and an account disabled or removed or its organisation disabled, end
+  them all, and they stay ended when the account or organisation is enabled again (before, enabling it brought a
+  copied cookie back to life).
+- **Everyone signs in once more after the update**: cookies signed before it carry no session id and are refused,
+  with the usual *session ended* message.
+- Corrects finding F-016 of the security assessment. Nothing to add to `.env`; rebuild the portal
+  (`docker compose up -d --build`).
+
+### Known vulnerabilities looked for; an SBOM per release (session 49)
+- **New: the *Supply chain* workflow** ([ADR 0033](../adr/0033-supply-chain.md), step 2) looks for known
+  vulnerabilities on every change of a lock file, a Dockerfile or a workflow, and every Monday: pip-audit and npm audit
+  read the four Python and two npm lock files, and Trivy scans the five images it builds (which also proves that the
+  locks install in them). A vulnerability with a correction available fails it (in the images, HIGH and CRITICAL);
+  exceptions, each with its reason, review date and an expiry within 90 days, are listed in
+  `.github/supply-chain/accepted.yaml` (at present only files of the official MongoDB image: its `gosu`, database tools
+  and `js-yaml`, reviewed as out of reach until the image is rebuilt). The proxy image now takes Alpine's security
+  updates at each build (`apk upgrade`), which brought the corrected libxml2 the first scan asked for. The tools are fetched by version and hash, not through third-party
+  actions.
+- **New: a CycloneDX SBOM of each image** is attached to each GitHub release (`resolver-<tag>-<service>.cdx.json`), and
+  kept as an artefact of every run of the workflow.
+- **Changed: Pillow 13.0.0 and PyMongo 4.19.0.** The first scan found known vulnerabilities with corrections in the
+  locked Pillow 12.3.0 (the portal's labels and logos; 43, five of them critical) and PyMongo 4.16.0 (every Python
+  service; 5). The portal now allows Pillow 13 (`>=13.0,<14`), and the resolver's and the data entry API's pins move
+  from PyMongo 4.16.0 to 4.19.0, a deliberate change of the official services' versions; behaviour unchanged.
+- Corrects finding F-015 of the security assessment, second and last step. Nothing to add to `.env`; rebuild the
+  images (`docker compose up -d --build`) to install the new Pillow and PyMongo.
+
+### The supply chain fixed by content (session 48)
+- **Changed: every Python package is installed from a lock file with its hashes**
+  ([ADR 0033](../adr/0033-supply-chain.md)). The resolver, the data entry API and the portal install `requirements.txt`
+  files that list every package, direct or not, at one version with the SHA-256 of its files (`pip install
+  --require-hashes`); their direct dependencies moved to `requirements.in`. The portal's packages no longer move to the
+  newest release within their ranges at each build. `dev-tests/lock-dependencies.sh` writes the lock files (the
+  development tests' first, each service's inside it), so the tests run the images' versions.
+- **Changed: base images by digest, actions by commit.** Every `FROM`, the test relay `axllent/mailpit` and the CI's
+  MongoDB are named `name:tag@sha256:…`; every GitHub Action by commit. `docker compose build --pull` no longer brings a
+  newer image of the same tag: a line's security release arrives as a new digest in the repository, then `git pull` and
+  `docker compose up -d --build`.
+- **Changed: Node.js in the resolver and the data entry API** comes from the official Node.js image and `gs1encoder`
+  from `package-lock.json` (`npm ci --ignore-scripts`); the images no longer pipe NodeSource's setup script into
+  `bash` nor run `npm init es6` (which fetched and ran the newest `create-es6`), and no longer contain npm or curl. The
+  build refuses a lock whose `gs1encoder` is not the release `docker-compose.yml` names.
+- **New: Dependabot** proposes the updates of the lock files, image digests and actions every Monday, against the
+  development branch (from the release that carries `.github/dependabot.yml` to the default branch);
+  **`SECURITY.md`** says how to report a vulnerability privately.
+- Corrects finding F-015 of the security assessment, first step: scanning for known vulnerabilities and an SBOM per
+  release follow (ADR 0033, step 2). Nothing to add to `.env`.
+
+### Spreadsheet imports read one row at a time (session 47)
+- **Changed: what an imported spreadsheet holds is bounded, not only its size**
+  ([ADR 0032](../adr/0032-spreadsheet-reading-limits.md)). Reading stops at the first data row past the format's limit
+  (5,000) instead of reading the whole sheet first; only the first 64 columns of a row are read (further columns are
+  ignored); blank rows no longer take memory. An Excel file whose contents unpack into more than 32 MB is refused with
+  *Once unpacked, the file holds more than 32 MB, the limit for an import. Split the spreadsheet into smaller parts.*
+  (twelve languages), as is one compressed otherwise than Excel does. A spreadsheet of the import's layout reaches
+  none of these limits; a crafted file of a few kilobytes could before take gigabytes of the portal's memory.
+
+### Request limits per address; anonymous requests counted (session 46)
+- **New: the proxy limits how many requests one address may send** ([ADR 0031](../adr/0031-request-limits.md)).
+  Resolution and the home page 50 a second (bursts of 100), the portal, its API and the tenant API 30 a second
+  (bursts of 90), sign-in, password recovery and single sign-on 60 a minute (bursts of 30), and 100 connections at
+  once, counted on the client's address found through the trusted proxies (an IPv6 address with the rest of its
+  `/64`). Beyond them the proxy answers 429 with `Retry-After` before any service is reached; the portal shows *Too
+  many requests from your address. Wait a moment and try again.* (twelve languages). New settings
+  `PROXY_LIMIT_RESOLVE`, `PROXY_LIMIT_PORTAL`, `PROXY_LIMIT_SIGNIN`, `PROXY_LIMIT_CONNECTIONS` (`0` turns one off)
+  and `PROXY_LIMIT_EXEMPT` (addresses or networks never limited: list your monitoring and any integrator that
+  resolves in bulk). The official data entry API keeps no request rate, only the connection limit.
+- **Changed: tenant API calls without a valid key are counted, not stored one by one.** One row per minute,
+  operation and status in *Requests → Tenant API* (*no valid key — N calls in this minute*), with the average time;
+  the overview adds them up.
+- **Changed: failed sign-ins with a user name of no account are counted, not journalled one by one.** Once an hour
+  the operator's audit trail gets one event with the count and the first ten addresses (up to two hours after the
+  attempts); the overview counts each failure. A wrong password for an existing account is still journalled at once
+  in its organisation's trail. The same for a single sign-on answer that reaches the portal without a sign-in in
+  progress. Commit `c89c362`.
+
+### The resolver and the data entry API without MongoDB's root user (session 45)
+- **Changed: every service connects to MongoDB as a user of its own, with the least privileges it needs**
+  ([ADR 0030](../adr/0030-least-privilege-services.md)). The resolver, which reads every anonymous request, and the
+  data entry API no longer receive MongoDB's root user: `portal-db-init`, the only service given it, creates at every
+  start a user for the resolver (it reads the records and the portal settings it serves from, and writes the request
+  log) and one for the data entry API (the records only), as it already did for the portal. A flaw in either can no
+  longer reach the portal's users, sessions, API keys or journal, nor create database users. New settings
+  `RESOLVER_DB_USERNAME`/`RESOLVER_DB_PASSWORD` and `DATA_ENTRY_DB_USERNAME`/`DATA_ENTRY_DB_PASSWORD` (optionally
+  `*_DB_HOST` or a complete `*_DB_URI`); the installer generates the passwords, `scripts/rotate-secrets.sh` rotates
+  them (`resolver-db`, `data-entry-db`). With `FQDN` naming a real host, each service refuses to start with the
+  example password of `.env.example`, naming the setting.
+- **Changed: the resolver's and the data entry API's containers no longer run as root** (a system user, as the
+  portal's already did).
+- **Changed: without `.env`, MongoDB (27017) and the proxy (8080) are published on the host's loopback address only.**
+  An installation made by the installer is unchanged (it writes both addresses); to reach a manual installation from
+  another machine set `PROXY_BIND_ADDRESS=0.0.0.0` in `.env`. Commit `3e92870`.
+
+### Requests to addresses users choose: the address checked is the one contacted (session 44)
+- **Fixed: the link checker, single sign-on and the check of a QR code domain contact the address they checked**
+  ([ADR 0029](../adr/0029-outbound-requests.md)). The portal already refused names that resolve to an internal
+  address; it now resolves the name once and connects to the address it checked, keeping the name for the site and
+  its certificate, so a name whose answer changes between the check and the request cannot lead the portal into the
+  server's own network. Proxies set in the portal's environment (`HTTPS_PROXY`) are no longer used for these
+  requests; neither the installer nor the composition sets one.
+- **Changed: the link checker contacts HTTPS addresses only.** A target starting with `http://` (the portal saves
+  HTTPS targets only; records written through the official API may hold others) is reported as *the address does not
+  use HTTPS and was not checked* (twelve languages), without a request.
+- **Changed: one link check of many addresses at a time per organisation**, and at most two requests to one site at
+  once. A second **Check links** (or import preview check) while one is queued or running answers *Another link check
+  of your organisation is already under way. Wait for it to finish or stop it.* (twelve languages). Commit
+  `0d23833`.
+
+### A leaflet in another language or for another market is no longer given silently (session 43)
+- **Changed: a safety-critical link in a language the person did not ask for now comes with a choice**
+  ([ADR 0028](../adr/0028-language-fallback.md)). When a browser asks for a recall status, safety information, patient
+  leaflet, summary of product characteristics or instructions for use — or scans a code whose default target is one of
+  them — and none of the links is in a language the browser accepts, or marked for the market asked (`?context=`),
+  the resolver no longer redirects straight to the other one: it shows the page of a choice with every version of
+  that information and its language, under a notice in the visitor's language (*No "Patient information leaflet" in
+  your language…*; twelve languages). One tap opens a version. A browser that also accepts the language of the link
+  (most send English as a second choice) is redirected as before.
+- **Added: the header `Resolution-Fallback`** (`language`, `context` or both) on every redirect or choice whose links
+  do not serve the language or the context the request asked for, for every link type, exposed to web apps on other
+  origins. Apps (`Accept: */*`) keep receiving the redirect, now with the header. Links that declare no language or no
+  context serve everyone, as before. GS1's conformance suite is unaffected.
+- **Added: two warnings in the portal** (editor, tenant API `warnings`, import preview), which never refuse a save:
+  *Safety-critical links without a language* (marked `und`, undetermined: the resolver cannot tell anyone they are in
+  another language) and *Safety-critical links missing in the record's languages* (for example a product page in
+  Portuguese and English with a leaflet in English only: a request in Portuguese receives the English leaflet). Commit
+  `9f28dab`.
+
+### No lost update when two people change one key (session 42)
+- **Fixed: two changes to the same identifier at the same moment no longer overwrite each other**
+  ([ADR 0027](../adr/0027-conditional-writes.md)). Every write of the data entry API (`POST /new`, `PUT`, a `DELETE`
+  of links or of a record) now writes the key's document only while it is still the one it read; when another user,
+  import or system changed it in between, the API reads it again and applies the change on top, so both are kept. If
+  the key keeps changing, nothing is written and the answer is 409: the portal shows *The records of this key were
+  being changed by someone else at the same moment…* (twelve languages) and the tenant API answers 409
+  `upstream.conflict`. A list sent to `POST /new` stops at the first item not written and says which; `POST /new` on
+  an existing key no longer answers 200 when the write failed. Commit `875db4b`.
+
+### The journal: insert-only, in a database of its own (session 41)
+- **Changed: the portal can no longer change or delete journal events** ([ADR 0026](../adr/0026-journal-integrity.md)
+  §2.5.2). The journal (`journal`, `journal_heads`) moves to a database of its own, `<PORTAL_DB_NAME>_journal`
+  (`resolver_portal_journal` by default), where the portal's MongoDB user may read and add events but not change,
+  delete or index them; `portal-db-init` makes the indexes, applies retention changes and seals the events of earlier
+  versions with the root user. A tampered event was already detected by the chains; now the portal's database user
+  cannot make one at all.
+- **Operators:** take a backup before this update (`sudo scripts/resolver-backup.sh` in the repository, or your own): at the first
+  `docker compose up -d --build`, `portal-db-init` moves the journal once and prints `journal moved to
+  <name>_journal (N event(s))`; nothing else to do, and the daily dump already covers every database. A line
+  `WARNING: … reappeared after the journal moved` means a portal of the earlier version wrote during the update; those
+  few events stay in the old place, neither moved nor sealed. Commit `e51f0c1`.
+
+### The journal: an alert when a chain breaks (session 40)
+- **Added: an alert by e-mail when the audit trail's integrity check finds a broken chain**
+  ([ADR 0026](../adr/0026-journal-integrity.md) §2.5, [ADR 0008](../adr/0008-monitoring-and-alerts.md)). The daily
+  verification of the journal's chains, and any administrator's *Verify integrity*, now keep their result; the
+  monitoring raises *Alert: … broken chain(s) in the audit trail* to the server administrators, naming each chain, the
+  problem and the event, reminds them every day while it lasts and sends *Resolved* once every chain is whole again.
+  A receipt typed wrongly is shown to whoever typed it and never alerts. The overview's Operation group shows when the
+  chains were last verified, and the *Alerts* screen lists the new kind. Twelve languages. Commit `30c81d5`.
+
+### The journal: written first, sealed, verified (session 39)
+- **Changed: a record change is journalled before it is made** ([ADR 0026](../adr/0026-journal-integrity.md)). The
+  journal entry of a save or a deletion (the editor, imports, the tenant API, *Fix serial numbers*) used to be written
+  after the data entry API had changed the record, and a failure to write it was only logged, so a record could change
+  without trace. Now the entry comes first; when the portal's database cannot take it, the change is refused with
+  *The audit journal could not be written* (503) and nothing is changed. A change the data entry API then refuses
+  adds an entry *Change not completed* naming the attempt; the record's history leaves such attempts out. The changes
+  the portal makes to a key's other records when it turns them to explicit default links are now journalled too.
+- **Added: every journal entry is sealed in a hash chain**, one per audit trail (each organisation's, the operator's)
+  and kind of entry (sign-ins, records, administration), with a key that stays outside the database
+  (`PORTAL_JOURNAL_KEY`). Changing, removing or inserting an entry, even directly in MongoDB or in a backup, breaks the
+  chain. Entries written before this version are sealed at the first start (marked so). **Operators:** the installer
+  adds `PORTAL_JOURNAL_KEY` to `.env` (an installation updated with `git pull` adds it by hand, see the release notes);
+  keep it with the other secrets, apart from the backups; `scripts/rotate-secrets.sh journal` replaces it. Without
+  it the portal starts and warns that the chains have no key.
+- **Added: *Verify integrity* on the Audit trail screen** (administrators): one line per chain with its result and its
+  head, a short text to copy and keep outside the server as a receipt; a receipt pasted later is looked for in its
+  chain. The worker verifies every chain once a day and writes each head to the portal's log. Twelve languages.
+  Commit `ad116df`.
+
+### Single sign-on: domains proved, verified e-mail, the provider's subject (session 38)
+- **Changed: an e-mail domain of a single sign-on configuration signs people in only once proved**
+  ([ADR 0025](../adr/0025-sso-domain-proof-and-subject.md)). Typing a domain used to claim it: any organisation's
+  administrator could list another organisation's domain, or a public mailbox domain, and so keep the rightful
+  organisation from using it and send people who typed such an address to their own provider. Now each listed domain
+  waits for a DNS TXT record at `_gs1resolver.<domain>` holding `gs1resolver-sso=<token>` (shown on the screen;
+  **Verify**), or for a server administrator's **Approve without DNS** (refused when accounts of another organisation
+  use the domain). A domain is proved in one configuration at most; a domain only listed elsewhere blocks nobody.
+  Password sign-in off applies only to users whose domain is proved. **Operators: configurations saved before this
+  version keep working — their domains are recorded as *accepted at the upgrade, without proof* — and should be
+  verified or corrected on the *Organisation sign-in* screen**; the portal's log says so at start.
+- **Changed: the provider must say the e-mail is verified** (`email_verified: true`); only an explicit `false` was
+  refused before. A configuration can say its provider never sends the claim (**The provider does not send
+  email_verified**; Microsoft Entra ID by default): **configurations using Entra ID must tick it**, or their users are
+  refused.
+- **Added: the account is bound to the provider's identity** at its first sign-in through the provider (issuer and
+  subject); a later sign-in presenting the same e-mail with another identity is refused, as is an identity already
+  bound to another account. The *Users* screen shows the binding and **Forget organisation account**, for a person
+  whose account at the provider was recreated; a new e-mail address forgets it too. The journal records the subject
+  of each sign-in, each domain proved or approved, and each binding forgotten. Twelve languages. Commit `1699d51`.
+- **Fixed: an organisation's administrator could run the operator's provider test** (*Test the provider* of the
+  operator's configuration), which reads the operator's provider and shows the result; it is now reserved to server
+  administrators, support access still testing the organisation in support. Commit `8b6d643`.
+
+- **Changed: wrong passwords no longer lock an account.** Five wrong passwords for a user name, typed by anyone from
+  anywhere, locked it for 15 minutes even for its owner, so anyone who knew a user name could keep an editor or an
+  administrator out, repeatedly. Wrong passwords now delay that user name **from the address they came from** only:
+  three are free, then 15 seconds, doubling with each further failure up to 15 minutes; the sign-in page says how long
+  (*Wait N seconds*, or minutes) and the answer carries `Retry-After`. An address that collects 20 wrong passwords in
+  15 minutes, whatever the user names (it was 5), waits 15 minutes. A successful sign-in no longer resets its
+  address's count, so an account of one's own cannot be used to keep guessing at others. A user's own wrong current
+  password in *Options* still locks the password change after five, and others' wrong sign-ins no longer count there.
+  The security message sent at five failures now says the account is **not** locked and counts failures from every
+  address (template `sign-in-failures`, in place of `account-locked`; twelve languages). Commit `5527110`.
+
+### The name GS1 Digital Link Resolver Suite (session 36)
+- **Changed, deliberately: the project is called GS1 Digital Link Resolver Suite**
+  ([ADR 0024](../adr/0024-name-and-about.md)), in place of *GS1 Digital Link Resolver CE — Expansion Pack*, in the
+  README, the documents, the upgrade script's messages and the default privacy notice of the twelve languages. **The
+  pages' default title changes** from the official project's *GS1 Resolver Community Edition* to the new name: the
+  portal (its screens, sign-in page, privacy notice and About page), the home page and the resolver's pages and item's
+  page (`RESOLVER_PRODUCT_NAME`'s default). An operator's own title (*Appearance*, ADR 0019) still replaces it; an
+  appearance saved earlier with the title left empty stored *GS1 Resolver Community Edition* and now shows the new
+  name, its colours, logo and icon kept. What the official project's integrations read keeps the official name: the
+  resolver's description file (`/.well-known/gs1resolver`) and the titles of the resolver's and the data entry API's
+  OpenAPI descriptions. Commit `71ef8d2`.
+
+### An About page (session 35)
+- **Added: an About page** ([ADR 0024](../adr/0024-name-and-about.md)), `/portal/about`, open to anyone and linked
+  from the portal's user menu and side menu, the sign-in page and the home page: what the software is, the version
+  running (`git describe --tags`, the commit linked and its date), the source code and the Apache License 2.0, the
+  manuals linked at that commit, the origin (the official GS1 Digital Link Resolver CE), every third-party component
+  and data source with its licence, and the trademark and responsibility notices; twelve languages. The version is
+  written when the portal's image is built: `docker-compose.yml` now gives the portal's builds the checkout's `.git`
+  (`git pull && docker compose up -d --build` keeps it current; a copy without `.git` shows *version unknown*). The
+  repository's address comes from the checkout's `origin`, with any user name or token removed. Commit `b4972fb`.
+
+### The client's address behind proxies (session 33)
+- **Fixed: the portal's limits per address and its audit trail now use the client's real address.** The portal took
+  the first address of `X-Forwarded-For`, which the client writes: changing it at every attempt escaped the sign-in,
+  recovery and link limits per address, and writing someone else's address first had failures counted, and recorded in
+  the audit trail, against them. The proxy now finds the client with nginx's `real_ip` through the proxies it trusts
+  (the host's nginx behind a loopback `PROXY_BIND_ADDRESS`, and `PROXY_TRUSTED_PROXIES`, which now also takes networks
+  and follows a chain of proxies) and sets that address alone in `X-Real-IP` and `X-Forwarded-For` for the resolver,
+  the data entry API and the portal. **Operators with a load balancer or CDN in front** must list it in
+  `PROXY_TRUSTED_PROXIES`; otherwise every client shares its address (and its limits). Commit `4d96de1`.
+
+### Deleting one record without rewriting the key (session 32)
+- **Changed: deleting one record no longer rewrites the identifier's other records**
+  ([ADR 0023](../adr/0023-record-level-delete.md)). The data entry API gains a record-level delete: `DELETE
+  /api/{ai}/{value}` with `{"removeRecord": true, "qualifiers": [...]}` removes the record with those qualifiers and
+  keeps the others, in one conditional write of the key's document (read again when another writer changed it in
+  between; 409 after three attempts; the document goes with its last record). A body without `removeRecord`, or no
+  body, behaves as before. The portal uses it for *Delete this record*, the tenant API's `DELETE /records/…` and *Fix
+  serial numbers* (each serial number written alone first, then the old record removed). Before, the portal deleted
+  the identifier's whole document and wrote the other records back, so its codes answered 404 between the two calls,
+  and for good when the second one failed; a failed delete now leaves every record in place. An identifier holding a
+  record the data entry API would now refuse no longer blocks the deletion of another record. The message *The
+  deletion failed and the original record was restored* is gone. Commit `f5642c5`.
+
+### Warnings on safety-critical links and near-duplicate batches (session 31)
+- **Added: the portal warns where a scan could receive a link not meant for it** ([ADR 0022](../adr/0022-answering-level.md)
+  §2.5), for the five safety-critical link types. In the editor, an orange box under the targets of a batch or serial
+  record that lacks a type a broader record holds (*This record lacks safety-critical links that a broader record
+  holds*: the types, whose link the request receives, and what the strict mode would do), updated as the form changes;
+  under the targets of a product holding such links while the identifier has batch or serial records (*Batches without
+  a record of their own receive these links*); and under the qualifiers when a batch or serial value differs from an
+  existing one only in capitals, spaces, hyphens, dots, slashes, or O/0 and I/1 (*Batch LOTA already exists for this
+  key*). A warning never stops a save.
+- The **tenant API** answers each saved record with `warnings` (`warning.walkUp`, `warning.productLevel`,
+  `warning.nearDuplicate`, with their parameters; described in `openapi.json`). The **import's preview** marks each
+  record with a warning (⚠ and the reason) and counts them; they are imported all the same. The organisation's
+  **Resolution** tab counts the batch and serial records lacking such a link and lists the first ten. Texts in the
+  twelve languages. Commit `9114e49`.
+
+### The strict mode for safety-critical link types (session 30)
+- **Added: a strict mode per organisation for five safety-critical link types** (`gs1:recallStatus`,
+  `gs1:safetyInfo`, `gs1:epil`, `gs1:smpc`, `gs1:eifu`; [ADR 0022](../adr/0022-answering-level.md) §2.4). Off by
+  default, so nothing changes until an organisation chooses it. With it on, a request for one of these types that names
+  a batch or serial number is answered only by a record naming that batch or serial number (a serial within a batch may
+  use the batch's record); a link held only by the product, or by a variant, is withheld: **404 with
+  `Resolution-Match: withheld`**, so that an app can tell "nothing for this batch" from "nothing at all", and in a
+  browser a page saying that the information is not available for that batch, with the product's links under the
+  notice that they may not apply to it. A batch nobody registered, or registered with its value typed in another letter
+  case, no longer receives the product's *not recalled* page as if it were its own. Other link types, a plain scan, the
+  linkset and requests without a batch or serial are not affected.
+- The organisation's administrators switch it on in the portal (organisation's page, new tab **Resolution**, with the
+  five types and an example of what changes); the server administrator for any organisation and, on the operator's
+  page, for the codes no organisation holds. Journalled (*Strict mode changed*); the resolver applies it within a
+  minute. Requests kept back appear on the Requests screen as *Withheld by the strict mode* (also under *Not found
+  (404)*), in the request log as the outcome `withheld` and in the overview's resolution quality. Texts in the twelve
+  languages. Commit `6879817`.
+
+### The level that answered a request (session 29)
+- **Added: `Resolution-Anchor` and `Resolution-Match` on every redirect (307) and choice (300)**
+  ([ADR 0022](../adr/0022-answering-level.md)): the GS1 Digital Link URI of the record whose links answered, and
+  `exact` or `walk-up`. A request for a batch with no record of its own is answered, as the standard requires, by the
+  product's record (*walk-up*); an app can now tell, for example, that a `gs1:recallStatus` answer came from the
+  product and not from the batch it asked about. Both headers are readable by web apps on other origins
+  (`Access-Control-Expose-Headers`). They are not part of the GS1 standards and change no answer the standard defines.
+  The notice on the resolver's pages, an optional strict mode per organisation for five safety-critical link types
+  (session 30, above) and warnings in the portal follow (ADR 0022 §5). Commit `826a047`.
+- **Added: a notice on the item's page and the choice page when their links come from a less specific level** — for
+  example *Batch/lot L2 has no information of its own. The links below belong to this level: Product (every unit)…* —
+  in the visitor's language (ADR 0022 §2.3). A person who scans a batch nobody registered no longer takes the
+  product's recall notice or leaflet for the batch's without being told. The level headings of these pages now show
+  batch and serial values as printed (`A/B`, not `A%2FB`). Commit `1bbdb27`.
+
+### The official data entry API closed to the internet by default (session 28)
+- **Changed: `/api` and `/swaggerui` answer 403 unless `.env` lists the client in `DATA_ENTRY_API_ALLOW`** (addresses
+  or networks, or `all`; [ADR 0021](../adr/0021-data-entry-api-closed.md)). Its one token changes the records of every
+  organisation outside the portal's rules and journal, and the proxy published it to everyone; organisations' systems
+  use the tenant API (`/portal/api/v1`) with keys of their own. The portal is not affected. Behind the host's nginx
+  (`PROXY_BIND_ADDRESS=127.0.0.1`, as the installer sets it) the client is the address the host's nginx names; behind
+  another proxy, list it in `PROXY_TRUSTED_PROXIES`. A deliberate change to the official project, where `/api` is
+  public. **Before upgrading**: a system that calls `/api` from outside the server needs its address in
+  `DATA_ENTRY_API_ALLOW`, or a move to the tenant API.
+- **Changed: the home page no longer links to the data entry API's documentation** (menu and card).
+- **Changed: example secrets refused outside development.** With `FQDN` naming a real host, the data entry API and the
+  portal refuse to start with `.env.example`'s `SESSION_TOKEN`, and the portal with its example `PORTAL_DB_PASSWORD`,
+  naming the setting; MongoDB's example password is logged as a warning. The installer already replaces the first two.
+- The installer's summary says whether the data entry API is open, and to whom. Commit `8405225`.
+
+### Template values can no longer change a target (session 28)
+- **Fixed (security; code from the official project): a request could redirect a template record to a host of its
+  choice.** For a record whose qualifier is a template (`{lotnumber}`, which the official data entry API accepts and
+  the portal does not create) and for the `{0}`/`{1}` of a serialised key (GIAI, GRAI, SSCC), the resolver put the
+  request's value into the stored links as JSON text and parsed it again; GS1's character set 82 allows quotes and
+  commas in a batch or serial value, so a crafted link on the resolver's own domain could add or replace a link's
+  members, its address among them. The value now goes into a copy of the stored links string by string,
+  percent-encoded inside an address. Installations without template records were not affected. Commit `8c06f72`.
+
+### A security assessment, phase 0: the threat model (session 27)
+- **Added: [`Documentation/threat-model.md`](../threat-model.md)**, the first step of a security assessment with a view
+  to medicines and medical devices ([ADR 0020](../adr/0020-security-assessment.md)): the services and their trust
+  boundaries, the assets ranked by their effect on patient safety, the actors, every entry point, the threats with
+  the controls that answer them (each with the code that implements it), the hazards that are not attacks, the gaps
+  phrased as controls with a priority, and the plan of the review of the code. Weaknesses not yet fixed are kept out
+  of the public documents until they are. No change to the software. Commit `450d40e`.
 
 ## 3.1.1 — 29 October 2026
 

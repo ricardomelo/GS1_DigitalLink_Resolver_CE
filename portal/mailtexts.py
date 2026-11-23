@@ -119,21 +119,23 @@ TEXTS = {
                   "sobre a conta (trocas de senha, links de recuperação) virão para cá.\n\n"
                   "Se você não conhece esta conta, avise os administradores do portal."),
     },
-    "account-locked": {
+    "sign-in-failures": {
         "en-GB": ("Sign-in attempts to your account",
                   "Hello,\n\n"
                   "The user {user} could not sign in to the link management portal after several wrong "
-                  "passwords, the last on {when} (UTC). Sign-in for this user is blocked for {minutes} "
-                  "minutes.\n\n"
-                  "If it was you, wait and try again, or use \"Forgot your password?\" on the sign-in page. If it "
-                  "was not, someone may be trying to use your account: tell your administrator."),
+                  "passwords in {minutes} minutes, the last on {when} (UTC).\n\n"
+                  "The account is not locked: each address that keeps trying waits longer between attempts, so "
+                  "you can still sign in from your own computer. If it was you, use \"Forgot your password?\" on "
+                  "the sign-in page if you need to. If it was not, someone may be trying to guess your password: "
+                  "tell your administrator."),
         "pt-BR": ("Tentativas de acesso à sua conta",
                   "Olá,\n\n"
                   "O usuário {user} não conseguiu entrar no portal de gestão de links depois de várias senhas "
-                  "erradas, a última em {when} (UTC). O acesso deste usuário está bloqueado por {minutes} "
-                  "minutos.\n\n"
-                  "Se foi você, espere e tente de novo, ou use \"Esqueceu a senha?\" na página de acesso. Se não "
-                  "foi, alguém pode estar tentando usar a sua conta: avise o seu administrador."),
+                  "erradas em {minutes} minutos, a última em {when} (UTC).\n\n"
+                  "A conta não está bloqueada: cada endereço que continua tentando espera cada vez mais entre as "
+                  "tentativas, e você ainda pode entrar a partir do seu computador. Se foi você, use \"Esqueceu a "
+                  "senha?\" na página de acesso, se precisar. Se não foi, alguém pode estar tentando adivinhar a "
+                  "sua senha: avise o seu administrador."),
     },
     "api-key-created": {
         "en-GB": ("A new API key was created",
@@ -374,6 +376,80 @@ TEXTS = {
                   "Olá,\n\nO portal de {operator} agora usa a tabela de tamanhos de GCP da GS1 de {date}, com {days} "
                   "dias. A lista antiga tinha sido avisada em {since}.\n\nVocê recebe esta mensagem como administrador do "
                   "servidor; pode desligar os alertas em Opções → E-mail."),
+    },
+    "alert-journal": {
+        "en-GB": ("Alert: {count} broken chain(s) in the audit trail",
+                  "Hello,\n\nThe verification of {at} found {count} chain(s) of the audit trail of the portal of {operator} broken (since {since}):\n\n{chains}\n\nAn event was changed, removed or added outside the portal. Open Audit trail → Verify integrity to see each chain, keep the database backups made before that date, and check who can reach the database server and the journal key. You will be reminded every day while a chain is broken.\n\nYou receive this message as a server administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Alerta: {count} cadeia(s) quebrada(s) na trilha de auditoria",
+                  "Olá,\n\nA verificação de {at} encontrou {count} cadeia(s) da trilha de auditoria do portal de {operator} quebrada(s) (desde {since}):\n\n{chains}\n\nUm evento foi alterado, apagado ou acrescentado fora do portal. Abra Auditoria → Verificar integridade para ver cada cadeia, guarde as cópias de segurança do banco de dados feitas antes dessa data e verifique quem tem acesso ao servidor do banco de dados e à chave do diário. Você será lembrado todos os dias enquanto houver uma cadeia quebrada.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
+    },
+    "alert-journal-ok": {
+        "en-GB": ("Resolved: every chain of the audit trail is whole",
+                  "Hello,\n\nThe verification of {at} found every chain of the audit trail of the portal of {operator} whole. A broken chain had been reported on {since}.\n\nYou receive this message as a server administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Resolvido: todas as cadeias da trilha de auditoria estão íntegras",
+                  "Olá,\n\nA verificação de {at} encontrou íntegras todas as cadeias da trilha de auditoria do portal de {operator}. Uma cadeia quebrada tinha sido avisada em {since}.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
+    },
+    "alert-settings-stale": {
+        "en-GB": ("Alert: the resolver cannot read the portal's settings",
+                  "Hello,\n\nSince {since} the resolver of {operator} has not been able to read the portal's settings from the database for longer than its limit (RESOLVER_SETTINGS_MAX_AGE_S; 15 minutes unless set). Until it reads them again it sends no code to another resolver (prefix rules and the resolver of last resort) and shows the item's pages without the organisations' brands; it keeps the domains, the strict mode and the request log's retention it read last.\n\nAddress checked: {url}\n\nOn the server, \"docker compose logs --tail=100 web-service\" shows which settings and why (lines \"not read\"). You will receive a message when it reads them again, and a reminder every 24 hours meanwhile.\n\nYou receive this message as a server administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Alerta: o Resolver não consegue ler as configurações do portal",
+                  "Olá,\n\nDesde {since} o Resolver de {operator} não consegue ler as configurações do portal no banco de dados por mais tempo que o seu limite (RESOLVER_SETTINGS_MAX_AGE_S; 15 minutos se não for definido). Até lê-las de novo, ele não envia nenhum código a outro resolver (regras por prefixo e resolver de último recurso) e mostra as páginas dos itens sem as marcas das organizações; mantém os domínios, o modo estrito e a retenção dos acessos que leu por último.\n\nEndereço verificado: {url}\n\nNo servidor, \"docker compose logs --tail=100 web-service\" mostra quais configurações e por quê (linhas \"not read\"). Você receberá uma mensagem quando ele voltar a lê-las, e um lembrete a cada 24 horas enquanto isso.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
+    },
+    "alert-settings-current": {
+        "en-GB": ("Resolved: the resolver reads the portal's settings again",
+                  "Hello,\n\nThe resolver of {operator} reads the portal's settings again and applies them ({url}). It had reported them unreadable on {since}.\n\nYou receive this message as a server administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Resolvido: o Resolver voltou a ler as configurações do portal",
+                  "Olá,\n\nO Resolver de {operator} voltou a ler as configurações do portal e a aplicá-las ({url}). Ele tinha avisado em {since} que não conseguia lê-las.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
+    },
+    "alert-domain-lapsed": {
+        "en-GB": ("Alert: the DNS record that proves {domain} is missing",
+                  "Hello,\n\n"
+                  "The portal of {operator} has not found the TXT record {record} for {days} days: it was last seen on {seen}. The record proves that you control {domain}.\n\n"
+                  "If {domain} is a domain of your QR codes, it is still served but no longer offered for new labels. If it signs people in with single sign-on, it still does. In both cases another organisation of this installation that proves the domain takes it over.\n\n"
+                  "If you still use the domain, publish the record again (Domains or Single sign-on shows its value) and click Verify. If you no longer use it, remove it.\n\n"
+                  "You receive this message as an administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Alerta: o registro DNS que comprova {domain} sumiu",
+                  "Olá,\n\n"
+                  "O portal de {operator} não encontra o registro TXT {record} há {days} dias: ele foi visto pela última vez em {seen}. O registro comprova que vocês controlam {domain}.\n\n"
+                  "Se {domain} é um domínio dos seus QR codes, ele continua atendido, mas não é mais oferecido para novas etiquetas. Se ele dá acesso pelo login único, continua dando. Nos dois casos, outra organização desta instalação que comprovar o domínio passa a tê-lo.\n\n"
+                  "Se ainda usam o domínio, publique o registro de novo (o valor está em Domínios ou em Login único) e clique em Verificar. Se não o usam mais, remova-o.\n\n"
+                  "Você recebe esta mensagem como administrador; pode desligar os alertas em Opções → E-mail."),
+    },
+    "forwarding-on": {
+        "en-GB": ("Codes of prefix {prefix} are now sent to another resolver",
+                  "Hello,\n\n"
+                  "Since {at}, the resolver of {operator} sends every code whose GS1 Company Prefix starts with {prefix} to {target}: a server administrator set this forwarding rule. It covers these prefixes of {organisation}: {prefixes}.\n\n"
+                  "Requests for those codes no longer reach the records you keep in this portal; the records themselves have not changed. If you did not expect this, contact the operator of the portal. The change is in your audit trail.\n\n"
+                  "You receive this message as an administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Os códigos do prefixo {prefix} agora vão para outro resolver",
+                  "Olá,\n\n"
+                  "Desde {at}, o resolver de {operator} envia a {target} todo código cujo prefixo de empresa GS1 começa com {prefix}: um administrador do servidor definiu essa regra de encaminhamento. Ela abrange estes prefixos de {organisation}: {prefixes}.\n\n"
+                  "As requisições desses códigos não chegam mais aos registros que vocês mantêm neste portal; os registros em si não mudaram. Se vocês não esperavam por isso, procurem o operador do portal. A mudança está na sua trilha de auditoria.\n\n"
+                  "Você recebe esta mensagem como administrador; pode desligar os alertas em Opções → E-mail."),
+    },
+    "forwarding-off": {
+        "en-GB": ("Codes of prefix {prefix} are no longer sent to another resolver",
+                  "Hello,\n\n"
+                  "Since {at}, the resolver of {operator} no longer sends codes whose GS1 Company Prefix starts with {prefix} to {target}: a server administrator switched off or removed the forwarding rule. It covered these prefixes of {organisation}: {prefixes}.\n\n"
+                  "Unless another rule covers them, requests for those codes are answered again from the records you keep in this portal: check that they are up to date. The change is in your audit trail.\n\n"
+                  "You receive this message as an administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Os códigos do prefixo {prefix} não vão mais para outro resolver",
+                  "Olá,\n\n"
+                  "Desde {at}, o resolver de {operator} não envia mais a {target} os códigos cujo prefixo de empresa GS1 começa com {prefix}: um administrador do servidor desligou ou removeu a regra de encaminhamento. Ela abrangia estes prefixos de {organisation}: {prefixes}.\n\n"
+                  "Salvo se outra regra os abranger, as requisições desses códigos voltam a ser respondidas pelos registros que vocês mantêm neste portal: confira se estão atualizados. A mudança está na sua trilha de auditoria.\n\n"
+                  "Você recebe esta mensagem como administrador; pode desligar os alertas em Opções → E-mail."),
+    },
+    "forwarding-covered": {
+        "en-GB": ("A forwarding rule sends codes of prefix {prefix} to another resolver",
+                  "Hello,\n\n"
+                  "On {at}, a server administrator of {operator} gave {organisation} these GS1 Company Prefixes: {prefixes}. A forwarding rule already sends every code whose GS1 Company Prefix starts with {prefix} to {target}.\n\n"
+                  "Requests for those codes do not reach the records you keep in this portal: while the rule is on, what you save for them is not what a scan finds. If you did not expect this, contact the operator of the portal. The change is in your audit trail.\n\n"
+                  "You receive this message as an administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Uma regra de encaminhamento envia os códigos do prefixo {prefix} a outro resolver",
+                  "Olá,\n\n"
+                  "Em {at}, um administrador do servidor de {operator} deu a {organisation} estes prefixos de empresa GS1: {prefixes}. Uma regra de encaminhamento já envia a {target} todo código cujo prefixo de empresa GS1 começa com {prefix}.\n\n"
+                  "As requisições desses códigos não chegam aos registros que vocês mantêm neste portal: enquanto a regra estiver ligada, o que vocês salvarem para eles não é o que a leitura encontra. Se vocês não esperavam por isso, procurem o operador do portal. A mudança está na sua trilha de auditoria.\n\n"
+                  "Você recebe esta mensagem como administrador; pode desligar os alertas em Opções → E-mail."),
     },
     "test": {
         "en-GB": ("Test message from the link management portal",

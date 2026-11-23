@@ -5,7 +5,8 @@ white text hard to read on the main or the action colour, a logo that is not PNG
 and back to the project's; the icon of the browsers' tabs (favicon) likewise; the portal's pages served with the title,
 logo and icon already in them; "Restore the original"; who may change it (server administrators outside support access);
 the journal; what anyone may read (the appearance, its style sheet, the logo); and the setting as the resolver's own
-reader (web_server/src/web_pages.py) sees it.
+reader (web_server/src/web_pages.py) sees it. The browser's rules (ADR 0038): the Content-Security-Policy and the other
+headers on every answer, and nothing in the pages or their scripts that the policy would refuse.
 
   pip install -r portal/requirements.txt mongomock
   python dev-tests/portal/test_appearance.py
@@ -84,6 +85,10 @@ root, ana, anyone = client("root", "root-password-long"), client("ana", "ana-pas
 
 # The resolver's own reader of the same setting (web_server/src/web_pages.py), on the portal's database
 RESOLVER_SRC = os.path.join(HERE, "..", "..", "web_server", "src")
+# web_pages imports the resolver's settings_age (ADR 0053), which the portal does not have
+age_spec = importlib.util.spec_from_file_location("settings_age", os.path.join(RESOLVER_SRC, "settings_age.py"))
+sys.modules["settings_age"] = importlib.util.module_from_spec(age_spec)
+age_spec.loader.exec_module(sys.modules["settings_age"])
 spec = importlib.util.spec_from_file_location("resolver_web_pages", os.path.join(RESOLVER_SRC, "web_pages.py"))
 web_pages = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(web_pages)
@@ -95,7 +100,7 @@ def resolver():
     return web_pages.appearance()
 
 
-ORIGINAL = {"title": "GS1 Resolver Community Edition", "colour": "#002C6C", "action": "#CE3D0D", "accent": "#F26334"}
+ORIGINAL = {"title": "GS1 Digital Link Resolver Suite", "colour": "#002C6C", "action": "#CE3D0D", "accent": "#F26334"}
 
 # ================================================================== the original
 data = anyone.get("/portal/api/appearance").get_json()
@@ -284,6 +289,26 @@ entry = store.col("journal").find_one({"action": "appearance-reset"}) or {}
 check("…in the journal", entry.get("user") == "root" and entry.get("tenant") is None, entry)
 check("restoring the original twice is harmless", root.delete("/portal/api/appearance", headers=ORIGIN).status_code == 200)
 
+# ================================================================== a former default title stored (ADR 0024 §2.1)
+# Before the new name, saving the colours with the title left empty stored "GS1 Resolver Community Edition": after the
+# update it is the default of today, not the operator's choice; the colours stay.
+store.set_setting("appearance", {"title": "GS1 Resolver Community Edition", "colour": "#1A3D2B",
+                                 "action": "#8A1538", "accent": "#E8B100"})
+found = anyone.get("/portal/api/appearance").get_json()
+check("a former default title stored: the new name, the colours kept", found["title"] == ORIGINAL["title"]
+      and found["colour"] == "#1A3D2B" and found["original"] is False, found)
+text = anyone.get("/portal/login").get_data(as_text=True)
+check("…the sign-in page served with the new name", f"<title>{ORIGINAL['title']}</title>" in text
+      and "Community Edition" not in text, text[:400])
+check("…the resolver's pages too", resolver()[0] == ORIGINAL["title"])
+r = root.put("/portal/api/appearance", json={"colour": "#1A3D2C"}, headers=ORIGIN)
+check("…saving the colours alone stores the new name, not the former one", r.status_code == 200
+      and store.get_setting("appearance")["title"] == ORIGINAL["title"], store.get_setting("appearance"))
+store.set_setting("appearance", {"title": "GS1 Resolver Community Edition (Acme)"})
+check("…a title that only contains it is the operator's", anyone.get("/portal/api/appearance").get_json()["title"]
+      == "GS1 Resolver Community Edition (Acme)" and resolver()[0] == "GS1 Resolver Community Edition (Acme)")
+store.col("settings").delete_one({"_id": "appearance"})
+
 # ================================================================== the resolver's reader
 store.set_setting("appearance", {"title": "Direct", "colour": "red", "action": "#123456"})
 title, logo, style = resolver()
@@ -305,6 +330,40 @@ for page in ("index.html", "login.html", "privacy.html"):
           text.index('href="appearance.css"') > text.index('href="app.css"')
           and text.index('src="appearance.js"') > text.index('src="i18n.js"'), page)
 check("appearance.js is served before sign-in", anyone.get("/portal/appearance.js").status_code == 200)
+
+# ---- The browser's rules on every answer (Documentation/adr/0038-browser-hardening.md, finding F-021) ----
+POLICY = dict(part.strip().split(" ", 1) for part in (
+    "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
+    "font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; "
+    "base-uri 'none'; form-action 'self'; frame-ancestors 'none'").split(";"))
+for who, c, path in [("anyone", anyone, "/portal/login"), ("anyone", anyone, "/portal/privacy"),
+                     ("anyone", anyone, "/portal/about"), ("anyone", anyone, "/portal/api/appearance"),
+                     ("anyone", anyone, "/portal/app.js"), ("anyone", anyone, "/portal/no-such-page"),
+                     ("root", root, "/portal/"), ("root", root, "/portal/api/me")]:
+    r = c.get(path)
+    seen = dict(part.strip().split(" ", 1) for part in r.headers.get("Content-Security-Policy", "").split(";") if part.strip())
+    check(f"CSP: {path} ({who}, {r.status_code}): own scripts and styles only, Google Fonts, calls to this origin, "
+          "never framed", seen == POLICY, seen)
+    check(f"…{path}: a window of its own, no type guessed, never framed (older browsers)",
+          r.headers.get("Cross-Origin-Opener-Policy") == "same-origin"
+          and r.headers.get("X-Content-Type-Options") == "nosniff" and r.headers.get("X-Frame-Options") == "DENY",
+          dict(r.headers))
+# The pages the policy applies to may not hold what it refuses: an inline script or style element, a style attribute
+# or an event handler attribute (the scripts set styles through the DOM, which the policy allows)
+import re  # noqa: E402
+for name in ("index.html", "login.html", "privacy.html", "about.html"):
+    with open(os.path.join(PORTAL, "static", name), encoding="utf-8") as fh:
+        text = fh.read()
+    check(f"CSP: static/{name} holds no inline script, style element, style or event attribute",
+          not re.search(r"<script(?![^>]*\ssrc=)[^>]*>|<style\b|<[^>]+\s(?:style|on[a-z]+)=", text),
+          re.findall(r"<script(?![^>]*\ssrc=)[^>]*>|<style\b|<[^>]+\s(?:style|on[a-z]+)=[^>]*>", text)[:3])
+for name in ("app.js", "login.js", "privacy.js", "about.js", "appearance.js", "password.js", "requests-map.js",
+             "i18n.js"):
+    with open(os.path.join(PORTAL, "static", name), encoding="utf-8") as fh:
+        text = fh.read()
+    check(f"CSP: static/{name} writes no style or event attribute into markup and evaluates no text",
+          not re.search(r"style=|\son[a-z]+=[\"']|setAttribute\(\s*[\"'](?:style|on[a-z]+)|\beval\(|new Function\(", text),
+          re.findall(r".{30}(?:style=|setAttribute\(\s*[\"']style|\beval\(|new Function\().{30}", text)[:3])
 
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

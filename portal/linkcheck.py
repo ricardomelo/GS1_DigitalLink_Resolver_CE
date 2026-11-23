@@ -6,46 +6,40 @@ redirects one by one so that a hop from https:// to http:// can be reported. Res
 CACHE_SECONDS in the "linkcheck_cache" collection of the portal's database (shared by every replica, emptied
 by MongoDB through a TTL index) so that checking the same addresses again does not hammer the sites.
 
-Only public addresses are contacted. Host names resolving to private, loopback, link-local or other
-non-global addresses (the Docker network, the cloud metadata service, …) are refused, at every hop, so
-that the portal cannot be used to probe the server's own network. PORTAL_LINKCHECK_ALLOW_PRIVATE=1
-lifts this for development tests only.
+Only HTTPS addresses on public addresses are contacted (Documentation/adr/0029-outbound-requests.md): an http://
+address is reported without a request; a host name resolving to a private, loopback, link-local or other non-global
+address (the Docker network, the cloud metadata service, …) is refused, at every hop, and the request is made to the
+address checked, not to the name resolved again (outbound.request()), so that the portal cannot be used to probe the
+server's own network. At most PER_HOST requests to one host run at once. PORTAL_LINKCHECK_ALLOW_PRIVATE=1 lifts the
+address and HTTPS rules for development tests only.
 
 Result: {"url", "ok", "problem" (message code or None), "status", "finalUrl", "params"}
   problem codes: linkcheck.httpError {status}, linkcheck.blocked {status}, linkcheck.unreachable,
-  linkcheck.insecureRedirect {location}, linkcheck.tooManyRedirects, linkcheck.privateAddress,
-  linkcheck.invalid
+  linkcheck.insecureRedirect {location}, linkcheck.insecureAddress, linkcheck.tooManyRedirects,
+  linkcheck.privateAddress, linkcheck.invalid
 """
-import ipaddress
 import os
-import socket
+import threading
+from collections import defaultdict
+from itertools import zip_longest
 from datetime import timedelta
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin, urlparse
 
 import requests
 from pymongo.errors import PyMongoError
 
+import outbound
 import store
 
 TIMEOUT = float(os.environ.get("PORTAL_LINKCHECK_TIMEOUT", "8"))
 MAX_REDIRECTS = 5
 CACHE_SECONDS = 600
 WORKERS = 8
+PER_HOST = 2               # requests to one host at once, whatever the number of its addresses in a check
 ALLOW_PRIVATE = os.environ.get("PORTAL_LINKCHECK_ALLOW_PRIVATE") == "1"
 USER_AGENT = "GS1-Resolver-CE-LinkChecker/1.0"
 
-
-
-def _public_host(host: str) -> bool | None:
-    """True if every address of the host is global; False if one is not; None if it does not resolve."""
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except (socket.gaierror, UnicodeError):
-        return None
-    if ALLOW_PRIVATE:
-        return True
-    return all(ipaddress.ip_address(info[4][0].split("%")[0]).is_global for info in infos)
 
 
 def is_downgrade(from_url: str, to_url: str) -> bool:
@@ -53,12 +47,14 @@ def is_downgrade(from_url: str, to_url: str) -> bool:
     return urlparse(from_url).scheme == "https" and urlparse(to_url).scheme == "http"
 
 
-def _request(session: requests.Session, url: str) -> requests.Response:
-    """One request without following redirects: HEAD, or GET without reading the body when HEAD is refused."""
-    response = session.head(url, allow_redirects=False, timeout=TIMEOUT)
+def _request(url: str) -> requests.Response:
+    """One request without following redirects, to a checked address of the name: HEAD, or GET without reading the
+    body when HEAD is refused."""
+    headers = {"User-Agent": USER_AGENT}
+    response = outbound.request("HEAD", url, ALLOW_PRIVATE, timeout=TIMEOUT, headers=headers)
     if response.status_code in (400, 403, 405, 501):     # many servers refuse or mishandle HEAD
         response.close()
-        response = session.get(url, allow_redirects=False, timeout=TIMEOUT, stream=True)
+        response = outbound.request("GET", url, ALLOW_PRIVATE, timeout=TIMEOUT, headers=headers, stream=True)
     response.close()                                    # the body is never read
     return response
 
@@ -93,49 +89,73 @@ def _result(url, problem=None, http_status=None, final=None, **params) -> dict:
 
 
 def _check(url: str) -> dict:
-    """Follows the redirects of an address by hand, refusing private addresses at every step (SSRF guard)
+    """Follows the redirects of an address by hand, refusing http:// and private addresses at every step (SSRF guard)
     and HTTPS → HTTP downgrades; reports errors, blocked checks and unreachable sites.
     """
     current = url
-    with requests.Session() as session:
-        session.headers["User-Agent"] = USER_AGENT
-        for _ in range(MAX_REDIRECTS + 1):
-            parsed = urlparse(current)
-            if parsed.scheme not in ("http", "https") or not parsed.hostname:
-                return _result(url, "linkcheck.invalid", final=current)
-            public = _public_host(parsed.hostname)
-            if public is None:
-                return _result(url, "linkcheck.unreachable", final=current)
-            if not public:
-                return _result(url, "linkcheck.privateAddress", final=current)
-            try:
-                response = _request(session, current)
-            except requests.RequestException:
-                return _result(url, "linkcheck.unreachable", final=current)
-            status = response.status_code
-            if 300 <= status < 400 and response.headers.get("Location"):
-                target = urljoin(current, response.headers["Location"])
-                if is_downgrade(current, target):
-                    return _result(url, "linkcheck.insecureRedirect", status, target, location=target)
-                current = target
-                continue
-            if status < 400:
-                return _result(url, http_status=status, final=current)
-            if status in (401, 403, 429):
-                # The site answers but refuses automated checks: the page may well be fine for people.
-                return _result(url, "linkcheck.blocked", status, current, status=status)
-            return _result(url, "linkcheck.httpError", status, current, status=status)
+    for _ in range(MAX_REDIRECTS + 1):
+        try:
+            scheme = outbound.target(current)[0]
+        except outbound.BadAddress:
+            return _result(url, "linkcheck.invalid", final=current)
+        if scheme != "https" and not ALLOW_PRIVATE:
+            return _result(url, "linkcheck.insecureAddress", final=current)
+        try:
+            response = _request(current)
+        except outbound.Unresolvable:
+            return _result(url, "linkcheck.unreachable", final=current)
+        except outbound.PrivateAddress:
+            return _result(url, "linkcheck.privateAddress", final=current)
+        except requests.RequestException:
+            return _result(url, "linkcheck.unreachable", final=current)
+        status = response.status_code
+        if 300 <= status < 400 and response.headers.get("Location"):
+            target = urljoin(current, response.headers["Location"])
+            if is_downgrade(current, target):
+                return _result(url, "linkcheck.insecureRedirect", status, target, location=target)
+            current = target
+            continue
+        if status < 400:
+            return _result(url, http_status=status, final=current)
+        if status in (401, 403, 429):
+            # The site answers but refuses automated checks: the page may well be fine for people.
+            return _result(url, "linkcheck.blocked", status, current, status=status)
+        return _result(url, "linkcheck.httpError", status, current, status=status)
     return _result(url, "linkcheck.tooManyRedirects", final=current)
 
 
+def _host(url: str) -> str:
+    """The host of an address, for the limit of requests to one host at once ("" when there is none)."""
+    try:
+        return (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
 def check_many(urls: list[str], progress=None) -> dict[str, dict]:
-    """Checks distinct URLs in parallel; progress(done, total) is called after each one."""
+    """Checks distinct URLs in parallel, at most PER_HOST at once to one host; progress(done, total) is called after
+    each one (an exception it raises stops the check: the addresses not started are not requested)."""
     distinct = list(dict.fromkeys(u for u in urls if u))
-    results, done = {}, 0
+    by_host = defaultdict(list)
+    for url in distinct:
+        by_host[_host(url)].append(url)
+    gates = {host: threading.BoundedSemaphore(PER_HOST) for host in by_host}
+    # one host after another (round robin), so that the threads waiting at one host's gate do not hold up the others
+    order = [url for group in zip_longest(*by_host.values()) for url in group if url]
+
+    def one(url):
+        with gates[_host(url)]:
+            return check_url(url)
+
+    results = {}
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        for url, result in zip(distinct, pool.map(check_url, distinct)):
-            results[url] = result
-            done += 1
-            if progress:
-                progress(done, len(distinct))
-    return results
+        futures = {pool.submit(one, url): url for url in order}
+        try:
+            for future in as_completed(futures):              # as they finish: the gates change the order
+                results[futures[future]] = future.result()
+                if progress:
+                    progress(len(results), len(distinct))
+        finally:
+            for future in futures:                            # stopped (an exception): the ones not started
+                future.cancel()
+    return {url: results[url] for url in distinct}

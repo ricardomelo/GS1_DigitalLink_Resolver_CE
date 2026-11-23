@@ -2,7 +2,7 @@
 
 /*
  * The installation's appearance on the portal's pages (Documentation/adr/0019-appearance.md): the title in place of
- * "GS1 Resolver Community Edition" (in the header and in every text, through I18N.setProduct), the operator's logo and
+ * "GS1 Digital Link Resolver Suite" (in the header and in every text, through I18N.setProduct), the operator's logo and
  * the icon of the browsers' tabs. The portal serves each page with them already in it (appearance.page()); this keeps
  * them in step after a change. The colours come with appearance.css, linked after app.css. Loaded after i18n.js, for
  * anyone (the sign-in page and the privacy notice too).

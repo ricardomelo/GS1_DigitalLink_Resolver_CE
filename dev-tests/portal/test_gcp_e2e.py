@@ -36,6 +36,7 @@ LIST_AGE = (datetime.now(timezone.utc).date() - date(2026, 9, 17)).days
 os.environ["PORTAL_MONITOR_GCP_DAYS"] = str(LIST_AGE + 30)
 sys.path[:0] = [HERE, PORTAL]
 
+import csp_guard  # noqa: E402,F401  (fails the program on a Content-Security-Policy violation: ADR 0038)
 import mock_data_entry  # noqa: E402
 import store  # noqa: E402
 import users  # noqa: E402

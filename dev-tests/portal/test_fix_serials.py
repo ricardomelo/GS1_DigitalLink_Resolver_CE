@@ -4,8 +4,8 @@ Serial-number records registered with their batch or variant before rule 2 of GS
 stand-in data entry API: such records are flagged; fixing one registers it again as the serial number alone with the
 batch and variant as informative qualifiers, links, description and the key's other records unchanged, in the journal;
 a serial number that already has its own record is left and reported; "fix them all" stays in the user's reach; and a
-key whose document holds a record the API would refuse is never deleted to be written back (the guard every
-deletion now has, through POST /api/validate).
+key whose document holds a record the API would refuse no longer blocks the deletion of another record (ADR 0023: one
+record is removed, nothing is written back).
 
   pip install -r portal/requirements.txt mongomock
   python dev-tests/portal/test_fix_serials.py
@@ -153,11 +153,11 @@ r = bia.post("/portal/api/records/fix-serials", json={"all": True}, headers=ORIG
 check("another organisation's administrator fixes its own", r.get_json()["params"]["fixed"] == 1
       and ([{"21": "Z"}], [{"10": "X"}], "Beta unit") in entries_of(C), r.get_json())
 
-# ================================================================== the guard of every rewrite
+# ================================================================== a deletion no longer rewrites the key
 r = edu.delete(f"/portal/api/record?key=01&value={B}&qualifiers=/21/S9", headers=ORIGIN)
-check("deleting a record of a key whose document holds one the API would refuse: refused, nothing deleted",
-      r.status_code == 422 and code(r) == "record.rewriteRefused" and "rule 2" in r.get_json()["params"]["detail"]
-      and len(entries_of(B)) == 4, (r.status_code, r.get_json(), entries_of(B)))
+check("deleting a record of a key whose document holds one the API would refuse: deleted, that record untouched "
+      "(nothing is written back since ADR 0023)", r.status_code == 200 and len(entries_of(B)) == 3
+      and ([{"10": "L9"}, {"21": "S8"}], [], "Unit S8") in entries_of(B), (r.status_code, r.get_json(), entries_of(B)))
 r = edu.delete(f"/portal/api/record?key=01&value={A}&qualifiers=/10/L2", headers=ORIGIN)
 check("an ordinary deletion still works", r.status_code == 200 and len(entries_of(A)) == 3)
 

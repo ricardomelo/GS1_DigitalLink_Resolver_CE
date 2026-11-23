@@ -17,14 +17,19 @@ import base64
 import logging
 import os
 import json
+import secrets
 import threading
 import time
 import unicodedata
 from urllib.parse import unquote, urlparse
 
-from flask import render_template_string, request
+from flask import g, render_template_string, request
 
-PRODUCT_NAME = os.getenv('RESOLVER_PRODUCT_NAME', 'GS1 Resolver Community Edition')
+import settings_age
+
+PRODUCT_NAME = os.getenv('RESOLVER_PRODUCT_NAME', 'GS1 Digital Link Resolver Suite')       # ADR 0024
+# A stored title equal to a former default is not the operator's choice (portal/appearance.py, FORMER_TITLES).
+FORMER_TITLES = ('GS1 Resolver Community Edition',)
 # Operator shown in the footer (see .env.example), beside the link to the installation's privacy notice (ADR 0017).
 ORG_NAME = os.getenv('RESOLVER_ORG_NAME', '').strip()
 ORG_URL = os.getenv('RESOLVER_ORG_URL', '').strip()
@@ -60,7 +65,8 @@ except OSError:
 
 class Appearance:
     """The installation's appearance set in the portal (Documentation/adr/0019-appearance.md): the setting "appearance"
-    of the portal's database, read again after CACHE_SECONDS (the last kept on failure); {} for the original."""
+    of the portal's database, read again after CACHE_SECONDS (the last kept on failure, for RESOLVER_SETTINGS_MAX_AGE_S
+    at most: then the original until it is read again; finding F-033, ADR 0053); {} for the original."""
     CACHE_SECONDS = 30
 
     def __init__(self, database=None):
@@ -68,20 +74,27 @@ class Appearance:
         self._doc: dict = {}
         self._loaded = 0.0
         self._lock = threading.Lock()
+        self.age = settings_age.Age('Appearance', 'the pages are shown with the original appearance')
 
     def current(self) -> dict:
+        self.refresh()
+        return {} if self.database is None or self.age.stale() else self._doc
+
+    def refresh(self) -> None:
+        """Reads the appearance again when CACHE_SECONDS have passed; a failure keeps the last one (settings_age)."""
         if self.database is None:
-            return {}
+            return
         now = time.monotonic()
         if now - self._loaded >= self.CACHE_SECONDS:
             with self._lock:
                 if now - self._loaded >= self.CACHE_SECONDS:
                     try:
                         self._doc = (self.database()['settings'].find_one({'_id': 'appearance'}) or {}).get('value') or {}
+                        self.age.read(now)
                     except Exception as exc:          # noqa: BLE001 — the pages keep the last appearance
                         logging.getLogger(__name__).warning('Appearance not read (%s); the last one is kept.', exc)
+                        self.age.failed(now)
                     self._loaded = now
-        return self._doc
 
     def forget(self) -> None:
         self._loaded = 0.0
@@ -99,7 +112,8 @@ def _hex(value) -> str | None:
 def appearance() -> tuple[str, str, str]:
     """(title, logo address, extra style) of the installation's pages: the operator's, else the original."""
     doc = APPEARANCE.current()
-    title = str(doc.get('title') or '').strip() or PRODUCT_NAME
+    title = str(doc.get('title') or '').strip()
+    title = PRODUCT_NAME if not title or title in FORMER_TITLES else title
     logo = doc.get('logo') or {}
     address = (f"data:{logo.get('type', 'image/png')};base64," + base64.b64encode(bytes(logo['data'])).decode('ascii')
                if logo.get('data') else LOGO_DATA_URI)
@@ -131,6 +145,45 @@ LOCALE_MATCHERS = [(prefix, tag) for prefix, tag in LOCALE_MATCHERS if tag in SU
 
 TEXT = {tag: texts['pages'] for tag, texts in PAGE_TEXTS.items()}
 LINK_TYPE_LABELS = {tag: texts['linkLabels'] for tag, texts in PAGE_TEXTS.items()}
+
+# The browser's rules for the resolver's answers (Documentation/adr/0038-browser-hardening.md, finding F-021). A page's
+# own <style> and <script> elements carry a nonce drawn for each answer; nothing else may run or style it, and nothing
+# is loaded from other sites but the fonts of the pages that use them. Every other answer (redirects, JSON, linksets)
+# may load nothing at all.
+PAGE_POLICY = ("default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'{fonts_css}; {fonts}"
+               "img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+OTHER_POLICY = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+# The Swagger UI of the library (flask-restx) writes its start-up script and style in the page, with the address of
+# the description in it: allowed inline, but it loads and calls nothing outside this origin and nothing frames it
+SWAGGER_POLICY = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+                  "img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; "
+                  "frame-ancestors 'none'")
+FONT_CSS = 'https://fonts.googleapis.com'
+FONT_FILES = 'https://fonts.gstatic.com'
+
+
+def content_security_policy() -> str:
+    """The Content-Security-Policy of the answer being made: the page's own (its nonce, and the fonts' sites when the
+    page loads fonts) when _page() made one, the Swagger UI's for the library's documentation page, else the policy
+    that allows nothing."""
+    if request.endpoint == 'api.doc':
+        return SWAGGER_POLICY
+    page = g.get('csp_page')
+    if not page:
+        return OTHER_POLICY
+    nonce, fonts = page
+    return PAGE_POLICY.format(nonce=nonce, fonts_css=f' {FONT_CSS}' if fonts else '',
+                              fonts=f'font-src {FONT_FILES}; ' if fonts else '')
+
+
+def _with_nonce(html: str, fonts: bool) -> str:
+    """The page's own <style> and <script> elements with this answer's nonce. Only the templates write these elements:
+    every value is escaped, so a '<style>' or '<script>' in a record's text reaches the page as text, not as markup
+    (the JSON-LD block is <script type=...>, data the browser does not run)."""
+    nonce = secrets.token_urlsafe(18)
+    g.csp_page = (nonce, fonts)
+    return html.replace('<style>', f'<style nonce="{nonce}">').replace('<script>', f'<script nonce="{nonce}">')
+
 
 _BASE = """<!doctype html>
 <html lang="{{ locale }}" dir="{{ direction }}"><head><meta charset="utf-8">
@@ -253,7 +306,8 @@ def _level_label(locale: str, anchor: str) -> str:
     # are absolute URIs (https://id.example.org/01/…), so only the path is read.
     parts = urlparse(anchor).path.strip('/').split('/')
     ai = parts[0] if parts else ''
-    pairs = dict(zip(parts[2::2], parts[3::2]))
+    # values are percent-encoded in paths and anchors (a batch may hold '/'): shown as they are printed
+    pairs = {k: unquote(v) for k, v in zip(parts[2::2], parts[3::2])}
     if '21' in pairs:
         return _t(locale, 'level.serial', value=pairs['21'])
     if '10' in pairs:
@@ -315,25 +369,78 @@ def _page(locale: str, title: str, body: str, fonts: bool = True, icon: str | No
     page's own favicon (the brand's logo on the item's page), else the installation's icon."""
     product, logo, style = appearance()           # the installation's title, logo and colours (ADR 0019)
     icon = icon or icon_address()
-    return render_template_string(_BASE, locale=locale, title=title, product=product, logo=logo, fonts=fonts, icon=icon,
+    html = render_template_string(_BASE, locale=locale, title=title, product=product, logo=logo, fonts=fonts, icon=icon,
                                   appearance_style=style,
                                   org=ORG_NAME, org_url=ORG_URL, footer=_t(locale, 'footer'),
                                   privacy_label=_t(locale, 'privacy'),
                                   language_label=_t(locale, 'language'), home_label=_t(locale, 'home'),
                                   locales=SUPPORTED_LOCALES, direction='rtl' if locale in RIGHT_TO_LEFT else 'ltr',
                                   cookie=LOCALE_COOKIE, body=body)
+    return _with_nonce(html, fonts)
+
+
+# The notice of a page whose links come from a less specific level than the request named (ADR 0022, section 2.3)
+_NOTICE = """<style>
+.level-notice{display:flex;gap:.7rem;align-items:flex-start;background:#FFF4E0;border:1px solid #F0D09A;
+border-inline-start:4px solid #E08A00;border-radius:.6rem;padding:.8rem 1rem;margin:0 0 1rem;color:#4A3000;line-height:1.45}
+.level-notice strong{display:block;margin-bottom:.15rem}
+.level-notice svg{flex:none;width:1.4rem;height:1.4rem;fill:#B36B00;margin-top:.1rem}
+</style>
+<div class="level-notice" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+<div><strong>{{ notice.title }}</strong>{{ notice.text }}</div></div>
+"""
+
+
+def level_notice(locale: str, walked: tuple[str, str] | None) -> dict | None:
+    """The notice's texts for walked = (the request's path, the path of the level that answered), or None when the
+    request was answered by its own level: which level has no record of its own, and whose links are shown."""
+    if not walked:
+        return None
+    asked, answered = walked
+    return {'title': _t(locale, 'notice.title', level=_level_label(locale, asked)),
+            'text': _t(locale, 'notice.text', level=_level_label(locale, answered))}
+
+
+def notice_html(locale: str, walked: tuple[str, str] | None) -> str:
+    """The notice as HTML (escaped by the template), or nothing."""
+    notice = level_notice(locale, walked)
+    return render_template_string(_NOTICE, notice=notice) if notice else ''
+
+
+def fallback_notices(locale: str, linkset: list[dict], fallback: list[str] | None, context: str | None) -> str:
+    """The notices of a choice whose links do not serve the language or the context (market) the request named
+    (ADR 0028), as HTML: one for each, naming the link type offered."""
+    if not fallback:
+        return ''
+    terms = [public.rsplit('/', 1)[-1] for item in linkset for public in item if public.startswith('http')]
+    label = _label(locale, terms[0]) if terms else ''
+    html = ''
+    for what in ('language', 'context'):
+        if what in fallback:
+            notice = {'title': _t(locale, f'fallback.{what}.title', label=label, context=context or ''),
+                      'text': _t(locale, f'fallback.{what}.text')}
+            html += render_template_string(_NOTICE, notice=notice)
+    return html
 
 
 def render_linkset(identifiers: str, qualifier_path: str | None, linkset: list[dict],
-                   json_ld: dict | None = None, choice: bool = False) -> str:
+                   json_ld: dict | None = None, choice: bool = False,
+                   walked: tuple[str, str] | None = None, fallback: list[str] | None = None,
+                   context: str | None = None) -> str:
     """HTML page listing every link of a linkset, for people who open ?linkType=linkset in a browser, or the
     links among which the resolver could not choose (choice: 300 Multiple Choices). With json_ld the linkset
-    is embedded as JSON-LD too (GS1-Conformant Resolver 1.2.1, section 2.10)."""
+    is embedded as JSON-LD too (GS1-Conformant Resolver 1.2.1, section 2.10). walked: the request's path and the
+    level that answered, when the links come from a less specific level (the notice of ADR 0022, section 2.3).
+    fallback: the preferences of the request ('language', 'context') that the links offered do not serve, with the
+    context asked (the notices of ADR 0028)."""
     locale = _request_locale()
     title = _t(locale, 'choice.title' if choice else 'linkset.title')
-    body = render_template_string("{% if text %}<p>{{ text }}</p>{% endif %}<p class='code'>{{ hri }}</p>" + _LINKS,
+    body = render_template_string("{% if text %}<p>{{ text }}</p>{% endif %}<p class='code'>{{ hri }}</p>"
+                                  "{{ notice|safe }}" + _LINKS,
                                   text=_t(locale, 'choice.text') if choice else '',
-                                  hri=_hri(identifiers, qualifier_path), levels=_levels(locale, linkset))
+                                  hri=_hri(identifiers, qualifier_path), levels=_levels(locale, linkset),
+                                  notice=fallback_notices(locale, linkset, fallback, context)
+                                  + notice_html(locale, walked))
     if json_ld is not None:
         # '<' escaped so that no value can close the script element
         data = json.dumps(json_ld, ensure_ascii=False).replace('<', '\\u003c')
@@ -342,13 +449,21 @@ def render_linkset(identifiers: str, qualifier_path: str | None, linkset: list[d
 
 
 def render_error(status: int, identifiers: str, qualifier_path: str | None, linktype: str | None,
-                 available: list[dict] | None) -> str:
+                 available: list[dict] | None, walked: tuple[str, str] | None = None) -> str:
     """HTML page for 400 (not a valid Digital Link) and 404 (unknown identifier, or a link type the
-    identifier does not have, with the types it has).
+    identifier does not have, with the types it has). walked: a link withheld by the strict mode (ADR 0022, section
+    2.4), as (the request's path, the level that holds it): the page names the level asked and shows the notice of
+    section 2.3 above the links that are available.
     """
     locale = _request_locale()
+    notice = ''
     if status == 400:
         title, text = _t(locale, 'error.400.title'), _t(locale, 'error.400.text')
+    elif status == 404 and linktype and walked:
+        term = linktype.split(':')[-1].rsplit('/', 1)[-1]
+        title = _t(locale, 'error.404withheld.title')
+        text = _t(locale, 'error.404withheld.text', label=_label(locale, term), level=_level_label(locale, walked[0]))
+        notice = notice_html(locale, walked) if available else ''
     elif status == 404 and linktype and available:
         term = linktype.split(':')[-1].rsplit('/', 1)[-1]
         title = _t(locale, 'error.404type.title')
@@ -360,7 +475,7 @@ def render_error(status: int, identifiers: str, qualifier_path: str | None, link
 
     body = render_template_string(
         "<p>{{ text }}</p><p class='code'>{{ hri }}</p>"
-        "<p class='muted'>{{ status_text }}</p>" + (_LINKS if available else ''),
-        text=text, hri=_hri(identifiers, qualifier_path),
+        "<p class='muted'>{{ status_text }}</p>{{ notice|safe }}" + (_LINKS if available else ''),
+        text=text, hri=_hri(identifiers, qualifier_path), notice=notice,
         status_text=_t(locale, 'status', status=status), levels=_levels(locale, available or []))
     return _page(locale, title, body)

@@ -1246,6 +1246,7 @@ function onIdentityChange() {
   refreshGcpHint(g);
   markInformative(g, l);
   renderScope(g, l);
+  scheduleWarnings();
   // The batch or variant of a serial number is informative: changing it keeps the record open
   const key = g.ok && l.ok ? recordKey(g, l) : null;
   if (state.openKey && key !== state.openKey) {
@@ -2168,6 +2169,8 @@ function orgPanel(d, tab) {
       : empty("org.noKeys"), orgManage("#apikeys", false)];
   }
   if (tab === "exports") return orgExports(d);
+  if (tab === "resolution") return orgResolution(d);
+  if (tab === "targets") return orgTargets(d);
   const link = el("p", "org-manage");
   const a = el("a", "", t("org.allAlerts"));
   a.href = "#alerts" + (CONFIG.serverAdmin && !CONFIG.support ? "?tenant=" + encodeURIComponent(d.operator ? "-" : d.id) : "");
@@ -2232,6 +2235,121 @@ function orgExports(d) {
   return out;
 }
 
+/* The strict mode for safety-critical link types (ADR 0022, section 2.4): set by the organisation's administrators and
+   the server administrators (the operator's for the keys no organisation holds); off by default, read only in support
+   access. The table shows what a request receives with the mode off and on. */
+function orgResolution(d) {
+  const r = d.resolution;
+  const out = [el("h3", "", t("resolution.title")), el("p", "field-msg", t("resolution.intro"))];
+  const types = el("ul", "resolution-types");
+  types.id = "org-resolution-types";
+  r.types.forEach(code => {
+    const li = el("li", "", I18N.linkType("gs1:" + code)[0]);
+    li.append(" ", el("code", "muted", "gs1:" + code));
+    types.append(li);
+  });
+  out.push(types);
+  const rows = ["withheld", "batch", "serial", "other"].map(row =>
+    [t("resolution.example." + row), t("resolution.example." + row + ".off"), t("resolution.example." + row + ".on")]);
+  out.push(orgTable(["resolution.example.request", "resolution.example.off", "resolution.example.on"], rows));
+  // batch and serial records that lack a safety-critical link of a broader record (ADR 0022, section 2.5)
+  if (r.lacking) {
+    const lack = el("div", r.lacking.count ? "safety-warn" : "field-msg");
+    lack.id = "org-resolution-lacking";
+    if (!r.lacking.count) lack.textContent = t("resolution.lackingNone");
+    else {
+      const ul = document.createElement("ul");
+      r.lacking.records.forEach(x => {
+        const [ai, value] = x.anchor.split("/").slice(1);
+        ul.append(el("li", "", `${keyText(ai, value)} · ${qualText(x.qualifiers)} — `
+                                + x.types.map(c => I18N.linkType(c)[0]).join(", ")));
+      });
+      lack.append(el("p", "safety-title", t(r.lacking.count === 1 ? "resolution.lackingOne" : "resolution.lackingMany",
+                                            { count: r.lacking.count })), ul,
+                  el("p", "", t(r.lacking.count > r.lacking.records.length ? "resolution.lackingMore" : "resolution.lackingHint")));
+    }
+    out.push(lack);
+  }
+  const label = el("label", "choice resolution-switch");
+  const box = el("input");
+  Object.assign(box, { type: "checkbox", id: "org-resolution-strict", checked: r.strict, disabled: !r.editable });
+  label.append(box, el("span", "", t(d.operator ? "resolution.enableOperator" : "resolution.enable")));
+  out.push(label);
+  const state = el("p", "field-msg", t(r.strict ? "resolution.stateOn" : "resolution.stateOff")
+    + (r.updated ? " · " + t("resolution.updated", { when: formatWhen(r.updated), user: r.updatedBy || "—" }) : ""));
+  state.id = "org-resolution-state";
+  out.push(state);
+  if (r.editable) {
+    const save = el("button", "btn btn-primary", t("resolution.save"));
+    save.type = "button";
+    save.id = "org-save-resolution";
+    save.addEventListener("click", saveOrgResolution);
+    out.push(save);
+  } else {
+    out.push(el("p", "field-msg", t("resolution.readOnly")));
+  }
+  out.push(el("p", "field-msg", t("resolution.journalNote")));
+  return out;
+}
+
+/* The hosts the organisation's targets may point to (ADR 0037, section 2.2): set by the organisation's administrators
+   and the server administrators (the operator's for the keys no organisation holds); empty accepts any public host;
+   read only in support access. The forms no target may take are refused for everyone and only described here. */
+function orgTargets(d) {
+  const x = d.targets;
+  const out = [el("h3", "", t("targets.title")),
+               el("p", "field-msg", t(d.operator ? "targets.introOperator" : "targets.intro")),
+               el("p", "field-msg", t("targets.always"))];
+  const label = el("label", "", t("targets.label"));
+  label.htmlFor = "org-target-hosts";
+  const box = el("textarea", "org-target-hosts");
+  Object.assign(box, { id: "org-target-hosts", rows: 6, value: x.hosts.join("\n"), disabled: !x.editable,
+                       placeholder: t("targets.placeholder"), spellcheck: false });
+  box.setAttribute("autocapitalize", "off");
+  box.setAttribute("aria-describedby", "org-targets-state");
+  const state = el("p", "field-msg", t(x.hosts.length ? "targets.stateList" : "targets.stateAny",
+                                         { count: nf(x.hosts.length), max: nf(x.max) })
+    + (x.updated ? " · " + t("resolution.updated", { when: formatWhen(x.updated), user: x.updatedBy || "—" }) : ""));
+  state.id = "org-targets-state";
+  out.push(label, box, state);
+  if (x.editable) {
+    const save = el("button", "btn btn-primary", t("targets.save"));
+    save.type = "button";
+    save.id = "org-save-targets";
+    save.addEventListener("click", saveOrgTargets);
+    out.push(save);
+  } else {
+    out.push(el("p", "field-msg", t("targets.readOnly")));
+  }
+  out.push(el("p", "field-msg", t("targets.journalNote")));
+  return out;
+}
+
+async function saveOrgTargets() {
+  const d = orgState.data;
+  try {
+    const result = await api("PUT", "targets/hosts", { tenant: d.id, hosts: $("#org-target-hosts").value });
+    d.targets = { ...d.targets, ...result.targets };
+    renderOrganisation();
+    orgStatus("ok", result.code, result.params);
+  } catch (e) {
+    orgStatus("error", e.code, e.params);
+  }
+}
+
+async function saveOrgResolution() {
+  const d = orgState.data, enabled = $("#org-resolution-strict").checked;
+  if (enabled && !d.resolution.strict && !await ask(t("resolution.confirmOn"))) return;
+  try {
+    const result = await api("PUT", "resolution/strict", { tenant: d.id, enabled });
+    d.resolution = { ...d.resolution, ...result.resolution };
+    renderOrganisation();
+    orgStatus("ok", result.code, result.params);
+  } catch (e) {
+    orgStatus("error", e.code, e.params);
+  }
+}
+
 async function saveOrgExports() {
   const d = orgState.data, limits = {};
   for (const input of $$("#org-panel .org-export-limit")) {
@@ -2279,6 +2397,7 @@ function alertText(a) {
   const what = a.kind === "404" ? t("overview.alert.404", { count: d.count ?? "" })
     : a.kind === "logspace" && d.percent !== undefined ? t("overview.alert.logspace", { percent: nf(d.percent) })
     : a.kind === "gcptable" && d.days !== undefined ? t("overview.alert.gcptable", { days: d.days })
+    : a.kind === "journal" && d.count !== undefined ? t("overview.alert.journal", { count: d.count })
     : t("overview.check." + a.kind);
   const extra = d.error || d.reason || (d.host ? d.host : "") || "";
   return extra ? `${what} · ${extra}` : what;
@@ -2296,7 +2415,7 @@ async function loadAlerts(event) {
   const kinds = $("#alerts-kind");
   if (!kinds.options.length) {
     kinds.replaceChildren(i18nOption("alerts.anyKind", ""),
-                          ...["resolver", "backup", "certificate", "logspace", "gcptable", "404"].map(k => i18nOption("alerts.kind." + k, k)));
+                          ...["resolver", "settings", "backup", "certificate", "logspace", "gcptable", "journal", "404"].map(k => i18nOption("alerts.kind." + k, k)));
   }
   const fromHash = new URLSearchParams(location.hash.split("?")[1] || "").get("tenant");
   if (fromHash !== null && !event) $("#alerts-tenant").value = fromHash;
@@ -2516,8 +2635,13 @@ function userRow(u) {
   email.setAttribute("aria-label", t("users.email"));
   email.placeholder = t("users.emailPlaceholder");
   cell("users.email", email);
-  cell("users.state", t(u.disabled ? "users.disabled" : u.invited ? "users.invitedState"
-                        : u.mustChange ? "users.mustChange" : "users.active"));
+  const state = cell("users.state", t(u.disabled ? "users.disabled" : u.invited ? "users.invitedState"
+                                      : u.mustChange ? "users.mustChange" : "users.active"));
+  if (u.sso) {                                       // bound to the provider's subject at the first sign-in (ADR 0025)
+    const bound = el("small", "muted user-sso", t("users.ssoBound"));
+    bound.title = `${u.sso.issuer} · ${u.sso.subject}`;
+    state.append(document.createElement("br"), bound);
+  }
   cell("users.lastLogin", formatWhen(u.lastLogin));
   const actions = document.createElement("div");
   actions.className = "user-actions";
@@ -2533,6 +2657,9 @@ function userRow(u) {
   if (u.username !== CONFIG.user) {                // your own password: user menu → Options
     button(mailLink(u) && u.invited ? "users.resendInvite" : "users.resetPassword", () => resetUser(u));
     button(u.disabled ? "users.enable" : "users.disable", () => saveUser(u.username, { disabled: !u.disabled }));
+    if (u.sso) button("users.ssoForget", async () => {
+      if (await ask(t("users.confirmSsoForget", { user: u.username }))) saveUser(u.username, { ssoForget: true });
+    });
     button("users.remove", () => removeUser(u.username), "btn-danger-ghost");
   }
   cell("users.actions", actions);
@@ -3016,12 +3143,59 @@ function downloadAudit() {
   location.href = BASE + "api/audit.csv?" + auditQuery();
 }
 
+/* The hash chains of the audit trail verified (Documentation/adr/0026-journal-integrity.md): one line per chain (its
+   trail and retention category), its result and its head, which the administrator keeps outside the server as a
+   receipt; a receipt typed below is looked for in its chain. */
+async function verifyAudit(event) {
+  if (event) event.preventDefault();
+  const panel = $("#audit-verify");
+  panel.hidden = false;
+  const receipt = $("#audit-receipt").value.trim();
+  I18N.set($("#audit-verify-msg"), "records.loading");
+  try {
+    const { chains, keyed } = await api("GET", "audit/verify" + (receipt ? "?receipt=" + encodeURIComponent(receipt) : ""));
+    $("#audit-verify-unkeyed").hidden = keyed;
+    $("#audit-chains-body").replaceChildren(...chains.map(c => {
+      const tr = document.createElement("tr");
+      tr.dataset.chain = c.chain;
+      const [trail, category] = c.chain.split("/");
+      const name = document.createElement("td");
+      name.textContent = (trail === "operator" ? t("users.operatorName") : (c.tenantName || trail)) + " · " +
+                         t("audit.category." + category);
+      const count = document.createElement("td");
+      count.textContent = c.events;
+      const result = document.createElement("td");
+      const badge = document.createElement("span");
+      badge.className = "badge " + (c.ok ? "badge-created" : "badge-failed");
+      if (c.ok) I18N.set(badge, "audit.chainOk");
+      else I18N.set(badge, "audit.chainBroken", { problem: t("audit.problem." + c.problem.kind), seq: c.problem.seq ?? "-" });
+      result.append(badge);
+      if (c.otherKey) {
+        const note = document.createElement("small");
+        note.className = "audit-chain-note";
+        I18N.set(note, "audit.chainOtherKey", { count: c.otherKey });
+        result.append(note);
+      }
+      const head = document.createElement("td");
+      head.className = "code audit-chain-head";
+      head.textContent = c.head || "";
+      tr.append(name, count, result, head);
+      return tr;
+    }));
+    const checked = chains.find(c => c.receipt !== undefined);
+    if (checked) I18N.set($("#audit-verify-msg"), checked.receipt ? "audit.receiptFound" : "audit.receiptMissing");
+    else I18N.set($("#audit-verify-msg"), chains.every(c => c.ok) ? "audit.verifyAllOk" : "audit.verifyBroken");
+  } catch (e) {
+    I18N.set($("#audit-verify-msg"), e.code, e.params);
+  }
+}
+
 /* ------------------------------------------------------------------ requests to the resolver (#requests)
    The log of resolver requests (Documentation/adr/0006-resolver-request-log.md), in the scope of the account: the
    last 30 days as bars, the latest requests with filters and pages, a CSV export, and for administrators the calls
    of the tenant API, and how long requests are kept (section 8). Nothing here identifies the people who scan: the
    server never stores it; the browser family and the approximate location (city) are derived when a scan arrives. */
-const REQUEST_OUTCOMES = ["redirect", "notFound", "unknown", "noLink", "choice", "linkset", "invalid", "error", "compressed",
+const REQUEST_OUTCOMES = ["redirect", "notFound", "unknown", "noLink", "withheld", "choice", "linkset", "invalid", "error", "compressed",
                           "page", "click", "forwarded", "fallback"];
 const REQUEST_DEVICES = ["mobile", "tablet", "desktop", "automated", "unknown"];
 const REQUEST_BROWSERS = ["chrome", "safari", "firefox", "edge", "samsung", "opera", "app", "other"];
@@ -3254,6 +3428,9 @@ async function loadApiCalls(event, more = false) {
         const id = document.createElement("code");
         id.textContent = c.key;
         key.append(c.keyName || "", c.keyName ? " " : "", id);
+      } else if (c.count > 1) {
+        // calls without a valid key are counted per minute, method, operation and status (ADR 0031)
+        I18N.set(key, "requests.noKeyCount", { count: c.count });
       } else {
         I18N.set(key, "requests.noKey");
       }
@@ -3436,8 +3613,8 @@ function domainCard(d) {
   card.dataset.domain = d.domain;
   const head = el("div", "domain-head");
   head.append(el("strong", "domain-name", d.domain + (d.stem || "")));
-  head.append(el("span", "badge " + (d.verified ? "badge-created" : "badge-unchanged"),
-                 t(d.verified ? "domains.verifiedBadge" : "domains.pendingBadge")));
+  head.append(el("span", "badge " + (d.lapsedAt ? "badge-error" : d.verified ? "badge-created" : "badge-unchanged"),
+                 t(d.lapsedAt ? "domains.lapsedBadge" : d.verified ? "domains.verifiedBadge" : "domains.pendingBadge")));
   head.append(el("span", "badge badge-update", t("domains.mode." + d.mode)));
   if (d.certificate) {
     head.append(el("span", "badge domain-cert is-" + d.certificate.state, t("domains.cert." + d.certificate.state)));
@@ -3451,9 +3628,17 @@ function domainCard(d) {
     dl.append(el("dt", "", t("domains.txtName")), el("dd", "code", d.txtName),
               el("dt", "", t("domains.txtValue")), el("dd", "code", d.txtValue));
     txt.append(dl);
+    if (d.expiresAt) txt.append(el("p", "field-msg", t("domains.pendingUntil", { date: formatWhen(d.expiresAt) })));
     card.append(txt);
   } else {
     card.append(el("p", "field-msg", t("domains.seen", { verified: formatWhen(d.verifiedAt), seen: formatWhen(d.seenAt) })));
+    if (d.lapsedAt) {
+      card.append(el("p", "field-msg is-error domain-lapsed", t("domains.lapsed", { seen: formatWhen(d.seenAt || d.verifiedAt) })));
+      const dl = el("dl", "overview-facts");
+      dl.append(el("dt", "", t("domains.txtName")), el("dd", "code", d.txtName),
+                el("dt", "", t("domains.txtValue")), el("dd", "code", d.txtValue));
+      card.append(dl);
+    }
   }
   if (d.certificate) card.append(certificateLine(d.certificate));
   if (d.check) {
@@ -3482,7 +3667,7 @@ function domainCard(d) {
     card.append(form);
     const actions = el("div", "user-actions");
     const button = (key, cls, fn) => { const b = el("button", "btn " + cls, t(key)); b.type = "button"; b.addEventListener("click", fn); actions.append(b); };
-    if (!d.verified) button("domains.verify", "btn-primary", () => domainCall("POST", d, "/verify", {}));
+    if (!d.verified || d.lapsedAt) button("domains.verify", "btn-primary", () => domainCall("POST", d, "/verify", {}));
     button("domains.check", "btn-ghost", () => domainCall("POST", d, "/check", {}));
     button("domains.remove", "btn-danger-ghost", async () => {
       if (await ask(t("domains.confirmRemove", { domain: d.domain }), { danger: true })) domainCall("DELETE", d, "");
@@ -3598,7 +3783,8 @@ function ssoCard(c) {
   head.append(el("strong", "domain-name", ssoScopeName(c.scope)));
   if (!c.blank) {
     head.append(el("span", "badge " + (c.enabled ? "badge-created" : "badge-unchanged"), t(c.enabled ? "sso.on" : "sso.off")));
-    head.append(el("span", "badge badge-update", t(c.secretSet ? "sso.secretSet" : "sso.secretMissing")));
+    head.append(el("span", "badge " + (c.secretUnreadable ? "badge-error" : "badge-update"),
+                   t(c.secretUnreadable ? "sso.secretUnreadableBadge" : c.secretSet ? "sso.secretSet" : "sso.secretMissing")));
     if (c.passwordOff) head.append(el("span", "badge badge-unchanged", t("sso.passwordOffBadge")));
   }
   card.append(head);
@@ -3627,15 +3813,19 @@ function ssoCard(c) {
   form.append(field("sso.issuer", issuer, "sso.issuerHint", { issuer: c.issuer || "https://…" }),
               field("sso.clientId", clientId), field("sso.clientSecret", secret),
               field("sso.domains", domainsInput, "sso.domainsHint"),
-              check("sso-enabled", c.enabled, "sso.enabled"), check("sso-password-off", c.passwordOff, "sso.passwordOff"));
+              check("sso-enabled", c.enabled, "sso.enabled"), check("sso-password-off", c.passwordOff, "sso.passwordOff"),
+              check("sso-email-unverified", c.emailVerifiedOptional, "sso.emailVerifiedOptional"));
   card.append(form);
   card.append(el("p", "field-msg", t("sso.passwordOffHint")));
+  card.append(el("p", "field-msg", t("sso.emailVerifiedOptionalHint")));
+  if ((c.domainStates || []).length) card.append(ssoDomains(c, editable));
   const actions = el("div", "user-actions");
   const button = (key, cls, fn) => { const b = el("button", "btn " + cls, t(key)); b.type = "button"; b.addEventListener("click", fn); actions.append(b); };
   if (editable) {
     button("sso.save", "btn-primary", () => ssoCall("PUT", c.scope, "", {
       issuer: issuer.value.trim(), clientId: clientId.value.trim(), clientSecret: secret.value, domains: domainsInput.value,
-      enabled: $(".sso-enabled", form).checked, passwordOff: $(".sso-password-off", form).checked }));
+      enabled: $(".sso-enabled", form).checked, passwordOff: $(".sso-password-off", form).checked,
+      emailVerifiedOptional: $(".sso-email-unverified", form).checked }));
   }
   if (!c.blank) {
     button("sso.test", "btn-ghost", () => ssoCall("POST", c.scope, "/test", {}));
@@ -3645,6 +3835,38 @@ function ssoCard(c) {
   }
   card.append(actions);
   return card;
+}
+
+/* The configuration's e-mail domains and their proofs (ADR 0025): a DNS record, a server administrator's approval or
+   the upgrade; a domain without one signs nobody in. */
+function ssoDomains(c, editable) {
+  const box = el("div", "sso-proofs");
+  box.append(el("p", "field-msg", t("sso.proofHint")));
+  for (const d of c.domainStates) {
+    const row = el("div", "sso-proof" + (d.proof ? " is-proved" : ""));
+    row.dataset.domain = d.domain;
+    const head = el("div", "domain-head");
+    head.append(el("strong", "code", d.domain), el("span", "badge " + (d.proof === "dns" || d.proof === "admin"
+      ? "badge-created" : d.proof ? "badge-update" : "badge-unchanged"), t({ dns: "sso.proofDns", admin: "sso.proofAdmin", upgrade: "sso.proofUpgrade" }[d.proof] || "sso.proofNone")));
+    if (d.provedAt) head.append(el("small", "muted", formatWhen(d.provedAt) + (d.provedBy ? " · " + d.provedBy : "")));
+    if (d.lapsedAt) head.append(el("span", "badge badge-error", t("domains.lapsedBadge")));
+    row.append(head);
+    if (d.lapsedAt) row.append(el("p", "field-msg is-error sso-lapsed", t("sso.proofLapsed", { seen: formatWhen(d.seenAt || d.provedAt) })));
+    if ((d.proof !== "dns" && d.proof !== "admin" || d.lapsedAt) && d.txtValue) {
+      const dl = el("dl", "domain-txt");
+      dl.append(el("dt", "", t("domains.txtName")), el("dd", "code", d.txtName),
+                el("dt", "", t("domains.txtValue")), el("dd", "code", d.txtValue));
+      row.append(dl);
+      const actions = el("div", "user-actions");
+      const button = (key, cls, suffix) => { const b = el("button", "btn " + cls, t(key)); b.type = "button";
+        b.addEventListener("click", () => ssoCall("POST", c.scope, suffix, { domain: d.domain })); actions.append(b); };
+      if (editable) button("sso.verify", "btn-primary", "/verify");
+      if (editable && ssoState.data.every) button("sso.approve", "btn-ghost", "/approve");
+      if (actions.children.length) row.append(actions);
+    }
+    box.append(row);
+  }
+  return box;
 }
 
 async function ssoCall(method, scope, suffix, body) {
@@ -3986,6 +4208,8 @@ function renderOverview() {
     tile("overview.q.invalid", q.invalid, { previous: q.previous.invalid, better: "down" }),
     tile("overview.q.error", q.error, { previous: q.previous.error, better: "down", warn: q.error > 0 }),
     // sent to another resolver (ADR 0018): shown when there were any
+    ...(q.withheld || q.previous.withheld ? [tile("overview.q.withheld", q.withheld, { previous: q.previous.withheld,
+                                                                                    better: "down" })] : []),
     ...(q.forwarded || q.previous.forwarded ? [tile("overview.q.forwarded", q.forwarded, { previous: q.previous.forwarded })] : []),
     ...(q.fallback || q.previous.fallback ? [tile("overview.q.fallback", q.fallback, { previous: q.previous.fallback })] : []),
     tile("overview.avgMs", q.avgMs, { unit: "ms", note: q.p95Max !== null && q.p95Max !== undefined
@@ -4047,15 +4271,17 @@ function renderOverview() {
     const d = c.detail || {};
     if (c.kind === "logspace" && d.reason === "noLimit") return t("overview.check.noLimit");
     if (c.kind === "gcptable" && d.reason === "none") return t("overview.check.gcpNone");
+    if (c.kind === "journal" && d.reason === "notVerified") return t("overview.check.journalNone");
     const extra = c.kind === "backup" && d.at ? t("overview.check.backupAt", { when: formatWhen(d.at) })
       : c.kind === "certificate" && d.expires ? t("overview.check.certExpires", { when: formatWhen(d.expires), days: d.days })
       : c.kind === "logspace" && d.percent !== undefined
         ? t("overview.check.spaceUse", { percent: nf(d.percent), max: formatBytes(d.max) })
       : c.kind === "gcptable" && d.date ? t("overview.check.gcpAge", { date: formatDay(d.date), days: d.days })
+      : c.kind === "journal" && d.at ? t("overview.check.journalAt", { when: formatWhen(d.at), chains: d.chains ?? 0 })
       : "";
     return t("overview.state." + (c.state || "unknown")) + (extra ? " · " + extra : "");
   };
-  if (op.checks) ["resolver", "backup", "certificate", "logspace", "gcptable"].forEach(name => facts.push(["overview.check." + name, checkText(op.checks[name])]));
+  if (op.checks) ["resolver", "settings", "backup", "certificate", "logspace", "gcptable", "journal"].forEach(name => facts.push(["overview.check." + name, checkText(op.checks[name])]));
   if (d.operation) facts.push(["overview.op.alerts", (op.alerts || []).length
     ? op.alerts.map(a => overviewAlert(a) + " · " +
                          t("overview.alertSince", { when: formatWhen(a.since) })).join("\n")
@@ -4897,7 +5123,12 @@ function renderImportReport(report) {
     return li;
   }));
   $("#import-body").replaceChildren(...report.records.map(item => importRow(item.rows, keyText(item.key || "01", item.value),
-    scopeOf(item) + (item.noKeyRecord ? " — " + t("import.noKeyRecord") : ""), item.description, item.action)));
+    scopeOf(item) + (item.noKeyRecord ? " — " + t("import.noKeyRecord") : ""), item.description, item.action,
+    item.action === "error" ? [] : item.warnings || [])));
+  const warned = $("#import-safety");
+  const n = report.warningCount || 0;
+  I18N.set(warned, n ? (n === 1 ? "import.warningsOne" : "import.warningsMany") : null, { count: n });
+  warned.hidden = !n;
   $("#import-report").hidden = false;
   // section 2.5.9: keys the import would leave without a record of their own
   const keys = report.keysWithoutRecord || [];
@@ -4914,7 +5145,7 @@ function renderImportReport(report) {
   apply.disabled = count === 0;
 }
 
-function importRow(rows, gtin, scope, description, action) {
+function importRow(rows, gtin, scope, description, action, warnings = []) {
   const tr = document.createElement("tr");
   const badge = document.createElement("span");
   badge.className = "badge badge-" + action;
@@ -4924,6 +5155,7 @@ function importRow(rows, gtin, scope, description, action) {
       const td = document.createElement("td");
       if (i === 1) td.className = "code";
       if (content instanceof Node) td.append(content); else td.textContent = content;
+      if (i === 2) warnings.forEach(w => td.append(el("span", "import-warning", "⚠ " + warningShort(w))));
       tr.append(td);
     });
   return tr;
@@ -4971,7 +5203,7 @@ async function pollImport() {
   if (status.state === "failed") {
     clearInterval(importState.polling);
     stop.hidden = true;
-    importStatus("error", status.error || "job.failed");
+    importStatus("error", status.error || "job.failed", { done: status.done, total: status.total });
     return;
   }
   if (status.state !== "finished" && status.state !== "cancelled") {
@@ -5187,6 +5419,7 @@ function addRow(data = {}) {
       li.dataset.hreflang = JSON.stringify(tags);
       fillLanguageSelect(languageField, tags);
     }
+    scheduleWarnings();            // the languages of safety-critical links (ADR 0028)
   });
   $(".url", li).addEventListener("blur", e => {
     const value = e.target.value.trim();
@@ -5225,6 +5458,7 @@ function currentDefaultType() {
 }
 
 function refreshDefault() {
+  scheduleWarnings();
   const msg = $("#default-msg");
   const landing = $("#landing-page").checked;
   $("#links").classList.toggle("landing", landing);
@@ -5273,6 +5507,109 @@ function collect() {
   };
 }
 
+/* ------------------------------------------------------------------ warnings (ADR 0022, section 2.5) */
+/* The portal asks the server, while the record is edited, what a request for it would receive from a less specific
+   record of the key (safety-critical link types) and whether a batch or serial value is close to another of the key's;
+   the same list comes with the saved record. Warnings never block the save. */
+let warningTimer = null, warningCall = 0;
+
+function scheduleWarnings() {
+  clearTimeout(warningTimer);
+  warningTimer = setTimeout(refreshWarnings, 400);
+}
+
+async function refreshWarnings() {
+  const g = readKey(), l = readQualifiers();
+  if (!CONFIG || isReader() || !g.ok || !l.ok || !(l.pairs || []).length && !state.openKey) {
+    renderWarnings([], !!state.openKey);
+    return;
+  }
+  const call = ++warningCall, open = !!state.openKey && !!$("#links .link-row");
+  // with no record open the targets are not read (there may be none): only the value is compared
+  const body = open ? collect() : { key: g.ai, value: g.value, qualifiers: Object.fromEntries(l.pairs || []), links: [] };
+  try {
+    const answer = await api("POST", "record/warnings", body);
+    if (call === warningCall) renderWarnings(answer.warnings || [], open);
+  } catch (e) {
+    if (call === warningCall) renderWarnings([], open);
+  }
+}
+
+function levelText(pairs) {
+  return pairs && pairs.length ? qualText(pairs) : t("warning.levelKey", { name: t(`key.${readKey().ai}.short`) });
+}
+
+function typeList(types) {
+  const ul = document.createElement("ul");
+  types.forEach(code => {
+    const li = document.createElement("li");
+    li.textContent = I18N.linkType(code)[0];
+    ul.append(li);
+  });
+  return ul;
+}
+
+function warningItem(title, ...parts) {
+  const item = el("div", "safety-item");
+  item.append(el("p", "safety-title", title), ...parts.map(p => typeof p === "string" ? el("p", "", p) : p));
+  return item;
+}
+
+/* Draws the warnings: near-duplicate values under the qualifiers, the others under the targets (only while a record
+   is open: they depend on its links). */
+function renderWarnings(warnings, open) {
+  const record = qualText(splitInformative(readKey().ai, readQualifiers().pairs || []).pairs);
+  const dup = [], safety = [];
+  warnings.forEach(w => {
+    const p = w.params || {};
+    if (w.code === "warning.nearDuplicate") {
+      const name = t(`qual.${p.ai}.item`, { value: p.existing });
+      dup.push(warningItem(t("warning.nearDuplicate.title", { name }),
+                           t("warning.nearDuplicate.text", { value: p.value, existing: p.existing })));
+    } else if (w.code === "warning.walkUp" && open) {
+      safety.push(warningItem(t("warning.walkUp.title"),
+                              t("warning.walkUp.text", { record, level: levelText(p.level) }), typeList(p.types),
+                              t("warning.walkUp.advice"), t(p.strict ? "warning.walkUp.strict" : "warning.walkUp.strictHint")));
+    } else if (w.code === "warning.productLevel" && open) {
+      const list = p.values.map(qualText).join("; ") + (p.count > p.values.length ? " …" : "");
+      safety.push(warningItem(t("warning.productLevel.title"),
+                              t("warning.productLevel.text", { count: p.count, list }), typeList(p.types),
+                              t(p.strict ? "warning.strictOn" : "warning.strictOff")));
+    } else if (w.code === "warning.noLanguage" && open) {
+      safety.push(warningItem(t("warning.noLanguage.title"), t("warning.noLanguage.text"), typeList(p.types)));
+    } else if (w.code === "warning.languageGap" && open) {
+      const ul = document.createElement("ul");
+      p.gaps.forEach(g => {
+        const li = document.createElement("li");
+        li.textContent = t("warning.languageGap.item", { type: I18N.linkType(g.type)[0], languages: g.missing.join(", ") });
+        ul.append(li);
+      });
+      safety.push(warningItem(t("warning.languageGap.title"), t("warning.languageGap.text"), ul));
+    }
+  });
+  $("#dup-warnings").replaceChildren(...dup);
+  $("#dup-warnings").hidden = !dup.length;
+  $("#safety-warnings").replaceChildren(...safety);
+  $("#safety-warnings").hidden = !safety.length;
+}
+
+/* One line of a warning for the import's preview. */
+function warningShort(w) {
+  const p = w.params || {};
+  if (w.code === "warning.walkUp") {
+    return t("warning.walkUp.short", { types: p.types.map(c => I18N.linkType(c)[0]).join(", "), level: levelText(p.level) });
+  }
+  if (w.code === "warning.productLevel") return t("warning.productLevel.short", { count: p.count });
+  if (w.code === "warning.noLanguage") {
+    return t("warning.noLanguage.short", { types: p.types.map(c => I18N.linkType(c)[0]).join(", ") });
+  }
+  if (w.code === "warning.languageGap") {
+    return p.gaps.map(g => t("warning.languageGap.item", { type: I18N.linkType(g.type)[0],
+                                                          languages: g.missing.join(", ") })).join("; ");
+  }
+  return t("warning.nearDuplicate.short", { value: p.value, existing: p.existing });
+}
+
 /* ------------------------------------------------------------------ save / delete */
 async function save(event) {
   event.preventDefault();
@@ -5304,6 +5641,7 @@ async function save(event) {
     $("#delete").hidden = false;
     setPublished(true);
     showStatus("ok", result.code);
+    renderWarnings(result.warnings || [], true);
     checkLinks();                       // warns about targets that do not answer; never blocks the save
   } catch (e) {
     showStatus("error", e.code, e.params);
@@ -5704,6 +6042,8 @@ async function init() {
   $("#support-cancel").addEventListener("click", () => $("#support-dialog").close());
   $("#support-leave").addEventListener("click", endSupport);
   $("#audit-csv").addEventListener("click", downloadAudit);
+  $("#audit-verify-open").addEventListener("click", verifyAudit);
+  $("#audit-receipt-form").addEventListener("submit", verifyAudit);
   $("#requests-filters").addEventListener("submit", e => loadRequests(e));
   $("#requests-map-box").addEventListener("toggle", () => loadRequestMap());
   $("#requests-more").addEventListener("click", () => loadRequests(null, true));

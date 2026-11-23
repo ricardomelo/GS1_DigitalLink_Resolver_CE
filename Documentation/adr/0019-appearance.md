@@ -90,3 +90,13 @@ After the first delivery the owner asked not to forget the HTML page's title and
 in the tab titles only by the pages' scripts, so the portal's pages first showed the original and the favicon stayed the
 project's. Now the portal serves its pages with the title, logo and icon in their HTML, and an icon of its own (section
 2, item 1) is the favicon of every page; without one, the project's stays.
+
+## 7. Note of 15 November 2026: the original title is now *GS1 Digital Link Resolver Suite*
+
+[ADR 0024](0024-name-and-about.md) renamed the project: the original title, shown when no appearance is set and
+restored by *Restore the original*, is *GS1 Digital Link Resolver Suite* (`appearance.ORIGINAL`, the pages' HTML and
+`RESOLVER_PRODUCT_NAME`'s default), in place of *GS1 Resolver Community Edition* wherever this ADR names it. Saving
+with an empty title stored the original title of the time, so a stored title equal to *GS1 Resolver Community Edition*
+(`appearance.FORMER_TITLES`, and the same list in `web_server/src/web_pages.py`) is read as the original title of
+today, not as the operator's choice; the colours, logo and icon stored with it stay. A title that only contains the old
+name (for example *GS1 Resolver Community Edition (Acme)*) is the operator's.

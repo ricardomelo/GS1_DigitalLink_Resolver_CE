@@ -39,6 +39,12 @@ EOF
 #!/bin/bash
 echo "systemctl \$*" >> $s/calls
 EOF
+  # dpkg-query: the version of the host's nginx package, from a state file (a fixed Ubuntu 24.04 build by default)
+  cat > "$b/dpkg-query" <<EOF
+#!/bin/bash
+if [[ "\$*" == *" nginx" ]]; then cat $s/nginx-version 2>/dev/null || printf '1.24.0-2ubuntu7.20'; exit 0; fi
+exec /usr/bin/dpkg-query "\$@"
+EOF
   cat > "$b/usermod" <<EOF
 #!/bin/bash
 echo "usermod \$*" >> $s/calls
@@ -109,8 +115,9 @@ run_installer() {   # extra environment as arguments; answers (if any) on stdin
   env -i PATH="$SB/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME=/root TERM=dumb \
     INSTALL_LOG_FILE="$SB/state/install.log" INSTALL_NGINX_AVAILABLE="$SB/nginx/sites-available" \
     INSTALL_NGINX_ENABLED="$SB/nginx/sites-enabled" INSTALL_CRON_FILE="$SB/state/cron" \
+    INSTALL_BACKUP_KEY_FILE="$SB/state/keys/backup.key" \
     INSTALL_GEOIP_CRON_FILE="$SB/state/geoip-cron" INSTALL_DOMAINS_CRON_FILE="$SB/state/domains-cron" \
-    INSTALL_HEALTH_TIMEOUT=30 INSTALL_PROXY_RESTART_AFTER=5 INSTALL_WORKER_TIMEOUT=5 INSTALL_DOCKER_GROUP_USER= "$@" \
+    INSTALL_OS_CODENAME=noble INSTALL_HEALTH_TIMEOUT=30 INSTALL_PROXY_RESTART_AFTER=5 INSTALL_WORKER_TIMEOUT=5 INSTALL_DOCKER_GROUP_USER= "$@" \
     bash "$SB/repo/scripts/install.sh" ${INSTALLER_ARGS:---non-interactive} > "$SB/state/out" 2>&1
 }
 
@@ -130,6 +137,8 @@ check "A: MongoDB password generated (48 hex)" "[[ \$(envval MONGO_INITDB_ROOT_P
 check "A: MONGO_URI matches the password" "[[ \$(envval MONGO_URI) == mongodb://gs1resolver:\$(envval MONGO_INITDB_ROOT_PASSWORD)@database-service:27017 ]]"
 check "A: API token generated (64 hex)" "[[ \$(envval SESSION_TOKEN) =~ ^[0-9a-f]{64}$ ]]"
 check "A: portal database password generated (48 hex)" "[[ \$(envval PORTAL_DB_PASSWORD) =~ ^[0-9a-f]{48}$ ]]"
+check "A: passwords of the resolver's and the data entry API's database users generated (48 hex, different; ADR 0030)" "[[ \$(envval RESOLVER_DB_PASSWORD) =~ ^[0-9a-f]{48}$ && \$(envval DATA_ENTRY_DB_PASSWORD) =~ ^[0-9a-f]{48}$ && \$(envval RESOLVER_DB_PASSWORD) != \$(envval DATA_ENTRY_DB_PASSWORD) ]]"
+check "A: MongoDB's root connection given to the database and portal-db-init only" "[[ \$(compose_cfg | grep -c 'MONGO_URI: mongodb') == 2 ]]"
 check "A: portal session key generated (64 hex)" "[[ \$(envval PORTAL_SECRET_KEY) =~ ^[0-9a-f]{64}$ ]]"
 check "A: job worker reported running" "grep -q 'Job worker running' $SB/state/out"
 check "A: first-user password cleared after start" "[[ -z \$(envval PORTAL_ADMIN_PASSWORD) && \$(envval PORTAL_ADMIN_USERNAME) == admin ]]"
@@ -143,6 +152,10 @@ check "A: nginx site enabled" "[[ -L $SB/nginx/sites-enabled/gs1resolver ]]"
 check "A: nginx -t passed" "grep -q '^nginx -t' $SB/state/calls"
 check "A: certbot called for the domain" "grep -q 'certbot --nginx -d id.example.org --non-interactive --agree-tos -m ops@example.org --redirect' $SB/state/calls"
 check "A: nginx and certbot packages requested" "grep -q 'apt-get install -y.*certbot python3-certbot-nginx' $SB/state/calls"
+check "A: the host's nginx installed or updated even when already there (ADR 0042)" "dpkg -s nginx >/dev/null 2>&1 && grep -q '^apt-get install -y nginx certbot python3-certbot-nginx' $SB/state/calls && grep -q '^apt-get update' $SB/state/calls"
+check "A: a fixed nginx package reported as carrying the November 2026 fixes" "grep -q 'nginx 1.24.0-2ubuntu7.20 carries the security fixes of November 2026' $SB/state/out && ! grep -q 'predates the security fixes' $SB/state/out"
+check "A: the site served over HTTP/1.1 only (no http2)" "! grep -q http2 $SB/nginx/sites-available/gs1resolver"
+check "A: the site keeps no access log (ADR 0043)" "[[ \$(grep -c 'access_log off;' $SB/nginx/sites-available/gs1resolver) == \$(grep -c '^ *server_name ' $SB/nginx/sites-available/gs1resolver) ]] && grep -q 'server_name id.example.org;' $SB/nginx/sites-available/gs1resolver"
 check "A: one replica of each service written to .env" "[[ \$(envval WEB_SERVICE_REPLICAS)\$(envval DATA_ENTRY_SERVICE_REPLICAS)\$(envval PORTAL_SERVICE_REPLICAS)\$(envval PORTAL_WORKER_REPLICAS) == 1111 ]]"
 check "A: Compose reads the replica counts" "[[ \$(compose_cfg | grep -c 'replicas: 1') == 4 ]]"
 check "A: replicas in the summary" "grep -q 'Replicas *resolver 1, data entry API 1, portal 1, job worker 1' $SB/state/out"
@@ -155,11 +168,18 @@ check "A: the GeoIP database's monthly update scheduled from the repository" "gr
 check "A: its first download tried at once; a failure only a warning" "grep -q 'The GeoIP database was not downloaded' $SB/state/out && grep -q 'not downloaded' $SB/state/install.log"
 check "A: scan locations in the summary" "grep -q 'Scan locations *yes' $SB/state/out"
 check "A: the organisations' own domains applied every 5 minutes, quietly" "grep -q \"^\\*/5 \\* \\* \\* \\* root $SB/repo/scripts/custom-domains.sh apply --quiet\" $SB/state/domains-cron && [[ \$(stat -c %a $SB/state/domains-cron) == 644 ]]"
+check "A: age installed for the backups (ADR 0044)" "grep -q '^apt-get install -y nginx certbot python3-certbot-nginx age\$' $SB/state/calls"
+check "A: a backup key made with age-keygen, mode 600" "[[ \$(stat -c %a $SB/state/keys/backup.key 2>/dev/null) == 600 ]] && grep -q '^AGE-SECRET-KEY-1' $SB/state/keys/backup.key"
+check "A: the backup key named in the summary, with the advice to keep a copy off the server" "grep -q 'Backup key:  $SB/state/keys/backup.key' $SB/state/out && grep -q 'without it no backup can be restored' $SB/state/out"
+check "A: the portal's data key generated (64 hex; ADR 0044)" "[[ \$(envval PORTAL_DATA_KEY) =~ ^[0-9a-f]{64}$ && \$(envval PORTAL_DATA_KEY) != \$(envval PORTAL_JOURNAL_KEY) ]]"
 A_TOKEN=$(envval SESSION_TOKEN); A_PWD=$(envval MONGO_INITDB_ROOT_PASSWORD)
-A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY)
+A_PORTAL_DB=$(envval PORTAL_DB_PASSWORD); A_KEY=$(envval PORTAL_SECRET_KEY); A_RESOLVER_DB=$(envval RESOLVER_DB_PASSWORD)
+A_DATA_KEY=$(envval PORTAL_DATA_KEY); A_BACKUP_KEY=$(sha256sum < "$SB/state/keys/backup.key")
 
 # ------------------------------------------------------------------------------ B. re-run
 echo "--- B. second run on the same installation"
+printf '1.24.0-2ubuntu7.19' > "$SB/state/nginx-version"
+printf 'server {\n    listen 443 ssl http2;\n    listen [::]:443 ssl http2;\n    server_name id.example.org;\n}\n' >> "$SB/nginx/sites-available/gs1resolver"
 echo "PORTAL_SESSION_IDLE_MINUTES='20'" >> "$SB/repo/.env"
 sed -i "s/^WEB_SERVICE_REPLICAS=.*/WEB_SERVICE_REPLICAS='2'/" "$SB/repo/.env"
 : > "$SB/state/calls"
@@ -176,6 +196,8 @@ check "B: the portal and its worker receive the relay settings" "[[ \$(compose_c
 check "B: no setting written twice (the last line of .env would win)" "[[ -z \$(grep -oE '^[A-Z_]+=' $SB/repo/.env | sort | uniq -d) ]]"
 check "B: secrets kept" "[[ \$(envval SESSION_TOKEN) == $A_TOKEN && \$(envval MONGO_INITDB_ROOT_PASSWORD) == $A_PWD ]]"
 check "B: portal database password and session key kept" "[[ \$(envval PORTAL_DB_PASSWORD) == $A_PORTAL_DB && \$(envval PORTAL_SECRET_KEY) == $A_KEY ]]"
+check "B: the resolver's database password kept" "[[ \$(envval RESOLVER_DB_PASSWORD) == $A_RESOLVER_DB ]]"
+check "B: the data key and the backup key kept" "[[ \$(envval PORTAL_DATA_KEY) == $A_DATA_KEY && \$(sha256sum < $SB/state/keys/backup.key) == '$A_BACKUP_KEY' ]] && grep -q 'Backups encrypted with the key in $SB/state/keys/backup.key (kept)' $SB/state/out"
 check "B: settings kept from .env (operator)" "[[ \$(envval RESOLVER_ORG_NAME) == 'Example Org' ]]"
 check "B: a time zone taken from the environment" "[[ \$(envval PORTAL_TIME_ZONE) == America/Sao_Paulo ]]"
 check "B: unmanaged setting carried over" "grep -q \"^PORTAL_SESSION_IDLE_MINUTES='20'\" $SB/repo/.env"
@@ -184,6 +206,17 @@ check "B: Compose scales the services as written" "[[ \$(compose_cfg | grep -c '
 check "B: previous .env backed up with mode 600" "ls $SB/repo/.env.bak-* >/dev/null && [[ \$(stat -c %a \$(ls $SB/repo/.env.bak-* | head -n 1)) == 600 ]]"
 check "B: existing portal users detected, no first user" "grep -q 'existing users are kept' $SB/state/out && [[ -z \$(envval PORTAL_ADMIN_PASSWORD) ]]"
 check "B: site with certificate kept, certbot not called" "! grep -q '^certbot' $SB/state/calls"
+check "B: an nginx package without the November 2026 fixes: warned, with the command that updates it" "grep -q 'nginx 1.24.0-2ubuntu7.19 predates the security fixes of November 2026' $SB/state/out && grep -q 'sudo apt-get install --only-upgrade nginx' $SB/state/out"
+check "B: a kept site that serves HTTP/2: warned, with the command that turns it off" "grep -q 'The site serves HTTP/2' $SB/state/out && grep -q 'To turn it off: sudo sed -i -E' $SB/state/out"
+B_SED=$(grep -o "sed -i -E '[^']*'" "$SB/state/out" | head -n 1)
+cp "$SB/nginx/sites-available/gs1resolver" "$SB/state/h2-site"
+eval "$B_SED $SB/state/h2-site"
+check "B: ... and that command leaves the listen lines without http2, the rest unchanged" "[[ -n \"$B_SED\" ]] && ! grep -q http2 $SB/state/h2-site && [[ \$(grep -c 'listen 443 ssl;' $SB/state/h2-site) == 1 ]] && diff <(grep -v listen $SB/state/h2-site) <(grep -v listen $SB/nginx/sites-available/gs1resolver) >/dev/null"
+check "B: a kept site with a server that keeps an access log: warned, with the command that turns it off" "grep -q 'The site keeps an access log' $SB/state/out && grep -q \"To turn it off: sudo sed -i -E -e '/\" $SB/state/out"
+B_LOG_SED=$(grep "The site keeps an access log" -A1 "$SB/state/out" | grep -o "sed -i -E -e '[^']*' -e '[^']*'" | head -n 1)
+cp "$SB/nginx/sites-available/gs1resolver" "$SB/state/log-site"
+eval "$B_LOG_SED $SB/state/log-site"
+check "B: ... and that command gives each server one access_log off, the rest unchanged" "[[ -n \"$B_LOG_SED\" ]] && [[ \$(grep -c 'access_log off;' $SB/state/log-site) == 2 ]] && [[ \$(grep -A1 'server_name' $SB/state/log-site | grep -c 'access_log off;') == 2 ]] && diff <(grep -v access_log $SB/state/log-site) <(grep -v access_log $SB/nginx/sites-available/gs1resolver) >/dev/null"
 
 # ------------------------------------------------------------------------------ C. server migrated by hand
 echo "--- C. existing .env written by hand (double quotes, percent-encoded URI), volumes present"
@@ -193,9 +226,11 @@ MONGO_INITDB_ROOT_USERNAME=resolveradmin
 MONGO_INITDB_ROOT_PASSWORD=p@ss:w0rd!xyz
 MONGO_URI=mongodb://resolveradmin:p%40ss%3Aw0rd%21xyz@database-service:27017
 SESSION_TOKEN=0123456789abcdef0123456789abcdef
+DATA_ENTRY_DB_PASSWORD=resolver_data_entry
 FQDN=idhml.example.org
 RESOLVER_ORG_NAME="GS1 Example"
 RESOLVER_CONTACT_STREET="Av. Exemplo, 328 - Pinheiros"
+BACKUP_RECIPIENTS=age1lggyhqrw2nlhcxprm67z43rta597azn8gknawjehu9d9dl0jq3yqqvfafg
 EOF
 touch "$SB/state/volume-resolver-database-volume" "$SB/state/volume-resolver-portal-config"
 cat > "$SB/nginx/sites-available/gs1resolver" <<'EOF'
@@ -212,8 +247,10 @@ check "C: exit status 0" "[[ $rc == 0 ]]"
 check "C: percent-encoded MONGO_URI kept as is" "[[ \$(envval MONGO_URI) == 'mongodb://resolveradmin:p%40ss%3Aw0rd%21xyz@database-service:27017' ]]"
 check "C: MongoDB user and token kept" "[[ \$(envval MONGO_INITDB_ROOT_USERNAME) == resolveradmin && \$(envval SESSION_TOKEN) == 0123456789abcdef0123456789abcdef ]]"
 check "C: an installation from before the portal's database gets its password and session key" "[[ \$(envval PORTAL_DB_PASSWORD) =~ ^[0-9a-f]{48}$ && \$(envval PORTAL_SECRET_KEY) =~ ^[0-9a-f]{64}$ ]]"
+check "C: an installation from before ADR 0030 gets the services' database passwords, the example one replaced" "[[ \$(envval RESOLVER_DB_PASSWORD) =~ ^[0-9a-f]{48}$ && \$(envval DATA_ENTRY_DB_PASSWORD) =~ ^[0-9a-f]{48}$ ]]"
 check "C: quoted values read correctly" "[[ \$(envval RESOLVER_CONTACT_STREET) == 'Av. Exemplo, 328 - Pinheiros' ]]"
 check "C: existing certificate site kept" "grep -q snakeoil $SB/nginx/sites-available/gs1resolver && ! grep -q '^certbot' $SB/state/calls"
+check "C: BACKUP_RECIPIENTS in .env: no backup key made on the server, the recipients kept" "[[ ! -e $SB/state/keys/backup.key ]] && grep -q 'Backups encrypted to BACKUP_RECIPIENTS of .env' $SB/state/out && ! grep -q 'Backup key:' $SB/state/out && [[ \$(envval BACKUP_RECIPIENTS) == age1lggyhqrw2nlhcxprm67z43rta597azn8gknawjehu9d9dl0jq3yqqvfafg ]]"
 check "C: Compose accepts the rewritten .env" "compose_cfg | grep -q 'MONGO_URI: mongodb://resolveradmin:p%40ss'"
 
 # ------------------------------------------------------------------------------ D. own certificate
@@ -227,6 +264,8 @@ check "D: exit status 0" "[[ $rc == 0 ]]"
 check "D: HTTPS site with the given files" "grep -Eq \"ssl_certificate +$SB/state/cert.pem;\" $SB/nginx/sites-available/gs1resolver"
 check "D: nginx -t passed with the certificate" "grep -q '^nginx -t' $SB/state/calls && ! grep -q 'rejected' $SB/state/out"
 check "D: certbot not used" "! grep -q '^certbot' $SB/state/calls"
+check "D: the HTTPS site without HTTP/2 (listen 443 ssl, ADR 0042)" "grep -q 'listen 443 ssl;' $SB/nginx/sites-available/gs1resolver && ! grep -Eq '^[^#]*http2' $SB/nginx/sites-available/gs1resolver"
+check "D: neither of the HTTPS site's servers keeps an access log (ADR 0043)" "[[ \$(grep -c 'access_log off;' $SB/nginx/sites-available/gs1resolver) == 2 && \$(grep -c '^ *server_name ' $SB/nginx/sites-available/gs1resolver) == 2 ]]"
 check "D: no schedule for the organisations' domains (no Let's Encrypt), and how to add one" "[[ ! -e $SB/state/domains-cron ]] && grep -q 'install scripts/custom-domains.cron' $SB/state/out"
 
 # ------------------------------------------------------------------------------ E. external proxy
@@ -241,6 +280,7 @@ check "E: database stays on 127.0.0.1" "compose_cfg | grep -B3 'published: \"270
 check "E: no cron when declined" "[[ ! -e $SB/state/cron ]]"
 check "E: no schedule for the organisations' domains behind an external proxy" "[[ ! -e $SB/state/domains-cron ]]"
 check "E: no GeoIP update when declined" "[[ ! -e $SB/state/geoip-cron ]] && grep -q 'Not recorded (no GeoIP database' $SB/state/out"
+check "E: age installed without nginx; the backup key made though the backup is not scheduled" "grep -q '^apt-get install -y age\$' $SB/state/calls && ! grep -q 'install -y.*nginx' $SB/state/calls && [[ -e $SB/state/keys/backup.key ]]"
 
 # ------------------------------------------------------------------------------ F. interactive
 echo "--- F. interactive answers"
@@ -336,6 +376,17 @@ check "J: \"off\" switches e-mail off and forgets the credentials" "[[ $rc == 0 
 printf "PORTAL_MAIL_HOST='mailpit'\nPORTAL_MAIL_PORT='1025'\nPORTAL_MAIL_SECURITY='none'\nPORTAL_MAIL_FROM='portal@example.org'\n" >> "$SB/repo/.env"
 run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org; rc=$?
 check "J: a test relay set by hand (mailpit, no encryption) is kept" "[[ $rc == 0 && \$(envval PORTAL_MAIL_HOST) == mailpit && \$(envval PORTAL_MAIL_SECURITY) == none && \$(envval PORTAL_MAIL_PORT) == 1025 ]]"
+
+# ------------------------------------------------------------------------------ L. the host's nginx versions
+echo "--- L. which nginx packages carry the security fixes of November 2026 (ADR 0042)"
+eval "$(sed -n '/^declare -A HOST_NGINX_FIXED/,/^}/p' "$HERE/../../scripts/install.sh")"
+for case in "1.24.0-2ubuntu7.19 noble no" "1.24.0-2ubuntu7.20 noble yes" "1.24.0-2ubuntu8 noble yes" \
+            "1.18.0-6ubuntu14.23 jammy no" "1.18.0-6ubuntu14.24 jammy yes" "1.18.0-6ubuntu14.24 focal unknown" \
+            "1.30.6-1~noble noble no" "1.30.7-1~noble noble yes" "1.31.8-1~jammy jammy no" "1.31.9-1~jammy jammy yes" \
+            "1.28.3-1~noble noble no" "1.32.0-1~noble noble yes"; do
+  read -r version codename expected <<< "$case"
+  check "L: nginx $version on $codename: $expected" "[[ \$(host_nginx_fixed $version $codename) == $expected ]]"
+done
 
 echo
 echo "$PASS passed, $FAIL failed"

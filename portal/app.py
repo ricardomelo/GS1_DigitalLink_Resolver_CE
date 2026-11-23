@@ -16,16 +16,19 @@ import csv
 import io
 import json
 import logging
+import math
 import os
 import re
 import secrets
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from urllib.parse import urlsplit
 
 import requests
 from flask import Flask, Response, g, jsonify, redirect, request, send_from_directory, session
-from pymongo.errors import PyMongoError
+from pymongo.errors import OperationFailure, PyMongoError
 
 import gs1
 import jobs
@@ -33,10 +36,13 @@ import journal
 import label
 import linear
 import apikeys
+import bodies
 import branding
 import domains
 import epc
+import example_secrets
 import exportlimits
+import failcount
 import gcp
 import linkcheck
 import mail
@@ -48,11 +54,17 @@ import appearance
 import forwarding
 import overview
 import privacy
+import about
 import requestlog
+import resolution
+import safety
 import sheet
+import sessions
+import sealed
 import sso
 import store
 import syntax
+import targets
 import tenants
 import tokens
 import users
@@ -62,6 +74,9 @@ from gs1 import ValidationError
 # --------------------------------------------------------------------------- configuration
 DATA_ENTRY_URL = os.environ.get("DATA_ENTRY_URL", "http://data-entry-service:3000/api").rstrip("/")
 SESSION_TOKEN = os.environ.get("SESSION_TOKEN", "")
+# The example token and database password of .env.example refused outside development (ADR 0021); the password only
+# when the portal builds its connection from it (no PORTAL_DB_URI)
+example_secrets.refuse(["SESSION_TOKEN"] + ([] if os.environ.get("PORTAL_DB_URI", "").strip() else ["PORTAL_DB_PASSWORD"]))
 # Public address of the resolver (used in the Digital Links the portal prints and for the Origin
 # check). RESOLVER_PUBLIC_URL if set, otherwise https://FQDN, the resolver root used by the web server.
 _FQDN = os.environ.get("FQDN", "").strip()
@@ -78,11 +93,20 @@ COOKIE_SECURE = os.environ.get("PORTAL_COOKIE_SECURE", "").strip().lower() not i
 SESSION_IDLE_MINUTES = max(0.1, float(os.environ.get("PORTAL_SESSION_IDLE_MINUTES", "30")))
 SESSION_MAX_HOURS = max(SESSION_IDLE_MINUTES / 60, float(os.environ.get("PORTAL_SESSION_MAX_HOURS", "12")))
 SESSION_WARNING_SECONDS = min(120.0, SESSION_IDLE_MINUTES * 60 / 4)
+# Sign-in throttle (finding F-005: no lock by user name alone, which anyone could turn against the account's owner).
+# Per user name and address: FREE_FAILURES wrong passwords, then a wait of FIRST_DELAY_SECONDS that doubles with each
+# further failure, up to LOCKOUT_SECONDS. Per address, whatever the user names: MAX_ADDRESS_FAILURES in the window,
+# then LOCKOUT_SECONDS. The owner is told once the account counts MAX_LOGIN_FAILURES from every address together.
 MAX_LOGIN_FAILURES = 5
-LOCKOUT_SECONDS = store.LOGIN_FAILURE_SECONDS   # 15 minutes
+LOCKOUT_SECONDS = store.LOGIN_FAILURE_SECONDS   # 15 minutes: how long a failure counts
+FREE_FAILURES = 3
+FIRST_DELAY_SECONDS = 15
+MAX_ADDRESS_FAILURES = 20
+FAILURE_PAUSE = 0.5         # every wrong password is answered after at least this long
 # Password recovery requests in the same window (Documentation/adr/0004-e-mail.md, section 3.5): per user name or
 # address typed, per browser address; invalid single-use links per browser address.
 RECOVERY_PER_LOGIN = 3
+NAME_REFUSALS = 5               # user names already taken an organisation's administrator may try in LOCKOUT_SECONDS (ADR 0036)
 RECOVERY_PER_ADDRESS = 10
 BAD_LINKS_PER_ADDRESS = 10
 RECOVERY_SECONDS = 0.5      # every recovery answer takes at least this long, whether or not an account matched
@@ -102,9 +126,9 @@ if os.environ.get("PORTAL_SESSION_HOURS", "").strip():
                 "PORTAL_SESSION_MAX_HOURS (default 12).")
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-# Needed by the sign-in page and the privacy notice (ADR 0017), which anyone opens
+# Needed by the sign-in page, the privacy notice (ADR 0017) and the About page (ADR 0024), which anyone opens
 PUBLIC_ASSETS = {"app.css", "i18n.js", "login.js", "password.js", "gs1-logo.png", "logo.svg", "favicon.png",
-                 "privacy.js", "appearance.js"}
+                 "privacy.js", "appearance.js", "about.js"}
 # The map of requests (ADR 0006, section 10): its script, d3, topojson-client and the countries, after sign-in
 PRIVATE_ASSETS = {"app.js", "requests-map.js", "d3.min.js", "topojson-client.min.js", "world-countries.json",
                   "iso3166.json"}
@@ -113,36 +137,11 @@ PRIVATE_ASSETS = {"app.js", "requests-map.js", "d3.min.js", "topojson-client.min
 def _secret_key() -> bytes:
     """PORTAL_SECRET_KEY if set (the installer writes one to .env; every replica must share it); otherwise a
     random key created once in the config volume, which serves the portal's processes and replicas on one
-    Docker host (they share the volume).
-
-    Several processes start at once (gunicorn's workers, replicas), so the file appears complete or not at
-    all: the key is written to a file of this process's own and then linked to the final name, which fails
-    for every process but the first. Reading a file another process had created but not yet written would
-    sign sessions with an empty key."""
+    Docker host (they share the volume). Created so that processes starting at once all read the same, complete
+    key (sealed.key_file)."""
     if os.environ.get("PORTAL_SECRET_KEY"):
         return os.environ["PORTAL_SECRET_KEY"].encode()
-    path = os.path.join(CONFIG_DIR, "secret.key")
-    if not os.path.exists(path):
-        draft = f"{path}.{os.getpid()}.{secrets.token_hex(4)}"
-        try:
-            fd = os.open(draft, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, "w") as fh:
-                fh.write(secrets.token_hex(32))
-            try:
-                os.link(draft, path)
-            except FileExistsError:
-                pass                                   # another process was first: use its key
-            finally:
-                os.unlink(draft)
-        except OSError as exc:
-            raise RuntimeError(f"Cannot create {path} ({exc}). "
-                               "/app/config must be writable by uid 10001 (the portal-config volume).") from exc
-    with open(path, encoding="utf-8") as fh:
-        key = fh.read().strip()
-    if not key:
-        raise RuntimeError(f"{path} is empty: delete it (a new key is made at the next start) "
-                           "or set PORTAL_SECRET_KEY in .env.")
-    return key.encode()
+    return sealed.key_file(os.path.join(CONFIG_DIR, "secret.key"), "PORTAL_SECRET_KEY").encode()
 
 
 app = Flask(__name__, static_folder=None)
@@ -183,8 +182,39 @@ def _bootstrap_admin() -> None:
 # Start-up: the files of earlier versions move into the database once, the journal's retention follows the
 # environment, and the first user is created while there is none.
 migrate.run(CONFIG_DIR)
-journal.apply_retention()
+
+
+def _journal_upkeep() -> None:
+    """Retention changes and the sealing of events of earlier versions. portal-db-init does both with the root user
+    (ADR 0026 section 2.5.2): where the portal's user may only insert into the journal they are refused here, which is
+    expected; events it did not move stay unsealed and the verification reports them."""
+    for step in (journal.apply_retention, journal.seal_unsealed):
+        try:
+            step()
+        except OperationFailure as exc:
+            if exc.code != store.UNAUTHORIZED:
+                raise
+            log.info("Journal: %s left to portal-db-init (the portal's user may only insert into the journal).",
+                     step.__name__)
+
+
+_journal_upkeep()
+if not journal.key():
+    log.warning("PORTAL_JOURNAL_KEY is not set: the journal's chains are sealed without a key, so anyone able to write "
+                "to the database could rewrite one consistently (Documentation/adr/0026-journal-integrity.md).")
 exportlimits.seed_from_env(os.environ.get("PORTAL_EXPORT_LIMITS", ""))
+if domains.upgrade():                 # domains saved before ADR 0035: names stored, unverified ones made claims
+    log.info("Domains: unverified domains of earlier versions are now claims, deleted unless verified within %d days "
+             "(Documentation/adr/0035).", domains.PENDING.days)
+if sso.upgrade():                     # configurations saved before ADR 0025: their domains count as proved
+    log.warning("Single sign-on: e-mail domains of earlier configurations were accepted without proof; "
+                "replace them with a DNS proof on the Single sign-on screen (Documentation/adr/0025).")
+if sso.seal_stored():                 # client secrets stored in clear, or sealed with an earlier key (ADR 0044)
+    log.info("Single sign-on: client secrets sealed with the current data key (Documentation/adr/0044).")
+if not os.environ.get(sealed.VARIABLE) and sso.has_secrets():
+    log.warning("%s is not set: the secrets the portal stores are sealed with %s, which works only while every "
+                "portal process shares that volume (one Docker host).", sealed.VARIABLE,
+                os.path.join(CONFIG_DIR, sealed.FILE_NAME))
 _bootstrap_admin()
 
 
@@ -200,6 +230,15 @@ class UpstreamError(Exception):
         self.params = params
 
 
+def refused_upstream(code: str, status: int, body, **params) -> UpstreamError:
+    """The UpstreamError for a write the data entry API did not make: code (502) in general, upstream.conflict (409)
+    when the API answered 409 because the key's document kept changing under other writers while it tried to write
+    it (ADR 0027, F-009): nothing of the call was written, and the user can open the record again and repeat."""
+    if status == 409:
+        return UpstreamError("upstream.conflict", 409, body)
+    return UpstreamError(code, 502, body, **params)
+
+
 def message(code: str, status: int = 200, **extra):
     """JSON answer carrying a message code (rendered in the user's language by i18n.js) and extra fields."""
     return jsonify(code=code, **extra), status
@@ -207,34 +246,60 @@ def message(code: str, status: int = 200, **extra):
 
 # --------------------------------------------------------------------------- authentication
 class LoginThrottle:
-    """Locks a username (and, separately, a client address) after repeated failures. The failures are
-    documents of the "login_failures" collection, so every replica of the portal sees the same count;
-    MongoDB deletes them once they are older than the lockout window (TTL index, store.py)."""
+    """Failed attempts, as documents of the "login_failures" collection, so every replica of the portal sees the same
+    count; MongoDB deletes them once they are older than LOCKOUT_SECONDS (TTL index, store.py). A key names what is
+    counted: "user-addr:<name>|<address>" (progressive delay), "addr:<address>" (hard limit), "user:<name>" (the
+    owner's notice only), "password-user:<name>" (the signed-in user's password change), and the recovery's keys."""
 
     @staticmethod
     def _failures():
         return store.col("login_failures")
 
-    def retry_after(self, *keys: str) -> int:
-        """Seconds to wait before another attempt for any of the keys (0 when none is locked)."""
+    def _recent(self, key: str, newest: bool, limit: int) -> list:
+        window = store.now() - timedelta(seconds=LOCKOUT_SECONDS)
+        return list(self._failures().find({"key": key, "at": {"$gt": window}}, {"at": 1})
+                    .sort("at", -1 if newest else 1).limit(limit))
+
+    def retry_after(self, *keys: str, limit: int = MAX_LOGIN_FAILURES) -> int:
+        """Seconds to wait before another attempt for any of the keys: a key that counts `limit` failures in the
+        window waits until the oldest of them leaves it (0 when none does)."""
         now = store.now()
-        window = now - timedelta(seconds=LOCKOUT_SECONDS)
         waits = []
         for key in keys:
-            recent = list(self._failures().find({"key": key, "at": {"$gt": window}}, {"at": 1})
-                          .sort("at", 1).limit(MAX_LOGIN_FAILURES))
-            if len(recent) >= MAX_LOGIN_FAILURES:
+            recent = self._recent(key, newest=False, limit=limit)
+            if len(recent) >= limit:
                 waits.append(int(LOCKOUT_SECONDS - (now - recent[0]["at"]).total_seconds()) + 1)
         return max(waits, default=0)
 
+    def delay(self, key: str) -> int:
+        """Seconds to wait before the next attempt of a user name from one address: none for the first FREE_FAILURES
+        failures in the window, then FIRST_DELAY_SECONDS after the last failure, doubling with each further one up
+        to LOCKOUT_SECONDS."""
+        count = self.count(key)
+        if count < FREE_FAILURES:
+            return 0
+        last = self._recent(key, newest=True, limit=1)[0]["at"]
+        wait = min(LOCKOUT_SECONDS, FIRST_DELAY_SECONDS * 2 ** (count - FREE_FAILURES))
+        return max(0, math.ceil(wait - (store.now() - last).total_seconds()))
+
+    def count(self, key: str) -> int:
+        """Failures of a key in the window."""
+        window = store.now() - timedelta(seconds=LOCKOUT_SECONDS)
+        return self._failures().count_documents({"key": key, "at": {"$gt": window}})
+
     def fail(self, *keys: str) -> None:
-        """Records a failed attempt for every key (user name and client address)."""
+        """Records a failed attempt for every key."""
         now = store.now()
         self._failures().insert_many([{"key": key, "at": now} for key in keys])
 
     def clear(self, *keys: str) -> None:
         """Forgets the failures of the keys after a successful sign-in."""
         self._failures().delete_many({"key": {"$in": list(keys)}})
+
+    def clear_user(self, name: str) -> None:
+        """Forgets every failure of a user name, from every address (a password set through a link)."""
+        self._failures().delete_many({"$or": [{"key": f"user:{name}"},
+                                              {"key": {"$regex": f"^{re.escape(f'user-addr:{name}|')}"}}]})
 
     def over(self, key: str, limit: int) -> bool:
         """Whether a key already counts `limit` events in the window (password recovery and links use their own
@@ -243,12 +308,31 @@ class LoginThrottle:
         return self._failures().count_documents({"key": key, "at": {"$gt": window}}, limit=limit) >= limit
 
 
+def login_keys(username: str) -> tuple[str, str, str]:
+    """The throttle's keys of a sign-in: the user name from this address, the address, the user name."""
+    name, addr = username.lower()[:users.EMAIL_MAX], client_address()
+    return f"user-addr:{name}|{addr}", f"addr:{addr}", f"user:{name}"
+
+
+def wait_answer(wait: int):
+    """429 with the wait in seconds (in minutes when longer) and Retry-After."""
+    if wait <= 90:
+        body, status = message("auth.wait", 429, params={"seconds": wait})
+    else:
+        body, status = message("auth.locked", 429, params={"minutes": -(-wait // 60)})
+    body.headers["Retry-After"] = str(wait)
+    return body, status
+
+
 throttle = LoginThrottle()
 
 
 def client_address() -> str:
-    """Address of the browser as seen through the proxies (X-Forwarded-For), for the sign-in throttle."""
-    return request.access_route[0] if request.access_route else (request.remote_addr or "?")
+    """Address of the browser, for the sign-in throttle and the audit trail: the last X-Forwarded-For address, which
+    the installation's proxy sets (not appends) to the client it resolved through its trusted proxies
+    (frontend_proxy_server/nginx.conf, real_ip). The first address is whatever the client wrote: trusting it let
+    anyone rotate it past the throttle per address, or charge their failures to another address."""
+    return request.access_route[-1] if request.access_route else (request.remote_addr or "?")
 
 
 def session_ends_in() -> float:
@@ -265,13 +349,21 @@ def tenant_blocked(account: dict | None) -> bool:
     return tenant is None or tenant["disabled"]
 
 
+def session_valid(username: str) -> bool:
+    """Whether the cookie's session id names an open session record of the user (sessions.py, ADR 0034): signing
+    out, a password change and an administrator's action end the record, and with it every copy of the cookie."""
+    return sessions.valid(session.get(sessions.COOKIE_KEY), username, SESSION_IDLE_MINUTES * 60, SESSION_MAX_HOURS * 3600)
+
+
 def current_user() -> str | None:
-    """Signed-in user of this session, or None. The session also carries a fingerprint of the account's
-    password hash: a password change or reset ends every other session of that user. A session older than
-    PORTAL_SESSION_MAX_HOURS ends whatever its use; the idle limit is checked with the cookie's signature.
+    """Signed-in user of this session, or None. The cookie names a session record in the portal's database
+    (session_valid) and carries a fingerprint of the account's password hash: a password change or reset ends
+    every other session of that user. A session older than PORTAL_SESSION_MAX_HOURS ends whatever its use; the idle
+    limit is checked with the cookie's signature and with the record's end.
     """
     username = session.get("user")
-    if username and users.fingerprint_matches(username, session.get("fp")) and not tenant_blocked(users.get(username)):
+    if (username and users.fingerprint_matches(username, session.get("fp")) and session_valid(username)
+            and not tenant_blocked(users.get(username))):
         if "since" not in session:          # sessions opened before the limit existed start counting now
             session["since"] = int(time.time())
         if session_ends_in() > 0:
@@ -415,26 +507,64 @@ def check_access(anchor: str) -> None:
 _SCOPE = object()
 
 
-def log_event(action: str, tenant=_SCOPE, actor_tenant=_SCOPE, **fields) -> None:
-    """Journal entry (history and audit); a failure is logged, never shown to the user.
+def write_event(action: str, tenant=_SCOPE, actor_tenant=_SCOPE, **fields) -> dict:
+    """Journal entry (history and audit), sealed in its chain (ADR 0026); returns its {"chain", "seq"}. Raises when
+    it cannot be written: log_event() for events written after their change, journal_first() for record changes.
 
     tenant: whose audit trail the event belongs to (None: the operator's). By default the owner of the record
     for record events, otherwise the scope of the request. actor_tenant: the tenant of the user who acted (by
     default the account's); when an operator user acts on a tenant the event is marked byOperator."""
+    user = fields.pop("user", None) or getattr(g, "user", None) or "-"
+    if tenant is _SCOPE:
+        tenant = (tenants.owner(fields["anchor"], getattr(g, "tenants", None) or tenants.load())
+                  if fields.get("anchor") else getattr(g, "tenant", None))
+    if actor_tenant is _SCOPE:
+        actor_tenant = getattr(g, "account_tenant", None)
+    if tenant:
+        fields["tenant"] = tenant
+        if not actor_tenant:
+            fields["byOperator"] = True
+    return journal.append(action, user, **fields)
+
+
+def log_event(action: str, tenant=_SCOPE, actor_tenant=_SCOPE, **fields) -> None:
+    """write_event() for an event written after its change (sign-ins, administration, settings: a write to the same
+    database, which fails with it): a failure is logged as an error, never shown to the user."""
     try:
-        user = fields.pop("user", None) or getattr(g, "user", None) or "-"
-        if tenant is _SCOPE:
-            tenant = (tenants.owner(fields["anchor"], getattr(g, "tenants", None) or tenants.load())
-                      if fields.get("anchor") else getattr(g, "tenant", None))
-        if actor_tenant is _SCOPE:
-            actor_tenant = getattr(g, "account_tenant", None)
-        if tenant:
-            fields["tenant"] = tenant
-            if not actor_tenant:
-                fields["byOperator"] = True
-        journal.append(action, user, **fields)
+        write_event(action, tenant, actor_tenant, **fields)
+    except (OSError, PyMongoError, store.LockTimeout) as exc:
+        log.error("Journal not written (%s): %s", action, exc)
+
+
+class JournalUnavailable(Exception):
+    """A record change refused because its journal entry could not be written first (ADR 0026, section 2.1)."""
+
+
+@contextmanager
+def journal_first(anchor: str, pairs: list, doc: dict | None, action: str):
+    """Wraps the data entry API calls of one record change (ADR 0026, section 2.1): the event (create, update or
+    delete, with the record's content) is written first, and JournalUnavailable (503) raised, with nothing changed,
+    when it cannot be; a failure inside adds change-failed naming the attempt; a success updates the record's "last
+    change" metadata, which never makes a save fail."""
+    qpath = gs1.qualifier_path(pairs, encode=False)
+    try:
+        ref = write_event(action, anchor=anchor, qpath=qpath, doc=doc)
+    except (OSError, PyMongoError, store.LockTimeout) as exc:
+        log.error("Journal not written, %s of %s refused: %s", action, meta.key(anchor, qpath), exc)
+        raise JournalUnavailable() from exc
+    try:
+        yield
+    except Exception as exc:
+        log_event(journal.FAILED_ACTION, anchor=anchor, qpath=qpath, ref=ref,
+                  detail=f"{action} {getattr(exc, 'code', None) or type(exc).__name__}")
+        raise
+    try:
+        if action == "delete":
+            meta.remove(anchor, qpath)
+        else:
+            meta.touch(anchor, qpath, g.user, getattr(g, "tenant", None))
     except (OSError, PyMongoError) as exc:
-        log.warning("Journal not written (%s): %s", action, exc)
+        log.warning("Record metadata not updated for %s: %s", meta.key(anchor, qpath), exc)
 
 
 # Routes that take a file as the request's body (ADR 0015: GS1's GCP length table), with types a page of another site
@@ -452,11 +582,36 @@ def same_origin_only():
         if request.method != "DELETE" and not request.is_json and not (
                 request.path in RAW_UPLOADS and request.mimetype in RAW_UPLOADS[request.path]):
             return message("request.jsonRequired", 415)
+        # The body's shape before any route reads it (Documentation/adr/0040-request-bodies.md, findings F-023 and
+        # F-029): one JSON object whose fields hold the kinds bodies.FIELDS lists, else 400 or 422 instead of an
+        # error 500 halfway through the route. An empty body is left to the route, which reads it as {}.
+        if request.is_json and request.get_data(cache=True).strip():
+            try:
+                body = json.loads(request.get_data(cache=True))
+            except (ValueError, RecursionError):     # not JSON, or nested past what the parser follows
+                return message("request.jsonInvalid", 400)
+            refused = bodies.problem(body)
+            if refused:
+                code, status, params = refused
+                return message(code, status, **({"params": params} if params else {}))
+
+
+# The browser's rules for every answer of the portal (Documentation/adr/0038-browser-hardening.md, finding F-021): the
+# pages run only the portal's own script files and style sheets (no inline script, style element or attribute: the
+# scripts change styles through the DOM, which the policy allows), fonts from Google Fonts, images of this origin,
+# data: (an uploaded logo's preview) and blob: (the label's QR code), calls to this origin only, nothing frames them
+# and a form may only be sent here.
+CONTENT_SECURITY_POLICY = ("default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
+                           "font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; "
+                           "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 
 
 @app.after_request
 def security_headers(resp):
-    """Headers added to every answer: no MIME sniffing, no framing, same-origin referrer, no caching."""
+    """Headers added to every answer: the content security policy, no MIME sniffing, no framing, a window of its own,
+    same-origin referrer, no caching."""
+    resp.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    resp.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
     resp.headers.setdefault("X-Frame-Options", "DENY")
@@ -468,6 +623,12 @@ def security_headers(resp):
 def on_validation_error(err):
     """A rule of the standard or of the portal was broken: 422 with the message code and parameters."""
     return message(err.code, 422, params=err.params)
+
+
+@app.errorhandler(JournalUnavailable)
+def on_journal_unavailable(err):
+    """A record change whose journal entry could not be written first: 503, nothing changed (ADR 0026)."""
+    return message("journal.unavailable", 503)
 
 
 @app.errorhandler(AccessDenied)
@@ -546,19 +707,6 @@ def describe_entry(entry: dict) -> dict:
     return {"kind": "other", "value": "".join(f"({q}){v}" for q, v in pairs)}
 
 
-def record_change(anchor: str, pairs: list, doc: dict | None, action: str) -> None:
-    """Keeps the "last change" metadata and the record's history; never makes a save fail."""
-    qpath = gs1.qualifier_path(pairs, encode=False)
-    try:
-        if action == "delete":
-            meta.remove(anchor, qpath)
-        else:
-            meta.touch(anchor, qpath, g.user, getattr(g, "tenant", None))
-    except (OSError, PyMongoError) as exc:
-        log.warning("Record metadata not updated for %s: %s", meta.key(anchor, qpath), exc)
-    log_event(action, anchor=anchor, qpath=qpath, doc=doc)
-
-
 def is_success(status: int, body) -> bool:
     """Whether a data entry answer is a success (the API sometimes answers 200 with an error field)."""
     return status in (200, 201) and not (isinstance(body, dict) and body.get("error"))
@@ -619,12 +767,34 @@ def landing_link(anchor: str, pairs) -> dict:
             "title": "Item page", "type": "text/html", "hreflang": ["und"]}
 
 
+def target_hosts(anchor: str) -> list[str]:
+    """The hosts a record's targets may point to (Documentation/adr/0037-target-addresses.md, section 2.2): the list
+    of the organisation holding the key, the operator's for keys no organisation holds; empty for any public host."""
+    tenant_list = getattr(g, "tenants", None)
+    if tenant_list is None:
+        tenant_list = tenants.load()
+    owner = tenants.owner(anchor, tenant_list)
+    if owner is None:
+        if g.get("operator_target_hosts") is None:     # read once per request (an import saves many records)
+            g.operator_target_hosts = targets.hosts(None)["hosts"]
+        return g.operator_target_hosts
+    return next((t.get("targetHosts") or [] for t in tenant_list if t["id"] == owner), [])
+
+
+def own_page(link_type: str, href: str) -> bool:
+    """Whether a target is a record's page on this installation (its own host or a verified domain), which no list of
+    hosts restricts."""
+    return (gs1.is_landing({"linktype": link_type, "href": href})
+            and (urlsplit(href).hostname or "").lower() in forwarding_own_hosts())
+
+
 def build_document(data: dict) -> tuple[str, str | None, dict]:
     """Validates a record sent by the browser (key, qualifiers, description, targets, default) and builds
     the Resolver CE v3 document: (anchor, qualifier pairs, document). Raises ValidationError on the first problem.
     """
     anchor = request_key(data)
     pairs, informative = request_record(data, anchor)
+    listed = target_hosts(anchor)
 
     description = gs1.clean_text(data.get("description"))
     if not description:
@@ -645,6 +815,8 @@ def build_document(data: dict) -> tuple[str, str | None, dict]:
         if link_type not in gs1.LINK_TYPE_CODES and link_type != gs1.LANDING_TYPE:
             raise ValidationError("link.typeRequired", position=position)
         href = gs1.normalise_url(row.get("url"), position)
+        if listed and not own_page(link_type, href):
+            targets.check(href, listed, position)
         hreflang = [gs1.normalise_language(h) for h in (row.get("hreflang") or []) if isinstance(h, str) and h]
         if not hreflang or not all(hreflang):
             raise ValidationError("link.languageRequired", position=position)
@@ -818,6 +990,19 @@ def privacy_page():
     return static_page("privacy.html")
 
 
+@app.get("/portal/about")
+def about_page():
+    """What the software is, its version, source, licence and components, for anyone (ADR 0024)."""
+    return static_page("about.html")
+
+
+@app.get("/portal/api/about")
+def about_facts():
+    """The running version (written at the image's build), the repository, the operator's name and the third-party
+    components — for anyone, signed in or not; no secret, setting or host (ADR 0024, section 2.4)."""
+    return jsonify(about.facts(notify.operator_name()))
+
+
 @app.get("/portal/api/privacy")
 def privacy_notice():
     """The notice in force (or ?version=n), the list of versions, the operator's name and the days requests are kept —
@@ -865,6 +1050,43 @@ def forwarding_view() -> dict:
             "readOnly": bool(g.support)}
 
 
+def tell_forwarded(action: str, detail: str, before: dict | None, after: dict | None) -> list[str]:
+    """A rule change that changes where codes go (forwarding.changes_destination()), for each organisation whose
+    prefixes the rule overlaps (finding F-028, ADR 0046): the event in that organisation's own audit trail, by the
+    operator, and a message to its administrators (forwarding-on: its codes now go to the rule's destination;
+    forwarding-off: the rule no longer sends them). Returns the names of the organisations concerned."""
+    if not forwarding.changes_destination(before, after):
+        return []
+    prefix = (after or before)["prefix"]
+    going = forwarding.destination(after)
+    told = []
+    for tenant in tenants.load():
+        prefixes = forwarding.covered(prefix, tenant)
+        if not prefixes:
+            continue
+        log_event(action, tenant=tenant["id"], detail=detail)
+        for user in monitor.recipients(tenant["id"]):
+            notify.send(user, "forwarding-on" if going else "forwarding-off", prefix=prefix,
+                        target=(going or forwarding.destination(before))[0], organisation=tenant["name"],
+                        prefixes=", ".join(prefixes), at=notify.now_text() + " UTC")
+        told.append(tenant["name"])
+    return sorted(told)
+
+
+def tell_covered(tenant: dict, previous: list[str]) -> list[str]:
+    """An organisation given prefixes that an enabled forwarding rule already covers (finding F-028, ADR 0054): for
+    each such rule, the event forwarding-covered in that organisation's own audit trail, by the operator, and the
+    message forwarding-covered to its administrators. Returns the prefixes of the rules concerned."""
+    found = forwarding.newly_covered(previous, tenant)
+    for rule, prefixes in found:
+        log_event("forwarding-covered", tenant=tenant["id"],
+                  detail=f'prefix={rule["prefix"]} target={rule["target"]} prefixes={",".join(prefixes)}')
+        for user in monitor.recipients(tenant["id"]):
+            notify.send(user, "forwarding-covered", prefix=rule["prefix"], target=rule["target"],
+                        organisation=tenant["name"], prefixes=", ".join(prefixes), at=notify.now_text() + " UTC")
+    return [rule["prefix"] for rule, _ in found]
+
+
 def forwarding_writable():
     """None, or the refusal during support access."""
     return message("forwarding.readOnly", 403) if g.support else None
@@ -905,8 +1127,9 @@ def post_forwarding_rule():
     data = request.get_json(silent=True) or {}
     found, _ = forwarding.save_rule(data.get("prefix"), data, g.user, forwarding_own_hosts(), new=True)
     audit.info("user=%s action=forwarding-rule-create prefix=%s", g.user, found["prefix"])
-    log_event("forwarding-rule-create", tenant=None,
-              detail=f'prefix={found["prefix"]} target={found["target"]} enabled={str(found["enabled"]).lower()}')
+    detail = f'prefix={found["prefix"]} target={found["target"]} enabled={str(found["enabled"]).lower()}'
+    log_event("forwarding-rule-create", tenant=None, detail=detail)
+    tell_forwarded("forwarding-rule-create", detail, None, found)
     return message("forwarding.ruleSaved", 200, params={"prefix": found["prefix"]}, **forwarding_view())
 
 
@@ -919,10 +1142,11 @@ def put_forwarding_rule(prefix):
     if refused:
         return refused
     data = request.get_json(silent=True) or {}
-    found, _ = forwarding.save_rule(prefix, data, g.user, forwarding_own_hosts(), new=False)
+    found, before = forwarding.save_rule(prefix, data, g.user, forwarding_own_hosts(), new=False)
     audit.info("user=%s action=forwarding-rule-update prefix=%s", g.user, found["prefix"])
-    log_event("forwarding-rule-update", tenant=None,
-              detail=f'prefix={found["prefix"]} target={found["target"]} enabled={str(found["enabled"]).lower()}')
+    detail = f'prefix={found["prefix"]} target={found["target"]} enabled={str(found["enabled"]).lower()}'
+    log_event("forwarding-rule-update", tenant=None, detail=detail)
+    tell_forwarded("forwarding-rule-update", detail, before, found)
     return message("forwarding.ruleSaved", 200, params={"prefix": found["prefix"]}, **forwarding_view())
 
 
@@ -936,7 +1160,9 @@ def delete_forwarding_rule(prefix):
         return refused
     found = forwarding.remove_rule(prefix)
     audit.info("user=%s action=forwarding-rule-remove prefix=%s", g.user, found["prefix"])
-    log_event("forwarding-rule-remove", tenant=None, detail=f'prefix={found["prefix"]} target={found["target"]}')
+    detail = f'prefix={found["prefix"]} target={found["target"]}'
+    log_event("forwarding-rule-remove", tenant=None, detail=detail)
+    tell_forwarded("forwarding-rule-remove", detail, found, None)
     return message("forwarding.ruleRemoved", 200, params={"prefix": found["prefix"]}, **forwarding_view())
 
 
@@ -973,51 +1199,64 @@ def shown_username(typed: str) -> str:
 
 @app.post("/portal/api/login")
 def login():
-    """Signs a user in: throttled per user name and per address, audited, and the session is bound to the
-    account's password fingerprint.
+    """Signs a user in: delayed per user name from each address and limited per address (never locked by user name
+    alone), audited, and the session is bound to the account's password fingerprint.
     """
     data = request.get_json(silent=True) or {}
     username = str(data.get("username", "")).strip()
     password = str(data.get("password", ""))
-    keys = (f"user:{username.lower()}", f"addr:{client_address()}")
-    wait = throttle.retry_after(*keys)
+    pair, by_addr, by_user = login_keys(username)
+    wait = max(throttle.delay(pair), throttle.retry_after(by_addr, limit=MAX_ADDRESS_FAILURES))
     if wait:
-        return message("auth.locked", 429, params={"minutes": -(-wait // 60)})
+        return wait_answer(wait)
     account = users.get(username) if username else None
     tenant = (account or {}).get("tenant")
     if not username or not users.verify(username, password):
-        throttle.fail(*keys)
+        throttle.fail(pair, by_addr, by_user)
         typed = shown_username(username)
         audit.info("user=%s action=login-failed addr=%s", typed, client_address())
-        log_event("login-failed", user=typed, detail=client_address(), tenant=tenant, actor_tenant=tenant)
-        if account and throttle.retry_after(keys[0]):   # this failure locked the account: tell its owner, once
-            notify.send(username, "account-locked", when=notify.now_text(), minutes=LOCKOUT_SECONDS // 60)
-        time.sleep(0.5)
+        if account:
+            log_event("login-failed", user=typed, detail=client_address(), tenant=tenant, actor_tenant=tenant)
+        else:       # a name of no account: counted, one journal event an hour (ADR 0031, section 2.3)
+            failcount.note("sign-in", client_address())
+        if account and throttle.count(by_user) == MAX_LOGIN_FAILURES:   # tell the owner, once in the window
+            notify.send(username, "sign-in-failures", when=notify.now_text(), minutes=LOCKOUT_SECONDS // 60)
+        time.sleep(FAILURE_PAUSE)
         return message("auth.invalid", 401)
     if tenant_blocked(account):
         audit.info("user=%s action=login-refused addr=%s", username, client_address())
         log_event("login-refused", user=username, detail=client_address(), tenant=tenant, actor_tenant=tenant)
         return message("auth.tenantDisabled", 403)
+    # a sign-in clears the user name's failures, never the address's: an account of one's own must not reset the
+    # address's count between guesses at other accounts
     if sso.password_off_for(account):
         # the organisation signs its people in with its own provider (ADR 0012); the password was right, so saying
         # so tells nothing to someone who did not know it
-        throttle.clear(*keys)
+        throttle.clear(pair, by_user)
         audit.info("user=%s action=login-refused addr=%s reason=sso-only", username, client_address())
         log_event("login-refused", user=username, detail=f"{client_address()} password sign-in off (single sign-on)",
                   tenant=tenant, actor_tenant=tenant)
         return message("auth.ssoRequired", 403)
-    throttle.clear(*keys)
-    open_session(username, data.get("language"), client_address())
+    throttle.clear(pair, by_user)
+    open_session(username, data.get("language"), client_address(), "password")
     return message("auth.welcome", 200, user=username, mustChange=bool((users.get(username) or {}).get("mustChange")))
 
 
-def open_session(username: str, language, detail: str) -> None:
-    """Signs the user in on this browser (password or single sign-on): a new session bound to the account's password
-    fingerprint, the audit trail and the journal."""
+def new_session_id(username: str, via: str) -> str:
+    """A new session record of the user (sessions.py); its id goes into the cookie."""
+    return sessions.open_record(username, via, SESSION_IDLE_MINUTES * 60, SESSION_MAX_HOURS * 3600)
+
+
+def open_session(username: str, language, detail: str, via: str) -> None:
+    """Signs the user in on this browser (via "password" or "sso"): a new session record (ADR 0034) bound to the
+    account's password fingerprint, the audit trail and the journal."""
     tenant = (users.get(username) or {}).get("tenant")
     session.clear()
     session.permanent = True
-    session.update(user=username, fp=users.fingerprint(username), was_logged_in=True, since=int(time.time()))
+    session.update(user=username, fp=users.fingerprint(username), was_logged_in=True, since=int(time.time()),
+                   **{sessions.COOKIE_KEY: new_session_id(username, via)})
+    if via == "sso":
+        session["via"] = "sso"
     audit.info("user=%s action=login addr=%s", username, client_address())
     users.touch_login(username)
     users.note_language(username, language)     # the language of his messages, until he chooses one
@@ -1026,8 +1265,10 @@ def open_session(username: str, language, detail: str) -> None:
 
 @app.post("/portal/api/logout")
 def logout():
-    """Ends the session and records it in the audit trail."""
+    """Ends the session, its record included (every copy of the cookie stops working), and records it in the audit
+    trail."""
     username, support = session.get("user"), session.get("support")
+    sessions.end(session.get(sessions.COOKIE_KEY))
     session.clear()
     if username:
         tenant = (users.get(username) or {}).get("tenant")
@@ -1047,7 +1288,7 @@ def change_password():
     data = request.get_json(silent=True) or {}
     current = str(data.get("currentPassword", ""))
     new = str(data.get("newPassword", ""))
-    keys = (f"user:{g.user.lower()}",)
+    keys = (f"password-user:{g.user.lower()}",)     # not the sign-in's keys: others' wrong passwords do not count
     if throttle.retry_after(*keys):
         return message("auth.locked", 429, params={"minutes": LOCKOUT_SECONDS // 60})
     if not users.verify(g.user, current):
@@ -1062,7 +1303,9 @@ def change_password():
     except users.StoreNotWritable as exc:
         log.error("Password change failed: %s", exc)
         return message("password.storeReadOnly", 500)
-    session["fp"] = users.fingerprint(g.user)   # keeps this session; every other session is signed out
+    # every session of the account ended (users.set_password); this browser stays signed in under a new id
+    session.update(fp=users.fingerprint(g.user),
+                   **{sessions.COOKIE_KEY: new_session_id(g.user, "sso" if session.get("via") == "sso" else "password")})
     audit.info("user=%s action=password-change", g.user)
     log_event("password-change", tenant=g.account_tenant)
     notify.send(g.user, "password-changed", when=notify.now_text())
@@ -1096,7 +1339,8 @@ def send_link(username: str, purpose: str, template: str, language: str | None =
 @app.post("/portal/api/password/forgot")
 def forgot_password():
     """Password recovery (Documentation/adr/0004-e-mail.md, decision 6): sends a recovery link when the user name
-    or address typed belongs to an account that may sign in and has an address. The answer, and the time it
+    or address typed belongs to an account that may sign in and has an address (one link per account when the
+    address is used in several organisations, ADR 0036). The answer, and the time it
     takes, are the same whether or not an account matched."""
     if not mail.enabled():
         return message("password.recoveryOff", 404)
@@ -1109,9 +1353,10 @@ def forgot_password():
     if throttle.over(keys[0], RECOVERY_PER_LOGIN) or throttle.over(keys[1], RECOVERY_PER_ADDRESS):
         return message("password.recoveryLimit", 429, params={"minutes": LOCKOUT_SECONDS // 60})
     throttle.fail(*keys)
-    username = users.find_login(typed)
-    account = users.get(username) if username else None
-    if account and account.get("email") and notify.reachable(account) and not sso.password_off_for(account):
+    for username in users.find_logins(typed):          # an address may belong to one account per organisation
+        account = users.get(username)
+        if not (account and account.get("email") and notify.reachable(account) and not sso.password_off_for(account)):
+            continue
         language = account.get("language") or data.get("language")
         if send_link(username, "reset", "password-recovery", language=language):
             tenant = account.get("tenant")
@@ -1163,7 +1408,7 @@ def set_password_by_link():
         log.error("Password through a link not set: %s", exc)
         return message("password.storeReadOnly", 500)
     tokens.purge(username)
-    throttle.clear(f"user:{username.lower()}")          # a locked account is open again
+    throttle.clear_user(username.lower())               # its sign-in delays end, from every address
     users.note_language(username, data.get("language"))
     action = "invite-accepted" if purpose == "invite" else "password-reset"
     audit.info("user=%s action=%s addr=%s", username, action, client_address())
@@ -1385,7 +1630,50 @@ def save_record():
         store_record(anchor, [], key_doc)        # first, so the qualified record is never without a default above it
     created = store_record(anchor, pairs, doc)
     code = ("save.createdWithKey" if key_doc else "save.created") if created else ("save.updatedWithKey" if key_doc else "save.updated")
-    return message(code, 201 if created else 200, digitalLink=uri, created=created, keyRecordCreated=bool(key_doc))
+    return message(code, 201 if created else 200, digitalLink=uri, created=created, keyRecordCreated=bool(key_doc),
+                   warnings=saved_warnings(anchor, pairs, doc))
+
+
+def strict_for(anchor: str) -> bool:
+    """Whether the strict mode for safety-critical link types is on for the organisation that owns the key (ADR 0022,
+    section 2.4); off when the portal's database cannot say."""
+    try:
+        return resolution.strict(tenants.owner(anchor, getattr(g, "tenants", None) or []))["strict"]
+    except PyMongoError as exc:
+        log.warning("Strict mode not read for %s: %s", anchor, exc)
+        return False
+
+
+def saved_warnings(anchor: str, pairs: list, doc: dict) -> list[dict]:
+    """The warnings of ADR 0022, section 2.5, for a record just saved (the editor and the tenant API); an empty list
+    when the key's records cannot be read again, never a failed save."""
+    try:
+        entries, _ = read_entries(anchor)
+    except UpstreamError as exc:
+        log.warning("Warnings not computed for %s: %s", anchor, exc)
+        return []
+    return safety.check(pairs, gs1.pairs_from(doc.get("informativeQualifiers")), doc.get("links"), entries,
+                        strict_for(anchor))
+
+
+@app.post("/portal/api/record/warnings")
+@require_login
+@role_required("editor")
+def record_warnings():
+    """The warnings of ADR 0022, section 2.5, for the record the editor holds, before it is saved: the same body as
+    POST /portal/api/record (key, value, qualifiers, links); nothing is written. A record the editor cannot yet
+    describe (an invalid key or qualifier) has no warnings."""
+    data = request.get_json(silent=True) or {}
+    try:
+        anchor = request_key(data)
+        pairs, informative = request_record(data, anchor)
+    except (ValidationError, ValueError, TypeError, AttributeError):
+        return jsonify({"warnings": []})
+    if not gs1.split_anchor(anchor) or not allowed(anchor):
+        return jsonify({"warnings": []})
+    entries, _ = read_entries(anchor)
+    rows = [row for row in data.get("links") or [] if isinstance(row, dict)]
+    return jsonify({"warnings": safety.check(pairs, informative, rows, entries, strict_for(anchor))})
 
 
 def key_record_document(anchor: str, pairs: list, doc: dict, request_data) -> dict | None:
@@ -1439,32 +1727,31 @@ def store_record(anchor: str, pairs: list, doc: dict) -> bool:
 
     # Case 1: new key, or new batch/lot on an existing GTIN → POST /new (upsert appends the entry)
     if target is None:
-        status, body = resolver("POST", "/new", doc)
-        if not is_success(status, body):
-            raise UpstreamError("upstream.createRejected", 502, body)
+        with journal_first(anchor, pairs, doc, "create"):
+            status, body = resolver("POST", "/new", doc)
+            if not is_success(status, body):
+                raise refused_upstream("upstream.createRejected", status, body)
         audit.info("user=%s action=create anchor=%s%s links=%d",
                    g.user, anchor, gs1.qualifier_path(pairs), len(doc["links"]))
-        record_change(anchor, pairs, doc, "create")
         return True
 
     # Case 2: existing entry → PUT (merge on linktype+hreflang+context), then a partial DELETE of the
     # links the user removed. In this order the product is never left without a target.
-    status, body = resolver("PUT", anchor, doc)
-    if not is_success(status, body):
-        raise UpstreamError("upstream.updateRejected", 502, body)
-
     new_keys = {gs1.link_key(l) for l in doc["links"]}
     removed = [{"linktype": l["linktype"], "hreflang": l.get("hreflang") or [],
                 "context": l.get("context") or []}
                for l in target.get("links", []) if gs1.link_key(l) not in new_keys]
-    if removed:
-        status, body = resolver("DELETE", anchor, {"qualifiers": qualifiers, "links": removed})
+    with journal_first(anchor, pairs, doc, "update"):
+        status, body = resolver("PUT", anchor, doc)
         if not is_success(status, body):
-            raise UpstreamError("upstream.partialUpdate", 502, body, count=len(removed))
+            raise refused_upstream("upstream.updateRejected", status, body)
+        if removed:
+            status, body = resolver("DELETE", anchor, {"qualifiers": qualifiers, "links": removed})
+            if not is_success(status, body):
+                raise UpstreamError("upstream.partialUpdate", 502, body, count=len(removed))
 
     audit.info("user=%s action=update anchor=%s%s links=%d removed=%d",
                g.user, anchor, gs1.qualifier_path(pairs), len(doc["links"]), len(removed))
-    record_change(anchor, pairs, doc, "update")
     return False
 
 
@@ -1488,10 +1775,11 @@ def turn_to_explicit_defaults(anchor: str, entries: list[dict], key_default: str
         entry = entries[first.get("item", 1) - 1] if 0 < first.get("item", 1) <= len(entries) else {}
         raise ValidationError("record.rewriteRefused", record=describe_entry(entry).get("path") or anchor,
                               detail=str(first.get("error", ""))[:200])
-    for doc in changed:
-        status, body = resolver("PUT", anchor, doc)
-        if not is_success(status, body):
-            raise UpstreamError("upstream.updateRejected", 502, body)
+    for doc in changed:           # each journalled as an update of its record (ADR 0026, section 2.1)
+        with journal_first(anchor, gs1.pairs_from(doc.get("qualifiers")), doc, "update"):
+            status, body = resolver("PUT", anchor, doc)
+            if not is_success(status, body):
+                raise refused_upstream("upstream.updateRejected", status, body)
     audit.info("user=%s action=explicit-defaults anchor=%s records=%d", g.user, anchor, len(changed))
 
 
@@ -1499,9 +1787,7 @@ def turn_to_explicit_defaults(anchor: str, entries: list[dict], key_default: str
 @require_login
 @role_required("editor")
 def delete_record():
-    """Deletes one record. The API deletes whole documents only, so the other records of the key are
-    written back, and the original is restored if that fails.
-    """
+    """Deletes one record; the key's other records are not touched (ADR 0023)."""
     anchor = request_key(request.args)
     check_access(anchor)
     pairs, _ = request_record(request.args, anchor)
@@ -1510,48 +1796,40 @@ def delete_record():
 
 
 def remove_record(anchor: str, pairs: list) -> None:
-    """Deletes one record of a key, keeping the others (the editor and the tenant API). ValidationError
-    record.notFound when the key has no record with those qualifiers."""
+    """Deletes one record of a key, keeping the others (the editor and the tenant API), with the data entry API's
+    record-level delete: one atomic write of the key's document, so the key's other records answer throughout (ADR
+    0023; before it the portal deleted the whole key and wrote the others back). ValidationError record.notFound
+    when the key has no record with those qualifiers."""
     entries, _ = read_entries(anchor)
     target = find_entry(entries, gs1.qualifier_list(pairs))
     if target is None:
         raise ValidationError("record.notFound")
-    others = [e for e in entries if e is not target]
-    rewrite_document(anchor, entries, others)
+    with journal_first(anchor, pairs, target, "delete"):
+        delete_one_record(anchor, target.get("qualifiers") or [])
 
     audit.info("user=%s action=delete anchor=%s%s", g.user, anchor, gs1.qualifier_path(pairs))
-    record_change(anchor, pairs, target, "delete")
+
+
+def delete_one_record(anchor: str, qualifiers: list) -> None:
+    """One record removed by the data entry API (DELETE with removeRecord, ADR 0023), the others kept.
+    ValidationError record.notFound when it is already gone; UpstreamError upstream.conflict when the key kept changing
+    under other writers (409), upstream.deleteFailed otherwise."""
+    status, body = resolver("DELETE", anchor, {"removeRecord": True, "qualifiers": qualifiers})
+    if status == 404:
+        raise ValidationError("record.notFound")
+    if not is_success(status, body):
+        raise refused_upstream("upstream.deleteFailed", status, body)
 
 
 def rewrite_refusals(entries: list[dict]) -> list[dict]:
-    """What the data entry API would refuse in entries about to be written back ([{"item", "error"}]), asked before
-    anything is deleted; [] from an API older than POST /validate (as before)."""
+    """What the data entry API would refuse in entries about to be written ([{"item", "error"}]), asked before
+    anything is changed; [] from an API older than POST /validate (as before)."""
     if not entries:
         return []
     status, body = resolver("POST", "/validate", entries)
     if status != 200 or not isinstance(body, dict):
         return []
     return body.get("problems") or []
-
-
-def rewrite_document(anchor: str, entries: list[dict], new_entries: list[dict]) -> None:
-    """Writes a key's document again with new_entries (the API deletes whole documents only): checked first, so
-    that nothing is deleted that could not be written back — records made before a rule or by other tools that the
-    API now refuses — and the original restored if writing fails."""
-    problems = rewrite_refusals(new_entries)
-    if problems:
-        first = problems[0]
-        entry = new_entries[first.get("item", 1) - 1] if 0 < first.get("item", 1) <= len(new_entries) else {}
-        raise ValidationError("record.rewriteRefused", record=describe_entry(entry).get("path") or anchor,
-                              detail=str(first.get("error", ""))[:200])
-    status, body = resolver("DELETE", anchor)
-    if not is_success(status, body):
-        raise UpstreamError("upstream.deleteFailed", 502, body)
-    if new_entries:
-        status, body = resolver("POST", "/new", new_entries)
-        if not is_success(status, body):
-            resolver("POST", "/new", entries)
-            raise UpstreamError("upstream.deleteRestored", 502, body)
 
 
 def fixed_serial_entry(entry: dict) -> dict | None:
@@ -1570,13 +1848,16 @@ def fixed_serial_entry(entry: dict) -> dict | None:
 
 
 def fix_serial_records(anchor: str) -> tuple[int, list[str]]:
-    """Fixes every rule-2 record of a key in one rewrite of its document (written back whole, it must be valid as a
-    whole): (records fixed, paths of the records left because their serial number already has a record of its own
-    with other targets — the key is then left unchanged). A rule-2 record that only repeats the serial number's own
-    record (same description and targets) is removed."""
+    """Fixes every rule-2 record of a key: (records fixed, paths of the records left because their serial number
+    already has a record of its own with other targets — the key is then left unchanged). A rule-2 record that only
+    repeats the serial number's own record (same description and targets) is removed. Each record fixed is written
+    as the serial number alone first, then the old record is removed with the record-level delete (ADR 0023), so the
+    serial number answers at every step; the new records are checked first, and nothing is written when the data
+    entry API would refuse one. Should a step fail, what was done is journalled and a second run finishes the key (an
+    old record then repeats the new one and is removed)."""
     entries, _ = read_entries(anchor)
     singles = {tuple(sorted(gs1.pairs_from(e.get("qualifiers")))): e for e in entries}
-    new_entries, fixed, dropped, conflicts = [], [], [], []
+    fixed, dropped, conflicts = [], [], []
 
     def same(a, b):
         links = lambda e: sorted((l.get("linktype"), l.get("href"), tuple(l.get("hreflang") or [])) for l in e.get("links") or [])
@@ -1585,7 +1866,6 @@ def fix_serial_records(anchor: str) -> tuple[int, list[str]]:
     for entry in entries:
         change = fixed_serial_entry(entry)
         if not change:
-            new_entries.append(entry)
             continue
         own = tuple(sorted(gs1.pairs_from(change["qualifiers"])))
         if own in singles:
@@ -1595,19 +1875,36 @@ def fix_serial_records(anchor: str) -> tuple[int, list[str]]:
                 conflicts.append(describe_entry(entry).get("path") or "")
             continue
         singles[own] = change
-        new_entries.append(change)
         fixed.append((entry, change))
     if conflicts:
         return 0, conflicts
-    if fixed or dropped:
-        rewrite_document(anchor, entries, new_entries)
+    problems = rewrite_refusals([change for _, change in fixed])
+    if problems:
+        first = problems[0]
+        item = first.get("item", 1)
+        entry = fixed[item - 1][1] if 0 < item <= len(fixed) else {}
+        raise ValidationError("record.rewriteRefused", record=describe_entry(entry).get("path") or anchor,
+                              detail=str(first.get("error", ""))[:200])
+    done = 0
+    try:
         for old, new in fixed:
-            record_change(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete")
-            record_change(anchor, gs1.pairs_from(new["qualifiers"]), new, "create")
+            with journal_first(anchor, gs1.pairs_from(new["qualifiers"]), new, "create"):
+                status, body = resolver("POST", "/new", new)
+                if not is_success(status, body):
+                    raise refused_upstream("upstream.updateRejected", status, body)
+            with journal_first(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete"):
+                delete_one_record(anchor, old.get("qualifiers") or [])
+            done += 1
         for old in dropped:
-            record_change(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete")
-        audit.info("user=%s action=fix-serials anchor=%s fixed=%d duplicates=%d", g.user, anchor, len(fixed), len(dropped))
-    return len(fixed) + len(dropped), []
+            with journal_first(anchor, gs1.pairs_from(old.get("qualifiers")), old, "delete"):
+                delete_one_record(anchor, old.get("qualifiers") or [])
+            done += 1
+    finally:
+        if done:
+            audit.info("user=%s action=fix-serials anchor=%s fixed=%d duplicates=%d%s", g.user, anchor,
+                       min(done, len(fixed)), max(done - len(fixed), 0),
+                       "" if done == len(fixed) + len(dropped) else " incomplete")
+    return done, []
 
 
 @app.post("/portal/api/records/fix-serials")
@@ -1869,7 +2166,21 @@ def import_preview():
     # records each keep their own default target: no shared default to agree on; compared in the form they are stored.
     explicit = {anchor for anchor, lines in existing.items() if lines and lines[0].get("defaultLinktype") == gs1.LANDING_TYPE}
     explicit |= {c[2] for c in candidates if c[4]["defaultLinktype"] == gs1.LANDING_TYPE}
+    # The key's records as they will be after the import (the file's records over the stored ones), for the warnings
+    # of ADR 0022, section 2.5
+    after: dict[str, list[dict]] = {}
+    for anchor, lines in existing.items():
+        after[anchor] = list(lines)
+    for _, _, anchor, _, doc, _ in candidates:
+        lines = after.setdefault(anchor, [])
+        lines[:] = [e for e in lines if not gs1.qualifiers_match(e.get("qualifiers"), doc.get("qualifiers", []))] + [doc]
+    strict_keys = {}
     for item, record, anchor, pairs, doc, informative in candidates:
+        if anchor not in strict_keys:
+            strict_keys[anchor] = strict_for(anchor)
+        found = safety.check(pairs, informative, doc["links"], after.get(anchor, []), strict_keys[anchor])
+        if found:
+            item["warnings"] = found
         entries = existing.get(anchor, [])
         target = find_entry(entries, doc.get("qualifiers", []))
         others = [e for e in entries if e is not target]
@@ -1921,12 +2232,16 @@ def import_preview():
         anchor = gs1.anchor_for(item["key"], item["value"]) if item.get("action") in ("create", "update") else None
         if anchor in key_records:
             item["noKeyRecord"] = True
+    # the account that prepared it: the worker writes only while it is still this account, able to (F-024, ADR 0041)
     token = jobs.create("import", g.user, "prepared", len(plan), plan=_storable_plan(plan),
-                        keyRecords=_storable_plan(key_records.values()), results=[])
+                        keyRecords=_storable_plan(key_records.values()), results=[],
+                        tenant=g.account_tenant, accountCreated=(users.get(g.user) or {}).get("created"))
     counts = {action: sum(1 for i in report if i["action"] == action)
               for action in ("create", "update", "unchanged", "error")}
     errors.sort(key=lambda e: e["row"])
-    return jsonify({"token": token, "records": report, "errors": errors, "counts": counts, "links": to_check,
+    warned = sum(1 for i in report if i.get("warnings") and i["action"] != "error")
+    return jsonify({"token": token, "records": report, "errors": errors, "counts": counts, "warningCount": warned,
+                    "links": to_check,
                     "keysWithoutRecord": [{"key": gs1.split_anchor(k["anchor"])[0], "value": gs1.split_anchor(k["anchor"])[1],
                                            "rows": k["rows"], "description": k["doc"]["itemDescription"]}
                                           for k in key_records.values()]})
@@ -1937,10 +2252,33 @@ def _storable_plan(plan) -> list[dict]:
     return [{**item, "pairs": [list(p) for p in item["pairs"]]} for item in plan]
 
 
+def import_refusal(job: dict, account: dict | None) -> str | None:
+    """Why the account of a queued import may no longer write its records (ADR 0041), or None: "removed" (no
+    account), "replaced" (an account of the same name made after the preview, or of another organisation),
+    "disabled", "organisation" (its organisation disabled or removed) or "role" (below editor). Jobs prepared
+    before the job kept the account's organisation and date are compared on what they have."""
+    if account is None:
+        return "removed"
+    if ("accountCreated" in job and account.get("created") != job["accountCreated"]
+            or "tenant" in job and account.get("tenant") != job["tenant"]):
+        return "replaced"
+    if account.get("disabled"):
+        return "disabled"
+    if tenant_blocked(account):
+        return "organisation"
+    if users.ROLES.index(account.get("role", "reader")) < users.ROLES.index("editor"):
+        return "role"
+    return None
+
+
 def run_import_job(job: dict, reporter: "jobs.Reporter") -> None:
     """Worker: writes the records of a confirmed import one by one with the editor's call sequence, from the
     first one not yet done (a job interrupted by a worker that stopped continues where it was; writing a
     record again is safe: the data entry API ends in the same state). Logs the import when done.
+
+    Before each record the account is read again, as a request would read it (ADR 0041): its role, organisation
+    and prefixes as they are now. An account removed, replaced, disabled, of a disabled organisation or no longer an
+    editor stops the import (failed, import.accountChanged); the records written before stay.
     """
     user = job["user"]
     plan = job["plan"]
@@ -1953,10 +2291,25 @@ def run_import_job(job: dict, reporter: "jobs.Reporter") -> None:
         log_event("import", detail=detail)
         return counts
 
+    def refused(reason: str, account: dict | None) -> None:
+        counts = {a: sum(1 for r in results if r["action"] == a) for a in ("created", "updated", "failed")}
+        detail = " ".join(f"{k}={v}" for k, v in {"reason": reason, **counts, "left": len(plan) - len(results)}.items())
+        audit.warning("user=%s action=import-refused %s", user, detail)
+        # in the trail of the organisation the import was for, whatever the account is now
+        trail = job["tenant"] if "tenant" in job else (account or {}).get("tenant")
+        log_event("import-refused", tenant=trail, actor_tenant=trail, user=user, detail=detail)
+        reporter.give_up("import.accountChanged")
+
     with app.test_request_context():
-        set_scope(user, users.get(user) or {})          # store_record logs and records who changed it
         for index in range(len(results), len(plan)):
             reporter.check_stop()                       # between records: a stopping worker hands the job back
+            # read again before each record: the role, organisation and prefixes a request would see now
+            account = users.get(user)
+            reason = import_refusal(job, account)
+            if reason:
+                refused(reason, account)
+                return
+            set_scope(user, account)                    # store_record logs and records who changed it
             item = plan[index]
             pairs = [tuple(p) for p in item["pairs"]]
             ai, value = gs1.split_anchor(item["anchor"])
@@ -2129,6 +2482,8 @@ def start_link_job():
         scope = "list"
     if len(urls) > MAX_CHECK_URLS:
         raise ValidationError("linkcheck.tooMany", max=MAX_CHECK_URLS)
+    if jobs.active("linkcheck", tenant=g.tenant):         # one check at a time per organisation (ADR 0029)
+        raise ValidationError("linkcheck.busy")
     # addresses contain "." and are values, not field names
     token = jobs.create("linkcheck", g.user, "queued", len(urls), scope=scope, tenant=g.tenant,
                         urls=[{"url": url, "records": keys} for url, keys in urls.items()])
@@ -2220,6 +2575,42 @@ def list_users():
                                if g.server_admin else []})
 
 
+class NameLimit(Exception):
+    """Too many user names already taken were tried (name_refusals_counted()): 429 users.nameLimit."""
+
+
+@app.errorhandler(NameLimit)
+def name_limit(_exc):
+    return message("users.nameLimit", 429, params={"minutes": LOCKOUT_SECONDS // 60})
+
+
+@contextmanager
+def name_refusals_counted(username: str):
+    """Around the creation of a user by an organisation's administrator (finding F-019, ADR 0036): user names are the
+    installation's sign-in names, so "already exists" may name an account of another organisation. Such refusals are
+    counted per administrator: after NAME_REFUSALS in LOCKOUT_SECONDS no user is created (users.nameLimit, 429) until
+    the oldest leaves the window, so that names cannot be tried in bulk; a refusal for a name held outside the
+    administrator's organisation goes into the operator's audit trail. Server administrators see every user."""
+    if g.server_admin:
+        yield
+        return
+    key = f"name-taken:{g.user}"
+    if throttle.over(key, NAME_REFUSALS):
+        audit.info("user=%s action=user-create-refused target=%s reason=limit", g.user, username)
+        raise NameLimit()
+    try:
+        yield
+    except users.UserError as exc:
+        if exc.code == "users.exists":
+            throttle.fail(key)
+            held = users.get(username)
+            if held and held.get("tenant") != g.account_tenant:
+                audit.info("user=%s action=user-create-refused target=%s reason=elsewhere", g.user, username)
+                log_event("user-create-refused", tenant=None,
+                          detail=f"{username} held by another organisation; tried from {tenant_name(g.account_tenant)}")
+        raise
+
+
 @app.post("/portal/api/users")
 @require_login
 @admin_required
@@ -2233,8 +2624,11 @@ def create_user():
     role, prefixes = str(data.get("role", "")), data.get("prefixes") or []
     detail = f'{username} role={data.get("role")} prefixes={",".join(prefixes)}'
     language = data.get("language") or (users.get(g.user) or {}).get("language")   # the inviter's, until the user signs in
-    if data.get("invite") and mail.enabled() and str(data.get("email") or "").strip():
-        users.create(username, None, role, prefixes, tenant=tenant, email=data.get("email"), language=language)
+    invite = bool(data.get("invite") and mail.enabled() and str(data.get("email") or "").strip())
+    password = None if invite else temporary_password()
+    with name_refusals_counted(username):
+        users.create(username, password, role, prefixes, tenant=tenant, email=data.get("email"), language=language)
+    if invite:
         if send_link(username, "invite", "invite", language=language):
             audit.info("user=%s action=user-create target=%s role=%s tenant=%s invited", g.user, username, role,
                        tenant or "-")
@@ -2242,9 +2636,6 @@ def create_user():
             return message("users.invited", 201, params={"user": username})
         password = temporary_password()                 # the invitation could not be queued: as before
         users.set_password(username, password, must_change=True)
-    else:
-        password = temporary_password()
-        users.create(username, password, role, prefixes, tenant=tenant, email=data.get("email"), language=language)
     audit.info("user=%s action=user-create target=%s role=%s tenant=%s", g.user, username, data.get("role"), tenant or "-")
     log_event("user-create", tenant=tenant, detail=detail)
     return message("users.created", 201, params={"user": username}, password=password)
@@ -2260,12 +2651,14 @@ def update_user(username):
     if username == g.user and (data.get("disabled") or data.get("role") not in (None, "admin")):
         raise users.UserError("users.notSelf")          # an administrator cannot lock himself out
     account = users.update(username, role=data.get("role"), prefixes=data.get("prefixes"),
-                           disabled=data.get("disabled"), email=data.get("email"))
+                           disabled=data.get("disabled"), email=data.get("email"),
+                           sso_forget=bool(data.get("ssoForget")))
     audit.info("user=%s action=user-update target=%s", g.user, username)
     log_event("user-update", tenant=target.get("tenant"),
               detail=f'{username} role={account["role"]} disabled={account["disabled"]} '
                      f'prefixes={",".join(account["prefixes"])}'
-                     + (" email-changed" if account["email"] != target.get("email") else ""))
+                     + (" email-changed" if account["email"] != target.get("email") else "")
+                     + (" sso-forgotten" if target.get("sso") and not account.get("sso") else ""))
     if account["email"] != target.get("email"):        # security: to the old address and to the new one
         when = notify.now_text()
         if target.get("email"):
@@ -2380,7 +2773,40 @@ def notify_expiring_keys() -> int:
     return told
 
 
+def recheck_domains() -> int:
+    """Housekeeping of the worker (hourly; each record looked at once a day): the TXT records of the QR codes' verified
+    domains and of single sign-on's DNS proofs (ADR 0035). One missing for domains.LAPSE has lapsed: journalled in its
+    scope's trail and told to that scope's administrators (server administrators for the operator's). Returns how
+    many lapsed."""
+    now = store.now()
+    lapsed = [(d.get("tenant"), d["_id"], d.get("seenAt") or d.get("verifiedAt"), "")
+              for d in domains.recheck_all(now)]
+    lapsed += [(p["tenant"], p["domain"], p["seen"], "sso ") for p in sso.recheck_proofs(now)]
+    for tenant, name, seen, kind in lapsed:
+        seen_text = (store.iso(seen) or "-").replace("T", " ")[:16]
+        with app.test_request_context():
+            g.tenants = tenants.load()
+            log_event("domain-lapsed", tenant=tenant, actor_tenant=tenant, user="-",
+                      detail=f"{kind}{name} record missing since {seen_text}")
+            for user in monitor.recipients(tenant):
+                notify.send(user, "alert-domain-lapsed", domain=name, record=f"{domains.TXT_NAME}.{name}",
+                            days=domains.LAPSE.days, seen=seen_text + " UTC")
+    return len(lapsed)
+
+
 # --------------------------------------------------------------------------- tenants (server administrators)
+def lacking_safety(tenant_id: str | None) -> dict | None:
+    """The batch and serial records of an organisation (None: the operator's keys) that lack a safety-critical link
+    type a less specific record of their key holds (ADR 0022, section 2.5): {"count", "records": the first ten}; None
+    when the resolver cannot be read."""
+    try:
+        lines = summary_with_links()
+    except UpstreamError:
+        return None
+    found = safety.lacking([line for line in lines if tenants.owner(line["anchor"], g.tenants) == tenant_id])
+    return {"count": len(found), "records": found[:10]}
+
+
 def record_owners() -> dict | None:
     """How many records each tenant holds ({tenant id or None: count}), from the resolver's summary; None when
     the resolver cannot be read (the tenants screen still works)."""
@@ -2426,6 +2852,7 @@ def create_tenant():
     tenant = tenants.create(data.get("name"), data.get("prefixes") or [], g.user)
     audit.info("user=%s action=tenant-create tenant=%s prefixes=%s", g.user, tenant["id"], ",".join(tenant["prefixes"]))
     log_event("tenant-create", tenant=tenant["id"], detail=f'{tenant["name"]} prefixes={",".join(tenant["prefixes"])}')
+    tell_covered(tenant, [])
     return message("tenants.created", 201, params={"name": tenant["name"]}, tenant=tenant)
 
 
@@ -2441,6 +2868,8 @@ def update_tenant(tenant_id):
                for field in ("name", "prefixes", "disabled") if before[field] != after[field]]
     audit.info("user=%s action=tenant-update tenant=%s %s", g.user, tenant_id, " ".join(changes))
     log_event("tenant-update", tenant=tenant_id, detail=" ".join(changes) or None)
+    if before["prefixes"] != after["prefixes"]:
+        tell_covered(after, before["prefixes"])
     return message("tenants.updated", 200, params={"name": after["name"]})
 
 
@@ -2492,6 +2921,8 @@ def organisation_page():
         "apikeys": [apikeys.public(d) for d in apikeys.load(chosen)],
         "alerts": monitor.history(chosen, False, limit=20) if chosen else monitor.history(None, True, "-", limit=20),
         "exports": {**exportlimits.describe(tenant), "editable": not g.support},
+        "resolution": {**resolution.strict(chosen), "editable": not g.support, "lacking": lacking_safety(chosen)},
+        "targets": {**targets.hosts(chosen), "editable": not g.support},
         "prefixChecks": prefix_checks(tenant["prefixes"] if tenant else []),
         "gcpTable": gcp_summary(),
         "canEditPrefixes": bool(g.server_admin and not g.support and tenant),
@@ -2543,6 +2974,69 @@ def set_export_maximum():
     log_event("export-maximum", tenant=None, detail=f"maximum={'-' if n is None else n}")
     return message("exports.maximumSaved" if n is not None else "exports.maximumCleared", 200,
                    params={"max": n} if n is not None else {}, maximum=n)
+
+
+@app.errorhandler(resolution.ResolutionError)
+def on_resolution_error(err):
+    """A strict mode setting refused: 422 with the message code."""
+    return message(err.code, 422, params=err.params)
+
+
+@app.put("/portal/api/resolution/strict")
+@require_login
+@admin_required
+def set_resolution_strict():
+    """{"tenant": id or "operator", "enabled": bool}: the strict mode for safety-critical link types
+    (Documentation/adr/0022-answering-level.md, section 2.4). An organisation's administrators set their own; a server
+    administrator any, and the operator's scope, outside support access. Journalled."""
+    data = request.get_json(silent=True) or {}
+    if g.support:
+        return message("resolution.readOnly", 403)
+    chosen = str(data.get("tenant") or "").strip()
+    if not g.server_admin:
+        if chosen != g.account_tenant:                 # another organisation's: as if it did not exist
+            return message("tenants.unknown", 404)
+    elif chosen != "operator" and not any(t["id"] == chosen for t in g.tenants):
+        return message("tenants.unknown", 404)
+    tenant_id = None if chosen == "operator" else chosen
+    kept, changed = resolution.set_strict(tenant_id, data.get("enabled"), g.user)
+    if changed:
+        detail = f"strict={'on' if kept['strict'] else 'off'}"
+        audit.info("user=%s action=resolution-strict tenant=%s %s", g.user, tenant_id or "-", detail)
+        log_event("resolution-strict", tenant=tenant_id, detail=detail)
+    return message("resolution.strictOn" if kept["strict"] else "resolution.strictOff", 200, resolution=kept)
+
+
+@app.errorhandler(targets.TargetsError)
+def on_targets_error(err):
+    """A list of target hosts refused: 422 with the message code."""
+    return message(err.code, 422, params=err.params)
+
+
+@app.put("/portal/api/targets/hosts")
+@require_login
+@admin_required
+def set_target_hosts():
+    """{"tenant": id or "operator", "hosts": [name, ...] or text}: the hosts the organisation's targets may point to
+    (Documentation/adr/0037-target-addresses.md, section 2.2); empty for any public host. An organisation's
+    administrators set their own; a server administrator any, and the operator's scope, outside support access.
+    Journalled."""
+    data = request.get_json(silent=True) or {}
+    if g.support:
+        return message("targets.readOnly", 403)
+    chosen = str(data.get("tenant") or "").strip()
+    if not g.server_admin:
+        if chosen != g.account_tenant:                 # another organisation's: as if it did not exist
+            return message("tenants.unknown", 404)
+    elif chosen != "operator" and not any(t["id"] == chosen for t in g.tenants):
+        return message("tenants.unknown", 404)
+    tenant_id = None if chosen == "operator" else chosen
+    kept, changed = targets.set_hosts(tenant_id, data.get("hosts"), g.user)
+    if changed:
+        detail = "hosts=" + (",".join(kept["hosts"]) or "-")
+        audit.info("user=%s action=target-hosts tenant=%s %s", g.user, tenant_id or "-", detail)
+        log_event("target-hosts", tenant=tenant_id, detail=detail[:500])
+    return message("targets.saved" if kept["hosts"] else "targets.savedAny", 200, targets=kept)
 
 
 @app.errorhandler(gcp.GcpError)
@@ -2684,6 +3178,30 @@ def _audit_events():
 def audit_trail():
     """The audit trail as JSON, newest first (administrators)."""
     return jsonify({"events": _audit_events()})
+
+
+@app.get("/portal/api/audit/verify")
+@require_login
+@admin_required
+def audit_verify():
+    """The hash chains of the request's audit trail verified (ADR 0026, section 2.4): an organisation's (also during
+    support access), or every chain for a server administrator outside support access. ?receipt=<chain>:<seq>:<hash>
+    checks a head kept earlier; a receipt of a chain outside the trail is refused (422 journal.badReceipt)."""
+    everything = g.server_admin and not g.support
+    names = journal.chains(g.tenant, everything=everything)
+    receipt = None
+    if request.args.get("receipt"):
+        receipt = journal.parse_receipt(request.args["receipt"])
+        if not receipt or not (everything or receipt[0].startswith((g.tenant or "operator") + "/")):
+            return message("journal.badReceipt", 422)
+        if receipt[0] not in names:
+            names.append(receipt[0])
+    results = [journal.verify(name, receipt) for name in names]
+    journal.record_verification(results)             # a broken chain alerts the server administrators (ADR 0026)
+    for result in results:
+        trail = result["chain"].split("/", 1)[0]
+        result["tenantName"] = None if trail == "operator" else tenant_name(trail)
+    return jsonify({"chains": results, "keyed": bool(journal.key())})
 
 
 @app.get("/portal/api/audit.csv")
@@ -2978,8 +3496,8 @@ def create_domain():
     data = request.get_json(silent=True) or {}
     tenant = _domain_write_scope()
     doc = domains.create(data.get("domain"), data.get("mode"), data.get("stem"), tenant, g.user, _installation_host())
-    log_event("domain-create", tenant=tenant, detail=f'{doc["_id"]} mode={doc["mode"]} stem={doc["stem"] or "-"}')
-    return message("domains.created", 201, params={"domain": doc["_id"]}, item=domains.public(doc))
+    log_event("domain-create", tenant=tenant, detail=f'{doc["name"]} mode={doc["mode"]} stem={doc["stem"] or "-"}')
+    return message("domains.created", 201, params={"domain": doc["name"]}, item=domains.public(doc))
 
 
 @app.put("/portal/api/domains/<name>")
@@ -2991,9 +3509,9 @@ def update_domain(name):
     before, after = domains.update(name, tenant, mode=data.get("mode"), stem=data.get("stem"),
                                    default_prefixes=data.get("defaultFor"))
     log_event("domain-update", tenant=tenant,
-              detail=f'{after["_id"]} mode={after.get("mode")} stem={after.get("stem") or "-"} '
+              detail=f'{domains.name_of(after)} mode={after.get("mode")} stem={after.get("stem") or "-"} '
                      f'default={",".join(after.get("defaultFor") or []) or "-"}')
-    return message("domains.saved", 200, params={"domain": after["_id"]}, item=domains.public(after))
+    return message("domains.saved", 200, params={"domain": domains.name_of(after)}, item=domains.public(after))
 
 
 @app.post("/portal/api/domains/<name>/verify")
@@ -3001,9 +3519,11 @@ def update_domain(name):
 @admin_required
 def verify_domain(name):
     tenant = _domain_write_scope()
-    was = domains.get(name, tenant).get("verified")
-    doc = domains.verify(name, tenant)
-    if not was:
+    was = domains.get(name, tenant)
+    doc, replaced = domains.verify(name, tenant)
+    if replaced:            # a lapsed domain of another scope, taken over (ADR 0035): in that scope's trail
+        log_event("domain-released", tenant=replaced.get("tenant"), detail=f'{replaced["_id"]} proved elsewhere')
+    if not was.get("verified") or (was.get("lapsedAt") and not doc.get("lapsedAt")):
         log_event("domain-verify", tenant=tenant, detail=doc["_id"])
     return message("domains.verified", 200, params={"domain": doc["_id"]}, item=domains.public(doc))
 
@@ -3016,7 +3536,7 @@ def check_domain(name):
     doc = domains.check(name, tenant, RESOLVER_PUBLIC_URL, _sample_anchor(tenant))
     result = doc["check"]
     return message("domains.checkOk" if result["ok"] else result["problem"], 200,
-                   params={"domain": doc["_id"], "detail": result.get("detail") or "", "url": result["url"]},
+                   params={"domain": domains.name_of(doc), "detail": result.get("detail") or "", "url": result["url"]},
                    item=domains.public(doc))
 
 
@@ -3026,8 +3546,8 @@ def check_domain(name):
 def remove_domain(name):
     tenant = _domain_write_scope()
     doc = domains.remove(name, tenant)
-    log_event("domain-remove", tenant=tenant, detail=doc["_id"])
-    return message("domains.removed", 200, params={"domain": doc["_id"]})
+    log_event("domain-remove", tenant=tenant, detail=domains.name_of(doc))
+    return message("domains.removed", 200, params={"domain": domains.name_of(doc)})
 
 
 # --------------------------------------------------------------------------- the item's page (ADR 0011)
@@ -3209,13 +3729,17 @@ def sso_callback():
     language = (session.get("sso") or {}).get("language")
     scope = (session.get("sso") or {}).get("scope")
     try:
-        username, doc = sso.finish(request.args, SSO_CALLBACK, session)
+        username, doc, subject = sso.finish(request.args, SSO_CALLBACK, session)
     except sso.SsoError as err:
         tenant = sso.tenant_of(scope) if scope else None
         audit.info("user=- action=login-failed addr=%s reason=%s", client_address(), err.code)
-        log_event("login-failed", user=shown_username(err.detail if "@" in err.detail else ""),
-                  detail=f"{client_address()} single sign-on: {err.code} {err.detail}"[:300],
-                  tenant=tenant, actor_tenant=tenant)
+        typed = err.detail.split(" ", 1)[0] if "@" in err.detail.split(" ", 1)[0] else ""
+        if scope:
+            log_event("login-failed", user=shown_username(typed),
+                      detail=f"{client_address()} single sign-on: {err.code} {err.detail}"[:300],
+                      tenant=tenant, actor_tenant=tenant)
+        else:       # no sign-in in progress on this browser: counted (ADR 0031, section 2.3)
+            failcount.note("sso", client_address())
         if scope and err.code != "sso.expired":
             sso.note(scope, False, err.code, err.detail)
         session.pop("sso", None)
@@ -3226,8 +3750,9 @@ def sso_callback():
                   tenant=account.get("tenant"), actor_tenant=account.get("tenant"))
         return redirect("/portal/login?sso=tenantDisabled")
     sso.note(doc["_id"], True)
-    open_session(username, language, f"{client_address()} single sign-on {urlparse_host(doc['issuer'])}")
-    session["via"] = "sso"
+    open_session(username, language, f"{client_address()} single sign-on {urlparse_host(doc['issuer'])} "
+                                     f"subject {subject['sub']}"[:250] + (" bound" if subject["bound"] else ""),
+                 "sso")
     return redirect("/portal/#overview")
 
 
@@ -3291,10 +3816,46 @@ def remove_sso(scope):
 @require_login
 @admin_required
 def test_sso(scope):
-    if not (sso_scope_allowed(scope) or scope == sso.scope_id(g.support)):
+    # support access may test the organisation in support (read only); outside it sso.scope_id(None) is the
+    # operator's scope, which only server administrators may reach (finding F-017)
+    if not (sso_scope_allowed(scope) or (g.support and scope == g.support)):
         return message("sso.scopeOutside", 403)
     result = sso.test(scope)
     return message(result.pop("code"), 200, result=result)
+
+
+@app.post("/portal/api/sso/<scope>/verify")
+@require_login
+@admin_required
+def verify_sso_domain(scope):
+    """Looks up the TXT record that proves one of the configuration's e-mail domains (ADR 0025)."""
+    if g.support:
+        raise ReadOnlySupport()
+    if not sso_scope_allowed(scope):
+        return message("sso.scopeOutside", 403)
+    domain = str((request.get_json(silent=True) or {}).get("domain", ""))
+    doc, released = sso.verify_domain(scope, domain, g.user)
+    log_event("sso-domain", tenant=sso.tenant_of(scope), detail=f"{domain.strip().lower()} proved by DNS")
+    for other in released:      # a lapsed proof of another configuration, taken over (ADR 0035): in its trail
+        log_event("domain-released", tenant=sso.tenant_of(other), detail=f"sso {domain.strip().lower()} proved elsewhere")
+    return message("sso.domainProved", 200, params={"domain": domain.strip().lower()}, item=sso.public(doc))
+
+
+@app.post("/portal/api/sso/<scope>/approve")
+@require_login
+@server_admin_required
+def approve_sso_domain(scope):
+    """A server administrator's approval of an e-mail domain without a DNS record (ADR 0025)."""
+    if g.support:
+        raise ReadOnlySupport()
+    if not sso_scope_allowed(scope):
+        return message("sso.scopeOutside", 403)
+    domain = str((request.get_json(silent=True) or {}).get("domain", ""))
+    doc, released = sso.approve_domain(scope, domain, g.user)
+    log_event("sso-domain", tenant=sso.tenant_of(scope), detail=f"{domain.strip().lower()} approved")
+    for other in released:      # a lapsed proof of another configuration, taken over (ADR 0035): in its trail
+        log_event("domain-released", tenant=sso.tenant_of(other), detail=f"sso {domain.strip().lower()} proved elsewhere")
+    return message("sso.domainApproved", 200, params={"domain": domain.strip().lower()}, item=sso.public(doc))
 
 
 # --------------------------------------------------------------------------- overview (ADR 0007)
@@ -3564,7 +4125,7 @@ def label_response(anchor: str, args) -> Response:
 JOB_RUNNERS = {"import": run_import_job, "linkcheck": run_link_job, "mail": notify.run_mail_job}
 # What the worker runs about once an hour, outside any job (worker.HOUSEKEEPING_SECONDS)
 HOUSEKEEPING = [notify_expiring_keys, requestlog.aggregate, requestlog.fold_noise, requestlog.apply_retention,
-                requestlog.apply_size_limit, domains.recheck_all]
+                requestlog.apply_size_limit, recheck_domains, journal.checkpoint, failcount.journal_closed_hours]
 # What the worker runs every PORTAL_MONITOR_MINUTES (Documentation/adr/0008-monitoring-and-alerts.md)
 MONITORING = [monitor.run]
 MONITOR_SECONDS = monitor.minutes() * 60

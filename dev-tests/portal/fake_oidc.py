@@ -43,10 +43,10 @@ class FakeProvider:
         threading.Thread(target=make_server("127.0.0.1", port, app, threaded=True).serve_forever, daemon=True).start()
 
     def reset(self):
-        """The next answer: a good ID token for NEXT["email"]."""
+        """The next answer: a good ID token for NEXT["email"], whose subject is "sub-<e-mail>" unless NEXT["sub"]."""
         self.NEXT.clear()
         self.NEXT.update(email=None, email_verified=True, aud=None, iss=None, nonce=None, exp=600, alg="RS256",
-                         key=None, error=None, token_status=200, no_id_token=False, extra={})
+                         key=None, error=None, token_status=200, no_id_token=False, extra={}, sub=None)
 
     def rotate(self) -> None:
         """A new signing key (the provider's keys now list both); the next token is signed with it."""
@@ -89,7 +89,7 @@ class FakeProvider:
         if wanted["no_id_token"]:
             return jsonify(access_token="x", token_type="Bearer")
         now = int(time.time())
-        claims = {"iss": wanted["iss"] or self.issuer, "aud": wanted["aud"] or self.client_id, "sub": "user-1",
+        claims = {"iss": wanted["iss"] or self.issuer, "aud": wanted["aud"] or self.client_id, "sub": wanted.get("sub") or f"sub-{wanted['email']}",
                   "iat": now, "exp": now + wanted["exp"], "nonce": wanted["nonce"] or grant["args"].get("nonce"),
                   "email": wanted["email"], "email_verified": wanted["email_verified"], **wanted["extra"]}
         claims = {k: v for k, v in claims.items() if v is not None}

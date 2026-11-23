@@ -1,6 +1,6 @@
 # Third-party software, data and licences
 
-What the GS1 Digital Link Resolver CE — Expansion Pack is made of besides its own code, under which licence, and what
+What the GS1 Digital Link Resolver Suite is made of besides its own code, under which licence, and what
 that means for anyone who installs and runs it, commercially or not. This is a summary for orientation, not legal
 advice: the licences themselves decide, and an operator with doubts asks its own lawyer.
 
@@ -26,7 +26,7 @@ advice: the licences themselves decide, and an operator with doubts asks its own
 | Part | Licence | Notes |
 |---|---|---|
 | GS1 Resolver CE v3 (the official project: resolver, data entry API, proxy, installer) | Apache 2.0, © GS1 AISBL | `LICENSE` at the root |
-| The Expansion Pack (portal, resolver changes, scripts, tests, documents) | Apache 2.0, as a derivative work | changes recorded in `Documentation/extensions/CHANGELOG.md` (Apache 2.0, section 4 b) |
+| The GS1 Digital Link Resolver Suite (portal, resolver changes, scripts, tests, documents) | Apache 2.0, as a derivative work | changes recorded in `Documentation/extensions/CHANGELOG.md` (Apache 2.0, section 4 b) |
 | Interface translations (`portal/static/i18n.js`, `portal/static/locales/*.json`, `portal/mail_languages.json`, `web_server/src/page_texts.json`, `frontend_proxy_server/home/home.js`) | Apache 2.0 | drafts other than pt-BR and en-GB; corrections by native speakers are welcome as pull requests (`Documentation/translation-glossary.md`) |
 
 ## Components installed or shipped with it

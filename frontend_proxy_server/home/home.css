@@ -128,6 +128,7 @@ h2 { font-size: 1.25rem; font-weight: 500; color: var(--gs1-blue); margin: .1rem
 
 .cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .cards-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cards-1 { grid-template-columns: minmax(0, 1fr); }
 .card {
   display: flex; flex-direction: column; gap: .5rem;
   padding: 1.1rem 1.25rem 1.25rem; border: 1px solid var(--line); border-radius: 4px;

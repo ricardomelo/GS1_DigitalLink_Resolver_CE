@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GS1 Resolver Community Edition</title>
+  <title>GS1 Digital Link Resolver Suite</title>
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,7 +16,7 @@
     <div class="header-inner">
       <a class="brand" href="/" data-i18n-attr="title:header.home">
         <img src="logo.svg" alt="" width="44" height="44">
-        <span class="product">GS1 Resolver Community Edition</span>
+        <span class="product">GS1 Digital Link Resolver Suite</span>
       </a>
       <div class="header-tools">
         <label class="locale-picker">
@@ -101,6 +101,10 @@
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6v-5c0-3.1-1.6-5.6-4.5-6.3V4a1.5 1.5 0 0 0-3 0v.7C7.6 5.4 6 7.9 6 11v5l-2 2v1h16v-1l-2-2Z"/></svg>
                 <span data-i18n="menu.alerts"></span>
               </a>
+              <a class="menu-item nav-item" role="menuitem" href="/portal/about" id="menu-about">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16Zm-1 3.5v2h2v-2h-2Zm0 3.5v6h2v-6h-2Z"/></svg>
+                <span data-i18n="menu.about"></span>
+              </a>
               <button type="button" class="menu-item" role="menuitem" id="menu-options">
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19.4 13a7.7 7.7 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.5 7.5 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.5 7.5 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.7 7.7 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 21h4l.4-2.9c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5L19.4 13ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z" transform="translate(-1 0)"/></svg>
                 <span data-i18n="menu.options"></span>
@@ -170,6 +174,8 @@
           <p class="scope-title"><span data-i18n="scope.title"></span> <strong id="scope-what"></strong></p>
           <ul id="scope-notes"></ul>
         </div>
+        <!-- A batch or serial value close to another of the key's (ADR 0022, section 2.5) -->
+        <div class="safety-warn" id="dup-warnings" role="status" aria-live="polite" hidden></div>
 
         <button type="button" id="open" class="btn btn-secondary" disabled data-i18n="open.button"></button>
         <p class="field-msg" id="open-msg" aria-live="polite"></p>
@@ -222,6 +228,8 @@
                     aria-controls="copy-pop" aria-expanded="false" data-i18n="copy.button"></button>
             <button type="button" id="check-links" class="btn btn-ghost needs-editor" data-i18n="links.check"></button>
           </div>
+          <!-- Safety-critical links a request for this record would receive from another level (ADR 0022, section 2.5) -->
+          <div class="safety-warn" id="safety-warnings" role="status" aria-live="polite" hidden></div>
           <!-- Copy the targets of another record into the form (nothing is saved until "Save links") -->
           <div class="copy-pop" id="copy-pop" role="dialog" aria-labelledby="copy-title" hidden>
             <h3 id="copy-title" data-i18n="copy.title"></h3>
@@ -827,6 +835,8 @@
         <button type="button" role="tab" data-tab="apikeys" id="org-tab-apikeys" data-i18n="org.tab.apikeys"></button>
         <button type="button" role="tab" data-tab="exports" id="org-tab-exports" data-i18n="org.tab.exports"></button>
         <button type="button" role="tab" data-tab="alerts" id="org-tab-alerts" data-i18n="org.tab.alerts"></button>
+        <button type="button" role="tab" data-tab="resolution" id="org-tab-resolution" data-i18n="org.tab.resolution"></button>
+        <button type="button" role="tab" data-tab="targets" id="org-tab-targets" data-i18n="org.tab.targets"></button>
       </div>
       <div class="org-panel" role="tabpanel" id="org-panel" aria-live="polite"></div>
     </section>
@@ -999,7 +1009,34 @@
         </div>
         <button type="submit" class="btn btn-primary" data-i18n="audit.filter"></button>
         <button type="button" class="btn btn-ghost" id="audit-csv" data-i18n="audit.csv"></button>
+        <button type="button" class="btn btn-ghost" id="audit-verify-open" data-i18n="audit.verify"></button>
       </form>
+      <section class="audit-verify" id="audit-verify" hidden>
+        <h2 data-i18n="audit.verify"></h2>
+        <p class="field-msg" data-i18n="audit.verifyLede"></p>
+        <p class="field-msg error" id="audit-verify-unkeyed" data-i18n="audit.notKeyed" hidden></p>
+        <div class="table-wrap">
+          <table class="records-table audit-chains">
+            <thead>
+              <tr>
+                <th scope="col" data-i18n="audit.chain"></th>
+                <th scope="col" data-i18n="audit.chainEvents"></th>
+                <th scope="col" data-i18n="audit.chainResult"></th>
+                <th scope="col" data-i18n="audit.chainHead"></th>
+              </tr>
+            </thead>
+            <tbody id="audit-chains-body"></tbody>
+          </table>
+        </div>
+        <form class="audit-filters" id="audit-receipt-form" novalidate>
+          <div class="audit-text">
+            <label for="audit-receipt" data-i18n="audit.receipt"></label>
+            <input id="audit-receipt" autocomplete="off" spellcheck="false" data-i18n-attr="placeholder:audit.receiptPlaceholder">
+          </div>
+          <button type="submit" class="btn btn-ghost" data-i18n="audit.receiptCheck"></button>
+        </form>
+        <p class="field-msg" id="audit-verify-msg" aria-live="polite"></p>
+      </section>
       <p class="field-msg" id="audit-count" aria-live="polite"></p>
       <div class="table-wrap">
         <table class="records-table audit-table">
@@ -1126,7 +1163,7 @@
           <div>
             <label for="appearance-name" data-i18n="appearance.name"></label>
             <input id="appearance-name" maxlength="60" autocomplete="off">
-            <p class="hint" data-i18n="appearance.nameHint" data-i18n-params='{"original":"GS1 Resolver Community Edition"}'></p>
+            <p class="hint" data-i18n="appearance.nameHint" data-i18n-params='{"original":"GS1 Digital Link Resolver Suite"}'></p>
           </div>
           <div>
             <label for="appearance-logo" data-i18n="appearance.logo"></label>
@@ -1520,6 +1557,7 @@
       <div id="import-status" class="status" role="status" aria-live="polite" hidden></div>
       <div id="import-report" hidden>
         <p class="import-summary" id="import-summary"></p>
+        <p class="field-msg is-warn" id="import-safety" aria-live="polite" hidden></p>
         <ul class="import-errors" id="import-errors"></ul>
         <div class="import-links-line">
           <p class="field-msg" id="import-links-msg" aria-live="polite"></p>

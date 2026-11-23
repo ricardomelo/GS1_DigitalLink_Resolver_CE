@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). Implemented in one delivery; amended on 17 October 2026 (section 8: export limits set in the portal, item 9.8) |
+| Status | **Accepted** (14 October 2026). Implemented in one delivery; amended on 17 October 2026 (section 8: export limits set in the portal, item 9.8); decisions 2 and 3 amended by [ADR 0025](0025-sso-domain-proof-and-subject.md) on 16 November 2026 (e-mail domains proved, `email_verified` required, the account bound to the provider's subject) |
 | Backlog item | 7.1 — single sign-on for the portal, per tenant; per-role limits on exports; 9.8 — export limits in the portal |
 | Decided by | the owner of the branch, away during the session, who asked for the recommended option on every point of section 4 |
 
@@ -32,6 +32,8 @@ be what an organisation wants.
 3. **Who signs in**: the sign-in page's *Sign in with your organisation's account* asks for the e-mail address; its
    domain chooses the configuration; the provider's answer must carry that `email` (not `email_verified: false`),
    and an account **with that e-mail must already exist** in that organisation (or the operator), not disabled.
+   *Since ADR 0025: the domain must be proved, `email_verified` must be true (unless the configuration says its
+   provider never sends it), and the account is bound to the provider's subject at its first sign-in.*
    Nobody is created by signing in: administrators still create or invite users and choose their role and prefixes.
 4. **Password sign-in off** applies to the organisation's users, never to server administrators (who must be able to
    reach the portal when a provider fails); their passwords stay and work again when the option is switched off.

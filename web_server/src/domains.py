@@ -18,7 +18,10 @@ A host that is not a registered domain (the installation's own name above all) i
 public_name() gives the name a request was made on, for the addresses the resolver writes about it (the linkset's
 anchors, the Link header, the description file's root): a GS1 Digital Link URI names the same item on any of the
 installation's names, and a client compares the anchors with the URI it asked for (GS1's conformance test suite
-requires the anchor to be that URI).
+requires the anchor to be that URI). Only names the installation knows are written: FQDN, the names listed in
+FQDN_ALIASES and the verified domains above; any other host a request names gets FQDN, so that a forged Host cannot
+put another name into an answer a shared cache might keep (Documentation/adr/0039-known-public-names.md, finding
+F-022).
 """
 import logging
 import os
@@ -27,6 +30,7 @@ import threading
 import time
 
 import request_log
+import settings_age
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +46,16 @@ def portal_db_name() -> str:
 
 class DomainMap:
     """The verified direct domains: {host: {"stem", "prefixes" (None for the operator), "excluded"}}, read again
-    after CACHE_SECONDS; when the database cannot be read the last map is kept."""
+    after CACHE_SECONDS; when the database cannot be read the last map is kept, also once it is older than
+    RESOLVER_SETTINGS_MAX_AGE_S (without it a domain would answer for every key; the age is logged and alerted:
+    finding F-033, Documentation/adr/0053-settings-age.md)."""
 
     def __init__(self, database=None):
         self.database = database        # a function giving the portal's database (pymongo), set by create_app
         self._map: dict[str, dict] = {}
         self._loaded = 0.0
         self._lock = threading.Lock()
+        self.age = settings_age.Age('Domains', 'the last domains read are kept')
 
     def _load(self) -> dict[str, dict]:
         db = self.database()
@@ -65,16 +72,24 @@ class DomainMap:
     def lookup(self, host: str) -> dict | None:
         if not host or self.database is None:
             return None
+        self.refresh()
+        return self._map.get(host)
+
+    def refresh(self) -> None:
+        """Reads the domains again when CACHE_SECONDS have passed; a failure keeps the last ones (settings_age)."""
+        if self.database is None:
+            return
         now = time.monotonic()
         if now - self._loaded >= CACHE_SECONDS:
             with self._lock:
                 if now - self._loaded >= CACHE_SECONDS:
                     try:
                         self._map = self._load()
+                        self.age.read(now)
                     except Exception as exc:          # noqa: BLE001 — the resolver keeps answering
                         logger.warning('Domains not read (%s); the last list is kept.', exc)
+                        self.age.failed(now)
                     self._loaded = now
-        return self._map.get(host)
 
     def forget(self) -> None:
         """Reads the domains again at the next request (tests)."""
@@ -93,18 +108,31 @@ def request_host(environ: dict) -> str:
     return host.split(':')[0]
 
 
+def _name(value: str) -> str:
+    """A host name as written in a setting: lower case, without spaces, port or final dot."""
+    return value.strip().lower().split(':')[0].rstrip('.')
+
+
+def known_names() -> frozenset[str]:
+    """The installation's own names: FQDN and those listed in FQDN_ALIASES (separated by commas or spaces), each a
+    valid host name; read at each call, so that a changed .env applies at the next start without a cache to empty."""
+    raw = [os.getenv('FQDN', '')] + re.split(r'[,\s]+', os.getenv('FQDN_ALIASES', '') or '')
+    return frozenset(name for name in map(_name, raw) if name and _HOST_NAME.match(name))
+
+
 def public_name(environ: dict) -> str | None:
-    """The public name the request was made on, as the start of its URI without the scheme: an organisation's domain
-    with its stem ("id.acme.example/gs1"), or the host the proxy names in X-Forwarded-Host when it is a valid host
-    name (another name of the installation). None without X-Forwarded-Host (a request that did not come through the
-    proxy): the caller then uses the installation's FQDN."""
+    """The public name the request was made on, as the start of its URI without the scheme: an organisation's verified
+    domain with its stem ("id.acme.example/gs1"), or the host the proxy names in X-Forwarded-Host when it is one of
+    the installation's own names (known_names()). None otherwise: without X-Forwarded-Host (a request that did not
+    come through the proxy) and for any other host, which a client chose; the caller then uses the installation's
+    FQDN (ADR 0039)."""
     entry = environ.get(ENV_KEY)
     if entry:
         return entry['host'] + entry['stem']
     if not environ.get('HTTP_X_FORWARDED_HOST'):
         return None
-    host = request_host(environ)
-    return host if _HOST_NAME.match(host) else None
+    host = request_host(environ).rstrip('.')
+    return host if host in known_names() else None
 
 
 def _without_stem(path: str, stem: str) -> str | None:

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). Implemented in one delivery. **Amended** on 17 October 2026 (section 7, item 9.6) and on 23 October 2026 (section 8, the addresses on the name requested) |
+| Status | **Accepted** (14 October 2026). Implemented in one delivery. **Amended** on 17 October 2026 (section 7, item 9.6) and on 23 October 2026 (section 8, the addresses on the name requested). Unverified domains as expiring claims and lapsed domains: [ADR 0035](0035-domain-claims-and-lapsed-proofs.md) (21 November 2026) |
 | Backlog items | 5.1 — the tenant's own domain in the QR code; 9.6 — domains without the terminal |
 | Decided by | the owner of the branch, away during the session, who asked for the recommended option on every point of section 4 |
 
@@ -187,6 +187,10 @@ valid host name (lower case, without port); otherwise — a request that did not
 that is not a host name — `FQDN`, as before. This covers the linkset's anchors (plain and JSON-LD), the JSON-LD
 `@id`, the `Link` header of linksets and redirects, and the description file's `resolverRoot`. Stored records are
 unchanged; links that hold an address (the item's page as a default target) keep the one the portal wrote.
+
+*Amended by [ADR 0039](0039-known-public-names.md) (finding F-022): the host in `X-Forwarded-Host` is written only when
+it is one of the installation's names — `FQDN` or a name listed in `FQDN_ALIASES` — and any other name gets `FQDN`; the
+list in `.env` not chosen below is now taken, because the host's site is its nginx's default for every name.*
 
 ### 8.3 Options considered
 

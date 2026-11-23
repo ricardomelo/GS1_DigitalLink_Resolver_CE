@@ -16,6 +16,7 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import timedelta
 
 from werkzeug.serving import make_server
 
@@ -382,6 +383,64 @@ check("command line: a new user created in a tenant; an existing user keeps his"
 check("tenants.find by name ignoring case, or by id", tenants.find(" ACME foods ")["id"] == acme["id"]
       and tenants.find(delta["id"])["name"] == "Delta" and tenants.find("nobody") is None)
 
+# ------------------------------------------------------------------ other organisations' names and addresses (F-019)
+# ADR 0036: an e-mail address is unique per organisation (the operator is one scope), so that refusing it never tells an
+# administrator that a person has an account elsewhere; user names stay the installation's sign-in names, and the
+# refusals an organisation's administrator meets are counted and those for another organisation's names journalled
+r = root.post("/portal/api/users", json={"username": "dan", "role": "admin", "tenant": delta["id"]})
+dan_pw = r.get_json().get("password")
+dan, _ = client("dan", dan_pw)
+dan.post("/portal/api/password", json={"currentPassword": dan_pw, "newPassword": "dan-password-long"})
+r = root.post("/portal/api/users", json={"username": "eve", "role": "reader", "tenant": acme["id"], "email": "eve@shared.example"})
+check("F-019: an address in Acme", r.status_code == 201, r.get_json())
+r = dan.post("/portal/api/users", json={"username": "eve2", "role": "reader", "email": "Eve@Shared.Example"})
+check("F-019: another organisation's administrator may give the same address (no refusal to learn from)",
+      r.status_code == 201 and users.get("eve2")["email"] == "eve@shared.example"
+      and users.get("eve2")["tenant"] == delta["id"], r.get_json())
+check("F-019: …but not twice in his own organisation", code(dan.post("/portal/api/users", json={
+      "username": "eve3", "role": "reader", "email": "eve@shared.example"})) == "users.emailExists")
+check("F-019: …nor the server administrator twice in one organisation", code(root.post("/portal/api/users", json={
+      "username": "eve4", "role": "reader", "tenant": acme["id"], "email": "eve@shared.example"})) == "users.emailExists")
+r = root.post("/portal/api/users", json={"username": "opeve", "role": "reader", "email": "eve@shared.example"})
+check("F-019: the operator is a scope of its own: its user may have the address too", r.status_code == 201, r.get_json())
+check("F-019: …once", code(root.post("/portal/api/users", json={"username": "opeve2", "role": "reader",
+                                                                 "email": "eve@shared.example"})) == "users.emailExists")
+dan.post("/portal/api/users", json={"username": "fay", "role": "reader"})
+dan.post("/portal/api/users", json={"username": "gil", "role": "reader", "email": "gil@shared.example"})
+r = dan.put("/portal/api/users/fay", json={"email": "gil@shared.example"})
+check("F-019: changing an address: another organisation's use is no refusal, the organisation's own is",
+      code(r) == "users.emailExists" and code(dan.put("/portal/api/users/fay", json={"email": "ana-b@shared.example"})) == "users.updated"
+      and code(root.put("/portal/api/users/eve", json={"email": "ana-b@shared.example"})) == "users.updated")
+check("F-019: recovery by address finds every account that has it", users.find_logins("EVE@shared.example")
+      == ["eve2", "opeve"] and users.find_logins("eve2") == ["eve2"] and users.find_logins("nobody@x.example") == [])
+refused_before = store.col("journal").count_documents({"action": "user-create-refused"})
+r = dan.post("/portal/api/users", json={"username": "fay", "role": "reader"})
+check("F-019: a name of his own organisation: already exists, nothing journalled", code(r) == "users.exists"
+      and store.col("journal").count_documents({"action": "user-create-refused"}) == refused_before)
+r = dan.post("/portal/api/users", json={"username": "eve", "role": "reader"})
+event = store.col("journal").find_one({"action": "user-create-refused"}, sort=[("at", -1)]) or {}
+check("F-019: a name of another organisation: refused, and journalled in the operator's trail (who tried, which name)",
+      code(r) == "users.exists" and event.get("user") == "dan" and "tenant" not in event
+      and event.get("detail", "").startswith("eve held by another organisation; tried from Delta"), event)
+for name in ("root", "opedit", "ana"):
+    dan.post("/portal/api/users", json={"username": name, "role": "reader"})
+r = dan.post("/portal/api/users", json={"username": "zed", "role": "reader"})
+check("F-019: after 5 names already taken in 15 minutes, no user is created (429, the wait in minutes)",
+      r.status_code == 429 and code(r) == "users.nameLimit" and r.get_json()["params"]["minutes"] == 15
+      and users.get("zed") is None, r.get_json())
+check("F-019: …whatever the name, so the limit tells nothing either",
+      code(dan.post("/portal/api/users", json={"username": "eve", "role": "reader"})) == "users.nameLimit"
+      and store.col("journal").count_documents({"action": "user-create-refused"}) == refused_before + 4)
+answers = [code(root.post("/portal/api/users", json={"username": name, "role": "reader"}))
+           for name in ("eve", "eve2", "fay", "gil", "ana", "eve")]
+check("F-019: …per administrator: the server administrator, who sees every user, is neither limited nor journalled",
+      answers == ["users.exists"] * 6 and root.post("/portal/api/users", json={"username": "zed0", "role": "reader"}).status_code == 201
+      and store.col("journal").count_documents({"action": "user-create-refused"}) == refused_before + 4, answers)
+store.col("login_failures").update_many({"key": "name-taken:dan"},
+                                        {"$set": {"at": store.now() - timedelta(seconds=portal.LOCKOUT_SECONDS + 5)}})
+check("F-019: …until the refusals leave the window", dan.post("/portal/api/users", json={
+      "username": "zed", "role": "reader"}).status_code == 201 and users.get("zed")["tenant"] == delta["id"])
+
 # ------------------------------------------------------------------ messages in both languages
 import re  # noqa: E402
 
@@ -403,7 +462,7 @@ server_codes = set(re.findall(r'(?:UserError|ValidationError|message)\("((?:tena
                                       for f in ("app.py", "users.py", "tenants.py"))))
 check("every message code of the server is translated", server_codes <= pt_keys and len(server_codes) > 25,
       sorted(server_codes - pt_keys))
-actions = {"login-refused", "tenant-create", "tenant-update", "tenant-remove", "support-open", "support-close"}
+actions = {"login-refused", "user-create-refused", "tenant-create", "tenant-update", "tenant-remove", "support-open", "support-close"}
 check("every new journal action has a name", {f"audit.action.{a}" for a in actions} <= pt_keys)
 
 print(f"\n{len(failures)} failure(s)")

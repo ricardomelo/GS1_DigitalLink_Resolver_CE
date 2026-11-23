@@ -465,6 +465,16 @@ tenants.update(acme["id"], disabled=True)
 r = anon.post("/portal/api/password/forgot", json={"login": "ana"}, headers=addr())
 check("nothing sent to a user of a disabled organisation", code(r) == "password.recoverySent" and not wait_messages(1, 1.0))
 tenants.update(acme["id"], disabled=False)
+# ADR 0036 (finding F-019): an address may be used once per organisation; recovery by it sends a link to each account
+users.create("ana2", "ana2-password-long", "editor", must_change=False, email="ana@acme.example")   # the operator's
+relay.clear()
+r = anon.post("/portal/api/password/forgot", json={"login": "Ana@Acme.Example"}, headers=addr())
+messages = wait_messages(2)
+owners = sorted((tokens.peek(link_in(m)[1]) or {}).get("user", "") for m in messages)
+check("recovery by an address two organisations use: the usual answer, a link to each account, to that address",
+      code(r) == "password.recoverySent" and owners == ["ana", "ana2"]
+      and all(m["To"] == "ana@acme.example" for m in messages), (code(r), owners))
+users.remove("ana2")
 
 # invalid links
 r = anon.post("/portal/api/password/link/check", json={"token": "A" * 43}, headers=addr())
@@ -529,13 +539,13 @@ messages = wait_messages(1)
 check("own password changed: a security message", code(r) == "password.changed" and messages
       and messages[0]["Subject"] == mailtexts.TEXTS["password-changed"]["en-GB"][0])
 relay.clear()
-lock_addr = {**ORIGIN, "X-Forwarded-For": "10.7.7.7"}
-for _ in range(5):
-    portal.app.test_client().post("/portal/api/login", json={"username": "maria", "password": "wrong"}, headers=lock_addr)
-r = portal.app.test_client().post("/portal/api/login", json={"username": "maria", "password": "wrong"}, headers=lock_addr)
+for n in range(6):                                  # from three addresses: the owner's account counts them all
+    portal.app.test_client().post("/portal/api/login", json={"username": "maria", "password": "wrong"},
+                                  headers={**ORIGIN, "X-Forwarded-For": f"10.7.7.{n % 3}"})
 messages = wait_messages(1)
-check("five wrong passwords lock the account and tell its owner once", r.status_code == 429 and len(wait_messages(2, 0.8)) == 1
-      and messages[0]["Subject"] == mailtexts.TEXTS["account-locked"]["en-GB"][0] and "15" in text_of(messages[0]))
+check("five wrong passwords from any addresses tell the account's owner once (not locked)",
+      len(wait_messages(2, 0.8)) == 1 and messages[0]["Subject"] == mailtexts.TEXTS["sign-in-failures"]["en-GB"][0]
+      and "15" in text_of(messages[0]) and "not locked" in text_of(messages[0]))
 relay.clear()
 for _ in range(5):
     portal.app.test_client().post("/portal/api/login", json={"username": "nobody", "password": "x"},

@@ -86,13 +86,15 @@
    "put": {
     "operationId": "putRecord",
     "summary": "Creates or replaces one record",
-    "description": "Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed.",
+    "description": "Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed. The answer lists `warnings` about safety-critical link types and near-duplicate batch or serial values (ADR 0022, section 2.5); they never refuse the save.",
     "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RecordInput"}}}},
     "responses": {
      "200": {"description": "Replaced", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Saved"}}}},
      "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Saved"}}}},
      "401": {"$ref": "#/components/responses/Unauthorised"},
      "403": {"$ref": "#/components/responses/Forbidden"},
+     "400": {"$ref": "#/components/responses/Malformed"},
+     "409": {"$ref": "#/components/responses/Conflict"},
      "415": {"$ref": "#/components/responses/Invalid"},
      "422": {"$ref": "#/components/responses/Invalid"},
      "429": {"$ref": "#/components/responses/RateLimit"},
@@ -108,6 +110,7 @@
      "401": {"$ref": "#/components/responses/Unauthorised"},
      "403": {"$ref": "#/components/responses/Forbidden"},
      "404": {"$ref": "#/components/responses/NotFound"},
+     "409": {"$ref": "#/components/responses/Conflict"},
      "429": {"$ref": "#/components/responses/RateLimit"},
      "502": {"$ref": "#/components/responses/Upstream"}
     }
@@ -160,9 +163,11 @@
    "Unauthorised": {"description": "No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "Forbidden": {"description": "The key lacks the scope (api.scope), or the record is outside its reach (access.prefix)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "NotFound": {"description": "No record with those qualifiers (record.notFound)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-   "Invalid": {"description": "A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+   "Invalid": {"description": "A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+   "Malformed": {"description": "The body is not one JSON object: not JSON at all, nested past what the parser follows, or an array, a text, a number or null (request.jsonInvalid)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "RateLimit": {"description": "Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait", "headers": {"Retry-After": {"schema": {"type": "integer"}}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-   "Upstream": {"description": "The resolver's data entry API failed or refused the change (upstream.*)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+   "Upstream": {"description": "The resolver's data entry API failed or refused the change (upstream.*)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+   "Conflict": {"description": "The key's records were being changed by other writers at the same moment, and the data entry API wrote nothing of this change (upstream.conflict; ADR 0027). Read the record again and repeat the change.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
   },
   "schemas": {
    "Error": {
@@ -223,8 +228,19 @@
     }
    },
    "Saved": {
-    "type": "object", "required": ["code", "created", "digitalLink"],
-    "properties": {"code": {"type": "string", "enum": ["save.created", "save.updated"]}, "created": {"type": "boolean"}, "digitalLink": {"type": "string"}}
+    "type": "object", "required": ["code", "created", "digitalLink", "warnings"],
+    "properties": {"code": {"type": "string", "enum": ["save.created", "save.updated"]}, "created": {"type": "boolean"}, "digitalLink": {"type": "string"},
+     "warnings": {"type": "array", "items": {"$ref": "#/components/schemas/Warning"}, "description": "What a request for the saved record would receive from another record of its key, and batch or serial values close to another of the key's. Never a refusal: the record is saved."}}
+   },
+   "Warning": {
+    "type": "object", "required": ["code", "params"],
+    "description": "A warning on safety-critical link types (gs1:recallStatus, gs1:safetyInfo, gs1:epil, gs1:smpc, gs1:eifu) or a near-duplicate value. `warning.walkUp`: the record lacks `types` that the record of qualifiers `level` holds (`[]`: the key's own record); a request for this record receives that record's links or, when `strict` is true (the organisation's strict mode), a 404. `warning.productLevel`: the key's own record holds `types` while the key has `count` batch or serial records (`values`: the qualifiers of the first five); those without their own link of a type receive this one. `warning.nearDuplicate`: the value `value` of AI `ai` differs from the key's existing `existing` only in letter case, spaces, `-` `.` `/` or O/0 and I/1. `warning.noLanguage`: links of the safety-critical `types` declare no language (`hreflang`), so the resolver gives them to a request in any language without saying so. `warning.languageGap`: for each of `gaps`, the safety-critical `type` has no link in the languages `missing` that other links of the record have; a request in one of them receives the type in another language, with the header `Resolution-Fallback: language`.",
+    "properties": {"code": {"type": "string", "enum": ["warning.walkUp", "warning.productLevel", "warning.nearDuplicate", "warning.noLanguage", "warning.languageGap"]},
+     "params": {"type": "object", "properties": {"types": {"type": "array", "items": {"type": "string"}},
+      "level": {"type": "array", "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2}}, "strict": {"type": "boolean"}, "count": {"type": "integer"},
+      "values": {"type": "array", "items": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}}},
+      "ai": {"type": "string"}, "value": {"type": "string"}, "existing": {"type": "string"},
+      "gaps": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string"}, "missing": {"type": "array", "items": {"type": "string"}}}}}}}}
    },
    "Stats": {
     "type": "object", "required": ["period", "usage", "quality", "records"],

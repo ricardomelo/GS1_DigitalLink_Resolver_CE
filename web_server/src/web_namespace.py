@@ -12,6 +12,8 @@ import epc_binary
 import forwarding
 import landing
 import request_log
+import resolution
+import settings_age
 import web_logic
 import web_pages
 
@@ -60,7 +62,10 @@ class RobotsTxt(Resource):
 class ItemPageClick(Resource):
     def get(self) -> Response | tuple[Any, int]:
         """A link of the item's page, logged as a click and redirected to (Documentation/adr/0011-item-page.md)."""
-        return landing.click(_page_linkset)
+        try:
+            return landing.click(_page_linkset)
+        except web_logic.RecordsUnavailable:
+            return _records_unavailable(request.args.get('a', ''))
 
 
 @web_namespace.route('/_brand/<prefix>')
@@ -71,12 +76,20 @@ class ItemPageLogo(Resource):
 
 
 def _page_linkset(identifiers: str, qualifier_path: str | None) -> list[dict] | None:
-    """The linkset of a record, as its page lists it (None when there is none)."""
+    """The linkset of a record, as its page lists it (None when there is none); RecordsUnavailable when the records'
+    database could not be read (finding F-031)."""
     ai, value = identifiers.strip('/').split('/', 1)
     data, _ = web_logic.read_document(identifiers, f'{ai}_{value}', qualifier_path, None, [], None, None, True)
+    if data.get('response_status') == 503:
+        raise web_logic.RecordsUnavailable(identifiers)
     if data.get('response_status') != 200:
         return None
     return web_logic.format_linkset_for_external_use(data, identifiers)['linkset']
+
+
+# The caches of the portal's settings whose age the heartbeat reports (settings_age)
+SETTINGS_CACHES = (domains.MAP, forwarding.FORWARDING, resolution.STRICT, landing.BRANDS, web_pages.APPEARANCE,
+                   request_log.RETENTION)
 
 
 @web_namespace.route('/heartbeat')
@@ -85,8 +98,11 @@ class Heartbeat(Resource):
         """
         Return a simple heartbeat response to indicate the application is running.
         A dict, which Flask-RESTX turns into JSON: the official jsonify() response inside a tuple answered 500.
+        "settings": "stale" while a cache of the portal's settings could not be read for longer than
+        RESOLVER_SETTINGS_MAX_AGE_S, else "current"; the portal's monitor alerts on it (finding F-033,
+        Documentation/adr/0053-settings-age.md).
         """
-        return {'response_message': 'Server is running!'}, 200
+        return {'response_message': 'Server is running!', 'settings': settings_age.state(SETTINGS_CACHES)}, 200
 
     def head(self) -> Response:
         """
@@ -113,8 +129,7 @@ class DocOperationsNonGS1DigitalLinkRequest(Resource):
 
         # If the response from GET is a tuple, unpack it
         if isinstance(response_tuple, tuple):
-            response_data, status_code = response_tuple
-            response = make_response(response_data, status_code)
+            response = make_response(*response_tuple)     # (body, status) or (body, status, headers)
         else:
             response = make_response(response_tuple)
         return response
@@ -132,7 +147,11 @@ class DocOperationsNonGS1DigitalLinkRequest(Resource):
         # the request log keeps the path only when no key can be read from it (ADR 0006)
         request_log.note(path='/' + non_gs1dl_request, query=_extract_query_strings(request))
         if epc_binary.COMPRESSED_EPC.fullmatch(non_gs1dl_request):
-            return _resolve_compressed_epc(non_gs1dl_request)
+            try:
+                return _resolve_compressed_epc(non_gs1dl_request)
+            except web_logic.ToolkitBusy as e:
+                # log only: _unavailable() logs the reason and answers a fixed text
+                return _unavailable('/' + non_gs1dl_request, e)
         try:
             logger.info('Non-GS1DL request received')
             decompress_result = web_logic.uncompress_gs1_digital_link(non_gs1dl_request)
@@ -155,6 +174,9 @@ class DocOperationsNonGS1DigitalLinkRequest(Resource):
             # asks for a request that is not a valid GS1 Digital Link URI (was 500)
             return _bad_request('/' + non_gs1dl_request, decompress_result.get('error', 'Not a GS1 Digital Link'))
 
+        except web_logic.ToolkitBusy as e:
+            # log only: _unavailable() logs the reason and answers a fixed text
+            return _unavailable('/' + non_gs1dl_request, e)
         except Exception as e:
             logger.warning('Error getting document: %s', e)
             return _bad_request('/' + non_gs1dl_request, 'Not a GS1 Digital Link')
@@ -171,6 +193,9 @@ class DocOperationsIdentifiersOnly(Resource):
 
             return _resolve_path(anchor_ai_code, [anchor_ai_code, anchor_ai])
 
+        except web_logic.ToolkitBusy as e:
+            # log only: _unavailable() logs the reason and answers a fixed text
+            return _unavailable(f'/{anchor_ai_code}/{anchor_ai}', e)
         except Exception as e:
             logger.warning('Error getting document: %s', e)
             abort(500, description="Error getting document")
@@ -181,8 +206,7 @@ class DocOperationsIdentifiersOnly(Resource):
 
         # If the response from GET is a tuple, unpack it
         if isinstance(response_tuple, tuple):
-            response_data, status_code = response_tuple
-            response = make_response(response_data, status_code)
+            response = make_response(*response_tuple)     # (body, status) or (body, status, headers)
         else:
             response = make_response(response_tuple)
 
@@ -204,6 +228,9 @@ class DocOperationsResource(Resource):
             logger.debug("Extra segments: %s", extra_segments)
             return _resolve_path(anchor_ai_code, [anchor_ai_code, anchor_ai, *(extra_segments or '').split('/')])
 
+        except web_logic.ToolkitBusy as e:
+            # log only: _unavailable() logs the reason and answers a fixed text
+            return _unavailable(f'/{anchor_ai_code}/{anchor_ai}/{extra_segments}', e)
         except Exception as e:
             logger.warning('Error getting document: %s', e)
             abort(500, description="Error getting document")
@@ -211,8 +238,7 @@ class DocOperationsResource(Resource):
     def head(self, anchor_ai_code: str, anchor_ai: str, extra_segments: str | None = None) -> Response:
         response_tuple = self.get(anchor_ai_code, anchor_ai, extra_segments)
         if isinstance(response_tuple, tuple):
-            response_data, status_code = response_tuple
-            response = make_response(response_data, status_code)
+            response = make_response(*response_tuple)     # (body, status) or (body, status, headers)
         else:
             response = make_response(response_tuple)
 
@@ -278,6 +304,7 @@ def _resolve_compressed_epc(segment: str) -> Response | tuple[Any, int]:
         epc = epc_binary.decompress(segment)
     except epc_binary.EpcDecodeError as e:
         logger.info('EPC binary string not decoded: %s', e)
+        # own message: EpcDecodeError's texts are epc_binary's own
         return _bad_request('/' + segment, f'Not a decodable EPC binary string: {e}')
     path, attributes = epc.path(), epc.query()
     logger.debug('%s decoded as %s %s?%s (hostname %s)', segment, epc.scheme, path, attributes, epc.hostname)
@@ -303,6 +330,27 @@ def _bad_request(path: str, error: str) -> Response | tuple[Any, int]:
     return {'response_status': 400, 'error': error}, 400
 
 
+def _unavailable(path: str, reason: Exception) -> Response | tuple[Any, int]:
+    """503 with Retry-After when the GS1 Digital Link Toolkit's Node.js process could not answer in time (U-002,
+    Documentation/adr/0047-toolkit-processes.md): the request may be valid, so not 400; HTML page or JSON."""
+    logger.warning('GS1 Digital Link Toolkit unavailable: %s', reason)
+    headers = {'Retry-After': '1'}
+    if _wants_html():
+        return Response(web_pages.render_error(503, path, None, None, None), status=503, mimetype='text/html',
+                        headers=headers)
+    return {'response_status': 503, 'error': 'The resolver is busy: try again in a moment'}, 503, headers
+
+
+def _records_unavailable(path: str) -> Response | tuple[Any, int]:
+    """503 with Retry-After when the records' database could not be read (finding F-031,
+    Documentation/adr/0051-records-unavailable.md): the page that asks to try again, or JSON; web_db logged the cause."""
+    headers = {'Retry-After': web_logic.records_retry_after()}
+    if _wants_html():
+        return Response(web_pages.render_error(503, path, None, None, None), status=503, mimetype='text/html',
+                        headers=headers)
+    return {'response_status': 503, 'error': web_logic.RECORDS_UNAVAILABLE}, 503, headers
+
+
 def _resolver_description() -> Response:
     """
     Resolver Description File (GS1-Conformant Resolver standard, section 3).
@@ -318,8 +366,8 @@ def _resolver_description() -> Response:
     if terms:
         description['termsOfUse'] = terms            # the operator's own terms of use, when there are any
 
-    # the name the request was made on: an organisation's own domain with its stem (ADR 0009), another name of the
-    # installation, else FQDN
+    # the name the request was made on: an organisation's own domain with its stem (ADR 0009), another of the
+    # installation's names (FQDN_ALIASES, ADR 0039), else FQDN
     root = domains.public_name(request.environ) or os.getenv('FQDN', '').strip()
     if root:
         description['resolverRoot'] = f'https://{root}'
@@ -446,9 +494,13 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
         return _forward(target if mode == 'fixed' else forwarding.join(target, path, query_strings), 'forwarded')
 
     if domains.allows(request.environ, *identifiers.strip('/').split('/', 1)):
+        # the strict mode for safety-critical link types, when the key's organisation switched it on (ADR 0022, 2.4)
+        strict = not linkset_requested and resolution.applies(asked, web_logic._parse_qualifier_path(qualifier_path)) \
+            and resolution.STRICT.on_for(*identifiers.strip('/').split('/', 1))
         response_data, link_header = web_logic.read_document(identifiers, doc_id, qualifier_path, linktype,
                                                              accept_language_list, context, media_types_list,
-                                                             linkset_requested)
+                                                             linkset_requested, strict=strict,
+                                                             offer_choice=_wants_html())
     else:
         # a registered domain answers only for its organisation's keys (ADR 0009): as a code nobody registered
         response_data, link_header = {'response_status': 404, 'error': f'No document found for anchor: {doc_id}',
@@ -457,6 +509,24 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
     # private keys for the request log, never part of an answer (ADR 0006)
     outcome = response_data.pop('_outcome', None)
     request_log.note(level=response_data.pop('_level', None), outcome=outcome)
+    # the record that answered and whether the request walked up to it (ADR 0022, section 2.2)
+    answered, match = response_data.pop('_anchor', None), response_data.pop('_match', None)
+    headers = _resolution_headers(answered, match) if status in (300, 307) else {}
+    # the request's language or context that the links given do not serve (ADR 0028)
+    fallback = response_data.pop('_fallback', None) or []
+    if fallback and status in (300, 307):
+        headers['Resolution-Fallback'] = ', '.join(fallback)
+    if match == 'withheld':
+        # withheld by the strict mode: an app tells "nothing for this batch" from "nothing at all" (ADR 0022, 2.4)
+        headers = {'Resolution-Match': 'withheld'}
+    if status == 503:
+        # the records' database could not be read: try again, never "unknown", never the resolver of last resort; the
+        # request log counts an error (finding F-031, Documentation/adr/0051-records-unavailable.md)
+        headers['Retry-After'] = web_logic.records_retry_after()
+    # the request's path and the level that answered (or holds the withheld link), for the notice on the pages
+    # (ADR 0022, sections 2.3 and 2.4)
+    walked = (web_logic._encoded_identifier(identifiers) + (qualifier_path or '').rstrip('/'), answered) \
+        if match in ('walk-up', 'withheld') else None
     # A key this resolver does not know: to the resolver of last resort when the operator switched it on (ADR 0018)
     if status == 404 and outcome == 'unknown':
         fallback = forwarding.FORWARDING.fallback()
@@ -473,9 +543,12 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
                                                      accept_language_list, context, None, True)
                 if ls_data['response_status'] == 200:
                     available = web_logic.format_linkset_for_external_use(ls_data, identifiers)['linkset']
-            html = web_pages.render_error(status, identifiers, qualifier_path, linktype, available)
-            return Response(html, status=status, mimetype='text/html')
-        return response_data, status
+            html = web_pages.render_error(status, identifiers, qualifier_path, linktype, available,
+                                          walked=walked if match == 'withheld' else None)
+            response = Response(html, status=status, mimetype='text/html')
+            response.headers.update(headers)
+            return response
+        return (response_data, status, headers) if headers else (response_data, status)
 
     link_values = []
     if link_header:
@@ -492,7 +565,7 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
             json_ld = web_logic.format_linkset_for_external_use(response_data, identifiers, as_json_ld=True)
             if request.args.get('view') == 'page':        # reached as a record's default target: a follow-up
                 request_log.note(form='landing', outcome='page')
-            response = Response(landing.render_page(identifiers, qualifier_path, linkset, json_ld),
+            response = Response(landing.render_page(identifiers, qualifier_path, linkset, json_ld, walked),
                                 status=200, mimetype='text/html')
         else:
             as_json_ld = 'application/ld+json' in accept
@@ -518,6 +591,7 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
             location = _append_query(location, query_strings)
         response.headers['Location'] = location
         response.headers['Link'] = _latin1(link_header)
+        response.headers.update(headers)
         return response
 
     if status == 300:
@@ -529,14 +603,26 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
         if _wants_html():
             json_ld = web_logic.format_linkset_for_external_use(choice, identifiers, as_json_ld=True)
             response = Response(web_pages.render_linkset(identifiers, qualifier_path, linkset['linkset'], json_ld,
-                                                         choice=True), status=300, mimetype='text/html')
+                                                         choice=True, walked=walked, fallback=fallback,
+                                                         context=context),
+                                status=300, mimetype='text/html')
         else:
             response = Response(json.dumps(linkset, ensure_ascii=False), status=300,
                                 content_type='application/linkset+json')
         response.headers['Link'] = _latin1(link_header)
+        response.headers.update(headers)
         return response
 
     return response_data, status
+
+
+def _resolution_headers(anchor: str | None, match: str | None) -> dict[str, str]:
+    """Resolution-Anchor (the GS1 Digital Link URI of the record whose links answered, on the name the request was
+    made on, like the linkset's anchors) and Resolution-Match (exact or walk-up): ADR 0022, section 2.2. Not part of
+    the GS1 standards; nothing when no record answered."""
+    if not anchor or not match:
+        return {}
+    return {'Resolution-Anchor': _latin1(web_logic.public_root() + anchor), 'Resolution-Match': match}
 
 
 def _forward(location: str, outcome: str) -> Response:

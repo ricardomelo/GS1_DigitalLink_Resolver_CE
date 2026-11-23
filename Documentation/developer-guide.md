@@ -1,6 +1,6 @@
 # Developer guide
 
-How the GS1 Digital Link Resolver CE — Expansion Pack is built: the services, every source file written or
+How the GS1 Digital Link Resolver Suite is built: the services, every source file written or
 changed by the fork, the portal's API and data files, the tests, and how to extend it. Read it together
 with the docstrings in the code, which describe each function, and with the
 [extensions documentation](extensions/README.md), which records the detailed rules and design decisions.
@@ -34,7 +34,8 @@ For installation and configuration see the [README](../README.md); for using the
                      frontend-proxy-service (nginx)
                        ├─ = /, /home/…            → home page (static, in the proxy image)
                        ├─ /                       → web-service:4000         resolution (public)
-                       ├─ /api, /swaggerui        → data-entry-service:3000  data entry API (token)
+                       ├─ /api, /swaggerui        → data-entry-service:3000  data entry API (token; listed
+                       │                                                     addresses only, ADR 0021)
                        └─ /portal/                → portal-service:8000      link management portal
                                                         │ Bearer SESSION_TOKEN, internal network
                                                         ▼
@@ -82,19 +83,36 @@ Files added by the fork are marked **new**; the others are official files with c
 docker-compose.yml               seven services (four with replicas), plus mailpit in the mail-test profile; .env loaded by every service; bind addresses; named volumes
 data_entry_server/src/
   data_entry_namespace.py        /summary, token on /index, BearerAuth in Swagger
-  data_entry_logic.py            read_summary()
-  data_entry_db.py               read_all_documents()
+  data_entry_logic.py            read_summary(); target_problem() (ADR 0048); anchor_problem(), one document id per
+                                 anchor (ADR 0049); fixed texts in error answers (INTERNAL_ERROR, ADR 0050)
+  target_rule.py                 new: the portal's target rule for every target the API is sent (ADR 0048)
+  data_entry_db.py               read_all_documents(); ids split at their first "_" (ADR 0049); DATABASE_ERROR,
+                                 INTERNAL_ERROR, INVALID_ID: fixed texts, the exception in the log (ADR 0050)
+  example_secrets.py             new: the example token and the example password of the service's own database user
+                                 refused, MongoDB's example root password warned about, outside development (ADR 0021,
+                                 ADR 0030; the same file in web_server/src and portal)
+  service_db.py                  new: the service's own MongoDB connection, DATA_ENTRY_DB_* (ADR 0030; the same file in
+                                 web_server/src)
 web_server/src/
-  web_logic.py                   walk-up, linkType forms, choice of a link, 404 rules, linkset
+  web_logic.py                   walk-up, linkType forms, choice of a link, 404 rules, linkset; INTERNAL_ERROR, a fixed
+                                 text in every error answer, the exception in the log (ADR 0050); _read(),
+                                 RecordsUnavailable: the records' database not read answered 503 (ADR 0051);
+                                 records_retry_after(): Retry-After of the time budget (ADR 0052)
+  db_budget.py                   new: one time budget for all the database reads of a request, RESOLVER_DB_TIMEOUT_MS
+                                 (pymongo.timeout(), 5 s by default; ADR 0052)
+  settings_age.py                new: the age of the portal's settings in the six caches, RESOLVER_SETTINGS_MAX_AGE_S
+                                 (Age, state(); 900 s by default; ADR 0053)
   gs1_syntax.py                  new: the GS1 Barcode Syntax Engine in the resolver's process (Node.js only as a fallback)
+  service_db.py                  new: the resolver's own MongoDB connection, RESOLVER_DB_* (ADR 0030)
   web_namespace.py               raw request path, HTML or JSON answers, description file, query string,
-                                 /eh… and /ex… requests
+                                 /eh… and /ex… requests; _records_unavailable(): 503 with Retry-After (ADR 0051)
   epc_binary.py                  new: EPC binary strings (eh/ex) decoded to GS1 Digital Link
   request_log.py                 new: the log of resolver requests: what is kept, a queue and a writer thread, the
                                  retention set in the portal (ADR 0006)
   geoip.py                       new: the approximate location of a request from a GeoIP database file (ADR 0006 §8)
   domains.py                     new: organisations' own domains: stem removed, keys limited to their prefixes (ADR 0009)
   forwarding.py                  new: prefix rules and the resolver of last resort, read from the portal (ADR 0018)
+  resolution.py                  new: the strict mode for safety-critical link types, read from the portal (ADR 0022)
   landing.py                     new: the item's page, its clicks (/_click) and the brands' logos (/_brand) (ADR 0011)
   tdt/                           new: EPC Tag Data Translation 2.2 artefacts (GS1's files, unchanged)
   web_pages.py                   new: HTML pages (errors, linkset) in twelve languages (page_texts.json, ADR 0014),
@@ -102,27 +120,33 @@ web_server/src/
   page_texts.json                new: the texts of the pages and the item's page, and link type names, per language
   public/gs1resolver.json        description file template
 frontend_proxy_server/
-  nginx.conf                     routes for /, /home/, /portal/, /api, /swaggerui
+  nginx.conf                     routes for /, /home/, /portal/, /api, /swaggerui; request limits per address (ADR 0031)
+  api-access.sh                  new: who may use /api and /swaggerui, the trusted proxies, the request limits and
+                                 the access log's choice, written when the container starts (ADR 0021, 0031, 0043)
   home/                          new: index.html, home.css, home.js, images
 portal/                          new: the link management portal
   app.py                         Flask application: pages, API, sessions, jobs
+  example_secrets.py             the example SESSION_TOKEN and database users' passwords refused outside development (ADR 0021)
   gs1.py                         keys, qualifiers, prefixes, link types, languages, Digital Link URIs
   syntax.py                      data attributes through the GS1 Barcode Syntax Engine
   label.py                       labels: QR code and an EAN/UPC beside it, sizes; SVG, PNG, PDF, ZIP (ADR 0010)
   linear.py                      EAN-13, UPC-A, EAN-8 and UPC-E encoding (ADR 0010)
   sheet.py                       spreadsheet import and export
-  linkcheck.py                   link checker with SSRF guard
+  linkcheck.py                   link checker: HTTPS only, every hop checked, 2 requests per host at once (ADR 0029)
+  outbound.py                    requests to addresses users choose: resolved once, connected to the address checked (ADR 0029)
   store.py                       the portal's database: connection, indexes, settings, shared lock
   users.py                       user store and roles
   tenants.py                     tenants: organisations that own GS1 Company Prefixes (ADR 0002)
   exportlimits.py                limits on exports: the installation's maximum, each organisation's per role (ADR 0012 §8)
+  failcount.py                   failed sign-ins naming no account, counted per hour, journalled once an hour (ADR 0031)
   meta.py                        who created and last changed each record
-  journal.py                     history of records and audit trail, retention
+  journal.py                     history of records and audit trail, retention, hash chains and their verification
   migrate.py                     one-off move of the files of earlier versions into the database
   jobs.py                        background jobs: states, claim, heartbeat, the worker's announcement
   worker.py                      the job worker (portal-worker service, or a thread with PORTAL_WORKER=embedded)
   mail.py                        outgoing e-mail through an SMTP relay; "python mail.py test <address>" (ADR 0004)
   mailtexts.py                   the texts of the e-mail messages in pt-BR and en-GB; mail_languages.json the others
+  sessions.py                    server-side session records, ended at sign-out and by account changes (ADR 0034)
   tokens.py                      single-use links: invitations and password recovery
   notify.py                      notifications: categories, the user's choices, the "mail" job
   apikeys.py                     API keys of the tenant API: creation, hash, revocation, request limit (ADR 0005)
@@ -133,14 +157,21 @@ portal/                          new: the link management portal
   domains.py                     organisations' own domains: rules, DNS proof, defaults, label address, checks (ADR 0009)
   branding.py                    brands of the item's page per prefix: rules, logo upload (ADR 0011)
   sso.py                         single sign-on per organisation, OpenID Connect (ADR 0012)
+  sealed.py                      secrets the portal stores and uses again, sealed with the data key (ADR 0044)
   epc.py                         the EPC of every key the Tag Data Standard encodes, for RFID and NFC tags (ADR 0010 §8)
   epc_schemes.json               the TDT levels epc.py reads, generated from web_server/src/tdt by tools/gen_epc_schemes.py
   gcp.py                         GS1's GCP length table: checked, stored, looked up; a command line (ADR 0015)
   privacy.py                     the installation's privacy notice, by version (ADR 0017)
+  about.py                       the About page's facts: the version written at the build, the repository (ADR 0024)
+  third_party.json               the About page's components: name, group, licence, address (ADR 0024 §2.3)
   forwarding.py                  forwarding by prefix and the resolver of last resort; the overview's figures (ADR 0018)
+  resolution.py                  the strict mode for safety-critical link types per organisation (ADR 0022 §2.4)
+  targets.py                     the hosts an organisation's targets may point to (ADR 0037 §2.2)
+  bodies.py                      the shape of every JSON body, checked before its route (ADR 0040)
   appearance.py                  the installation's title, logo, tab icon and colours; its style sheet and pages (ADR 0019)
   openapi.json                   its OpenAPI 3.1 description, served at /portal/api/v1/openapi.json
-  db_init.py                     creates the portal's database user (portal-db-init service)
+  db_init.py                     creates the database users of the portal, the resolver and the data entry API (ADR 0030),
+                                 moves and seals the journal (portal-db-init)
   create_user.py                 command-line user administration
   static/                        index.html, login.html, app.js, login.js, password.js, i18n.js, app.css,
                                  appearance.js (the installation's title and logo on every page, ADR 0019)
@@ -157,13 +188,22 @@ portal/                          new: the link management portal
   tools/gen_engine_messages.py   writes (or --check, --summary) engine_messages.json from an engine build
   tools/dictionary_diff.py       what changes between two generated dictionaries (the weekly issue)
   assets/fonts/                  Liberation Sans for the label text (OFL)
-  Dockerfile, requirements.txt
+  Dockerfile                     the image; pip installs requirements.txt with --require-hashes (ADR 0033)
+  requirements.in                the portal's direct dependencies (ranges); requirements.txt locks them with hashes
 scripts/                         new: install.sh, templates/, resolver-backup.sh, resolver-backup.cron,
                                  restore-rehearsal.sh, rotate-secrets.sh, custom-domains.sh (+ .cron),
                                  geoip-update.sh (+ .cron), upgrade-from-official.sh
 dev-tests/                       new: development tests, their pytest layer and the screenshot script
+  requirements.in, .txt          the tests' environment (the three services + test tools), locked with hashes
+  lock-dependencies.sh           writes every Python lock file with uv: the tests' first, each service's inside it (ADR 0033)
 .github/workflows/dev-tests.yml  new: continuous integration (development tests on GitHub Actions)
 .github/actions/dev-tests-setup/ new: runner set-up for the tests, with the pinned versions
+.github/dependabot.yml           new: weekly update proposals for the locks, image digests and actions (ADR 0033)
+.github/workflows/supply-chain.yml new: known vulnerabilities of the locks and the five images, SBOMs (ADR 0033)
+.github/supply-chain/            new: audit.py (reads pip-audit's and npm audit's reports), accepted.yaml (reviewed
+                                 exceptions), install-trivy.sh (Trivy by version and SHA-256), requirements.in/.txt
+                                 (pip-audit, locked with hashes)
+SECURITY.md                      new: how to report a vulnerability privately (ADR 0033)
 Documentation/                   README index, user guide, features, history, this guide,
                                  extensions/ (detailed documentation, changelog), images/,
                                  upstream-README.md
@@ -174,13 +214,13 @@ tests/, useful_external_python_scripts/   official
 
 | Service | Build | Port | Volumes | Containers |
 |---|---|---|---|---|
-| `database-service` | `database_server/` | `${DATABASE_BIND_ADDRESS:-0.0.0.0}:27017` | database data | 1 (`database-server`) |
-| `data-entry-service` | `data_entry_server/` (gunicorn) | internal 3000 | — | `DATA_ENTRY_SERVICE_REPLICAS` |
-| `web-service` | `web_server/` (gunicorn) | internal 4000 | — | `WEB_SERVICE_REPLICAS` |
+| `database-service` | `database_server/` | `${DATABASE_BIND_ADDRESS:-127.0.0.1}:27017` | database data | 1 (`database-server`) |
+| `data-entry-service` | `data_entry_server/` (two stages: Node.js and `gs1encoder`, application; gunicorn) | internal 3000 | — | `DATA_ENTRY_SERVICE_REPLICAS` |
+| `web-service` | `web_server/` (three stages: syntax engine, Node.js and `gs1encoder`, application; gunicorn) | internal 4000 | — | `WEB_SERVICE_REPLICAS` |
 | `portal-db-init` | `portal/` (`python db_init.py`, runs once at each start) | — | — | 1 |
 | `portal-service` | `portal/` (two stages: syntax engine, application; gunicorn) | internal 8000 | `resolver-portal-config:/app/config` | `PORTAL_SERVICE_REPLICAS` |
 | `portal-worker` | `portal/` (`python worker.py`) | — | `resolver-portal-config:/app/config` | `PORTAL_WORKER_REPLICAS` |
-| `frontend-proxy-service` | `frontend_proxy_server/` (nginx 1.30) | `${PROXY_BIND_ADDRESS:-0.0.0.0}:8080` | — | 1 (`frontend-proxy-server`) |
+| `frontend-proxy-service` | `frontend_proxy_server/` (nginx 1.30) | `${PROXY_BIND_ADDRESS:-127.0.0.1}:8080` | — | 1 (`frontend-proxy-server`) |
 | `mailpit` | image `axllent/mailpit`, profile `mail-test` only (a test relay, [ADR 0004](adr/0004-e-mail.md)) | `127.0.0.1:8025` (its pages and API) | — | none unless started with `--profile mail-test` |
 
 Every service reads `.env.example` and then `.env` (Compose ≥ 2.24, `required: false`), so `.env` holds
@@ -198,9 +238,16 @@ reads `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD`, `PORTAL_DB_H
 request log `RESOLVER_LOG_DAYS`, `PORTAL_TIME_ZONE` and `PORTAL_STATS_DAYS`, and for monitoring `PORTAL_MONITOR_*` and
 `PORTAL_ALERT_404_*` (ADR 0008). The resolver reads `RESOLVER_LOG_DAYS`, `RESOLVER_LOG_COUNTRY_HEADER`,
 `RESOLVER_LOG_ADDRESS_HEADER` and `RESOLVER_GEOIP_DB` (the GeoIP database, `/geoip` mounted read only from the
-repository's `geoip/` folder; ADR 0006, section 8) and writes its log with the root `MONGO_URI` it already has; it reads
+repository's `geoip/` folder; ADR 0006, section 8) and writes its log with its own database user; it reads
 the retention set in the portal from the portal's database with the same connection. `portal-db-init` alone
-receives the root `MONGO_URI` on the portal's side; the portal's and the worker's are blanked. The worker has the portal's settings (it imports `app.py` and runs the
+receives the root `MONGO_URI` ([ADR 0030](adr/0030-least-privilege-services.md)); every other service's is blanked
+and the resolver, the data entry API and the portal connect as their own users (`RESOLVER_DB_*`, `DATA_ENTRY_DB_*`,
+`PORTAL_DB_*`: user, password, host, or a complete `*_DB_URI`), after `portal-db-init` has finished well. The
+resolver's, the data entry API's and the portal's images run as unprivileged users (uid 10001). Every base image is
+named by tag and digest and every Python package comes from the service's `requirements.txt` with its file hashes;
+the resolver's and the data entry API's images take `node` from a stage built on the official `node:24-bookworm-slim`,
+where `gs1encoder` is installed from the toolkit's `package-lock.json` with `npm ci --ignore-scripts` and refused when
+it is not `x-gs1-syntax-engine`'s release ([ADR 0033](adr/0033-supply-chain.md)). The worker has the portal's settings (it imports `app.py` and runs the
 same start-up, which is safe under the shared locks).
 
 ## 4. Request flows
@@ -208,7 +255,14 @@ same start-up, which is safe under the shared locks).
 **A scan.** `GET /01/09506000134352/10/L2026A` → proxy → web-service. The engine checks the URI; the
 resolver reads the document of `/01/09506000134352`, chooses the entry of the qualifier set (walking up to
 a less specific entry when there is none), picks the link by `linkType`, language, media type and context,
-and answers `307` to it with the scan's query string appended exactly as sent.
+and answers `307` to it with the scan's query string appended exactly as sent. A 307 or 300 names the record that
+answered in `Resolution-Anchor` and whether the request walked up to it in `Resolution-Match` (`exact` or `walk-up`;
+[ADR 0022](adr/0022-answering-level.md) §2.2). With the strict mode of the key's organisation on, a request for a
+safety-critical link type that names a batch or serial number is answered only by a record naming it; a link held
+only by a less specific level is withheld: `404` with `Resolution-Match: withheld` (§2.4). When the links given do
+not serve the request's `Accept-Language` or `context`, the answer carries `Resolution-Fallback` (`language`,
+`context`); a browser asking for one of the five safety-critical types then receives the page of a choice (300)
+instead of the redirect ([ADR 0028](adr/0028-language-fallback.md)).
 
 **The request's event** ([ADR 0006](adr/0006-resolver-request-log.md)). Every resolution route calls
 `request_log.note()` with what it knows (form, key, qualifiers, query string, link type asked, languages, the level
@@ -238,23 +292,43 @@ own query string.
 3. `store_record()` reads the current document (`GET /api/01/…`) and chooses the calls:
    new entry → `POST /api/new`; existing entry → `PUT` (merge) and then a partial `DELETE` of the targets
    the user removed, in that order so the record is never without targets;
-4. `record_change()` updates the record's metadata (`record_meta`) and appends a version to the journal;
+4. each data entry call that changes the record runs inside `journal_first()` (ADR 0026 §2.1): the version (`create`,
+   `update`) is written to the journal **before** the call, and the save refused with 503 `journal.unavailable`,
+   nothing changed, when it cannot be; a call that then fails adds `change-failed` (`ref`: the attempt's chain and
+   sequence number, `detail`: the action and the message code); a success updates the record's metadata
+   (`record_meta`). The records `turn_to_explicit_defaults()` changes are journalled the same way, one `update` each;
 5. answers a message code (`save.created`, `save.updated`), translated by the browser.
 
-**Deleting one record of a key.** The API can only delete a whole document, so `delete_record()` deletes it
-and writes the other entries back with `POST /api/new`; if that fails, the original document is restored.
+**Deleting one record of a key.** `remove_record()` (the editor's `delete_record()` and the tenant API) reads the
+key's records to find it (`record.notFound`), then `delete_one_record()` sends the data entry API's record-level
+delete, `DELETE /api/{ai}/{value}` with `{"removeRecord": true, "qualifiers": [...]}`: one atomic write of the key's
+document, the other records untouched ([ADR 0023](adr/0023-record-level-delete.md)); a failure is
+`upstream.deleteFailed` with every record in place. The official API deletes whole documents only, so the portal used to
+delete the document and write the other records back: a window in which the key answered 404, for good when the second
+call failed.
+
+**Another writer at the same moment.** Every write of the data entry API is conditional on the key's document as it
+read it, and applied again on top of another writer's change ([ADR 0027](adr/0027-conditional-writes.md)); when the
+key keeps changing it answers 409 and writes nothing. `refused_upstream()` turns that 409, for `POST /new`, `PUT`, the
+record-level delete, fixing serial numbers and the explicit default links, into 409 `upstream.conflict` (open the record
+again and repeat the change) instead of the operation's 502 code; the journal adds `change-failed` as for any failure.
 
 **A spreadsheet import.** `POST /import/preview` reads the file (`sheet.py`), validates every row with the
 editor's rules, compares with the resolver and keeps the plan as a `prepared` job (30 minutes).
 `POST /import/apply` queues it; a worker claims it and `run_import_job()` writes the records one by one with
-`store_record()`, storing each result as it goes; the browser polls `GET /import/status`. `POST /import/cancel`
+`store_record()`, storing each result as it goes; the browser polls `GET /import/status`. Before each record the worker
+reads the account again and sets the scope from it, as a request does: `import_refusal()` stops the import (failed,
+`import.accountChanged`, journalled as `import-refused` in the trail of the job's organisation) when the account was
+removed, replaced (the job keeps the organisation and creation date of the account that prepared it), disabled, its
+organisation disabled, or it is no longer an editor ([ADR 0041](adr/0041-queued-import-account.md)). `POST /import/cancel`
 stops it after the record in hand (the records written stay).
 
 **A link check.** `POST /links/check` checks the few targets of one record at once. `POST /links/jobs` (every
 record, import preview) queues a job; the worker's `run_link_job()` checks each address once with
 `linkcheck.check_many()`; `GET /links/jobs/{token}` reports progress and problems; the last full check is
 kept in the database (settings `lastFullCheck`) for `GET /links/last`. `POST /links/jobs/{token}/cancel` stops a
-check within a second, with no result.
+check within a second, with no result. One link check is queued or running per organisation at a time (`jobs.active()`;
+a second one answers 422 `linkcheck.busy`, [ADR 0029](adr/0029-outbound-requests.md) §2.3).
 
 **A background job** ([ADR 0001](adr/0001-portal-state-in-mongodb.md), section 3.3). States `prepared` →
 `queued` → `running` → `finished`, `failed` or `cancelled` (stopped by its user, section 3.3.1: a queued job at once,
@@ -277,8 +351,8 @@ Organised in sections (comment lines `# ---- …`):
 
 | Section | Contents |
 |---|---|
-| configuration | environment, Flask settings (session cookie `gs1resolver_portal`, HttpOnly, SameSite=Lax, Secure over HTTPS, sliding expiry), loggers (`portal`, `portal.audit`); at start-up `migrate.run()`, `journal.apply_retention()`, then the first user from `PORTAL_ADMIN_*` |
-| authentication | `LoginThrottle` (5 failures → 15 minutes, per user name and per address, in the `login_failures` collection), `current_user()` with the password fingerprint and `tenant_blocked()`, `set_scope()` and `require_login`, `role_required()`, `admin_required`, `server_admin_required`, `allowed()` / `check_access()` (owner of the identifier = scope of the request, then the user's prefixes), `log_event()` (tenant and `byOperator` of each event), same-origin check for writes, security headers, error handlers |
+| configuration | environment, Flask settings (session cookie `gs1resolver_portal`, HttpOnly, SameSite=Lax, Secure over HTTPS, sliding expiry), loggers (`portal`, `portal.audit`); at start-up `migrate.run()`, `journal.apply_retention()`, `journal.seal_unsealed()` (a warning without `PORTAL_JOURNAL_KEY`), then the first user from `PORTAL_ADMIN_*` |
+| authentication | `LoginThrottle` in the `login_failures` collection: per user name and address a delay after 3 failures (15 seconds, doubling up to 15 minutes, `delay()`), per address 20 failures → 15 minutes (`retry_after()`), never a lock by user name alone (finding F-005); failed sign-ins naming no account counted by `failcount.note()` instead of journalled one by one (ADR 0031); `login_keys()`, `wait_answer()`, `current_user()` with the password fingerprint, the session record (`session_valid()`, ADR 0034) and `tenant_blocked()`, `open_session()` and `new_session_id()`, `set_scope()` and `require_login`, `role_required()`, `admin_required`, `server_admin_required`, `allowed()` / `check_access()` (owner of the identifier = scope of the request, then the user's prefixes), `log_event()` (tenant and `byOperator` of each event), same-origin check for writes, security headers (`security_headers()`: `CONTENT_SECURITY_POLICY`, `Cross-Origin-Opener-Policy: same-origin`, `nosniff`, `X-Frame-Options: DENY`, `same-origin` referrer, `no-store`; [ADR 0038](adr/0038-browser-hardening.md) §2.1), error handlers |
 | resolver API client | `resolver()` (one API call with the token), `read_entries()`, `find_entry()`, `describe_entry()` (product, qualified or other), `record_change()` |
 | form → Resolver CE v3 | `request_key()`, `request_qualifiers()`, `build_document()` |
 | pages and assets | `/portal/`, `/portal/login`, static files (`PUBLIC_ASSETS` before sign-in — among them `logo.svg`, the project's logo —, `PRIVATE_ASSETS` after) |
@@ -290,10 +364,25 @@ Organised in sections (comment lines `# ---- …`):
 | background jobs | `JOB_RUNNERS` (job type → function for `worker.py`); the embedded worker when `PORTAL_WORKER=embedded` |
 
 Errors are exceptions carrying a message code: `gs1.ValidationError` (422), `AccessDenied` (403),
-`users.UserError` (422), `UpstreamError` (502/503, detail logged only). Since step 3 of ADR 0001 nothing in
+`users.UserError` (422), `UpstreamError` (502/503, detail logged only; 409 `upstream.conflict` when the data entry
+API refused a write because the key kept changing under other writers, `refused_upstream()`, [ADR
+0027](adr/0027-conditional-writes.md)). Since step 3 of ADR 0001 nothing in
 the portal depends on the memory of one process: gunicorn runs `WEB_CONCURRENCY` processes (two by default)
-with eight threads each, in every replica. `_secret_key()` writes the fallback `secret.key` to a file of
-its own and links it to the final name, so processes starting together all read one complete key.
+with eight threads each, in every replica. `_secret_key()` writes the fallback `secret.key` with
+`sealed.key_file()`: to a file of its own, linked to the final name, so processes starting together all read one
+complete key. At start-up `sso.seal_stored()` seals the client secrets stored in clear by earlier versions (and those
+of an earlier data key), and a warning names `data.key` when `PORTAL_DATA_KEY` is not set and secrets are stored.
+
+### `sealed.py` — sealed secrets
+
+[ADR 0044](adr/0044-encrypted-backups-and-sealed-secrets.md). `seal(text, place)` gives `{"sealed": 1, "kid", "nonce",
+"data"}`: AES-256-GCM (`cryptography`, in the image through `pyjwt[crypto]`) under `keys()[0]`, with `place` (e.g.
+`sso:<scope>:clientSecret`) as associated data. `keys()`: the current key — `PORTAL_DATA_KEY`, else `data.key` of the
+configuration volume (`key_file()`, created like `secret.key`) — stretched with HKDF-SHA256, then
+`PORTAL_DATA_KEY_PREVIOUS` and, with `PORTAL_DATA_KEY` set, `data.key` when it exists. `open_value(value, place)` tries
+the key named by `kid` first, then the others; a text (stored before sealing) is returned as it is; `None` when nothing
+opens it. `needs_resealing()`: a text, or a `kid` that is not the current key's. `key_id()`: 16 hexadecimal digits of
+SHA-256 over `kid:` and the key.
 
 ### `gs1.py` — GS1 rules
 
@@ -340,7 +429,12 @@ its own and links it to the final name, so processes starting together all read 
 - `company_part()` / `within_prefixes()` for governance; `link_key()` (type + languages + context).
 - `normalise_language()` (any BCP 47 tag).
 - Text: `without_invisible()`, `ascii_digits()`, `clean_text()` (NFC, no control characters),
-  `normalise_url()` (HTTPS only, no spaces or invisible characters), `guess_media_type()`.
+  `normalise_url()` (HTTPS only, no spaces or invisible characters, then `target_host_problem()`), `guess_media_type()`.
+- Target hosts ([ADR 0037](adr/0037-target-addresses.md) §2.1): `target_host_problem(url)` → `link.urlUserInfo`
+  (anything before an `@`), `link.urlAddress`, `link.urlHost`, `link.urlInvalid` (a port that is not a number) or
+  `None`; `host_problem(host)` for a host alone (read as a browser reads it: NFKC, ideographic full stops as dots; an
+  IPv6 address or a last label that is a number is an address; a name without a dot, an empty label, a character
+  outside letters, digits, `-`, `_` and non-ASCII, or a top-level name of `PRIVATE_TOP_NAMES` is not a public one).
 - `LINK_TYPES` (29 GS1 link types, grouped), `LANGUAGES`, `MAX_DESCRIPTION`.
 
 ### `syntax.py` — data attributes
@@ -397,26 +491,55 @@ centres and relative sizes. `app.label_size()`, `app.label_linear()` read `size=
 ### `sheet.py` — spreadsheets
 
 `FORMATS` (limits per format), `detect_format()`, `read_table()` (`_read_xlsx`, `_read_csv` with encoding
-and separator detection), `map_header()` (column titles in any language, old `gtin` alias),
+and separator detection, both generators of rows of at most `MAX_COLUMNS` (64) cells; `_take()` raises
+`import.tooManyRows` at the first data row past the format's limit, before the rest is read, and keeps every blank
+row as one shared empty list; `_check_unpacked()` unpacks an XLSX file's parts before openpyxl opens it and refuses
+more than `MAX_UNPACKED_MB` (32 MB, `import.unpackedTooBig`) or parts compressed otherwise than stored or deflate;
+no row after `XLSX_LAST_ROW` is read: [ADR 0032](adr/0032-spreadsheet-reading-limits.md)), `map_header()` (column titles in any language, old `gtin` alias),
 `parse_rows()` (rows → records with every row error), `export_rows()`, `write_csv()`, `write_xlsx()`
-(with reference sheets), `protect()` / `unprotect()` against formulas.
+(with reference sheets; every text through `xlsx_text()`, which removes the control characters XLSX forbids, as
+`overview._label()` does for the overview's export: ADR 0040), `protect()` / `unprotect()` against formulas.
 
 ### `linkcheck.py` — link checker
 
-`check_url()` (cached 10 minutes in the `linkcheck_cache` collection, shared by every replica) → `_check()`: follows redirects by hand (at most 5), resolves every host
-and refuses private, loopback and link-local addresses at each step, uses `HEAD` and falls back to `GET`
-without reading the body, reports HTTPS → HTTP downgrades. `check_many()` runs a thread pool with progress.
+`check_url()` (cached 10 minutes in the `linkcheck_cache` collection, shared by every replica) → `_check()`: follows redirects by hand (at most 5),
+reports an `http://` address as `linkcheck.insecureAddress` without a request, requests each hop with
+`outbound.request()` (private addresses refused, the address checked contacted), uses `HEAD` and falls back to `GET`
+without reading the body, reports HTTPS → HTTP downgrades. `check_many()` runs a thread pool (`WORKERS`) with progress,
+at most `PER_HOST` (2) requests to one host at once, the hosts taken in turn, results as they finish; an exception
+from `progress` cancels the addresses not started. `PORTAL_LINKCHECK_ALLOW_PRIVATE=1` (development tests only) lifts
+the address and HTTPS rules.
+
+### `outbound.py` — requests to addresses users choose
+
+[ADR 0029](adr/0029-outbound-requests.md). `request(method, url, allow_private=False, **kwargs)`: `target()` (http or
+https, a host, a valid port, no user information, else `BadAddress`), `addresses()` (the name resolved once; every
+address `is_global()` — IPv4 inside IPv6 forms checked too —, else `PrivateAddress`; none: `Unresolvable`), then a
+`requests` session without the environment's proxies whose `_PinnedAdapter` connects to one checked address while
+keeping the name for SNI and the certificate's check, the `Host` header set to the name; up to `MAX_ADDRESSES` (3)
+tried when one does not connect; redirects never followed. `public_host()` (True, False, None) for checks made when a
+setting is saved. Used by `linkcheck._request()`, `sso._send()` and `domains.probe()`.
 
 ### `store.py`, `users.py`, `tenants.py`, `meta.py`, `journal.py` — the portal's database
 
 `store.py` holds one MongoDB client per process (`store.db()`, created and indexed at the first call;
-`store.col(name)`), the connection settings (`PORTAL_DB_*`, or `PORTAL_DB_URI`; `mongomock://` for the
+`store.col(name)`, which takes `journal` and `journal_heads` — `JOURNAL_COLLECTIONS` — from the journal's own database
+`journal_db_name()`, `<PORTAL_DB_NAME>_journal`, and ignores the refusal to make indexes there, error `UNAUTHORIZED`,
+13: `portal-db-init` makes them; ADR 0026 §2.5.2), the connection settings (`PORTAL_DB_*`, or `PORTAL_DB_URI`; `mongomock://` for the
 development tests), UTC dates (`now()`, `iso()`, `parse_iso()`), values in the `settings` collection
 (`get_setting()`, `set_setting()`) and `lock(name)`, an exclusive lock shared by every process (a document
 `lock:<name>` in `settings`; a lock older than `hold_seconds` is broken). `users.py` writes under the
 `users` lock, so two administrators cannot remove the last enabled one at the same moment; it also hashes
 passwords (Werkzeug), spends the same time for unknown users, and computes the session fingerprint.
-`users.py` also keeps a user's tenant and e-mail address (`clean_email()`, unique), checks that a tenant
+`sessions.py` keeps a record per open session ([ADR 0034](adr/0034-session-records.md)): `open_record(user, via,
+idle_seconds, max_seconds)` returns a random id of 256 bits for the cookie (`COOKIE_KEY`, `sid`) and stores its
+SHA-256 (`digest()`); `valid()` answers whether the id names an unexpired record of that user and renews its end at
+most once per `renewal_seconds()` (a minute, or a quarter of the idle limit); `end()` (sign-out), `end_user(user,
+keep)` and `end_users(names)`. `users.set_password()`, `clear_password()`, `update()` (disabled) and `remove()` end
+the user's sessions, `tenants.update()` (disabled) those of the tenant's users; `app.change_password()` then gives
+the browser a new id.
+`users.py` also keeps a user's tenant and e-mail address (`clean_email()`, unique per organisation, the operator's
+users one scope: `_check_email()`, [ADR 0036](adr/0036-names-and-addresses-across-organisations.md)), checks that a tenant
 user's prefixes lie inside the tenant's and an operator user's outside every tenant's (`_check_scope()`), and
 counts only operator administrators as server administrators (`is_server_admin()`). `tenants.py` creates,
 changes and removes tenants under the same `users` lock (the rules cross both collections:
@@ -424,8 +547,24 @@ changes and removes tenants under the same `users` lock (the rules cross both co
 ([ADR 0002](adr/0002-tenants.md)). `meta.py` keeps creation and last change per record, with the tenant that
 made it (`visible()` hides it from other scopes). `journal.py` stores one document per event with its category
 (`session`, `record`, `admin`), its `tenant` and `byOperator`, and `expiresAt`; `for_record()` (per scope) and
-`search()` (with `scope_query()`) keep the output of the former `journal.jsonl` lines; `apply_retention()`
-updates `expiresAt` when `PORTAL_JOURNAL_*_DAYS` change. Section 8 lists the collections.
+`search()` (with `scope_query()`) keep the output of the former `journal.jsonl` lines (`for_record()` leaves out an
+attempt that a `change-failed` names); `apply_retention()` updates `expiresAt` when `PORTAL_JOURNAL_*_DAYS` change.
+Every event is sealed by `append()` in a hash chain ([ADR 0026](adr/0026-journal-integrity.md)): `chain_of()`
+(`<tenant id or operator>/<category>`), `seq`, `prev`, `hash` (`content_hash()`: SHA-256 of the canonical JSON of every
+field but `_id`, `expiresAt`, `hash`, `mac`), `mac` (`mac_of()`, HMAC-SHA-256 with `key()`, `PORTAL_JOURNAL_KEY`) and
+`kid` (`key_id()`); a unique index on `(chain, seq)` and a retry number events across replicas, a lock the threads of
+one process; `journal_heads` keeps each chain's last `seq` and `hash`. `seal_unsealed(ids=None)` seals events written
+before (marked `sealed: "upgrade"`): `portal-db-init` with the root user, limited to the events it moved
+(`ids`), and the portal at start-up (`app._journal_upkeep()`, which leaves both steps to `portal-db-init` when its
+user is refused, error 13); `append_upgraded(doc)` seals and inserts an event of `journal.jsonl` (`migrate.py`); `verify(chain, receipt)` walks a chain (problems `hash`, `mac`, `prev`,
+`gap`, `start`, `truncated`, `unsealed`, `receipt`; `otherKey` counts events sealed without the current key);
+`chains()`, `parse_receipt()`, `receipt_text()`; `checkpoint()`, in the worker's housekeeping, verifies every chain
+once a day, logs each head (an error for a broken chain) and stores the result in the setting `journalVerified`
+(`{at, chains, broken: [{chain, kind, seq}]}`, read by `last_verification()` and the monitor's check `journal`);
+`record_verification(results)`, called by `GET /audit/verify`, adds the broken chains an administrator's verification
+found and takes out those it found whole (never a wrong receipt). In `app.py`, `write_event()` raises, `log_event()` logs
+an error instead (events written after their change), `journal_first()` wraps record changes. Section 8 lists the
+collections.
 
 **Scope of a request (ADR 0002).** `set_scope()` puts on `g` the account (`user`, `account_role`,
 `account_tenant`, `server_admin`), every tenant (`tenants`, read once per request) and what applies: `tenant`
@@ -436,7 +575,8 @@ checks `allowed()` again before writing each record.
 
 ### `jobs.py`, `worker.py`
 
-`jobs.py` is the queue: `create()`, `get()` (the user's job of a type, not expired), `queue_prepared()`,
+`jobs.py` is the queue: `create()`, `get()` (the user's job of a type, not expired), `active()` (a queued or running
+job of a type with the fields given: an organisation's link check), `queue_prepared()`,
 `cancel()` (the user's import or link check: a queued one cancelled, a running one marked), `status()` (state,
 progress, `stalled`, `cancelling`, `error`), and for workers `announce()` / `withdraw()` /
 `workers_alive()`, `requeue_stale()`, `claim()` (the oldest queued job whose `notBefore`, if any, has
@@ -446,7 +586,8 @@ after their write when the user asked to stop), `release()` (a job marked to sto
 `cancelled()`, `fail()`. The types are
 `import`, `linkcheck` and `mail`. Between jobs, about once an hour (`HOUSEKEEPING_SECONDS`), the worker
 runs `app.HOUSEKEEPING` (`Worker.housekeep()`; a failing task is logged and the others run): today
-`notify_expiring_keys()` and `requestlog.aggregate()`; and every `monitor_seconds` (`app.MONITOR_SECONDS`, from
+`notify_expiring_keys()`, the request log's upkeep, `recheck_domains()` (ADR 0035), `journal.checkpoint()` and
+`failcount.journal_closed_hours()`; and every `monitor_seconds` (`app.MONITOR_SECONDS`, from
 `PORTAL_MONITOR_MINUTES`; 0: never) `app.MONITORING`, today `monitor.run()`. Timings are constants at the top (`HEARTBEAT_SECONDS` 10,
 `STALE_SECONDS` 120, `MAX_ATTEMPTS` 3, `WORKER_ALIVE_SECONDS` 30, `STALLED_SECONDS` 15, expiries 30 minutes
 and one day). `worker.py` has `Worker` (`run_once()`, `loop()`, `stop()`), `start_embedded()`, `wake()` and
@@ -473,7 +614,8 @@ only the SHA-256 is stored), `peek()`, `consume()` (atomic: `find_one_and_delete
 validity comes from `PORTAL_INVITE_HOURS` and `PORTAL_RESET_MINUTES`.
 
 `notify.py` maps each message to a category (`TEMPLATES`, `CATEGORIES`: `account` and `security` always sent,
-`jobs` optional and off by default), checks the recipient (`reachable()`: enabled, of an enabled tenant;
+`jobs` optional and off by default, `alerts` optional and on by default: monitoring, a lapsed domain, a forwarding rule
+over the organisation's prefixes), checks the recipient (`reachable()`: enabled, of an enabled tenant;
 `wants()`: the user's choice for optional categories), composes the message in the user's language and queues a
 `mail` job (`send()`, which never raises: the action that caused the message has happened). `run_mail_job()` (in
 `app.JOB_RUNNERS`) skips an account that can no longer receive, sends, puts the job back for `RETRY_MINUTES` (1, 5,
@@ -485,12 +627,16 @@ In `app.py`: `send_link()` (issues a link and queues its message; the link is wi
 queued), `forgot_password()` (the same answer and at least `RECOVERY_SECONDS` for every input; limits
 `RECOVERY_PER_LOGIN` and `RECOVERY_PER_ADDRESS` through `LoginThrottle.over()`), `check_password_link()` and
 `set_password_by_link()` (`BAD_LINKS_PER_ADDRESS`; the password set, every other link and session of the account
-ended, a locked account opened again), `preferences_of()` and the preferences endpoints, and the calls of
-`notify.send()` after a password change, a change of e-mail address, the failed sign-in that locks an account,
-an import and a check of every record. `create_user()` invites when asked, mail is on and there is an address;
+ended, the user name's sign-in delays forgotten from every address, `clear_user()`), `preferences_of()` and the preferences endpoints, and the calls of
+`notify.send()` after a password change, a change of e-mail address, the fifth failed sign-in of an account in 15 minutes (`sign-in-failures`),
+an import and a check of every record. `create_user()` invites when asked, mail is on and there is an address, inside
+`name_refusals_counted()` (ADR 0036: an organisation's administrator's `users.exists` refusals counted under
+`name-taken:<user>`, 5 in 15 minutes (`NAME_REFUSALS`) → `users.nameLimit` 429 through `NameLimit`; one for another
+organisation's name journalled as `user-create-refused` in the operator's trail; server administrators exempt);
+`forgot_password()` sends a link to each account `find_logins()` names;
 `reset_user()` sends a link when it can (a new invitation for an invited user) and otherwise makes a temporary
 password as before. `users.py` gains the fields `invited`, `language`, `languageChosen` and `notify`, and
-`clear_password()`, `find_login()` (a user name, ignoring case, or an address), `note_language()` and
+`clear_password()`, `find_logins()` (a user name, ignoring case, or every account with an address, ADR 0036), `note_language()` and
 `set_preferences()`; `create()` without a password makes an invited account.
 
 ### `apikeys.py`, `api_v1.py`, `openapi.json` — the tenant API
@@ -542,7 +688,12 @@ with an `ai` in `KEY_SET`; the same objects as `total` and `days` outside the wh
 `overview.usage_and_quality()` takes people's figures and the quality, `usage.noKey` being the installation's total
 less `keyed`'s; `monitor.spikes()` matches `ai` in `KEYS` in the events, the counts and the baseline.
 `record_api_call()` and `list_api_calls()` keep and list the tenant API's calls (`api_requests`); `api_v1.py` records
-each call in an `after_request` hook, with the key seen (also a refused one), the route's template, status and time.
+each call in an `after_request` hook, with the key seen (also a refused one), the route's template, status and time. A
+call without a valid key is counted (ADR 0031 §2.2): an upsert on `b` (`<minute>|<method>|<operation>|<status>`, unique
+where present) with `$inc` `n` and `ms` and `$setOnInsert` `t` (the minute), `expiresAt`, `m`, `op`, `s`; a
+`DuplicateKeyError` (another replica inserted the minute first) is followed by the same update without upsert. Rows
+carry `count` (`n`, 1 for a call stored alone) and, for a counted row, the average `ms`; `api_call_count(query)` sums
+`n` (1 where absent) for the overview.
 
 Section 8 of the ADR (item 9.5): rows carry `browser`, `region` and `city`; `event_query()` filters `browser`
 (`BROWSERS`) and `country`; `count_day()` and `collect()` group also by `br`, `c`, `rg` and `ci` (`GROUP_ID`,
@@ -577,7 +728,9 @@ requests without a key count) and today's raw events grouped the same way; usage
 quality every request. `record_quality()` counts the records, keys by type, `noKeyRecord`, `breaksRules`, records
 without a description, keys nobody scanned in the period and records with link problems. `governance()` reads
 `journal.counts(scope, start, end, allowed)` (actions, and record changes per user, within the user's prefixes), the
-accounts of the scope by role, the API keys (active, expiring within 14 days) and `api_requests` (calls, refused).
+accounts of the scope by role, the API keys (active, expiring within 14 days) and `api_requests` (calls, refused, each
+counted document for its `n`: `requestlog.api_call_count()`); `journal.counts()` counts an event with a `count` field
+(failed sign-ins naming no account, an hour at a time: `failcount.py`) for that many.
 `summary_rows()` and `tables()` turn an answer into rows labelled with the texts the browser sends (the message codes
 when none are sent); `write_csv()` and `write_xlsx()` make the files (cells protected, sheet names cleaned for Excel).
 `api_v1.v1_stats()` serves `usage`, `quality` and `records` to keys with `stats:read`.
@@ -587,13 +740,18 @@ when none are sent); `write_csv()` and `write_xlsx()` make the files (cells prot
 [ADR 0008](adr/0008-monitoring-and-alerts.md). `run()` takes the `monitor` lock without waiting (another replica: the
 round is skipped) and calls `_run(now)`: `check_resolver()` (`requests.get` of `PORTAL_MONITOR_URL` and of the probe,
 redirects not followed; the `failures` counter makes an alert only after `FAILURES_BEFORE_ALERT` rounds),
-`check_backup(now)` (the setting `backup.last` the backup script writes), `check_certificate(now)` (once an hour;
+`check_settings()` (the resolver's `GET /heartbeat` through the proxy, `heartbeat_url()`: an alert at once while it
+says `"settings": "stale"`, templates `alert-settings-stale` and `alert-settings-current`; unknown when it does not
+answer or has no `settings`; finding F-033, ADR 0053), `check_backup(now)` (the setting `backup.last` the backup script writes), `check_certificate(now)` (once an hour;
 `tls_expiry(host)` opens a verified TLS connection: `SSLCertVerificationError` is an alert, any other error unknown)
 `_update_space(now)` (`check_space()`: the request log's `space_share()` — alert from `SPACE_ALERT` %, a message at
 each new step of `SPACE_STEP` kept in `notifiedLevel`, no reminder, resolved below `SPACE_ALERT`; ADR 0006 §9),
 `check_gcp_table(now)` (`gcp_age()`: the days since the date GS1 gave the list in use against `gcp_days()`,
-`PORTAL_MONITOR_GCP_DAYS`; unknown without a list or at 0; reminded every `GCP_REMIND_DAYS`, `_update(remind_hours=…)`)
-and `spikes(now, tenants)` (the last hour's `o: "unknown"` grouped by key, bucketed by `requestlog.owner_of()` into
+`PORTAL_MONITOR_GCP_DAYS`; unknown without a list or at 0; reminded every `GCP_REMIND_DAYS`, `_update(remind_hours=…)`),
+`check_journal()` (`journal.last_verification()`, the setting `journalVerified` that `journal.checkpoint()` writes once a
+day and `journal.record_verification()` brings up to date after an administrator's verification: an alert while a chain
+is broken, templates `alert-journal` and `alert-journal-ok`, the first ten broken chains in `detail.broken`; unknown
+before the first verification; ADR 0026 §2.5) and `spikes(now, tenants)` (the last hour's `o: "unknown"` grouped by key, bucketed by `requestlog.owner_of()` into
 the installation and each organisation, against the usual hour from `request_daily` of the 7 days before). `_update()`
 stores each state in `alerts` and decides the message: into alert → the alert template; still in alert after
 `REMIND_HOURS` → again; back to `ok` → the resolved template (none for spikes; `unknown` never resolves). `recipients()`
@@ -609,17 +767,32 @@ only_tenant, kind, since, until)` lists them, newest first, in the caller's scop
 
 ### `domains.py` — organisations' own domains
 
-[ADR 0009](adr/0009-tenant-domains.md). `clean_name()` (IDNA, host name rules, not the installation's), `clean_stem()`,
+[ADR 0009](adr/0009-tenant-domains.md). `clean_name()` (IDNA, host name rules, not the installation's), `clean_stem()`
+(one to three segments; not an AI; not a first segment in `RESERVED_STEM` — `api…`, `swaggerui…`, `portal`, `home`,
+`.well-known`, any case — which the installation's proxy gives to something other than the resolver, ADR 0045),
 `clean_mode()`; `create()`, `update()` (mode, stem, `defaultFor` checked by `_check_defaults()`: the organisation's
 prefixes, or for the operator none of an organisation's, one domain per prefix), `remove()`, all in the scope of the
 account (`app.domain_scope()`, read only during support access: `ReadOnlySupport`, 403 `domains.readOnly`).
-`verify()` looks for `gs1resolver-verify=<token>` among `txt_records("_gs1resolver.<domain>")` (dnspython; the tests
-replace it) and never un-verifies; `recheck_all()` (in `app.HOUSEKEEPING`) records `seenAt` once a day.
+Claims and lapsed domains ([ADR 0035](adr/0035-domain-claims-and-lapsed-proofs.md)): `create()` makes a claim under
+`pending_id(name, tenant)` (`"<name> <tenant or ->"`) with `name` and `expiresAt` (`PENDING`, 7 days; TTL index), refused
+(`domains.exists`) when the scope has the name already or another scope verified it and it has not lapsed (`_taken()`);
+`_live()` leaves out claims whose time is up before MongoDB deletes them; `get(name, tenant)` finds the scope's domain or
+claim by name; `name_of(doc)`. `verify()` looks for `gs1resolver-verify=<token>` among
+`txt_records("_gs1resolver.<domain>")` (dnspython; the tests replace it) and returns `(domain, replaced)`: a claim found
+is written under the key `<name>` (verified, no `expiresAt`) and the other claims of the name are deleted; another
+scope's domain of that name refuses it (`domains.exists`) unless lapsed, when it and its host report are deleted
+(`replaced`, journalled `domain-released` by the route); a verified domain found is seen now and no longer lapsed.
+`recheck_all()` (through `app.recheck_domains()` in `app.HOUSEKEEPING`) looks at each verified domain's record once a
+day: found, `seenAt` and no `lapsedAt`; missing for `LAPSE` (7 days) since `seenAt` (or `verifiedAt`), `lapsedAt` is set
+and the domain returned. `usable(doc)` (verified, not lapsed) decides what `verified()`, `default_for()` and
+`label_base()` offer. `upgrade()` (at start-up, idempotent) gives every document its `name` and turns an unverified one
+into a claim. `app.recheck_domains()` also runs `sso.recheck_proofs()` and, for each domain or proof that lapsed,
+journals `domain-lapsed` (by `-`, in the scope's trail) and sends `alert-domain-lapsed` to `monitor.recipients()`.
 `label_base(anchor, tenant, choice, installation)` gives the address in front of the GS1 path: the default domain of
 the record's company part (`default_for()`, longest prefix), the installation's, or a verified domain of the scope
 (else `domains.unusable`); `app.link_base()` uses it for the editor's preview, labels, the record's `digitalLink` and the
-tenant API. `check()` requests through the domain with `probe()` (no redirects followed, the link checker's guard
-against private addresses): the description file at the domain's root, or a redirect of a code of the organisation to
+tenant API. `check()` requests through the domain with `probe()` (`outbound.request()`: no redirects followed, private
+addresses refused, the address checked contacted, ADR 0029): the description file at the domain's root, or a redirect of a code of the organisation to
 the installation's same path and query. Section 7 of the ADR: `certificate(doc, host)` (the card's state: `None` for
 a domain not verified or redirected, `pending` until the host reports, `served` with `until`, `failed` with `error`,
 `attempts` and `nextAttemptAt`), `host_states(names)` and `with_hosts(docs)` (the reports in `domain_hosts`, written
@@ -655,16 +828,34 @@ explicit default links or with a page in the file skip the shared-default checks
 
 ### `sso.py` — single sign-on
 
-[ADR 0012](adr/0012-single-sign-on.md). Configurations in `sso` (`_id` the tenant or `operator`): `save()` (issuer
-checked by `check_url()` — https and a public address unless `PORTAL_SSO_ALLOW_INSECURE` —, client ID, the secret kept
-when not given, `clean_domains()` unique in the installation, complete when `enabled`), `remove()`, `public()` (never
-the secret), `for_email()`, `password_off_for()` (never for the operator's users), `note()` (last sign-in or failure).
+[ADR 0012](adr/0012-single-sign-on.md), [ADR 0025](adr/0025-sso-domain-proof-and-subject.md). Configurations in `sso`
+(`_id` the tenant or `operator`): `save()` (issuer checked by `check_url()` — https and a public address unless
+`PORTAL_SSO_ALLOW_INSECURE` —, client ID, the secret kept when not given, `clean_domains()` refusing a domain another
+configuration has proved, complete when `enabled`, the proofs of the domains still listed kept, the configuration's
+`token` made once, `emailVerifiedOptional`; the secret stored `sealed.seal()`ed for `_place(scope)`, ADR 0044),
+`remove()`, `public()` (never the secret: `secretSet`, `secretUnreadable` when `client_secret()` gives `None`;
+`domainStates` with each domain's proof and its TXT record), `note()` (last sign-in or failure), `client_secret()` (the
+secret opened; `""` without one), `seal_stored()` (at start-up: a secret in clear or of an earlier key sealed with the
+current key, `update_one` only where the stored value is the one read), `has_secrets()`. Domains: `proved()` (the listed domains with a proof),
+`proved_elsewhere()`, `verify_domain()` (the TXT record `_gs1resolver.<domain>` = `gs1resolver-sso=<token>`, read with
+`domains.txt_records()`), `approve_domain()` (a server administrator's; refused while `accounts_elsewhere()` finds
+accounts of another organisation at the domain); both return `(configuration, released)`: `_add_proof()` removes a
+lapsed proof of the domain from other configurations (ADR 0035); `proved_elsewhere()` ignores lapsed proofs;
+`recheck_proofs()` (housekeeping) looks at each DNS proof's record once a day, recording `seenAt` and, missing for
+`domains.LAPSE`, `lapsedAt` (a lapsed proof still signs people in); `upgrade()` (at start-up: configurations without
+`proofs` get one `upgrade` proof per listed domain); `for_email()` and `password_off_for()` (never for the operator's users) read proved
+domains only.
 The provider: `discovery()` and `_keys()` cached an hour (`forget()`), the keys read again once for an unknown key ID;
+every request to it (`_get_json()`, the token exchange) goes through `_send()` → `outbound.request()` (ADR 0029:
+the address checked contacted; a private one is `sso.issuerPrivate` unless `PORTAL_SSO_ALLOW_INSECURE`);
 `start()` puts `state`, `nonce` and the PKCE verifier in the signed session cookie and gives the authorization address;
-`finish()` checks the state and its age (10 minutes), posts the code with the secret and the verifier, `verify()`s the
+`finish()` checks the state and its age (10 minutes), opens the secret (`sso.secretUnreadable` before any request
+when it does not open), posts the code with the secret and the verifier, `verify()`s the
 ID token (algorithm among `ALGORITHMS`, key, issuer, audience, expiry with 60 s leeway, nonce, `azp`), and finds the
-account by e-mail in the configuration's organisation (its domain, `email_verified` not false, not disabled). Errors are
-`SsoError(code, detail)`. In `app.py`: `open_session()` shared with the password sign-in, `session["via"] = "sso"` (no
+account by e-mail in the configuration's organisation (searched there only: an address may be used once per organisation, ADR 0036; a proved domain, `email_verified` true — or absent with
+`emailVerifiedOptional` —, not disabled), then `users.bind_sso()`: bound to the token's `iss` and `sub` at the first
+sign-in, `sso.subjectMismatch` for another subject of that issuer, `sso.subjectTaken` for a subject bound to another
+account; it returns the subject for the journal. Errors are `SsoError(code, detail)`. In `app.py`: `open_session()` shared with the password sign-in, with `via` `"sso"` (`session["via"] = "sso"`, no
 temporary-password change after it), the routes below, `auth.ssoRequired` once the password is right, and
 `export_limit()`/`export_refused()` reading `exportlimits.effective()` (below).
 
@@ -689,25 +880,40 @@ last resort in the setting `forwarding.fallback` (`{"enabled", "url", "updated",
 `DEFAULT_FALLBACK`, `https://id.gs1.org`, until set; an empty address means it). `rules()`, `rule(prefix)`,
 `save_rule(prefix, data, user, own_hosts, new)` and `remove_rule(prefix)` keep the collection `forwarding_rules`
 (`PREFIX`: 3 to 12 digits; `MODES`: `path`, `fixed`; the note's spaces tidied, `MAX_NOTE`). `check_target()` accepts an
-`https` address of at most `MAX_URL` characters, without credentials or spaces, whose host is not in `own_hosts`
+`https` address of at most `MAX_URL` characters, without credentials or spaces, that passes `gs1.target_host_problem()`
+(its code and the address otherwise, [ADR 0037](adr/0037-target-addresses.md)), whose host is not in `own_hosts`
 (`app.forwarding_own_hosts()`: the installation's host and every verified domain). `overlaps(prefix, tenants)` names
 the organisations whose prefixes overlap a rule's. `group(keys, total, before, top)` gives the overview's Forwarding
 group from `requestlog.collect()`'s counts per key, matched against the current rules with `rule_of()` (the longest
 prefix). `ForwardingError` carries the message code (`app.on_forwarding_error`: 422, 404 for `forwarding.unknownRule`).
+`covered(prefix, tenant)` gives the organisation's prefixes a rule's overlaps (one starts with the other; `overlaps()`
+is built on it); `destination(rule)` is where a rule sends its codes, `(target, mode)` while it is on, else `None`;
+`changes_destination(before, after)` tells whether a change (created: `before` `None`; removed: `after` `None`) changes
+that. `app.tell_forwarded(action, detail, before, after)`, called by the three rule routes after the operator's event,
+journals the same event in the trail of each organisation `covered()` names (by the operator) and sends its
+administrators (`monitor.recipients()`) `forwarding-on` (`prefix`, `target`, `organisation`, `prefixes`, `at`) or
+`forwarding-off` (the destination it had) when the change does ([ADR 0046](adr/0046-forwarding-tells-organisations.md),
+finding F-028); it returns the organisations' names. `newly_covered(previous, tenant)` gives the rules switched on
+that cover prefixes the organisation has now and did not have in `previous`, each with those prefixes;
+`app.tell_covered(tenant, previous)`, called by `create_tenant()` and, when the prefixes changed, `update_tenant()`
+after the operator's event, journals `forwarding-covered` (`prefix=… target=… prefixes=…`) in the organisation's trail
+(by the operator) and sends its administrators `forwarding-covered` (`prefix`, `target`, `organisation`, `prefixes`,
+`at`) for each ([ADR 0054](adr/0054-forwarding-tells-new-prefixes.md)); it returns the rules' prefixes.
 
 ### `appearance.py` — the installation's appearance
 
 [ADR 0019](adr/0019-appearance.md). The setting `appearance` (`{"title", "colour", "action", "accent", "logo": {"type",
-"data", "etag", "width", "height"} | None, "icon": (the same) | None, "updated", "updatedBy"}`; absent: `ORIGINAL`).
-`current()` gives it (with the images' bytes), `public(doc)` what every page needs (the title and colours or the
-original's, `logo`: the address `appearance/logo?v=<etag>` or `logo.svg`, `icon`: `appearance/icon?v=<etag>` or
+"data", "etag", "width", "height"} | None, "icon": (the same) | None, "updated", "updatedBy"}`; absent: `ORIGINAL`, whose title is *GS1 Digital Link Resolver Suite*, ADR 0024).
+`current()` gives it (with the images' bytes), `public(doc)` what every page needs (the title, `title_of(doc)`: the stored one, else the original's, also when the
+stored one is a former default of `FORMER_TITLES` — *GS1 Resolver Community Edition*, which `save()` stored for an empty
+title before ADR 0024; the colours or the original's; `logo`: the address `appearance/logo?v=<etag>` or `logo.svg`, `icon`: `appearance/icon?v=<etag>` or
 `favicon.png`, `customLogo`, `customIcon`, `original`, `defaults`, `updated`, `updatedBy`). `save(data, user)`
-folds the title's spaces (1 to `TITLE_MAX`, printable; empty: the original's), takes each colour as `#RRGGBB` (upper case;
+folds the title's spaces (1 to `TITLE_MAX`, printable; empty or absent: `title_of()` of the stored one), takes each colour as `#RRGGBB` (upper case;
 absent: the stored one), refuses a main or action colour on which white text has less than `MIN_CONTRAST` (4.5:1,
 `contrast()`: WCAG 2.1) with `appearance.colourContrast` / `appearance.actionContrast` (`ratio`, `min`), and takes the
 logo and the icon (`IMAGES`) through `branding.read_logo()` (base64 or a data URI replaces one, `""` removes it, absent
 keeps it). `page(text)` puts the title, `data-product`, the header's logo and the icon's `<link>` into one of the
-portal's pages (`app.static_page()` serves `index.html`, `login.html` and `privacy.html` through it; unchanged for the
+portal's pages (`app.static_page()` serves `index.html`, `login.html`, `privacy.html` and `about.html` through it; unchanged for the
 original). `reset()`
 removes the setting; `css(doc)` writes the pages' design tokens (`--gs1-blue`, `--gs1-blue-dark` = `darker(colour, .33)`,
 `--gs1-orange`, `--action`, `--action-dark` = `darker(action, .18)`), a comment only for the original. `UserError` carries
@@ -716,11 +922,26 @@ the message code (422).
 On the pages, `appearance.css` is linked after `app.css` and `appearance.js` loaded after `i18n.js` (index, sign-in,
 privacy notice); `i18n.js` starts from the page's `data-product`; `Appearance.show(found)` sets the header's logo, the
 icon's `<link>` and `I18N.setProduct(title)`, after which `t()` puts
-the title in place of `GS1 Resolver Community Edition` in every template **before** its `{placeholders}` are filled (a
+the title in place of `GS1 Digital Link Resolver Suite` in every template **before** its `{placeholders}` are filled (a
 parameter can still name the original) and `.product` elements show it. The screen (`#appearance`, app.js
 `loadAppearance`, `previewAppearance`, `saveAppearance`, `resetAppearance`) reloads `appearance.css` with a new query
 after a change. `home.js` (`showAppearance()`) reads `/portal/api/appearance` and adds `/portal/appearance.css` (and
 the operator's logo and icon) when it is not the original.
+
+### `about.py` — the About page's facts
+
+[ADR 0024](adr/0024-name-and-about.md). `build()` (cached for the process) reads `version.json`, which a stage of
+`portal/Dockerfile` writes when the image is built (`python about.py write /version.json` on the checkout's `.git`,
+given by `docker-compose.yml` as the additional context `git-dir`; the final image receives the file alone); without a
+file holding a commit it asks `from_git()` in the portal's folder (`git describe --tags --always`, `git log -1
+--format=%H %cI`, `git remote get-url origin`, 5 s each); without git, `{}`. `clean()` keeps only `version`, `commit`
+(lower-case hex), `date` (ISO 8601) and `repository`, each of its expected shape. `public_address()` makes the origin a
+public `https://` address — an `ssh://` or scp-like `git@host:owner/repo` rewritten, user names, passwords and tokens
+dropped, `.git` removed — and refuses local paths, `localhost`, IP addresses and names without a dot (then
+`OFFICIAL_REPOSITORY`). `components()` reads `third_party.json` (`GROUPS`: `gs1`, `platform`, `libraries`, `data`);
+`facts(operator)` is the answer of `GET /portal/api/about`. A missing or broken file, an absent git or a strange address
+never stop the portal. `about.js` draws the page: the documents and `LICENSE` at `{repository}/blob/{commit}/…`
+(the default branch `master` without a commit), every value as text, only `https://` addresses as links.
 
 ### `privacy.py` — the privacy notice
 
@@ -745,6 +966,19 @@ reads the stored one again when its checksum changed (looked at most every `RECH
 `lookup(anchor)` uses the digits that start `gs1.company_part()`; `check_prefix(prefix)` gives `ok`, `longer`, `shorter`,
 `notGcp` or `unknown`. `python gcp.py load FILE|- [--force]` and `python gcp.py info` in the portal's container.
 
+### `failcount.py` — failed sign-ins naming no account, counted
+
+[ADR 0031](adr/0031-request-limits.md), section 2.3 (finding F-013). `note(kind, address)` adds one to the document of
+the kind and the current hour in `anonymous_failures` (`_id` `<kind>|<hour>`; `$inc n`, `$setOnInsert` `kind`, `hour`,
+`journaled: false`, `expiresAt` seven days and an hour later) and keeps the first `SAMPLE` (10) addresses (`$addToSet`
+only while `addrs.9` does not exist); it never raises. Kinds (`KINDS`): `sign-in` (`app.login()`: no account of that
+name, or an empty one) and `sso` (`app.sso_callback()` when the session holds no single sign-on in progress).
+`journal_closed_hours()`, in the worker's hourly housekeeping (`app.HOUSEKEEPING`), claims each counter of a finished
+hour (`find_one_and_update` `journaled: false → true`, oldest first), writes `journal.append("login-failed", "-",
+detail=detail_of(doc), count=n)` in the operator's trail and gives the counter back when that write fails; it returns
+the events written. `detail_of()` gives the count, the hour in UTC and the addresses (`and others` when the sample is
+full).
+
 ### `exportlimits.py` — limits on exports
 
 [ADR 0012](adr/0012-single-sign-on.md), section 8 (item 9.8). `maximum()`/`set_maximum()` (setting `exports.maximum`,
@@ -756,14 +990,91 @@ maximum; the operator's roles their own limit, its `admin` none), `describe()` f
 organisation's limits, setting `exports.seeded`), called by `app.py` at start-up. Errors are `LimitError(code,
 max=…)` (`exports.invalid`, `exports.maximumInvalid`), answered 422.
 
+### `resolution.py` — the strict mode for safety-critical link types
+
+[ADR 0022](adr/0022-answering-level.md), section 2.4. `SAFETY_CRITICAL` (the five types; the resolver's
+`web_server/src/resolution.py` holds the same list, `test_strict_mode.py` keeps them equal), `strict(tenant_id)`
+(`{strict, types, updated, updatedBy}`: the tenant's `strictSafety`, `strictSafetyUpdated`, `strictSafetyBy`, or the
+setting `resolution.strict` `{enabled, updated, updatedBy}` for `None`, the operator's scope) for the organisation's
+page, and `set_strict(tenant_id, enabled, user)` → (the setting, whether it changed). Errors are
+`ResolutionError(code)` (`resolution.invalid`), answered 422.
+
+### `targets.py` — the hosts an organisation's targets may point to
+
+[ADR 0037](adr/0037-target-addresses.md), section 2.2. `hosts(tenant_id, tenant=None)` (`{hosts, updated, updatedBy,
+max}`: the tenant's `targetHosts`, `targetHostsUpdated`, `targetHostsBy`, or the setting `targets.hosts` `{hosts,
+updated, updatedBy}` for `None`, the operator's scope); `set_hosts(tenant_id, value, user)` → (the list, whether it
+changed); `clean(value)` (a list of names or a text, separated by lines, commas or spaces; a leading `*.` or dot dropped;
+each passing `gs1.host_problem()`, which refuses a scheme, path, port or `@` as well; `ascii_host()`: lower case, NFKC, Punycode; repeats
+removed, sorted; at most `MAX_HOSTS`, 50); `allowed(url, listed)` (the host equal to a listed name or under one; any
+when the list is empty) and `check(url, listed, position)` (`gs1.ValidationError` `link.urlNotAllowed` with `position`,
+`url`, `host`). Errors are `TargetsError(code)` (`targets.invalid`, `targets.hostInvalid`, `targets.tooMany`),
+answered 422. `app.target_hosts(anchor)` picks the list of the organisation holding the key (from `g.tenants`, whose
+items carry `targetHosts`), the operator's for the other keys (read once per request); `build_document()` checks each
+target against it, except the record's own page on the installation or a verified domain (`app.own_page()`).
+
+### `bodies.py` — the shape of every JSON body, checked before its route
+
+[ADR 0040](adr/0040-request-bodies.md) (findings F-023 and F-029). `FIELDS` names, once for every route, the kinds a
+field may hold: `TEXT`, `FLAG` (true or false, never 0 or 1), `LIST`, `TEXTS` (a list of texts), `OBJECTS` (a list of
+objects whose fields the same table checks: `links`, `attributes`), `NAMES` (an object of texts: `labels`, qualifiers
+by AI), `RECORD` (an object the same table checks: `keyRecord`) and `LABELS` (the texts of a spreadsheet or an
+overview, checked part by part by `LABEL_FIELDS`: `headers`, `sheets`, `languages`, `keys` objects of texts, `aliases`
+an object of lists of texts (`ALIASES`), `linkTypes` either, `yes`/`no` a text or a list, any other part a text);
+`domains` and `qualifiers` take two kinds.
+`field_problem(body)` → the path of the first field of another kind (`links.2.url`), objects inside objects stopping at
+`DEPTH` (3); `problem(body)` → `("request.jsonInvalid", 400, {})` for anything but an object, `("request.fieldInvalid",
+422, {"field": path})`, or `None`. `null` passes for every field (the routes read it as absent) and a field not in
+`FIELDS` is left to its route, which checks it with its own message code (the retention's days and sizes, export
+limits, notification choices, `enabled` of forwarding and strict resolution, target hosts). `app.same_origin_only()`
+calls it for every `POST`, `PUT` and `DELETE` sent as JSON with a body that is not empty, after parsing it itself
+(`ValueError` or `RecursionError` → 400), so a route never sees a body of another shape. A new field a route reads
+without checking its kind goes into `FIELDS`; `test_malformed.py` finds the one forgotten.
+
+### `safety.py` — the warnings on safety-critical link types
+
+[ADR 0022](adr/0022-answering-level.md), section 2.5. `check(pairs, informative, links, entries, strict)` → a list of
+`{code, params}` for a record about to be saved, given the key's records as the data entry API returns them:
+`warning.walkUp` (`types`, `level` — the qualifiers of the record that answers, ordered as the resolver walks up, `[]`
+for the key's own —, `strict`: the strict mode withholds them because the level names none of the request's batch or
+serial numbers), `warning.productLevel` (`types`, `count` and `values` of the key's batch or serial records,
+`strict`), `warning.nearDuplicate` (`ai`, `value`, `existing`; values of AI 10, 21 or 235 equal under `fold()`:
+upper case, without spaces, `-`, `.` and `/`, O and I read as 0 and 1), and from `language_warnings(links)`
+([ADR 0028](adr/0028-language-fallback.md)) `warning.noLanguage` (`types` with a link that declares no language or
+only `und`) and `warning.languageGap` (`gaps`: `[{type, missing}]`, the record's languages a safety-critical type
+does not serve, by `serves(tags, wanted)`, the resolver's RFC 4647 lookup). `safety_types(links)` reads `linktype` or
+`linkType`; `lacking(lines)` lists the batch and serial records of a summary that `check()` warns about. Used by
+`app.py` (`saved_warnings()` for `POST /record` and the tenant API, `POST /record/warnings`, the import's preview,
+`lacking_safety()` for the organisation's page); `strict_for(anchor)` reads the strict mode of the key's owner.
+
 ### `migrate.py`, `db_init.py`
 
 `migrate.run(config_dir)` moves `users.json`, `records-meta.json` and `journal.jsonl` into empty collections
 once, under the `migration` lock, with fixed `_id`s so that an interrupted import finishes at the next
-start; the files become `*.migrated`. `db_init.py` (the `portal-db-init` service) connects with the root
-`MONGO_URI` and creates the portal's user, or updates its password and roles (`readWrite` on its database, `read` on
-`resolver_log`, and `requestLogPrune` — the `remove` action on `resolver_log.requests` only, a role it creates or
-updates — for the retention set in the portal); it refuses `admin`, `local`, `config`, `resolver_ce` and `resolver_log` as the portal's database.
+start; the files become `*.migrated` (journal events sealed one by one as they are inserted). `db_init.py` (the
+`portal-db-init` service) connects with the root `MONGO_URI` and creates the portal's user, or updates its password
+and roles (`readWrite` on its database, `read` on `resolver_log`, `requestLogPrune` — the `remove` action on
+`resolver_log.requests` only — for the retention set in the portal, and `journalAppend` in `<PORTAL_DB_NAME>_journal` —
+`find`, `insert`, `listIndexes` on `journal`, the same and `update` on `journal_heads`, `journal_privileges()` —, roles it
+creates or updates with `ensure_role()`); it refuses `admin`, `local`, `config`, `resolver_ce` and `resolver_log` as the
+portal's database. Then, as root, through `store.py` and `journal.py` (`connect_store()`): the indexes of both
+databases; `move_journal()`, once, the journal of an earlier version from the portal's database into its own (in
+batches, an event already there skipped, one whose `(chain, seq)` is taken inserted without its seal; nothing dropped
+unless every document is found by `_missing()`; the marker `journal_moved {_id: "moved", at, events}`, which the
+portal cannot write; a collection that reappears afterwards printed as a WARNING and left); `journal_upkeep()`:
+`apply_retention()`, `seal_unsealed(ids)` for the events it moved unsealed, and a WARNING for any other unsealed event.
+
+Before the portal's user it makes the official services' users ([ADR 0030](adr/0030-least-privilege-services.md)),
+`service_users(client, portal_db)`: in `admin`, the roles `resolverService` (`resolver_privileges(portal_db)`: `find`
+on `resolver_ce.gs1resolver` and on `RESOLVER_PORTAL_COLLECTIONS` — `tenants`, `domains`, `settings`, `branding`,
+`forwarding_rules` — of the portal's database; `insert`, `update`, `createIndex` on `resolver_log.requests` and
+`request_counts`) and `dataEntryService` (`data_entry_privileges()`: `find`, `insert`, `update`, `remove` on
+`resolver_ce.gs1resolver`), then for each of `SERVICES` the user `RESOLVER_DB_USERNAME` / `DATA_ENTRY_DB_USERNAME`
+(defaults `resolver_web`, `resolver_data_entry`) with that role only and the password of `.env` (`ensure_user()`:
+created, or password and roles updated). An empty password leaves that user alone with a WARNING; MongoDB's root user
+(`root_username()`: `MONGO_INITDB_ROOT_USERNAME`, else the user of `MONGO_URI`) is refused as a service's user. It warns
+about MongoDB's example root password outside development (`example_secrets`). A collection the resolver starts to read
+needs its name in `RESOLVER_PORTAL_COLLECTIONS`: `dev-tests/install/test_least_privilege.py` scans the resolver's code.
 
 ### `create_user.py`
 
@@ -778,6 +1089,7 @@ No framework and no build step: plain HTML, CSS and JavaScript served as static 
 | File | Role |
 |---|---|
 | `index.html` | the portal page: header with language and user menus, editor (three steps, other records, history), label block, record list, users, audit, dialogs (options, import), the template of a target row |
+| `about.html`, `about.js` | the public About page (ADR 0024), for anyone: what the software is, the version and its commit, source and licence, the documents at the running commit, the origin, the components of `third_party.json` in four groups, trademarks |
 | `privacy.html`, `privacy.js` | the public privacy notice (ADR 0017), for anyone; `PrivacyText.render()` turns the plain text into elements with `textContent` only (also the preview of the administrators' screen) |
 | `login.html`, `login.js` | sign-in page; with e-mail also *Forgotten your password?* and the page a link opens (`#invite=…` / `#reset=…`: the token is read, removed from the address bar at once and posted; a link pasted into an open page is caught by `hashchange`) |
 | `password.js` | show/hide button in every password field |
@@ -884,7 +1196,9 @@ answer like a typed element string, the hint saying how it was read.
 
 ## 7. Portal API
 
-Base `/portal/api`, session cookie, JSON. Writes need the portal's own `Origin` and a JSON body. Every
+Base `/portal/api`, session cookie, JSON. Writes need the portal's own `Origin` and a JSON body: one object whose
+fields hold the kinds `bodies.FIELDS` lists, else 400 `request.jsonInvalid` or 422 `request.fieldInvalid` before the
+route runs (ADR 0040). Every
 call checks the role and limits identifiers to the scope of the request (the user's tenant, a support
 access, or the operator) and to the user's GS1 Company Prefixes. Errors answer `{"code": "...", "params": {...}}`.
 "admin" below means a tenant administrator or a server administrator; "server admin" an administrator of the
@@ -892,9 +1206,9 @@ operator.
 
 | Method and path | Role | Purpose |
 |---|---|---|
-| `POST /login` `{username, password}` | — | Sign in (429 `auth.locked` when throttled) |
-| `POST /logout` | — | Sign out |
-| `POST /password` `{currentPassword, newPassword}` | any | Change password; other sessions end; a security message when mail is on |
+| `POST /login` `{username, password}` | — | Sign in (429 `auth.wait` with `seconds`, or `auth.locked` with `minutes` beyond 90 seconds, and `Retry-After` when throttled) |
+| `POST /logout` | — | Sign out: the session's record is removed, so a copy of the cookie stops working too (ADR 0034) |
+| `POST /password` `{currentPassword, newPassword}` | any | Change password; other sessions end (their records are removed) and this one gets a new id; a security message when mail is on |
 | `GET /login/options` | — | `{passwordRecovery}`: whether the sign-in page offers recovery (mail on) |
 | `POST /password/forgot` `{login, language}` | — | Recovery link by e-mail to the account of that user name or address, when it may sign in and has an address; always `password.recoverySent` (404 `password.recoveryOff` when mail is off, 429 `password.recoveryLimit`) |
 | `POST /password/link/check` `{token}` · `POST /password/link` `{token, newPassword, language}` | — | A single-use link: `{user, purpose, min}` or 410 `password.linkInvalid`; then the password set (`password.set`, `purpose`), the link used up (429 `password.linkLimit` after ten invalid links from one address) |
@@ -902,27 +1216,32 @@ operator.
 | `GET /config` | any | User, role (the one that applies), `accountRole`, `serverAdmin`, `tenant` and `support` (`{id, name, disabled}` or `null`), prefixes, resolver address, link types, keys with qualifiers and shapes, languages, import limits, data attributes, session limits (`session`: `idleSeconds`, `warningSeconds`, `endsIn`, `maxHours`), `mail` (`{enabled}`), `requestLog` (`{days, whole}`: the log's retention, 0 when off, and whether the user sees the whole installation), `exportLimit` (the most rows the user may export, `null`: no limit; ADR 0012 §8), `gcpTable` (`{date, count}` of GS1's GCP length table, or `null`; ADR 0015), `epc` (each key with an EPC and what a record needs first: `{qualifier}`, `{serialAfter}` or `{}`; ADR 0010 §8) and `preferences` (as `GET /preferences`) |
 | `GET /session` | any (also while a new password is due) | Renews the session; answers the same session limits |
 | `GET /record?key=&value=&qualifiers=/10/L1` | reader | One record: `exists`, `description`, `links`, `defaultLinkType`, `sharedDefaultLinkType`, `digitalLink`, `otherEntries` (each with `informative`), `qualifiers` (the record's own), `informative` (typed) and `storedInformative`, `hasKeyRecord` |
-| `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}], keyRecord?}` | editor | Create (201) or replace (200); the first link is the default. With a serial number, 22 and 10 in `qualifiers` are stored as informative. `keyRecord: {mode: copy\|target, description, url}` also creates the key's own record first (`save.createdWithKey`, `keyRecordCreated`) |
+| `POST /record` `{key, value, qualifiers, description, links:[{linkType, url, title, hreflang, forwardQueryString}], keyRecord?}` | editor | Create (201) or replace (200); the first link is the default. With a serial number, 22 and 10 in `qualifiers` are stored as informative. `keyRecord: {mode: copy\|target, description, url}` also creates the key's own record first (`save.createdWithKey`, `keyRecordCreated`). The answer carries `warnings` (`safety.check()`, [ADR 0022](adr/0022-answering-level.md) §2.5; never a refusal) |
+| `POST /record/warnings` (the body of `POST /record`) | editor | The warnings of ADR 0022 §2.5 for the record the editor holds, before saving; nothing written: `{warnings: [{code, params}]}` (`warning.walkUp`, `warning.productLevel`, `warning.nearDuplicate`, `warning.noLanguage`, `warning.languageGap`); an empty list for a key or qualifier not yet valid or outside the user's scope |
 | `DELETE /record?key=&value=&qualifiers=` | editor | Delete one record, keeping the others of the key |
 | `GET /records` | reader | Every record with kind, qualifiers, `informative`, description, default link type, number of links, created/updated by and when, `noKeyRecord`, `breaksRules` |
 | `POST /export` `{format: xlsx\|csv, labels, only}` | reader | Spreadsheet of every record, or of those in `only` (`anchor\|qualifier path`, what a filtered list shows); the export limits apply (ADR 0012 §8) |
-| `POST /import/preview` `{filename, data (base64), labels, checkLinks}` | editor | Validation and comparison; `token`, `records` (with `informative`, `informativeBefore`, `noKeyRecord`), `errors`, `counts`, `links`, `keysWithoutRecord` |
+| `POST /import/preview` `{filename, data (base64), labels, checkLinks}` | editor | Validation and comparison; `token`, `records` (with `informative`, `informativeBefore`, `noKeyRecord`, `warnings` of ADR 0022 §2.5 computed on the key's records as they will be after the import), `errors`, `counts`, `warningCount` (valid records with a warning), `links`, `keysWithoutRecord` |
 | `POST /import/apply` `{token, createKeyRecords?}` · `GET /import/status?token=` · `POST /import/cancel` `{token}` | editor | Queue a previewed import for the worker (with `createKeyRecords`, the keys' own records first); `state` (`queued`, `running`, `finished`, `failed`, `cancelled`), `done`, `total`, `stalled`, `cancelling`, `error`, and the results when finished or cancelled; stop it (the user's own; answers the status) |
 | `POST /links/check` `{urls}` | editor | Check addresses (editor) |
 | `POST /links/jobs` `{scope: all\|urls}` · `GET /links/jobs/{token}` · `POST /links/jobs/{token}/cancel` · `GET /links/last` | editor · editor · editor · reader | Background link check (status: `state` `queued`\|`running`\|`finished`\|`failed`\|`cancelled`, `done`, `total`, `stalled`, `cancelling`, `error`); stop it (the user's own; answers the status) |
 | `GET /history?key=&value=&qualifiers=` | reader | Versions of a record made in the scope of the request, with content |
-| `GET /users` · `POST /users` `{username, role, prefixes, email, tenant}` · `PUT /users/{name}` `{role, prefixes, email, disabled}` · `POST /users/{name}/reset` · `DELETE /users/{name}` | admin | User administration: a server admin manages every user (`tenant` chooses the organisation; the answer to GET adds `tenants`), a tenant administrator the users of his tenant; `tenantName` and `invited` on each user; temporary passwords in the answer. With mail on: `POST /users` with `invite` and an address answers `users.invited` without a password; `reset` answers `users.resetSent` (a link by e-mail) for a user with an address |
+| `GET /users` · `POST /users` `{username, role, prefixes, email, tenant}` · `PUT /users/{name}` `{role, prefixes, email, disabled, ssoForget}` · `POST /users/{name}/reset` · `DELETE /users/{name}` | admin | User administration: a server admin manages every user (`tenant` chooses the organisation; the answer to GET adds `tenants`), a tenant administrator the users of his tenant; `tenantName` and `invited` on each user; temporary passwords in the answer; an organisation's administrator who met 5 `users.exists` in 15 minutes gets `users.nameLimit` (429, ADR 0036). With mail on: `POST /users` with `invite` and an address answers `users.invited` without a password; `reset` answers `users.resetSent` (a link by e-mail) for a user with an address |
 | `GET /tenants` · `POST /tenants` `{name, prefixes}` · `PUT /tenants/{id}` `{name, prefixes, disabled}` · `DELETE /tenants/{id}` | server admin | Organisations; GET adds `users`, `records` and `prefixChecks` (each prefix against GS1's table, ADR 0015) per tenant, `operatorRecords`, `exportMaximum` and `gcpTable` |
 | `GET /gcp` · `POST /gcp[?confirm=1]` (body: GS1's XML, `application/gzip` or `application/xml`) | server admin | GS1's GCP length table ([ADR 0015](adr/0015-gcp-length-table.md)): `table` (`date`, `count`, `lengths`, `uploadedBy`, `uploadedAt`, `sha256`, or `null`) and `age` (`date`, `days`,
 `maxDays`, `old`: `monitor.gcp_age()`, ADR 0008 §3.1; `null` without a list); the upload answers `gcp.loaded` (`date`, `count`) with `table`, 409 `gcp.older` (`date`, `current`) unless `confirm=1`, 422 with the parser's code, 403 `gcp.readOnly` in support access; journal `gcp-upload`. The only routes that take a body other than JSON (`RAW_UPLOADS`), with types a form of another site cannot send |
 | `GET /forwarding` · `PUT /forwarding/fallback` `{enabled, url}` · `POST /forwarding/rules` `{prefix, target, mode, enabled, note}` · `PUT /forwarding/rules/{prefix}` `{target, mode, enabled, note}` · `DELETE /forwarding/rules/{prefix}` | server admin | Forwarding ([ADR 0018](adr/0018-forwarding.md)): `fallback` (`enabled`, `url`, `default`, `updated`, `updatedBy`), `rules` (each with `organisations`, the organisations whose prefixes it overlaps), `readOnly` (support access); every change answers the same with a message code (`forwarding.fallbackSaved`, `fallbackOff`, `ruleSaved`, `ruleRemoved`) and is a journal event (`forwarding-fallback`, `forwarding-rule-create`, `-update`, `-remove`); 422 `forwarding.*`, 404 `forwarding.unknownRule`, 403 `forwarding.readOnly` during support access |
 | `GET /appearance` · `PUT /appearance` `{title, colour, action, accent, logo, icon}` · `DELETE /appearance` | anyone · server admin | The installation's appearance ([ADR 0019](adr/0019-appearance.md)): `appearance.public()`. PUT saves it (`logo`, `icon`: base64 or a data URI to replace, `""` for the project's, absent to keep; 422 `appearance.titleInvalid`, `colourInvalid`, `colourContrast`, `actionContrast`, `branding.logo*`), DELETE restores the original; both answer `appearance.saved` / `appearance.restored` with `appearance`, 403 `appearance.readOnly` during support access; journal `appearance-save` (`title=… colour=… action=… accent=… logo=yes\|no icon=yes\|no`), `appearance-reset`. For anyone too: `GET /portal/appearance.css` (cached 60 s), `GET /portal/appearance/logo` and `GET /portal/appearance/icon` (the operator's logo and icon, cached a day, or `logo.svg` and `favicon.png`) |
+| `GET /about` | anyone | The About page's facts ([ADR 0024](adr/0024-name-and-about.md)): `version` (`git describe --tags`), `commit`, `date` (each `null` when unknown), `repository` (public `https://`; the official repository when unknown), `operator` (`RESOLVER_ORG_NAME` or `null`), `components` (`name`, `group`, `licence`, `url`). The page itself: `GET /portal/about`, for anyone |
 | `GET /privacy[?version=n]` · `PUT /privacy` `{text, note}` | anyone · server admin | The privacy notice ([ADR 0017](adr/0017-privacy-notice.md)): `notice` (the version in force or asked for, `null` before the first; 404 `privacy.unknown`), `current`, `versions` (newest first, no text), `operator`, `days`. PUT publishes a new version (422 `privacy.*`; 403 `privacy.readOnly` during support access); journal `privacy-publish`. The page itself: `GET /portal/privacy`, for anyone |
 | `GET /gcp/lookup?key=&value=` | any | The key's GS1 Company Prefix by the table: `prefix`, `length` (0: not a GS1 Company Prefix; `null`: no entry), `date`; `{table: null}` without a table |
 | `PUT /exports/maximum` `{maximum}` | server admin | The most rows one export may hold in any organisation ([ADR 0012](adr/0012-single-sign-on.md) §8), `null` or empty lifts it: `exports.maximumSaved` (`max`) or `exports.maximumCleared`, `maximum`; 422 `exports.maximumInvalid` (`max`); 403 `exports.readOnly` in support access; journal `export-maximum` |
+| `PUT /targets/hosts` `{tenant, hosts}` | admin | The hosts the organisation's targets may point to ([ADR 0037](adr/0037-target-addresses.md) §2.2; `tenant` its id, or `operator` for the keys no organisation holds; `hosts` a list of names or a text): an organisation's administrators their own (another's or the operator's: 404 `tenants.unknown`), a server administrator any; `targets.saved` (or `targets.savedAny` for an empty list) with `targets` (as on the organisation's page); 422 `targets.invalid`, `targets.hostInvalid` `{host}`, `targets.tooMany` `{max}`; 403 `targets.readOnly` in support access; journal `target-hosts` (`hosts=` the names or `-`) when it changes |
+| `PUT /resolution/strict` `{tenant, enabled}` | admin | The strict mode for safety-critical link types ([ADR 0022](adr/0022-answering-level.md) §2.4; `tenant` its id, or `operator` for the keys no organisation holds): an organisation's administrators their own (another's or the operator's: 404 `tenants.unknown`), a server administrator any; `resolution.strictOn` or `resolution.strictOff` with `resolution` (as on the organisation's page); 422 `resolution.invalid` (not a boolean); 403 `resolution.readOnly` in support access; journal `resolution-strict` (`strict=on` or `off`) when it changes |
 | `PUT /exports/limits` `{tenant, limits: {reader, editor, api}}` | admin | An organisation's limits per role (`tenant` its id, or `operator`), each `null` (the maximum) or 0 to the maximum: an organisation's administrators their own (another's: 404 `tenants.unknown`), a server administrator any and the operator's; `exports.saved` with `exports` (as on the organisation's page); 422 `exports.invalid` (`max`); 403 `exports.readOnly` in support access; journal `export-limits` |
 | `POST /support` `{tenant, reason}` · `DELETE /support` | server admin | Open and close read-only support access to a tenant, recorded in its audit trail |
 | `GET /audit` · `GET /audit.csv` (`user`, `from`, `to`, `q`, `limit`) | admin | Audit trail of the scope: a tenant's; the operator's plus what operator users did to tenants; a tenant's during support access. Events carry `tenant`, `tenantName`, `byOperator`; the CSV adds `organisation` and `by_operator` |
+| `GET /audit/verify` (`receipt`) | admin | The hash chains of the scope verified ([ADR 0026](adr/0026-journal-integrity.md) §2.4): an organisation's (also in support access), every chain for a server administrator outside support access. `chains` (each `journal.verify()`: `chain`, `events`, `first`, `last`, `head` as `<chain>:<seq>:<hash>`, `keyed`, `otherKey`, `ok`, `problem` `{kind, seq}`, `receipt` when one was given, `tenantName`), `keyed`; 422 `journal.badReceipt` for a receipt that is not one or names a chain outside the scope. Any record change answers 503 `journal.unavailable` when its journal entry cannot be written first |
 | `POST /digital-link` `{key, value, qualifiers, attributes:[{ai, value}]}` | reader | Digital Link with data attributes checked by the engine; nothing stored |
 | `GET /qrcode?key=&value=&qualifiers=&format=png\|svg\|pdf\|zip&hri=full\|key\|none&version=auto\|1-40&ecl=l\|m\|q\|h&size=80…200&linear=none\|auto\|upce&domain=&attr=AI:value` | reader | Label; headers `X-QR-Version`, `X-QR-Level`, `X-QR-Modules`, `X-Linear-Symbol`; 422 `qr.tooSmall` / `qr.tooLong`, `label.sizeInvalid`, `label.linearInvalid`, `label.linearNotPossible`, `domains.unusable` |
 | `GET /keys` · `POST /keys` `{name, scopes, days, prefixes}` · `DELETE /keys/{id}` | admin | API keys of the account's own scope (a tenant administrator's organisation; the operator for a server administrator, also during support access): the list with `scopes`, `maxDays`, `defaultDays`, `ratePerMinute`; creation answers `key` (shown once) and `item`; delete revokes |
@@ -933,14 +1252,15 @@ operator.
 | `GET /requests/retention` · `PUT /requests/retention` `{days}`, `{tenant, days}` or `{maxMegabytes}` | any · admin | How long requests are kept (ADR 0006, section 8): `enabled`, `default` (`RESOLVER_LOG_DAYS`), `days` (the installation's), `max`, `scopeDays`, `canSetGlobal`, `organisations` (`id`, `name`, `logDays`, `days`, `editable`, `space`: every one for a server administrator, the own for an organisation's administrators, none for others), `space` (the whole log: `events`, `bytes`, `indexBytes`, `dataBytes`, `used`; server administrators), `maxBytes` and `maxMegabytes` (the most space and its largest value; server administrators, otherwise `null`). PUT `{days}` or `{maxMegabytes}` (`null`: no limit; 422 `requests.spaceInvalid` with `max`; journal `requestlog-space`): server administrators outside support access; `{tenant, days}` (`null`: the installation's): the organisation's administrators or a server administrator; 422 `requests.retentionInvalid` (`max`), `requests.retentionOff`; journal `requestlog-retention` |
 | `GET /requests/api?from=&to=&key=&before=&limit=` | admin | The tenant API's calls of the scope (every organisation's for a server administrator): `calls` (`at`, `key`, `keyName`, `organisation`, `method`, `operation`, `status`, `ms`), `next`, `whole` |
 | `GET /domains` · `POST /domains` `{domain, mode, stem}` · `PUT /domains/{domain}` `{mode, stem, defaultFor}` · `POST /domains/{domain}/verify` · `POST /domains/{domain}/check` · `DELETE /domains/{domain}` | admin | The organisations' own domains ([ADR 0009](adr/0009-tenant-domains.md)) of the account's scope (a server administrator lists every domain with `organisation`; support access: read only, 403 `domains.readOnly`); each domain's `certificate` (ADR 0009 §7); `hostRun` (`at`, `ok`, `late`) for server administrators outside support access, else `null`; `domains.*` codes |
-| `GET /organisation[?id=<tenant id>\|operator]` | admin | An organisation's page ([ADR 0013](adr/0013-administration-and-navigation.md)): `id`, `name`, `operator`, `prefixes`, `disabled`, `records`, `users` (public), `domains`, `brands`, `sso` (no secret), `apikeys`, `alerts` (the last 20 of the history), `exports` (`maximum`, `limits`, `effective` per role — `reader`, `editor`, `admin`, `api` —, `editable`), `prefixChecks` and `gcpTable` (ADR 0015), `canEditPrefixes`, `readOnly`; an organisation's administrator always gets their own, a server administrator any (the operator's without `id`), in support access the organisation in support; `tenants.unknown` 404 |
+| `GET /organisation[?id=<tenant id>\|operator]` | admin | An organisation's page ([ADR 0013](adr/0013-administration-and-navigation.md)): `id`, `name`, `operator`, `prefixes`, `disabled`, `records`, `users` (public), `domains`, `brands`, `sso` (no secret), `apikeys`, `alerts` (the last 20 of the history), `exports` (`maximum`, `limits`, `effective` per role — `reader`, `editor`, `admin`, `api` —, `editable`), `resolution` (the strict mode, `editable`, and `lacking`: `{count, records}` — the first ten batch or serial records lacking a safety-critical type a broader record of their key holds, `safety.lacking()` — or `null` when the resolver cannot be read), `targets` (the hosts its targets may point to, `targets.hosts()`, `editable`; ADR 0037), `prefixChecks` and `gcpTable` (ADR 0015), `canEditPrefixes`, `readOnly`; an organisation's administrator always gets their own, a server administrator any (the operator's without `id`), in support access the organisation in support; `tenants.unknown` 404 |
 | `GET /alerts?tenant=&kind=&from=&to=` | admin | The alert history, newest first, at most 500: `alerts` (`check`, `kind`, `tenant`, `organisation`, `raisedAt`, `endedAt`, `endedAs`, `detail`), `kinds`, `historyDays`, `tenants` (server administrators); an organisation's administrators see their organisation's only; `tenant` `-` for the installation's own checks; `alerts.kindUnknown`, `alerts.dateInvalid` |
 | `GET /branding` · `PUT /branding/{prefix}` `{name, colour, accent, verified, logo}` · `DELETE /branding/{prefix}` · `GET /branding/{prefix}/logo` | admin | Brands of the item's page ([ADR 0011](adr/0011-item-page.md)) of the account's scope: `brands`, `prefixes`, `installationDefault` (`*`, server administrators outside support access), `maxLogoKB`, `verifiedOn`, `readOnly`; `logo` a base64 PNG, JPEG or WebP (a `data:` URI or bare), `""` removes it, absent keeps it; journal `branding-save`, `branding-remove`; `branding.*` codes; support access read only (403) |
 | `POST /code/read` `{text}` | any | What a scanner or an RFID reader sent, as `{bracketed, source}`: `scan` read by `syntax.ENGINE.read_scan()` (scan data with a symbology identifier, or an element string with `^` or GS for FNC1), `epc` read by the resolver through the proxy (`read_epc()`: `<eh…>?linkType=linkset`, the linkset's anchor); 422 `code.unreadable` (the engine's reason), `code.engineUnavailable`, `code.epcInvalid`, `code.epcNoRecord`; 502 `code.epcUnavailable` |
 | `GET /epc?key=&value=&qualifiers=&filter=0…7&prefixLength=6…12&domain=` | reader | The EPC of any key with a scheme (`epc.encode()`, ADR 0010 §8: SGTIN, SSCC, SGLN, GRAI, GIAI, GSRN, GSRNP, GDTI, SGCN, CPI, ITIP; the 96-bit scheme for numeric values without leading zeros, else the longer one; filter 1 by default for a GTIN or ITIP, 0 otherwise; 422 `epc.unsupported`, `epc.needsQualifier` (`qualifier`), `epc.needsSerial` (`serialAfter`), `epc.notEncodable`): `scheme`, `hex` (the tag's EPC bank, padded to a 16-bit word: an SGTIN-198 has 52 digits; ADR 0010 §9), `base64`, `tagUri`, `pureIdentity`, `compressedHex` (`epc.Epc.link_hex`, padded to a digit only)/`compressedBase64` on the label's domain, `prefixLength` and `prefixFrom` (`chosen`; `table`: GS1's GCP length table, ADR 0015, with `tableDate`; `prefixes`: `epc.prefix_length_of()` of the organisation's or the user's prefixes), in that order; 422 `epc.notGcp` (`date`: the table marks the range 0, no length chosen), `epc.prefixLength`, `epc.filterInvalid` |
-| `POST /records/fix-serials` `{key, value}` or `{all: true}` | editor | Serial numbers registered with their batch or variant (rule 2 of §2.5.9) registered again as the serial number alone with the batch and variant as `informativeQualifiers` (`fix_serial_records()`, a key at a time, its document written back whole; a true duplicate of the serial number's own record removed; a key with a conflicting record left whole): `rules.fixed`, `rules.fixedSome`, `rules.fixedNone` with `fixed`, `conflicts`, `refused`; journal `fix-serials` and the records' `delete`/`create` |
+| `POST /records/fix-serials` `{key, value}` or `{all: true}` | editor | Serial numbers registered with their batch or variant (rule 2 of §2.5.9) registered again as the serial number alone with the batch and variant as `informativeQualifiers` (`fix_serial_records()`, a key at a time: each new record checked with `POST /api/validate`, then written with `POST /new` before the old one is removed with the record-level delete, ADR 0023; a true duplicate of the serial number's own record removed; a key with a conflicting record left whole): `rules.fixed`, `rules.fixedSome`, `rules.fixedNone` with `fixed`, `conflicts`, `refused`; journal `fix-serials` and the records' `delete`/`create` |
 | `POST /sso/start` `{email, language}` · `GET /portal/sso/callback` | — | Single sign-on ([ADR 0012](adr/0012-single-sign-on.md)): `{url}` of the provider (422 `sso.*`); the provider's answer, then a redirect to `/portal/#overview` or to `/portal/login?sso=<reason>` |
-| `GET /sso` · `PUT /sso/{scope}` `{issuer, clientId, clientSecret, domains, enabled, passwordOff}` · `DELETE /sso/{scope}` · `POST /sso/{scope}/test` | admin | Configurations of the scope (`scope` the tenant or `operator`; a server administrator every one, `every`, `organisations`); `callback`; journal `sso-save`, `sso-remove`; support access read only |
+| `GET /sso` · `PUT /sso/{scope}` `{issuer, clientId, clientSecret, domains, enabled, passwordOff, emailVerifiedOptional}` · `DELETE /sso/{scope}` · `POST /sso/{scope}/test` · `POST /sso/{scope}/verify` `{domain}` | admin | Configurations of the scope (`scope` the tenant or `operator`; a server administrator every one, `every`, `organisations`); `callback`; `test` also for the organisation in support access, never the operator's for an organisation's administrator; `verify` looks up a domain's TXT record (`sso.domainProved`, 422 `sso.txtMissing`, `sso.domainTaken`, `sso.domainNotListed`); journal `sso-save`, `sso-remove`, `sso-domain`; support access read only |
+| `POST /sso/{scope}/approve` `{domain}` | server admin | A domain approved without a DNS record ([ADR 0025](adr/0025-sso-domain-proof-and-subject.md)): `sso.domainApproved`, 422 `sso.domainUsed` (accounts of another organisation at the domain), `sso.domainTaken`; journal `sso-domain` |
 | `GET /overview?days=7\|30\|90[&tenant=<id>\|operator]` | any | The overview of the scope ([ADR 0007](adr/0007-overview-indicators.md)): `period`, `whole`, `scoped`, `organisation`, `logDays`, `usage`, `quality`, `records` (with `lastCheckAt` and the scope's active `alerts`), `operation` (server administrators outside support access only, the installation's whatever the filter; otherwise `null`), `governance` (administrators; otherwise `null`); `tenant`: a server administrator's view of one organisation or the operator (`scoped_view()`, ignored for anyone else; ADR 0013); 422 `overview.badPeriod`, `tenants.unknown`, 503 `requests.unavailable` |
 | `POST /overview/export` `{format: xlsx\|csv, days, labels}` | any | The overview as a file (lists up to 100); journal `overview-export` |
 | `GET /portal/healthz` | — | `{"portal": "ok", "resolver": "ok"\|"unavailable", "worker": "ok"\|"unavailable", "mail": "on"\|"off"}` |
@@ -951,35 +1271,40 @@ and in the README (*Tenant API*): `GET /`, `GET /records`, `GET`/`PUT`/`DELETE /
 
 ## 8. Portal data
 
-The portal's database (`PORTAL_DB_NAME`, default `resolver_portal`), included in the daily MongoDB dump.
+The portal's database (`PORTAL_DB_NAME`, default `resolver_portal`), and the journal's (`<PORTAL_DB_NAME>_journal`:
+`journal`, `journal_heads` and the marker `journal_moved`, where the portal's user may read and insert only; ADR 0026
+§2.5.2), both included in the daily MongoDB dump (every database).
 Decisions and the reasons for them: [ADR 0001](adr/0001-portal-state-in-mongodb.md).
 
 | Collection | `_id` and content | Indexes |
 |---|---|---|
-| `users` | user name; `hash` (empty while invited, or after a reset by link), `role`, `prefixes`, `tenant` (absent for the operator's users), `email` (optional), `disabled`, `mustChange`, `created`, `lastLogin`, `invited`, `language`, `languageChosen`, `notify` (the last four absent when empty) | — |
-| `tenants` | `t-` + 12 hexadecimal digits; `name`, `prefixes`, `disabled`, `created`, `createdBy` ([ADR 0002](adr/0002-tenants.md)); `logDays` (ADR 0006 §8); `exportLimits` `{reader, editor, api}` (ADR 0012 §8) | — |
+| `users` | user name; `hash` (empty while invited, or after a reset by link), `role`, `prefixes`, `tenant` (absent for the operator's users), `email` (optional), `disabled`, `mustChange`, `created`, `lastLogin`, `invited`, `language`, `languageChosen`, `notify`, `sso` (`iss`, `sub`, `at`: the provider's subject bound at the first single sign-on; [ADR 0025](adr/0025-sso-domain-proof-and-subject.md)) (the last five absent when empty) | — |
+| `tenants` | `t-` + 12 hexadecimal digits; `name`, `prefixes`, `disabled`, `created`, `createdBy` ([ADR 0002](adr/0002-tenants.md)); `logDays` (ADR 0006 §8); `exportLimits` `{reader, editor, api}` (ADR 0012 §8); `strictSafety`, `strictSafetyUpdated`, `strictSafetyBy` (ADR 0022 §2.4; read by the resolver); `targetHosts`, `targetHostsUpdated`, `targetHostsBy` (ADR 0037 §2.2) | — |
 | `record_meta` | record key (GTIN records by the 14 digits, other keys by `AI/value`, plus the qualifier path); `createdAt`, `createdBy`, `updatedAt`, `updatedBy`, `tenant` (absent for the operator) | — |
-| `journal` | ObjectId (`jsonl-<line>` for migrated events); `at` (date), `user`, `action`, `category`, `tenant` (absent for the operator), `byOperator`, `anchor`, `qpath`, `doc`, `detail`, `expiresAt`. Record actions `create`, `update`, `delete` (with the record's content), `import`; others `login`, `login-failed`, `login-refused`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`, `tenant-create`, `tenant-update`, `tenant-remove`, `support-open` (the reason in `detail`), `support-close`, `password-recovery`, `password-reset`, `invite-accepted`, `preferences`, `mail-failed` (never an e-mail address), `api-key-create`, `api-key-revoke`; changes made through the tenant API carry the user `api:<key id>` | date; record + date; user + date; tenant + date; category; TTL on `expiresAt` |
-| `login_failures` | `key` (`user:<name>` or `addr:<address>`; recovery requests `forgot-user:<entry>` and `forgot-addr:<address>`; invalid links `link-addr:<address>`), `at` | key + date; TTL 15 minutes on `at` |
+| `journal` | ObjectId (`jsonl-<line>` for migrated events); `at` (date), `user`, `action`, `category`, `tenant` (absent for the operator), `byOperator`, `anchor`, `qpath`, `doc`, `detail`, `ref` (`change-failed`: `{chain, seq}` of the attempt), `expiresAt`; the seal of [ADR 0026](adr/0026-journal-integrity.md): `chain`, `seq`, `prev`, `hash`, `mac`, `kid`, `sealed` (`upgrade` for events sealed at the upgrade). Record actions `create`, `update`, `delete` (with the record's content, written before the change), `import`, and `change-failed`; others `login`, `login-failed`, `login-refused`, `logout`, `password-change`, `export`, `user-create`, `user-update`, `user-reset`, `user-remove`, `tenant-create`, `tenant-update`, `tenant-remove`, `support-open` (the reason in `detail`), `support-close`, `password-recovery`, `password-reset`, `invite-accepted`, `preferences`, `mail-failed` (never an e-mail address), `api-key-create`, `api-key-revoke`; changes made through the tenant API carry the user `api:<key id>`; a `login-failed` by `-` with `count` stands for that many failed sign-ins naming no account in the hour its `detail` gives (`failcount.py`, ADR 0031), a `login-failed` naming a user for one failure of an existing account | date; record + date; user + date; tenant + date; category; TTL on `expiresAt`; unique `(chain, seq)` for sealed events |
+| `journal_heads` | the chain (`<tenant id or operator>/<category>`); `seq`, `hash`, `at` of its newest event, kept outside the retention ([ADR 0026](adr/0026-journal-integrity.md) §2.2) | — |
+| `login_failures` | `key` (`user-addr:<name>|<address>` for the delay, `addr:<address>` for the address's limit, `user:<name>` for the owner's notice only, `password-user:<name>` for the password change; recovery requests `forgot-user:<entry>` and `forgot-addr:<address>`; invalid links `link-addr:<address>`; user names already taken that an organisation's administrator tried `name-taken:<administrator>`, ADR 0036), `at` | key + date; TTL 15 minutes on `at` |
 | `linkcheck_cache` | address; `result`, `expiresAt` | TTL on `expiresAt` |
-| `jobs` | token; `type` (`import`, `linkcheck`, `mail`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `expiresAt`, `error`, `notBefore`; imports `plan`, `keyRecords`, `results`; link checks `scope`, `urls` (`[{url, records}]`), `problems`, `records` (`[{record, problems}]`); messages `to`, `subject`, `text` and `html` (removed once sent or failed), `template`, `tries`, `lastError`, `sent` or `skipped` | state + creation; TTL on `expiresAt` |
+| `jobs` | token; `type` (`import`, `linkcheck`, `mail`), `user`, `state`, `created`, `queuedAt`, `startedAt`, `finishedAt`, `heartbeat`, `worker`, `attempts`, `done`, `total`, `expiresAt`, `error`, `notBefore`; imports `plan`, `keyRecords`, `results`, `tenant` and `accountCreated` (the account that prepared it, ADR 0041); link checks `scope`, `urls` (`[{url, records}]`), `problems`, `records` (`[{record, problems}]`); messages `to`, `subject`, `text` and `html` (removed once sent or failed), `template`, `tries`, `lastError`, `sent` or `skipped` | state + creation; TTL on `expiresAt` |
 | `api_keys` | 12 hexadecimal digits (the key's id); `hash` (SHA-256 of the secret), `name`, `tenant` (absent for the operator), `scopes`, `prefixes`, `created`, `createdBy`, `expiresAt`, `lastUsed`, `revoked`, `revokedBy`, `expiryNotice` ([ADR 0005](adr/0005-tenant-api.md)) | tenant + creation; expiry |
 | `api_rate` | `<key id>:<minute>`; `n`, `at` | TTL 2 minutes on `at` |
+| `sessions` | SHA-256 of the session id in the cookie; `user`, `via` (`password`, `sso`), `created`, `seen` (last renewal), `expiresAt` ([ADR 0034](adr/0034-session-records.md)) | user; TTL on `expiresAt` |
 | `tokens` | SHA-256 of a single-use link's token; `purpose` (`invite`, `reset`), `user`, `created`, `expiresAt` ([ADR 0004](adr/0004-e-mail.md)) | user + purpose; TTL on `expiresAt` |
 | `workers` | worker name (`host:pid:mode`); `seen`, `mode`, `job` | TTL 10 minutes on `seen` |
 | `request_daily` | `<day>\|<AI>\|<value>` (a key's day) or `<day>\|*` (the installation's day); `day`, `ai`, `v`, `cp`, `total`, `automated`, `outcome`, `device`, `form` (counts by name), `language`, `linkType` (`[[name, count]]`, 20 at most), `ms` (sum), `msMax`, on the installation's day also `keys`, `p50`, `p95`, `p99`; `run`, `expiresAt` ([ADR 0006](adr/0006-resolver-request-log.md)) | day; company part + day; TTL on `expiresAt` |
-| `domains` | the domain (lower case, Punycode); `tenant`, `mode`, `stem`, `defaultFor`, `token`, `verified`, `verifiedAt`, `seenAt`, `check`, `created`, `createdBy` | — (read by the resolver too) |
+| `domains` | the domain (lower case, Punycode), or `"<name> <tenant or ->"` for a claim not yet verified ([ADR 0035](adr/0035-domain-claims-and-lapsed-proofs.md)); `name`, `tenant`, `mode`, `stem`, `defaultFor`, `token`, `verified`, `verifiedAt`, `seenAt`, `lapsedAt`, `expiresAt` (claims), `check`, `created`, `createdBy` | `name`; TTL on `expiresAt` (read by the resolver too: verified domains only) |
 | `domain_hosts` | the domain; `state` (`served`, `failed`), `checkedAt`, `attempts`, `nextAttemptAt`, `error` (`nginx`, `certificate`), `certificateUntil` — written by `scripts/custom-domains.sh` as root, read by the portal (ADR 0009 §7) | — |
 | `branding` | the prefix or `*`; `name`, `colour`, `accent`, `verified`, `logo` (`type`, `data`, `etag`, `width`, `height`), `updated`, `updatedBy` | — (read by the resolver too) |
-| `sso` | `operator` or the tenant; `issuer`, `clientId`, `clientSecret`, `domains`, `enabled`, `passwordOff`, `updated`, `updatedBy`, `lastLogin`, `lastError` | — |
-| `alerts` | `resolver`, `backup`, `certificate`, `404:*`, `404:<tenant id>`; `state` (`ok`, `alert`, `unknown`), `since`, `checkedAt`, `failures`, `detail`, `notifiedAt`, `resolvedAt`, `tenant` | — (a handful of documents) |
+| `sso` | `operator` or the tenant; `issuer`, `clientId`, `clientSecret`, `domains`, `enabled`, `passwordOff`, `emailVerifiedOptional`, `token`, `proofs` (`domain`, `how` — `dns`, `admin`, `upgrade` —, `at`, `by`, `seenAt` and `lapsedAt` for DNS proofs, ADR 0035), `updated`, `updatedBy`, `lastLogin`, `lastError` | — |
+| `alerts` | `resolver`, `settings`, `backup`, `certificate`, `404:*`, `404:<tenant id>`; `state` (`ok`, `alert`, `unknown`), `since`, `checkedAt`, `failures`, `detail`, `notifiedAt`, `resolvedAt`, `tenant` | — (a handful of documents) |
 | `forwarding_rules` | the prefix; `target`, `mode` (`path`, `fixed`), `enabled`, `note`, `created`, `createdBy`, `updated`, `updatedBy` | — (read by the resolver too; the setting `forwarding.fallback` is in `settings`) |
 | `privacy_notice` | the version number; `text`, `note`, `at`, `by` | — (never updated or deleted) |
 | `gcp_table` | `current`: GS1's GCP length table in use — `date`, `count`, `lengths` (entries per length), `sha256`, `uploadedBy`, `uploadedAt`, `data` (gzip of `prefix length` lines) ([ADR 0015](adr/0015-gcp-length-table.md)) | — |
 | `alert_history` | `<check>@<time>`; `check`, `kind` (`resolver`, `backup`, `certificate`, `404`), `tenant`, `raisedAt`, `endedAt`, `endedAs`, `detail`, `expiresAt` ([ADR 0013](adr/0013-administration-and-navigation.md)) | `raisedAt`; `tenant` + `raisedAt`; TTL on `expiresAt` (400 days) |
-| `api_requests` | ObjectId; `t`, `key` (absent without a valid key), `tenant` (absent for the operator), `m`, `op` (the route's template), `s`, `ms`, `expiresAt` | date; tenant + date; TTL on `expiresAt` |
-| `settings` | `lastFullCheck` (the operator's) and `lastFullCheck:<tenant>`, `journalRetention`, `migration`, `requestStats.finalUntil` (the last finished day counted), `requestLog.days` (the installation's retention, ADR 0006 §8), `domains.hostRun` (the last run of the host's domains task, ADR 0009 §7), `exports.maximum`, `exports.operator` and
-`exports.seeded` (ADR 0012 §8), `forwarding.fallback` (ADR 0018), `appearance` (ADR 0019; read by the resolver too), and
+| `api_requests` | ObjectId; `t`, `key` (absent without a valid key), `tenant` (absent for the operator), `m`, `op` (the route's template), `s`, `ms`, `expiresAt`; the calls without a valid key counted per minute (ADR 0031): `b` (`<minute>|<method>|<operation>|<status>`), `n` (calls), `ms` (their total), `t` the minute | date; tenant + date; unique `b` where present; TTL on `expiresAt` |
+| `anonymous_failures` | `<kind>|<hour>`; `kind` (`sign-in`, `sso`), `hour`, `n`, `addrs` (the first 10), `journaled`, `expiresAt` (`failcount.py`, ADR 0031) | journaled + hour; TTL on `expiresAt` |
+| `settings` | `lastFullCheck` (the operator's) and `lastFullCheck:<tenant>`, `journalRetention`, `journalCheckpoint` (the day of the last daily verification, ADR 0026), `migration`, `requestStats.finalUntil` (the last finished day counted), `requestLog.days` (the installation's retention, ADR 0006 §8), `domains.hostRun` (the last run of the host's domains task, ADR 0009 §7), `exports.maximum`, `exports.operator` and
+`exports.seeded` (ADR 0012 §8), `forwarding.fallback` (ADR 0018), `resolution.strict` (ADR 0022 §2.4; read by the resolver), `targets.hosts` (ADR 0037 §2.2), `appearance` (ADR 0019; read by the resolver too), and
 the `lock:<name>` documents | — |
 
 The resolver's own log is another database, **`resolver_log`**, which the portal's user may read and prune only: its
@@ -995,7 +1320,8 @@ or `PORTAL_JOURNAL_ADMIN_DAYS` (0) days from the end of the day it was made; 0 k
 
 The `resolver-portal-config` volume (`/app/config`, in the daily backup) keeps `secret.key`, the session key
 used when `PORTAL_SECRET_KEY` is not set (shared by every portal process and replica on the same Docker host,
-which mount the same volume), and the files of earlier versions renamed `*.migrated`.
+which mount the same volume), `data.key`, the data key used when `PORTAL_DATA_KEY` is not set (ADR 0044), and the
+files of earlier versions renamed `*.migrated`.
 
 ## 9. Changes to the resolver (`web_server/`)
 
@@ -1003,7 +1329,10 @@ which mount the same volume), and the files of earlier versions renamed `*.migra
   and `_entry_applies()` (walk-up: an entry applies when all its qualifiers are in the request, templates
   such as `{0}` matching any value; the most specific applicable entry answers first — a serial number or
   TPX (`_UNIT_QUALIFIERS`) before any batch or variant, then more qualifiers before fewer; informative
-  qualifiers are never read), `_qualifier_path_from()` (values percent-encoded), `_find_linktype_key()`,
+  qualifiers are never read), `answering_match()` (`exact` when the answering entry names every qualifier of the
+  request or its serial number, otherwise `walk-up`; ADR 0022 §2.2), `_qualifier_path_from()` (values percent-encoded), `_substituted()` (a template's
+  value put into a copy of the stored linkset or document string by string, percent-encoded inside an `href`, as it
+  is elsewhere; used for qualifier templates and the `{0}`/`{1}` of serialised keys, never on JSON text), `_find_linktype_key()`,
   `_public_link()` (only public fields; `fwqs` dropped), `format_linkset_for_external_use()` (RFC 9264 or
   JSON-LD); 404 when the link type is missing.
   Choosing a link (item 1.5): `_handle_link_type()` follows section 2.6.3 — without `linkType` only
@@ -1020,7 +1349,40 @@ which mount the same volume), and the files of earlier versions renamed `*.migra
   that library cannot be loaded (a warning, once per process), through `callGS1encoder.js` in a new Node.js
   process, as the official code did for every request. A Node.js process costs tens of milliseconds of CPU; a
   check in the process a few microseconds: a two-replica staging installation saturated at about 26 resolutions a
-  second, its resolver containers at 100 % CPU.
+  second, its resolver containers at 100 % CPU. Every Node.js process of the GS1 Digital Link Toolkit goes through
+  `_run_toolkit()` ([ADR 0047](adr/0047-toolkit-processes.md)): at most `TOOLKIT_PROCESSES` (2) at once in each
+  server process (a `BoundedSemaphore`), a turn waited for up to `TOOLKIT_WAIT` (1 s), the process killed after
+  `TOOLKIT_TIMEOUT` (3 s); either failure raises `ToolkitBusy`, which `_test_gs1_digital_link_syntax()`,
+  `_validate_and_fetch_document()` and `read_document()` let through and the routes answer with
+  `web_namespace._unavailable()` (503, `Retry-After: 1`, the page's *error.other* texts or JSON).
+  `uncompress_gs1_digital_link()` refuses a segment that is not 4 to 1,024 URI-safe base64 characters
+  (`COMPRESSED_DL`) without a process, and `_uncompressed()` keeps the toolkit's answer for the last 4,096 segments
+  (`functools.lru_cache`; `ToolkitBusy` is not kept); the toolkit's error output goes to the log, not to the client.
+- The records' database not read (finding F-031, [ADR 0051](adr/0051-records-unavailable.md)): every read of a
+  resolution goes through `web_logic._read()`, which raises `RecordsUnavailable` when `web_db.read_document()` answers
+  5xx (a `PyMongoError`, logged there); `_validate_and_fetch_document()` answers it 503 with `RECORDS_UNAVAILABLE`, so a
+  serialised key's search for a stored prefix stops too. `web_namespace._process_response()` adds `Retry-After`
+  (`records_retry_after()`, the time budget below in whole seconds) and answers the page's *error.other* texts or
+  JSON; only a 404 with the outcome
+  `unknown` goes to the resolver of last resort, so a 503 never does; the request log counts `error`. `/_click`
+  answers `_records_unavailable()` when `_page_linkset()` raises it.
+- One time budget for a request's database reads (finding F-032, [ADR 0052](adr/0052-database-time-budget.md)):
+  `db_budget.Budget` wraps the whole application, outside `domains.Middleware`, and runs each request inside
+  `pymongo.timeout(db_budget.seconds())`: `RESOLVER_DB_TIMEOUT_MS` in milliseconds (500 to 60,000; 5,000 when unset or
+  invalid, with a warning at start). The caches' loads (domains, forwarding, strict mode, retention, brands,
+  appearance) and `web_db.read_document()` share it; once it is spent a read without a server fails at once, the
+  caches keep their last values and the resolver answers 503. Background threads (the request log's writer) are
+  outside it.
+- The age of the portal's settings (finding F-033, [ADR 0053](adr/0053-settings-age.md)): each of the six caches
+  (`domains.DomainMap`, `forwarding.Forwarding`, `resolution.StrictMode`, `landing.BrandMap`, `web_pages.Appearance`,
+  `request_log.Retention`) has an `age` (`settings_age.Age`: `read()` after a good read, `failed()` after a failed one,
+  `stale()`) and a public `refresh()`. `stale()` is true while its reads have failed since the last good one and for
+  longer than `RESOLVER_SETTINGS_MAX_AGE_S` (60 to 86,400 seconds; 900 when unset or invalid, with a warning at start);
+  it logs one error line when it becomes true, `read()` one information line when it ends. Once stale,
+  `Forwarding.rule_for()` and `fallback()` answer `None`, `BrandMap` holds no brand and `Appearance.current()` is `{}`;
+  the domains, the strict mode and the retention keep their values. `web_namespace.SETTINGS_CACHES` lists the six;
+  `GET /heartbeat` answers `settings_age.state()` in `settings` (`current` or `stale`), which refreshes each first. The
+  portal's `monitor.check_settings()` reads it through the proxy (`heartbeat_url()`) for the check `settings`.
 - `web_namespace.py`: `_request_segments()` and `_resolve_path()` (the path from the raw request URI,
   `RAW_URI`, each segment decoded on its own, so `%2F` stays in its value), `_extract_query_strings()` (the
   raw query string), `_wants_html()` (browser, API client, or no `Accept` header: HTML),
@@ -1065,9 +1427,12 @@ which mount the same volume), and the files of earlier versions renamed `*.migra
   `stem`, `prefixes` or the `excluded` prefixes of the operator's domains) put in `environ[ENV_KEY]`.
   `allows(environ, ai, value)` compares `request_log.company_part()`; `_process_response()` answers a refused key as
   `read_document()` answers an unknown one (404, outcome `unknown`) and does not list its link types on the HTML
-  page; `public_name(environ)` is the name the request was made on (the domain and its stem; else a valid host name in
-  `X-Forwarded-Host`; else None), used by `web_logic.public_root()` for the linkset's anchors, its JSON-LD `@id` and
-  the `Link` header, and by `_resolver_description()` for `resolverRoot`, `FQDN` when None (ADR 0009 §8).
+  page; `public_name(environ)` is the name the request was made on (the domain and its stem; else the host in
+  `X-Forwarded-Host` when it is one of `known_names()` — `FQDN` and the valid names of `FQDN_ALIASES`, read at each
+  call, lower case, without port or final dot ([ADR 0039](adr/0039-known-public-names.md), finding F-022); else
+  None), used by `web_logic.public_root()` for the linkset's anchors, its JSON-LD `@id` and
+  the `Link` header, the `Resolution-Anchor` header, and by `_resolver_description()` for `resolverRoot`, `FQDN`
+  when None (ADR 0009 §8).
 - `landing.py` (new, [ADR 0011](adr/0011-item-page.md)): `BRANDS` (`BrandMap`, the portal's `branding` read like the
   domains, at most every 60 s, the last kept on failure; `for_part()` the longest prefix of the company part, else
   `*`); `page_levels()` (each level's links in the page's order, `defaultLink` left out); `render_page()` replaces
@@ -1081,6 +1446,14 @@ which mount the same volume), and the files of earlier versions renamed `*.migra
   cache, `nosniff`). `web_namespace` notes `form="landing", outcome="page"` for `?linkType=linkset&view=page` in a
   browser; `request_log.outcome()` keeps those outcomes for answers below 400 and `event()` turns an automated
   client's back into `linkset` and `redirect`.
+- The browser's rules ([ADR 0038](adr/0038-browser-hardening.md) §2.2–2.3): `web_pages._page()` passes the page through
+  `_with_nonce()`, which draws a nonce (`secrets.token_urlsafe(18)`) into `g.csp_page` with the page's `fonts` flag and
+  writes it into every `<style>` and `<script>` start tag the templates wrote (values are escaped, so none comes from
+  data; the JSON-LD `<script type=…>` is left alone); `content_security_policy()` gives `PAGE_POLICY` with that nonce
+  (`style-src` and `font-src` name Google Fonts only when the page loads fonts: never the item's page),
+  `SWAGGER_POLICY` for the library's documentation page (`api.doc`) and `OTHER_POLICY` (`default-src 'none'`) for any
+  other answer. `add_headers()` in `__init__.py` sets it with `X-Content-Type-Options: nosniff` and `Referrer-Policy:
+  strict-origin-when-cross-origin` (`setdefault`, after the CORS headers).
 - `request_log.py` (new, [ADR 0006](adr/0006-resolver-request-log.md)): `note()` (called by the routes; marks the
   request as one to log), `start()` and `record()` (the application's `before_request` / `after_request` hooks, set in
   `create_app()`), `event()` (the stored document: `qualifiers()` keeps only the AI of 21 and 235, `attribute_ais()`
@@ -1105,13 +1478,25 @@ which mount the same volume), and the files of earlier versions renamed `*.migra
   and `fallback()`; `join(base, path, query)`. `web_namespace._process_response()` applies a rule before reading the
   record (the key in the domain's scope, the path's syntax valid) and the fallback after a 404 whose outcome is
   `unknown`, both through `_forward()` (307, the outcome `forwarded` or `fallback` noted for the request log).
+- `resolution.py` (new, [ADR 0022](adr/0022-answering-level.md) §2.4): `StrictMode` reads the tenants' prefixes with
+  `strictSafety` and the setting `resolution.strict` from the portal's database at most every `CACHE_SECONDS` (60),
+  keeping the last ones when it cannot; `on_for(ai, value)` (the longest prefix's organisation, else the operator's
+  scope), `applies(linktype, path_qualifiers)` (one of `SAFETY_CRITICAL` with a batch or serial: `STRICT_QUALIFIERS`
+  10, 21, 235) and `may_answer(path_qualifiers, doc_qualifiers)` (the record names the request's batch or serial).
+  `web_namespace._process_response()` passes `strict` to `web_logic.read_document()`, which returns a 404 with
+  `_outcome` and `_match` `withheld` and `_anchor` the level holding the link when a record that may not answer would
+  have; the answer carries `Resolution-Match: withheld` (JSON, HTML and HEAD), the request log the outcome `withheld`,
+  and a browser `web_pages.render_error(walked=…)`: its own title and text (`error.404withheld.*`) naming the level
+  asked, the notice of §2.3 and the links available.
 - `web_pages.py` ([ADR 0019](adr/0019-appearance.md)): `Appearance` reads the setting `appearance` from the portal's
   database at most every `CACHE_SECONDS` (30), keeping the last one when it cannot (`APPEARANCE`, given the database by
-  `create_app()` unless a test set another); `appearance()` gives `_page()` the title (else `PRODUCT_NAME`), the logo as
+  `create_app()` unless a test set another); `appearance()` gives `_page()` the title (else `PRODUCT_NAME`, also for a former default of `FORMER_TITLES`, as in
+  the portal's `appearance.title_of()`; `RESOLVER_PRODUCT_NAME`, default *GS1 Digital Link Resolver Suite*, ADR 0024), the logo as
   a `data:` URI (else `LOGO_DATA_URI`) and the style `:root{--blue;--orange;--action}` of the colours that are
   `#RRGGBB` (`_hex()`), placed after the page's own tokens; `icon()` / `icon_address()` the operator's icon, the
   favicon of every page without one of its own (the item's page keeps its brand's logo) and the answer of
-  `/favicon.ico` (`web_namespace.Favicon`). The description file keeps `PRODUCT_NAME`.
+  `/favicon.ico` (`web_namespace.Favicon`). The description file keeps the official name of `public/gs1resolver.json`
+  (ADR 0024 §2.1).
 - `geoip.py` (new, ADR 0006 §8): `client_address(headers, remote_addr)` (the first address of
   `RESOLVER_LOG_ADDRESS_HEADER`, `X-Real-IP` by default, or the connection's), `Locator` (`maxminddb` in memory-mapped
   mode, opened at the first lookup, opened again when the file's modification time changes, looked for at most every
@@ -1119,12 +1504,30 @@ which mount the same volume), and the files of earlier versions renamed `*.migra
   (English names) and, with a city, `ll` (the city's position rounded to `POINT_DECIMALS`, a tenth of a degree, by
   `_point()`; ADR 0006 §10) for a public address only; the address is never logged.
   `web_logic.read_document()` and `_validate_and_fetch_document()` add `_level` (the level that answered a 307 or 300)
-  and `_outcome` (`unknown` or `noLink` on a 404) for the log; `web_namespace._process_response()` pops both before
-  answering.
+  and `_outcome` (`unknown`, `noLink` or `withheld` on a 404) for the log, and `_anchor` and `_match` for the headers;
+  `web_namespace._process_response()` pops them before answering and `_resolution_headers()` turns the last two into
+  `Resolution-Anchor` (on `public_root()`, like the linkset's anchors) and `Resolution-Match` on a 307 or 300
+  ([ADR 0022](adr/0022-answering-level.md) §2.2), both in `Access-Control-Expose-Headers` (`__init__.py`).
+- A language or market not served ([ADR 0028](adr/0028-language-fallback.md)): `web_logic.unserved(links, ranges,
+  context)` → `['language']`, `['context']`, both or none (links that declare no language, or only `und`, or no
+  context serve every one; `und`, the resolver's value for an absent `Accept-Language`, and `*` are no preference);
+  `_described()` gives the plain scan's `gs1:defaultLink` (stored as href and title) the languages and contexts of the
+  link of the default link type with the same target. `_handle_link_type()` (the former body now `_answer_link_type()`)
+  adds `_fallback` to a 307 or 300 and, with `offer_choice` (`read_document(offer_choice=…)`, set by
+  `web_namespace._process_response()` from `_wants_html()`), turns a 307 for a safety-critical type (asked, or the
+  key's default link type on a plain scan) that does not serve the request into a 300 with every link of the type at
+  that level. `_process_response()` pops `_fallback` into `Resolution-Fallback` (exposed in `__init__.py`) and passes
+  it with the context to `web_pages.render_linkset()`, whose `fallback_notices()` draws one notice per preference
+  (`fallback.language.*`, `fallback.context.*` in `page_texts.json`) above the walk-up notice.
 - `web_pages.py` (new): `render_error()` and `render_linkset()` (also the 300 choice page, with the linkset
   embedded as JSON-LD) in the twelve languages of `page_texts.json` (ADR 0014: `PAGE_TEXTS`, `SUPPORTED_LOCALES` in the menus' order by `_menu_key()`
   named in themselves, `LOCALE_MATCHERS`, `dir="rtl"` for Arabic; `landing.TEXT` reads the same file),
-  `negotiate_locale()`, the operator footer, only `http(s)` targets as links.
+  `negotiate_locale()`, the operator footer, only `http(s)` targets as links. `_level_label()` names a level from its
+  path, values decoded as printed; `level_notice()` and `notice_html()` (`_NOTICE`) write the notice of a page whose
+  links come from a less specific level than the request named ([ADR 0022](adr/0022-answering-level.md) §2.3), on the
+  readable linkset, the 300 page (`render_linkset(walked=…)`) and the item's page (`landing.render_page(walked=…)`):
+  `web_namespace._process_response()` passes `walked` = (the request's path, the answering level) when
+  `read_document()` reports `walk-up` — for a linkset, of the most specific level that applies.
 
 The table of every behaviour change, with the clause of the standard, is in the extensions documentation
 (*Resolver CE changes*).
@@ -1134,6 +1537,39 @@ The table of every behaviour change, with the clause of the standard, is in the 
 - `GET /api/summary[?links=true]` (`DocSummary` → `read_summary()` → `read_all_documents()`): one line per
   entry (anchor, qualifiers, description, default link type, number of links, optionally the links).
 - `GET /api/index` now requires the token; every protected operation declares `security='BearerAuth'`.
+- `browser_rules()` (an `after_request` hook in `create_app()`, [ADR 0038](adr/0038-browser-hardening.md) §2.3): the
+  Swagger UI page (`api.doc`, `/api/docs`) gets `SWAGGER_POLICY` (inline start-up script and style allowed, this origin
+  only, never framed), every other answer `OTHER_POLICY` (`default-src 'none'`); both `nosniff`.
+- `create_app()` calls `example_secrets.refuse(['SESSION_TOKEN', 'DATA_ENTRY_DB_PASSWORD'])` and
+  `example_secrets.warn(['MONGO_URI'], logger)` first ([ADR 0021](adr/0021-data-entry-api-closed.md) §2.7,
+  [ADR 0030](adr/0030-least-privilege-services.md)): with `FQDN` naming a real host, the example token or the example
+  password of its own database user stops the service with a `RuntimeError` naming the setting. It then connects with
+  `service_db.uri('DATA_ENTRY', logger)`: `DATA_ENTRY_DB_URI`, else a URI built from `DATA_ENTRY_DB_USERNAME`,
+  `_PASSWORD` and `_HOST` (default `database-service:27017`, `authSource=admin`, credentials percent-encoded), else
+  `MONGO_URI` with a warning (a service started by hand: the composition blanks it); the log names the host only
+  (`service_db.host_of()`). The resolver's `create_app()` does the same with `RESOLVER_DB_PASSWORD` and the prefix
+  `RESOLVER`; the portal refuses the token and its example
+  `PORTAL_DB_PASSWORD` (when `PORTAL_DB_URI` is empty) as `app.py` is imported. The proxy keeps the whole API closed
+  to addresses that `DATA_ENTRY_API_ALLOW` does not list (section 11).
+- `anchor_problem()` (first in `registration_problem()`; finding U-004,
+  [ADR 0049](adr/0049-data-entry-anchors.md)): an anchor (a v3 entry's `anchor`, the one a v2 entry's
+  `identificationKeyType` and `identificationKey` make: `entry_anchor()`) is `/AI/value` — `_ANCHOR`, an AI of
+  `KEY_AIS` (the sixteen primary keys, equal to `portal/gs1.py` `PRIMARY_KEYS`), a value of printable ASCII without `/`
+  or space — or 400 `anchor '…': an anchor is /AI/value, …`. A document id is the AI, `_` and the value; the AI is
+  digits, so the first `_` ends it (`convert_path_to_document_id()`, which refuses any other shape with `ValueError`,
+  and `document_id_to_anchor()`; `data_entry_db._reformat_id_for_db()` and `_reformat_id_for_external_use()`;
+  `read_index()`; `_convert_mongo_linkset_to_v3()`). The routes `/{AI}/{value}` answer 400 (`ANCHOR_PATH_ERROR`) for an
+  AI part with `_` (`_document_id()`), the route with more segments always; the resolver's `web_db._reformat_id()`
+  turns only the slash after the AI's digits into `_`. Ids of `/AI/value` anchors written before are unchanged.
+- Error answers (finding U-006, [ADR 0050](adr/0050-error-answers.md)): every answer made in an `except` block carries
+  a fixed text (`data_entry_db.DATABASE_ERROR`, `INTERNAL_ERROR`, `INVALID_ID`, `data_entry_logic.INTERNAL_ERROR`;
+  `web_logic.INTERNAL_ERROR` and `web_db`'s in the resolver), with the official status; the exception goes to the
+  service's log with its traceback (`exc_info=True`). An answer that does use the exception carries `# own message`
+  (the exception is the code's own refusal, its text written for the caller: `_qualifier_ais()`, `_Refused`, a missing
+  field, `EpcDecodeError`) or `# log only` (passed to a function that only logs it: `_unavailable()`,
+  `gs1_syntax._verdict()`); `test_data_entry_api.py` and `test_resolver.py` refuse any other. A duplicate key answers
+  409 naming the document. The resolver's and the data entry API's images install no package from Debian's
+  repository (the official ones installed `nano`; `test_least_privilege.py`).
 - `registration_problem()` (called by `create_document()` and `update_document()`): the qualifiers each key
   takes (`KEY_QUALIFIERS`, URI Syntax 1.7 §4.9), 415 needs 8020, and rules 1 and 2 of GS1-Conformant
   Resolver 1.2.1 §2.5.9 (235 alone; no 22 or 10 with 21).
@@ -1142,10 +1578,17 @@ The table of every behaviour change, with the clause of the standard, is in the 
   Barcode Syntax Engine through the toolkit's `callGS1encoder.js` (`TOOLKIT`, `_engine_accepts()`: `node` with the
   string as one argument, no shell; the engine's message returned in the 400). Template values (`{lotnumber}`) are
   left out; without the script (development outside the image) values are not checked, logged once.
+- `target_problem()` (between the two, on the same calls and on `POST /api/validate`; finding U-003,
+  [ADR 0048](adr/0048-data-entry-target-rule.md)): every target sent (`href` of a v3 entry's or a `PUT` body's links,
+  `targetUrl` of a v2 entry's responses) follows the portal's target rule, copied in `target_rule.py`
+  (`target_problem()`, `hrefs_problem()`: `https:` with a host, no spaces or control characters, no user information,
+  no IP address, no private name, a numeric port; the codes and `PRIVATE_TOP_NAMES` of `portal/gs1.py`); a target
+  already in the key's stored document (`_stored_hrefs()`, `target_rule.document_hrefs()`) is accepted as it is. 400
+  `link N ('…'): <reason>`; a list is checked whole before anything is written.
 - `POST /api/validate` (`validate_documents()`): what `POST /new` would refuse in one entry or a list
-  (`registration_problem()`, `value_problem()`), nothing stored. The portal asks it before rewriting a key's
-  document (`rewrite_document()`: deleting a record, fixing serial numbers), so that it never deletes what it could
-  not write back — a record made before a rule, or by another tool, that the API now refuses (`record.rewriteRefused`).
+  (`registration_problem()`, `target_problem()`, `value_problem()`), nothing stored. The portal asks it before writing records it
+  derives from stored ones (`rewrite_refusals()`: fixing serial numbers, turning a key to explicit default links), so
+  that it never half-changes a key the API would then refuse (`record.rewriteRefused`).
 - Links of type `gs1:defaultLink` (item 9.1, bug B1): the linkset member `https://gs1.org/voc/defaultLink` holds the
   derived default (one object, `href` and `title`) or, when the record has links of that type, those links (a list).
   `_convert_mongo_linkset_to_v3()` returns the list's links like any other (it skipped the member whatever it held, so
@@ -1159,12 +1602,12 @@ The table of every behaviour change, with the clause of the standard, is in the 
   default link type stays. The official code added the new linkset object to the entry, so the same record sent twice
   had every link twice (official pull request #128; its fix applied `_find_matching_link()` to the linkset objects,
   which carry no linktype, so a link in another language replaced the type's links). The portal sends it when two
-  people create the same record at once and when it restores a key's records after a failed rewrite.
+  people create the same record at once.
 - `POST /new` with a list holding several records of one key (`_author_db_linkset_list()` gathers them in one
   document): `_process_document_upsert()` takes each entry in turn, merging it into a stored entry, or one before it
   in the list, with the same qualifiers, adding it otherwise, and writes the document once. The official code returned
   after the first entry when the document existed (the others dropped, with a 201), and a new document kept a record
-  sent twice as two entries with the same qualifiers. The portal's restore after a failed rewrite is such a list.
+  sent twice as two entries with the same qualifiers.
 - `PUT` and a `DELETE` of links name one entry by the body's `qualifiers` (none: the key's own entry):
   `_matched_record_index()`; when no entry of the key has them, 404 `Record not found: <id><qualifiers>`
   (`_record_not_found()`) and nothing is written. The official code fell back to the document's first entry, so a
@@ -1179,7 +1622,26 @@ The table of every behaviour change, with the clause of the standard, is in the 
   returned some as a bare dictionary, which the namespace unpacked as body and status). A `DELETE` whose body names no
   link (`_names_links()`: `links` a non-empty list of objects; `{}`, the qualifiers alone, `"links": []`) answers 400
   and deletes nothing; the official handler deleted the whole document (and answered 500 to `links` as a string).
-  Without a body, the whole document is deleted, as before; the portal sends a body only with the links it removes.
+  Without a body, the whole document is deleted, as before; the portal sends a body only with the links it removes
+  or the record it removes.
+- One record removed, the key's others kept ([ADR 0023](adr/0023-record-level-delete.md)): a `DELETE` with
+  `{"removeRecord": true, "qualifiers": [...]}` (`_record_qualifiers()`: a list of one-AI objects with string values;
+  none or `[]` for the key's own record; 400 for `removeRecord` other than `true`, `links` in the same body or other
+  qualifiers) calls `delete_record()`: it reads the document, finds the entry with `_do_qualifiers_match()` (404
+  `_record_not_found()`; 404 for a key without a document) and writes the document without the entry, or deletes it
+  when no entry is left, through `_write_document()` (below). 200 `{entry, removed: 1, remaining, result}`.
+- Every write conditional ([ADR 0027](adr/0027-conditional-writes.md), finding F-009): `_process_document_upsert()`
+  (`POST /new`), `update_document()` (`PUT`), `delete_links()` and `delete_record()` give `_write_document(document_id,
+  change)` a function that builds the new document from a copy of the one read (`None` for a key without a document)
+  and returns it with the operation's answer, or raises `_Refused(body, status)` for any other answer (404, 400).
+  `_write_document()` writes a new key with `data_entry_db.create_document()` (409 for an `_id` created in the
+  meantime) and any other with `data_entry_db.write_document_if_unchanged(document, expected)`: `replace_one` (or
+  `delete_one` when no record is left) with a filter naming every field of the document read, so the document as read
+  is the revision (409 when another writer changed or deleted it). On a 409 it reads again and applies the change on
+  top, up to `WRITE_ATTEMPTS` (3) times, then answers 409 with nothing written. `data_entry_db.update_document()`, the
+  official unconditional replace by `_id`, is gone. A list sent to `POST /new` stops at the first item not written and
+  answers its status with `written` (the items written before it); `POST /new` on an existing key answers the write's
+  own error (the official code answered 200).
 
 ## 11. Proxy and home page (`frontend_proxy_server/`)
 
@@ -1188,26 +1650,92 @@ The table of every behaviour change, with the clause of the standard, is in the 
 name is also the Host header the web server receives, so it must be a valid host name), `/api` and
 `/swaggerui` to data-entry-service, and `/portal/` to portal-service (with `/portal` → `/portal/`). The
 resolver's location also passes `X-Forwarded-Host: $host`, the public name asked (an organisation's own domain,
-ADR 0009).
+ADR 0009), which the resolver writes only when it knows the name (ADR 0039). `absolute_redirect off`: the redirects
+nginx writes itself (`/portal`, `/home`) carry the path alone, never the client's `Host` (ADR 0039 §2.2; the host's
+site for an existing certificate redirects plain HTTP to `$server_name`).
 Each service is an upstream block (`resolver-web`, `data-entry`, `portal`) whose server is the service name
 with `resolve` and a shared `zone`: nginx asks Docker's DNS (`resolver 127.0.0.11 valid=10s`) for every
 replica's address, again every 10 seconds, shares the requests among them in turn, and goes on to another
 replica when one refuses the connection. It starts even while a service has no address yet (that service's
-paths answer 502 until it has). This needs nginx 1.27.3 or later; the image is `nginx:1.30-alpine`
-(rebuilt with `docker compose build --pull` to take a new security release of the 1.30 branch).
+paths answer 502 until it has). This needs nginx 1.27.3 or later; the image is `nginx:1.30-alpine` by digest
+(a new security release of the 1.30 branch arrives as Dependabot's proposal of a new digest, ADR 0033).
+`/api` and `/swaggerui` answer 403 unless the client's address is allowed (ADR 0021): the `geo
+$data_entry_api_allowed` block includes `/etc/nginx/api-access.conf`, which `api-access.sh` writes when the container
+starts (the nginx image runs `/docker-entrypoint.d/40-api-access.sh` before nginx) from three settings Compose passes
+from `.env`, no secret among them: `DATA_ENTRY_API_ALLOW` (addresses or networks, or `all`; each becomes
+`<entry> 1;`), `PROXY_TRUSTED_PROXIES` and `PROXY_BIND_ADDRESS`. The last two make the trusted proxies of the
+`real_ip` settings in `/etc/nginx/real-ip.conf`, written by the same script: each `PROXY_TRUSTED_PROXIES` entry becomes
+`set_real_ip_from <address>;`, and a loopback `PROXY_BIND_ADDRESS` adds the container's default gateway, read from
+`/proc/net/route`, where the host's nginx arrives from. With `real_ip_header X-Forwarded-For` and `real_ip_recursive
+on`, `$remote_addr` is the client: walking `X-Forwarded-For` from its end, the first address that is not a trusted
+proxy (the connection's address when the peer is not one). `geo` matches that address, and every location sets it
+alone in `X-Real-IP` and `X-Forwarded-For` (set, not appended), so the portal's `client_address()` (the last
+`X-Forwarded-For` address: the sign-in, recovery and link throttles per address and the audit trail) and the resolver's
+location lookup (`geoip.client_address()`, `X-Real-IP`) never read an address the client wrote (finding F-004, ADR 0021
+§3). An entry that is not an address or a network is left out with a warning on standard error (nginx would refuse it
+and not start); the image carries both files empty. `API_ACCESS_FILE`, `REAL_IP_FILE` and `API_ACCESS_ROUTES` let the
+tests run the script outside the image; the development nginx is built with `--with-http_realip_module`, as the
+image's is.
+Request limits per client address (ADR 0031, finding F-013): `map $remote_addr $limit_client` keeps an IPv4 address
+whole and reduces an IPv6 address to its `/64` (the first four groups when written out, else the groups before `::`);
+`geo $limit_exempt` includes `/etc/nginx/limit-exempt.conf` (`<entry> 1;` for each `PROXY_LIMIT_EXEMPT` entry) and
+`map $limit_exempt $limit_key` empties the key of an exempt address, which nginx does not count. `api-access.sh` writes
+`limits-http.conf` (the zones `limit_resolve` and `limit_portal`, per second, `limit_signin`, per minute, on
+`$limit_key`, 10 MB each, and `limit_conn_zone` `limit_conn`; a rate of 0 is written 1, unused) and the rules each
+location includes: `limit-resolve.conf` (`/`, `/home/`, `= /`; burst twice the rate), `limit-portal.conf`
+(`/portal/`; three times), `limit-signin.conf` (a regular-expression location for `/portal/api/login`,
+`/portal/api/password/forgot`, `/portal/api/password/link`, `/portal/api/password/link/check`,
+`/portal/api/sso/start` and `/portal/sso/callback`, before `/portal/`; half), all `nodelay`, and `limit-server.conf`
+(`limit_conn limit_conn <n>;` for the server); a setting of 0 writes the file empty, a value that is not a whole number
+keeps the default (`PROXY_LIMIT_RESOLVE` 50, `PROXY_LIMIT_PORTAL` 30, `PROXY_LIMIT_SIGNIN` 60,
+`PROXY_LIMIT_CONNECTIONS` 100) with a warning. `limit_req_status` and `limit_conn_status` are 429, their refusals
+logged at the level `access-log.conf` sets (below);
+`error_page 429` sends nginx's own refusals to `@too_many` (plain text) or, in the portal's locations, `@too_many_json`
+(`{"code": "proxy.tooMany"}`), both with `Retry-After: 1`; a 429 from a service passes through
+(`proxy_intercept_errors` is off). `/api` and `/swaggerui` have no rate, only the connections. `LIMITS_DIR` lets the
+tests write the files elsewhere; the image carries them empty (no limit).
+Access log (ADR 0043, finding F-025): two formats, `minimal` (`$time_iso8601 $request_method $log_area $status
+$body_bytes_sent $request_time`) and `full` (the former `main` with `$request_time`), and two `access_log` lines to
+the same file with `if=$access_log_minimal` and `if=$access_log_full`. `map $request_uri $log_area` gives `/` for the
+root, the path's first segment when it is 2 to 4 digits, `.well-known` or a lower-case word of at most 20 letters and
+hyphens with an optional extension of 2 to 4 letters, else `/...` (nginx escapes non-ASCII bytes in its logs, hence
+three dots); `$request_uri` and not `$uri`, which names the index file after an internal redirect. `api-access.sh`
+writes `/etc/nginx/access-log.conf` from `PROXY_ACCESS_LOG` (`minimal`, the default; `full`; `off`; another value
+`minimal` with a warning; case and spaces ignored): the two maps (`map $host $access_log_minimal { default 1; }`) and
+`limit_req_log_level` / `limit_conn_log_level`, `info` (below the error log's `warn`: the refusals' lines name the
+client and the request) except `warn` with `full`. `ACCESS_LOG_FILE` lets the tests write it elsewhere; the image
+carries the minimal choice. gunicorn runs without `--access-logfile` in the three images, and the host's site
+templates say `access_log off;` in each server; `install.sh` `configure_nginx()` warns about a kept Let's Encrypt site
+with fewer `access_log off;` lines than `server_name` lines and prints a `sed` command that deletes them and adds one
+after each `server_name`. `docker-compose.yml`'s `x-logging` anchor (`json-file`, `max-size` `${LOG_MAX_SIZE:-10m}`,
+`max-file` `${LOG_MAX_FILES:-5}`) is given to every service.
+HTTPS only (ADR 0038 §2.4, finding F-021): `map $http_x_forwarded_proto $strict_transport` is `max-age=31536000` when
+the host's proxy says the request came over HTTPS, else empty (nginx then sends no header); the server adds
+`Strict-Transport-Security $strict_transport` and so do the locations with `add_header` of their own (`@too_many`,
+`@too_many_json`, `= /`, `^~ /home/`), which would not inherit it.
 `home/home.js` reads the operator from `/.well-known/gs1resolver` and shares the language choice with the
 portal; its catalogue holds the twelve languages (Arabic right to left; `home.css` uses logical properties).
 
 ## 12. Scripts (`scripts/`)
 
 - `install.sh`: installer for Ubuntu 22.04/24.04 (checks, questions with earlier values as defaults,
-  Docker, host nginx with Certbot or an existing certificate or an external proxy, `.env` with generated
+  Docker, host nginx with Certbot or an existing certificate or an external proxy — installed or updated on every run,
+  its package compared with the first carrying nginx's fixes of November 2026 by `check_host_nginx()`
+  (`HOST_NGINX_FIXED` per Ubuntu release, 1.30.7 / 1.31.9 for nginx.org's builds), the HTTPS site over HTTP/1.1 only and
+  a kept site serving HTTP/2 reported, [ADR 0042](adr/0042-host-nginx.md) — `.env` with generated
   secrets and the replica counts — not asked; 1, the environment or the existing `.env`, 1 to 20 —,
   start-up, backup cron). Safe to re-run; `--non-interactive` reads every answer from
   environment variables. Templates of the nginx site in `templates/`.
 - `resolver-backup.sh` + `resolver-backup.cron`: MongoDB dump through the container (every database, the
   portal's and the request log included) and archive of the portal volume, 14 days kept; a failed dump says
-  `ERROR`, leaves no partial file and exits with status 1.
+  `ERROR`, leaves no partial file and exits with status 1. Since ADR 0044 each archive goes through `age -r …` on its
+  way to the disk (`*.archive.gz.age`, `*.tar.gz.age`; `pipefail`): the recipients are the public key of
+  `BACKUP_KEY_FILE` (`age-keygen -y`; default `/etc/resolver-backup.key`, created with `age-keygen` and a `NOTICE` when
+  neither it nor `BACKUP_RECIPIENTS` exists) and `BACKUP_RECIPIENTS`; `setting()` reads the environment, else `.env`;
+  age missing is `ERROR` (recorded, nothing written); `BACKUP_ENCRYPTION=off` writes plain archives with a `WARNING`.
+  `install.sh` installs `age` with nginx (`install_prerequisites()`), makes the key in `backup_key()` (unless
+  `BACKUP_RECIPIENTS`; `INSTALL_BACKUP_KEY_FILE` for tests) and names it in the summary; it generates
+  `PORTAL_DATA_KEY` once, like `PORTAL_JOURNAL_KEY`.
 - `geoip-update.sh` + `geoip-update.cron` (ADR 0006 §8): DB-IP's City Lite of the month (or the previous month's)
   into `geoip/dbip-city-lite.mmdb`, or `GEOIP_URL` (`.env` or the environment; its query string never printed),
   gzip-compressed or not, checked (size, the MMDB marker) and moved into place in one step; `ERROR` and status 1 keep
@@ -1223,14 +1751,26 @@ portal; its catalogue holds the twelve languages (Arabic right to left; `home.cs
   (5 × 2^(n−1), at most 360); a served domain is reported again only when its state or certificate changed; `flock` on
   `LOCK_FILE`; `apply --quiet`. `custom-domains.cron` runs it every 5 minutes; `install.sh` installs it
   (`schedule_domains()`, `INSTALL_DOMAINS_CRON_FILE`) when `TLS_MODE` is `letsencrypt` and removes it otherwise.
+  Only the resolver on an organisation's domain ([ADR 0045](adr/0045-organisation-domains-resolver-only.md)):
+  `portal_origin()` (`PORTAL_ORIGIN`, else `RESOLVER_PUBLIC_URL`, else `https://FQDN`, as `portal/app.py`; a plain
+  `http(s)` origin in lower case, else nothing); `write_rule()` writes `NGINX_SNIPPETS/gs1resolver-domain-paths.conf`
+  when its content changes (`= /portal`, `^~ /portal/` → 302 to the portal's address, or 404 with a warning when there
+  is none; `^~ /api`, `^~ /swaggerui` → 404); `add_rule()` puts `include <rule>;` before each `location / {` of a site,
+  once (status 1 when already there, 2 when the site has none); `write_site()` calls it; `migrate_sites()` gives it to
+  every site written before, tests nginx once and puts each changed site back on a refusal; `apply` writes the rule and
+  migrates before the domains' loop and reloads nginx when either changed; `list` names the sites without the include.
 - `resolver-backup.sh` also records each run in the portal's database (`backup.last`, ADR 0008), and copies its
   archives to `BACKUP_COPY_TO` (rsync; a failed copy fails the run) when set (item 7.2).
 - `restore-rehearsal.sh` (item 7.2): `mongorestore` of an archive into `docker run --network none` of the database
   service's image (`docker compose images -q`), document counts of every collection (`COUNT_JS`, mongosh) next to the
   live ones, `resolver_ce.gs1resolver` and `<PORTAL_DB_NAME>.users` required; the container removed by an `EXIT` trap.
+  The newest of `resolver-*.archive.gz` and `*.archive.gz.age` by default; an `.age` archive goes through `age -d -i
+  BACKUP_KEY_FILE` (an error naming the setting when the key is not readable; a key that does not open it fails the
+  restore).
 - `rotate-secrets.sh` (item 7.2): `SESSION_TOKEN`, `PORTAL_SECRET_KEY`, `PORTAL_DB_PASSWORD` and the MongoDB root
   password (`changeUserPassword` through `mongosh` with the new value on standard input, then `.env` and `MONGO_URI`);
-  `.env.bak-<time>`; `docker compose up -d`.
+  `.env.bak-<time>`; `docker compose up -d`. Named only: `journal` (`PORTAL_JOURNAL_KEY`) and `data` (`PORTAL_DATA_KEY`,
+  the former value written to `PORTAL_DATA_KEY_PREVIOUS`; ADR 0044).
 - `upgrade-from-official.sh` (session 17): in the folder of an official installation (no `portal-service` in its
   `docker-compose.yml`, no uncommitted change to tracked files, the database service running and answering with the
   credentials of `.env` or `.env.example`), counts `resolver_ce`'s documents per collection (`COUNT_JS`), `mongodump
@@ -1249,32 +1789,38 @@ portal; its catalogue holds the twelve languages (Arabic right to left; `home.cs
 No Docker needed; each program exits with status 1 on a failure. The portal programs use `mongomock`
 (`PORTAL_DB_URI=mongomock://`, one database per program); with `PORTAL_DB_URI` set to a real MongoDB they
 run against it. Setup and commands are in
-`dev-tests/README.md`.
+`dev-tests/README.md`. The portal's browser programs import `dev-tests/portal/csp_guard.py`, which wraps
+Playwright's `new_page()` to watch each page's console and fails the program on any Content-Security-Policy message
+(ADR 0038 §2.6; 2 of its 23 mutations, an image source and a style attribute, caught by it).
 
 | Program | Checks | Covers |
 |---|---:|---|
-| `resolver/test_resolver.py` | 207 | resolver and data entry code through Flask's test client: every key and qualified record, walk-up, link types, 404 rules, linkset schema, attributes passed on, description file schema, HTML pages, `/eh…` and `/ex…` requests; the engine in the resolver's process (`gs1_syntax.py`): the same answers as Node.js for valid and invalid URIs and element strings, no Node.js process for a resolution, the fallback to Node.js without the library (reported once), the cache, eight threads at once, the time of a check; the project's logo embedded in the pages (item 7.3); the footer's link to the privacy notice (ADR 0017; 1 of its 21 mutations) |
+| `resolver/test_resolver.py` | 299 | resolver and data entry code through Flask's test client: every key and qualified record, walk-up, link types, 404 rules, linkset schema, attributes passed on, description file schema, HTML pages, `/eh…` and `/ex…` requests; template records and the `{0}`/`{1}` of serialised keys: values with quotes, commas, slashes and question marks stay one encoded segment of the registered address (official code; 2 mutations, both caught); the level that answered (ADR 0022 §2.2): `Resolution-Anchor` and `Resolution-Match` on every 307 and 300 through product, variant, batch and serial levels, a unit's record exact for its batch and variant, on the name the request was made on, exposed to other origins, absent from a linkset and a 404 (6 mutations, all caught); the notice on the item's page and the 300 page when the links come from a less specific level, in the visitor's language, not when the request's own level answers, a batch value decoded and escaped, the linkset unchanged (6 mutations, all caught); the engine in the resolver's process (`gs1_syntax.py`): the same answers as Node.js for valid and invalid URIs and element strings, no Node.js process for a resolution, the fallback to Node.js without the library (reported once), the cache, eight threads at once, the time of a check; the project's logo embedded in the pages (item 7.3); the footer's link to the privacy notice (ADR 0017; 1 of its 21 mutations); the 300 page's notice of a language not served ([ADR 0028](adr/0028-language-fallback.md)); `Resolution-Anchor` on a name listed in `FQDN_ALIASES` and on `FQDN` otherwise (ADR 0039); the toolkit's Node.js processes ([ADR 0047](adr/0047-toolkit-processes.md)): one-segment paths that cannot be compressed links refused without a process, a real compressed link decompressed by the real toolkit and then answered from memory, a process that never ends killed within the limit (503 with `Retry-After`, JSON and HTML, not remembered, every slot given back), every slot taken (503, no process), eight requests at once never more than two processes, the fallback syntax check and a compression answering 503 when the toolkit is busy (13 mutations, all caught); document ids ([ADR 0049](adr/0049-data-entry-anchors.md)): a key value with `_` resolved to its own record, a `%2F` in a value never reading it, the resolver's mapping (1 of its 15 mutations); error answers ([ADR 0050](adr/0050-error-answers.md)): no answer built from an exception's text in `web_server/src`, `web_db` on a failing database and a failure while choosing the link answered with a fixed text, the exception and its traceback in the log (6 of its 16 mutations); the records' database down ([ADR 0051](adr/0051-records-unavailable.md)): 503 with `Retry-After` and the fixed text, the page that asks to try again and not *no information registered*, a linkset, HEAD, a serialised key without a search, the database failing during the binary search and during the scan, an item page's button, an invalid code still 400, the answers back with the database (10 of its 12 mutations); one time budget for a request's database reads ([ADR 0052](adr/0052-database-time-budget.md)): 5 s by default, the setting in milliseconds, values refused, the budget around the whole application, with the real PyMongo client and no database a 503 within the budget as JSON and as the page, the next request too, the budget in the log, an invalid setting warned about (10 mutations) |
 | `resolver/test_epc_binary.py` | 167 | EPC binary decoder: EPCB examples, every vector of TDS 2.3 annex E.3 (`eh` and `ex`), +AIDC data, `++` hostnames, refusals, RE3, TDT artefacts against their schema; 800 random EPCs against `epc-tds` when `EPC_TDS` is set (166 without; no 12-digit company prefix for SGLN, GRAI, GDTI, which it decodes one digit too long); SGLN, GRAI, GDTI and SGCN of a 12-digit company prefix against the standard (item 9.10) |
-| `resolver/test_gs1_suite.py` | 332 | GS1's resolver test suite, its JavaScript unchanged in Chromium, against the web server code over HTTP; a Python version of its `tester.php`; eleven scenarios (also the item's page as the default target, and another name of the installation); needs `GS1_RESOLVER_TESTSUITE` and `AJV_DIST` (skipped without) |
-| `resolver/test_data_entry_api.py` | 95 | token on every protected operation; registration rules of §2.5.9 and informative qualifiers; `POST /new` on a record that exists merging its links; a list of a key's records written whole (a record sent twice merged); `PUT` and a `DELETE` of links for a record the key does not have (404, nothing changed); 400 for a body that is not JSON or not an object, for a record without a link of its default link type and for a `DELETE` whose body names no link (nothing changed); values checked by the GS1 Barcode Syntax Engine (check digits, lengths, character sets, also of informative qualifiers; brackets in a value; templates left out; a list refused whole; `PUT`; no engine, no check) |
-| `resolver/test_mock_parity.py` | 43 | the portal's stand-in for the data entry API against the real one (item 9.1): the same calls in the portal's order (`POST /new`, also on a record that exists and with a list of a key's records, `PUT` merging, the shared default, informative qualifiers, `DELETE` of links, both 404 for a record the key does not have, both 400 for a `DELETE` whose body names no link, `GET`, `/summary?links=true`, links of type `gs1:defaultLink`: the item's page and explicit default links) give the same records; the real API returns `gs1:defaultLink` links (bug B1). 2 of the 24 mutations of item 9.1, all caught |
-| `resolver/test_domains_resolver.py` | 45 | organisations' own domains in the resolver ([ADR 0009](adr/0009-tenant-domains.md)): a domain with a stem resolving its organisation's codes (also a batch with `%2F`, the raw URI stripped), refusing others with 404 and without their link types or linkset, the description file's `resolverRoot`; the anchors, `Link` header, JSON-LD `@id` and `resolverRoot` on the name requested (a domain's stem, another name, none, a header that is not a host name); a domain without a stem; `X-Forwarded-Host`, `Host`, ports, capitals, several hosts; the operator's domain; hosts that are not registered domains, pending ones, redirecting ones; the cache, a database that cannot be read; the proxy's header |
-| `resolver/test_forwarding_resolver.py` | 26 | forwarding in the resolver ([ADR 0018](adr/0018-forwarding.md)): the resolver of last resort (off by default and when switched off; on with GS1's address or the operator's, the path, the query string and a '/' in a value kept, a GTIN-13; a compressed link sent uncompressed; a linkset request and HEAD; never a known key, a missing link type or an invalid request; the request log's `fallback` and the destination's host); prefix rules (every key of the prefix even when registered, the path kept or a fixed address, the longest prefix, a disabled rule ignored, GTIN-13, SSCC and GLN, an invalid request still 400, an organisation's own domain limited to its keys; `forwarded`); both together; the settings read again after the cache and kept when the database fails. 10 of the 32 mutations of ADR 0018, all caught |
-| `resolver/test_landing.py` | 80 | the item's page in the resolver ([ADR 0011](adr/0011-item-page.md)): a scan of a record whose default is its page redirected there (a batch to its own), JSON clients and the linkset unchanged; the page (logged as a follow-up), its title, the brand of the longest prefix (name escaped, colours, text colour by contrast, the logo served by the resolver), a button per link with its icon, each link type once in the visitor's best language (marked when not the page's; Spanish then French, none the visitor reads), the brand's logo as favicon, levels, the readable code, JSON-LD, nothing from other sites; each record's own choice (the product's page, a batch's own target, a batch without a record reaching the product's page); automated clients' views and clicks logged as plain answers; `/_click` (302, `no-store`, the click's event) and its refusals (another type, positions, levels, paths, another domain), never a target from the request; a domain's stem kept; logos; Verified by GS1 (on, off, a brand's switch, GTIN, GLN, not an SSCC, never in the linkset); the cache and a database that cannot be read; the installation's appearance ([ADR 0019](adr/0019-appearance.md): the original, then the operator's title, embedded logo and colours on the item's page, an error page and the readable linkset, never in JSON nor the description file, the operator's icon as an error page's favicon and as `/favicon.ico` while the item's page keeps its brand's, a title escaped and a value that is not a colour ignored, the original again once removed). 20 of the 41 mutations of the item's page, 5 of the 24 of item 9.1 and 6 of the 42 of ADR 0019, all caught |
+| `resolver/test_gs1_suite.py` | 332 | GS1's resolver test suite, its JavaScript unchanged in Chromium, against the web server code over HTTP; a Python version of its `tester.php`; eleven scenarios (also the item's page as the default target, and another name of the installation, listed in `FQDN_ALIASES`, ADR 0039); needs `GS1_RESOLVER_TESTSUITE` and `AJV_DIST` (skipped without) |
+| `resolver/test_data_entry_api.py` | 215 | token on every protected operation; registration rules of §2.5.9 and informative qualifiers; `POST /new` on a record that exists merging its links; a list of a key's records written whole (a record sent twice merged); `PUT` and a `DELETE` of links for a record the key does not have (404, nothing changed); 400 for a body that is not JSON or not an object, for a record without a link of its default link type and for a `DELETE` whose body names no link (nothing changed); the record-level delete of ADR 0023 (one record removed, the others kept, in one conditional write; 404, 400 for malformed bodies, a document changed in between read again, 409 when it keeps changing; the database layer on mongomock); every write conditional (ADR 0027: `PUT`, `POST /new` and a `DELETE` of links racing another writer read again with both changes kept, two writers creating one key, 409 with nothing written when the key keeps changing, a list stopping at the item not written, a failed write no longer answered 200, the default link type in the filter, no unconditional replace left; 7 of its 8 mutations); values checked by the GS1 Barcode Syntax Engine (check digits, lengths, character sets, also of informative qualifiers; brackets in a value; templates left out; a list refused whole; `PUT`; no engine, no check); the browser's rules (ADR 0038): the Swagger UI's policy and the other answers', the Swagger UI in Chromium with nothing refused; 3 of the 23 mutations of ADR 0038, all caught; the target rule ([ADR 0048](adr/0048-data-entry-target-rule.md)): 18 targets refused by `POST /new` naming the link and the reason, a list refused whole, a v2 `targetUrl`, four accepted forms, `PUT` refusing a new target, a target the key already holds accepted by `PUT`, `POST /new` and `POST /validate` but not on another key, 47 addresses refused as the portal refuses them (14 mutations, all caught); anchors ([ADR 0049](adr/0049-data-entry-anchors.md)): 12 malformed anchors refused by `POST /new`, no anchor, a v2 key with a slash refused and a valid one accepted, a list refused whole, `POST /validate`, the primary keys the portal's, a value with `_` stored, read, listed and changed under its own anchor, paths whose AI part has `_` and paths with more segments refused, ids and anchors one to one, documents of other shapes listed and removable but never written again, the database layer's ids on mongomock (12 of its 15 mutations); error answers ([ADR 0050](adr/0050-error-answers.md)): no answer built from an exception's text in `data_entry_server/src`, `POST /new`, `PUT` and both `DELETE`s on a failure, a failing write and the route's own `abort()` answered with a fixed text and logged with the traceback, a body neither an object nor a list not repeated, the database layer on a failing database (six operations, an invalid id, a duplicate key) (8 of its 16 mutations) |
+| `resolver/test_mock_parity.py` | 55 | the portal's stand-in for the data entry API against the real one (item 9.1): the same calls in the portal's order (`POST /new`, also on a record that exists and with a list of a key's records, `PUT` merging, the shared default, informative qualifiers, `DELETE` of links, both 404 for a record the key does not have, both 400 for a `DELETE` whose body names no link, the record-level delete (ADR 0023: 200, 404, 400, the last record taking the document), `GET`, `/summary?links=true`, links of type `gs1:defaultLink`: the item's page and explicit default links) give the same records; the real API returns `gs1:defaultLink` links (bug B1); malformed anchors and a path whose AI part has `_` answered 400 by both (ADR 0049; 2 of its 15 mutations). 2 of the 24 mutations of item 9.1, all caught |
+| `resolver/test_domains_resolver.py` | 61 | organisations' own domains in the resolver ([ADR 0009](adr/0009-tenant-domains.md)): a domain with a stem resolving its organisation's codes (also a batch with `%2F`, the raw URI stripped), refusing others with 404 and without their link types or linkset, the description file's `resolverRoot`; the anchors, `Link` header, JSON-LD `@id` and `resolverRoot` on the name requested (a domain's stem, another name listed in `FQDN_ALIASES`, none, a header that is not a host name); names nobody listed, an unverified and a redirecting domain answered with `FQDN` everywhere a name is written, `Resolution-Anchor` included, the list's parsing, the host's site redirecting to `$server_name` ([ADR 0039](adr/0039-known-public-names.md): 7 of its 9 mutations, all caught); a domain without a stem; `X-Forwarded-Host`, `Host`, ports, capitals, several hosts; the operator's domain; hosts that are not registered domains, pending ones, redirecting ones; the cache, a database that cannot be read; the proxy's header |
+| `resolver/test_forwarding_resolver.py` | 32 | forwarding in the resolver ([ADR 0018](adr/0018-forwarding.md)): the resolver of last resort (off by default and when switched off; on with GS1's address or the operator's, the path, the query string and a '/' in a value kept, a GTIN-13; a compressed link sent uncompressed; a linkset request and HEAD; never a known key, a missing link type or an invalid request; the request log's `fallback` and the destination's host); prefix rules (every key of the prefix even when registered, the path kept or a fixed address, the longest prefix, a disabled rule ignored, GTIN-13, SSCC and GLN, an invalid request still 400, an organisation's own domain limited to its keys; `forwarded`); both together; the settings read again after the cache and kept when the database fails; the records' database down ([ADR 0051](adr/0051-records-unavailable.md)): a registered code, an unknown one and a compressed link answered 503 and never sent to the last resort, outcome `error`, a prefix rule still forwarding, an unknown code sent again once the database is back. 10 of the 32 mutations of ADR 0018 and 7 of the 12 of ADR 0051, all caught |
+| `resolver/test_strict_resolver.py` | 37 | the strict mode for safety-critical link types in the resolver ([ADR 0022](adr/0022-answering-level.md) §2.4): off by default (the walk-up); on for an organisation: a batch or a serial alone without its own link of the five types withheld (404, `Resolution-Match: withheld`, no `Location`, the request log's `withheld`), a batch value in another case, the URI form of a type, a variant's record not naming the batch; the batch's or unit's own record answers, a serial within a batch answered by the batch's record; another link type, the default link, the product without batch, the linkset and a type nobody registered unchanged; HEAD; the operator's keys and another organisation (the longest prefix) not affected; the browser's page (its title naming the batch and the type, the notice, the product's links, the visitor's language); the operator's scope; the setting read again after the cache and kept when the database fails. 8 mutations, all caught |
+| `resolver/test_settings_age.py` | 38 | the age of the portal's settings in the resolver ([ADR 0053](adr/0053-settings-age.md), finding F-033): `RESOLVER_SETTINGS_MAX_AGE_S` (900 s; 60 to 86,400; a warning for another value); forwarding through Flask's test client within and past the limit (no prefix rule, no resolver of last resort), one error line and one information line, the database back; the age counted from the last good read and from the start; brands and appearance dropped; domains, strict mode and retention kept; the heartbeat's `settings` over the six caches |
+| `resolver/test_language_resolver.py` | 32 | a language or market not served ([ADR 0028](adr/0028-language-fallback.md)): `Resolution-Fallback` (`language`, `context`, both) on a 307 or 300 for an app, exposed to other origins; a language served by a shorter tag or accepted at a lower weight, `*` and no `Accept-Language` without the header; links without a language or context serve everyone; a plain scan judged on the default link's own languages; the linkset unchanged; a browser asking one of the five safety-critical types receives the page of a choice (300) with every link of the type, the notice in its language (Portuguese, Arabic) naming the type or the market, the request log's `choice`; a language served, other link types, a plain scan of a key whose default type is not safety-critical and a leaflet without a language keep the redirect; a plain scan of a key whose default type is the leaflet gets the choice; `unserved()`. 10 mutations, all caught |
+| `resolver/test_landing.py` | 108 | the item's page in the resolver ([ADR 0011](adr/0011-item-page.md)): a scan of a record whose default is its page redirected there (a batch to its own), JSON clients and the linkset unchanged; the page (logged as a follow-up), its title, the brand of the longest prefix (name escaped, colours, text colour by contrast, the logo served by the resolver), a button per link with its icon, each link type once in the visitor's best language (marked when not the page's; Spanish then French, none the visitor reads), the brand's logo as favicon, levels, the readable code, JSON-LD, nothing from other sites; each record's own choice (the product's page, a batch's own target, a batch without a record reaching the product's page); automated clients' views and clicks logged as plain answers; `/_click` (302, `no-store`, the click's event) and its refusals (another type, positions, levels, paths, another domain), never a target from the request; a domain's stem kept; logos; Verified by GS1 (on, off, a brand's switch, GTIN, GLN, not an SSCC, never in the linkset); the cache and a database that cannot be read; the installation's appearance ([ADR 0019](adr/0019-appearance.md): the original, then the operator's title, embedded logo and colours on the item's page, an error page and the readable linkset, never in JSON nor the description file, the operator's icon as an error page's favicon and as `/favicon.ico` while the item's page keeps its brand's, a title escaped and a value that is not a colour ignored, the original again once removed). 20 of the 41 mutations of the item's page, 5 of the 24 of item 9.1 and 6 of the 42 of ADR 0019, all caught; the browser's rules (ADR 0038): a nonce per answer on every inline element of the item's page, a linkset page and the error pages, a value's element left as text, no fonts on the item's page, `nosniff` and the referrer policy, nothing allowed on the other answers, the pages in Chromium with nothing refused; 10 of the 23 mutations of ADR 0038, all caught |
 | `resolver/test_request_log.py` | 135 | the log of resolver requests ([ADR 0006](adr/0006-resolver-request-log.md)) through Flask's test client into mongomock: every field of a redirect's event, levels, unit qualifiers kept as AIs only, every outcome (unknown code, missing link type, choice, linkset, invalid request, probe, compressed link, `?compress`, EPC binary string), HEAD, languages, what is never stored (address, User-Agent, full referrer, values of data attributes and serial numbers), routes not logged, answers unchanged, the country header, retention and the switch, indexes, device classes, and that a database that does not answer or fails never holds a request up (events lost and counted, batches of 500); browser families, the approximate location from a GeoIP database written by `mmdb-writer` (the address never kept, private addresses never looked up, the address header, the country header, a newer, broken or missing file) and the retention the portal sets per organisation (ADR 0006 §8); the city's position rounded to a tenth of a degree, dropped with the city when the country header disagrees (ADR 0006 §10). 11 of the 27 mutations of item 9.5 and 3 of the 12 of the map, all caught Automated clients' requests and those without a key counted per quarter of an hour, not stored, their counts adding up per group, with the retention's expiry and their indexes (ADR 0006 §11): 7 of its 20 mutations, all caught. A path whose first segment is no primary key counted as one without a key, a primary key with a wrong value still stored, the primary keys those of the dictionary (§12): 1 of the 7 mutations of §12 and §13, caught; the probes answered 400 by the real syntax check, `/heartbeat` 200 |
 | `portal/test_dictionary.py` | 30 | the GS1 rules from the dictionary (ADR 0003): `gs1_dictionary.json` exactly what the pinned release's dictionary gives, the parser, keys, shapes, order and formats built from it with the portal's exceptions, a longer format or a new key handled with no code, an unknown linter or shape stopping the build, the rules sent to the browser, AIs (7041) and (8040)–(8043) and their Portuguese names, the comparison of the weekly issue |
 | `portal/test_engine_messages.py` | 26 | the engine's messages (ADR 0003): `engine_messages.json` exactly what the pinned release's sources give, both languages of every message with the same parameters (the English one the engine's text), every message and linter's message recognised as itself, the portal's refusals carrying the message, the comparison of the weekly issue |
 | `portal/test_keys.py` | 138 | keys and qualifiers, compared with the GS1 Syntax Engine |
 | `portal/test_governance.py` | 35 | roles, prefixes, users, history, audit |
-| `portal/test_sheet.py` | 44 | spreadsheets, limits per format |
-| `portal/test_special_chars.py` | 57 | special characters |
+| `portal/test_sheet.py` | 59 | spreadsheets, limits per format; what a file holds once read ([ADR 0032](adr/0032-spreadsheet-reading-limits.md)): reading stopped at the first row past the limit, 64 columns, blank rows as one shared list with the row numbers kept, rows past Excel's last row, an XLSX that unpacks into more than 32 MB, bzip2 parts. 16 mutations, all caught |
+| `portal/test_special_chars.py` | 58 | special characters; names of no account typed at sign-in never stored (ADR 0031) |
 | `portal/test_data_attributes.py` | 83 | data attributes, decimal families, QR options (needs `GS1_SYNTAX_ENGINE_DIR`) |
-| `portal/test_linkcheck.py` | 16 | link checker, SSRF guard |
+| `portal/test_linkcheck.py` | 30 | link checker, SSRF guard; [ADR 0029](adr/0029-outbound-requests.md): `http://` reported without a request (`linkcheck.insecureAddress`), user information invalid, internal addresses in IPv4 and IPv6 forms refused, a rebinding name never reaching the local server, at most 2 requests to one host at once while two hosts run side by side, a stop leaving the rest unrequested |
+| `portal/test_outbound.py` | 55 | requests to addresses users choose ([ADR 0029](adr/0029-outbound-requests.md)): which addresses are global (IPv4-mapped, 6to4, NAT64 included); a name resolved once and every address checked; addresses refused before any request; DNS rebinding (the address checked dialled, never the next answer); Host, SNI and the certificate's check on the name over a local HTTPS server; a certificate for another name refused; no redirect followed; the next address tried, three at most; no proxy from the environment; single sign-on's requests and the domain check through it. 14 mutations, all caught |
 | `portal/test_portal_config.py` | 13 | configuration and start-up, session limits |
-| `portal/test_session.py` | 30 | session limits (15 s idle in the test): server rules, warning, renewal on use, other tabs, absolute limit, both languages; community notice in the footer (about two minutes) |
-| `portal/test_store.py` | 58 | the portal's database layer: connection settings, indexes, the shared lock (also between two administrators at once), users, record metadata, journal and its retention, sign-in throttle, migration of the old files (also interrupted and resumed) |
-| `portal/test_tenants.py` | 82 | tenants ([ADR 0002](adr/0002-tenants.md)): an installation without tenants unchanged; tenants and their prefixes (names, overlaps, redundancy, operator users in the way); the operator's records and users; tenant administrators and their users; e-mail addresses; records, history, record list, export and imports per tenant, and the worker's check before each record; prefixes moving between owners; the audit trail per tenant and its CSV; support access; disabled and removed tenants; link check results per scope; ownership by key type; the command line; the messages of both languages (same keys, every key of the page and every message code of the server translated) |
-| `portal/test_mail.py` | 138 | e-mail ([ADR 0004](adr/0004-e-mail.md)) against an SMTP relay of the test's own (`fake_smtp.py`: STARTTLS or TLS with a throwaway certificate, authentication, refusals on demand): settings that do not fit, sending with STARTTLS and TLS, headers and the HTML alternative, temporary and permanent failures, credentials never sent without encryption, the test command; the texts of both languages; single-use links (hash only, once, replaced, expired, purged); `notBefore` and `defer()`; with mail off nothing changes; invitations, password recovery (the same answer and time for every input, limits, who gets nothing), resets by an administrator, security notices, preferences, notices of finished jobs; retries, failures, a message skipped for an account disabled meanwhile, no address in the journal; every message code translated. Every protection mutation-checked |
+| `portal/test_session.py` | 78 | session limits (15 s idle in the test): server rules, the server-side session records of [ADR 0034](adr/0034-session-records.md) (finding F-016: a copied cookie refused after sign-out, a password change — this browser kept under a new id —, a reset, an account or organisation disabled and enabled again, an account removed; only the id's SHA-256 stored; renewal at most once per interval, capped at the absolute limit; a record of another user or a cookie without an id refused; 17 mutations, all caught), the throttle and audit trail on the address the proxy set (not a forged first `X-Forwarded-For` address), the sign-in delay per user name and address with no lock by user name alone (F-005), warning, renewal on use, other tabs, absolute limit, both languages; community notice in the footer (about two minutes); failed sign-ins naming no account counted per hour, never journalled one by one, at most 10 addresses, one journal event per finished hour by the housekeeping (once, given back when the journal fails, sealed, counted by the overview; ADR 0031): 7 of its 27 mutations, all caught |
+| `portal/test_store.py` | 110 | the portal's database layer: the journal's own database and its move, retention and sealing by `db_init.py` (ADR 0026 §2.5.2); connection settings, indexes, the shared lock (also between two administrators at once), users, record metadata, journal and its retention, its hash chains (ADR 0026: seals, every kind of tampering, racing writers, events sealed at the upgrade, receipts, keys, the daily checkpoint; 16 of the 25 mutations, all caught after one check was added), sign-in throttle and its progressive delay, migration of the old files (also interrupted and resumed) |
+| `portal/test_tenants.py` | 96 | tenants ([ADR 0002](adr/0002-tenants.md)): an installation without tenants unchanged; tenants and their prefixes (names, overlaps, redundancy, operator users in the way); the operator's records and users; tenant administrators and their users; e-mail addresses, unique per organisation; another organisation's names and addresses (ADR 0036: refusals of taken names limited and journalled); records, history, record list, export and imports per tenant, and the worker's check before each record; prefixes moving between owners; the audit trail per tenant and its CSV; support access; disabled and removed tenants; link check results per scope; ownership by key type; the command line; the messages of both languages (same keys, every key of the page and every message code of the server translated) |
+| `portal/test_mail.py` | 139 | e-mail ([ADR 0004](adr/0004-e-mail.md)) against an SMTP relay of the test's own (`fake_smtp.py`: STARTTLS or TLS with a throwaway certificate, authentication, refusals on demand): settings that do not fit, sending with STARTTLS and TLS, headers and the HTML alternative, temporary and permanent failures, credentials never sent without encryption, the test command; the texts of both languages; single-use links (hash only, once, replaced, expired, purged); `notBefore` and `defer()`; with mail off nothing changes; invitations, password recovery (the same answer and time for every input, limits, who gets nothing, a link to each account of an address used in two organisations), resets by an administrator, security notices, preferences, notices of finished jobs; retries, failures, a message skipped for an account disabled meanwhile, no address in the journal; every message code translated. Every protection mutation-checked |
 | `portal/test_api.py` | 92 | the tenant API and its keys ([ADR 0005](adr/0005-tenant-api.md)): keys created, listed and revoked only in the administrator's own scope (also during support access), the rules of a key (name, scopes, days, prefixes, 20 active), the full key once and only its hash stored, the creator told by e-mail; authentication (missing, wrong, revoked, expired, disabled organisation), sessions and keys kept apart; records listed in pages, read, written (GS1 rules, another owner's record refused, no CORS), deleted; labels; scopes, a key's prefixes, the operator's keys; the journal (`api:<id>`); the request limit and the last use; the expiry notice and the worker's housekeeping; the OpenAPI description against the routes and the answers; both languages. Every protection mutation-checked |
 | `portal/test_datamatrix.py` | 66 | Data Matrix and scanning environments ([ADR 0010 §7](adr/0010-label-studio.md), item 9.3): a GS1 DataMatrix read back by zxing-cpp as `]d2` with its element string (FNC1 first and after the batch), square even where a rectangle is smaller; a Data Matrix with the URI as `]d1`; the QR code unchanged; data too long refused; SVG, PDF and zip naming the symbol and its data; each environment's ranges, symbols and sizes (with an EAN/UPC beside, a narrower linear range limiting them and setting its X); refusals; the HRI as text (Liberation Sans, OCR-B) or outlines, the modules the same; the portal's and the tenant API's options, headers, file names and refusals with the sizes allowed; `/config`; both languages; the OpenAPI description. 16 of the 22 mutations, all caught. Release 26.0 of the General Specifications (§7.6): each table's ranges and sizes, the QR code only where a table names one, the environments of each key and its default, an SSCC and a GLN drawn at their tables' targets, an environment of other keys refused with the key's. 8 of the 11 mutations of §7.6, all caught. The EAN/UPC's own size (§7.7): its sizes by its range alone, a 2D symbol at 200 % beside an EAN-13 at 100 % (both read back), its bars and the zip's README (percentage and magnification), refusals, `linearsize` through the portal (unused without `linear`) and `/config`'s `linearSizes`. 9 of the 16 mutations of §7.7, all caught |
 | `portal/test_link_types.py` | 23 | every link type and language (item 9.4): `gs1_link_types.json` checked against the GS1 Web Vocabulary (`GS1_WEB_VOCABULARY`, pinned in the CI setup), only stable types, not the resolver's default ones; each grouped, every group in every key type's order, the order by key type; Portuguese default titles; the titles given before still the portal's; names in both languages; `/config`; a record with new types and their default titles by language; any well-formed language, a malformed one and a deprecated type refused; a spreadsheet with a new type. 9 of the 15 mutations, all caught |
@@ -1282,24 +1828,31 @@ run against it. Setup and commands are in
 | `portal/test_admin_nav.py` | 42 | administration and navigation ([ADR 0013](adr/0013-administration-and-navigation.md), item 9.2): an organisation's page (prefixes, users without secrets, domains, brands, single sign-on, API keys, alerts; an organisation's administrator always their own, a server administrator any and the operator's, support access the one in support, editors refused, an unknown organisation 404); a refused prefix named; the account's organisation with its prefixes; the alert history (recorded once, closed as `ok` or `unknown`, a new entry later; an organisation's administrator their spikes only, a server administrator everything, by organisation, the installation's own, kind, dates inclusive; refusals); the overview by organisation (its figures equal to its administrators', the operator's, an unknown one refused, ignored for others), Operation for server administrators only, the lines moved to record quality, the export filtered; every new text in both languages; no `confirm()` left. 12 of the 24 mutations of item 9.2, all caught |
 | `portal/test_overview.py` | 71 | the overview ([ADR 0007](adr/0007-overview-indicators.md)): the period and the previous one (a period refused), usage before and after the worker counted (past days from the aggregates, today from the raw events, the same figures either way), per day, the most scanned codes, shares, quality (a compressed link's answer counted as answered), unknown and noLink codes with whether the key has records; record quality (no key record, keys nobody scanned); operation; each scope (an organisation, a user's prefixes, the operator, the whole installation, its scans, shares and quality those of GS1 codes and its requests without a GS1 code apart, also in its export (ADR 0006 §14), but only codes in the lists, support access); 7 and 90 days; governance (changes by kind and user, within an administrator's prefixes; users; API keys expiring); `/v1/stats` and its scope, a key's prefixes; the exports (sheet names, labels, protected cells, the journal, the origin); the resolver or the log unreadable; the texts in both languages, the description, the sign-in's landing. 25 mutations, all caught (7 of ADR 0006 §14) |
 | `portal/test_label.py` | 92 | the label studio ([ADR 0010](adr/0010-label-studio.md)): check digits, the symbol each GTIN takes and refusals, UPC-E's zero suppression, reference module patterns (EAN-13, UPC-A, EAN-8 and UPC-E for every check digit) read back by zxing-cpp when written, EAN-13 for every first digit read back by OpenCV; the default label identical to the previous version's (size and PNG pixels); sizes, the 2 mm text, the PNG's DPI; each symbol beside the QR code at 80, 100 and 200 % read back; bar heights, guard bars, quiet zones, digits; the PDF (structure, cross-references, page size, rectangles, no font, title); the zip; through the portal and the tenant API with refusals. 18 mutations, all caught |
-| `portal/test_domains.py` | 71 | organisations' own domains in the portal ([ADR 0009](adr/0009-tenant-domains.md)): who manages which (organisation administrators, the operator's by server administrators who list every domain, support access read only, not editors); names, stems, modes, uniqueness, Punycode, the limit; the DNS proof (refused with the record to add, verified, kept when the record goes, the daily look again); default prefixes (the organisation's, one domain each, the operator's not an organisation's); the address of the preview, the record, labels and the tenant API (default, installation, chosen, refused); the check of both modes (resolver, not the resolver, no answer, private address, a redirect that loses the path) and the real probe's guard; removal; the journal; both languages. 25 mutations with the resolver's, all caught; the certificate's state from the host's report and the server task's last run (ADR 0009 §7). 5 of the 16 mutations of item 9.6, all caught |
+| `portal/test_domains.py` | 106 | organisations' own domains in the portal ([ADR 0009](adr/0009-tenant-domains.md)): who manages which (organisation administrators, the operator's by server administrators who list every domain, support access read only, not editors); names, stems, modes, claims (several organisations, once per scope, the first proved keeps the name, deleted after 7 days, ignored once their time is up; [ADR 0035](adr/0035-domain-claims-and-lapsed-proofs.md)), Punycode, the limit; the DNS proof (refused with the record to add, verified, kept when the record goes, the daily look again); default prefixes (the organisation's, one domain each, the operator's not an organisation's); the address of the preview, the record, labels and the tenant API (default, installation, chosen, refused); the check of both modes (resolver, not the resolver, no answer, private address, a redirect that loses the path) and the real probe's guard; removal; the journal; both languages. 25 mutations with the resolver's, all caught; the certificate's state from the host's report and the server task's last run (ADR 0009 §7). 5 of the 16 mutations of item 9.6, all caught; stems the installation's proxy would give to something else refused, the same words further in accepted (ADR 0045: 4 of its 18 mutations, all caught); lapsed domains (missing 7 days at the daily look: journalled once, administrators told, no longer offered for labels, verified again, taken over by another organisation's proved claim with its host report, a claim of an earlier version unable to take over a domain that has not lapsed) and the upgrade of earlier documents (ADR 0035; 22 of its 32 mutations, all caught) |
 | `portal/test_item_page.py` | 89 | the item's page in the portal ([ADR 0011](adr/0011-item-page.md)): who brands which prefixes (an organisation's own or longer, the operator's and `*` by server administrators, not editors, not another organisation's), the rules of a logo (SVG, GIF, not base64, not an image, size, pixels), the colours and the name, a change keeping what it leaves out, the logo's preview and its scope, support access read only, removal, the journal; the editor's option (the page link and its address, read back hidden, the key's own record with its own page, unticked); each record's choice (item 9.1: a batch of a product using its page going to its own target through copies, read back, reordered; a key without the page turned when a batch takes it, its other records unchanged; unticking in such a key; a key holding a record the API would refuse left untouched; a `gs1:defaultLink` of another tool kept as a target); brands owned through their prefix (B2: a prefix moved from the operator, a stale owner ignored and removed) and domains' default prefixes read the same way; spreadsheets (exported as a row, read back as the option; no copies exported; a whole export read back unchanged; a new key's page and a batch's own target in one file); the tenant API (a record's own default type); the link check leaving the pages out; the overview's page views and clicks apart from scans; the Requests filter; both languages. 21 of the 41 mutations of the item's page and 17 of the 24 of item 9.1, all caught |
 | `portal/test_titles.py` | 11 | default link titles in the link's language (F21, item 7.3): Portuguese for `pt`, `pt-BR`, `pt-PT`, English otherwise, typed titles kept, the portal's titles shown empty and following a change of language, an old English default on a Portuguese link corrected on saving, the tenant API, every type with a Portuguese title. 4 mutations, all caught |
 | `docs/test_docs.py` | 15 | the documents in step (ADR 0016): every feature of `features.md` cites checks, each reference found in the inventory; every program in the inventory, in this table with its count and in `dev-tests/README.md`; the API reference against `openapi.json`; the documentation index (every manual and decision record); every relative link of the documents |
 | `portal/test_gcp.py` | 79 | GS1's GCP length table with a test table in its format (ADR 0015): the parser (plain with a byte order mark and a comment, gzip, another offset to UTC; 18 refusals — not XML, broken gzip, unclosed, DOCTYPE, root, date, another element, a child of an entry, prefixes and lengths out of range, non-ASCII digits, a prefix twice, empty —, the entry named, too large plain and as a small gzip), the longest match, length 0 and no entry, the counts; one stored document, an older list refused unless confirmed, each process reading a changed list; the company prefix of a GTIN, GLN, SSCC, GRAI and GIAI; an organisation's prefix ok, longer, shorter, not a GCP or unknown; the routes (server administrators only, a form's type and another site refused, support access, 409 for an older list, the journal, `/config`, the lookup); the warnings on the organisation's page and the organisations' list; the EPC's partition (the table, the person's choice first, the prefixes without a table, `epc.notGcp` unless chosen); the command line (load, refusal, `--force`, info); the messages in both languages. 22 mutations of item 9.9, all caught |
 | `portal/test_privacy.py` | 30 | the privacy notice ([ADR 0017](adr/0017-privacy-notice.md)): no version yet (the operator's name and the days given), the page and its script, style and logo for anyone, the portal's own script still not; the default notice in every language with `{operator}` and `{days}`, the responsibility clause and "as is" in English and Portuguese; publishing only by a server administrator (not without signing in, not an organisation's administrator), five refusals and the limit named, nothing stored by a refusal; version 1 (line breaks, tabs, the note tidied), the journal, shown to anyone; version 2 in force, the list newest first without texts, version 1 still readable, unknown versions 404, no route to change or delete; two administrators at once (`privacy.conflict`); support access read only; every text in twelve languages and the resolver's footer label. 13 of the 21 mutations, all caught |
-| `portal/test_forwarding.py` | 54 | forwarding in the portal ([ADR 0018](adr/0018-forwarding.md)): the resolver of last resort (off with GS1's address; on without an address, another address trimmed, off with the address kept; eight refusals: http, no host, credentials, spaces, too long, this installation, an organisation's verified domain, a non-boolean), who may (not without signing in, not an organisation's administrator, read only during support access), prefix rules (defaults, the note tidied, ten refusals, an overlap naming the organisations, the list by prefix, switched off, an unknown rule, removed), each change in the journal, every setting as the resolver's own reader sees it, the overview's quality counts, the Forwarding group (last resort, top codes, rules and requests by rule) only for a server administrator on the whole installation, the CSV and XLSX exports, the Requests filter. 15 of the 32 mutations, all caught |
-| `portal/test_appearance.py` | 67 | the installation's appearance in the portal ([ADR 0019](adr/0019-appearance.md)): the original for anyone (its answer, an empty style sheet, the project's logo, the resolver's pages), the contrast rule (WCAG's: black 21:1, white 1:1, the original colours passing); saved (spaces folded, colours in upper case, the logo described) and read by anyone, the style sheet's tokens and darker shades, the logo served (cached, never sniffed), the resolver's own reader; the title alone keeping colours and logo, another logo (WebP), the project's logo back, an empty title; eleven refusals (title length and control characters, three colours that are not `#RRGGBB`, a light main and a light action colour with the ratio, four logos); who may (not without signing in, not an organisation's administrator, read only during support access); restore (the setting removed, the original for anyone and the resolver, twice harmless); the journal; the resolver's reader ignoring what is not a colour, its 30-second cache and a database that fails; the pages linking the style sheet and the script; the tab icon (the project's at first, saved, served, in the journal, as the resolver reads it, back to the project's, an SVG refused) and the portal's pages served with the title (escaped), the logo and the icon in them, as in the files for the original. 19 of the 42 mutations, all caught |
+| `portal/test_about.py` | 36 | the About page ([ADR 0024](adr/0024-name-and-about.md)): the repository's public address (ssh and scp-like rewritten, `.git` dropped, user names, passwords and tokens removed; local paths, `localhost`, IP addresses, single names, odd schemes and characters refused); `version.json` read back in its four fields only, values of another shape dropped; git on a checkout with a tag and a tokened origin, the build stage's step writing the file, `{}` outside a checkout or without git; `build()` preferring the file, git for a broken file or one without a commit, unknown without both; `GET /portal/api/about` for anyone with its six fields, the operator, the checkout's commit, no secret, read once; the page, its script for anyone, the software's name not replaced by an operator's title, documents at the running commit, no `innerHTML`; the links in the user menu (every role, before Options), on the sign-in page and the home page, none on the resolver's pages; `third_party.json` in step with `Documentation/third-party.md`; the texts of every language. 6 mutations, all caught |
+| `portal/test_forwarding.py` | 90 | forwarding in the portal ([ADR 0018](adr/0018-forwarding.md)): the resolver of last resort (off with GS1's address; on without an address, another address trimmed, off with the address kept; eight refusals: http, no host, credentials, spaces, too long, this installation, an organisation's verified domain, a non-boolean), who may (not without signing in, not an organisation's administrator, read only during support access), prefix rules (defaults, the note tidied, ten refusals, an overlap naming the organisations, the list by prefix, switched off, an unknown rule, removed), each change in the journal, the organisations a rule concerns told ([ADR 0046](adr/0046-forwarding-tells-organisations.md): the administrator, not an editor nor another organisation, with the prefix, destination, prefixes covered and time; the event in the organisation's own trail, by the operator, seen in its Audit trail; nothing for a note or a rule that stays off; another destination or mode, switched off, removed while on; rules shorter and longer than its prefix; two organisations; none; both messages in the twelve languages and their category), every setting as the resolver's own reader sees it, the overview's quality counts, the Forwarding group (last resort, top codes, rules and requests by rule) only for a server administrator on the whole installation, the CSV and XLSX exports, the Requests filter. 15 of the 32 mutations of ADR 0018 and the 16 of ADR 0046, all caught |
+| `portal/test_strict_mode.py` | 27 | the strict mode in the portal ([ADR 0022](adr/0022-answering-level.md) §2.4): off by default on the organisation's page with the five types; an organisation's administrator switches it on and off (stored as the resolver reads it, with who and when; another organisation's and the operator's: 404); an editor refused; a value not true or false refused (422); a server administrator for any organisation and the operator's scope; an unknown organisation 404; support access read only (403); each change journalled once, labelled in both languages; the list of types and the stored names equal to the resolver's; the outcome `withheld` on the Requests filter, alone and among those not found, and counted apart by the overview. 5 mutations, all caught |
+| `portal/test_targets.py` | 94 | target addresses ([ADR 0037](adr/0037-target-addresses.md)): every form refused for every organisation (user information, IPv4 and IPv6 addresses in any form a browser reads, full-width digits and ideographic full stops, localhost, names without a dot, private top-level names, empty labels, percent signs, a port that is not a number) with its code, the target's position and the address, and the public forms accepted (ports, a trailing dot, names outside ASCII, underscores); the editor, the tenant API, imports (each row with its number) and forwarding destinations; the hosts listed per organisation: empty by default, set by an organisation's administrator (cleaned: case, `*.`, a leading dot, Punycode, repeats; stored with who and when; a list or a text), refused names, types and lengths, another organisation's and the operator's 404, editors 403; a host or a name under it saved, look-alikes refused, Punycode equal to its Unicode form, the record's own page exempt and a page-like address elsewhere checked; other organisations' and the operator's keys unaffected; a server administrator for any organisation and the operator's scope; support access read only; each change journalled once. 27 mutations: 25 caught, 2 removed with the redundant code they mutated, and one check made stronger (the page's own 2 in `admin_nav_e2e`) |
+| `portal/test_malformed.py` | 410 | malformed request bodies ([ADR 0040](adr/0040-request-bodies.md)): every write route of the application's table of routes, as a server administrator, an organisation's administrator, nobody and an API key — bodies that are not one JSON object answered 400 `request.jsonInvalid`, each field of `bodies.FIELDS` of every other kind 422 `request.fieldInvalid` naming its path (rows and the key's record too), a valid body per route with every place replaced by every kind of value and the fields left to the routes never answered 500, query operators where values go refused (F-029), an XLSX export with control characters in its labels, valid, `null` and empty bodies still passing |
+| `portal/test_safety_warnings.py` | 61 | the warnings on safety-critical link types ([ADR 0022](adr/0022-answering-level.md) §2.5): `fold()` (case, spaces, `-` `.` `/`, O/0 and I/1), the five types equal to the strict mode's; a batch lacking types the product holds (`warning.walkUp`, the key's own record answering), the product holding them while a batch exists (`warning.productLevel`), none without safety types; before saving (`POST /record/warnings`, nothing written), a batch with its own links without warning, a near duplicate (`lota`, `L0TA`, `LOT-A`, `LOT.A`, `lot-a` beside `LOTA`), not for the record itself, another value or another key; an invalid key and a key outside the organisation without warnings, a reader refused; a serial within a batch warned per level; the strict mode (the product's level withheld, the batch's not, a variant's not); the tenant API's `warnings` and their description in `openapi.json`; the *Resolution* tab's count with the types, not counted in the operator's scope; the import's preview (per record, counted, still created); the texts and the editor's boxes. 9 mutations, all caught; the languages of safety-critical links ([ADR 0028](adr/0028-language-fallback.md)): `warning.languageGap` by the resolver's rule (`serves()`: `pt` serves `pt-BR`, `pt-PT` does not), `warning.noLanguage` for links in `und`, not both for one type, other link types silent, the stored form, the tenant API, `openapi.json`, the import's preview, the editor and the import's lines, six texts. 7 mutations, all caught |
+| `portal/test_appearance.py` | 100 | the installation's appearance in the portal ([ADR 0019](adr/0019-appearance.md)): the original for anyone (its answer, an empty style sheet, the project's logo, the resolver's pages), the contrast rule (WCAG's: black 21:1, white 1:1, the original colours passing); saved (spaces folded, colours in upper case, the logo described) and read by anyone, the style sheet's tokens and darker shades, the logo served (cached, never sniffed), the resolver's own reader; the title alone keeping colours and logo, another logo (WebP), the project's logo back, an empty title; eleven refusals (title length and control characters, three colours that are not `#RRGGBB`, a light main and a light action colour with the ratio, four logos); who may (not without signing in, not an organisation's administrator, read only during support access); restore (the setting removed, the original for anyone and the resolver, twice harmless); the journal; the resolver's reader ignoring what is not a colour, its 30-second cache and a database that fails; the pages linking the style sheet and the script; the tab icon (the project's at first, saved, served, in the journal, as the resolver reads it, back to the project's, an SVG refused) and the portal's pages served with the title (escaped), the logo and the icon in them, as in the files for the original; a former default title stored (*GS1 Resolver Community Edition*, ADR 0024) read as the new name by the portal, its pages and the resolver, the colours kept, and not stored again. 21 of the 44 mutations, all caught; the browser's rules (ADR 0038): the policy, `Cross-Origin-Opener-Policy`, `nosniff` and `DENY` on every kind of answer, nothing in the pages or their scripts the policy would refuse; 4 of the 23 mutations of ADR 0038, all caught |
 | `portal/test_exports.py` | 69 | limits on exports (ADR 0012 §2.7 and §8): `PORTAL_EXPORT_LIMITS` read once into the operator's and the existing organisations' limits (an organisation's own kept), then no longer; a role without exports refused for records, requests and the overview; a role's limit with the numbers, its exact value allowed; the installation's maximum (server administrators only, its bounds, not in support access) capping an organisation's administrators and roles without limits, not the operator's users; an organisation's limits (its administrators or a server administrator; never above the maximum, never another's; empty follows the maximum) and the operator's; a lowered maximum applying over a higher limit; the tenant API's listing truncated at the keys' limit across pages, refused at 0, one record still read; the page told; the journal (refusals, limits, maximum); every journal action labelled in both languages. 18 mutations of item 9.8: 17 caught, one equivalent (removed) |
-| `portal/test_sso.py` | 62 | single sign-on with a stand-in OpenID provider (`fake_oidc.py`): configurations (who, rules, the write-only secret, an empty secret field, unique domains, https and public addresses, support access, the provider's test); the round trip (authorization request with PKCE, state, nonce, hint; token request with the secret and the verifier; the session and the journal) and 18 refusals; a new provider key; password sign-in off (not for server administrators, no recovery e-mail); no temporary-password change after single sign-on; both languages. 26 mutations: 24 caught after two checks were added, 2 equivalent (one redundant guard removed) |
+| `portal/test_sso.py` | 128 | single sign-on with a stand-in OpenID provider (`fake_oidc.py`): configurations (who, rules, the write-only secret, an empty secret field, https and public addresses, support access, the provider's test); e-mail domains proved ([ADR 0025](adr/0025-sso-domain-proof-and-subject.md): the TXT record shown, nobody signed in before the proof, verify by DNS, approval by server administrators only and refused while another organisation's accounts use the domain, one proved configuration per domain, a removed domain losing its proof, the journal, the upgrade of earlier configurations); the round trip (authorization request with PKCE, state, nonce, hint; token request with the secret and the verifier; the session and the journal) and 22 refusals (an unproved domain, `email_verified` absent or false, another subject, a subject bound to another account among them); the subject bound at the first sign-in, shown, forgotten by an administrator, dropped with a new e-mail; a new provider key; password sign-in off (not for server administrators, nor for an address of an unproved domain, no recovery e-mail); no temporary-password change after single sign-on; both languages. 26 mutations of item 7.1: 24 caught after two checks were added, 2 equivalent; 15 of ADR 0025, all caught after one check was added; 1 of finding F-017 (the operator's provider test), caught; a callback without a sign-in in progress counted, not journalled (ADR 0031): 2 of its 27 mutations, all caught; DNS proofs looked at again once a day, lapsed after 7 days missing (journalled, administrators told, still signing people in, approvals never lapsing), taken over by another configuration's proof and proved again (ADR 0035: 10 of its 32 mutations, all caught); the account searched only in the configuration's organisation when another has the same address (ADR 0036); the client secret sealed with the data key, earlier and lost keys (ADR 0044) |
 | `portal/test_scan_search.py` | 16 | reading a scanned code for the search: scan data (`]d2` with GS, `]Q1` with a Digital Link, `]C1`), element strings with `^` or GS, digits; the engine's refusals; RFID EPCs (hexadecimal, `eh…`, `ex…`) through a stand-in resolver, an EPC without a record or that does not decode, a resolver that does not answer; sign-in required; both languages |
-| `portal/test_fix_serials.py` | 16 | serial numbers registered with their batch or variant: flagged; fixed a key at a time (informative qualifiers in path order, targets, description and other records kept, the journal); a true duplicate removed, a conflict leaving its key whole; every one in reach, another organisation's untouched; editors only; the guard of every rewrite (a deletion refused, nothing deleted, when the key holds a record the API would refuse). 8 mutations, all caught |
+| `portal/test_fix_serials.py` | 16 | serial numbers registered with their batch or variant: flagged; fixed a key at a time (informative qualifiers in path order, targets, description and other records kept, the journal); a true duplicate removed, a conflict leaving its key whole; every one in reach, another organisation's untouched; editors only; a deletion going through when the key holds a record the API would refuse (ADR 0023). 8 mutations, all caught |
+| `portal/test_record_delete.py` | 39 | deleting one record without rewriting the key ([ADR 0023](adr/0023-record-level-delete.md)): the editor's delete, the tenant API's and fixing serial numbers make the record-level delete (one call, never a whole-document delete; the new serial-number record written before the old one is removed; refused records checked first); the data entry API failing at each step leaves every record in place, journals each attempt first and `change-failed` after a failure, and a second run of the fix finishes the key; a key holding a record the API would refuse no longer blocks a deletion; the stand-in's refusals; the data entry API's 409 for a key changing under other writers (ADR 0027) answered 409 `upstream.conflict` by the editor's save and delete, the tenant API's and fixing serial numbers, the records unchanged. 12 mutations, all caught, and one of ADR 0027
+| `portal/test_journal.py` | 29 | the journal's integrity in the portal ([ADR 0026](adr/0026-journal-integrity.md)): a record change journalled before the data entry API is called (the editor, the tenant API) and refused with 503 `journal.unavailable`, nothing changed, when its event cannot be written; `change-failed` after a create, a partial update or a delete the API refuses, left out of the record's history; records turned to explicit default links journalled; events of an earlier version sealed at start-up; the verification route (administrators, each its own trail, every chain for a server administrator, receipts, a changed event found); the daily checkpoint in the housekeeping. 8 of the 25 mutations of ADR 0026, all caught (one more in `record_delete`); start-up leaving retention and sealing to `portal-db-init` when refused |
 | `portal/test_epc.py` | 67 | the EPC encoder (ADR 0010 §8): the SGTIN's Tag Data Standard example, every partition and kind of serial number decoded back by the resolver's own decoder from `eh…` (the link's and the tag's hexadecimal) and `ex…`; the tag's hexadecimal padded to a 16-bit word and the link's to a digit, for every scheme (ADR 0010 §9); 200 random SGTINs the same as `epc-tds` encodes them; the definitions file against the TDT artefacts; SSCC, SGLN (the extension 0 without one), GRAI, GIAI, GSRN, GSRNP, GDTI, SGCN, CPI and ITIP at every partition, numeric and alphanumeric, decoded back; the 96-bit scheme only without leading zeros; a CPI's escapes; an SGCN's leading zeros; refusals and what a record needs first; about 480 random EPCs of eight scheme families the same as `epc-tds` writes from our tag URIs; `GET /portal/api/epc` (the organisation's length or a chosen one, filter by key, domain, refusals, access) and the record search by each new EPC through a resolver; both languages. Run in the `resolver` group, whose CI job has `epc-tds`. 18 mutations of item 9.10 and 3 of the word-aligned hexadecimal, all caught |
-| `portal/test_monitor.py` | 91 | monitoring ([ADR 0008](adr/0008-monitoring-and-alerts.md)): the settings; the resolver through a stand-in proxy (two failed rounds, no repeat, a reminder after 24 hours, resolved; the probe; no answer); the backup's record (unknown, late, failed, good again, the error in the message); the certificate (valid, once an hour, expiring, invalid, unreachable without a message, valid again); the request log's space against its limit (unknown without a limit or sizes, an alert at 80 %, a message per step of 5 up to 100, none within a step or after the trim, free space not counted, resolved below 80 %, the history; ADR 0006 §9, 7 of its 16 mutations); the age of GS1's GCP length table (unknown without a list or at 0, 89 days ok and 90 an alert, its message, no reminder the next day and one a week later, resolved by a higher limit or a newer list, the history, `GET /gcp`'s `age`; 12 mutations, all caught); spikes per scope (the last hour only, the codes, robots' 404 without a GS1 key left out, the usual hour of the codes with a key, both settings, the end without a message); recipients (server administrators, an organisation's administrators, not readers, not a user who switched alerts off, not disabled accounts); the overview's alerts per scope and support access; the lock; the worker's schedule; the category and a user's choice; messages in the recipient's language and both languages' placeholders; the screen's texts. 21 mutations, all caught (3 of ADR 0006 §14) |
-| `portal/test_requestlog.py` | 177 | the request log in the portal ([ADR 0006](adr/0006-resolver-request-log.md)): who sees which events (an organisation, a user's prefixes, the operator, server administrators with each event's organisation, a limited server administrator, support access, a prefix moving between organisations), filters (outcome, device, automated, code as GTIN-13, GTIN-14, prefix, anchor; days of `PORTAL_TIME_ZONE`), pages with ties, the CSV (formulas protected, the organisation column, the journal), the daily aggregates (per key and for the installation, percentiles, expiry, finished days, replacement, the lock, the switch, an unknown time zone), requests per day per scope, the tenant API's calls (never the record or the secret; who sees them), the configuration, an unreadable log, the messages of both languages; browser, region and city in rows, filters, CSV, aggregates and the overview, the retention set in the portal (who sets which days, refusals, the journal, support access), the housekeeping applying it (ADR 0006 §8); the most space (who sees and sets it, refusals, megabytes of 1,048,576 bytes, the journal) and the housekeeping that trims the oldest events down to 95 % (ADR 0006 §9); the map's counts per country and place with positions, its filters and scope, the position in rows and the CSV (ADR 0006 §10). 10 of the 27 mutations of item 9.5, 7 of the 16 of finding F1 and 4 of the 12 of the map, all caught The counts in a day's aggregates (times' percentiles the events' only), today's figures per day and of the overview, the monitoring's 404s; the events of before deleted once their day is counted, from where the last run stopped, under a lock, with a journal event; the first run from the oldest count (ADR 0006 §11): 11 of its 20 mutations, all caught. Events whose key is no primary key left out of the list and the map and deleted with the others (§12); the map for an organisation or the operator a server administrator chose on the overview (§13): 3 of their 7 mutations, all caught |
-| `portal/test_jobs.py` | 97 | background jobs: states, expiry, atomic claim, ownership of writes, silent workers given back and failed after three attempts, the worker's announcement, `stalled`, the health check, the worker loop (errors, heartbeat, stop and hand-back, `JobLost`), the embedded worker and `PORTAL_WORKER`; imports through the API (queue, worker, journal, another user, a worker dying before and after writing a record, a failure); link checks through the API (every record, a list, a stop that cancels pending addresses); stopping a job (ADR 0001 §3.3.1: a queued one at once, a running one after its next write, the heartbeat and `finish()` never, a silent or stopping worker's marked job cancelled, the worker carrying on; an import through the API stopped while queued, while running with the records written kept and the journal's count, during its last record finished; a link check stopped while running and queued; another user refused). 17 mutations, all caught |
+| `portal/test_monitor.py` | 121 | monitoring ([ADR 0008](adr/0008-monitoring-and-alerts.md)): the settings; the resolver's settings by its heartbeat (finding F-033: ok, an alert at once while stale, reminded, unknown without an answer, resolved); the resolver through a stand-in proxy (two failed rounds, no repeat, a reminder after 24 hours, resolved; the probe; no answer); the backup's record (unknown, late, failed, good again, the error in the message); the certificate (valid, once an hour, expiring, invalid, unreachable without a message, valid again); the request log's space against its limit (unknown without a limit or sizes, an alert at 80 %, a message per step of 5 up to 100, none within a step or after the trim, free space not counted, resolved below 80 %, the history; ADR 0006 §9, 7 of its 16 mutations); the age of GS1's GCP length table (unknown without a list or at 0, 89 days ok and 90 an alert, its message, no reminder the next day and one a week later, resolved by a higher limit or a newer list, the history, `GET /gcp`'s `age`; 12 mutations, all caught); the journal's hash chains (ADR 0026 §2.5: unknown before the first verification, ok after it, a changed event alerts only after the next verification, its message naming the chain, the problem and the event, the history, a reminder a day later, an administrator's verification keeping a broken chain and taking a whole one out at once, resolved with a message, a wrong receipt never alerting, monitoring off; 7 mutations, all caught); spikes per scope (the last hour only, the codes, robots' 404 without a GS1 key left out, the usual hour of the codes with a key, both settings, the end without a message); recipients (server administrators, an organisation's administrators, not readers, not a user who switched alerts off, not disabled accounts); the overview's alerts per scope and support access; the lock; the worker's schedule; the category and a user's choice; messages in the recipient's language and both languages' placeholders; the screen's texts. 21 mutations, all caught (3 of ADR 0006 §14) |
+| `portal/test_requestlog.py` | 185 | the request log in the portal ([ADR 0006](adr/0006-resolver-request-log.md)): who sees which events (an organisation, a user's prefixes, the operator, server administrators with each event's organisation, a limited server administrator, support access, a prefix moving between organisations), filters (outcome, device, automated, code as GTIN-13, GTIN-14, prefix, anchor; days of `PORTAL_TIME_ZONE`), pages with ties, the CSV (formulas protected, the organisation column, the journal), the daily aggregates (per key and for the installation, percentiles, expiry, finished days, replacement, the lock, the switch, an unknown time zone), requests per day per scope, the tenant API's calls (never the record or the secret; who sees them), the configuration, an unreadable log, the messages of both languages; browser, region and city in rows, filters, CSV, aggregates and the overview, the retention set in the portal (who sets which days, refusals, the journal, support access), the housekeeping applying it (ADR 0006 §8); the most space (who sees and sets it, refusals, megabytes of 1,048,576 bytes, the journal) and the housekeeping that trims the oldest events down to 95 % (ADR 0006 §9); the map's counts per country and place with positions, its filters and scope, the position in rows and the CSV (ADR 0006 §10). 10 of the 27 mutations of item 9.5, 7 of the 16 of finding F1 and 4 of the 12 of the map, all caught The counts in a day's aggregates (times' percentiles the events' only), today's figures per day and of the overview, the monitoring's 404s; the events of before deleted once their day is counted, from where the last run stopped, under a lock, with a journal event; the first run from the oldest count (ADR 0006 §11): 11 of its 20 mutations, all caught. Events whose key is no primary key left out of the list and the map and deleted with the others (§12); the map for an organisation or the operator a server administrator chose on the overview (§13): 3 of their 7 mutations, all caught; tenant API calls without a valid key counted per minute, method, operation and status (one document, the list's count and average time, the overview's sum, a replica's race, not counted with the log off; ADR 0031): 5 of its 27 mutations, all caught |
+| `portal/test_jobs.py` | 116 | background jobs: states, expiry, atomic claim, ownership of writes, silent workers given back and failed after three attempts, the worker's announcement, `stalled`, the health check, the worker loop (errors, heartbeat, stop and hand-back, `JobLost`), the embedded worker and `PORTAL_WORKER`; imports through the API (queue, worker, journal, another user, a worker dying before and after writing a record, a failure); link checks through the API (every record, a list, a stop that cancels pending addresses); stopping a job (ADR 0001 §3.3.1: a queued one at once, a running one after its next write, the heartbeat and `finish()` never, a silent or stopping worker's marked job cancelled, the worker carrying on; an import through the API stopped while queued, while running with the records written kept and the journal's count, during its last record finished; a link check stopped while running and queued; another user refused); one link check per organisation (`linkcheck.busy`, `jobs.active()`, ADR 0029); the preview of an XLSX that unpacks too far refused without a job (ADR 0032); a queued import and its account (ADR 0041: the account's organisation and date kept in the job; a reader since Apply or since the second record, disabled, removed, re-created under the same name, an organisation disabled or its user removed — stopped, the records written kept, `import-refused` in the right trail with its counts; prefixes taken during the import failing the next records; a job without the new fields). 17 mutations, all caught; 2 of ADR 0029, both caught; 13 of ADR 0041, all caught |
 | `portal/test_worker_processes.py` | 13 | `worker.py` as real processes on a real MongoDB (run by `test_store_mongodb.py`): two workers share the queue without taking a job twice; SIGTERM hands the job back and the other worker finishes it; after SIGKILL a new worker continues the job once its heartbeat is old |
-| `portal/test_store_mongodb.py` | 171 | on a real MongoDB (`PORTAL_TEST_MONGO_URI`, CI only): the user made by `db_init.py` and its privileges (reading the request log and deleting its events — the role `requestLogPrune`, ADR 0006 §8 —, never inserting or changing one); `test_store.py`, `test_jobs.py` and `test_worker_processes.py` again as that user (their lines relayed); the TTL monitor, also for jobs and old worker announcements The request counts' upsert adding up and the portal user grouping them and deleting the automated events of counted days (ADR 0006 §11) |
+| `portal/test_store_mongodb.py` | 285 | on a real MongoDB (`PORTAL_TEST_MONGO_URI`, CI only): the user made by `db_init.py` and its privileges (reading the request log and deleting its events — the role `requestLogPrune`, ADR 0006 §8 —, never inserting or changing one; in the journal's database the role `journalAppend`: events read and inserted, heads moved forward, never an event changed, replaced or deleted, an index made, the collection changed or dropped, ADR 0026 §2.5.2); the journal of an earlier version moved there once, sealed events kept and unsealed ones sealed, a collection that reappears reported and left; `test_store.py` (with `DEV_TESTS_DB_ADMIN_URI`, the root user, for its tampering and upkeep steps), `test_jobs.py` and `test_worker_processes.py` again as that user (their lines relayed); the TTL monitor, also for jobs, old worker announcements, session records and domain claims (a verified domain kept, ADR 0035); session records opened, renewed and ended as the portal's user (ADR 0034); the users of the resolver and of the data entry API ([ADR 0030](adr/0030-least-privilege-services.md)): made in `admin` with their role only, the resolver reading the records and five collections of the portal's database and writing its request log as the resolver does, refused the portal's users, sessions and journal, writing records, changing settings, deleting events and creating users; the data entry API reading and writing records, refused the portal's database, the request log and creating users; a new password applied at the next run; the root user refused as a service's user. The request counts' upsert adding up and the portal user grouping them and deleting the automated events of counted days (ADR 0006 §11) |
 | `portal/test_registration.py` | 27 | §2.5.9 through the portal API: informative qualifiers (save, open, history, list, export, import), records against rule 2, the key's own record when saving and importing |
 | `portal/test_mail_e2e.py` | 37 | the e-mail screens in Chromium with the relay of `fake_smtp.py`: recovery on the sign-in page (the same answer for every entry), an invitation from the users screen, the page a link opens (user name, the token gone from the address bar, short and different passwords refused, a phone's width), a link used twice, a link opened while someone else is signed in, a recovery ending the user's open session, Options → E-mail kept, a reset by link, every text of the sign-in page translated, and the same screens with e-mail off |
 | `portal/test_requests_e2e.py` | 54 | the Requests screen in Chromium ([ADR 0006](adr/0006-resolver-request-log.md)): the menu item for every user (and the menu closing), 30 bars from the aggregates and today's events, the latest requests (organisation column for a server administrator, EPC scheme, level, serial as `/21/*`), the next page, filters (not found, a GTIN-13, automated requests), the CSV export, support access, English, an organisation's reader (no organisation column, no API tab), an administrator's API calls without the key's secret, a phone's width, the log switched off; the browser and location in a row with the city's Google Maps link and DB-IP credited, the browser and country filters, the Retention tab for a server administrator and an organisation's administrator (ADR 0006 §8), the most space on disk (refused, saved, shown in GB, emptied; ADR 0006 §9); the map (loaded when opened, countries shaded, cities, a country's regions and cities on a click, the whole world again, following the filters) and the region in the location (ADR 0006 §10); the nine columns within 1,280 pixels. 3 of the 27 mutations of item 9.5, 2 of the 16 of finding F1 and 5 of the 12 of the map, all caught No box for automated requests, no such device, a line saying they are counted (ADR 0006 §11): 2 of its 20 mutations, caught |
@@ -1309,25 +1862,29 @@ run against it. Setup and commands are in
 | `portal/test_languages_e2e.py` | 38 | the interface languages in Chromium ([ADR 0014](adr/0014-interface-languages.md)): the sign-in page in the browser's language before signing in, its catalogue fetched once; Japanese, the menu naming each language in itself, the Latin alphabet's first, German chosen and kept; Arabic right to left (the sidebar on the right, the content beside it, codes left to right, no page wider than a computer's or a phone's screen); every screen in every language without a message key showing, none wider than the screen, no script error. 5 of the 13 mutations of item 9.7, all caught (one after the content's check was added) |
 | `portal/test_gcp_e2e.py` | 22 | GS1's GCP length table in Chromium: the panel without a list, no file, a refused file with the entry named, a list uploaded compressed by the page (its type and size seen by the server), the status and the list in use, the warning beside a prefix that disagrees (and only that one), an older list asked in the portal's dialog (cancel keeps, confirm replaces), the organisation's page, the editor's line (a prefix, a range that is not one, nothing while incomplete), the EPC's partition said to come from the list, the list's age said under it when the monitoring would report it (the limit computed from today), Portuguese, no script errors or browser dialogs |
 | `portal/test_privacy_e2e.py` | 24 | the privacy notice in Chromium: the sign-in page's footer link, the public page without signing in (the default notice in Portuguese with the operator and the days, headings, said to be the default, then in English), the portal's footer link, the server administrator's screen (the text from the default, the hint, the preview with markup shown as text and an address as a link, publishing after the portal's confirmation, cancelled and confirmed, version 2 on top), the public page with the version in force and the list, an earlier version marked with a link to the one in force, markup never run, an unknown version, no screen for an organisation's administrator (menu or address), a phone's width. 6 of the 21 mutations, all caught (one after a paragraph of markup alone was added) |
+| `portal/test_about_e2e.py` | 14 | the About page in Chromium: the sign-in page's link, the page without signing in in Portuguese (the name, the operator, the version with its commit linked, five documents and the licence at that commit, the components in four groups with their licences, trademarks and responsibility), in Arabic right to left, the sidebar and the user menu's item for an editor (just before Options) opening it, a phone's width without sideways scrolling, no script error |
 | `portal/test_forwarding_e2e.py` | 26 | forwarding in Chromium: the menu item and screen of a server administrator, the resolver of last resort switched on with GS1's address and an http address refused, prefix rules added (the form emptied), one over an organisation's prefix with the warning naming it, edited (the prefix fixed), switched off from the list, removed after the portal's confirmation (cancelled, then confirmed); the overview's Forwarding group (tiles, the codes sent to the last resort, the requests by rule, the link to the screen) and quality tiles; the Requests filter and rows of the new outcome; an organisation's administrator without the screen or the group; Portuguese; a phone's width. 7 of the 32 mutations, all caught |
 | `portal/test_appearance_e2e.py` | 28 | the installation's appearance in Chromium: the menu item after the item's page, the screen with the original (the hint naming it, the form's colours, the title's placeholder, the preview), the preview following the form (title, logo, band, button, tab mark) without saving, a light action colour refused with its contrast, the preview's browser tab with the icon chosen, saved: the header's title and logo, the colours, the tab title and icon at once, the page then served with them and kept on reload without the appearance's answer, who changed it, the hint still naming the original; the sign-in page and the privacy notice in another browser; restore after the portal's confirmation (cancelled, then confirmed); Portuguese; an organisation's administrator without the screen; a phone's width. 12 of the 42 mutations, all caught |
-| `portal/test_admin_nav_e2e.py` | 53 | administration and navigation in Chromium: the sidebar (the user menu's 17 screens, current one marked, folded to icons and remembered, absent on a phone), all 13 screens at 390 pixels without sideways scrolling, prefixes as rows (checked as typed, Add GCP, ×, a refused row marked), the portal's own confirmation (cancel, Escape, confirm), an organisation's page (tabs, arrow keys, prefixes saved, support access for another's brands, the operator's page), the prefix picker (a longer prefix added), the alert history and its filter, the overview's organisation filter and Operation, an organisation's administrator in Portuguese; the export limits of item 9.8 (the maximum saved and shown again on the organisations' list, a negative one refused, the *Exports* tab for a server administrator and in Portuguese for an organisation's administrator, a limit above the maximum refused). 12 of the 24 mutations of item 9.2, all caught; 4 of item 9.8; the layout of 20 October (the sign-in page without the sidebar's room and its form under the title, the project's logo, the sidebar's room in the portal, *Organisation management*, the content up to 96rem, *New organisation* aligned): 9 of its 13 mutations, all caught but one equivalent; every name of the side menu within it (a long one wraps), 1 mutation, caught; *Create organisation* next to *Add GCP* on a 1,920-pixel page (finding of 21 October), 2 mutations, caught |
+| `portal/test_admin_nav_e2e.py` | 60 | administration and navigation in Chromium: the sidebar (the user menu's 17 screens, current one marked, folded to icons and remembered, absent on a phone), all 13 screens at 390 pixels without sideways scrolling, prefixes as rows (checked as typed, Add GCP, ×, a refused row marked), the portal's own confirmation (cancel, Escape, confirm), an organisation's page (tabs, arrow keys, prefixes saved, support access for another's brands, the operator's page), the prefix picker (a longer prefix added), the alert history and its filter, the overview's organisation filter and Operation, an organisation's administrator in Portuguese; the export limits of item 9.8 (the maximum saved and shown again on the organisations' list, a negative one refused, the *Exports* tab for a server administrator and in Portuguese for an organisation's administrator, a limit above the maximum refused); the *Resolution* tab of ADR 0022 §2.4 (the five types, the example, the strict mode switched on after a confirmation and off without one, who changed it). 12 of the 24 mutations of item 9.2, all caught; 4 of item 9.8; the layout of 20 October (the sign-in page without the sidebar's room and its form under the title, the project's logo, the sidebar's room in the portal, *Organisation management*, the content up to 96rem, *New organisation* aligned): 9 of its 13 mutations, all caught but one equivalent; every name of the side menu within it (a long one wraps), 1 mutation, caught; *Create organisation* next to *Add GCP* on a 1,920-pixel page (finding of 21 October), 2 mutations, caught; the *Targets* tab of ADR 0037 (an empty list, a name with `https://` refused, a list cleaned and shown again with who changed it, emptied again), 2 mutations, caught |
+| `portal/test_safety_warnings_e2e.py` | 11 | the warnings of [ADR 0022](adr/0022-answering-level.md) §2.5 in Chromium: the editor's box under the targets for a batch lacking the product's safety links (the types, what the strict mode would do), updated before saving as a link is added, the box under the qualifiers for a near-duplicate batch before the record is opened, the product's box listing its batches, no box once the batch has its own links, the import's preview (the row marked, the count above the table), the *Resolution* tab's count and the editor's box in Portuguese. 4 mutations, all caught |
 | `portal/test_overview_e2e.py` | 36 | the overview in Chromium: sign-in lands on it, its groups for an organisation's administrator, the period selector, *Register* opening the editor on the code, the Excel and CSV exports, the menu items, Portuguese, the map of requests under the most scanned codes (the period, an organisation chosen), a reader without governance, a server administrator's whole installation (its tile of requests without a GS1 code, none for an organisation) and server facts, an old GCP length table's check and alert, a phone's width |
-| `portal/test_domains_e2e.py` | 41 | the Domains screen, the label's domain and the label studio's options (sizes with their X-dimensions, the linear barcode, PDF and ZIP downloads) in Chromium: adding, the TXT record, verifying before and after it exists, defaults, a check, the label offering the domain (default of the prefix, installation, chosen; the address under the code and the downloads), Portuguese, removal, an editor without the screen, a phone's width; the card's certificate state (pending, failed, served until a date) and a server administrator's line on the server's task (ADR 0009 §7; 2 of the 16 mutations of item 9.6); the RFID and NFC block for a GLN (the extension 0, an alphanumeric extension), an SSCC and a GRAI (not before its serial component), none for a party GLN, filter 0 by default (item 9.10) |
+| `portal/test_domains_e2e.py` | 44 | the Domains screen, the label's domain and the label studio's options (sizes with their X-dimensions, the linear barcode, PDF and ZIP downloads) in Chromium: adding, the TXT record, the day a claim is deleted, verifying before and after it exists, a lapsed domain's badge and *Verify* again (ADR 0035), defaults, a check, the label offering the domain (default of the prefix, installation, chosen; the address under the code and the downloads), Portuguese, removal, an editor without the screen, a phone's width; the card's certificate state (pending, failed, served until a date) and a server administrator's line on the server's task (ADR 0009 §7; 2 of the 16 mutations of item 9.6); the RFID and NFC block for a GLN (the extension 0, an alphanumeric extension), an SSCC and a GRAI (not before its serial component), none for a party GLN, filter 0 by default (item 9.10) |
 | `portal/test_item_page_e2e.py` | 29 | the item's page in Chromium: the editor's option (no row marked as the default when ticked, saved, read back; a new batch starting with the product's choice, the other records' choices above the targets, unticked and saved to its own target), the Item page screen (a brand with an uploaded logo, its preview in the brand's colours, edited, its logo removed, another organisation's prefix refused, removed), Portuguese, the Requests filter, an editor without the screen, a phone's width |
-| `portal/test_sso_e2e.py` | 17 | single sign-on in Chromium with the stand-in provider: the screen (return address, secret write-only, test), the sign-in page's form, the round trip to the overview, refusals back on the sign-in page, password sign-in off, Portuguese, an editor without the screen, a reader without export buttons, a phone's width |
+| `portal/test_sso_e2e.py` | 23 | single sign-on in Chromium with the stand-in provider: the screen (return address, secret write-only, test, a domain waiting for its TXT record, then proved by *Verify*; a lapsed proof shown and proved again, ADR 0035), the sign-in page's form, the round trip to the overview, refusals back on the sign-in page, password sign-in off, Portuguese, an editor without the screen, a reader without export buttons, the *Users* screen's bound identity and *Forget*, a phone's width |
 | `portal/test_portal_e2e.py` | 230 | the portal in Chromium against `mock_data_entry.py`, desktop and phone, the record list's filters in the address and its filtered export, with an embedded worker (also stopped: the queue and "not running" messages, a job that fails); *Stop* on a link check, on the import preview's address check and *Stop import* on an import; organisations, a tenant administrator and support access in both languages; also run without the engine (181) |
-| `home/test_home.py` | 79 | home page through a real nginx (1.27.3 or later: `NGINX_BIN` or the PATH), no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts; replicas through a stub DNS server answering the service names with `127.0.0.x` addresses: nginx starts while a service has no address and finds it later, shares the requests between two replicas, follows a third added and two removed without a restart, and no request fails while replicas stop; the project's logo on the home page and served as SVG (item 7.3); the footer's link to the privacy notice, in Portuguese in the browser (ADR 0017; 1 of its 21 mutations); the installation's appearance from the portal (ADR 0019): none for the original, then the operator's title in the header, footer and tab, its logo, icon and colours, kept across a change of language, within the page's Content Security Policy (4 of its 42 mutations) |
+| `home/test_home.py` | 246 | home page through a real nginx (1.27.3 or later, with `real_ip`: `NGINX_BIN` or the PATH), the client's address each service receives through trusted proxies, no syntax box, community notice; proxy routes, including that the Host header sent to each upstream is one Werkzeug accepts; the official data entry API closed by default (ADR 0021): 403 without reaching the service, open to an allowed address or network, the client named by a trusted proxy's `X-Forwarded-For` (the last address) or by the host's nginx at the container's gateway behind a loopback `PROXY_BIND_ADDRESS`, not otherwise, wrong entries left out without stopping nginx, `all` (4 mutations, all caught); replicas through a stub DNS server answering the service names with `127.0.0.x` addresses: nginx starts while a service has no address and finds it later, shares the requests between two replicas, follows a third added and two removed without a restart, and no request fails while replicas stop; the project's logo on the home page and served as SVG (item 7.3); the footer's link to the privacy notice, in Portuguese in the browser (ADR 0017; 1 of its 21 mutations); the installation's appearance from the portal (ADR 0019): none for the original, then the operator's title in the header, footer and tab, its logo, icon and colours, kept across a change of language, within the page's Content Security Policy (4 of its 42 mutations); the request limits of ADR 0031 (the zones and rules api-access.sh writes, defaults, refusals of bad values; 429 with Retry-After from the proxy for resolution, the portal (JSON `proxy.tooMany`) and sign-in, each path of the sign-in group, the portal's own 429 passed through, per client address, an IPv6 /64 in long and short form, exempt addresses, the data entry API without a rate, connections, 0 off): 13 of its 27 mutations, all caught; Strict-Transport-Security on every location over HTTPS, the 429s too, none over HTTP (ADR 0038); 4 of the 23 mutations of ADR 0038, all caught; the proxy's own redirects (`/home`, `/portal`) carrying the path alone with a forged `Host` (ADR 0039; 1 of its 9 mutations) |
 | `load/test_load.py` | 16 | the load test script (item 7.4) against a stand-in server: rate, mix, keep-alive, statuses, errors, percentiles, thresholds, a codes file, refusals, its User-Agent automated for the request log |
-| `install/test_install.sh` | 98 | installer through shims (Compose v2), including a portal whose job worker does not start; replica counts written, kept, taken from the environment and refused when invalid; the time zone of the request counts (the server's, from the environment, refused when not a name); the e-mail relay (off by default, written with STARTTLS or TLS, its password kept and never shown, switched off, a test relay set by hand kept, refusals); no setting written twice in `.env`; the final checks through the proxy (a scan, the portal over HTTPS) and a scan answered 502 |
-| `install/test_deploy.py` | 134 | the organisations' domains on the host with the report to the portal, growing waits, `--quiet`, the lock and the 5-minute cron file (ADR 0009 §7; 7 of the 16 mutations of item 9.6); the GeoIP database's monthly update with a stand-in `curl` (DB-IP's month or the previous one, `GEOIP_URL` from `.env` never printed with its query string, a file that is not an MMDB refused, the old file kept; its cron file, the resolver's read-only mount); the daily backup with a stand-in `docker` (only options `mongodump` has; a failed dump: `ERROR`, status 1, no partial file; a good one: the archive, `OK`; each run recorded for the portal's monitoring, a record that cannot be written only a warning, the record's mongosh script valid JavaScript; the off-server copy and its failure); `restore-rehearsal.sh` and `rotate-secrets.sh` with a stand-in `docker` (item 7.2); `upgrade-from-official.sh` with a stand-in `docker`, an official clone and a local branch of the Expansion Pack (the backup before anything changes and owner-only, the containers stopped with the volume kept before the installer, the branch switched with the official one kept, the credentials and token kept in `.env`, an `.env` of its own left alone, the records compared, `--check`, five refusals that change nothing, fewer records afterwards; 11 mutations, all caught); `custom-domains.sh` with stand-in `docker`, `nginx`, `systemctl` and `certbot` (CERTBOT_EMAIL needed, sites from the template, Certbot per domain, a name that is not a host name refused, domains already served left alone, orphan sites listed); `docker compose config` of the replicas and process counts (defaults, values from `.env`, a refused value, names kept by the database and the proxy); the proxy image's nginx version and `resolve` in every upstream; each image's gunicorn `CMD` started locally (three processes, an answer, the request logged, a clean stop on SIGTERM within 10 s); the portal's fallback session key with six processes starting together and eight threads while writing it is slow; the portal started from the files the `COPY` lines of its Dockerfile put in the image, every module and data file of `portal/` among them; one engine release, in `docker-compose.yml` only, given to every image (ADR 0003), the resolver's image building the engine's library with the portal's script (build context `engine-tools`) |
+| `install/test_install.sh` | 132 | installer through shims (Compose v2), including a portal whose job worker does not start; replica counts written, kept, taken from the environment and refused when invalid; the time zone of the request counts (the server's, from the environment, refused when not a name); the e-mail relay (off by default, written with STARTTLS or TLS, its password kept and never shown, switched off, a test relay set by hand kept, refusals); no setting written twice in `.env`; the final checks through the proxy (a scan, the portal over HTTPS) and a scan answered 502; the passwords of the resolver's and the data entry API's database users generated, kept, the example replaced, and MongoDB's root connection given to the database and `portal-db-init` only ([ADR 0030](adr/0030-least-privilege-services.md)); the host's nginx installed or updated when already there, its version reported (fixed, or a warning with the command that updates it), the HTTPS site without HTTP/2, a kept site serving HTTP/2 reported with a `sed` command that the test runs, twelve package versions against the table (ADR 0042: 9 mutations, all caught); age installed, the backup key made and kept, `PORTAL_DATA_KEY` (ADR 0044) |
+| `install/test_deploy.py` | 204 | the organisations' domains on the host with the report to the portal, growing waits, `--quiet`, the lock and the 5-minute cron file (ADR 0009 §7; 7 of the 16 mutations of item 9.6); the GeoIP database's monthly update with a stand-in `curl` (DB-IP's month or the previous one, `GEOIP_URL` from `.env` never printed with its query string, a file that is not an MMDB refused, the old file kept; its cron file, the resolver's read-only mount); the daily backup with a stand-in `docker` (only options `mongodump` has; a failed dump: `ERROR`, status 1, no partial file; a good one: the archive, `OK`; each run recorded for the portal's monitoring, a record that cannot be written only a warning, the record's mongosh script valid JavaScript; the off-server copy and its failure); `restore-rehearsal.sh` and `rotate-secrets.sh` with a stand-in `docker` (item 7.2); `upgrade-from-official.sh` with a stand-in `docker`, an official clone and a local branch of the GS1 Digital Link Resolver Suite (the backup before anything changes and owner-only, the containers stopped with the volume kept before the installer, the branch switched with the official one kept, the credentials and token kept in `.env`, an `.env` of its own left alone, the records compared, `--check`, five refusals that change nothing, fewer records afterwards; 11 mutations, all caught); `custom-domains.sh` with stand-in `docker`, `nginx`, `systemctl` and `certbot` (CERTBOT_EMAIL needed, sites from the template, Certbot per domain, a name that is not a host name refused, domains already served left alone, orphan sites listed); `docker compose config` of the replicas and process counts (defaults, values from `.env`, a refused value, names kept by the database and the proxy); the proxy image's nginx version and `resolve` in every upstream; each image's gunicorn `CMD` started locally (three processes, an answer, the request logged, a clean stop on SIGTERM within 10 s); the portal's fallback session key with six processes starting together and eight threads while writing it is slow; the portal started from the files the `COPY` lines of its Dockerfile put in the image, every module and data file of `portal/` among them; one engine release, in `docker-compose.yml` only, given to every image (ADR 0003), the resolver's image building the engine's library with the portal's script (build context `engine-tools`); the example secrets of `.env.example` (ADR 0021): the data entry API and the portal refuse to start with the example token or the portal's example database password while `FQDN` names a real host, the data entry API and the resolver only warn about MongoDB's example password, every service starts with the examples on `localhost` or without `FQDN`, the three copies of `example_secrets.py` identical (8 mutations, all caught); the resolver and the data entry API connecting as their own database users, refusing the example passwords of those users on a real domain, never logging a password, and the rotation of both passwords ([ADR 0030](adr/0030-least-privilege-services.md)); the About page's version (ADR 0024): the portal's three builds receive `.git` as the context `git-dir`, a separate stage writes `version.json`, the final image takes that file alone, and the portal started without it answers an unknown version and the official repository (1 mutation, caught); archives encrypted with age, the rehearsal decrypting, `rotate-secrets.sh data` (ADR 0044); only the resolver on an organisation's domain (ADR 0045): `custom-domains.sh`'s rule file with the portal's address (its precedence and check), its include in new sites and in sites written before (once, before each location, a second run idle), a site nginx refuses put back, a site without `location /` reported, `list`, and through a real nginx the portal redirected, the data entry API refused, codes passed on (14 of its 18 mutations, all caught) |
+| `install/test_least_privilege.py` | 47 | the least privilege of the services ([ADR 0030](adr/0030-least-privilege-services.md), F-012), without Docker or MongoDB: `docker compose config` without `.env` (MongoDB's root credentials reach the database and `portal-db-init` only; the resolver and the data entry API receive their own user and start after `portal-db-init`; MongoDB and the proxy on the loopback address unless `.env` names another); the three Python images run as a system user of their own and install no package from Debian's repository in their final stage (no editor; ADR 0050, 2 of its 16 mutations); `service_db.py` (the URI built and percent-encoded with `authSource=admin`, a complete URI preferred, `MONGO_URI` only as a fallback with a warning, an error with nothing; the two copies identical); `db_init.py` with a stand-in client (the roles `resolverService` and `dataEntryService` in `admin` with exactly their privileges, the users made then brought up to date, a service without a password left alone, the root user refused, no password printed, the example root password warned about); every collection the resolver's code names granted by its role; `.env.example`, the installer and the rotation script. 28 mutations, all caught |
+| `install/test_supply_chain.py` | 220 | the supply chain ([ADR 0033](adr/0033-supply-chain.md), F-015), from the repository's files: every image of the Dockerfiles, the composition and the workflows named by digest (a stage of the same file excepted, `COPY --from` a stage, a named context or a digest); every action by commit with its release in a comment, every workflow's permissions, checkout without credentials; no download piped into a shell, no `npm init` initializer, npm only as `npm ci --ignore-scripts` and pip only with `--require-hashes --no-deps` in the images, the CI and the cloud hook; the four Python locks written by `lock-dependencies.sh`, each line a pin with SHA-256 hashes, every direct dependency locked and within its specifier, each service's lock at the tests' versions and hashes; both toolkits' `package.json` and `package-lock.json` (`gs1encoder` at `x-gs1-syntax-engine`, npm registry, SHA-512 integrity), the image's refusal of another release, `node` and the package copied where `web_logic.py` starts it; Dependabot for every directory, against `master`, `gs1encoder` left alone; `SECURITY.md`; the supply-chain workflow (its triggers, `contents: read` but for the release job, pip-audit on the four locks from its own hashed lock, npm audit on both toolkits, every image the composition builds scanned by Trivy with the HIGH/CRITICAL gate against `accepted.yaml`, CycloneDX SBOMs kept and attached to the release, `install-trivy.sh` by version and SHA-256), `accepted.yaml`'s entries (statement, review date, expiry within 90 days), `audit.py` on made-up pip-audit and npm audit reports (a correction fails, none does not, an accepted identifier or alias until its expiry day, an entry limited to an image's paths never accepting a lock's finding, a missing or unreadable report fails). 34 + 31 mutations, all caught |
 
 **pytest and continuous integration.** `dev-tests/test_programs.py` runs each program above as one pytest
 test (a subprocess from the repository root): exit status 0 without a `FAIL` line passes; otherwise the
 report shows the `FAIL` lines and the end of the output; a program that only printed `SKIP` is skipped.
 Markers group them: `resolver` (resolver, EPC binary, data entry, GS1 suite, the load test script), `portal` (the portal programs
-without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`, `test_requests_e2e.py`, `test_overview_e2e.py`, `test_domains_e2e.py`, `test_item_page_e2e.py`, `test_sso_e2e.py`, `test_privacy_e2e.py`…), `home`,
-`install` (the installer through password-less `sudo` when not root, and `test_deploy.py`), `database` (`test_store_mongodb.py`). `dev-tests/conftest.py` keeps the programs from
+without a browser), `e2e` (`test_portal_e2e.py` with and without the engine, `test_session.py`, `test_mail_e2e.py`, `test_api_e2e.py`, `test_requests_e2e.py`, `test_overview_e2e.py`, `test_domains_e2e.py`, `test_item_page_e2e.py`, `test_sso_e2e.py`, `test_about_e2e.py`, `test_privacy_e2e.py`…), `home`,
+`install` (the installer through password-less `sudo` when not root, `test_deploy.py`, `test_least_privilege.py` and `test_supply_chain.py`), `database` (`test_store_mongodb.py`). `dev-tests/conftest.py` keeps the programs from
 being imported by pytest, registers the markers and prints the check counts of each program at the end (and
 in the GitHub Actions run summary; on GitHub each failed program's `FAIL` lines also become an annotation of
 the job, which the API gives where the logs cannot be downloaded). With `DEV_TESTS_STRICT=1` a program fails when an environment variable
@@ -1342,18 +1899,39 @@ its own copy, regenerates the dictionary, compares it (`tools/dictionary_diff.py
 writes both in the issue; one issue per release; it never pushes (`contents: read`, `issues: write`). A fork on GitHub has Issues switched off by default, and the
 job then fails with "repository has disabled issues": switch them on in Settings → Features → Issues.
 
+A third workflow, `.github/workflows/supply-chain.yml` ([ADR 0033](adr/0033-supply-chain.md) §2.2), runs on a push or
+pull request that changes a lock, a `.in` file, a `package.json`, a Dockerfile, `docker-compose.yml`, the engine's
+build script, a workflow or `.github/supply-chain/`, weekly (Mondays 04:41 UTC, from `master`), by hand and on a
+published release. Job `locks`: pip-audit (installed from `.github/supply-chain/requirements.txt` with
+`--require-hashes`) on the four Python locks with `--require-hashes --disable-pip`, `npm audit --package-lock-only` on
+both toolkits, then `.github/supply-chain/audit.py --accepted .github/supply-chain/accepted.yaml reports/*.json`:
+exit 1 on a vulnerability with a correction not accepted, 2 on a missing or unreadable report; the table goes to the
+run's summary. Job `images`: Trivy from `install-trivy.sh` (version and SHA-256 written there; update it by hand),
+`docker compose build` of the five images (`IMAGES`: database, data entry, web, portal, proxy; the worker and the
+database initialiser run the portal's image), for each a CycloneDX SBOM and a full JSON report, then a gate failing
+on HIGH or CRITICAL with a correction (`--ignore-unfixed --ignorefile accepted.yaml --exit-code 1`); artefact
+`image-sboms-and-reports`. Job `release-sbom` (release only, the one job with `contents: write`): the same build from
+the tag and `gh release upload` of `resolver-<tag>-<service>.cdx.json`. An entry of `accepted.yaml` (Trivy's
+ignore-file format; the statements shared through YAML anchors under `x-statements`) has `id`, optionally `paths`
+(files of an image: Trivy accepts it only there, `audit.py` ignores it), `statement`, `reviewed` and `expired_at` at
+most 90 days later; the first run's entries are the official `mongo:7-jammy` image's `gosu`, database tools and
+`js-yaml` (ADR 0033 §2.2.8); Trivy and `audit.py`
+both stop honouring it after that date. To read a red run: the summary of `locks`, the group of the image in
+`images`; correct with `dev-tests/lock-dependencies.sh --upgrade-package X` or a new digest.
+
 `.github/workflows/dev-tests.yml` runs one job per group in parallel on every push and pull request to
 `master` (not for changes to `Documentation/` or Markdown files only), in strict mode. The `database`
 job starts a `mongo:7` service container and runs the `portal` and `database` groups on it. `database` is
 informative (`continue-on-error`) until it proves stable; `e2e` and `install` started that way and are
 required since step 4 of item 2.3. The composite action
 `.github/actions/dev-tests-setup` installs only what a job asks for and exports the variables: Python 3.12
-and Node.js 24 as in the images; `gs1encoder`, `epc-tds` and `ajv-dist` at pinned versions (cache keyed by
+and Node.js 24 as in the images; the Python packages of `dev-tests/requirements.txt` with `--require-hashes` (ADR 0033); `gs1encoder`, `epc-tds` and `ajv-dist` at pinned versions (cache keyed by
 the versions, `gs1encoder`'s read from `docker-compose.yml`); the portal's engine built by
 `portal/tools/build-syntax-engine.sh` at that release (cache keyed by the release and the script); Chromium (cache keyed by the Playwright version); GS1's suite at commit
 `32597c1`; Ubuntu's nginx for the installer, nginx 1.30.5 from nginx.org for the proxy test; Docker
 Compose v2.29.7. Change a version there, in one place; the engine's release is not there but in
-`docker-compose.yml`.
+`docker-compose.yml`. Every action is named by commit with its release in a comment, the `mongo:7` service by digest
+(ADR 0033); `.github/dependabot.yml` proposes their updates weekly.
 
 `docs/screenshots.py` regenerates the images of the README and of the user guide, in English, from the real portal with example data (GS1 logo hidden). The e-mail images (`mail_images()`) are made with e-mail
 switched on for them only, against the relay of `fake_smtp.py`. Commit only images that really changed.
@@ -1394,14 +1972,33 @@ need no code. A `+` scheme needs code only for a Table F format or TDS 14.5 meth
 does not know; a `++` scheme only an entry in `PLUS_PLUS` while TDT has no artefact for it. Add its TDS
 annex E vector to `test_epc_binary.py`.
 
+**A Python dependency.** Add it to the service's `requirements.in` (and nothing to `requirements.txt` by hand), run
+`dev-tests/lock-dependencies.sh` (needs uv and PyPI; `--upgrade-package X` moves one package, `--upgrade` all) and
+commit the `.in` and `.txt` files of every service and of `dev-tests/` together; a test tool goes into
+`dev-tests/requirements.in`. `test_supply_chain.py` fails on a lock out of step. A Dependabot proposal that changes a
+service's lock alone fails there too: run the script on its branch ([ADR 0033](adr/0033-supply-chain.md)).
+
+**A known vulnerability the supply-chain workflow reports.** Update first: `dev-tests/lock-dependencies.sh
+--upgrade-package X` for a Python package (raise the `.in` specifier or pin when it excludes the correction), a new
+digest of the same tag for an image, `npm install --package-lock-only` in both toolkits for an npm package; run every
+development test. Only when no update is possible, add an entry to `.github/supply-chain/accepted.yaml` with the
+reason, the review date and an expiry within 90 days.
+
+**An image, an action or an npm package.** Name an image `name:tag@sha256:<digest>` (the digest of the multi-platform
+index: `docker buildx imagetools inspect name:tag`), an action `owner/action@<commit>  # vX.Y.Z`, and install npm
+packages from a committed `package-lock.json` with `npm ci --ignore-scripts`; never pipe a download into a shell.
+Add the new directory to `.github/dependabot.yml`.
+
 **The syntax engine.** The weekly job *GS1 Barcode Syntax Engine update check*
 (`.github/workflows/engine-update.yml`) opens an issue when a newer release exists, with what changes in the
 dictionary, the engine messages that need a translation and the portal's test results. To update, change the
 release in one place, `x-gs1-syntax-engine` in `docker-compose.yml`; build the engine
 (`portal/tools/build-syntax-engine.sh <dir>`), regenerate the dictionary (`python portal/tools/gen_dictionary.py
 <dir>`) and the messages (`python portal/tools/gen_engine_messages.py <dir>`), add the new or changed messages to
-both languages of `i18n.js` (`engine.*`; the English one is the engine's text, parameters as `{p1}`, `{p2}`…), run
-every test, commit; on the server `docker compose up -d --build`. Every image, the build script, CI and the tests
+both languages of `i18n.js` (`engine.*`; the English one is the engine's text, parameters as `{p1}`, `{p2}`…), lock the
+new `gs1encoder` in both toolkits (`npm install --package-lock-only --save-exact gs1encoder@<release>` in
+`web_server/src/gs1-digitallink-toolkit` and `data_entry_server/src/gs1-digitallink-toolkit`; the image build refuses a
+lock of another release), run every test, commit; on the server `docker compose up -d --build`. Every image, the build script, CI and the tests
 follow the one release (`test_deploy.py` fails when something holds a release of its own; `test_dictionary.py` and
 `test_engine_messages.py` when a file was made from another or a message has no translation).
 

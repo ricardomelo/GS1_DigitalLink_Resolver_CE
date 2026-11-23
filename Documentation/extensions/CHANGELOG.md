@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased (branch gs1br/develop)
+## 3.2.1 — 23 November 2026
+
+A documentation release of 3.2.0: the public record of the security and resilience assessment, so that `master`
+carries it. No change to the software; a development test uses a name reserved for examples instead of a real
+organisation's domain. Nothing to do when updating beyond `git pull`.
 
 ### A public record of the security and resilience assessment (session 69)
 - **Added: `Documentation/security-assessment.md`** ([ADR 0055](../adr/0055-public-assessment-record.md), amending

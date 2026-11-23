@@ -1879,3 +1879,6 @@ Then, at the owner's request (relayed by session 68 on 22 November), the public 
 the scope, the method, the 39 findings fixed (neutral titles, area, severity, ADR, commit, release), the resilience
 work, the hardening in progress by category and advice for operators; never a weakness not yet fixed. Publishing the
 private register, one page per finding and the changelog alone were weighed and not taken.
+
+The record was released at once as **3.2.1** (23 November; tag `v3.2.1`, with a GitHub release, by the owner), a
+documentation release of 3.2.0, so that `master` and the `upstream` branch carry it.

@@ -313,10 +313,10 @@ with sync_playwright() as p:
     ana.fill("#org-target-hosts", "https://example.com/x"); ana.click("#org-save-targets"); ana.wait_for_timeout(500)
     check("…a name with https:// refused with its message", "não é um nome de host público" in ana.inner_text("#org-status")
           and not store.col("tenants").find_one({"_id": acme["id"]}).get("targetHosts"), ana.inner_text("#org-status"))
-    ana.fill("#org-target-hosts", "Example.COM\n*.gs1br.org"); ana.click("#org-save-targets"); ana.wait_for_timeout(600)
+    ana.fill("#org-target-hosts", "Example.COM\n*.example.net"); ana.click("#org-save-targets"); ana.wait_for_timeout(600)
     check("…saved: cleaned, shown again with the count and who changed it",
-          store.col("tenants").find_one({"_id": acme["id"]}).get("targetHosts") == ["example.com", "gs1br.org"]
-          and ana.input_value("#org-target-hosts") == "example.com\ngs1br.org"
+          store.col("tenants").find_one({"_id": acme["id"]}).get("targetHosts") == ["example.com", "example.net"]
+          and ana.input_value("#org-target-hosts") == "example.com\nexample.net"
           and "Hosts listados: 2" in ana.inner_text("#org-targets-state")
           and "ana" in ana.inner_text("#org-targets-state"), ana.inner_text("#org-panel"))
     shot(ana, "organisation-targets-pt")

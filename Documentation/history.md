@@ -1868,3 +1868,7 @@ organisation given a prefix that a rule switched on already covered was told not
 languages); the same prefixes saved again, prefixes taken away and rules switched off tell nobody. Refusing such a
 prefix and a confirmation step on the *Organisations* screen were weighed and not taken. `test_forwarding.py` 75 → 90;
 11 mutations, all caught.
+
+The owner asked for a pull request to `master` at the end of the session; `master` was brought up to `gs1br/develop`
+(`58ac50a`) by fast-forward on 23 November, and the changelog's unreleased section became **3.2.0** (tag `v3.2.0`, with
+a GitHub release, by the owner), the security and resilience assessment's release.

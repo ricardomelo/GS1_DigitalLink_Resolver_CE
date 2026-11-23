@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased (branch gs1br/develop)
+## 3.2.0 — 23 November 2026
+
+The security and resilience assessment's release: everything below down to 3.1.1, from the threat model (session 27)
+to the last finding fixed (session 69). A minor release of v3, like 3.1.0: the same architecture, services, routes and
+stored data, an installation of 3.1.x upgraded in place. Each entry below says what operators must do; read the
+paragraphs that follow before updating.
 
 Change of behaviour an integrator may notice: the official data entry API (`/api`, `/swaggerui`) is closed to every
 address that `DATA_ENTRY_API_ALLOW` does not list; organisations' systems use the tenant API. Its writes answer 409

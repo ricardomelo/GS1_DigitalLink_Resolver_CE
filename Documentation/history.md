@@ -1871,4 +1871,11 @@ prefix and a confirmation step on the *Organisations* screen were weighed and no
 
 The owner asked for a pull request to `master` at the end of the session; `master` was brought up to `gs1br/develop`
 (`58ac50a`) by fast-forward on 23 November, and the changelog's unreleased section became **3.2.0** (tag `v3.2.0`, with
-a GitHub release, by the owner), the security and resilience assessment's release.
+a GitHub release, by the owner), the security and resilience assessment's release. The `upstream` branch received the tag (`07bdd41`), the references
+to this fork that 3.2.0 had added adapted there to `master`.
+
+Then, at the owner's request (relayed by session 68 on 22 November), the public record of the assessment
+([ADR 0055](adr/0055-public-assessment-record.md), amending ADR 0020 §2.3): `Documentation/security-assessment.md` (`d5c24e2`), with
+the scope, the method, the 39 findings fixed (neutral titles, area, severity, ADR, commit, release), the resilience
+work, the hardening in progress by category and advice for operators; never a weakness not yet fixed. Publishing the
+private register, one page per finding and the changelog alone were weighed and not taken.

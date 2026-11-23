@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased (branch gs1br/develop)
+
+### A public record of the security and resilience assessment (session 69)
+- **Added: `Documentation/security-assessment.md`** ([ADR 0055](../adr/0055-public-assessment-record.md), amending
+  ADR 0020). What the assessment covered and how — the threat model, the review by area, the proof of each finding by
+  a development test that fails before its fix, mutation checks, the continuous integration, the test plans on
+  staging, and what it is not (an independent penetration test) —; a table of every finding fixed (F-001 to F-033 in
+  the code this project added, U-001 to U-006 in the official project's), each with a neutral title, its area, its
+  severity before the fix, its ADR, the commit that completed it and its release (all in 3.2.0); the resilience and
+  performance work; the hardening still in progress, by category; and advice for operators (commit `d5c24e2`). Linked from the README,
+  the documentation index, the threat model and `SECURITY.md`. No change to the software.
+
 ## 3.2.0 — 23 November 2026
 
 The security and resilience assessment's release: everything below down to 3.1.1, from the threat model (session 27)

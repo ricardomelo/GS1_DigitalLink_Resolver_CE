@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (17 November 2026) |
+| Status | **Accepted** (17 November 2026); §4 (*The editor's own copy*) closed by [ADR 0058](0058-record-revision.md) (27 November 2026) for clients that send the record's revision |
 | Backlog item | 10.1, phase 1 of the security assessment ([ADR 0020](0020-security-assessment.md)); extends [ADR 0023](0023-record-level-delete.md) §2.2 to every write |
 | Decided by | the owner of the branch's standing instruction (take the recommended option and carry on): the document as read is the revision checked by the write's filter, the data entry API reads again and applies the change on top of another writer's, and answers 409 when the key keeps changing; no revision field and no per-key lock |
 
@@ -65,6 +65,9 @@ later.
   level of links); both versions are in the journal and the record's history, from which the first can be restored.
   An `If-Match` revision carried by the editor and the tenant API from the read to the save would refuse that save
   instead; it is left for a later step.
+  > Closed by [ADR 0058](0058-record-revision.md): the editor and the tenant API's reads give the record's revision
+  > (`ETag`), and a save or delete that sends it back as `If-Match` is refused with 412 `record.changed` when the
+  > record changed in between; without the header, as before.
 - **The portal's save is two calls when links are removed** (`PUT`, then a `DELETE` of links). A conflict on the
   second leaves the first applied: `upstream.partialUpdate` asks the user to save again, as before.
 

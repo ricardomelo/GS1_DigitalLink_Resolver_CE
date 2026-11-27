@@ -19,7 +19,10 @@ checks, through Flask's test client:
   * the browser's rules (ADR 0038): the Swagger UI's policy (this origin only, never framed) and the policy of every
     other answer (nothing at all); the Swagger UI opened in Chromium starts and the policy refuses nothing;
   * a body that is not JSON (or, for PUT and DELETE, not an object) and a record without a link of its default link
-    type answer 400 and change nothing.
+    type answer 400 and change nothing;
+  * a record's revision (ADR 0058): the same function in the data entry API and the portal; If-Match and
+    If-None-Match on PUT, POST /new and both DELETEs (412 with nothing written, the new revision answered), checked
+    inside the conditional write (another writer between the read and the write: refused).
 
   pip install -r data_entry_server/src/requirements.txt
   python dev-tests/resolver/test_data_entry_api.py
@@ -516,6 +519,145 @@ if mongomock:
           and "/8004/A_C" in missing["error"] and "/8004/A/C" not in missing["error"], missing)
 else:
     print("SKIP the database layer on mongomock (pip install mongomock)")
+
+# ---------------------------------------------------------------- a record's revision: If-Match / If-None-Match (ADR 0058)
+# A save from a record opened minutes before replaced another user's save in between (the residual of F-009 that ADR
+# 0027 left). The writes take an optional If-Match ("<revision>" or *) or If-None-Match: *, checked against the record
+# as read inside the conditional write; 412 with nothing written when they do not hold; the answer gives the new
+# revision.
+import revision  # noqa: E402
+
+spec = importlib.util.spec_from_file_location("portal_revision", os.path.join(REPO, "portal", "revision.py"))
+portal_revision = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(portal_revision)
+
+
+def record_of(qualifiers):
+    """The record as GET gives it (the v3 entry with these qualifiers), or None."""
+    r = client.get("/api/01/09506000134352", headers=AUTH)
+    if r.status_code != 200:
+        return None
+    return next((e for e in r.get_json()["data"] if data_entry_logic._do_qualifiers_match(e.get("qualifiers") or [],
+                                                                                            qualifiers)), None)
+
+
+def rev_of(qualifiers):
+    return revision.of(record_of(qualifiers))
+
+
+def if_match(value):
+    return {**AUTH, "If-Match": f'"{value}"'}
+
+
+STORE.clear()
+post([entry(), entry(qualifiers=[{"10": "L1"}]), entry(qualifiers=[{"21": "S1"}], informativeQualifiers=[{"10": "L1"}])])
+samples = [record_of([]), record_of([{"10": "L1"}]), record_of([{"21": "S1"}])]
+check("revision: the data entry API's and the portal's functions give the same value for every record",
+      all(revision.of(e) == portal_revision.of(e) for e in samples) and len({revision.of(e) for e in samples}) == 3,
+      [(revision.of(e), portal_revision.of(e)) for e in samples])
+check("revision: 20 hexadecimal digits; none for a record that does not exist",
+      re.fullmatch(r"[0-9a-f]{20}", revision.of(samples[0]) or "") is not None and revision.of(None) is None,
+      revision.of(samples[0]))
+other_default = dict(samples[0], defaultLinktype="gs1:epil", anchor="/01/1")
+check("revision: the key's default link type and the anchor are not part of it; the description and links are",
+      revision.of(other_default) == revision.of(samples[0])
+      and revision.of(dict(samples[0], itemDescription="y")) != revision.of(samples[0])
+      and revision.of(dict(samples[0], links=[])) != revision.of(samples[0]), samples[0])
+check("revision: the headers read as the standard writes them (quotes, W/, lists, *)",
+      revision.tags('"a1"') == ["a1"] and revision.tags('W/"a1", "b2"') == ["a1", "b2"] and revision.tags("*") == ["*"]
+      and revision.tags("a1") == ["a1"] and revision.tags("") is None and revision.tags(None) is None)
+
+before = rev_of([])
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY}, headers=if_match(before))
+check("PUT with If-Match of the record as read → 200, written, the new revision answered",
+      r.status_code == 200 and linktypes(KEY, []) == ["gs1:pip", "gs1:safetyInfo"]
+      and r.get_json().get("revision") == rev_of([]) != before, (r.status_code, r.get_data(as_text=True)[:200]))
+snapshot = copy.deepcopy(STORE)
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": LEAFLET}, headers=if_match(before))
+check("PUT with If-Match of an earlier revision → 412, nothing written, the current revision answered",
+      r.status_code == 412 and STORE == snapshot and r.get_json().get("revision") == rev_of([])
+      and "changed" in r.get_json().get("error", ""), (r.status_code, r.get_data(as_text=True)[:200]))
+r = client.put("/api/01/09506000134352", json={"qualifiers": [{"10": "L9"}], "links": LEAFLET}, headers=if_match(before))
+check("PUT with If-Match on a record that does not exist → 412 (not 404)", r.status_code == 412 and STORE == snapshot,
+      r.status_code)
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": LEAFLET},
+               headers={**AUTH, "If-Match": f'W/"{before}", "{rev_of([])}"'})
+check("PUT with a list naming the current revision (and W/) → 200", r.status_code == 200
+      and "gs1:epil" in linktypes(KEY, []), r.status_code)
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": PIP}, headers={**AUTH, "If-Match": "*"})
+check("PUT with If-Match: * on an existing record → 200", r.status_code == 200, r.status_code)
+snapshot = copy.deepcopy(STORE)
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": PIP}, headers={**AUTH, "If-None-Match": "*"})
+check("PUT with If-None-Match: * on an existing record → 412, nothing written", r.status_code == 412
+      and STORE == snapshot, r.status_code)
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": PIP}, headers=AUTH)
+check("PUT without the headers → 200 as before (the official API's behaviour)", r.status_code == 200, r.status_code)
+
+snapshot = copy.deepcopy(STORE)
+r = client.post("/api/new", json=entry(qualifiers=[{"10": "L1"}]), headers={**AUTH, "If-None-Match": "*"})
+check("POST /new with If-None-Match: * naming an existing record → 412, nothing written", r.status_code == 412
+      and STORE == snapshot, r.status_code)
+r = client.post("/api/new", json=entry(qualifiers=[{"10": "L7"}]), headers={**AUTH, "If-None-Match": "*"})
+check("POST /new with If-None-Match: * for a new record → written, its revision answered",
+      r.status_code == 200 and r.get_json().get("revision") == rev_of([{"10": "L7"}]) is not None,
+      (r.status_code, r.get_data(as_text=True)[:200]))
+r = client.post("/api/new", json=[entry("/01/09521234000037"), entry(qualifiers=[{"10": "L8"}]),
+                                  entry(qualifiers=[{"10": "L1"}])], headers={**AUTH, "If-None-Match": "*"})
+check("POST /new with a list and If-None-Match: * stops at the key holding a record that exists (412), nothing of "
+      "that key written, the keys before it written", r.status_code == 412 and record_of([{"10": "L8"}]) is None
+      and "01_09521234000037" in STORE and len(r.get_json().get("written", [])) == 1,
+      (r.status_code, r.get_data(as_text=True)[:200]))
+stale = rev_of([{"10": "L1"}])
+client.put("/api/01/09506000134352", json={"qualifiers": [{"10": "L1"}], "itemDescription": "Batch one"}, headers=AUTH)
+snapshot = copy.deepcopy(STORE)
+r = client.post("/api/new", json=entry(qualifiers=[{"10": "L1"}]), headers=if_match(stale))
+check("POST /new with If-Match of an earlier revision → 412, nothing written", r.status_code == 412
+      and STORE == snapshot, r.status_code)
+
+snapshot = copy.deepcopy(STORE)
+r = client.delete("/api/01/09506000134352", json={"qualifiers": [{"10": "L1"}], "links": PIP}, headers=if_match(stale))
+check("DELETE of links with If-Match of an earlier revision → 412, nothing removed", r.status_code == 412
+      and STORE == snapshot, r.status_code)
+client.put("/api/01/09506000134352", json={"qualifiers": [{"10": "L1"}], "links": LEAFLET}, headers=AUTH)
+current = rev_of([{"10": "L1"}])
+r = client.delete("/api/01/09506000134352", json={"qualifiers": [{"10": "L1"}], "links": LEAFLET},
+                  headers=if_match(current))
+check("DELETE of links with If-Match of the record as read → 200, removed, the new revision answered",
+      r.status_code == 200 and linktypes(KEY, [{"10": "L1"}]) == ["gs1:pip"]
+      and r.get_json().get("revision") == rev_of([{"10": "L1"}]) != current, (r.status_code, r.get_data(as_text=True)[:200]))
+snapshot = copy.deepcopy(STORE)
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": [{"10": "L1"}]},
+                  headers=if_match(current))
+check("DELETE of a record with If-Match of an earlier revision → 412, the record kept", r.status_code == 412
+      and STORE == snapshot, r.status_code)
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": [{"10": "L1"}]},
+                  headers=if_match(rev_of([{"10": "L1"}])))
+check("DELETE of a record with If-Match of the record as read → 200, removed, no revision left",
+      r.status_code == 200 and record_of([{"10": "L1"}]) is None and r.get_json().get("revision") is None,
+      (r.status_code, r.get_data(as_text=True)[:200]))
+r = client.delete("/api/01/09506000134352", json={"removeRecord": True, "qualifiers": [{"10": "L1"}]},
+                  headers={**AUTH, "If-Match": "*"})
+check("DELETE of a record already gone with If-Match: * → 412", r.status_code == 412, r.status_code)
+
+# the check and the write are one step: another writer between the read and the write fails the write, the
+# operation reads again and the check refuses
+client.put("/api/01/09506000134352", json={"qualifiers": [], "links": [dict(SAFETY[0], href="https://example.com/s0")]},
+           headers=AUTH)
+read_rev = rev_of([])
+db.read_document = racing(lambda: data_entry_logic.update_document(KEY, {"qualifiers": [], "itemDescription": "Theirs"}))
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY}, headers=if_match(read_rev))
+db.read_document = real_read
+check("PUT with If-Match racing another writer on the same record → 412, the other writer's change kept, this one not",
+      r.status_code == 412 and record_of([])["itemDescription"] == "Theirs"
+      and [l["href"] for l in record_of([])["links"] if l["linktype"] == "gs1:safetyInfo"] == ["https://example.com/s0"],
+      (r.status_code, record_of([])))
+read_rev = rev_of([])
+db.read_document = racing(other_put([{"10": "L7"}], LEAFLET))
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY}, headers=if_match(read_rev))
+db.read_document = real_read
+check("…racing another writer on another record of the key → read again, the record unchanged, written (200)",
+      r.status_code == 200 and "gs1:safetyInfo" in linktypes(KEY, []) and "gs1:epil" in linktypes(KEY, [{"10": "L7"}]),
+      (r.status_code, linktypes(KEY, [])))
 
 # ---------------------------------------------------------------- values checked by the GS1 Barcode Syntax Engine (F11)
 ENGINE = os.environ.get("GS1_SYNTAX_ENGINE")

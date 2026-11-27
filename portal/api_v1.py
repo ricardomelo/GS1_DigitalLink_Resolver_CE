@@ -23,6 +23,7 @@ import app as portal
 import gs1
 import overview
 import requestlog
+import revision
 from gs1 import ValidationError
 
 log = logging.getLogger("portal.api")
@@ -187,18 +188,20 @@ def v1_get_record(key, value):
     ai, val = gs1.split_anchor(anchor)
     shown, landing, own_default = gs1.record_view(target.get("links") or [], default)
     links = [_link_out(l) for l in shown]
-    return jsonify({"key": ai, "value": val, "qualifiers": gs1.qualifier_path(pairs, encode=False),
+    answer = jsonify({"key": ai, "value": val, "qualifiers": gs1.qualifier_path(pairs, encode=False),
                     "informative": gs1.qualifier_path(stored, encode=False),
                     "description": target.get("itemDescription") or "", "defaultLinkType": own_default, "links": links,
                     "landingPage": landing,
                     "digitalLink": gs1.digital_link(portal.link_base(anchor), anchor,
                                                     gs1.join_informative(pairs, informative or stored))})
+    return portal.with_etag(answer, 200, revision.of(target))   # the record's revision (ADR 0058)
 
 
 @portal.app.put(PREFIX + "/records/<key>/<path:value>")
 @require_key("records:write")
 def v1_put_record(key, value):
-    """Creates (201) or replaces (200) one record with the description and links of the body."""
+    """Creates (201) or replaces (200) one record with the description and links of the body; If-Match /
+    If-None-Match: * make it conditional on the record as read (412 record.changed, ADR 0058); ETag: its new revision."""
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         raise ValidationError("request.jsonRequired")
@@ -208,21 +211,24 @@ def v1_put_record(key, value):
     data["links"] = [row for row in data["links"] if isinstance(row, dict)]
     anchor, pairs, doc = portal.build_document(data)
     portal.check_access(anchor)
-    created = portal.store_record(anchor, pairs, doc)
+    saved = {}
+    created = portal.store_record(anchor, pairs, doc, portal.request_precondition(), saved)
     uri = gs1.digital_link(portal.link_base(anchor), anchor,
                            gs1.join_informative(pairs, gs1.pairs_from(doc.get("informativeQualifiers"))))
-    return portal.message("save.created" if created else "save.updated", 201 if created else 200,
-                          created=created, digitalLink=uri, warnings=portal.saved_warnings(anchor, pairs, doc))
+    response, status = portal.message("save.created" if created else "save.updated", 201 if created else 200,
+                                      created=created, digitalLink=uri,
+                                      warnings=portal.saved_warnings(anchor, pairs, doc))
+    return portal.with_etag(response, status, saved.get("revision"))
 
 
 @portal.app.delete(PREFIX + "/records/<key>/<path:value>")
 @require_key("records:write")
 def v1_delete_record(key, value):
-    """Deletes one record, keeping the key's others."""
+    """Deletes one record, keeping the key's others; If-Match makes it conditional on the record as read (ADR 0058)."""
     anchor = _anchor(key, value)
     pairs, _ = portal.request_record(request.args, anchor)
     try:
-        portal.remove_record(anchor, pairs)
+        portal.remove_record(anchor, pairs, portal.request_precondition())
     except ValidationError as exc:
         if exc.code == "record.notFound":
             return _refuse("record.notFound", 404)

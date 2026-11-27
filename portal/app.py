@@ -57,6 +57,7 @@ import overview
 import privacy
 import about
 import requestlog
+import revision
 import resolution
 import safety
 import sheet
@@ -237,6 +238,8 @@ def refused_upstream(code: str, status: int, body, **params) -> UpstreamError:
     it (ADR 0027, F-009): nothing of the call was written, and the user can open the record again and repeat."""
     if status == 409:
         return UpstreamError("upstream.conflict", 409, body)
+    if status == 412:            # an If-Match / If-None-Match of the save no longer held (ADR 0058)
+        return UpstreamError("record.changed", 412, body)
     return UpstreamError(code, 502, body, **params)
 
 
@@ -652,11 +655,11 @@ def on_upstream_error(err):
 
 
 # --------------------------------------------------------------------------- resolver API client
-def resolver(method: str, path: str, payload=None) -> tuple[int, object]:
-    """One call to the data entry API with the bearer token: (HTTP status, decoded JSON body).
-    Raises UpstreamError when the API cannot be reached or refuses the token.
+def resolver(method: str, path: str, payload=None, headers: dict | None = None) -> tuple[int, object]:
+    """One call to the data entry API with the bearer token: (HTTP status, decoded JSON body). headers: more headers
+    (the preconditions of a write, ADR 0058). Raises UpstreamError when the API cannot be reached or refuses the token.
     """
-    headers = {"Authorization": f"Bearer {SESSION_TOKEN}", "Accept": "application/json"}
+    headers = {**(headers or {}), "Authorization": f"Bearer {SESSION_TOKEN}", "Accept": "application/json"}
     try:
         r = requests.request(method, DATA_ENTRY_URL + path, headers=headers,
                              json=payload, timeout=UPSTREAM_TIMEOUT)
@@ -706,6 +709,40 @@ def describe_entry(entry: dict) -> dict:
                 "path": gs1.qualifier_path(pairs, encode=False),
                 "informative": [list(p) for p in gs1.pairs_from(entry.get("informativeQualifiers"))]}
     return {"kind": "other", "value": "".join(f"({q}){v}" for q, v in pairs)}
+
+
+# --------------------------------------------------------------------------- a record's revision (ADR 0058)
+def request_precondition() -> tuple[list[str] | None, list[str] | None] | None:
+    """The If-Match and If-None-Match headers of a save or delete of the editor or the tenant API, None when the
+    request has neither (the save then behaves as before: the last save wins)."""
+    tags = revision.tags(request.headers.get("If-Match")), revision.tags(request.headers.get("If-None-Match"))
+    return tags if tags != (None, None) else None
+
+
+def precondition_headers(precondition) -> dict:
+    """The headers that pass a request's preconditions on to the data entry API, which checks them again inside its
+    conditional write (one atomic step)."""
+    if not precondition:
+        return {}
+    quoted = lambda tags: ", ".join(t if t == "*" else f'"{t}"' for t in tags)
+    out = {}
+    if precondition[0] is not None:
+        out["If-Match"] = quoted(precondition[0])
+    if precondition[1] is not None:
+        out["If-None-Match"] = quoted(precondition[1])
+    return out
+
+
+def check_precondition(precondition, entry: dict | None) -> None:
+    """UpstreamError record.changed (412) when the preconditions do not hold for the record as the portal has just
+    read it (entry None: it does not exist): no journal entry and no call for a save already out of date."""
+    if precondition and revision.problem(entry, *precondition):
+        raise UpstreamError("record.changed", 412, f"revision {revision.of(entry)}")
+
+
+def with_etag(response, status: int, value: str | None):
+    """A JSON answer with the record's revision as its ETag header (none when the record does not exist)."""
+    return (response, status, {"ETag": f'"{value}"'}) if value else (response, status)
 
 
 def is_success(status: int, body) -> bool:
@@ -1601,6 +1638,8 @@ def get_record():
                                 for e in entries),
         "defaultLinkType": default,
         "description": "", "links": [], "landingPage": False,
+        # the record's revision (ADR 0058): sent back with the save and the delete as If-Match
+        "revision": revision.of(target),
     }
     if target:
         shown, landing, own_default = gs1.record_view(target.get("links") or [], default)
@@ -1613,26 +1652,35 @@ def get_record():
             "title": "" if gs1.is_default_title(l.get("linktype"), l.get("title") or "") else l.get("title") or "",
             "hreflang": l.get("hreflang") or ["pt"], "context": l.get("context") or [],
         } for l in shown]
-    return jsonify(result)
+    return with_etag(jsonify(result), 200, result["revision"])
 
 
 @app.post("/portal/api/record")
 @require_login
 @role_required("editor")
 def save_record():
-    """Creates or replaces a record from the editor (editor role, within the user's prefixes)."""
+    """Creates or replaces a record from the editor (editor role, within the user's prefixes). If-Match /
+    If-None-Match: * make the save conditional on the record as the editor read it (ADR 0058); the answer gives the
+    record's new revision."""
     data = request.get_json(silent=True) or {}
     anchor, pairs, doc = build_document(data)
     check_access(anchor)
+    precondition = request_precondition()
     uri = gs1.digital_link(link_base(anchor), anchor,
                            gs1.join_informative(pairs, gs1.pairs_from(doc.get("informativeQualifiers"))))
     key_doc = key_record_document(anchor, pairs, doc, data.get("keyRecord"))
+    if key_doc and precondition:         # out of date: refused before the key's own record is written
+        entries, _ = read_entries(anchor)
+        check_precondition(precondition, find_entry(entries, doc.get("qualifiers", [])))
     if key_doc:
         store_record(anchor, [], key_doc)        # first, so the qualified record is never without a default above it
-    created = store_record(anchor, pairs, doc)
+    saved = {}
+    created = store_record(anchor, pairs, doc, precondition, saved)
     code = ("save.createdWithKey" if key_doc else "save.created") if created else ("save.updatedWithKey" if key_doc else "save.updated")
-    return message(code, 201 if created else 200, digitalLink=uri, created=created, keyRecordCreated=bool(key_doc),
-                   warnings=saved_warnings(anchor, pairs, doc))
+    response, status = message(code, 201 if created else 200, digitalLink=uri, created=created,
+                               keyRecordCreated=bool(key_doc), warnings=saved_warnings(anchor, pairs, doc),
+                               revision=saved.get("revision"))
+    return with_etag(response, status, saved.get("revision"))
 
 
 def strict_for(anchor: str) -> bool:
@@ -1705,13 +1753,18 @@ def key_record_document(anchor: str, pairs: list, doc: dict, request_data) -> di
     return key_doc
 
 
-def store_record(anchor: str, pairs: list, doc: dict) -> bool:
+def store_record(anchor: str, pairs: list, doc: dict, precondition=None, saved: dict | None = None) -> bool:
     """Creates or replaces one record (primary key + qualifier set) with the safe call sequence.
-    Returns True when the record was created. Used by the editor and by spreadsheet imports."""
+    Returns True when the record was created. Used by the editor, the tenant API and spreadsheet imports.
+    precondition: the If-Match / If-None-Match of the request (ADR 0058), checked on the record read here, then passed
+    to the data entry API with the record's first write (and the revision that write answers to the DELETE of links
+    that follows it); UpstreamError record.changed (412) when they do not hold. saved, when given, receives the
+    record's new revision ("revision")."""
     qualifiers = doc.get("qualifiers", [])
 
     entries, current_default = read_entries(anchor)
     target = find_entry(entries, qualifiers)
+    check_precondition(precondition, target)
     others = [e for e in entries if e is not target]
 
     # Explicit default links (ADR 0011, amendment): a key whose records use them takes this record's default target
@@ -1729,9 +1782,10 @@ def store_record(anchor: str, pairs: list, doc: dict) -> bool:
     # Case 1: new key, or new batch/lot on an existing GTIN → POST /new (upsert appends the entry)
     if target is None:
         with journal_first(anchor, pairs, doc, "create"):
-            status, body = resolver("POST", "/new", doc)
+            status, body = resolver("POST", "/new", doc, precondition_headers(precondition))
             if not is_success(status, body):
                 raise refused_upstream("upstream.createRejected", status, body)
+            note_revision(saved, body)
         audit.info("user=%s action=create anchor=%s%s links=%d",
                    g.user, anchor, gs1.qualifier_path(pairs), len(doc["links"]))
         return True
@@ -1743,17 +1797,29 @@ def store_record(anchor: str, pairs: list, doc: dict) -> bool:
                 "context": l.get("context") or []}
                for l in target.get("links", []) if gs1.link_key(l) not in new_keys]
     with journal_first(anchor, pairs, doc, "update"):
-        status, body = resolver("PUT", anchor, doc)
+        status, body = resolver("PUT", anchor, doc, precondition_headers(precondition))
         if not is_success(status, body):
             raise refused_upstream("upstream.updateRejected", status, body)
+        note_revision(saved, body)
         if removed:
-            status, body = resolver("DELETE", anchor, {"qualifiers": qualifiers, "links": removed})
+            # with preconditions, the DELETE holds to the revision the PUT answered: a writer between the two calls
+            # fails it rather than lose a change (upstream.partialUpdate, as before)
+            after = body.get("revision") if precondition and isinstance(body, dict) else None
+            status, body = resolver("DELETE", anchor, {"qualifiers": qualifiers, "links": removed},
+                                    {"If-Match": f'"{after}"'} if after else {})
             if not is_success(status, body):
                 raise UpstreamError("upstream.partialUpdate", 502, body, count=len(removed))
+            note_revision(saved, body)
 
     audit.info("user=%s action=update anchor=%s%s links=%d removed=%d",
                g.user, anchor, gs1.qualifier_path(pairs), len(doc["links"]), len(removed))
     return False
+
+
+def note_revision(saved: dict | None, body) -> None:
+    """Keeps the record's revision a write of the data entry API answered (ADR 0058) in saved, when asked."""
+    if saved is not None and isinstance(body, dict) and "revision" in body:
+        saved["revision"] = body["revision"]
 
 
 def turn_to_explicit_defaults(anchor: str, entries: list[dict], key_default: str) -> None:
@@ -1788,34 +1854,39 @@ def turn_to_explicit_defaults(anchor: str, entries: list[dict], key_default: str
 @require_login
 @role_required("editor")
 def delete_record():
-    """Deletes one record; the key's other records are not touched (ADR 0023)."""
+    """Deletes one record; the key's other records are not touched (ADR 0023). If-Match makes the delete conditional
+    on the record as the editor read it (ADR 0058)."""
     anchor = request_key(request.args)
     check_access(anchor)
     pairs, _ = request_record(request.args, anchor)
-    remove_record(anchor, pairs)
+    remove_record(anchor, pairs, request_precondition())
     return message("delete.done")
 
 
-def remove_record(anchor: str, pairs: list) -> None:
+def remove_record(anchor: str, pairs: list, precondition=None) -> None:
     """Deletes one record of a key, keeping the others (the editor and the tenant API), with the data entry API's
     record-level delete: one atomic write of the key's document, so the key's other records answer throughout (ADR
     0023; before it the portal deleted the whole key and wrote the others back). ValidationError record.notFound
-    when the key has no record with those qualifiers."""
+    when the key has no record with those qualifiers. precondition: the request's If-Match (ADR 0058), checked here
+    and by the data entry API's write; UpstreamError record.changed (412) when the record is no longer the one read."""
     entries, _ = read_entries(anchor)
     target = find_entry(entries, gs1.qualifier_list(pairs))
+    check_precondition(precondition, target)
     if target is None:
         raise ValidationError("record.notFound")
     with journal_first(anchor, pairs, target, "delete"):
-        delete_one_record(anchor, target.get("qualifiers") or [])
+        delete_one_record(anchor, target.get("qualifiers") or [], precondition)
 
     audit.info("user=%s action=delete anchor=%s%s", g.user, anchor, gs1.qualifier_path(pairs))
 
 
-def delete_one_record(anchor: str, qualifiers: list) -> None:
+def delete_one_record(anchor: str, qualifiers: list, precondition=None) -> None:
     """One record removed by the data entry API (DELETE with removeRecord, ADR 0023), the others kept.
     ValidationError record.notFound when it is already gone; UpstreamError upstream.conflict when the key kept changing
-    under other writers (409), upstream.deleteFailed otherwise."""
-    status, body = resolver("DELETE", anchor, {"removeRecord": True, "qualifiers": qualifiers})
+    under other writers (409), record.changed when the preconditions (ADR 0058) no longer held (412),
+    upstream.deleteFailed otherwise."""
+    status, body = resolver("DELETE", anchor, {"removeRecord": True, "qualifiers": qualifiers},
+                            precondition_headers(precondition))
     if status == 404:
         raise ValidationError("record.notFound")
     if not is_success(status, body):

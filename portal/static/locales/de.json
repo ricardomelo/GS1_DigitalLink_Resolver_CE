@@ -2090,6 +2090,8 @@
  "upstream.partialUpdate": "Die neuen Ziele wurden gespeichert, aber {count} alte(s) Ziel(e) konnte(n) nicht entfernt werden. Bitte speichern Sie erneut.",
  "upstream.deleteFailed": "Der Resolver konnte den Eintrag nicht löschen.",
  "upstream.conflict": "Die Einträge dieses Schlüssels wurden im selben Moment von jemand anderem geändert, und der Resolver hat diese Änderung nicht übernommen. Öffnen Sie den Eintrag erneut, prüfen Sie ihn und wiederholen Sie die Änderung.",
+ "record.changed": "Jemand anderes hat diesen Eintrag gespeichert oder gelöscht, nachdem Sie ihn geöffnet haben. Es wurde nichts gespeichert. Öffnen Sie den Eintrag erneut, um die aktuelle Fassung zu sehen, und wiederholen Sie die Änderung.",
+ "record.reopen": "Eintrag erneut öffnen",
  "save.created": "Eintrag angelegt. Der Code führt jetzt zu den eingegebenen Zielen.",
  "save.updated": "Änderungen gespeichert. Der Code führt jetzt zu den neuen Zielen.",
  "delete.done": "Eintrag gelöscht. Der Code führt nicht mehr zu diesen Zielen.",

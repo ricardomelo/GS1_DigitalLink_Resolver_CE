@@ -6,6 +6,7 @@ from flask import request, abort, Response
 from flask_restx import Namespace, Resource, fields
 import logging
 import data_entry_logic
+import revision
 from models.request_models import register_request_models
 from models.response_models import register_response_models
 
@@ -83,6 +84,13 @@ ANCHOR_PATH_ERROR = {"response_status": 400,
                      "error": "The path is /{AI}/{value}: the AI without '_', the value without '/'"}
 
 
+def _precondition() -> tuple[list[str] | None, list[str] | None] | None:
+    """The If-Match and If-None-Match headers of a write (ADR 0058), None when the request has neither: the write then
+    behaves as the official API's."""
+    tags = revision.tags(request.headers.get('If-Match')), revision.tags(request.headers.get('If-None-Match'))
+    return tags if tags != (None, None) else None
+
+
 def _document_id(anchor_ai_code: str, anchor_ai: str) -> str | None:
     if not anchor_ai_code or '_' in anchor_ai_code or not anchor_ai:
         return None
@@ -119,6 +127,7 @@ class NewDocOperations(TokenResource):
                 fields.List(fields.Nested(new_document_response_item_model))
             ),
             400: 'Invalid data format. The payload could not be interpreted as v2 or v3 data-entry.',
+            412: 'An If-Match or If-None-Match header (ADR 0058) does not hold for a record named: nothing written.',
             401: 'Missing Authorization Header',
             403: 'Token is invalid.',
             415: 'Request must be in JSON format (Content-Type must be application/json).',
@@ -140,7 +149,7 @@ class NewDocOperations(TokenResource):
             data, refusal = _json_body()
             if refusal:
                 return refusal
-            response_data, http_response_status = data_entry_logic.create_document(data)
+            response_data, http_response_status = data_entry_logic.create_document(data, _precondition())
             return response_data, http_response_status
 
         except Exception:
@@ -237,7 +246,10 @@ class DocOperations(TokenResource):
             logger.warning('Error getting document %s', e)
             abort(500, description="Error getting document")
 
-    @data_entry_namespace.doc(description="Update a document using its anchor",
+    @data_entry_namespace.doc(description="Update a document using its anchor. "
+                         "Optional If-Match: \"<revision>\" (or *) and If-None-Match: * headers make the write "
+                         "conditional on the record named (ADR 0058): 412 with nothing written when it fails; the "
+                         "answer gives the record's new revision.",
              params={'anchor': 'The anchor of the document to update'})
     def put(self, anchor_ai_code: str, anchor_ai: str) -> tuple[Any, int] | Response:
         try:
@@ -256,7 +268,8 @@ class DocOperations(TokenResource):
             document_id = _document_id(anchor_ai_code, anchor_ai)
             if document_id is None:
                 return ANCHOR_PATH_ERROR, 400
-            response_data, http_response_status = data_entry_logic.update_document(document_id, data)
+            response_data, http_response_status = data_entry_logic.update_document(document_id, data,
+                                                                                   _precondition())
             return response_data, http_response_status
 
         except Exception:
@@ -271,7 +284,10 @@ class DocOperations(TokenResource):
                          "with those qualifiers; none for the key's own record) and keeps the others, in one atomic "
                          "write; the document goes with its last record (404 when there is no such record). "
                          "If no body is provided, the entire document is deleted; a body that names no link "
-                         "(no 'links', an empty list) and does not remove a record is refused with 400.",
+                         "(no 'links', an empty list) and does not remove a record is refused with 400. "
+                         "Optional If-Match: \"<revision>\" (or *) and If-None-Match: * headers make the write "
+                         "conditional on the record named (ADR 0058): 412 with nothing written when it fails; the "
+                         "answer gives the record's new revision.",
              params={'anchor': 'The anchor of the document to delete or modify'})
     def delete(self, anchor_ai_code: str, anchor_ai: str) -> tuple[Any, int] | Response:
         try:
@@ -298,13 +314,14 @@ class DocOperations(TokenResource):
                                 "error": "A DELETE that removes a record has 'removeRecord': true, the record's "
                                          "'qualifiers' (a list of {AI: value}; none for the key's own record) and "
                                          "no 'links'"}, 400
-                    response_data, http_response_status = data_entry_logic.delete_record(document_id, qualifiers)
+                    response_data, http_response_status = data_entry_logic.delete_record(document_id, qualifiers,
+                                                                                         _precondition())
                     return response_data, http_response_status
                 if not _names_links(data):
                     return {"response_status": 400,
                             "error": "A DELETE with a body removes the links it names: 'links' must be a non-empty "
                                      "list of links. Send no body to delete the whole document"}, 400
-                response_data, http_response_status = data_entry_logic.delete_links(document_id, data)
+                response_data, http_response_status = data_entry_logic.delete_links(document_id, data, _precondition())
                 return response_data, http_response_status
 
             response_data = data_entry_logic.delete_document(document_id)

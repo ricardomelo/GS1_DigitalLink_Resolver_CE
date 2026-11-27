@@ -36,6 +36,7 @@ const state = {
   hasKeyRecord: true,          // whether the key has a record of its own (section 2.5.9)
   keyPromptDone: false,        // the user chose to save without it in this editing session
   pendingUnsaved: false,       // unsaved changes of a record whose identity was then changed
+  revision: null,              // the open record's revision (ADR 0058): sent back with the save and the delete
 };
 
 /* ------------------------------------------------------------------ API */
@@ -47,8 +48,8 @@ class ApiError extends Error {
   }
 }
 
-async function api(method, path, body) {
-  const opts = { method, headers: { Accept: "application/json" }, credentials: "same-origin" };
+async function api(method, path, body, headers = {}) {
+  const opts = { method, headers: { ...headers, Accept: "application/json" }, credentials: "same-origin" };
   if (body !== undefined) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
@@ -1433,6 +1434,7 @@ async function openRecord() {
       informativeNote = stored.length ? ["informative.differs", { stored: qualText(stored) }] : ["informative.added", {}];
     }
     state.exists = record.exists;
+    state.revision = record.revision || null;
     resetAttributes();                  // data attributes belong to the code drawn for one item, not the record
     state.sharedDefaultLinkType = record.sharedDefaultLinkType;
     $("#description").value = record.description || "";
@@ -5702,7 +5704,8 @@ async function save(event) {
   I18N.set(button, "save.saving");
   hideStatus();
   try {
-    const result = await api("POST", "record", body);
+    const result = await api("POST", "record", body, precondition());
+    state.revision = result.revision || null;
     if (result.keyRecordCreated) {
       state.hasKeyRecord = true;
       refreshOthers();
@@ -5720,6 +5723,14 @@ async function save(event) {
     button.disabled = false;
     I18N.set(button, "save.button");
   }
+}
+
+/* The save and the delete hold to the record as it was opened (ADR 0058): If-Match with its revision, or
+   If-None-Match: * for a record that did not exist; someone else's save in between is refused (412 record.changed)
+   instead of being replaced. No header when the portal gave no revision (as before). */
+function precondition() {
+  if (state.revision) return { "If-Match": `"${state.revision}"` };
+  return state.exists ? {} : { "If-None-Match": "*" };
 }
 
 /* GS1-Conformant Resolver 1.2.1, section 2.5.9: for any code "there SHALL be a default link available either at
@@ -5882,9 +5893,10 @@ async function remove() {
     : t("delete.targetBase", { key: keyText(g.ai, g.value) });
   if (!await ask(t("delete.confirm", { target }), { danger: true })) return;
   try {
-    const result = await api("DELETE", "record?" + query(g, l));
+    const result = await api("DELETE", "record?" + query(g, l), undefined, precondition());
     showStatus("ok", result.code);
     state.exists = false;
+    state.revision = null;
     $("#delete").hidden = true;
     setPublished(false);
   } catch (e) {
@@ -5897,11 +5909,13 @@ function showStatus(kind, code, params) {
   el.className = "status is-" + kind;
   I18N.set(el, code, params);
   el.hidden = false;
+  $("#status-actions").hidden = code !== "record.changed";   // someone else saved: offer to open the record again
   el.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
 
 function hideStatus() {
   $("#status").hidden = true;
+  $("#status-actions").hidden = true;
 }
 
 /* ------------------------------------------------------------------ user menu */
@@ -6091,6 +6105,7 @@ async function init() {
   });
   $("#form").addEventListener("submit", save);
   $("#delete").addEventListener("click", remove);
+  $("#reopen").addEventListener("click", openRecord);
   $("#copy").addEventListener("click", async e => {
     const button = e.currentTarget;
     await navigator.clipboard.writeText(button.dataset.uri);

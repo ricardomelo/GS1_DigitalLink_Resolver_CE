@@ -73,9 +73,9 @@
    "get": {
     "operationId": "getRecord",
     "summary": "One record",
-    "description": "Scope `records:read`.",
+    "description": "Scope `records:read`. The `ETag` header is the record's revision: send it back as `If-Match` with a `PUT` or `DELETE` to make the change conditional on the record as read (ADR 0058).",
     "responses": {
-     "200": {"description": "The record", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Record"}}}},
+     "200": {"description": "The record", "headers": {"ETag": {"$ref": "#/components/headers/ETag"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Record"}}}},
      "401": {"$ref": "#/components/responses/Unauthorised"},
      "403": {"$ref": "#/components/responses/Forbidden"},
      "404": {"$ref": "#/components/responses/NotFound"},
@@ -86,15 +86,17 @@
    "put": {
     "operationId": "putRecord",
     "summary": "Creates or replaces one record",
-    "description": "Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed. The answer lists `warnings` about safety-critical link types and near-duplicate batch or serial values (ADR 0022, section 2.5); they never refuse the save.",
+    "description": "Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed. The answer lists `warnings` about safety-critical link types and near-duplicate batch or serial values (ADR 0022, section 2.5); they never refuse the save. With `If-Match` (the `ETag` of a read, or `*`) or `If-None-Match: *` (create only), the save is made only while the record is as read (ADR 0058), else 412 `record.changed` with nothing written; without them the last save wins.",
+    "parameters": [{"$ref": "#/components/parameters/IfMatch"}, {"$ref": "#/components/parameters/IfNoneMatch"}],
     "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RecordInput"}}}},
     "responses": {
-     "200": {"description": "Replaced", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Saved"}}}},
-     "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Saved"}}}},
+     "200": {"description": "Replaced", "headers": {"ETag": {"$ref": "#/components/headers/ETag"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Saved"}}}},
+     "201": {"description": "Created", "headers": {"ETag": {"$ref": "#/components/headers/ETag"}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Saved"}}}},
      "401": {"$ref": "#/components/responses/Unauthorised"},
      "403": {"$ref": "#/components/responses/Forbidden"},
      "400": {"$ref": "#/components/responses/Malformed"},
      "409": {"$ref": "#/components/responses/Conflict"},
+     "412": {"$ref": "#/components/responses/Changed"},
      "415": {"$ref": "#/components/responses/Invalid"},
      "422": {"$ref": "#/components/responses/Invalid"},
      "429": {"$ref": "#/components/responses/RateLimit"},
@@ -104,13 +106,15 @@
    "delete": {
     "operationId": "deleteRecord",
     "summary": "Deletes one record, keeping the key's others",
-    "description": "Scope `records:write`.",
+    "description": "Scope `records:write`. With `If-Match` (the `ETag` of a read), the record is deleted only while it is as read (ADR 0058), else 412 `record.changed`.",
+    "parameters": [{"$ref": "#/components/parameters/IfMatch"}],
     "responses": {
      "200": {"description": "Deleted", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Message"}}}},
      "401": {"$ref": "#/components/responses/Unauthorised"},
      "403": {"$ref": "#/components/responses/Forbidden"},
      "404": {"$ref": "#/components/responses/NotFound"},
      "409": {"$ref": "#/components/responses/Conflict"},
+     "412": {"$ref": "#/components/responses/Changed"},
      "429": {"$ref": "#/components/responses/RateLimit"},
      "502": {"$ref": "#/components/responses/Upstream"}
     }
@@ -157,7 +161,12 @@
   "parameters": {
    "Key": {"name": "key", "in": "path", "required": true, "description": "The primary key's Application Identifier (01, 00, 414, 8004…)", "schema": {"type": "string", "pattern": "^[0-9]{2,4}$"}},
    "Value": {"name": "value", "in": "path", "required": true, "description": "The key's value (a GTIN of 8, 12, 13 or 14 digits is stored as GTIN-14); percent-encode / and other reserved characters", "schema": {"type": "string"}},
-   "Qualifiers": {"name": "qualifiers", "in": "query", "description": "The record's key qualifiers as a path (/22/V1/10/L1/21/S1); absent: the key's own record", "schema": {"type": "string"}}
+   "Qualifiers": {"name": "qualifiers", "in": "query", "description": "The record's key qualifiers as a path (/22/V1/10/L1/21/S1); absent: the key's own record", "schema": {"type": "string"}},
+   "IfMatch": {"name": "If-Match", "in": "header", "description": "The record's revision as read (its ETag, quoted), or * for any existing record: the change is made only while the record still has it (ADR 0058)", "schema": {"type": "string"}},
+   "IfNoneMatch": {"name": "If-None-Match", "in": "header", "description": "* to create the record only: refused when it already exists (ADR 0058)", "schema": {"type": "string", "enum": ["*"]}}
+  },
+  "headers": {
+   "ETag": {"description": "The record's revision (ADR 0058): a hash of its content, quoted", "schema": {"type": "string"}}
   },
   "responses": {
    "Unauthorised": {"description": "No key (api.keyMissing), or a key that is unknown, expired, revoked or of a disabled organisation (api.keyInvalid)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
@@ -167,6 +176,7 @@
    "Malformed": {"description": "The body is not one JSON object: not JSON at all, nested past what the parser follows, or an array, a text, a number or null (request.jsonInvalid)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "RateLimit": {"description": "Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait", "headers": {"Retry-After": {"schema": {"type": "integer"}}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "Upstream": {"description": "The resolver's data entry API failed or refused the change (upstream.*)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+   "Changed": {"description": "An If-Match or If-None-Match did not hold: someone else saved or deleted the record after it was read, and nothing was written (record.changed; ADR 0058). Read the record again and repeat the change.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
    "Conflict": {"description": "The key's records were being changed by other writers at the same moment, and the data entry API wrote nothing of this change (upstream.conflict; ADR 0027). Read the record again and repeat the change.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
   },
   "schemas": {

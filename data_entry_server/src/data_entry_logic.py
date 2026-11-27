@@ -8,6 +8,7 @@ import subprocess
 from typing import Any
 
 import data_entry_db
+import revision
 import target_rule
 
 logger = logging.getLogger(__name__)
@@ -550,6 +551,29 @@ class _Refused(Exception):
         self.body, self.status = body, status
 
 
+Precondition = tuple[list[str] | None, list[str] | None]
+"""The entity tags of a write's If-Match and If-None-Match headers (ADR 0058), each None when absent."""
+
+PRECONDITION_FAILED = "Record changed since it was read"
+
+
+def _require(precondition: Precondition | None, entry: dict[str, Any] | None) -> None:
+    """Raises _Refused 412 when the preconditions of the request (ADR 0058) fail for the record as just read by
+    _write_document (entry: its v3 form, None when it does not exist). Called inside the write's change function, so
+    the check and the conditional write are one step: a writer between them makes the write fail and the check run
+    again on the new read."""
+    if precondition and revision.problem(entry, *precondition):
+        raise _Refused({"response_status": 412, "error": PRECONDITION_FAILED, "revision": revision.of(entry)}, 412)
+
+
+def _entry_v3(document: dict[str, Any] | None, index: int | None) -> dict[str, Any] | None:
+    """The v3 form of the document's entry at index (as GET gives it), None for no document or no index."""
+    if document is None or index is None:
+        return None
+    entries = _convert_mongo_linkset_to_v3(document) or []
+    return entries[index] if index < len(entries) else None
+
+
 def _write_document(document_id: str, change) -> tuple[dict[str, Any], int]:
     """
     Every write of a key's document (ADR 0027): reads it, lets change(stored) build the new document from a copy of
@@ -586,16 +610,23 @@ def _write_document(document_id: str, change) -> tuple[dict[str, Any], int]:
             "error": f"Document {document_id} kept changing under other writers; nothing was written"}, 409
 
 
-def _process_document_upsert(authored_doc: dict[str, Any]) -> tuple[dict[str, Any], int]:
+def _process_document_upsert(authored_doc: dict[str, Any],
+                             precondition: Precondition | None = None) -> tuple[dict[str, Any], int]:
     """
     Writes every entry of authored_doc (several when a list sent to POST /new has more than one record of the key):
     an entry with the qualifiers of a stored one, or of one before it in authored_doc, is merged into it; any other
     is added. The document is written once, at the end, conditionally (_write_document). The official code returned
     after the first entry when the document existed, so the other records of a list were dropped with a 201, and a
     new document kept a record sent twice as two entries with the same qualifiers; it also answered 200 when the
-    update itself failed.
+    update itself failed. The preconditions (ADR 0058) hold for each record the entries name; the answer gives the
+    record's new revision when authored_doc names one record.
     """
     def change(document):
+        for entry in authored_doc['data']:
+            index = None if document is None else next(
+                (i for i, e in enumerate(document['data'])
+                 if _do_qualifiers_match(e['qualifiers'], entry['qualifiers'])), None)
+            _require(precondition, _entry_v3(document, index))
         if document is None:
             logger.info('Document does not exist: %s', authored_doc['_id'])
             document = {**copy.deepcopy(authored_doc), 'data': []}
@@ -619,10 +650,17 @@ def _process_document_upsert(authored_doc: dict[str, Any]) -> tuple[dict[str, An
                 # If the qualifiers don't match, add the entry to the document
                 document['data'].append(entry)
 
+        new_revision = None
+        if len(authored_doc['data']) == 1:
+            index = next((i for i, e in enumerate(document['data'])
+                          if _do_qualifiers_match(e['qualifiers'], authored_doc['data'][0]['qualifiers'])), None)
+            new_revision = revision.of(_entry_v3(document, index))
         if created:
-            return document, lambda result: ({"entry": authored_doc['_id'], "result": result}, 201)
+            return document, lambda result: ({"entry": authored_doc['_id'], "result": result,
+                                              "revision": new_revision}, 201)
         return document, lambda result: ({"entry": authored_doc['_id'],
-                                          "qualifiers": authored_doc['data'][0]['qualifiers'], "result": result}, 200)
+                                          "qualifiers": authored_doc['data'][0]['qualifiers'], "result": result,
+                                          "revision": new_revision}, 200)
 
     try:
         return _write_document(authored_doc['_id'], change)
@@ -680,7 +718,10 @@ def document_id_to_anchor(document_id: str) -> str:
     return '/' + document_id.replace('_', '/', 1)
 
 
-def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[str, Any] | list[dict[str, Any]], int]:
+def create_document(data: dict[str, Any] | list[dict[str, Any]],
+                    precondition: Precondition | None = None) -> tuple[dict[str, Any] | list[dict[str, Any]], int]:
+    """POST /new: one record, or a list of records, each written into its key's document (merged into a record with
+    the same qualifiers); the preconditions (ADR 0058), if any, hold for every record named."""
     try:
         # If 'data' is a list
         if isinstance(data, list):
@@ -710,7 +751,7 @@ def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[s
                     # if it does not exist a new document is created.  This is the
                     # same behaviour as the single-item (dict) path and avoids the
                     # data-loss / race-condition issues of DELETE + CREATE.
-                    create_result, status = _process_document_upsert(validated_doc)
+                    create_result, status = _process_document_upsert(validated_doc, precondition)
                     logger.info('Result: %s Status: %s', create_result, status)
 
                     # Stop at the first item not written (a document that kept changing is a 409): the official
@@ -736,7 +777,7 @@ def create_document(data: dict[str, Any] | list[dict[str, Any]]) -> tuple[dict[s
             validated_doc = _validate_data(authored_linkset_doc)
 
             # Process the single 'data' entry for insertion using the helper function and get the result and status
-            create_result, status = _process_document_upsert(validated_doc['data'])
+            create_result, status = _process_document_upsert(validated_doc['data'], precondition)
             return create_result, status  # Return the result and status
 
         # If 'data' is not a list nor a dictionary, return an error response (with its status: the official code
@@ -870,17 +911,21 @@ def _record_not_found(document_id: str, qualifiers: list[dict[str, str]]) -> dic
     return {"response_status": 404, "error": f"Record not found: {document_id}{path or ' (no qualifiers)'}"}
 
 
-def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any], int]:
+def update_document(document_id: str, data: dict[str, Any],
+                    precondition: Precondition | None = None) -> tuple[dict[str, Any], int]:
     """
     Idempotent update of an existing document.
     - Returns 404 if the document does not exist, or has no record with the payload's qualifiers.
     - Preserves fields not present in the payload.
     - Merges links: matches by (linktype, hreflang, context).
       Matching links are updated; unmatched links are added.
+    - With preconditions (If-Match, If-None-Match: ADR 0058), 412 when the record is not the one they name; the
+      answer gives the record's new revision.
     """
     def change(existing_db_doc):
         # 1. The existing document, read by _write_document
         if existing_db_doc is None:
+            _require(precondition, None)
             raise _Refused({"response_status": 404, "error": f"Document not found: {document_id}"}, 404)
 
         # 2. Convert existing DB document to v3 format
@@ -890,6 +935,7 @@ def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, A
 
         # 3. Find the matching v3 item by qualifiers (default: no qualifiers); none is a 404, not the first record
         matched_idx = _matched_record_index(existing_v3_list, data.get('qualifiers', []))
+        _require(precondition, None if matched_idx is None else existing_v3_list[matched_idx])
         if matched_idx is None:
             raise _Refused(_record_not_found(document_id, data.get('qualifiers', [])), 404)
 
@@ -933,7 +979,9 @@ def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, A
         if 'defaultLinktype' in data:
             existing_db_doc['defaultLinktype'] = data['defaultLinktype']
 
-        return existing_db_doc, lambda result: ({"entry": document_id, "result": result}, 200)
+        new_revision = revision.of(_entry_v3(existing_db_doc, matched_idx))
+        return existing_db_doc, lambda result: ({"entry": document_id, "result": result, "revision": new_revision},
+                                                200)
 
     try:
         # 8. Persist, provided nobody changed the document in between (ADR 0027)
@@ -944,16 +992,19 @@ def update_document(document_id: str, data: dict[str, Any]) -> tuple[dict[str, A
         return {"response_status": 500, "error": INTERNAL_ERROR}, 500
 
 
-def delete_links(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any], int]:
+def delete_links(document_id: str, data: dict[str, Any],
+                 precondition: Precondition | None = None) -> tuple[dict[str, Any], int]:
     """
     Remove specific links from an existing document.
     Links are matched by the uniqueness key (linktype, hreflang, context).
     Returns 404 if the document does not exist, or has no record with the payload's qualifiers.
     Returns 404 if none of the requested links were found in the document.
+    With preconditions (ADR 0058), 412 when the record is not the one they name; the answer gives its new revision.
     """
     def change(existing_db_doc):
         # 1. The existing document, read by _write_document
         if existing_db_doc is None:
+            _require(precondition, None)
             raise _Refused({"response_status": 404, "error": f"Document not found: {document_id}"}, 404)
 
         # 2. Convert to v3
@@ -963,6 +1014,7 @@ def delete_links(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any]
 
         # 3. Find matching v3 item by qualifiers; none is a 404, not the first record
         matched_idx = _matched_record_index(existing_v3_list, data.get('qualifiers', []))
+        _require(precondition, None if matched_idx is None else existing_v3_list[matched_idx])
         if matched_idx is None:
             raise _Refused(_record_not_found(document_id, data.get('qualifiers', [])), 404)
 
@@ -993,7 +1045,9 @@ def delete_links(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any]
         # 6. Replace the matched data entry in the existing DB document
         existing_db_doc['data'][matched_idx] = new_data_entry
 
-        return existing_db_doc, lambda result: ({"entry": document_id, "removed": removed_count, "result": result}, 200)
+        new_revision = revision.of(_entry_v3(existing_db_doc, matched_idx))
+        return existing_db_doc, lambda result: ({"entry": document_id, "removed": removed_count, "result": result,
+                                                 "revision": new_revision}, 200)
 
     try:
         # 7. Persist, provided nobody changed the document in between (ADR 0027)
@@ -1004,26 +1058,30 @@ def delete_links(document_id: str, data: dict[str, Any]) -> tuple[dict[str, Any]
         return {"response_status": 500, "error": INTERNAL_ERROR}, 500
 
 
-def delete_record(document_id: str, qualifiers: list[dict[str, str]]) -> tuple[dict[str, Any], int]:
+def delete_record(document_id: str, qualifiers: list[dict[str, str]],
+                  precondition: Precondition | None = None) -> tuple[dict[str, Any], int]:
     """
     Removes one record (the data entry with these qualifiers; none is the key's own record) from a document, keeping
     the document's other records, in one atomic write of the document (ADR 0023): the document is replaced without the
     record, or deleted when it was the last one. The official API deleted whole documents only, so its callers deleted
     the key and wrote the other records back, leaving the key without any record between the two calls, or for good
     when the second one failed. A document changed by another writer between the read and the write is read again
-    (_write_document). Returns 404 when the document, or a record with these qualifiers, does not exist.
+    (_write_document). Returns 404 when the document, or a record with these qualifiers, does not exist; with
+    preconditions (ADR 0058), 412 when the record is not the one they name.
     """
     def change(document):
         if document is None:
+            _require(precondition, None)
             raise _Refused({"response_status": 404, "error": f"Document not found: {document_id}"}, 404)
         entries = document.get('data') or []
         matched_idx = next((i for i, entry in enumerate(entries)
                             if _do_qualifiers_match(entry.get('qualifiers') or [], qualifiers)), None)
+        _require(precondition, _entry_v3(document, matched_idx))
         if matched_idx is None:
             raise _Refused(_record_not_found(document_id, qualifiers), 404)
         remaining = {**document, 'data': entries[:matched_idx] + entries[matched_idx + 1:]}
         return remaining, lambda result: ({"entry": document_id, "removed": 1, "remaining": len(remaining['data']),
-                                           "result": result}, 200)
+                                           "result": result, "revision": None}, 200)
 
     try:
         return _write_document(document_id, change)

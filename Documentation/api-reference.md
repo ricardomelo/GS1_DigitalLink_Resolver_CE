@@ -81,7 +81,7 @@ Scope `records:read`. Sorted by `id`; pass the `next` of an answer as `after` to
 
 `GET /portal/api/v1/records/{key}/{value}` — One record
 
-Scope `records:read`.
+Scope `records:read`. The `ETag` header is the record's revision: send it back as `If-Match` with a `PUT` or `DELETE` to make the change conditional on the record as read (ADR 0058).
 
 | Parameter | In | Required | Type | Meaning |
 |---|---|---|---|---|
@@ -102,13 +102,15 @@ Scope `records:read`.
 
 `PUT /portal/api/v1/records/{key}/{value}` — Creates or replaces one record
 
-Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed. The answer lists `warnings` about safety-critical link types and near-duplicate batch or serial values (ADR 0022, section 2.5); they never refuse the save.
+Scope `records:write`. The first link is the record's default link unless `defaultLinkType` names another of its types. Links are matched on link type, languages and context: links the record had and the body lacks are removed. The answer lists `warnings` about safety-critical link types and near-duplicate batch or serial values (ADR 0022, section 2.5); they never refuse the save. With `If-Match` (the `ETag` of a read, or `*`) or `If-None-Match: *` (create only), the save is made only while the record is as read (ADR 0058), else 412 `record.changed` with nothing written; without them the last save wins.
 
 | Parameter | In | Required | Type | Meaning |
 |---|---|---|---|---|
 | `key` | path | yes | string (pattern `^[0-9]{2,4}$`) | The primary key's Application Identifier (01, 00, 414, 8004…) |
 | `value` | path | yes | string | The key's value (a GTIN of 8, 12, 13 or 14 digits is stored as GTIN-14); percent-encode / and other reserved characters |
 | `qualifiers` | query | no | string | The record's key qualifiers as a path (/22/V1/10/L1/21/S1); absent: the key's own record |
+| `If-Match` | header | no | string | The record's revision as read (its ETag, quoted), or * for any existing record: the change is made only while the record still has it (ADR 0058) |
+| `If-None-Match` | header | no | string (one of `*`) | * to create the record only: refused when it already exists (ADR 0058) |
 
 Request body (required): [RecordInput](#schema-recordinput).
 
@@ -120,6 +122,7 @@ Request body (required): [RecordInput](#schema-recordinput).
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
 | 400 | The body is not one JSON object: not JSON at all, nested past what the parser follows, or an array, a text, a number or null (request.jsonInvalid) — [Error](#schema-error) |
 | 409 | The key's records were being changed by other writers at the same moment, and the data entry API wrote nothing of this change (upstream.conflict; ADR 0027). Read the record again and repeat the change. — [Error](#schema-error) |
+| 412 | An If-Match or If-None-Match did not hold: someone else saved or deleted the record after it was read, and nothing was written (record.changed; ADR 0058). Read the record again and repeat the change. — [Error](#schema-error) |
 | 415 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
 | 422 | A rule of GS1 or of the portal refused the request (for example gtin.checkDigit, description.required, links.required, link.typeRequired, default.sharedMismatch, request.jsonRequired, api.limit), or a field of the body holds a value of another kind than the schema gives (request.fieldInvalid, with params.field the path of the field, e.g. links.2.url) — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
@@ -129,13 +132,14 @@ Request body (required): [RecordInput](#schema-recordinput).
 
 `DELETE /portal/api/v1/records/{key}/{value}` — Deletes one record, keeping the key's others
 
-Scope `records:write`.
+Scope `records:write`. With `If-Match` (the `ETag` of a read), the record is deleted only while it is as read (ADR 0058), else 412 `record.changed`.
 
 | Parameter | In | Required | Type | Meaning |
 |---|---|---|---|---|
 | `key` | path | yes | string (pattern `^[0-9]{2,4}$`) | The primary key's Application Identifier (01, 00, 414, 8004…) |
 | `value` | path | yes | string | The key's value (a GTIN of 8, 12, 13 or 14 digits is stored as GTIN-14); percent-encode / and other reserved characters |
 | `qualifiers` | query | no | string | The record's key qualifiers as a path (/22/V1/10/L1/21/S1); absent: the key's own record |
+| `If-Match` | header | no | string | The record's revision as read (its ETag, quoted), or * for any existing record: the change is made only while the record still has it (ADR 0058) |
 
 | Status | Answer |
 |---|---|
@@ -144,6 +148,7 @@ Scope `records:write`.
 | 403 | The key lacks the scope (api.scope), or the record is outside its reach (access.prefix) — [Error](#schema-error) |
 | 404 | No record with those qualifiers (record.notFound) — [Error](#schema-error) |
 | 409 | The key's records were being changed by other writers at the same moment, and the data entry API wrote nothing of this change (upstream.conflict; ADR 0027). Read the record again and repeat the change. — [Error](#schema-error) |
+| 412 | An If-Match or If-None-Match did not hold: someone else saved or deleted the record after it was read, and nothing was written (record.changed; ADR 0058). Read the record again and repeat the change. — [Error](#schema-error) |
 | 429 | Too many requests in this minute for the key (api.rateLimit); Retry-After gives the seconds to wait — [Error](#schema-error) |
 | 502 | The resolver's data entry API failed or refused the change (upstream.*) — [Error](#schema-error) |
 

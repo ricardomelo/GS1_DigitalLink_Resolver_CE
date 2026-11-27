@@ -6,7 +6,8 @@ the data entry stand-in honest. It covers what the portal relies on: POST /new (
 record that exists, a list of a key's records),
 PUT (links merged by type, language and context; the shared default link type;
 informative qualifiers; 404 for a record the key does not have), DELETE of some links (404 likewise), DELETE of one
-record (removeRecord, ADR 0023), GET and GET /summary with links — with and without links of type
+record (removeRecord, ADR 0023), If-Match and If-None-Match against the portal's revision (ADR 0058), GET and GET
+/summary with links — with and without links of type
 gs1:defaultLink (Documentation/adr/0011-item-page.md, amendment of 17 October 2026).
 
 No Docker, no MongoDB: the real data entry application with its database layer replaced by a dictionary, as in
@@ -248,6 +249,66 @@ check("DELETE of the whole key: both accept", real.status_code == mock.status_co
       (real.status_code, mock.status_code))
 real, mock = both("get", "/01/09506000134352")
 check("after the DELETE both answer 404", real.status_code == mock.status_code == 404, (real.status_code, mock.status_code))
+
+# ---------------------------------------------------------------- a record's revision (ADR 0058)
+# The portal computes a record's revision from what GET gives (portal/revision.py) and sends it back as If-Match: each
+# API must agree with it, refuse a stale one with 412 and answer the new revision after a write.
+import importlib.util  # noqa: E402
+spec = importlib.util.spec_from_file_location("portal_revision", os.path.join(REPO, "portal", "revision.py"))
+portal_revision = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(portal_revision)
+REV = "/01/09506000134356"
+REV_DOC = lambda qualifiers=None, href="https://a.example/r": {**record([link("gs1:pip", href)], "gs1:pip", qualifiers),
+                                                               "anchor": "/01/09506000134356"}
+
+
+def revisions(qualifiers=None):
+    """(real, stand-in) revision of the record as each one's GET gives it, by the portal's function."""
+    out = []
+    for client in (REAL, MOCK):
+        r = client.get("/api" + REV, headers=AUTH)
+        data = r.get_json().get("data") or [] if r.status_code == 200 else []
+        out.append(portal_revision.of(next((e for e in data if (e.get("qualifiers") or []) == (qualifiers or [])), None)))
+    return out
+
+
+def each(method, path, payload, headers):
+    return [getattr(c, method)("/api" + path, json=payload, headers={**AUTH, **headers}) for c in (REAL, MOCK)]
+
+
+answers = each("post", "/new", REV_DOC(), {"If-None-Match": "*"})
+check("revision: POST /new with If-None-Match: * for a new record: both write and answer the revision of their GET",
+      [a.status_code for a in answers] == [201, 201]
+      and [a.get_json().get("revision") for a in answers] == revisions() and None not in revisions(),
+      [(a.status_code, a.get_data(as_text=True)[:120]) for a in answers])
+answers = each("post", "/new", REV_DOC(), {"If-None-Match": "*"})
+check("revision: …again, the record now exists: both answer 412", [a.status_code for a in answers] == [412, 412],
+      [a.status_code for a in answers])
+first = revisions()
+answers = [c.put("/api" + REV, json=REV_DOC(href="https://a.example/r2"), headers={**AUTH, "If-Match": f'"{rev}"'})
+           for c, rev in zip((REAL, MOCK), first)]
+check("revision: PUT with If-Match of the revision read: both write and answer the new revision of their GET",
+      [a.status_code for a in answers] == [200, 200] and [a.get_json().get("revision") for a in answers] == revisions()
+      and revisions() != first, [(a.status_code, a.get_data(as_text=True)[:120]) for a in answers])
+answers = [c.put("/api" + REV, json=REV_DOC(href="https://a.example/r3"), headers={**AUTH, "If-Match": f'"{rev}"'})
+           for c, rev in zip((REAL, MOCK), first)]
+check("revision: PUT with If-Match of an earlier revision: both answer 412", [a.status_code for a in answers] == [412, 412],
+      [a.status_code for a in answers])
+same("revision: nothing written by the refused PUT", REV)
+current = revisions()
+answers = [c.delete("/api" + REV, json={"qualifiers": [], "links": [{"linktype": "gs1:pip", "hreflang": ["en"],
+                                                                      "context": []}]},
+                    headers={**AUTH, "If-Match": f'"{rev}"'}) for c, rev in zip((REAL, MOCK), first)]
+check("revision: DELETE of links with If-Match of an earlier revision: both answer 412",
+      [a.status_code for a in answers] == [412, 412], [a.status_code for a in answers])
+answers = [c.delete("/api" + REV, json={"removeRecord": True, "qualifiers": []}, headers={**AUTH, "If-Match": f'"{rev}"'})
+           for c, rev in zip((REAL, MOCK), first)]
+check("revision: DELETE of the record with If-Match of an earlier revision: both answer 412",
+      [a.status_code for a in answers] == [412, 412], [a.status_code for a in answers])
+answers = [c.delete("/api" + REV, json={"removeRecord": True, "qualifiers": []}, headers={**AUTH, "If-Match": f'"{rev}"'})
+           for c, rev in zip((REAL, MOCK), current)]
+check("revision: DELETE of the record with If-Match of the revision read: both remove it",
+      [a.status_code for a in answers] == [200, 200] and revisions() == [None, None], [a.status_code for a in answers])
 
 # Anchors (ADR 0049, finding U-004): /AI/value only, and no AI part with "_" in a path
 for anchor in ("/01/09506000134352/10/L1", "/99/X", "01/09506000134352"):

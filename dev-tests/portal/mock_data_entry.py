@@ -3,11 +3,14 @@ In-memory stand-in for the Resolver CE data-entry API, used by the portal end-to
 It reproduces the behaviours the portal must cope with: POST /new on an existing entry and PUT both merge by (linktype, hreflang, context), DELETE removes links, one record (removeRecord, ADR 0023) or the whole document;
 PUT and a DELETE of links with qualifiers no record of the key has answer 404;
 informativeQualifiers are kept like the real API does, and a registration with AI 21 plus AI 22 or
-AI 10 is refused (GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2).
+AI 10 is refused (GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2); If-Match / If-None-Match on a write
+are checked against the record's revision and a write answers the new one (ADR 0058).
 Bearer token: "tok".
 """
 # Stands in for the Resolver CE data entry API (what matters: upsert and PUT merge links, partial DELETE)
 import copy
+import hashlib
+import json
 import re
 from flask import Flask, request, jsonify
 app = Flask(__name__)
@@ -25,6 +28,24 @@ def v3(did):
         if e.get("informative"): it["informativeQualifiers"]=copy.deepcopy(e["informative"])
         out.append(it)
     return out
+def rev(entry):            # revision.of() of the portal and the data entry API (ADR 0058)
+    if entry is None: return None
+    content={n:entry.get(n) or e() for n,e in (("qualifiers",list),("itemDescription",str),("links",list),("informativeQualifiers",list))}
+    return hashlib.sha256(json.dumps(content,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()[:20]
+def tags(h):
+    if not h or not h.strip(): return None
+    out=[p.strip()[2:] if p.strip().startswith("W/") else p.strip() for p in h.split(",")]
+    return [p.strip().strip('"') for p in out if p.strip().strip('"')] or None
+def entry_of(did,qualifiers):
+    return next((e for e in v3(did) if qm(e.get("qualifiers"),qualifiers)),None) if did in DB else None
+def failed(did,qualifiers):
+    """A 412 answer when the request's If-Match / If-None-Match do not hold for the record, else None."""
+    im,inm=tags(request.headers.get("If-Match")),tags(request.headers.get("If-None-Match"))
+    cur=rev(entry_of(did,qualifiers))
+    bad=(im is not None and (cur is None or ("*" not in im and cur not in im))) or \
+        (inm is not None and cur is not None and ("*" in inm or cur in inm))
+    return (jsonify(response_status=412,error="Record changed since it was read",revision=cur),412) if bad else None
+def did_of(doc): return doc["anchor"].split("/")[-2]+"_"+doc["anchor"].split("/")[-1]
 def rule2(qualifiers):
     ais={k for i in (qualifiers or []) for k in i}
     return "21" in ais and bool(ais & {"22","10"})
@@ -57,11 +78,16 @@ def new():
     if isinstance(d,list):
         if any(bad_anchor(x) for x in d): return jsonify(response_status=400,error="anchor"),400
         if any(rule2(x.get("qualifiers")) for x in d): return jsonify(response_status=400,error="rule 2"),400
+        for x in d:
+            f=failed(did_of(x),x.get("qualifiers",[]))
+            if f: return f
         for x in d: upsert(x)
         return jsonify([{"ok":1}]),201
     if bad_anchor(d): return jsonify(response_status=400,error="anchor"),400
     if rule2(d.get("qualifiers")): return jsonify(response_status=400,error="rule 2"),400
-    s=upsert(d); return jsonify({"entry":"x","result":{"response_status":s}}),s
+    f=failed(did_of(d),d.get("qualifiers",[]))
+    if f: return f
+    s=upsert(d); return jsonify({"entry":"x","result":{"response_status":s},"revision":rev(entry_of(did_of(d),d.get("qualifiers",[])))}),s
 @app.route("/api/<c>/<v>",methods=["GET","PUT","DELETE"])
 def doc(c,v):
     if not auth(): return "no",403
@@ -75,6 +101,9 @@ def doc(c,v):
     if request.method=="DELETE" and isinstance(d,dict) and request.content_length and not remove and not (
             isinstance(d.get("links"),list) and d["links"] and all(isinstance(l,dict) for l in d["links"])):
         return jsonify(response_status=400,error="a DELETE body must name links"),400
+    if request.method!="GET" and d:
+        f=failed(did,d.get("qualifiers",[]))
+        if f: return f
     if did not in DB: return jsonify(response_status=404,error="nf"),404
     if request.method=="GET": return jsonify(data=v3(did),response_status=200)
     ents=DB[did]["entries"]
@@ -90,11 +119,11 @@ def doc(c,v):
             m=[i for i,l in enumerate(e["links"]) if key(l)==key(nl)]
             if m: e["links"][m[0]].update(nl)
             else: e["links"].append(nl)
-        return jsonify(response_status=200)
+        return jsonify(response_status=200,revision=rev(entry_of(did,d.get("qualifiers",[]))))
     if remove:                     # one record removed, the key's others kept; the document goes with its last
         ents.pop(idx)
         if not ents: del DB[did]
-        return jsonify(response_status=200,removed=1,remaining=len(ents))
+        return jsonify(response_status=200,removed=1,remaining=len(ents),revision=None)
     if d and d.get("links"):
         e=ents[idx]; n=0
         for rl in d["links"]:
@@ -102,7 +131,7 @@ def doc(c,v):
             if m: e["links"].pop(m[0]); n+=1
         if not n: return jsonify(response_status=404,error="none"),404
         assert e["links"], "empty linkset would crash"
-        return jsonify(response_status=200)
+        return jsonify(response_status=200,revision=rev(entry_of(did,d.get("qualifiers",[]))))
     del DB[did]; return jsonify(response_status=200)
 @app.get("/api/summary")
 def summary():

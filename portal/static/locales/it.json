@@ -2090,6 +2090,8 @@
  "upstream.partialUpdate": "Le nuove destinazioni sono state salvate, ma non è stato possibile rimuovere {count} vecchia/e destinazione/i. Salvi di nuovo.",
  "upstream.deleteFailed": "Il resolver non è riuscito a eliminare il record.",
  "upstream.conflict": "I record di questa chiave venivano modificati da qualcun altro nello stesso momento e il resolver non ha applicato questa modifica. Riaprire il record, controllarlo e ripetere la modifica.",
+ "record.changed": "Qualcun altro ha salvato o eliminato questo record dopo che lo avete aperto. Non è stato salvato nulla. Riaprire il record per vedere la versione attuale, poi ripetere la modifica.",
+ "record.reopen": "Riaprire il record",
  "save.created": "Record creato. Il codice ora porta alle destinazioni inserite.",
  "save.updated": "Modifiche salvate. Il codice ora porta alle nuove destinazioni.",
  "delete.done": "Record eliminato. Il codice non porta più a queste destinazioni.",

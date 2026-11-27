@@ -721,6 +721,32 @@
       </form>
       <div class="status" id="gcp-status" role="status" aria-live="polite" hidden></div>
 
+      <!-- Records outside the rules (Documentation/adr/0056-records-outside-the-rules.md) -->
+      <h2 data-i18n="legacy.title"></h2>
+      <p class="field-msg" data-i18n="legacy.intro"></p>
+      <div class="overview-actions legacy-actions">
+        <button type="button" class="btn btn-primary" id="legacy-check" data-i18n="legacy.check"></button>
+        <button type="button" class="btn btn-ghost needs-export" id="legacy-xlsx" data-i18n="overview.exportXlsx" hidden></button>
+        <button type="button" class="btn btn-ghost needs-export" id="legacy-csv" data-i18n="overview.exportCsv" hidden></button>
+      </div>
+      <div class="status" id="legacy-status" role="status" aria-live="polite" hidden></div>
+      <div class="table-wrap" id="legacy-table" hidden>
+        <table class="records-table users-table legacy-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="legacy.col.problem"></th>
+              <th scope="col" data-i18n="legacy.col.anchor"></th>
+              <th scope="col" data-i18n="legacy.col.qualifiers"></th>
+              <th scope="col" data-i18n="legacy.col.organisation"></th>
+              <th scope="col" data-i18n="legacy.col.linkType"></th>
+              <th scope="col" data-i18n="legacy.col.target"></th>
+            </tr>
+          </thead>
+          <tbody id="legacy-body"></tbody>
+        </table>
+      </div>
+      <p class="field-msg" id="legacy-more" hidden></p>
+
       <h2 data-i18n="tenants.listTitle"></h2>
       <div class="table-wrap">
         <table class="records-table users-table tenants-table">

@@ -34,6 +34,7 @@ import gs1
 import jobs
 import journal
 import label
+import legacy
 import linear
 import apikeys
 import bodies
@@ -3077,6 +3078,50 @@ def gcp_lookup():
     anchor = request_key(request.args)
     found = gcp.lookup(anchor)
     return jsonify(found if found else {"table": None})
+
+
+@app.post("/portal/api/legacy-records")
+@require_login
+@server_admin_required
+def legacy_records():
+    """Records outside the rules (Documentation/adr/0056-records-outside-the-rules.md): what the resolver holds under
+    an anchor or with a target the data entry API now refuses (findings U-004 and U-003), read from GET
+    /summary?links=true across the installation. format "json" (default): the counts and the rows; "csv" or "xlsx":
+    the file, with the labels the browser sends in the user's language, a journal event legacy-export. Changes
+    nothing. Not during support access: the report is the whole installation's."""
+    if g.support:
+        return message("access.serverAdmin", 403)
+    data = request.get_json(silent=True) or {}
+    fmt = data.get("format") or "json"
+    if fmt not in ("json", "csv", "xlsx"):
+        raise ValidationError("legacy.format")
+    status, body = resolver("GET", "/summary?links=true")
+    if status == 404:
+        lines = []
+    elif status != 200 or not isinstance(body, dict):
+        raise UpstreamError("upstream.readFailed", 502, body)
+    else:
+        lines = body.get("data") or []
+    found = legacy.rows(lines, tenants.load())
+    numbers = legacy.counts(found)
+    if fmt == "json":
+        return jsonify({**numbers, "rows": found[:legacy.SCREEN_ROWS]})
+    refused = export_refused(len(found))
+    if refused:
+        return refused
+    labels = data.get("labels") if isinstance(data.get("labels"), dict) else {}
+    labels = {str(k): str(v) for k, v in labels.items()}
+    audit.info("user=%s action=legacy-export format=%s anchors=%d targets=%d", g.user, fmt, numbers["anchors"],
+               numbers["targets"])
+    log_event("legacy-export", tenant=None, detail=f'{fmt} anchors={numbers["anchors"]} targets={numbers["targets"]}')
+    stamp = time.strftime("%Y%m%d-%H%M")
+    if fmt == "csv":
+        out, mime = legacy.write_csv(found, labels), "text/csv; charset=utf-8"
+    else:
+        out, mime = legacy.write_xlsx(found, labels), \
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return Response(out, mimetype=mime, headers={
+        "Content-Disposition": f'attachment; filename="records-outside-the-rules-{stamp}.{fmt}"'})
 
 
 @app.get("/portal/api/alerts")

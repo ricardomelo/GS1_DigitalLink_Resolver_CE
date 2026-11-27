@@ -2920,6 +2920,77 @@ async function uploadGcp(event) {
   }
 }
 
+/* Records outside the rules (Documentation/adr/0056-records-outside-the-rules.md): anchors and targets the resolver
+   holds that the data entry API now refuses, the whole installation's; the screen shows the counts and the first rows,
+   the files every row. */
+const LEGACY_PROBLEMS = ["anchorShape", "keyValue", "targetNotHttps", "targetHost", "targetForm"];
+const LEGACY_COLUMNS = ["problem", "anchor", "qualifiers", "organisation", "linkType", "target"];
+
+function legacyStatus(kind, key, params) {
+  const box = $("#legacy-status");
+  box.hidden = !key;
+  box.className = "status" + (kind ? " is-" + kind : "");
+  if (key) I18N.set(box, key, params);
+}
+
+async function checkLegacy() {
+  const button = $("#legacy-check");
+  button.disabled = true;
+  legacyStatus("", "legacy.checking");
+  try {
+    const data = await api("POST", "legacy-records", { format: "json" });
+    const rows = data.rows || [];
+    legacyStatus(data.total ? "warn" : "ok", data.total ? "legacy.found" : "legacy.none",
+                 { total: nf(data.total), anchors: nf(data.anchors), targets: nf(data.targets) });
+    $("#legacy-body").replaceChildren(...rows.map(r => {
+      const tr = el("tr");
+      tr.append(...LEGACY_COLUMNS.map(c => el("td", c === "problem" || c === "organisation" ? "" : "code",
+                                             c === "problem" ? t("legacy.problem." + r.problem) : r[c] || "")));
+      return tr;
+    }));
+    $("#legacy-table").hidden = !rows.length;
+    $("#legacy-more").hidden = data.total <= rows.length;
+    if (data.total > rows.length) I18N.set($("#legacy-more"), "legacy.more", { shown: nf(rows.length), total: nf(data.total) });
+    $("#legacy-xlsx").hidden = $("#legacy-csv").hidden = !data.total;
+  } catch (e) {
+    legacyStatus("error", e.code, e.params);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function legacyLabels() {
+  const labels = { "legacy.sheet": t("legacy.title") };
+  LEGACY_COLUMNS.forEach(c => { labels["legacy.col." + c] = t("legacy.col." + c); });
+  LEGACY_PROBLEMS.forEach(p => { labels["legacy.problem." + p] = t("legacy.problem." + p); });
+  return labels;
+}
+
+async function exportLegacy(format) {
+  try {
+    const res = await fetch(BASE + "api/legacy-records", {
+      method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ format, labels: legacyLabels() }),
+    });
+    SessionClock.contact();
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      legacyStatus("error", body.code || "error.unexpected", body.params || { status: res.status });
+      return;
+    }
+    const blob = await res.blob();
+    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || `records.${format}`;
+    const a = el("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } catch (e) {
+    legacyStatus("error", "error.unexpected", { status: e.message });
+  }
+}
+
 /* An organisation's prefixes that GS1's list sees otherwise (longer, shorter, not a company prefix, not listed):
    one warning line each; nothing when they agree or without a list. */
 function prefixWarnings(checks) {
@@ -6038,6 +6109,9 @@ async function init() {
   $("#tenants-create").addEventListener("submit", createTenant);
   $("#export-maximum-form").addEventListener("submit", saveExportMaximum);
   $("#gcp-form").addEventListener("submit", uploadGcp);
+  $("#legacy-check").addEventListener("click", checkLegacy);
+  $("#legacy-xlsx").addEventListener("click", () => exportLegacy("xlsx"));
+  $("#legacy-csv").addEventListener("click", () => exportLegacy("csv"));
   $("#support-form").addEventListener("submit", startSupport);
   $("#support-cancel").addEventListener("click", () => $("#support-dialog").close());
   $("#support-leave").addEventListener("click", endSupport);

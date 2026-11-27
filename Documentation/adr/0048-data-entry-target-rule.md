@@ -48,7 +48,8 @@ redirect to such a target, which is what a scan does.
 
 ## 4. Residuals
 
-- Targets stored before the rule are not reported or changed (as in ADR 0037 §4 for the portal).
+- Targets stored before the rule are not changed (as in ADR 0037 §4 for the portal); since
+  [ADR 0056](0056-records-outside-the-rules.md) they are reported to the operator (*Records outside the rules*).
 - Between the check of `POST /new` and its write, another writer may remove the target that made one acceptable; the
   write then stores a target that was in the document a moment before (no new target reaches the database this way).
 - The per-organisation host lists (ADR 0037 §2.2) apply in the portal only.

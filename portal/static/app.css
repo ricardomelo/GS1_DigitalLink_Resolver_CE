@@ -588,6 +588,8 @@ body:not([data-operator-view="true"]) .audit-tenant-col { display: none !importa
 .tenants-table input[data-field="name"] { min-width: 11rem; }
 .tenants-table input[data-field="prefixes"] { min-width: 12rem; }
 .tenants-table td.count { font-variant-numeric: tabular-nums; }
+.legacy-table td.code { overflow-wrap: anywhere; }
+.legacy-actions { margin: .5rem 0 .75rem; }
 @media (min-width: 721px) { .tenants-table td.count { text-align: end; } }
 .support-banner { background: #FFF1D6; border-bottom: 1px solid #F0C36D; color: #5C3A00; }
 .support-banner[hidden] { display: none; }

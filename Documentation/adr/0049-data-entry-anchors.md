@@ -59,8 +59,9 @@ followed:
 
 ## 4. Residuals
 
-- Documents written before under other anchor shapes are not reported in the portal; the operator finds them in the
-  API's `/summary` (anchors the portal cannot read) and removes them with `DELETE /api/{AI}/{value}`.
+- Documents written before under other anchor shapes are not changed; the operator removes them with
+  `DELETE /api/{AI}/{value}`. Since [ADR 0056](0056-records-outside-the-rules.md) they are reported in the portal
+  (*Records outside the rules*, *Organisations* screen).
 - The portal still refuses `_` in key values (`PORTAL_EXCEPTIONS["key_chars"]`): its reason is gone, its forms and
   hints are unchanged.
 - The list of primary keys exists twice (portal, from the dictionary; data entry API, written out); the comparison

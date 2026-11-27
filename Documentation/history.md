@@ -1923,3 +1923,21 @@ two days after the newest digest of the base image, so a new digest could not br
 `apt-get upgrade` of the packages the base image holds, as the proxy and the database image already did; no new
 package, so ADR 0050's rule stands. An accepted exception until the base image is rebuilt was weighed and not taken.
 `test_supply_chain.py` gained 9 checks; 8 mutations, all caught.
+
+## Session 73 — a save over someone else's change is refused
+
+The first residual of finding F-009 (ADR 0027 §4), the first of the smaller residuals in the owner's order, in one code
+commit (`b7e282c`; [ADR 0058](adr/0058-record-revision.md)). Checked first in the code: every write of the data entry
+API was conditional on the key's document as that API read it, a few milliseconds before writing, but nothing linked
+the editor's read of a record to its save minutes later, so the last save replaced the other user's. Now a record's
+revision — a hash of its qualifiers, description, links and informative qualifiers, the same function in the portal
+and in the data entry API, nothing stored — is given by the editor's read and as the tenant API's `ETag`; a save or
+delete with `If-Match` (or `If-None-Match: *` to create only) is refused with 412 `record.changed` when the record
+changed: checked on the portal's own read, then passed on to the data entry API, which checks it again inside its
+conditional write, so a writer in between is refused too. The editor offers to open the record again. Without the
+headers nothing changes. The header required, a revision number stored in each document and the check in the portal
+only were weighed and not taken. `test_record_revision.py` and `test_record_revision_e2e.py` are new,
+`test_data_entry_api.py` and `test_mock_parity.py` gained the checks; 16 mutations, all caught. The owner added two
+items to the backlog for later: 11.1, export and import of an account's and an organisation's data, and 11.2, a user
+deleting their account and the data related to it and to their organisation.
+

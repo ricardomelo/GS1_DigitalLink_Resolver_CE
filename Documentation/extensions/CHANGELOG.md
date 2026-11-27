@@ -2,6 +2,23 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### A save over someone else's change is refused (session 73)
+- **Added: the editor no longer saves over a change it has not seen** ([ADR 0058](../adr/0058-record-revision.md),
+  the first residual of finding F-009; code `b7e282c`). Until now, when two people had the same record open, the one
+  who saved last silently replaced the other's save (the links the first person added were removed). The editor now
+  remembers the version of the record it opened and sends it with the save and the delete; if someone else saved or
+  deleted the record in between, nothing is saved and the editor says so, with a button that opens the record again
+  (new texts in twelve languages; drafts except pt-BR and en-GB). A new record that someone else created while it was
+  being filled in is refused the same way.
+- **Added to the tenant API:** the read of a record gives its version as an `ETag` header; a `PUT` or `DELETE` that
+  sends it back as `If-Match` (or `If-None-Match: *` to create only) answers **412 `record.changed`** instead of
+  replacing a change made in between, and a save answers the new `ETag`. Without the headers nothing changes
+  (`portal/openapi.json`, [API reference](../api-reference.md)).
+- **Added to the official data entry API:** `PUT`, `POST /new` and both `DELETE`s accept the same optional headers,
+  checked inside the conditional write of ADR 0027 (412 with nothing written), and their answers carry the record's
+  new `revision`; requests without them behave as before.
+- **Operators:** `git pull`, then `docker compose up -d --build`. Nothing for `.env`; no stored data changes.
+
 ### Debian's security updates in the Python images (session 72)
 - **Changed: the resolver's, the data entry API's and the portal's images take Debian's security updates when they are
   built** ([ADR 0033](../adr/0033-supply-chain.md) §2.10; code `a3fa9ae`). The supply-chain scan found a HIGH

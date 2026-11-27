@@ -409,8 +409,17 @@ change records of the same identifier at the same moment: each change is applied
 lost. Should the identifier keep changing while the portal saves, nothing of your change is saved and the portal says
 *The records of this key were being changed by someone else at the same moment, and the resolver did not apply this
 change. Open the record again, check it and repeat the change.* The same applies to deleting a record and to fixing
-serial numbers. Two people saving the *same* record one after the other still leave the last one's version; the
-earlier one stays in the record's history (section 8).
+serial numbers.
+
+**Someone else saving the record you have open.** The editor remembers the version of the record you opened. If
+someone else saves or deletes that record before you save, your save is refused and nothing is saved: *Someone else
+saved or deleted this record after you opened it. Nothing was saved. Open the record again to see the current version,
+then make the change again.* The button **Open the record again** below the message shows their version (the portal
+asks first, because your unsaved changes are discarded; copy what you typed if you need it). The same applies to
+deleting a record you opened before someone else changed it, and to a new record that someone else created while you
+were filling it in. A spreadsheet import, and an organisation's system that does not send the record's version back
+(the tenant API's `ETag` and `If-Match`, [ADR 0058](adr/0058-record-revision.md)), still leave the last save's
+version; the earlier one stays in the record's history (section 8).
 
 ## 6. Other records of the same identifier
 

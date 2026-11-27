@@ -30,7 +30,7 @@ another, a user beyond their role, wrong data registered, wrong routing, and the
 | A private register | each weakness — where, how, its consequence — kept outside the repository until fixed; never described in a public document before its fix |
 | One fix per delivery | one finding (or one residual) at a time, with its own ADR where it changes a decision, its code and technical documents in one commit, the changelog and the user documents in the next |
 | Proof | a development test that fails on the code before the fix and passes after it; it stays in the suite as a regression test. Each new check is proved able to fail by mutating the code it guards (mutation checks); the files are restored and compared by checksum |
-| Continuous integration | every push runs the development tests in six jobs (portal, resolver and data entry API with GS1's conformance suite, the portal in a real browser, the home page and proxy on the real nginx, the installer and deployment, and the portal on a real MongoDB); a second workflow looks for known vulnerabilities in lock files and images and attaches an SBOM to each release. The suite holds 7,138 checks in 85 programs ([test-inventory.md](test-inventory.md)) |
+| Continuous integration | every push runs the development tests in six jobs (portal, resolver and data entry API with GS1's conformance suite, the portal in a real browser, the home page and proxy on the real nginx, the installer and deployment, and the portal on a real MongoDB); a second workflow looks for known vulnerabilities in lock files and images and attaches an SBOM to each release. The suite holds 7,213 checks in 87 programs ([test-inventory.md](test-inventory.md)) |
 | Staging | each delivery comes with a test plan of steps and expected results that the operator runs on a staging installation |
 
 **What it is not.** It is a review by the maintainers with an AI reviewer, not an independent penetration test; a
@@ -52,7 +52,7 @@ branch; the ADR says what was decided and why, and the [changelog](extensions/CH
 | F-006 | Single sign-on domains proved by DNS before they route anyone | Authentication | Medium | [0025](adr/0025-sso-domain-proof-and-subject.md) | `1699d51` | 3.2.0 |
 | F-007 | Single sign-on: a verified e-mail and the provider's subject required | Authentication | Medium | [0025](adr/0025-sso-domain-proof-and-subject.md) | `1699d51` | 3.2.0 |
 | F-008 | The journal written before each change, sealed in chains, verified daily, insert-only in its own database | Audit | Medium | [0026](adr/0026-journal-integrity.md) | `e51f0c1` | 3.2.0 |
-| F-009 | No lost update when two people change one key | Integrity | Medium | [0027](adr/0027-conditional-writes.md) | `875db4b` | 3.2.0 |
+| F-009 | No lost update when two people change one key; a save over a change not seen refused | Integrity | Medium | [0027](adr/0027-conditional-writes.md), [0058](adr/0058-record-revision.md) | `875db4b`, `b7e282c` | 3.2.0; revision: unreleased |
 | F-010 | A leaflet in another language or for another market no longer given silently | Routing | Medium | [0028](adr/0028-language-fallback.md) | `9f28dab` | 3.2.0 |
 | F-011 | Requests to addresses users choose contact the address that was checked | Outbound requests | Medium | [0029](adr/0029-outbound-requests.md) | `0d23833` | 3.2.0 |
 | F-012 | Each service with its own database user and least privilege, none as root | Infrastructure | Medium | [0030](adr/0030-least-privilege-services.md) | `3e92870` | 3.2.0 |

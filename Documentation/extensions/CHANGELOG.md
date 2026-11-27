@@ -2,6 +2,21 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### The portal on a host name of its own (session 71)
+- **Added: the portal can have a host name of its own, apart from the resolver's**
+  ([ADR 0057](../adr/0057-portal-own-host-name.md), amending ADR 0038 §2.5; code `6933371`). Until now the portal, the
+  resolver's pages, the home page and the data entry API's Swagger UI always shared the installation's name, so a
+  script on any of those pages would have run with the portal's origin. An operator who sets
+  `PORTAL_ORIGIN=https://portal.example.org` in `.env` now gets the portal on that name only: the installation's
+  proxy serves nothing else there (any other path goes to the resolver's name) and sends the portal's pages, sign-in
+  and API on the resolver's name to the new one. The tenant API (`/portal/api/v1`) and the files the home page reads
+  (the appearance, logo and icon) keep answering on the resolver's name too, so integrations need no change. The
+  installer adds the name to the host's nginx site, asks Let's Encrypt for one certificate covering both names and
+  checks the portal on its name; a value that is not `https://` and a host name stops it with the reason.
+  **Nothing changes without the setting**: one name, as before. Choosing a name needs a DNS record for it, the
+  single sign-on providers' callback changed to `https://<name>/portal/sso/callback`, and users signing in once more
+  on the new name (old addresses are redirected).
+
 ### Records outside the rules: a report for the operator (session 70)
 - **Added: records written before today's rules are reported to server administrators**
   ([ADR 0056](../adr/0056-records-outside-the-rules.md), completing sessions 63 and 64). Since 3.2.0 the official data

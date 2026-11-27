@@ -1897,3 +1897,18 @@ organisation that holds each prefix: the counts and the first 20 rows on the scr
 journal event for a file. The report's target rule is the data entry API's, compared address by address. Rewriting or
 deleting such records, a monitoring check with alerts and a count on the *Overview* were weighed and not taken.
 `test_legacy.py` (55 checks) and `test_legacy_e2e.py` (11) are new; 18 mutations, all caught.
+
+## Session 71 — the portal on a host name of its own
+
+Residual (5) of the order proposed in session 66: the first residual of finding F-021 (session 54), in one code
+commit (`6933371`; [ADR 0057](adr/0057-portal-own-host-name.md), amending ADR 0038 §2.5). Checked first in the
+code: the portal already had a setting for its address (`PORTAL_ORIGIN`, used by its `Origin` check, single sign-on
+callback, e-mail messages and cookie), but the installation's proxy served `/portal/` on every name, so the portal
+always shared the resolver's origin. Now, when `PORTAL_ORIGIN` names a host other than the resolver's,
+`frontend_proxy_server/api-access.sh` writes a map that the proxy applies before any location: on the portal's name
+only the portal, every other path redirected to the resolver's name; on every other name the portal's pages, sign-in,
+API and files redirected to its name, but for the tenant API (keys, never cookies) and the public files the home page
+reads. The installer adds the name to the host's site and to one certificate (`--expand`) and checks the portal on
+it. One origin stays the default; a second name required of every installation, a name made up by the installer and
+the tenant API moved with the portal were weighed and not taken. `test_home.py` and `test_install.sh` (scenario M)
+gained the checks; 18 mutations, all caught.

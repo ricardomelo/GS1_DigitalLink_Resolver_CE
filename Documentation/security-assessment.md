@@ -30,7 +30,7 @@ another, a user beyond their role, wrong data registered, wrong routing, and the
 | A private register | each weakness — where, how, its consequence — kept outside the repository until fixed; never described in a public document before its fix |
 | One fix per delivery | one finding (or one residual) at a time, with its own ADR where it changes a decision, its code and technical documents in one commit, the changelog and the user documents in the next |
 | Proof | a development test that fails on the code before the fix and passes after it; it stays in the suite as a regression test. Each new check is proved able to fail by mutating the code it guards (mutation checks); the files are restored and compared by checksum |
-| Continuous integration | every push runs the development tests in six jobs (portal, resolver and data entry API with GS1's conformance suite, the portal in a real browser, the home page and proxy on the real nginx, the installer and deployment, and the portal on a real MongoDB); a second workflow looks for known vulnerabilities in lock files and images and attaches an SBOM to each release. The suite holds 7,027 checks in 85 programs ([test-inventory.md](test-inventory.md)) |
+| Continuous integration | every push runs the development tests in six jobs (portal, resolver and data entry API with GS1's conformance suite, the portal in a real browser, the home page and proxy on the real nginx, the installer and deployment, and the portal on a real MongoDB); a second workflow looks for known vulnerabilities in lock files and images and attaches an SBOM to each release. The suite holds 7,129 checks in 85 programs ([test-inventory.md](test-inventory.md)) |
 | Staging | each delivery comes with a test plan of steps and expected results that the operator runs on a staging installation |
 
 **What it is not.** It is a review by the maintainers with an AI reviewer, not an independent penetration test; a
@@ -64,7 +64,7 @@ branch; the ADR says what was decided and why, and the [changelog](extensions/CH
 | F-018 | Domain claims that expire, proofs that lapse | Domains | Low | [0035](adr/0035-domain-claims-and-lapsed-proofs.md) | `5405e90` | 3.2.0 |
 | F-019 | User names and e-mail addresses of other organisations not disclosed | Privacy | Low | [0036](adr/0036-names-and-addresses-across-organisations.md) | `0f432e2` | 3.2.0 |
 | F-020 | Target addresses: HTTPS, public host names, an optional list per organisation | Data entry | Low | [0037](adr/0037-target-addresses.md) | `806ff42` | 3.2.0 |
-| F-021 | Content-Security-Policy on every page, HTTPS only | Browser | Low | [0038](adr/0038-browser-hardening.md) | `7447750` | 3.2.0 |
+| F-021 | Content-Security-Policy on every page, HTTPS only; the portal on a host name of its own, when the operator sets one | Browser | Low | [0038](adr/0038-browser-hardening.md), [0057](adr/0057-portal-own-host-name.md) | `7447750`, `6933371` | 3.2.0; own host name: unreleased |
 | F-022 | Only the installation's own host names in the resolver's answers | Resolver | Low | [0039](adr/0039-known-public-names.md) | `e8e7a23` | 3.2.0 |
 | F-023 | Malformed request bodies refused before the route | Robustness | Low | [0040](adr/0040-request-bodies.md) | `eda6315` | 3.2.0 |
 | F-024 | A queued import stops when its account may no longer write | Authorisation | Low | [0041](adr/0041-queued-import-account.md) | `4bb4928` | 3.2.0 |

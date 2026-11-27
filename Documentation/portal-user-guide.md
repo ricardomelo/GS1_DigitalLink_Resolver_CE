@@ -91,6 +91,11 @@ menu, or the portal's address itself, opens the editor. If you have no account, 
 forgotten your password, use **Forgotten your password?** when the page offers it (installations with e-mail,
 below); otherwise ask the administrator for a new temporary password.
 
+Some installations give the portal a name of its own (for example `https://portal.example.org/portal/`), apart from
+the resolver's. The portal then opens only there: the old address on the resolver's name takes you to it, and you sign
+in once more on the new name. Bookmark the new address. The logo in the header still leads to the resolver's home
+page, and the language you chose on one name may have to be chosen again on the other.
+
 - **Organisation account (single sign-on).** When your organisation has set it up, **Sign in with your
   organisation's account** asks for your work e-mail and takes you to your organisation's sign-in page (Microsoft,
   Google…); you come back signed in. Your portal user must already exist with that e-mail — ask your administrator

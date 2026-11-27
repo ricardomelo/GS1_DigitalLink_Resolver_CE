@@ -22,7 +22,9 @@ checks, through Flask's test client:
     type answer 400 and change nothing;
   * a record's revision (ADR 0058): the same function in the data entry API and the portal; If-Match and
     If-None-Match on PUT, POST /new and both DELETEs (412 with nothing written, the new revision answered), checked
-    inside the conditional write (another writer between the read and the write: refused).
+    inside the conditional write (another writer between the read and the write: refused);
+  * a PUT's removeLinks (ADR 0059): the links named removed in the same write as the links sent, removedLinks
+    answered, a malformed list, a link both sent and named or a record left without links refused with 400.
 
   pip install -r data_entry_server/src/requirements.txt
   python dev-tests/resolver/test_data_entry_api.py
@@ -658,6 +660,60 @@ db.read_document = real_read
 check("…racing another writer on another record of the key → read again, the record unchanged, written (200)",
       r.status_code == 200 and "gs1:safetyInfo" in linktypes(KEY, []) and "gs1:epil" in linktypes(KEY, [{"10": "L7"}]),
       (r.status_code, linktypes(KEY, [])))
+
+# ---------------------------------------------------------------- a PUT that also removes links (ADR 0059)
+# The portal's save that removed links was two calls, a PUT and then a DELETE of links: a failure or a conflict on the
+# second left the first applied (the second residual of F-009). A PUT's optional removeLinks names links removed in
+# the same conditional write.
+NAMED_LEAFLET = [{"linktype": "gs1:epil", "hreflang": ["en"]}]
+client.put("/api/01/09506000134352", json={"qualifiers": [], "links": LEAFLET}, headers=AUTH)
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY, "removeLinks": NAMED_LEAFLET},
+               headers=AUTH)
+check("PUT with removeLinks → 200, the links sent merged and those named removed in one write, removedLinks 1, the "
+      "new revision answered", r.status_code == 200 and linktypes(KEY, []) == ["gs1:pip", "gs1:safetyInfo"]
+      and r.get_json().get("removedLinks") == 1 and r.get_json().get("revision") == rev_of([]),
+      (r.status_code, r.get_data(as_text=True)[:200], linktypes(KEY, [])))
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY, "removeLinks": NAMED_LEAFLET},
+               headers=AUTH)
+check("…the same PUT again: 200, removedLinks 0 (a link already gone is not an error)", r.status_code == 200
+      and r.get_json().get("removedLinks") == 0, (r.status_code, r.get_data(as_text=True)[:200]))
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY}, headers=AUTH)
+check("…a PUT without removeLinks answers no removedLinks (as before)", r.status_code == 200
+      and "removedLinks" not in r.get_json(), r.get_data(as_text=True)[:200])
+snapshot = copy.deepcopy(STORE)
+for name, body in [
+        ("not a list", {"removeLinks": {"linktype": "gs1:epil"}}),
+        ("a link without its linktype", {"removeLinks": [{"hreflang": ["en"]}]}),
+        ("an hreflang that is not a list of strings", {"removeLinks": [{"linktype": "gs1:epil", "hreflang": "en"}]}),
+        ("a link both sent and named", {"links": SAFETY, "removeLinks": [{"linktype": "gs1:safetyInfo",
+                                                                          "hreflang": ["en"]}]}),
+        ("every link of the record named", {"removeLinks": [{"linktype": "gs1:pip", "hreflang": ["en"]},
+                                                            {"linktype": "gs1:safetyInfo", "hreflang": ["en"]}]})]:
+    r = client.put("/api/01/09506000134352", json={"qualifiers": [], **body}, headers=AUTH)
+    check(f"PUT with removeLinks {name} → 400 saying why, nothing written", r.status_code == 400 and STORE == snapshot
+          and ("at least one link" in r.get_json().get("error", "") if name.startswith("every") else
+               "removeLinks" in r.get_json().get("error", "")), (r.status_code, r.get_data(as_text=True)[:200]))
+read_rev = rev_of([])
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": LEAFLET,
+                                               "removeLinks": [{"linktype": "gs1:safetyInfo", "hreflang": ["en"]}]},
+               headers=if_match("0" * 20))
+check("PUT with removeLinks and If-Match of an earlier revision → 412, nothing added and nothing removed",
+      r.status_code == 412 and STORE == snapshot, r.status_code)
+db.read_document = racing(other_put([], [dict(LEAFLET[0], linktype="gs1:faqs", href="https://example.com/faqs")]))
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": LEAFLET,
+                                               "removeLinks": [{"linktype": "gs1:safetyInfo", "hreflang": ["en"]}]},
+               headers=AUTH)
+db.read_document = real_read
+check("…racing another writer who adds a link: read again, both changes kept (the link named removed, theirs kept)",
+      r.status_code == 200 and linktypes(KEY, []) == ["gs1:epil", "gs1:faqs", "gs1:pip"], (r.status_code, linktypes(KEY, [])))
+read_rev = rev_of([])
+db.read_document = racing(lambda: data_entry_logic.update_document(KEY, {"qualifiers": [], "itemDescription": "Other"}))
+r = client.put("/api/01/09506000134352", json={"qualifiers": [], "links": SAFETY,
+                                               "removeLinks": [{"linktype": "gs1:faqs", "hreflang": ["en"]}]},
+               headers=if_match(read_rev))
+db.read_document = real_read
+check("…with If-Match, racing another writer on the same record → 412, nothing of this PUT applied",
+      r.status_code == 412 and linktypes(KEY, []) == ["gs1:epil", "gs1:faqs", "gs1:pip"], (r.status_code, linktypes(KEY, [])))
 
 # ---------------------------------------------------------------- values checked by the GS1 Barcode Syntax Engine (F11)
 ENGINE = os.environ.get("GS1_SYNTAX_ENGINE")

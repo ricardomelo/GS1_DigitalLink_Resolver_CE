@@ -86,6 +86,8 @@ existing integration of the tenant API. The official data entry API keeps its an
 - **Optional.** A client that sends no header (the import, an integration that does not) keeps the last save wins.
 - **Two calls.** A save that removes links is still two calls; a writer between them now fails the second, which leaves
   the first applied (`upstream.partialUpdate`, ADR 0027 §4, the second residual of F-009).
+  > Closed by [ADR 0059](0059-save-in-one-write.md): one `PUT` with `removeLinks`, so the `If-Match` covers the whole
+  > save.
 - **The key's default link type** is not part of the revision: a change of it by another record's save is not refused
   here (the portal refuses a save whose default link type differs from the key's, `default.sharedMismatch`).
 

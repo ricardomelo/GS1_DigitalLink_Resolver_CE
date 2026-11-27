@@ -911,6 +911,25 @@ def _record_not_found(document_id: str, qualifiers: list[dict[str, str]]) -> dic
     return {"response_status": 404, "error": f"Record not found: {document_id}{path or ' (no qualifiers)'}"}
 
 
+def remove_links_problem(data: dict[str, Any]) -> str | None:
+    """Why a PUT's 'removeLinks' (ADR 0059) cannot be taken, or None: a list of links named by linktype (a string),
+    hreflang and context (lists of strings, optional), none of them also among the 'links' the PUT sends."""
+    if 'removeLinks' not in data:
+        return None
+    named = data['removeLinks']
+    if not isinstance(named, list) or not all(
+            isinstance(link, dict) and isinstance(link.get('linktype'), str) and link['linktype']
+            and all(isinstance(link.get(field, []), list) and all(isinstance(v, str) for v in link.get(field, []))
+                    for field in ('hreflang', 'context'))
+            for link in named):
+        return ("'removeLinks' is a list of the links to remove, each named by its 'linktype' and, when it has "
+                "them, its 'hreflang' and 'context' lists")
+    sent = data.get('links') if isinstance(data.get('links'), list) else []
+    if any(isinstance(link, dict) and _find_matching_link(sent, link) is not None for link in named):
+        return "A link cannot be both sent in 'links' and named in 'removeLinks'"
+    return None
+
+
 def update_document(document_id: str, data: dict[str, Any],
                     precondition: Precondition | None = None) -> tuple[dict[str, Any], int]:
     """
@@ -919,9 +938,16 @@ def update_document(document_id: str, data: dict[str, Any],
     - Preserves fields not present in the payload.
     - Merges links: matches by (linktype, hreflang, context).
       Matching links are updated; unmatched links are added.
+    - Removes, in the same write, the links named in 'removeLinks' (ADR 0059; matched the same way, one not found
+      ignored), so a save that adds and removes links is never half applied; the answer counts them
+      ('removedLinks'). A record left without links is refused with 400.
     - With preconditions (If-Match, If-None-Match: ADR 0058), 412 when the record is not the one they name; the
       answer gives the record's new revision.
     """
+    problem = remove_links_problem(data)
+    if problem:
+        return {"response_status": 400, "error": problem}, 400
+
     def change(existing_db_doc):
         # 1. The existing document, read by _write_document
         if existing_db_doc is None:
@@ -965,6 +991,22 @@ def update_document(document_id: str, data: dict[str, Any],
                     existing_links.append(new_link)
             matched_v3['links'] = existing_links
 
+        # 5a. Remove the links named, in this same write (ADR 0059): the official way was a second call, a DELETE of
+        # links, so a failure between the two left the new links saved and the old ones in place
+        removed_count = None
+        if 'removeLinks' in data:
+            existing_links = matched_v3.get('links', [])
+            removed_count = 0
+            for link_to_remove in data['removeLinks']:
+                idx = _find_matching_link(existing_links, link_to_remove)
+                if idx is not None:
+                    existing_links.pop(idx)
+                    removed_count += 1
+            if not existing_links:
+                raise _Refused({"response_status": 400,
+                                "error": "A record keeps at least one link: 'removeLinks' names all of them"}, 400)
+            matched_v3['links'] = existing_links
+
         # 6. Convert merged v3 item back to DB format
         authored_result = _author_db_linkset_document(matched_v3)
         if authored_result['response_status'] != 200:
@@ -980,8 +1022,10 @@ def update_document(document_id: str, data: dict[str, Any],
             existing_db_doc['defaultLinktype'] = data['defaultLinktype']
 
         new_revision = revision.of(_entry_v3(existing_db_doc, matched_idx))
-        return existing_db_doc, lambda result: ({"entry": document_id, "result": result, "revision": new_revision},
-                                                200)
+        answer = {"entry": document_id, "revision": new_revision}
+        if removed_count is not None:
+            answer["removedLinks"] = removed_count
+        return existing_db_doc, lambda result: ({**answer, "result": result}, 200)
 
     try:
         # 8. Persist, provided nobody changed the document in between (ADR 0027)

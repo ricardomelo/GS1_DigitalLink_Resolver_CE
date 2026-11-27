@@ -4,8 +4,9 @@ Flask test client and the stand-in data entry API: the editor's read (GET /porta
 read give the record's revision (`revision`, ETag); a save or a delete that sends it back as If-Match is made only
 while the record is still the one read, and refused with 412 record.changed (nothing written, nothing journalled as
 done) when someone else saved or deleted it in between; If-None-Match: * creates only; the headers are checked by the
-portal on its own read first and passed to the data entry API with the record's first write (the DELETE of links
-that follows a PUT holds to the revision the PUT answered); a save without the headers behaves as before.
+portal on its own read first and passed to the data entry API with the record's write; a save without the headers
+behaves as before. A save that removes links is one PUT naming them (removeLinks, ADR 0059, the second residual of
+F-009): refused, it leaves the record as it was; a data entry API that does not say it removed them is not believed.
 
   pip install -r portal/requirements.txt mongomock
   python dev-tests/portal/test_record_revision.py
@@ -55,6 +56,26 @@ def watch():
     if request.method != "GET" and not request.path.endswith("/validate") and BEFORE.get("write"):
         BEFORE.pop("write")()
     return None
+
+
+FAIL_PUT = {}       # {"on": True} → the next PUT refused by the stand-in (500)
+STRIP = {}          # {"on": True} → removedLinks taken out of the stand-in's answers (a data entry API without ADR 0059)
+
+
+@mock_data_entry.app.before_request
+def refuse_put():
+    if request.method == "PUT" and FAIL_PUT.pop("on", False):
+        return {"response_status": 500, "error": "injected failure"}, 500
+    return None
+
+
+@mock_data_entry.app.after_request
+def forget_removal(response):
+    if STRIP.get("on") and response.is_json and isinstance(response.get_json(), dict):
+        body = response.get_json()
+        body.pop("removedLinks", None)
+        response.set_data(jsonify(body).get_data())
+    return response
 
 
 threading.Thread(target=make_server("127.0.0.1", DATA_ENTRY_PORT, mock_data_entry.app, threaded=True).serve_forever,
@@ -181,15 +202,15 @@ check("…nothing written (Eva's links kept, the description unchanged), no writ
       and not writes(), (entries_of(A), writes()))
 check("…nothing journalled", done_events(A) == events and failed_events(A) == 0, done_events(A))
 
-# the save that removes links: PUT then DELETE, the DELETE holding to the revision the PUT answered
+# the save that removes links: one PUT naming them (removeLinks, ADR 0059), with the revision read
 CALLS.clear()
 r = edu.post("/portal/api/record", json=save_body(A, "Batch L1", ["https://acme.example.com/edu"], "/10/L1"),
              headers=if_match(second))
 third = (r.get_json() or {}).get("revision")
-methods = [(c[0], c[3]) for c in writes()]
-check("a save that removes links with If-Match: 200, the PUT carries the revision read, the DELETE the one the PUT "
-      "answered", r.status_code == 200 and len(methods) == 2 and methods[0] == ("PUT", f'"{second}"')
-      and methods[1][0] == "DELETE" and methods[1][1] not in (None, f'"{second}"'), (r.get_json(), methods))
+sent = [(c[0], c[3], (c[2] or {}).get("removeLinks")) for c in writes()]
+check("a save that removes links with If-Match: 200, one PUT carrying the revision read and the link removed "
+      "(removeLinks), no DELETE", r.status_code == 200 and len(sent) == 1 and sent[0][:2] == ("PUT", f'"{second}"')
+      and sent[0][2] == [{"linktype": "gs1:epil", "hreflang": ["en"], "context": []}], (r.get_json(), sent))
 check("…the record as saved, its final revision answered", entries_of(A)[1][2] == ["https://acme.example.com/edu"]
       and third == mock_data_entry.rev(mock_data_entry.entry_of(f"01_{A}", [{"10": "L1"}])), (entries_of(A), third))
 
@@ -302,6 +323,36 @@ r = api.delete(f"/portal/api/v1/records/01/{E}", headers={**KEY, "If-Match": new
 check("…with the ETag of the record as read: deleted", r.status_code == 200 and len(entries_of(E)) == 1, r.status_code)
 r = api.put(f"/portal/api/v1/records/01/{E}?qualifiers=/10/W1", json=BODY, headers=KEY)
 check("the tenant API's save without the headers: as before", r.status_code == 200, r.status_code)
+
+# ================================================================== a save that removes links is one write (ADR 0059)
+put_raw(D, [([], "Tea", [LINK, {**LINK, "linktype": "gs1:epil", "href": "https://acme.example.com/old"}])])
+CALLS.clear()
+FAIL_PUT["on"] = True
+r = edu.post("/portal/api/record", json=save_body(D, "Tea", ["https://acme.example.com/p"]), headers=ORIGIN)
+check("the data entry API refuses a save that removes links: 502 upstream.updateRejected, nothing half applied (the "
+      "old link kept, no DELETE sent)", r.status_code == 502 and code(r) == "upstream.updateRejected"
+      and entries_of(D)[0][2] == ["https://acme.example.com/old", "https://acme.example.com/p"]
+      and [c[0] for c in writes()] == ["PUT"], (r.status_code, r.get_json(), entries_of(D), writes()))
+CALLS.clear()
+BEFORE["write"] = lambda: mock_data_entry.DB[f"01_{D}"]["entries"][0]["links"].append(
+    {"linktype": "gs1:faqs", "href": "https://acme.example.com/theirs", "title": "F", "hreflang": ["en"]})
+r = edu.post("/portal/api/record", json=save_body(D, "Tea", ["https://acme.example.com/p"]), headers=ORIGIN)
+check("…saved again without the headers while someone adds a link: one PUT, the link removed gone, theirs kept",
+      r.status_code == 200 and [c[0] for c in writes()] == ["PUT"]
+      and entries_of(D)[0][2] == ["https://acme.example.com/p", "https://acme.example.com/theirs"],
+      (r.status_code, entries_of(D), writes()))
+STRIP["on"] = True
+r = edu.post("/portal/api/record", json=save_body(D, "Tea", ["https://acme.example.com/p"]), headers=ORIGIN)
+STRIP.clear()
+check("…a data entry API that does not say it removed them (no removedLinks): 502 upstream.partialUpdate, never "
+      "taken for done", r.status_code == 502 and code(r) == "upstream.partialUpdate", (r.status_code, r.get_json()))
+put_raw(D, [([], "Tea", [LINK, {**LINK, "linktype": "gs1:epil", "href": "https://acme.example.com/old"}])])
+CALLS.clear()
+r = api.put(f"/portal/api/v1/records/01/{D}", json={"description": "Tea", "links": [
+    {"linkType": "gs1:pip", "url": "https://acme.example.com/p", "hreflang": ["en"]}]}, headers=KEY)
+check("the tenant API's save that removes links: one PUT naming them, no DELETE", r.status_code == 200
+      and [c[0] for c in writes()] == ["PUT"] and writes()[0][2].get("removeLinks")
+      and entries_of(D)[0][2] == ["https://acme.example.com/p"], (r.status_code, writes(), entries_of(D)))
 
 # the description of the tenant API
 spec = portal.app.test_client().get("/portal/api/v1/openapi.json").get_json()

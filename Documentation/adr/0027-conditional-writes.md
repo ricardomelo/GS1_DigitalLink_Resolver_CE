@@ -70,6 +70,8 @@ later.
   > record changed in between; without the header, as before.
 - **The portal's save is two calls when links are removed** (`PUT`, then a `DELETE` of links). A conflict on the
   second leaves the first applied: `upstream.partialUpdate` asks the user to save again, as before.
+  > Closed by [ADR 0059](0059-save-in-one-write.md): the portal's save is one `PUT`, whose `removeLinks` names the links
+  > removed in the same conditional write.
 
 ## 5. Checks
 

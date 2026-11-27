@@ -6,7 +6,8 @@ the data entry stand-in honest. It covers what the portal relies on: POST /new (
 record that exists, a list of a key's records),
 PUT (links merged by type, language and context; the shared default link type;
 informative qualifiers; 404 for a record the key does not have), DELETE of some links (404 likewise), DELETE of one
-record (removeRecord, ADR 0023), If-Match and If-None-Match against the portal's revision (ADR 0058), GET and GET
+record (removeRecord, ADR 0023), If-Match and If-None-Match against the portal's revision (ADR 0058), a PUT's
+removeLinks (ADR 0059), GET and GET
 /summary with links — with and without links of type
 gs1:defaultLink (Documentation/adr/0011-item-page.md, amendment of 17 October 2026).
 
@@ -309,6 +310,28 @@ answers = [c.delete("/api" + REV, json={"removeRecord": True, "qualifiers": []},
            for c, rev in zip((REAL, MOCK), current)]
 check("revision: DELETE of the record with If-Match of the revision read: both remove it",
       [a.status_code for a in answers] == [200, 200] and revisions() == [None, None], [a.status_code for a in answers])
+
+# A PUT that also removes links (ADR 0059): what the portal sends when a save removes links
+both("post", "/new", {**record([link("gs1:pip", "https://a.example/p"), link("gs1:epil", "https://a.example/e"),
+                                link("gs1:faqs", "https://a.example/f")], "gs1:pip"), "anchor": REV})
+answers = each("put", REV, {"qualifiers": [], "itemDescription": "Item", "defaultLinktype": "gs1:pip",
+                            "links": [link("gs1:pip", "https://a.example/p2")],
+                            "removeLinks": [{"linktype": "gs1:epil", "hreflang": ["en"], "context": []},
+                                            {"linktype": "gs1:smpc", "hreflang": ["en"]}]}, {})
+check("removeLinks: a PUT naming a link held and one not held: both 200, removedLinks 1, the new revision of their GET",
+      [a.status_code for a in answers] == [200, 200] and [a.get_json().get("removedLinks") for a in answers] == [1, 1]
+      and [a.get_json().get("revision") for a in answers] == revisions(),
+      [(a.status_code, a.get_data(as_text=True)[:160]) for a in answers])
+same("removeLinks: the link sent merged, the one named removed, the other kept", REV)
+for name, extra in [("a link both sent and named", {"links": [link("gs1:pip", "https://a.example/p3")],
+                                                     "removeLinks": [{"linktype": "gs1:pip", "hreflang": ["en"]}]}),
+                    ("every link of the record named", {"removeLinks": [{"linktype": "gs1:pip", "hreflang": ["en"]},
+                                                                        {"linktype": "gs1:faqs", "hreflang": ["en"]}]}),
+                    ("not a list", {"removeLinks": "gs1:faqs"})]:
+    answers = each("put", REV, {"qualifiers": [], **extra}, {})
+    check(f"removeLinks: {name}: both answer 400", [a.status_code for a in answers] == [400, 400],
+          [a.status_code for a in answers])
+same("removeLinks: nothing written by the refused PUTs", REV)
 
 # Anchors (ADR 0049, finding U-004): /AI/value only, and no AI part with "_" in a path
 for anchor in ("/01/09506000134352/10/L1", "/99/X", "01/09506000134352"):

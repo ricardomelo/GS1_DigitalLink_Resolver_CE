@@ -186,7 +186,7 @@
    "checks": [
     "an editor cannot list or create keys",
     "a tenant administrator creates a key: 201, the full key once",
-    "the key's item: tidy name, sorted scopes, 30 days, no hash2026-11-27 22:03:02,197 INFO portal.worker Job 231cf87b4b214097b5ddd8664d9fd466 (mail of ana) started, attempt 1, from item 0 of 1.",
+    "the key's item: tidy name, sorted scopes, 30 days, no hash",
     "only the secret's SHA-256 is stored, under the organisation",
     "expiry: 30 days from now",
     "list: the organisation's keys, the scopes, the limits",
@@ -213,7 +213,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_3339d199926…)",
+    "a wrong key is refused (rk_a6c89e33c99…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -677,6 +677,17 @@
     "DELETE of a record already gone with If-Match: * → 412",
     "PUT with If-Match racing another writer on the same record → 412, the other writer's change kept, this one not",
     "…racing another writer on another record of the key → read again, the record unchanged, written (200)",
+    "PUT with removeLinks → 200, the links sent merged and those named removed in one write, removedLinks 1, the new revision answered",
+    "…the same PUT again: 200, removedLinks 0 (a link already gone is not an error)",
+    "…a PUT without removeLinks answers no removedLinks (as before)",
+    "PUT with removeLinks not a list → 400 saying why, nothing written",
+    "PUT with removeLinks a link without its linktype → 400 saying why, nothing written",
+    "PUT with removeLinks an hreflang that is not a list of strings → 400 saying why, nothing written",
+    "PUT with removeLinks a link both sent and named → 400 saying why, nothing written",
+    "PUT with removeLinks every link of the record named → 400 saying why, nothing written",
+    "PUT with removeLinks and If-Match of an earlier revision → 412, nothing added and nothing removed",
+    "…racing another writer who adds a link: read again, both changes kept (the link named removed, theirs kept)",
+    "…with If-Match, racing another writer on the same record → 412, nothing of this PUT applied",
     "engine: POST /new refuses a GTIN with a wrong check digit → 400, saying so",
     "engine: POST /new refuses a GTIN of 13 digits → 400, saying so",
     "engine: POST /new refuses a batch longer than 20 characters → 400, saying so",
@@ -781,7 +792,7 @@
     "Chromium: the Swagger UI starts under its policy and reads the description",
     "Chromium: the policy refused nothing on the Swagger UI"
    ],
-   "count": 237,
+   "count": 248,
    "ciOnly": false
   },
   "datamatrix": {
@@ -1138,9 +1149,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (279 features)",
+    "features.md: every table has a Checks column (280 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (647 references)",
+    "…each reference names a program of the inventory (653 references)",
     "…and words found in one of its checks",
     "every test program is in the inventory (87)",
     "…and the inventory holds no program that no longer exists",
@@ -1151,8 +1162,8 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (58)",
-    "every relative link of the documents leads to a file (75 documents)"
+    "…and every decision record (59)",
+    "every relative link of the documents leads to a file (76 documents)"
    ],
    "count": 15,
    "ciOnly": false
@@ -3285,7 +3296,7 @@
     "…the record's history leaves the failed attempt out",
     "…a second, successful attempt is the history's only version",
     "…the audit trail shows the attempt and its failure",
-    "an update stopped half way (the links' removal refused): 502 and change-failed upstream.partialUpdate",
+    "an update that removes links refused (one write, ADR 0059): 502 and change-failed upstream.updateRejected",
     "a delete the API refuses: change-failed upstream.deleteFailed",
     "records turned to explicit default links are journalled, one update each with its new content",
     "verification: administrators only (an editor: 403)",
@@ -3962,7 +3973,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:43037/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:42671/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",
@@ -4668,12 +4679,18 @@
     "revision: DELETE of links with If-Match of an earlier revision: both answer 412",
     "revision: DELETE of the record with If-Match of an earlier revision: both answer 412",
     "revision: DELETE of the record with If-Match of the revision read: both remove it",
+    "removeLinks: a PUT naming a link held and one not held: both 200, removedLinks 1, the new revision of their GET",
+    "removeLinks: the link sent merged, the one named removed, the other kept: GET /01/09506000134356 gives the same records",
+    "removeLinks: a link both sent and named: both answer 400",
+    "removeLinks: every link of the record named: both answer 400",
+    "removeLinks: not a list: both answer 400",
+    "removeLinks: nothing written by the refused PUTs: GET /01/09506000134356 gives the same records",
     "POST /new with the anchor '/01/09506000134352/10/L1': both answer 400",
     "POST /new with the anchor '/99/X': both answer 400",
     "POST /new with the anchor '01/09506000134352': both answer 400",
     "GET of a path whose AI part has '_': both answer 400"
    ],
-   "count": 63,
+   "count": 69,
    "ciOnly": false
   },
   "monitor": {
@@ -5560,7 +5577,7 @@
     "a save from a record opened before someone else's save: 412 record.changed",
     "…nothing written (Eva's links kept, the description unchanged), no write sent to the data entry API",
     "…nothing journalled",
-    "a save that removes links with If-Match: 200, the PUT carries the revision read, the DELETE the one the PUT answered",
+    "a save that removes links with If-Match: 200, one PUT carrying the revision read and the link removed (removeLinks), no DELETE",
     "…the record as saved, its final revision answered",
     "someone else saves between the portal's check and its write: the data entry API's 412 → 412 record.changed",
     "…their change kept, the attempt journalled as failed",
@@ -5582,9 +5599,13 @@
     "the tenant API's delete with the ETag of an earlier read: 412, the record kept",
     "…with the ETag of the record as read: deleted",
     "the tenant API's save without the headers: as before",
+    "the data entry API refuses a save that removes links: 502 upstream.updateRejected, nothing half applied (the old link kept, no DELETE sent)",
+    "…saved again without the headers while someone adds a link: one PUT, the link removed gone, theirs kept",
+    "…a data entry API that does not say it removed them (no removedLinks): 502 upstream.partialUpdate, never taken for done",
+    "the tenant API's save that removes links: one PUT naming them, no DELETE",
     "the tenant API's description: ETag on the read and the save, If-Match/If-None-Match, 412 record.changed"
    ],
-   "count": 34,
+   "count": 38,
    "ciOnly": false
   },
   "record_revision_e2e": {
@@ -6313,7 +6334,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)",
+    "an uncached check takes well under a millisecond (0.003 ms; Node.js: tens of ms)",
     "one-segment path that cannot be a compressed GS1 Digital Link (wp-login.php): 400, no Node.js process",
     "one-segment path that cannot be a compressed GS1 Digital Link (a%20b): 400, no Node.js process",
     "one-segment path that cannot be a compressed GS1 Digital Link (config.bak): 400, no Node.js process",

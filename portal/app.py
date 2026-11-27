@@ -1757,9 +1757,8 @@ def store_record(anchor: str, pairs: list, doc: dict, precondition=None, saved: 
     """Creates or replaces one record (primary key + qualifier set) with the safe call sequence.
     Returns True when the record was created. Used by the editor, the tenant API and spreadsheet imports.
     precondition: the If-Match / If-None-Match of the request (ADR 0058), checked on the record read here, then passed
-    to the data entry API with the record's first write (and the revision that write answers to the DELETE of links
-    that follows it); UpstreamError record.changed (412) when they do not hold. saved, when given, receives the
-    record's new revision ("revision")."""
+    to the data entry API with the record's write; UpstreamError record.changed (412) when they do not hold. saved,
+    when given, receives the record's new revision ("revision")."""
     qualifiers = doc.get("qualifiers", [])
 
     entries, current_default = read_entries(anchor)
@@ -1790,26 +1789,21 @@ def store_record(anchor: str, pairs: list, doc: dict, precondition=None, saved: 
                    g.user, anchor, gs1.qualifier_path(pairs), len(doc["links"]))
         return True
 
-    # Case 2: existing entry → PUT (merge on linktype+hreflang+context), then a partial DELETE of the
-    # links the user removed. In this order the product is never left without a target.
+    # Case 2: existing entry → one PUT: the links sent merged on linktype+hreflang+context, the links the user removed
+    # named in removeLinks and taken out in the same write (ADR 0059), so a save is never half applied and the product
+    # is never left without a target. A data entry API that does not count them (removedLinks) did not remove them.
     new_keys = {gs1.link_key(l) for l in doc["links"]}
     removed = [{"linktype": l["linktype"], "hreflang": l.get("hreflang") or [],
                 "context": l.get("context") or []}
                for l in target.get("links", []) if gs1.link_key(l) not in new_keys]
     with journal_first(anchor, pairs, doc, "update"):
-        status, body = resolver("PUT", anchor, doc, precondition_headers(precondition))
+        status, body = resolver("PUT", anchor, {**doc, "removeLinks": removed} if removed else doc,
+                                precondition_headers(precondition))
         if not is_success(status, body):
             raise refused_upstream("upstream.updateRejected", status, body)
         note_revision(saved, body)
-        if removed:
-            # with preconditions, the DELETE holds to the revision the PUT answered: a writer between the two calls
-            # fails it rather than lose a change (upstream.partialUpdate, as before)
-            after = body.get("revision") if precondition and isinstance(body, dict) else None
-            status, body = resolver("DELETE", anchor, {"qualifiers": qualifiers, "links": removed},
-                                    {"If-Match": f'"{after}"'} if after else {})
-            if not is_success(status, body):
-                raise UpstreamError("upstream.partialUpdate", 502, body, count=len(removed))
-            note_revision(saved, body)
+        if removed and not (isinstance(body, dict) and "removedLinks" in body):
+            raise UpstreamError("upstream.partialUpdate", 502, body, count=len(removed))
 
     audit.info("user=%s action=update anchor=%s%s links=%d removed=%d",
                g.user, anchor, gs1.qualifier_path(pairs), len(doc["links"]), len(removed))

@@ -182,11 +182,11 @@ audit = ana.get("/portal/api/audit").get_json()["events"]
 check("…the audit trail shows the attempt and its failure", sum(e["action"] == journal.FAILED_ACTION for e in audit) == 1
       and sum(e["action"] == "create" and e.get("qpath") == "/10/L1" for e in audit) == 2)
 
-FAIL["rule"] = lambda method, body: method == "DELETE" and "links" in (body or {})
+FAIL["rule"] = lambda method, body: method == "PUT" and "removeLinks" in (body or {})
 r = edu.post("/portal/api/record", json={**record(A, {"10": "L1"}), "links": [
     {"linkType": "gs1:pip", "url": "https://acme.example.com/p", "title": "", "hreflang": ["pt"]}]}, headers=ORIGIN)
-check("an update stopped half way (the links' removal refused): 502 and change-failed upstream.partialUpdate",
-      r.status_code == 502 and events(A, journal.FAILED_ACTION)[-1]["detail"] == "update upstream.partialUpdate",
+check("an update that removes links refused (one write, ADR 0059): 502 and change-failed upstream.updateRejected",
+      r.status_code == 502 and events(A, journal.FAILED_ACTION)[-1]["detail"] == "update upstream.updateRejected",
       (r.status_code, [e["detail"] for e in events(A, journal.FAILED_ACTION)]))
 
 FAIL["rule"] = lambda method, body: method == "DELETE"

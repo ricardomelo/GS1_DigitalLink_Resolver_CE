@@ -247,6 +247,10 @@ class DocOperations(TokenResource):
             abort(500, description="Error getting document")
 
     @data_entry_namespace.doc(description="Update a document using its anchor. "
+                         "The links sent are merged into the record (matched by linktype, hreflang and context); "
+                         "an optional 'removeLinks' list names links removed in the same write (ADR 0059; one not "
+                         "found is ignored, 'removedLinks' in the answer counts those removed; 400 when a link is "
+                         "both sent and named, or the record would keep no link). "
                          "Optional If-Match: \"<revision>\" (or *) and If-None-Match: * headers make the write "
                          "conditional on the record named (ADR 0058): 412 with nothing written when it fails; the "
                          "answer gives the record's new revision.",

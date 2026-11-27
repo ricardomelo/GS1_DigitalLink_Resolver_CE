@@ -1,7 +1,8 @@
 """
 In-memory stand-in for the Resolver CE data-entry API, used by the portal end-to-end test.
 It reproduces the behaviours the portal must cope with: POST /new on an existing entry and PUT both merge by (linktype, hreflang, context), DELETE removes links, one record (removeRecord, ADR 0023) or the whole document;
-PUT and a DELETE of links with qualifiers no record of the key has answer 404;
+PUT and a DELETE of links with qualifiers no record of the key has answer 404; a PUT's removeLinks are removed in
+the same write (ADR 0059);
 informativeQualifiers are kept like the real API does, and a registration with AI 21 plus AI 22 or
 AI 10 is refused (GS1-Conformant Resolver 1.2.1, section 2.5.9, rule 2); If-Match / If-None-Match on a write
 are checked against the record's revision and a write answers the new one (ADR 0058).
@@ -112,6 +113,12 @@ def doc(c,v):
         return jsonify(response_status=404,error="Record not found"),404
     if request.method=="PUT":
         e=ents[idx]
+        rm=d.get("removeLinks")
+        if rm is not None and (not isinstance(rm,list) or not all(isinstance(l,dict) and isinstance(l.get("linktype"),str) for l in rm)
+                               or any(key(l)==key(nl) for l in rm for nl in d.get("links",[]))):
+            return jsonify(response_status=400,error="removeLinks"),400
+        if rm is not None and not [l for l in e["links"]+d.get("links",[]) if not any(key(l)==key(r) for r in rm)]:
+            return jsonify(response_status=400,error="a record keeps at least one link"),400
         if "itemDescription" in d: e["itemDescription"]=d["itemDescription"]
         if "defaultLinktype" in d: DB[did]["default"]=d["defaultLinktype"]
         if "informativeQualifiers" in d: e["informative"]=copy.deepcopy(d["informativeQualifiers"] or [])
@@ -119,7 +126,11 @@ def doc(c,v):
             m=[i for i,l in enumerate(e["links"]) if key(l)==key(nl)]
             if m: e["links"][m[0]].update(nl)
             else: e["links"].append(nl)
-        return jsonify(response_status=200,revision=rev(entry_of(did,d.get("qualifiers",[]))))
+        out={"response_status":200}
+        if rm is not None:         # removed in the same write (ADR 0059), one not found ignored
+            before=len(e["links"]); e["links"]=[l for l in e["links"] if not any(key(l)==key(r) for r in rm)]
+            out["removedLinks"]=before-len(e["links"])
+        return jsonify(**out,revision=rev(entry_of(did,d.get("qualifiers",[]))))
     if remove:                     # one record removed, the key's others kept; the document goes with its last
         ents.pop(idx)
         if not ents: del DB[did]

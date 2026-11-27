@@ -22,6 +22,11 @@ RUN python /tmp/about.py write /version.json || echo '{}' > /version.json
 FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 GS1_SYNTAX_ENGINE_DIR=/opt/gs1-syntax-engine
+
+# Debian's security updates of the packages the base image already holds, until a new digest carries them (as the
+# proxy's apk upgrade and the database image's dist-upgrade; Documentation/adr/0033-supply-chain.md, section 2.10):
+# apt-get upgrade installs no new package, and the package lists are removed in the same layer.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=syntax-engine /opt/gs1-syntax-engine /opt/gs1-syntax-engine
 

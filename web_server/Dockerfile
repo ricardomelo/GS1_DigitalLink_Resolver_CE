@@ -31,6 +31,11 @@ LABEL authors="nick"
 # to the terminal without buffering it first
 ENV PYTHONUNBUFFERED 1
 
+# Debian's security updates of the packages the base image already holds, until a new digest carries them (as the
+# proxy's apk upgrade and the database image's dist-upgrade; Documentation/adr/0033-supply-chain.md, section 2.10):
+# apt-get upgrade installs no new package, and the package lists are removed in the same layer.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
  # This Environment variable is used to set the fully qualified domain name (FQDN) of the host machine which will be
  # Used when outputing linkset information
  ENV FQDN='id.mydomainname_currently_set_in_dockerfile.com'

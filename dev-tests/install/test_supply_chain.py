@@ -5,6 +5,9 @@ Development test for the supply chain (F-015; Documentation/adr/0033-supply-chai
 Checks, from the repository's files alone (no network, no Docker):
   * the Dockerfiles, docker-compose.yml and the workflows: every image taken from a registry is named by digest
     (name:tag@sha256:…), a stage of the same Dockerfile excepted;
+  * every final image takes its distribution's security updates of the packages it holds (apt-get upgrade in the
+    three Debian images, the database image's dist-upgrade, the proxy's apk upgrade), the package lists removed in
+    the same layer, so that a correction published after the base image's digest still reaches the image;
   * the workflows and the composite action: every action is the repository's own (./…) or named by a 40-character
     commit with its release in a comment; every workflow states its permissions; checkout keeps no credentials;
   * no download is piped into a shell, no "npm init <initializer>" (it fetches and runs a package), npm installs only
@@ -120,6 +123,34 @@ def image_checks() -> None:
             if container:
                 image = container if isinstance(container, str) else container.get("image", "")
                 check(DIGEST.match(image), f"{path}: {job_name}'s container by digest", image)
+
+
+def final_stage(dockerfile: str) -> str:
+    """The last stage of a Dockerfile, continuation lines joined and comments dropped."""
+    lines = [line for line in re.sub(r"\\\n", " ", dockerfile).splitlines() if not line.lstrip().startswith("#")]
+    last = max(i for i, line in enumerate(lines) if re.match(r"^\s*FROM\s", line, re.I))
+    return "\n".join(lines[last:])
+
+
+SECURITY_UPDATES = {
+    "web_server/Dockerfile": r"^RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/\*$",
+    "data_entry_server/Dockerfile": r"^RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/\*$",
+    "portal/Dockerfile": r"^RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/\*$",
+    "database_server/Dockerfile": r"^RUN apt-get update -y && apt-get dist-upgrade -y$",
+    "frontend_proxy_server/Dockerfile": r"^RUN apk upgrade --no-cache$",
+}
+
+
+def security_update_checks() -> None:
+    check(set(SECURITY_UPDATES) == set(DOCKERFILES), "every image's Dockerfile has its security-update rule here")
+    for path, rule in SECURITY_UPDATES.items():
+        final = final_stage(text(path))
+        check(re.search(rule, final, re.M), f"{path}: the final image takes its distribution's security updates of "
+              "the packages it holds", rule)
+        if "apt-get upgrade" in rule:
+            run = re.search(r"^FROM\s.*?\n(.*?)^RUN apt-get update && apt-get upgrade", final, re.M | re.S)
+            check(run and not re.search(r"^(COPY|ADD)\s", run.group(1), re.M),
+                  f"{path}: the security updates run before the image's own files are copied")
 
 
 # --------------------------------------------------------------------------------------------------------- actions
@@ -459,7 +490,7 @@ def audit_checks() -> None:
 
 
 def main() -> int:
-    for section in (image_checks, action_checks, download_checks, lock_checks, npm_checks, policy_checks,
+    for section in (image_checks, security_update_checks, action_checks, download_checks, lock_checks, npm_checks, policy_checks,
                     workflow_checks, accepted_checks, audit_checks):
         try:
             section()

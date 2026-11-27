@@ -20,6 +20,11 @@ LABEL authors="nick"
 # to the terminal without buffering it first
 ENV PYTHONUNBUFFERED 1
 
+# Debian's security updates of the packages the base image already holds, until a new digest carries them (as the
+# proxy's apk upgrade and the database image's dist-upgrade; Documentation/adr/0033-supply-chain.md, section 2.10):
+# apt-get upgrade installs no new package, and the package lists are removed in the same layer.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
 # Node.js for the GS1 Digital Link Toolkit and the GS1 Barcode Syntax Engine (the stage "node" above), at the path
 # the service starts it from. No editor: the official image installed nano, a tool for whoever gets a shell in the
 # container (finding U-006, Documentation/adr/0050-error-answers.md); docker compose cp copies a file in and out.

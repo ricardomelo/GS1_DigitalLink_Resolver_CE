@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (21 November 2026); step 1 and step 2 delivered the same day |
+| Status | **Accepted** (21 November 2026); step 1 and step 2 delivered the same day; amended on 27 November 2026 (section 2.10: Debian's security updates in the three Python images) |
 | Backlog item | 10.1, phase 1 of the security assessment ([ADR 0020](0020-security-assessment.md)); threat T-I5 and gap G-18 of the [threat model](../threat-model.md) |
 | Decided by | the owner of the branch's standing instruction (take the recommended option and carry on): lock files with hashes resolved together, images by tag and digest, actions by commit, Node.js from the official image, Dependabot for the updates; scanning and the SBOM in a second step, with pip-audit, npm audit and Trivy fetched by hash, and a reviewed list of accepted vulnerabilities that expire |
 
@@ -118,6 +118,19 @@ resolver's direct dependencies pinned, and read-only permissions for the CI.
    attaching the SBOMs; when Trivy loses its version or hash check; when an accepted entry lacks a statement or a date
    or lasts more than 90 days; and it runs `audit.py` on made-up reports (a correction fails, none does not, an
    accepted identifier or alias counts until its expiry day, an unreadable or missing report fails).
+10. **Debian's security updates in the final image (27 November 2026).** The supply-chain workflow found linux-pam
+   (`libpam0g`, `libpam-modules`, `libpam-modules-bin`, `libpam-runtime`) vulnerable, HIGH, in the resolver's, the
+   data entry API's and the portal's images, with a correction in Debian 12's security archive. The correction was
+   published after the newest `python:3.12-slim-bookworm` digest, so no new digest could bring it, and no proposal
+   from Dependabot existed. The final stage of the three Dockerfiles now runs
+   `apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*`, before the image's own files are copied,
+   as the proxy runs `apk upgrade --no-cache` and the database image `apt-get dist-upgrade` (step 8). `apt-get
+   upgrade` only updates packages the base image already holds and installs no new one, so the final stage still
+   installs no package from Debian's repository ([ADR 0050](0050-error-answers.md), section 2.4). Not chosen: an
+   entry in `accepted.yaml` until the base image is rebuilt (the last resort, and the correction exists); waiting for
+   Dependabot (the workflow red for weeks, for every change of a Dockerfile or lock). `test_supply_chain.py` fails
+   when a final image loses its distribution's security updates, keeps the package lists or takes them after its
+   own files.
 
 ## 3. Options considered
 
@@ -132,6 +145,7 @@ resolver's direct dependencies pinned, and read-only permissions for the CI.
 | Image scanner and SBOM writer | Trivy, one tool for both, by version and SHA-256 from its release, a release more than two weeks old | Grype and Syft (two tools for the same result); Trivy's or Anchore's GitHub Actions (a third-party action by tag runs with the job's token: Trivy's own actions had their tags moved to a credential stealer on 19 March 2026, alongside a malicious Trivy 0.69.4, GHSA-69fq-xp46-6x23); Docker Scout (an account) |
 | Python scanner | pip-audit (PyPI's and OSV's advisories), alongside Trivy's view of the same packages inside the images | Trivy alone (one advisory source for both); Safety (an account for the current database) |
 | What fails | locks: any severity with a correction; images: HIGH and CRITICAL with a correction | everything found (the distributions' uncorrected vulnerabilities would keep it red); CRITICAL only (too late) |
+| A correction published after the base image's digest | the final stage takes the distribution's security updates of the packages it holds (section 2.10) | an accepted entry until the digest catches up; waiting for Dependabot |
 | Accepted vulnerabilities | a reviewed list with statement, review date and an expiry of at most 90 days | `.trivyignore` identifiers without reasons; no list (one uncorrectable vulnerability would keep the workflow red until its correction) |
 
 ## 4. Consequences
@@ -154,8 +168,10 @@ resolver's direct dependencies pinned, and read-only permissions for the CI.
   repository: the answer is an update (Dependabot's proposal or `lock-dependencies.sh --upgrade-package`), or, as a
   last resort, an entry in `accepted.yaml`. The development tests stay green meanwhile.
 - The SBOM describes the image built by the release job from the tag; an operator's own build of the same tag
-  installs the same locked packages and digests, but its system packages are those of the digest, so it matches the
-  SBOM unless the repository's digests were updated in between.
+  installs the same locked packages and digests, but its system packages are those of the digest plus the
+  distribution's security updates of the day it was built (section 2.10), so it can hold newer system packages than
+  the SBOM lists. Docker reuses the cached layer of that update until the digest changes; `docker compose build
+  --pull --no-cache` takes the day's updates.
 - Trivy's version is updated by hand, after reading its release notes.
 
 ## 5. Delivery
@@ -168,3 +184,6 @@ Step 2 (21 November 2026): `.github/workflows/supply-chain.yml`; `.github/supply
 `accepted.yaml`, `install-trivy.sh`, `requirements.in` and `requirements.txt`); `dev-tests/lock-dependencies.sh` and
 `.github/dependabot.yml` for the tools' lock; Pillow 13.0.0 and PyMongo 4.19.0 in the locks. Checks added to
 `dev-tests/install/test_supply_chain.py`.
+Amendment (27 November 2026, section 2.10): the final stage of `web_server/Dockerfile`, `data_entry_server/Dockerfile`
+and `portal/Dockerfile` takes Debian's security updates; checks added to `dev-tests/install/test_supply_chain.py`
+(223 → 232).

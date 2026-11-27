@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased (branch gs1br/develop)
+
+### Records outside the rules: a report for the operator (session 70)
+- **Added: records written before today's rules are reported to server administrators**
+  ([ADR 0056](../adr/0056-records-outside-the-rules.md), completing sessions 63 and 64). Since 3.2.0 the official data
+  entry API refuses anchors that are not `/AI/value` with a GS1 primary key and targets that are not public `https:`
+  addresses, but what it had stored before stayed as it was, still resolved, and some of it never appeared in
+  *Registered records*. A new section *Records outside the rules* on the *Organisations* screen reads, on request,
+  every record of the installation and lists each identifier the portal's rules refuse (another shape, an AI that is
+  not a primary key, a qualifier written into the value, a wrong check digit, a `_`) and each target that is not
+  HTTPS, points inside a network or is badly written — the counts and the first 20 rows, with the organisation that
+  holds each prefix, and every row in Excel or CSV (journal event *Export of records outside the rules*). Nothing is
+  changed: corrections stay with the operator, through the data entry API or in the portal.
+- **Operators:** after `git pull`: `docker compose up -d --build`. Nothing for `.env`. Run the check once after
+  updating and hand each organisation its rows. Commit `af12fac`.
+- **Translators:** the section's texts (`legacy.*`), the message `legacy.format` and `audit.action.legacy-export`,
+  drafts in ten languages.
+
 ## 3.2.1 — 23 November 2026
 
 A documentation release of 3.2.0: the public record of the security and resilience assessment, so that `master`

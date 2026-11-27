@@ -788,6 +788,7 @@ task is:
 | The most rows per export in every organisation | — | yes | [Organisations](#organisations-server-administrators) |
 | Create, rename, disable, remove organisations; their GS1 Company Prefixes | — | yes | [Organisations](#organisations-server-administrators) and the organisation's page |
 | Upload GS1's GCP length table | — | yes | [Organisations](#organisations-server-administrators) |
+| Find records written before today's rules | — | yes | [Organisations](#organisations-server-administrators), *Records outside the rules* |
 | Single sign-on (OpenID Connect) | their own | any, and the operator's | [Organisation sign-in](#organisation-sign-in-administrators) |
 | API keys for the organisation's systems | their own | the operator's | [API keys](#api-keys-administrators) |
 | Own domains in the QR codes | their own | every one | [Domains](#domains-administrators) |
@@ -940,6 +941,17 @@ belong to no organisation (the operator's).
   With a list, an organisation's prefix that disagrees with it is pointed out under its prefixes — longer than GS1's
   company prefix there, shorter than the prefixes it covers, or not a GS1 Company Prefix range —, here and on the
   organisation's page; it is still accepted.
+- **Records outside the rules**: records the resolver keeps from before today's rules, written through the official
+  data entry API — an identifier that is not a GS1 key with a value the portal accepts (a qualifier written into the
+  identifier, such as `/01/09506000134352_10_LOT`, an AI that is not a primary key, a wrong check digit, a `_`), or a
+  target that is not a public HTTPS address (`http:`, `javascript:`, an address inside a network). They are still
+  resolved as they are, and some never appear in *Registered records*. **Check the records** reads every record of the
+  installation (on a large one it takes as long as an export) and changes nothing: it says how many identifiers and
+  targets are outside the rules and shows the first 20, each with its problem, the organisation that holds its prefix,
+  and for a target its qualifiers, link type and address. **Export Excel** and **Export CSV** give every row (recorded
+  in the audit trail). Correct or delete each one through the data entry API, or in the portal when it lists the
+  record (its rules then apply to what you save); hand an organisation its own rows. Not available during support
+  access.
 - **Exports in every organisation**: the **most rows per export** any organisation's users and API keys may download —
   the record spreadsheet, the requests' CSV, the tenant API's record listing —, its administrators included. Empty (the
   default) is no limit. Each organisation sets limits per role below it on its page (**Exports**). Server

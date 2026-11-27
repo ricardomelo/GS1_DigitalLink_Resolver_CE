@@ -30,7 +30,7 @@ another, a user beyond their role, wrong data registered, wrong routing, and the
 | A private register | each weakness — where, how, its consequence — kept outside the repository until fixed; never described in a public document before its fix |
 | One fix per delivery | one finding (or one residual) at a time, with its own ADR where it changes a decision, its code and technical documents in one commit, the changelog and the user documents in the next |
 | Proof | a development test that fails on the code before the fix and passes after it; it stays in the suite as a regression test. Each new check is proved able to fail by mutating the code it guards (mutation checks); the files are restored and compared by checksum |
-| Continuous integration | every push runs the development tests in six jobs (portal, resolver and data entry API with GS1's conformance suite, the portal in a real browser, the home page and proxy on the real nginx, the installer and deployment, and the portal on a real MongoDB); a second workflow looks for known vulnerabilities in lock files and images and attaches an SBOM to each release. The suite holds 6,956 checks in 83 programs ([test-inventory.md](test-inventory.md)) |
+| Continuous integration | every push runs the development tests in six jobs (portal, resolver and data entry API with GS1's conformance suite, the portal in a real browser, the home page and proxy on the real nginx, the installer and deployment, and the portal on a real MongoDB); a second workflow looks for known vulnerabilities in lock files and images and attaches an SBOM to each release. The suite holds 7,027 checks in 85 programs ([test-inventory.md](test-inventory.md)) |
 | Staging | each delivery comes with a test plan of steps and expected results that the operator runs on a staging installation |
 
 **What it is not.** It is a review by the maintainers with an AI reviewer, not an independent penetration test; a
@@ -79,8 +79,8 @@ branch; the ADR says what was decided and why, and the [changelog](extensions/CH
 | F-033 | Settings the resolver cannot read again expire, with an alert | Resolver | Low | [0053](adr/0053-settings-age.md) | `5df16ce` | 3.2.0 |
 | U-001 | Template values can no longer change a redirect's target | Official resolver | Medium | — | `8c06f72` | 3.2.0 |
 | U-002 | Compressed links decompressed within limits | Official resolver | Medium | [0047](adr/0047-toolkit-processes.md) | `642839d` | 3.2.0 |
-| U-003 | Targets sent to the data entry API follow the portal's rule | Official data entry API | Medium | [0048](adr/0048-data-entry-target-rule.md) | `0067b4c` | 3.2.0 |
-| U-004 | Anchors of one shape and one document id per anchor | Official data entry API | Low | [0049](adr/0049-data-entry-anchors.md) | `6527a49` | 3.2.0 |
+| U-003 | Targets sent to the data entry API follow the portal's rule; targets stored before reported to the operator | Official data entry API | Medium | [0048](adr/0048-data-entry-target-rule.md), [0056](adr/0056-records-outside-the-rules.md) | `af12fac` | 3.2.0; report: unreleased |
+| U-004 | Anchors of one shape and one document id per anchor; anchors stored before under other shapes reported to the operator | Official data entry API | Low | [0049](adr/0049-data-entry-anchors.md), [0056](adr/0056-records-outside-the-rules.md) | `af12fac` | 3.2.0; report: unreleased |
 | U-005 | No lost update in the data entry API's writes | Official data entry API | Medium | [0027](adr/0027-conditional-writes.md) | `875db4b` | 3.2.0 |
 | U-006 | Error answers without the exception's text; images without a root user or an editor | Official images | Low | [0030](adr/0030-least-privilege-services.md), [0050](adr/0050-error-answers.md) | `6653986` | 3.2.0 |
 

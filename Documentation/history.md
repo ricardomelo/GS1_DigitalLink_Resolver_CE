@@ -1882,3 +1882,18 @@ private register, one page per finding and the changelog alone were weighed and 
 
 The record was released at once as **3.2.1** (23 November; tag `v3.2.1`, with a GitHub release, by the owner), a
 documentation release of 3.2.0, so that `master` and the `upstream` branch carry it.
+
+## Session 70 — records outside the rules: a report for the operator
+
+Residual (4) of the order proposed in session 66: the first residuals of findings U-003 (session 63) and U-004
+(session 64), in one code commit (`af12fac`; [ADR 0056](adr/0056-records-outside-the-rules.md)). Checked first in the
+code: since ADR 0049 a document written under another anchor shape reads back with its qualifiers in the value
+(`/01/…_10_LOT`) or under an AI that is not a primary key, and targets stored before ADR 0048 keep `http:`,
+`javascript:` or private addresses; neither was reported anywhere but the data entry API's `/summary`. Now a section
+*Records outside the rules* on the *Organisations* screen reads, on request, the summary with links of the whole
+installation (`POST /portal/api/legacy-records`, server administrators, not during support access; `portal/legacy.py`)
+and lists five problems — `anchorShape`, `keyValue`, `targetNotHttps`, `targetHost`, `targetForm` — with the
+organisation that holds each prefix: the counts and the first 20 rows on the screen, every row in CSV or Excel, a
+journal event for a file. The report's target rule is the data entry API's, compared address by address. Rewriting or
+deleting such records, a monitoring check with alerts and a count on the *Overview* were weighed and not taken.
+`test_legacy.py` (55 checks) and `test_legacy_e2e.py` (11) are new; 18 mutations, all caught.

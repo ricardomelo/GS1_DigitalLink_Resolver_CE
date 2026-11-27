@@ -33,12 +33,19 @@
 #   PROXY_ACCESS_LOG        minimal (the default: no client address, no query string, the path's first segment only),
 #                           full (the address and the whole request line: personal data) or off
 #
+# and where the portal answers (Documentation/adr/0057-portal-own-host-name.md), portal-host.conf:
+#
+#   PORTAL_ORIGIN           the portal's address; when its host is not the resolver's, the portal answers on that name
+#                           only and nothing else does there (empty, the same host or not an address: every name)
+#   RESOLVER_PUBLIC_URL     the resolver's address (else https://FQDN)
+#   FQDN                    the installation's name
+#
 # 0 turns a limit off; a value that is not a whole number keeps the default, with a warning.
 #
 # An entry that is not an address or a network is left out with a warning (it opens nothing); the proxy still
 # starts, so a typing error never takes the resolver down. For the tests: API_ACCESS_FILE and REAL_IP_FILE (the files
 # written), LIMITS_DIR (the folder of the limits' files) and API_ACCESS_ROUTES (the kernel's routing table, read for
-# the gateway), ACCESS_LOG_FILE (the access log's file).
+# the gateway), ACCESS_LOG_FILE (the access log's file), PORTAL_HOST_FILE (where the portal answers).
 set -eu
 
 OUT="${API_ACCESS_FILE:-/etc/nginx/api-access.conf}"
@@ -181,3 +188,51 @@ case $mode in
   full) say "access log: full (client addresses and whole request lines: personal data; see the privacy notice)" ;;
   off) say "access log: off" ;;
 esac
+
+# ---- The portal on a host name of its own (Documentation/adr/0057-portal-own-host-name.md) ----
+# When PORTAL_ORIGIN names a host other than the resolver's (RESOLVER_PUBLIC_URL, else FQDN), the portal answers only on
+# that name and nothing else does: portal-host.conf maps the request's host and path ($uri, as the locations see it) to
+# the address nginx.conf redirects to (302), empty to serve the request. On every other name the tenant API and the
+# public files the home page reads stay; the portal's other paths go to its name. Otherwise one origin, as before.
+# origin <value>: a plain http(s) origin in lower case without a final slash, else nothing
+origin() {
+  value=$(printf '%s' "$1" | tr -d ' ' | tr '[:upper:]' '[:lower:]' | sed 's|/$||')
+  if printf '%s\n' "$value" | grep -Eq '^https?://[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]{1,5})?$'; then echo "$value"; fi
+}
+host_of() { printf '%s\n' "$1" | sed -E 's|^https?://||; s|:[0-9]+$||'; }
+
+PORTAL_HOST_OUT="${PORTAL_HOST_FILE:-/etc/nginx/portal-host.conf}"
+portal_origin=$(origin "${PORTAL_ORIGIN:-}")
+resolver_origin=$(origin "${RESOLVER_PUBLIC_URL:-}")
+if [ -z "$resolver_origin" ] && [ -n "${FQDN:-}" ]; then resolver_origin=$(origin "https://$FQDN"); fi
+portal_host=""
+if [ -n "$(printf '%s' "${PORTAL_ORIGIN:-}" | tr -d ' ')" ] && [ -z "$portal_origin" ]; then
+  say "PORTAL_ORIGIN: '${PORTAL_ORIGIN}' is not an address like https://portal.example.org; the portal stays on every name"
+elif [ -n "$portal_origin" ] && [ -z "$resolver_origin" ]; then
+  say "PORTAL_ORIGIN names the portal's host but neither RESOLVER_PUBLIC_URL nor FQDN names the resolver's; the portal stays on every name"
+elif [ -n "$portal_origin" ] && [ "$(host_of "$portal_origin")" != "$(host_of "$resolver_origin")" ]; then
+  portal_host=$(host_of "$portal_origin")
+fi
+if [ -n "$portal_host" ]; then
+  write "$PORTAL_HOST_OUT" "map \$host \$portal_name {
+    default 0;
+    \"$portal_host\" 1;
+}
+map \"\$portal_name\$uri\" \$host_redirect {
+    default \"\";
+    \"~^1/portal(?:/|\$)\" \"\";
+    \"~^1\" \"$resolver_origin\$request_uri\";
+    \"~^0/portal/api/v1(?:/|\$)\" \"\";
+    \"0/portal/api/appearance\" \"\";
+    \"0/portal/appearance.css\" \"\";
+    \"0/portal/appearance/logo\" \"\";
+    \"0/portal/appearance/icon\" \"\";
+    \"0/portal/logo.svg\" \"\";
+    \"0/portal/favicon.png\" \"\";
+    \"~^0/portal(?:/|\$)\" \"$portal_origin\$request_uri\";
+}"
+  say "portal: on $portal_host only ($portal_origin); its other addresses on every other name redirected there, the resolver's on $portal_host to $resolver_origin"
+else
+  write "$PORTAL_HOST_OUT" "map \$host \$host_redirect { default \"\"; }"
+  say "portal: on every name (one origin with the resolver)"
+fi

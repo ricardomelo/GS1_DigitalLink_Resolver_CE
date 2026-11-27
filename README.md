@@ -792,6 +792,7 @@ never committed).
 | `RESOLVER_ORG_NAME`, `RESOLVER_ORG_URL`, `RESOLVER_CONTACT_*` | Operator in the description file, on the home page and on the resolver's pages (name linked to `RESOLVER_ORG_URL`) |
 | `RESOLVER_TERMS_URL` | Optional: the operator's terms of use, published as `termsOfUse` in the description file (left out when empty) |
 | `RESOLVER_PUBLIC_URL` | Portal's public address when it is not `https://FQDN` (e.g. development) |
+| `PORTAL_ORIGIN` | The portal on a host name of its own (`https://portal.example.org`): the proxy serves the portal on that name only and nothing else there, and redirects the portal's addresses on the resolver's name to it, but for the tenant API and the files the home page reads; the installer adds the name to the site and the certificate ([ADR 0057](Documentation/adr/0057-portal-own-host-name.md)). Empty: `RESOLVER_PUBLIC_URL` (one origin) |
 | `PORTAL_ADMIN_USERNAME`, `PORTAL_ADMIN_PASSWORD` | First portal user, created only while there are none |
 | `PORTAL_DB_NAME`, `PORTAL_DB_USERNAME`, `PORTAL_DB_PASSWORD` | The portal's own database and user (created by `portal-db-init`); the installer generates the password |
 | `PORTAL_SECRET_KEY` | Key that signs the portal's sessions; every portal replica must share it (the installer generates it; empty: a key kept in the portal's volume) |

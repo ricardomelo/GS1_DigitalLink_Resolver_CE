@@ -72,6 +72,7 @@ EOF
   cat > "$b/curl" <<'EOF'
 #!/bin/bash
 args="$*"
+echo "curl $args" >> STATE/curl-calls
 case $args in
   *healthz*) [[ -e STATE/proxy-stale ]] && exit 22
              if [[ -e STATE/worker-down ]]; then echo '{"portal":"ok","resolver":"ok","worker":"unavailable"}'
@@ -376,6 +377,34 @@ check "J: \"off\" switches e-mail off and forgets the credentials" "[[ $rc == 0 
 printf "PORTAL_MAIL_HOST='mailpit'\nPORTAL_MAIL_PORT='1025'\nPORTAL_MAIL_SECURITY='none'\nPORTAL_MAIL_FROM='portal@example.org'\n" >> "$SB/repo/.env"
 run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org; rc=$?
 check "J: a test relay set by hand (mailpit, no encryption) is kept" "[[ $rc == 0 && \$(envval PORTAL_MAIL_HOST) == mailpit && \$(envval PORTAL_MAIL_SECURITY) == none && \$(envval PORTAL_MAIL_PORT) == 1025 ]]"
+
+# ------------------------------------------------------------------------------ M. the portal on its own name
+echo "--- M. the portal on a host name of its own (PORTAL_ORIGIN, ADR 0057)"
+new_sandbox
+run_installer "${BASE[@]}" PORTAL_ORIGIN=https://Portal.Example.org/; rc=$?
+SITE=$SB/nginx/sites-available/gs1resolver
+check "M: exit status 0" "[[ $rc == 0 ]]"
+check "M: PORTAL_ORIGIN written to .env, once" "[[ \$(envval PORTAL_ORIGIN) == https://Portal.Example.org/ && \$(grep -c '^PORTAL_ORIGIN=' $SB/repo/.env) == 1 ]]"
+check "M: the proxy and the portal receive it" "[[ \$(compose_cfg | grep -c 'PORTAL_ORIGIN: https://Portal.Example.org/') -ge 2 ]]"
+check "M: the host's site serves both names (lower case), every server block" "[[ \$(grep -c 'server_name id.example.org portal.example.org;' $SITE) -ge 1 && \$(grep -c 'server_name' $SITE) == \$(grep -c 'server_name id.example.org portal.example.org;' $SITE) ]]"
+check "M: one certificate for both names (--expand)" "grep -q 'certbot --nginx -d id.example.org -d portal.example.org --expand --non-interactive --agree-tos -m ops@example.org --redirect' $SB/state/calls"
+check "M: the services' health asked on the portal's name" "grep -q 'curl -fsS --max-time 5 -H Host: portal.example.org http://127.0.0.1:8080/portal/healthz' $SB/state/curl-calls && ! grep -q 'max-time 5 http://127.0.0.1:8080/portal/healthz' $SB/state/curl-calls"
+check "M: the final check reaches the portal on its name" "grep -q 'https://portal.example.org/portal/ answers' $SB/state/out"
+check "M: the summaries give the portal's and the tenant API's addresses on its name" "grep -q 'Portal           https://portal.example.org/portal/ (a host name of its own)' $SB/state/out && grep -q 'Portal           https://portal.example.org/portal/\$' $SB/state/out && grep -q 'Tenant API       https://portal.example.org/portal/api/v1' $SB/state/out && grep -q 'Home page        https://id.example.org/' $SB/state/out"
+: > "$SB/state/calls"
+run_installer FQDN=id.example.org CERTBOT_EMAIL=ops@example.org; rc=$?
+check "M: a second run keeps it, once, and the site with its certificate" "[[ $rc == 0 && \$(envval PORTAL_ORIGIN) == https://Portal.Example.org/ && \$(grep -c '^PORTAL_ORIGIN=' $SB/repo/.env) == 1 ]] && grep -q 'already serves id.example.org portal.example.org with a certificate: kept' $SB/state/out && ! grep -q '^certbot' $SB/state/calls"
+new_sandbox
+run_installer "${BASE[@]}" PORTAL_ORIGIN=https://ID.example.org; rc=$?
+check "M: PORTAL_ORIGIN naming the resolver's own address: one name, as before" "[[ $rc == 0 ]] && grep -q 'server_name id.example.org;' $SB/nginx/sites-available/gs1resolver && grep -q 'certbot --nginx -d id.example.org --non-interactive' $SB/state/calls && grep -q 'https://id.example.org/portal/ answers' $SB/state/out"
+for bad in http://portal.example.org https://portal.example.org/portal "https://portal.example.org:8443" "portal.example.org" "https://bad_name.example"; do
+  new_sandbox
+  run_installer "${BASE[@]}" PORTAL_ORIGIN="$bad"; rc=$?
+  check "M: PORTAL_ORIGIN '$bad' refused with the reason, nothing written" "[[ $rc != 0 ]] && grep -q \"PORTAL_ORIGIN: invalid value '$bad'\" $SB/state/out && [[ ! -e $SB/repo/.env ]]"
+done
+new_sandbox
+run_installer FQDN=id.example.org TLS_MODE=external PROXY_BIND_ADDRESS=127.0.0.1 RESOLVER_ORG_NAME=Org PORTAL_ORIGIN=https://portal.example.org; rc=$?
+check "M: TLS elsewhere: both names to forward, the portal checked through the port with its name" "[[ $rc == 0 ]] && grep -q 'forward https://id.example.org and https://portal.example.org to this server' $SB/state/out && grep -q 'curl -fsS --max-time 10 -H Host: portal.example.org http://127.0.0.1:8080/portal/healthz' $SB/state/curl-calls"
 
 # ------------------------------------------------------------------------------ L. the host's nginx versions
 echo "--- L. which nginx packages carry the security fixes of November 2026 (ADR 0042)"

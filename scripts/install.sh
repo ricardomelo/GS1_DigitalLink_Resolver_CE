@@ -36,7 +36,9 @@
 #   WEB_SERVICE_REPLICAS, DATA_ENTRY_SERVICE_REPLICAS, PORTAL_SERVICE_REPLICAS, PORTAL_WORKER_REPLICAS
 #   (containers of each service, 1–20; not asked: default 1, or the value in the existing .env),
 #   PORTAL_MAIL_HOST (the portal's e-mail relay; empty or "off": no e-mail), PORTAL_MAIL_SECURITY
-#   (starttls | tls), PORTAL_MAIL_PORT, PORTAL_MAIL_USERNAME, PORTAL_MAIL_PASSWORD, PORTAL_MAIL_FROM
+#   (starttls | tls), PORTAL_MAIL_PORT, PORTAL_MAIL_USERNAME, PORTAL_MAIL_PASSWORD, PORTAL_MAIL_FROM,
+#   PORTAL_ORIGIN (https://<name>: the portal on a host name of its own, added to the site and the certificate;
+#   not asked: empty, or the value in the existing .env; Documentation/adr/0057-portal-own-host-name.md)
 # =================================================================================================
 set -Eeuo pipefail
 umask 077
@@ -241,7 +243,7 @@ MANAGED_KEYS=" MONGO_INITDB_ROOT_USERNAME MONGO_INITDB_ROOT_PASSWORD MONGO_URI S
   PORTAL_ADMIN_PASSWORD PORTAL_DB_PASSWORD RESOLVER_DB_PASSWORD DATA_ENTRY_DB_PASSWORD PORTAL_SECRET_KEY PORTAL_JOURNAL_KEY PORTAL_DATA_KEY PROXY_BIND_ADDRESS DATABASE_BIND_ADDRESS TLS_MODE
   CERTBOT_EMAIL TLS_CERT_FILE TLS_KEY_FILE WEB_SERVICE_REPLICAS DATA_ENTRY_SERVICE_REPLICAS
   PORTAL_SERVICE_REPLICAS PORTAL_WORKER_REPLICAS PORTAL_MAIL_HOST PORTAL_MAIL_PORT PORTAL_MAIL_SECURITY
-  PORTAL_MAIL_USERNAME PORTAL_MAIL_PASSWORD PORTAL_MAIL_FROM PORTAL_TIME_ZONE "
+  PORTAL_MAIL_USERNAME PORTAL_MAIL_PASSWORD PORTAL_MAIL_FROM PORTAL_TIME_ZONE PORTAL_ORIGIN "
 
 # Reads KEY=VALUE lines of an existing .env (quotes removed) into EXISTING.
 load_existing_env() {
@@ -292,6 +294,10 @@ write_env() {
     env_line RESOLVER_CONTACT_POSTCODE "$RESOLVER_CONTACT_POSTCODE"
     env_line RESOLVER_CONTACT_COUNTRY "$RESOLVER_CONTACT_COUNTRY"
     env_line RESOLVER_CONTACT_TELEPHONE "$RESOLVER_CONTACT_TELEPHONE"
+    if [[ -n ${PORTAL_ORIGIN-} ]]; then
+      printf '# The portal on a host name of its own (Documentation/adr/0057-portal-own-host-name.md)\n'
+      env_line PORTAL_ORIGIN "$PORTAL_ORIGIN"
+    fi
     printf '\n# Portal: first user, created only while the portal has no users.\n'
     printf '# The installer clears the password once the user exists.\n'
     env_line PORTAL_ADMIN_USERNAME "$PORTAL_ADMIN_USERNAME"
@@ -413,7 +419,9 @@ render_template() {
   local template=$1 target=$2 drop_ipv6=()
   # "listen [::]:…" fails where the kernel has IPv6 disabled; keep those lines only when it is available.
   [[ -e /proc/net/if_inet6 ]] || drop_ipv6=(-e '/listen \[::\]/d')
-  sed -e "s|@FQDN@|$FQDN|g" -e "s|@DATE@|$(date -Is)|g" -e "s|@PROXY_PORT@|$PROXY_PORT|g" \
+  # the portal's own name, when it has one (ADR 0057), served by the same site
+  sed -e "s|server_name @FQDN@;|server_name @FQDN@${PORTAL_HOST:+ $PORTAL_HOST};|" \
+      -e "s|@FQDN@|$FQDN|g" -e "s|@DATE@|$(date -Is)|g" -e "s|@PROXY_PORT@|$PROXY_PORT|g" \
       -e "s|@CERT_FILE@|${TLS_CERT_FILE-}|g" -e "s|@KEY_FILE@|${TLS_KEY_FILE-}|g" "${drop_ipv6[@]}" \
       "$TEMPLATE_DIR/$template" > "$target"
   chmod 644 "$target"
@@ -457,14 +465,37 @@ check_host_nginx() {
   esac
 }
 
+# The names the host's site serves: the resolver's, and the portal's when it has one of its own (ADR 0057)
+site_names() { printf '%s' "$FQDN${PORTAL_HOST:+ $PORTAL_HOST}"; }
+
+# The portal's own host name from PORTAL_ORIGIN (Documentation/adr/0057-portal-own-host-name.md): empty when the setting
+# is empty or names the resolver's own address; the name when it is https://<another name>; anything else stops the
+# installer, since the proxy would keep the portal on every name while the portal refuses writes outside that address.
+portal_host() {
+  local origin=${PORTAL_ORIGIN-} host
+  origin=${origin%/}
+  [[ -n $origin ]] || return 0
+  [[ $origin =~ ^[Hh][Tt][Tt][Pp][Ss]://([^/:]+)$ ]] && host=${BASH_REMATCH[1],,} && valid_fqdn "$host" >/dev/null 2>&1 \
+    || die "PORTAL_ORIGIN: invalid value '$PORTAL_ORIGIN' (https:// and a host name, e.g. https://portal.example.org; empty: the portal on $FQDN)."
+  [[ $host == "${FQDN,,}" ]] || printf '%s' "$host"
+}
+
+# The portal's health through the installation's proxy on this machine, on the portal's own name when it has one
+# (ADR 0057: on any other name the proxy redirects the portal's addresses there)
+portal_health() {
+  local host=()
+  [[ -n ${PORTAL_HOST-} ]] && host=(-H "Host: $PORTAL_HOST")
+  curl -fsS --max-time 5 "${host[@]}" "http://127.0.0.1:$PROXY_PORT/portal/healthz" 2>/dev/null
+}
+
 site_has_certificate() {
   [[ -f $NGINX_AVAILABLE/$SITE_NAME ]] && grep -q "ssl_certificate" "$NGINX_AVAILABLE/$SITE_NAME"
 }
 
 configure_nginx() {
   local site=$NGINX_AVAILABLE/$SITE_NAME template
-  if [[ $TLS_MODE == letsencrypt ]] && site_has_certificate && grep -q "server_name $FQDN;" "$site"; then
-    ok "nginx site $SITE_NAME already serves $FQDN with a certificate: kept as it is."
+  if [[ $TLS_MODE == letsencrypt ]] && site_has_certificate && grep -q "server_name $(site_names);" "$site"; then
+    ok "nginx site $SITE_NAME already serves $(site_names) with a certificate: kept as it is."
     if grep -Eq '^[[:space:]]*(listen[^;#]*[[:space:]]http2|http2[[:space:]]+on)' "$site"; then
       warn "The site serves HTTP/2, where nginx's most serious flaws of November 2026 lie; the installer's sites no longer do."
       warn "To turn it off: sudo sed -i -E 's/(listen[^;]*) http2/\\1/' $site && sudo nginx -t && sudo systemctl reload nginx"
@@ -493,10 +524,14 @@ configure_nginx() {
 }
 
 obtain_certificate() {
-  if site_has_certificate; then ok "Certificate already configured for $FQDN."; return; fi
-  info "Requesting a Let's Encrypt certificate for $FQDN (the domain must point to this server and"
+  if site_has_certificate; then ok "Certificate already configured for $(site_names)."; return; fi
+  info "Requesting a Let's Encrypt certificate for $(site_names) (each name must point to this server and"
   info "port 80 must be reachable from the Internet)…"
-  run certbot --nginx -d "$FQDN" --non-interactive --agree-tos -m "$CERTBOT_EMAIL" \
+  # one certificate for both names when the portal has its own (ADR 0057); --expand: a certificate of the resolver's
+  # name alone, from an earlier run, gains the portal's
+  local portal=()
+  [[ -n ${PORTAL_HOST-} ]] && portal=(-d "$PORTAL_HOST" --expand)
+  run certbot --nginx -d "$FQDN" "${portal[@]}" --non-interactive --agree-tos -m "$CERTBOT_EMAIL" \
       --redirect --keep-until-expiring \
     || die "Certbot could not obtain the certificate. Check DNS and port 80, then run the installer again."
   ok "Certificate installed; renewal is automatic (certbot timer)."
@@ -550,7 +585,7 @@ collect_settings() {
   for var in FQDN TLS_MODE CERTBOT_EMAIL TLS_CERT_FILE TLS_KEY_FILE PROXY_BIND_ADDRESS RESOLVER_ORG_NAME \
              RESOLVER_ORG_URL RESOLVER_CONTACT_STREET RESOLVER_CONTACT_LOCALITY RESOLVER_CONTACT_REGION \
              RESOLVER_CONTACT_POSTCODE RESOLVER_CONTACT_COUNTRY RESOLVER_CONTACT_TELEPHONE PORTAL_ADMIN_USERNAME \
-             PORTAL_MAIL_HOST PORTAL_MAIL_PORT PORTAL_MAIL_SECURITY PORTAL_MAIL_USERNAME PORTAL_MAIL_FROM; do
+             PORTAL_MAIL_HOST PORTAL_MAIL_PORT PORTAL_MAIL_SECURITY PORTAL_MAIL_USERNAME PORTAL_MAIL_FROM PORTAL_ORIGIN; do
     preset "$var"
   done
   # The development default of .env.example is not a real domain.
@@ -570,6 +605,8 @@ collect_settings() {
 
   printf '\n    %sResolver address%s\n' "$C_BOLD" "$C_OFF"
   ask FQDN "Domain name of the resolver (e.g. id.example.org)" "" valid_fqdn
+  # the portal's own host name: not asked (ADR 0057)
+  PORTAL_HOST=$(portal_host) || exit 1
 
   printf '\n    %sHTTPS%s\n' "$C_DIM" "$C_OFF"
   info "letsencrypt  nginx on this server with a free Let's Encrypt certificate (recommended)"
@@ -755,6 +792,7 @@ secrets() {
 summary_before() {
   printf '\n    %sSummary%s\n' "$C_BOLD" "$C_OFF"
   printf '      Resolver         https://%s\n' "$FQDN"
+  [[ -z ${PORTAL_HOST-} ]] || printf '      Portal           https://%s/portal/ (a host name of its own)\n' "$PORTAL_HOST"
   printf '      HTTPS            %s\n' "$TLS_MODE"
   printf '      Port %s        published on %s\n' "$PROXY_PORT" "$PROXY_BIND_ADDRESS"
   printf '      Operator         %s\n' "$RESOLVER_ORG_NAME"
@@ -824,7 +862,7 @@ start_services() {
   run compose up -d --build --remove-orphans
   info "Waiting for the resolver and the portal to answer…"
   local waited=0 answer="" proxy_restarted=0
-  until answer=$(curl -fsS --max-time 5 "http://127.0.0.1:$PROXY_PORT/portal/healthz" 2>/dev/null) \
+  until answer=$(portal_health) \
         && [[ $answer == *'"portal":"ok"'* && $answer == *'"resolver":"ok"'* ]]; do
     (( waited >= HEALTH_TIMEOUT )) && die "The services did not become healthy in ${HEALTH_TIMEOUT}s. See: docker compose logs"
     if (( waited >= PROXY_RESTART_AFTER && ! proxy_restarted )); then
@@ -846,7 +884,7 @@ start_services() {
       break
     fi
     sleep 5; worker_waited=$(( worker_waited + 5 ))
-    answer=$(curl -fsS --max-time 5 "http://127.0.0.1:$PROXY_PORT/portal/healthz" 2>/dev/null || true)
+    answer=$(portal_health || true)
   done
   [[ $answer == *'"worker":"ok"'* ]] && ok "Job worker running"
   if (( ! PORTAL_HAS_USERS )) && [[ -n $PORTAL_ADMIN_PASSWORD ]]; then
@@ -864,7 +902,7 @@ start_services() {
 }
 
 configure_https() {
-  [[ $TLS_MODE == external ]] && { step "HTTPS"; info "Left to the external proxy: forward https://$FQDN to this server's port $PROXY_PORT."; return; }
+  [[ $TLS_MODE == external ]] && { step "HTTPS"; info "Left to the external proxy: forward https://$FQDN${PORTAL_HOST:+ and https://$PORTAL_HOST} to this server's port $PROXY_PORT, with the name each request was made on."; return; }
   step "HTTPS"
   local others
   others=$(ss -H -ltnp '( sport = :80 or sport = :443 )' 2>/dev/null | grep -v '"nginx"' || true)
@@ -970,18 +1008,23 @@ final_checks() {
     307|300|200|404) ok "$base$CHECK_CODE → $code (a scan reaches the resolver and its database)" ;;
     *) warn "$base$CHECK_CODE → ${code:-no answer}: a scan does not reach the resolver (see: docker compose logs web-service)" ;;
   esac
-  if curl -fsS --max-time 10 "$base/portal/healthz" 2>/dev/null | grep -q '"resolver":"ok"'; then
-    ok "$base/portal/ answers and reaches the data entry API"
+  # on the portal's own name when it has one (ADR 0057); behind an external proxy, through the port with that name
+  local portal=$base host=()
+  if [[ -n ${PORTAL_HOST-} ]]; then
+    if [[ $TLS_MODE == external ]]; then host=(-H "Host: $PORTAL_HOST"); else portal="https://$PORTAL_HOST"; fi
+  fi
+  if curl -fsS --max-time 10 "${host[@]}" "$portal/portal/healthz" 2>/dev/null | grep -q '"resolver":"ok"'; then
+    ok "$portal/portal/ answers and reaches the data entry API"
   else
-    warn "$base/portal/healthz did not answer as expected"
+    warn "$portal/portal/healthz did not answer as expected"
   fi
 }
 
 summary_after() {
   step "Done"
   printf '      Home page        https://%s/\n' "$FQDN"
-  printf '      Portal           https://%s/portal/\n' "$FQDN"
-  printf '      Tenant API       https://%s/portal/api/v1  (API keys: created in the portal)\n' "$FQDN"
+  printf '      Portal           https://%s/portal/\n' "${PORTAL_HOST:-$FQDN}"
+  printf '      Tenant API       https://%s/portal/api/v1  (API keys: created in the portal)\n' "${PORTAL_HOST:-$FQDN}"
   if grep -q '^DATA_ENTRY_API_ALLOW=..*' "$ENV_FILE" 2>/dev/null; then
     printf '      Data entry API   https://%s/api/docs  (token: SESSION_TOKEN; open to DATA_ENTRY_API_ALLOW in %s)\n' "$FQDN" "$ENV_FILE"
   else

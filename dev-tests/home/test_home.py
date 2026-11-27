@@ -11,6 +11,8 @@ replaced by frontend_proxy_server/home) and checks:
     addresses and networks of DATA_ENTRY_API_ALLOW, the client read from X-Forwarded-For only when the peer is a
     trusted proxy (PROXY_TRUSTED_PROXIES, or the container's gateway behind a loopback PROXY_BIND_ADDRESS); entries
     that are not addresses are left out without stopping nginx (frontend_proxy_server/api-access.sh writes the file);
+  * the portal on a host name of its own (ADR 0057): with PORTAL_ORIGIN naming another host, the portal only there
+    and nothing else there; its addresses on the other names redirected, but for the tenant API and the public files;
   * HTTPS only (ADR 0038): Strict-Transport-Security on every answer to a request made over HTTPS (the 429s too),
     none over plain HTTP;
   * replicas (item 2.3, step 4): nginx starts while a service is missing and finds it later, shares
@@ -50,6 +52,7 @@ API_ACCESS_SCRIPT = PACKAGE / "frontend_proxy_server" / "api-access.sh"
 API_ACCESS_PATH = "/etc/nginx/api-access.conf"   # where the proxy image keeps the files the script writes
 REAL_IP_PATH = "/etc/nginx/real-ip.conf"
 ACCESS_LOG_PATH = "/etc/nginx/access-log.conf"   # the access log's choice, written by api-access.sh (ADR 0043)
+PORTAL_HOST_PATH = "/etc/nginx/portal-host.conf"  # where the portal answers, written by api-access.sh (ADR 0057)
 # the request limits' files api-access.sh writes there too (ADR 0031)
 LIMIT_FILES = ("limits-http", "limit-exempt", "limit-server", "limit-resolve", "limit-portal", "limit-signin")
 HOME_DIR = PACKAGE / "frontend_proxy_server" / "home"
@@ -224,6 +227,7 @@ def start_nginx(workdir: Path, dns: StubDNS, ports: dict[str, int]) -> tuple[sub
     conf = conf.replace(API_ACCESS_PATH, str(workdir / "api-access.conf"))
     conf = conf.replace(REAL_IP_PATH, str(workdir / "real-ip.conf"))
     conf = conf.replace(ACCESS_LOG_PATH, str(workdir / "access-log.conf"))
+    conf = conf.replace(PORTAL_HOST_PATH, str(workdir / "portal-host.conf"))
     for name in LIMIT_FILES:
         conf = conf.replace(f"/etc/nginx/{name}.conf", str(workdir / f"{name}.conf"))
     write_api_access(workdir, {})                      # as the container starts without the settings: closed
@@ -263,7 +267,8 @@ def write_api_access(workdir: Path, settings: dict[str, str]) -> str:
         settings = {**settings, "PROXY_LIMIT_EXEMPT": "127.0.0.0/8"}
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "API_ACCESS_FILE": str(workdir / "api-access.conf"),
            "REAL_IP_FILE": str(workdir / "real-ip.conf"), "API_ACCESS_ROUTES": str(workdir / "route"),
-           "LIMITS_DIR": str(workdir), "ACCESS_LOG_FILE": str(workdir / "access-log.conf"), **settings}
+           "LIMITS_DIR": str(workdir), "ACCESS_LOG_FILE": str(workdir / "access-log.conf"),
+           "PORTAL_HOST_FILE": str(workdir / "portal-host.conf"), **settings}
     run = subprocess.run(["sh", str(API_ACCESS_SCRIPT)], env=env, capture_output=True, text=True)
     check(run.returncode == 0, f"api-access.sh runs with {settings or 'no settings'}" + (f" ({run.stderr.strip()})" if run.returncode else ""))
     return run.stderr
@@ -714,6 +719,105 @@ def access_log_checks(base: str, workdir: Path) -> None:
     reload_nginx(workdir)
 
 
+PORTAL_NAME, RESOLVER_NAME = "portal.example.org", "id.example.org"
+
+
+def answered_by(base: str, path: str, host: str, method: str = "GET",
+                headers: dict[str, str] | None = None) -> tuple[int, str | None, list[str], dict]:
+    """(status, Location, the upstreams that received the request, the headers) of a request made on a host name."""
+    before = len(hits)
+    status, answer, _ = fetch(base + path, headers={"Host": host, **(headers or {})}, method=method,
+                              data=b"{}" if method == "POST" else None)
+    return status, answer.get("Location"), [h[0] for h in hits[before:]], answer
+
+
+def portal_host_checks(base: str, workdir: Path) -> None:
+    """The portal on a host name of its own (ADR 0057, residual of finding F-021): with PORTAL_ORIGIN naming a host
+    other than the resolver's, the portal answers on that name only and nothing else does there; on every other name
+    the tenant API and the public files the home page reads stay and the portal's other paths are redirected to its
+    name. The same host, a value that is not an address, or no resolver's name: one origin, as before."""
+    printed = write_api_access(workdir, {})
+    check("portal: on every name" in printed and "$host_redirect { default" in (workdir / "portal-host.conf").read_text(),
+          "portal's name: without PORTAL_ORIGIN, one origin (the portal on every name)")
+    status, location, seen, _ = answered_by(base, "/portal/", RESOLVER_NAME)
+    check(status == 200 and seen == ["portal"], f"…the portal answers on the resolver's name ({status}, {seen})")
+
+    printed = write_api_access(workdir, {"PORTAL_ORIGIN": " https://Portal.Example.org/ ", "FQDN": RESOLVER_NAME})
+    reload_nginx(workdir)
+    check(f"portal: on {PORTAL_NAME} only (https://{PORTAL_NAME})" in printed,
+          f"portal's name: PORTAL_ORIGIN another host → the script says so ({printed.strip().splitlines()[-1]!r})")
+    # on the portal's name: the portal, nothing else
+    for path, method in (("/portal/", "GET"), ("/portal/login?next=1", "GET"), ("/portal/api/me", "GET"),
+                         ("/portal/api/login", "POST"), ("/portal/api/v1/records", "GET"), ("/portal/appearance.css", "GET")):
+        status, location, seen, _ = answered_by(base, path, PORTAL_NAME, method)
+        check(status == 200 and seen == ["portal"], f"on the portal's name: {method} {path} → the portal ({status}, {seen})")
+    status, location, seen, _ = answered_by(base, "/portal/", "Portal.Example.org:443")
+    check(status == 200 and seen == ["portal"], f"…the name in capitals and with a port is the portal's ({status}, {seen})")
+    status, location, seen, _ = answered_by(base, "/portal", PORTAL_NAME)
+    check(status == 301 and location == "/portal/" and not seen, f"…/portal → 301 /portal/ ({status}, {location})")
+    for path in ("/", "/01/09506000134352?linkType=all", "/01/09506000134352/10/A%2FB", "/.well-known/gs1resolver",
+                 "/api/docs", "/swaggerui/", "/home/home.css", "/portalx", "/heartbeat"):
+        status, location, seen, _ = answered_by(base, path, PORTAL_NAME)
+        check(status == 302 and location == f"https://{RESOLVER_NAME}{path}" and not seen,
+              f"on the portal's name: GET {path} → 302 to the resolver's name, same path, nothing reached "
+              f"({status}, {location}, {seen})")
+    status, location, seen, _ = answered_by(base, "/api/new", PORTAL_NAME, "POST")
+    check(status == 302 and location == f"https://{RESOLVER_NAME}/api/new" and not seen,
+          f"…POST /api/new too: the data entry API is not on the portal's name ({status}, {seen})")
+    # on the resolver's name (and any other): the portal's addresses go to its name
+    for host in (RESOLVER_NAME, "evil.example"):
+        for path in ("/portal/", "/portal", "/portal/login?next=%2Fportal%2F", "/portal/api/me", "/portal/app.js",
+                     "/portal/privacy", "/portal/about", "/portal/sso/callback?code=x&state=y", "/portal/api/about",
+                     "/portal/api/appearance/x", "/portal/locales/en-GB.json"):
+            status, location, seen, _ = answered_by(base, path, host)
+            check(status == 302 and location == f"https://{PORTAL_NAME}{path}" and not seen,
+                  f"on {host}: GET {path} → 302 to the portal's name, same path and query ({status}, {location}, {seen})")
+    status, location, seen, _ = answered_by(base, "/portal/api/login", RESOLVER_NAME, "POST")
+    check(status == 302 and location == f"https://{PORTAL_NAME}/portal/api/login" and not seen,
+          f"…POST /portal/api/login (the sign-in's own location) too, the portal never reached ({status}, {seen})")
+    status, location, seen, _ = answered_by(base, "/%70ortal/api/me", RESOLVER_NAME)
+    check(status == 302 and location == f"https://{PORTAL_NAME}/%70ortal/api/me" and not seen,
+          f"…a path written another way (/%70ortal/) is matched as nginx routes it ({status}, {location}, {seen})")
+    for path, method in (("/portal/api/v1", "GET"), ("/portal/api/v1/records?page=2", "GET"),
+                         ("/portal/api/v1/records", "POST"), ("/portal/api/appearance", "GET"),
+                         ("/portal/appearance.css", "GET"), ("/portal/appearance/logo?v=1", "GET"),
+                         ("/portal/appearance/icon", "GET"), ("/portal/logo.svg", "GET"), ("/portal/favicon.png", "GET")):
+        status, location, seen, _ = answered_by(base, path, RESOLVER_NAME, method)
+        check(status == 200 and seen == ["portal"],
+              f"on the resolver's name: {method} {path} stays (tenant API, public files) ({status}, {seen})")
+    for path, upstream in (("/01/09506000134352", "resolver"), ("/.well-known/gs1resolver", "resolver")):
+        status, location, seen, _ = answered_by(base, path, RESOLVER_NAME)
+        check(status == 200 and seen == [upstream], f"on the resolver's name: GET {path} → {upstream}, as before ({seen})")
+    status, _, _, answer = answered_by(base, "/", RESOLVER_NAME)
+    check(status == 200 and "Content-Security-Policy" in answer, "on the resolver's name: GET / → the home page")
+    for host, path in ((PORTAL_NAME, "/"), (RESOLVER_NAME, "/portal/")):
+        _, _, _, answer = answered_by(base, path, host, headers={"X-Forwarded-Proto": "https"})
+        check(answer.get("Strict-Transport-Security") == HSTS, f"the redirect of {path} on {host} carries HSTS over HTTPS")
+
+    # RESOLVER_PUBLIC_URL names the resolver before FQDN
+    write_api_access(workdir, {"PORTAL_ORIGIN": "https://portal.example.org", "RESOLVER_PUBLIC_URL": "https://r.example.net/",
+                               "FQDN": RESOLVER_NAME})
+    reload_nginx(workdir)
+    status, location, _, _ = answered_by(base, "/01/1", PORTAL_NAME)
+    check(status == 302 and location == "https://r.example.net/01/1",
+          f"portal's name: RESOLVER_PUBLIC_URL is the resolver's address before FQDN ({location})")
+    # one origin: the same host, a value that is not an address, no resolver's name
+    for settings, said, label in (
+            ({"PORTAL_ORIGIN": "https://ID.example.org", "FQDN": RESOLVER_NAME}, "portal: on every name", "the resolver's own host"),
+            ({"PORTAL_ORIGIN": "https://x.example/; return 302 https://evil", "FQDN": RESOLVER_NAME},
+             "is not an address like https://portal.example.org", "a value that is not an address"),
+            ({"PORTAL_ORIGIN": "javascript:alert(1)", "FQDN": RESOLVER_NAME}, "is not an address", "another scheme"),
+            ({"PORTAL_ORIGIN": "https://portal.example.org"}, "neither RESOLVER_PUBLIC_URL nor FQDN", "no resolver's name")):
+        printed = write_api_access(workdir, settings)
+        reload_nginx(workdir)
+        written = (workdir / "portal-host.conf").read_text()
+        status, location, seen, _ = answered_by(base, "/portal/", RESOLVER_NAME)
+        check(said in printed and "evil" not in written and "javascript" not in written and status == 200
+              and seen == ["portal"], f"portal's name: {label} → one origin, said ({status}, {seen})")
+    write_api_access(workdir, {})                       # back to the start's settings for the checks that follow
+    reload_nginx(workdir)
+
+
 class Cluster:
     """The replicas behind the proxy and the stub DNS that names them."""
 
@@ -1013,6 +1117,7 @@ def main() -> int:
         startup_checks(base, cluster)
         routing_checks(base)
         hsts_checks(base)
+        portal_host_checks(base, workdir)
         api_access_checks(base, workdir)
         client_address_checks(base, workdir)
         limits_checks(base, workdir)

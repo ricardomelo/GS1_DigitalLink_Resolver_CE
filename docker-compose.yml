@@ -217,6 +217,10 @@ services:
       PROXY_LIMIT_EXEMPT: ${PROXY_LIMIT_EXEMPT:-}
       # what the access log keeps (ADR 0043): minimal (the default), full or off
       PROXY_ACCESS_LOG: ${PROXY_ACCESS_LOG:-}
+      # where the portal answers (ADR 0057): on PORTAL_ORIGIN's name only when it is not the resolver's
+      PORTAL_ORIGIN: ${PORTAL_ORIGIN:-}
+      RESOLVER_PUBLIC_URL: ${RESOLVER_PUBLIC_URL:-}
+      FQDN: ${FQDN:-}
     # the host's loopback address unless .env says otherwise (ADR 0030): the installer writes PROXY_BIND_ADDRESS
     ports:
       - "${PROXY_BIND_ADDRESS:-127.0.0.1}:8080:80"

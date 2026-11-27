@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (21 November 2026) |
+| Status | **Accepted** (21 November 2026); §2.5 amended by [ADR 0057](0057-portal-own-host-name.md) (27 November 2026): the portal on a host name of its own when the operator sets one |
 | Backlog item | 10.1, phase 1 of the security assessment ([ADR 0020](0020-security-assessment.md)); threats T-B1, T-B3, T-R5 and T-I6, gap G-16 of the [threat model](../threat-model.md); finding F-021 |
 | Decided by | the owner of the branch's standing instruction (take the recommended option and carry on): a policy for every answer of the portal, the resolver and the data entry API; Strict-Transport-Security from the installation's proxy; the single origin kept. The portal on a host name of its own, a route for violation reports and HSTS for the names under the installation's were not taken |
 
@@ -96,6 +96,9 @@ One year, without `includeSubDomains` (other names under the installation's are 
 
 ### 2.5 One origin, kept
 
+> Amended by [ADR 0057](0057-portal-own-host-name.md): one origin stays the default; an operator who sets
+> `PORTAL_ORIGIN` to a name of its own gets the portal on that name only, and the costs below fall only on them.
+
 The portal stays at `/portal/` on the installation's name. A name of its own (`portal.<name>`) would isolate it from
 the resolver's pages and the Swagger UI, but needs a second name and certificate for every installation, changes the
 address of every bookmark, of the single sign-on callbacks registered with the providers and of the tenant API, and
@@ -144,7 +147,8 @@ gives the organisations' domains (ADR 0009, F-027) a question of their own. What
 ### 3.1 Residuals
 
 1. **One origin**: a script flaw in any page of the installation's name would still reach the portal's API with the
-   user's cookie; the Swagger UI allows inline script (§2.3).
+   user's cookie; the Swagger UI allows inline script (§2.3). Closed for installations that give the portal a name of
+   its own ([ADR 0057](0057-portal-own-host-name.md)); the default stays one origin.
 2. **No reports**: a policy refusal in production is seen only in the browser's console.
 3. **HSTS depends on `X-Forwarded-Proto`** from the host's proxy; one year, fixed, without `includeSubDomains` or
    `preload`.

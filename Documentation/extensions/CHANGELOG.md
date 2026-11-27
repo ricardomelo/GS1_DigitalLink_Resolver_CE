@@ -2,6 +2,17 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Debian's security updates in the Python images (session 72)
+- **Changed: the resolver's, the data entry API's and the portal's images take Debian's security updates when they are
+  built** ([ADR 0033](../adr/0033-supply-chain.md) §2.10; code `a3fa9ae`). The supply-chain scan found a HIGH
+  vulnerability in linux-pam (CVE-2025-6020) in the three images. Debian published its correction after the newest
+  `python:3.12-slim-bookworm` digest, so a new digest could not bring it. Each image now runs `apt-get upgrade` of
+  the packages its base already holds, as the proxy (`apk upgrade`) and the database image (`dist-upgrade`) already
+  did; no new package is installed, and no exception was added to the accepted list.
+- **Operators:** after `git pull`: `docker compose build --pull --no-cache`, then `docker compose up -d`. Nothing for
+  `.env`. A later plain `docker compose up -d --build` reuses the update's cached layer until the base image's digest
+  changes; `--pull --no-cache` takes the day's updates.
+
 ### The portal on a host name of its own (session 71)
 - **Added: the portal can have a host name of its own, apart from the resolver's**
   ([ADR 0057](../adr/0057-portal-own-host-name.md), amending ADR 0038 §2.5; code `6933371`). Until now the portal, the

@@ -1912,3 +1912,14 @@ reads. The installer adds the name to the host's site and to one certificate (`-
 it. One origin stays the default; a second name required of every installation, a name made up by the installer and
 the tenant API moved with the portal were weighed and not taken. `test_home.py` and `test_install.sh` (scenario M)
 gained the checks; 18 mutations, all caught.
+
+## Session 72 — Debian's security updates in the Python images
+
+The supply-chain workflow failed on `beb3d7b` from an outside cause: Trivy found linux-pam (CVE-2025-6020, HIGH) in
+the resolver's, the data entry API's and the portal's images, built on `python:3.12-slim-bookworm`. Checked first:
+no proposal from Dependabot; Debian's correction (`1.5.2-6+deb12u3`) reached its security archive on 26 November,
+two days after the newest digest of the base image, so a new digest could not bring it. One code commit
+(`a3fa9ae`; [ADR 0033](adr/0033-supply-chain.md) §2.10): the final stage of the three Dockerfiles runs
+`apt-get upgrade` of the packages the base image holds, as the proxy and the database image already did; no new
+package, so ADR 0050's rule stands. An accepted exception until the base image is rebuilt was weighed and not taken.
+`test_supply_chain.py` gained 9 checks; 8 mutations, all caught.

@@ -419,7 +419,9 @@ asks first, because your unsaved changes are discarded; copy what you typed if y
 deleting a record you opened before someone else changed it, and to a new record that someone else created while you
 were filling it in. A spreadsheet import, and an organisation's system that does not send the record's version back
 (the tenant API's `ETag` and `If-Match`, [ADR 0058](adr/0058-record-revision.md)), still leave the last save's
-version; the earlier one stays in the record's history (section 8).
+version; the earlier one stays in the record's history (section 8). A save that adds some targets and removes others
+is applied whole or not at all: if it is refused, the record stays as it was, never with the new targets beside the
+old ones ([ADR 0059](adr/0059-save-in-one-write.md)).
 
 ## 6. Other records of the same identifier
 

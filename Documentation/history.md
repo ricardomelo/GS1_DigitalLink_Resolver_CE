@@ -1941,3 +1941,16 @@ only were weighed and not taken. `test_record_revision.py` and `test_record_revi
 items to the backlog for later: 11.1, export and import of an account's and an organisation's data, and 11.2, a user
 deleting their account and the data related to it and to their organisation.
 
+
+## Session 74 — a save that removes links, in one write
+
+The second residual of finding F-009, in one code commit (`4e38aa4`; [ADR 0059](adr/0059-save-in-one-write.md)).
+Checked first in the code: the portal saved a record whose user had removed targets in two calls, a `PUT` that merges
+the targets sent and then a `DELETE` of the targets no longer there, so a failure or a conflict on the second left the
+new targets saved beside the old ones (`upstream.partialUpdate`). Now the data entry API's `PUT` takes an optional
+`removeLinks`: the links it names are removed in the same conditional write as the links sent are merged, one not found
+ignored, a link both sent and named or a record left without links refused with 400; the answer counts them
+(`removedLinks`). The portal sends one `PUT`; an answer without the count (a data entry API without this change) is
+not taken for done. A `PUT` that replaces all the record's links and a transaction across the two calls were weighed
+and not taken. `test_data_entry_api`, `test_mock_parity`, `test_record_revision` and `test_journal` gained or changed
+checks; 9 mutations, all caught.

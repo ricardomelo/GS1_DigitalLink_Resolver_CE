@@ -2,6 +2,18 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### A save that removes links, in one write (session 74)
+- **Changed: a save that adds some targets and removes others is applied whole or not at all**
+  ([ADR 0059](../adr/0059-save-in-one-write.md), the second residual of finding F-009; code `4e38aa4`). Until now the
+  portal saved such a record in two calls to the data entry API, and when the second failed the new targets were saved
+  beside the old ones (*The new targets were saved, but … old target(s) could not be removed*). The editor, the tenant
+  API and the spreadsheet import now send one call; refused, the record stays as it was.
+- **Added to the official data entry API:** `PUT` accepts an optional `removeLinks` list, the links removed in the same
+  write as the links sent are merged (one not found is ignored; `removedLinks` in the answer counts those removed; 400
+  for a link both sent and named, or a record that would keep no link). Requests without it behave as before.
+- **Operators:** `git pull`, then `docker compose up -d --build` (the portal and the data entry API change together).
+  Nothing for `.env`; no stored data changes.
+
 ### A save over someone else's change is refused (session 73)
 - **Added: the editor no longer saves over a change it has not seen** ([ADR 0058](../adr/0058-record-revision.md),
   the first residual of finding F-009; code `b7e282c`). Until now, when two people had the same record open, the one

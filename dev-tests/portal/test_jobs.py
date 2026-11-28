@@ -717,6 +717,45 @@ check("…a record's own check counts each address once", r.status_code == 200 a
       (r.status_code, linkcheck.used_today(None)))
 os.environ.pop("PORTAL_LINKCHECK_DAILY_LIMIT", None)
 
+# one check per organisation, atomically (F-011 residual 2, ADR 0060 §5): two starts at once, one job
+real_active = jobs.active
+
+
+def slow_active(*args, **kwargs):
+    found = real_active(*args, **kwargs)
+    time.sleep(0.3)                                  # widens the gap between the test and the job's creation
+    return found
+
+
+jobs.active = slow_active
+answers = []
+try:
+    starters = [threading.Thread(target=lambda c=c, n=n: answers.append(
+        c.post("/portal/api/links/jobs", json={"urls": [f"{BASE}/ok/race{n}"]}))) for n, c in enumerate((web, other))]
+    for t in starters:
+        t.start()
+    for t in starters:
+        t.join()
+finally:
+    jobs.active = real_active
+codes = sorted((r.status_code, (r.get_json() or {}).get("code")) for r in answers)
+check("two link checks of one organisation started at once: one queued, the other linkcheck.busy",
+      codes == [(202, None), (422, "linkcheck.busy")]
+      and store.col("jobs").count_documents({"type": "linkcheck", "state": "queued"}) == 1, codes)
+w.run_once()
+store.col("settings").insert_one({"_id": "lock:linkcheck-start:-", "owner": "another start", "since": store.now()})
+portal.LINK_START_WAIT, before = 0.3, store.col("jobs").count_documents({"type": "linkcheck"})
+r = web.post("/portal/api/links/jobs", json={"urls": [BASE + "/ok/locked"]})
+check("…a start that waits too long for another start of the organisation: linkcheck.busy, nothing queued",
+      r.status_code == 422 and r.get_json().get("code") == "linkcheck.busy"
+      and store.col("jobs").count_documents({"type": "linkcheck"}) == before, (r.status_code, r.get_json()))
+store.col("settings").delete_one({"_id": "lock:linkcheck-start:-"})
+portal.LINK_START_WAIT = 5
+r = web.post("/portal/api/links/jobs", json={"urls": [BASE + "/ok/after"]})
+w.run_once()
+check("…the lock is given back after each start", r.status_code == 202
+      and store.col("settings").count_documents({"_id": "lock:linkcheck-start:-"}) == 0, (r.status_code, r.get_json()))
+
 # ------------------------------------------------------------------ stopping a job (its user's request)
 clear()
 q = jobs.create("linkcheck", "maria", "queued", 3, scope="list", urls=[])

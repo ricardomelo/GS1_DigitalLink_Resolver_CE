@@ -2475,6 +2475,8 @@ def _save_last_full_check(tenant: str | None, value: dict) -> None:
 
 
 MAX_CHECK_URLS = 5000
+LINK_START_WAIT = 5            # seconds a start waits for another start of the organisation (ADR 0060 §5)
+LINK_START_HOLD = 30           # a start's lock older than this belongs to a process that died
 
 
 @app.post("/portal/api/links/check")
@@ -2559,12 +2561,19 @@ def start_link_job():
         scope = "list"
     if len(urls) > MAX_CHECK_URLS:
         raise ValidationError("linkcheck.tooMany", max=MAX_CHECK_URLS)
-    if jobs.active("linkcheck", tenant=g.tenant):         # one check at a time per organisation (ADR 0029)
-        raise ValidationError("linkcheck.busy")
-    _reserve_link_checks(len(urls))
-    # addresses contain "." and are values, not field names
-    token = jobs.create("linkcheck", g.user, "queued", len(urls), scope=scope, tenant=g.tenant,
-                        urls=[{"url": url, "records": keys} for url, keys in urls.items()])
+    # One check at a time per organisation (ADR 0029): the test and the job's creation under one lock shared by every
+    # replica, so that two starts at once cannot both pass it (ADR 0060 §5); a lock still taken after
+    # LINK_START_WAIT seconds is another start of the organisation under way
+    try:
+        with store.lock(f"linkcheck-start:{g.tenant or '-'}", hold_seconds=LINK_START_HOLD, wait_seconds=LINK_START_WAIT):
+            if jobs.active("linkcheck", tenant=g.tenant):
+                raise ValidationError("linkcheck.busy")
+            _reserve_link_checks(len(urls))
+            # addresses contain "." and are values, not field names
+            token = jobs.create("linkcheck", g.user, "queued", len(urls), scope=scope, tenant=g.tenant,
+                                urls=[{"url": url, "records": keys} for url, keys in urls.items()])
+    except store.LockTimeout:
+        raise ValidationError("linkcheck.busy") from None
     worker.wake()
     return jsonify({"token": token, "total": len(urls)}), 202
 

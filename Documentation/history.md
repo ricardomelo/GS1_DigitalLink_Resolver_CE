@@ -1983,3 +1983,8 @@ Then the second residual of F-012 (`6f2d2d8`; [ADR 0061](adr/0061-read-only-file
 services — resolver, data entry API, `portal-db-init`, portal and worker — now run with a read-only root file system
 and `/tmp` in memory; the proxy and the database stay writable. `test_least_privilege` checks the composition; the
 containers themselves are verified on staging. 3 mutations, all caught.
+
+Then the third residual of F-012 (`3fb41cf`; [ADR 0062](adr/0062-example-secrets-watched.md)): the portal no longer creates
+its first user with the example password of `.env.example` on a real host, and a new monitoring check alerts the server
+administrators while MongoDB's root password (as `portal-db-init` finds it) or the first user's password is still
+the example. `test_portal_config`, `test_monitor` and `test_least_privilege` gained checks; 6 mutations, all caught.

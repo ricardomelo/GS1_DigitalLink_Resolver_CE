@@ -1365,7 +1365,9 @@ organisation's users see its spikes of codes nobody registered).
 daily counts are complete, the installation's active alerts and the state of each check of the monitoring: the
 resolver through the proxy, the resolver's settings (whether it can still read what this portal sets), the daily
 backup, the HTTPS certificate, the request log's space, the GCP length table (the date and age of GS1's list in use)
-and the audit trail's integrity (when its chains were last verified). The server administrator can also choose an
+the audit trail's integrity (when its chains were last verified) and **Example passwords** (an alert while MongoDB's
+root password, or the first administrator's password, is still the public example of `.env.example`: change them as the
+alert's message says). The server administrator can also choose an
 **Organisation** at the top of the page: the figures are then that organisation's, as its administrators see them (or
 the operator's codes); Operation stays the installation's.
 

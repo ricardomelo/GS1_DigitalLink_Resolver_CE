@@ -2,6 +2,19 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Example passwords: the first user never created with one, an alert while one is in use (session 75)
+- **Changed: the portal no longer creates its first user with the example password of `.env.example`**
+  (`PORTAL_ADMIN_PASSWORD=change-me-please`) on an installation reached by others ([ADR 0062](../adr/0062-example-secrets-watched.md),
+  the third residual of finding F-012; code `3fb41cf`); it logs that a password of your own is needed. The installer
+  always wrote one.
+- **Added: a monitoring check, *Example passwords*.** While MongoDB's root password, or the first administrator's
+  password, is still the public example, the server administrators receive an alert by e-mail (reminded weekly) and
+  see it on the Overview; *Resolved* when both are changed (new messages and texts in twelve languages; drafts except
+  pt-BR and en-GB). Until now `portal-db-init` only printed a warning in its log.
+- **Operators:** `git pull`, then `docker compose up -d --build`. Nothing for `.env`. If the alert arrives: on the
+  server, `sudo scripts/rotate-secrets.sh mongo` for MongoDB's root password; for the first administrator, sign in
+  and change the password in *Options*.
+
 ### Read-only file systems for the Python services (session 75)
 - **Changed: the resolver, the data entry API, `portal-db-init`, the portal and its worker run with a read-only root
   file system** ([ADR 0061](../adr/0061-read-only-file-systems.md), the second residual of finding F-012; code

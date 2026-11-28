@@ -1988,3 +1988,8 @@ Then the third residual of F-012 (`3fb41cf`; [ADR 0062](adr/0062-example-secrets
 its first user with the example password of `.env.example` on a real host, and a new monitoring check alerts the server
 administrators while MongoDB's root password (as `portal-db-init` finds it) or the first user's password is still
 the example. `test_portal_config`, `test_monitor` and `test_least_privilege` gained checks; 6 mutations, all caught.
+
+Then the fourth residual of F-013 (`af7558f`; [ADR 0063](adr/0063-host-nginx-limits.md)): the host's nginx, which ends
+TLS in front of the installation's proxy, now limits each client address's connections and requests, and the time a
+slow client may take, for every site it serves, from one file the installer writes into its `conf.d`. A real nginx
+accepts it and answers 429 over the rate. 5 mutations, all caught. The session ended here at about 55 % of its context.

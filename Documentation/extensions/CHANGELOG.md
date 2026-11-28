@@ -2,6 +2,20 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Limits of the host's nginx (session 75)
+- **Added: the host's nginx limits each client address for every site it serves** ([ADR 0063](../adr/0063-host-nginx-limits.md),
+  the fourth residual of finding F-013; code `af7558f`): 200 connections at once and 200 requests a second (bursts of 400),
+  429 beyond them, and the time a slow client may take (10 s for the headers, 15 s between reads of the body, 30 s
+  between writes of the answer). The installation's proxy keeps its finer limits behind it. Only in the modes
+  `letsencrypt` and `certificate` (nothing changes with `TLS_MODE=external`).
+- **New settings `HOST_NGINX_LIMIT_CONNECTIONS` and `HOST_NGINX_LIMIT_RATE`** (200 each by default; 0 turns one off),
+  read by the installer. Addresses exempt at the proxy (`PROXY_LIMIT_EXEMPT`) are not exempt at the host: for an
+  integrator resolving in bulk, raise the rate.
+- **Operators:** `git pull`, then **run the installer again** (`sudo scripts/install.sh`; it keeps your settings and
+  site) so that it writes `/etc/nginx/conf.d/gs1resolver-limits.conf`, tests nginx and reloads it; then
+  `docker compose up -d --build`. Nothing needs to be added to `.env` unless other numbers are wanted
+  (`grep -q '^HOST_NGINX_LIMIT_RATE=' .env || printf 'HOST_NGINX_LIMIT_RATE=400\n' >> .env`, then the installer again).
+
 ### Example passwords: the first user never created with one, an alert while one is in use (session 75)
 - **Changed: the portal no longer creates its first user with the example password of `.env.example`**
   (`PORTAL_ADMIN_PASSWORD=change-me-please`) on an installation reached by others ([ADR 0062](../adr/0062-example-secrets-watched.md),

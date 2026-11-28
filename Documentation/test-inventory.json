@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-27",
+ "generated": "2026-11-28",
  "programs": {
   "about": {
    "area": "Administration: organisations, users, exports, sign-in, API, domains, alerts, e-mail, privacy, About, forwarding, appearance",
@@ -213,7 +213,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_a6c89e33c99…)",
+    "a wrong key is refused (rk_b5468ddc1ff…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -1149,10 +1149,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (280 features)",
+    "features.md: every table has a Checks column (281 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (653 references)",
-    "…and words found in one of its checks",
+    "…each reference names a program of the inventory (659 references)",
     "every test program is in the inventory (87)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
@@ -1165,7 +1164,7 @@
     "…and every decision record (59)",
     "every relative link of the documents leads to a file (76 documents)"
    ],
-   "count": 15,
+   "count": 14,
    "ciOnly": false
   },
   "domains": {
@@ -3973,7 +3972,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:42671/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:33631/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",
@@ -5694,6 +5693,17 @@
     "…the 404 answer is unchanged",
     "several links, none decided: 300 'choice' at the key's level",
     "…the 300 answer carries no private key",
+    "…a choice in no language asked keeps which preference was not served (ADR 0028, section 6)",
+    "a redirect to a link in another language: 'ns' language, as Resolution-Fallback says",
+    "…none when the language asked is served",
+    "…none when a later choice of the request is served (residual 4 of F-010, by design)",
+    "…none without Accept-Language",
+    "…none when the links declare no market (they serve every one)",
+    "an app asking a leaflet in another language and for another market: 307, 'ns' language and context",
+    "…none when both are served",
+    "a browser asking that leaflet for another market: the choice page, 'ns' context",
+    "…a linkset asked: no 'ns' (nothing was chosen for the request)",
+    "…a 404: no 'ns'",
     "a linkset: 200 'linkset', link type 'linkset'",
     "linkType=all is a linkset too",
     "a request the syntax check refuses: 400 'invalid', key kept, no path",
@@ -5799,7 +5809,7 @@
     "a failing database: the answer is the same, the events lost and counted",
     "events are written in batches of at most 500"
    ],
-   "count": 135,
+   "count": 146,
    "ciOnly": false
   },
   "requestlog": {
@@ -5815,11 +5825,14 @@
     "a server administrator limited to a prefix sees the operator's events of that prefix only",
     "support access: a server administrator sees the organisation's events only",
     "an event's row: anchor, outcome, device, language, link type, time",
+    "an event's row: the preferences not served (Resolution-Fallback, ADR 0028 section 6)",
     "a prefix given to an organisation: its events leave the operator's view",
     "…and appear in the organisation's",
     "…and come back when the organisation is removed",
     "outcome=notFound: unknown codes and missing link types",
     "outcome=unknown",
+    "outcome=notServed: answers that did not serve the language or market asked",
+    "…within the account's scope (none of the operator's)",
     "device=desktop",
     "device=automated shows them without automated=1",
     "code: a GTIN-13 (the company part)",
@@ -5838,6 +5851,7 @@
     "CSV: UTF-8 with BOM, ';', a header",
     "CSV: a code's value cannot become a formula in Excel",
     "CSV: a server administrator's export names the organisation",
+    "CSV: a column notServed after level, 'language' for a leaflet in another language",
     "CSV: the export is a journal event",
     "CSV of an organisation: its events only, no organisation column",
     "the first run counts from the oldest event's day to today",
@@ -5991,7 +6005,7 @@
     "audit.action.requestlog-folded in both languages",
     "requests.countedOnly in both languages"
    ],
-   "count": 185,
+   "count": 189,
    "ciOnly": false
   },
   "requests_e2e": {
@@ -6026,6 +6040,8 @@
     "filter: a country, typed in either case",
     "…the map follows the filters",
     "filter: not found (404)",
+    "filter: language or market not served (ADR 0028, section 6)",
+    "…marked beside the outcome",
     "filter: a GTIN-13",
     "automated requests counted, not listed (ADR 0006, section 11): no box to include them, no such device, a line saying so",
     "CSV export with the filters, the organisation column",
@@ -6052,7 +6068,7 @@
     "the log switched off: a notice",
     "no script errors"
    ],
-   "count": 54,
+   "count": 56,
    "ciOnly": false
   },
   "resolver": {
@@ -6334,7 +6350,7 @@
     "a missing library is reported once and answers None (the caller then starts Node.js)",
     "a repeated check is answered from the cache",
     "eight threads checking at once get every answer right",
-    "an uncached check takes well under a millisecond (0.003 ms; Node.js: tens of ms)",
+    "an uncached check takes well under a millisecond (0.002 ms; Node.js: tens of ms)",
     "one-segment path that cannot be a compressed GS1 Digital Link (wp-login.php): 400, no Node.js process",
     "one-segment path that cannot be a compressed GS1 Digital Link (a%20b): 400, no Node.js process",
     "one-segment path that cannot be a compressed GS1 Digital Link (config.bak): 400, no Node.js process",

@@ -77,7 +77,7 @@ event(OPER, 60, br="firefox", c="PT", rg="Lisbon", ci="Lisbon", ll=[38.7, -9.1])
 event(OPER, 61, br="firefox", c="DE", rg="Berlin", ci="Berlin", ll=[52.5, 13.4])
 event(ACME, 3, o="unknown", s=404, lang="en", q={"10": "L7", "21": None})
 event(ACME, 4, f="epc", epc="SGTIN+", lvl="/10/L7", to="batch.acme.example", da=["17"], q={"10": "L7", "21": None})
-event(OPER, 5, dev="desktop", lt="pip", lvl="", to="www.example.org")
+event(OPER, 5, dev="desktop", lt="pip", lvl="", to="www.example.org", ns=["language", "context"])   # ADR 0028
 event(None, 6, o="invalid", s=400, p="/wp-login.php", dev="automated")
 event(OPER, 7, dev="automated")
 for i in range(1, 12):
@@ -208,6 +208,13 @@ with sync_playwright() as p:
     page.wait_for_timeout(800)
     listed = rows(page)
     check("filter: not found (404)", listed and all("Código não cadastrado" in r or "Sem link" in r for r in listed), listed[:3])
+    page.select_option("#requests-outcome", "notServed"); page.click("#requests-filters button[type=submit]")
+    page.wait_for_timeout(800)
+    listed = rows(page)
+    check("filter: language or market not served (ADR 0028, section 6)", len(listed) == 1 and "/01/" + OPER in listed[0]
+          and "não atende: idioma, mercado" in listed[0], listed[:3])
+    check("…marked beside the outcome", page.inner_text("#requests-body tr:first-child .requests-unserved").strip()
+          == "não atende: idioma, mercado", page.inner_text("#requests-body"))
     page.select_option("#requests-outcome", ""); page.fill("#requests-code", ACME[1:])
     page.click("#requests-filters button[type=submit]"); page.wait_for_timeout(800)
     listed = rows(page)

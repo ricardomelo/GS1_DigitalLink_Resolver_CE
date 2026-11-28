@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (the log on the server: capture in the resolver, daily aggregates and reading in the portal, the tenant API's calls), 3 (the *Requests* screen). **Amended** on 17 October 2026 (section 8, item 9.5), on 20 October 2026 (section 9, finding F1 of the staging tests; section 10), on 21 October 2026 (section 11) and on 23 October 2026 (sections 12 and 13) |
+| Status | **Accepted** (14 October 2026). To be implemented in three steps: 1 (this record), 2 (the log on the server: capture in the resolver, daily aggregates and reading in the portal, the tenant API's calls), 3 (the *Requests* screen). **Amended** on 17 October 2026 (section 8, item 9.5), on 20 October 2026 (section 9, finding F1 of the staging tests; section 10), on 21 October 2026 (section 11), on 23 October 2026 (sections 12 and 13) and on 27 November 2026 (section 3.1: the field `ns`, [ADR 0028](0028-language-fallback.md) §6) |
 | Backlog items | 4.1 — log of resolver requests; 9.5 — browser, approximate location and retention set in the portal; F1 (staging tests of 20 October) — a limit by size |
 | Decided by | the owner of the branch, who asked for the recommended option on every point of section 4 |
 
@@ -97,6 +97,7 @@ Constraints:
 | `lt` | the link type asked, without the vocabulary's address (`pip`); `linkset` for a linkset; absent for the default |
 | `s`, `o` | HTTP status and outcome: `redirect` 307, `choice` 300, `linkset` 200, `unknown` 404 (no record applies), `noLink` 404 (a record applies, no link of that type), `invalid` 400, `error` 5xx, `compressed` 200; `page` 200 and `click` 302 for the item's page reached as a default target and its buttons ([ADR 0011](0011-item-page.md); an automated client's are logged `linkset` and `redirect`); `forwarded` 307 (a prefix rule) and `fallback` 307 (the resolver of last resort) for a request sent to another resolver ([ADR 0018](0018-forwarding.md)); `withheld` 404 (a safety-critical link held only by a less specific level, kept back by the strict mode: [ADR 0022](0022-answering-level.md) §2.4) |
 | `lvl` | the level that answered (`""` for the key, `/10/L1` for a batch; unit values as `*`); redirect and choice only |
+| `ns` | the request's preferences the links given do not serve, as `Resolution-Fallback` says: `["language"]`, `["context"]` or both; redirect and choice only, absent when every preference is served ([ADR 0028](0028-language-fallback.md) §6) |
 | `to` | host of the target (redirect only) |
 | `ms` | milliseconds from the request's arrival in the resolver to its answer |
 | `lang` | the first language range of Accept-Language, lower case (`pt-br`), absent for `*` or none |

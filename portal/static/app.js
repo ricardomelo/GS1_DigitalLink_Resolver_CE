@@ -3268,7 +3268,9 @@ async function verifyAudit(event) {
    last 30 days as bars, the latest requests with filters and pages, a CSV export, and for administrators the calls
    of the tenant API, and how long requests are kept (section 8). Nothing here identifies the people who scan: the
    server never stores it; the browser family and the approximate location (city) are derived when a scan arrives. */
-const REQUEST_OUTCOMES = ["redirect", "notFound", "unknown", "noLink", "withheld", "choice", "linkset", "invalid", "error", "compressed",
+// notFound and notServed are filters, not outcomes: the three kinds of 404; a redirect or choice that did not serve the
+// language or market asked (ADR 0028, section 6)
+const REQUEST_OUTCOMES = ["redirect", "notFound", "unknown", "noLink", "withheld", "choice", "notServed", "linkset", "invalid", "error", "compressed",
                           "page", "click", "forwarded", "fallback"];
 const REQUEST_DEVICES = ["mobile", "tablet", "desktop", "automated", "unknown"];
 const REQUEST_BROWSERS = ["chrome", "safari", "firefox", "edge", "samsung", "opera", "app", "other"];
@@ -3405,7 +3407,14 @@ function requestRow(e) {
   const badge = document.createElement("span");
   badge.className = "badge requests-outcome is-" + e.outcome;
   I18N.set(badge, "requests.outcome." + e.outcome);
-  requestCell(tr, "requests.outcome", badge);
+  const outcomeCell = requestCell(tr, "requests.outcome", badge);
+  if (e.notServed?.length) {
+    // the request's language or market that the link given does not serve (Resolution-Fallback, ADR 0028)
+    const unserved = document.createElement("span");
+    unserved.className = "badge badge-warn requests-unserved";
+    unserved.textContent = t("requests.notServed", { what: e.notServed.map(w => t("requests.notServed." + w)).join(", ") });
+    outcomeCell.append(" ", unserved);
+  }
   const answer = [];
   if (e.linkType) answer.push(t("requests.asked", { type: e.linkType }));
   if (e.level !== null && e.level !== undefined) answer.push(t("requests.level", { level: e.level || t("requests.keyLevel") }));

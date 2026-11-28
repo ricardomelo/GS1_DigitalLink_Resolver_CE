@@ -56,6 +56,7 @@ QUEUE_SIZE = 10_000            # events waiting in one process
 BATCH_SIZE = 500               # events written at once
 FLUSH_SECONDS = 1.0            # the longest an event waits in the queue when the resolver is quiet
 WARN_SECONDS = 60              # at most one warning a minute about lost events
+UNSERVED = ("language", "context")    # what an answer may not serve (Resolution-Fallback, ADR 0028)
 UNIT_QUALIFIERS = {"21", "235"}        # they name a single unit: only the AI is kept
 COMPANY_AFTER_FIRST_DIGIT = {"01", "8006", "00", "8003"}   # indicator, extension or filler digit before the prefix
 # The primary keys of GS1 Digital Link (the AIs with "dlpkey" in GS1's Barcode Syntax Dictionary, as the portal reads
@@ -204,7 +205,7 @@ def attribute_ais(query_string: str) -> list[str]:
 # ----------------------------------------------------------------------------------------------- the routes' side
 def note(**fields: Any) -> None:
     """Called by the resolution routes: marks the request as one to record and keeps what the route knows (form, ai,
-    value, qualifiers, linkType, level, outcome, epc, path). Fields given as None are ignored."""
+    value, qualifiers, linkType, level, outcome, epc, path, unserved). Fields given as None are ignored."""
     current = g.get("resolution")
     if current is None:
         current = g.resolution = {}
@@ -256,6 +257,11 @@ def event(noted: dict[str, Any], response: Response) -> dict[str, Any]:
     doc["o"] = outcome(status, noted)
     if doc["o"] in ("redirect", "choice") and "level" in noted:
         doc["lvl"] = masked_level(noted["level"])
+    if doc["o"] in ("redirect", "choice"):
+        # the request's preferences the links given do not serve, as Resolution-Fallback says (ADR 0028, section 6)
+        unserved = [what for what in UNSERVED if what in (noted.get("unserved") or [])]
+        if unserved:
+            doc["ns"] = unserved
     if status in (301, 302, 303, 307, 308):
         target = host_of(response.headers.get("Location"))
         if target:

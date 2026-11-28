@@ -3333,7 +3333,7 @@ def audit_csv():
 
 # --------------------------------------------------------------------------- request log (ADR 0006)
 REQUEST_CSV_COLUMNS = ["at", "method", "form", "epc", "key", "value", "qualifiers", "attributes", "linkType", "status",
-                       "outcome", "level", "target", "ms", "language", "device", "referrer", "country", "browser",
+                       "outcome", "level", "notServed", "target", "ms", "language", "device", "referrer", "country", "browser",
                        "region", "city", "latitude", "longitude", "path"]
 
 

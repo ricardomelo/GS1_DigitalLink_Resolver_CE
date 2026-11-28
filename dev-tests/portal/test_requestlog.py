@@ -98,7 +98,7 @@ ACME_OUT = "7891234100015"         # Acme, outside 78912345
 OPER = "9506000134352"             # the operator's
 OTHER = "7790001000014"            # the operator's too (no organisation holds 779)
 ids = {
-    "acme_in": event(ACME_IN, lang="pt-br", lt="pip"),
+    "acme_in": event(ACME_IN, lang="pt-br", lt="pip", ns=["language"]),   # a leaflet in another language (ADR 0028)
     "acme_out": event(ACME_OUT, o="unknown", s=404),
     "oper": event(OPER, o="noLink", s=404),
     "other": event(OTHER, dev="desktop"),
@@ -149,6 +149,8 @@ row = rows[str(ids["acme_in"])]
 check("an event's row: anchor, outcome, device, language, link type, time", row["anchor"] == "/01/0" + ACME_IN
       and row["outcome"] == "redirect" and row["device"] == "mobile" and row["language"] == "pt-br"
       and row["linkType"] == "pip" and row["ms"] == 10 and row["at"].endswith("Z"), row)
+check("an event's row: the preferences not served (Resolution-Fallback, ADR 0028 section 6)",
+      row["notServed"] == ["language"] and rows[str(ids["other"])]["notServed"] == [], (row, rows[str(ids["other"])]))
 
 # a prefix moved to another organisation takes its history along
 users.remove("opa")                                  # limited to 9506: a prefix cannot be given while he holds it
@@ -168,6 +170,10 @@ _, got = seen(root, "?outcome=notFound")
 check("outcome=notFound: unknown codes and missing link types", got == ids_of("acme_out", "oper"), got)
 _, got = seen(root, "?outcome=unknown")
 check("outcome=unknown", got == ids_of("acme_out"), got)
+_, got = seen(root, "?outcome=notServed")
+check("outcome=notServed: answers that did not serve the language or market asked", got == ids_of("acme_in"), got)
+_, got = seen(oto, "?outcome=notServed")
+check("…within the account's scope (none of the operator's)", got == set(), got)
 _, got = seen(root, "?device=desktop")
 check("device=desktop", got == ids_of("other"), got)
 _, got = seen(root, "?device=automated")
@@ -222,6 +228,10 @@ probe_row = next((row for row in table if row and "HYPERLINK" in ";".join(row)),
 check("CSV: a code's value cannot become a formula in Excel", any(c.startswith("'=HYPERLINK") for c in probe_row), probe_row)
 check("CSV: a server administrator's export names the organisation", table[0][-1] == "organisation"
       and any(row[-1] == "Acme Foods" for row in table[1:]), table[0])
+acme_line = next((row for row in table if row and row[table[0].index("value")] == "0" + ACME_IN), [])
+check("CSV: a column notServed after level, 'language' for a leaflet in another language",
+      table[0][table[0].index("level") + 1] == "notServed" and acme_line[table[0].index("notServed")] == "language",
+      (table[0], acme_line))
 check("CSV: the export is a journal event", any(e["action"] == "requests-export" and e["user"] == "root"
                                                for e in journal.search(limit=20)), journal.search(limit=3))
 r = ana.get("/portal/api/requests.csv")

@@ -516,6 +516,8 @@ def _process_response(doc_id: str, identifiers: str, qualifier_path: str | None 
     fallback = response_data.pop('_fallback', None) or []
     if fallback and status in (300, 307):
         headers['Resolution-Fallback'] = ', '.join(fallback)
+        # and the request log keeps which (field "ns": residual 3 of finding F-010, ADR 0028 section 6)
+        request_log.note(unserved=list(fallback))
     if match == 'withheld':
         # withheld by the strict mode: an app tells "nothing for this batch" from "nothing at all" (ADR 0022, 2.4)
         headers = {'Resolution-Match': 'withheld'}

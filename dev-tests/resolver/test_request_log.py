@@ -157,7 +157,7 @@ check("never the full referrer", "secret" not in text and "/page" not in text, t
 check("never the values of data attributes", "261231" not in text and "000500" not in text, text)
 check("the browser family", e.get("br") == "app", e)       # an iPhone User-Agent without "Safari/": an app's web view
 check("only the documented fields", set(e) <= {"t", "expiresAt", "m", "f", "epc", "ai", "v", "cp", "q", "da", "lt", "s",
-                                                "o", "lvl", "to", "ms", "lang", "dev", "br", "ref", "c", "rg", "ci",
+                                                "o", "lvl", "ns", "to", "ms", "lang", "dev", "br", "ref", "c", "rg", "ci",
                                                 "ll", "p"}, sorted(e))
 check("no country without RESOLVER_LOG_COUNTRY_HEADER", "c" not in e, e)
 
@@ -188,6 +188,43 @@ r, e = ask(G + "?linkType=gs1:instructions", language="de")
 check("several links, none decided: 300 'choice' at the key's level", r.status_code == 300 and e and e.get("o") == "choice"
       and e.get("lvl") == "" and e.get("lang") == "de", e)
 check("…the 300 answer carries no private key", "_level" not in r.get_data(as_text=True), r.get_data(as_text=True)[:200])
+check("…a choice in no language asked keeps which preference was not served (ADR 0028, section 6)",
+      r.headers.get("Resolution-Fallback") == "language" and e and e.get("ns") == ["language"], (r.headers, e))
+
+# ---------------------------------------------------------------- answers that do not serve the language or market asked
+r, e = ask(G, language="de")
+check("a redirect to a link in another language: 'ns' language, as Resolution-Fallback says",
+      r.status_code == 307 and r.headers.get("Resolution-Fallback") == "language" and e and e.get("o") == "redirect"
+      and e.get("ns") == ["language"], (r.status_code, r.headers.get("Resolution-Fallback"), e))
+r, e = ask(G)
+check("…none when the language asked is served", r.status_code == 307 and "Resolution-Fallback" not in r.headers
+      and e and "ns" not in e, e)
+r, e = ask(G, language="de,pt;q=0.5")
+check("…none when a later choice of the request is served (residual 4 of F-010, by design)",
+      r.status_code == 307 and e and "ns" not in e, e)
+r, e = ask(G, language=None)
+check("…none without Accept-Language", r.status_code == 307 and e and "ns" not in e, e)
+r, e = ask(G + "?context=BR")
+check("…none when the links declare no market (they serve every one)", r.status_code == 307 and e and "ns" not in e, e)
+M = "/01/09506000134352"
+author({"anchor": M, "itemDescription": "Medicine", "defaultLinktype": "gs1:pip", "links": [
+    {"linktype": "gs1:pip", "href": "https://www.example.org/med", "title": "Medicine", "type": "text/html", "hreflang": ["pt"]},
+    {"linktype": "gs1:epil", "href": "https://www.example.org/leaflet-us", "title": "Leaflet", "type": "text/html",
+     "hreflang": ["en"], "context": ["US"]}]})
+r, e = ask(M + "?linkType=gs1:epil&context=BR", language="de")
+check("an app asking a leaflet in another language and for another market: 307, 'ns' language and context",
+      r.status_code == 307 and r.headers.get("Resolution-Fallback") == "language, context" and e
+      and e.get("o") == "redirect" and e.get("ns") == ["language", "context"],
+      (r.status_code, r.headers.get("Resolution-Fallback"), e))
+r, e = ask(M + "?linkType=gs1:epil&context=US", language="en")
+check("…none when both are served", r.status_code == 307 and e and "ns" not in e, e)
+r, e = ask(M + "?linkType=gs1:epil&context=BR", language="en", accept="text/html")
+check("a browser asking that leaflet for another market: the choice page, 'ns' context",
+      r.status_code == 300 and e and e.get("o") == "choice" and e.get("ns") == ["context"], (r.status_code, e))
+r, e = ask(M + "?linkType=gs1:epil&context=BR", language="de", accept="application/linkset+json")
+check("…a linkset asked: no 'ns' (nothing was chosen for the request)", r.status_code == 200 and e and "ns" not in e, e)
+r, e = ask(M + "?linkType=gs1:recallStatus", language="de")
+check("…a 404: no 'ns'", r.status_code == 404 and e and "ns" not in e, e)
 r, e = ask(G, accept="application/linkset+json")
 check("a linkset: 200 'linkset', link type 'linkset'", r.status_code == 200 and e and e.get("o") == "linkset"
       and e.get("lt") == "linkset" and "lvl" not in e and "to" not in e, e)

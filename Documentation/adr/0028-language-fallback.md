@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (17 November 2026) |
+| Status | **Accepted** (17 November 2026); §6 (27 November 2026): the request log records the preference not served |
 | Backlog item | 10.1, phase 1 of the security assessment ([ADR 0020](0020-security-assessment.md)); hazard H-6 and control G-19 of the [threat model](../threat-model.md); follows [ADR 0022](0022-answering-level.md) |
 | Decided by | the owner of the branch's standing instruction (take the recommended option and carry on): keep the standard's choice, state the preference not served in a header, offer a choice to a person for the five safety-critical types, warn in the portal |
 
@@ -96,9 +96,9 @@ preview, beside the warnings of ADR 0022, section 2.5:
 - A browser whose languages are not served now needs one more tap to reach a safety-critical link. A browser that
   sends `Accept-Language: pt-BR,pt;q=0.9,en;q=0.8` accepts English and is not affected by an English leaflet.
 - GS1's conformance test suite is unaffected: it sends `Accept: */*` (an app), and the header is extra.
-- The request log records the outcome as before (`choice` for the page, `redirect` for an app); it has no field for the
-  preference not served. A count of such answers, and a list of an organisation's languages and markets for the
-  portal's warnings, can follow if needed.
+- The request log records the outcome as before (`choice` for the page, `redirect` for an app); since §6 it also
+  records the preference not served. A list of an organisation's languages and markets for the portal's warnings can
+  follow if needed.
 
 ## 5. Delivery
 
@@ -108,3 +108,28 @@ header), `web_pages.fallback_notices()` and four texts in `page_texts.json`; `po
 editor (`app.js`), `openapi.json` and six texts in `i18n.js` and `locales/`. Checks in
 `dev-tests/resolver/test_language_resolver.py` (new), `dev-tests/resolver/test_resolver.py` and
 `dev-tests/portal/test_safety_warnings.py`.
+
+## 6. The preference not served in the request log (27 November 2026)
+
+Residual (3) of finding F-010: the request log had no field for these answers, so an organisation could not see how
+often its leaflets were given in a language or for a market that was not asked for. The owner was away; the
+recommended option was taken.
+
+- **The event.** A 307 or 300 that carries `Resolution-Fallback` stores the same values in the event's `ns` (a list,
+  `language`, `context` or both, in that order); no other answer has the field
+  ([ADR 0006](0006-resolver-request-log.md) §3.1). `web_namespace._process_response()` passes them with
+  `request_log.note(unserved=…)` where it sets the header, so the field and the header cannot disagree;
+  `request_log.event()` keeps it for the outcomes `redirect` and `choice` only. Nothing about the person is added: the
+  first language asked was already in `lang`.
+- **The portal.** The Requests screen's *Outcome* filter has *Language or market not served* (`outcome=notServed`,
+  the events with `ns`), and a row shows *not served: language, market* beside its outcome; the API's row has
+  `notServed` (a list) and the CSV a column `notServed` after `level` (values separated by spaces). Twelve languages.
+- **Not taken.** A count of these answers in the daily aggregates and the Overview (the filter and the CSV answer
+  the question for a period; a count per key can follow if organisations ask for it); the counts of automated
+  requests (ADR 0006 §11) do not keep the field: they are not people scanning.
+- **Residual.** Events recorded before this change have no `ns`: the filter finds none of them.
+
+Checks: `dev-tests/resolver/test_request_log.py` (the field on a redirect and a choice, for an app and a browser,
+language, market and both, and its absence when the preference is served, without `Accept-Language`, for links that
+declare none, for a linkset and a 404), `dev-tests/portal/test_requestlog.py` (the row, the filter within the
+account's scope, the CSV column) and `dev-tests/portal/test_requests_e2e.py` (the filter and the mark on the screen).

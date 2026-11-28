@@ -447,6 +447,9 @@ def event_query(args, scope: dict) -> dict:
     if outcome:
         if outcome == "notFound":
             parts.append({"o": {"$in": ["unknown", "noLink", "withheld"]}})
+        elif outcome == "notServed":
+            # a redirect or choice that did not serve the language or market asked (ADR 0028, section 6)
+            parts.append({"ns": {"$exists": True}})
         elif outcome in OUTCOMES:
             parts.append({"o": outcome})
         else:
@@ -505,6 +508,7 @@ def row(doc: dict, tenant_names: dict | None = None, tenant_list: list[dict] | N
         "anchor": f"/{doc['ai']}/{doc['v']}" if doc.get("ai") and doc.get("v") is not None else None,
         "qualifiers": qualifier_path(doc.get("q")), "attributes": doc.get("da") or [],
         "linkType": doc.get("lt"), "status": doc.get("s"), "outcome": doc.get("o"), "level": doc.get("lvl"),
+        "notServed": doc.get("ns") or [],
         "target": doc.get("to"), "ms": doc.get("ms"), "language": doc.get("lang"), "device": doc.get("dev"),
         "referrer": doc.get("ref"), "country": doc.get("c"), "browser": doc.get("br"), "region": doc.get("rg"),
         "city": doc.get("ci"), "path": doc.get("p"),

@@ -672,6 +672,8 @@ body:not([data-requests-whole="true"]) .requests-org-col { display: none !import
 /* Nine columns within the content at 1280 px with the sidebar, without sideways scrolling (owner's note of 20 October) */
 .requests-table td { overflow-wrap: anywhere; }
 .requests-table .requests-outcome { white-space: normal; }
+/* the language or market not served (ADR 0028, section 6), under the outcome */
+.requests-table .requests-unserved { white-space: normal; margin-top: .25rem; border-radius: .5rem; }
 .requests-table td.code { white-space: normal; word-break: break-all; }
 /* The map of requests (requests-map.js; ADR 0006, section 10): the map, the country's regions and cities beside it */
 .requests-map-box { margin: .5rem 0 1rem; }

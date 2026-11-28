@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (17 November 2026) |
+| Status | **Accepted** (17 November 2026); §3 *Limits* amended by [ADR 0060](0060-link-check-budget.md) (a daily budget of addresses per organisation, 28 November 2026) |
 | Backlog item | 10.1, phase 1 of the security assessment ([ADR 0020](0020-security-assessment.md)); threats T-S1 and T-S2 and control G-17 of the [threat model](../threat-model.md) |
 | Decided by | the owner of the branch's standing instruction (take the recommended option and carry on): connect to the address checked, HTTPS only for the link checker, one link check per organisation and a limit per host |
 

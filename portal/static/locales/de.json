@@ -1265,6 +1265,7 @@
  "linkcheck.invalid": "die Adresse ist ungültig.",
  "linkcheck.tooMany": "Es sind mehr als {max} Adressen auf einmal zu prüfen.",
  "linkcheck.busy": "Eine andere Linkprüfung Ihrer Organisation läuft bereits. Warten Sie, bis sie beendet ist, oder brechen Sie sie ab.",
+ "linkcheck.budget": "Das Tageslimit Ihrer Organisation für Linkprüfungen ist erreicht: {max} Adressen pro Tag, heute noch {left}. Versuchen Sie es morgen erneut oder prüfen Sie weniger Adressen.",
  "linkcheck.expired": "Die Prüfung ist abgelaufen. Beginnen Sie erneut.",
  "records.exportXlsx": "Tabelle exportieren (Excel)",
  "records.rules.alert": "{count} Seriennummer(n) mit ihrer Charge oder Variante erfasst, vor Regel 2 von Abschnitt 2.5.9.",

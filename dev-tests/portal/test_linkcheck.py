@@ -200,5 +200,66 @@ check("rebinding: the request goes to the address checked (unreachable), never t
       r["problem"] == "linkcheck.unreachable" and HITS["count"] == 0 and set(dialled) == {"93.184.216.34"},
       (r, HITS, dialled))
 
+# ------------------------------------------------------------------ the daily budget per organisation (ADR 0060)
+from datetime import date, timedelta as _td  # noqa: E402
+
+import requestlog  # noqa: E402
+import store  # noqa: E402
+from pymongo.errors import PyMongoError  # noqa: E402
+
+os.environ.pop("PORTAL_LINKCHECK_DAILY_LIMIT", None)
+check("the daily limit: 20,000 addresses by default", linkcheck.daily_limit() == 20000, linkcheck.daily_limit())
+os.environ["PORTAL_LINKCHECK_DAILY_LIMIT"] = "many"
+check("…a value that is not a whole number: the default", linkcheck.daily_limit() == 20000, linkcheck.daily_limit())
+os.environ["PORTAL_LINKCHECK_DAILY_LIMIT"] = "10"
+linkcheck.reserve("t-a", 6)
+check("a check within the day's budget is counted", linkcheck.used_today("t-a") == 6, linkcheck.used_today("t-a"))
+
+
+def refused(tenant, count):
+    try:
+        linkcheck.reserve(tenant, count)
+    except linkcheck.OverBudget as exc:
+        return exc.limit, exc.left
+    return None
+
+
+check("…one that does not fit is refused with what is left, and nothing counted",
+      refused("t-a", 5) == (10, 4) and linkcheck.used_today("t-a") == 6, (refused("t-a", 5), linkcheck.used_today("t-a")))
+linkcheck.reserve("t-a", 4)
+check("…exactly what is left fits; then nothing more", linkcheck.used_today("t-a") == 10 and refused("t-a", 1) == (10, 0))
+check("…another organisation and the operator have days of their own",
+      refused("t-b", 10) is None and refused(None, 3) is None and linkcheck.used_today("t-b") == 10
+      and linkcheck.used_today(None) == 3)
+check("…more than a whole day's budget at once: refused without counting",
+      refused("t-c", 11) == (10, 10) and linkcheck.used_today("t-c") == 0)
+doc = store.col("linkcheck_budget").find_one({"_id": f"t-a|{requestlog.today().isoformat()}"})
+check("…one document per organisation and day of the installation, removed two days later (TTL)",
+      doc and doc["tenant"] == "t-a" and doc["day"] == requestlog.today().isoformat()
+      and _td(days=1) < doc["expiresAt"] - store.now() <= _td(days=2), doc)
+real_today = requestlog.today
+requestlog.today = lambda: real_today() + _td(days=1)
+try:
+    check("…the next day starts again", refused("t-a", 10) is None and linkcheck.used_today("t-a") == 10)
+finally:
+    requestlog.today = real_today
+os.environ["PORTAL_LINKCHECK_DAILY_LIMIT"] = "0"
+check("…0: no limit, nothing counted", refused("t-a", 1000) is None and linkcheck.used_today("t-a") == 10)
+os.environ["PORTAL_LINKCHECK_DAILY_LIMIT"] = "10"
+
+
+class Down:
+    def update_one(self, *args, **kwargs):
+        raise PyMongoError("down")
+
+
+real_col = store.col
+store.col = lambda name: Down() if name == "linkcheck_budget" else real_col(name)
+try:
+    check("…the database cannot be written: the check goes ahead", refused("t-d", 5) is None)
+finally:
+    store.col = real_col
+os.environ.pop("PORTAL_LINKCHECK_DAILY_LIMIT", None)
+
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

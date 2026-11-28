@@ -1265,6 +1265,7 @@
  "linkcheck.invalid": "l’adresse n’est pas valide.",
  "linkcheck.tooMany": "Il y a plus de {max} adresses à vérifier en une fois.",
  "linkcheck.busy": "Une autre vérification des liens de votre organisation est déjà en cours. Attendez qu’elle se termine ou arrêtez-la.",
+ "linkcheck.budget": "La limite quotidienne de vérification des liens de votre organisation est atteinte : {max} adresses par jour, il en reste {left} aujourd’hui. Réessayez demain ou vérifiez moins d’adresses.",
  "linkcheck.expired": "La vérification a expiré. Recommencez.",
  "records.exportXlsx": "Exporter la feuille de calcul (Excel)",
  "records.rules.alert": "{count} numéro(s) de série enregistré(s) avec leur lot ou leur variante, antérieurs à la règle 2 de la section 2.5.9.",

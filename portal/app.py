@@ -2483,8 +2483,19 @@ MAX_CHECK_URLS = 5000
 def check_links():
     """Checks the few targets of one record (editor); answers when all are done."""
     urls = [u for u in (request.get_json(silent=True) or {}).get("urls") or [] if isinstance(u, str)][:MAX_LINKS]
+    _reserve_link_checks(len(set(urls)))
     results = linkcheck.check_many(urls)
     return jsonify({"results": [results[u] for u in dict.fromkeys(urls) if u in results]})
+
+
+def _reserve_link_checks(count: int) -> None:
+    """Counts the addresses of a check against the organisation's day (ADR 0060); ValidationError linkcheck.budget
+    {max, left} when they do not fit."""
+    try:
+        linkcheck.reserve(g.tenant, count)
+    except linkcheck.OverBudget as exc:
+        audit.info("user=%s action=linkcheck-refused reason=budget urls=%d left=%d", g.user, count, exc.left)
+        raise ValidationError("linkcheck.budget", max=exc.limit, left=exc.left) from None
 
 
 def run_link_job(job: dict, reporter: "jobs.Reporter") -> None:
@@ -2550,6 +2561,7 @@ def start_link_job():
         raise ValidationError("linkcheck.tooMany", max=MAX_CHECK_URLS)
     if jobs.active("linkcheck", tenant=g.tenant):         # one check at a time per organisation (ADR 0029)
         raise ValidationError("linkcheck.busy")
+    _reserve_link_checks(len(urls))
     # addresses contain "." and are values, not field names
     token = jobs.create("linkcheck", g.user, "queued", len(urls), scope=scope, tenant=g.tenant,
                         urls=[{"url": url, "records": keys} for url, keys in urls.items()])

@@ -123,6 +123,7 @@ def ttl(collection, field):
 check("journal: TTL index on expiresAt (expire at that date)", ttl("journal", "expiresAt") == 0)
 check("login_failures: TTL index on at, 15 minutes", ttl("login_failures", "at") == 900)
 check("linkcheck_cache: TTL index on expiresAt", ttl("linkcheck_cache", "expiresAt") == 0)
+check("linkcheck_budget: TTL index on expiresAt (ADR 0060)", ttl("linkcheck_budget", "expiresAt") == 0)
 names = {tuple(i["key"].keys()) for i in store.col("journal").list_indexes()}
 check("journal: indexes for the record history and the audit filters",
       {("anchor", "qpath", "at"), ("user", "at"), ("at",), ("category",)} <= names, names)

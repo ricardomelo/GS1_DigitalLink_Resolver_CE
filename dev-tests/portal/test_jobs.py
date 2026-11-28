@@ -695,6 +695,28 @@ status = web.get(f"/portal/api/links/jobs/{token}").get_json()
 check("the next worker checks the whole list again (the cache answers what was done) and finishes",
       status["state"] == "finished" and status["done"] == 40 and status["problems"] == [], status)
 
+# the daily budget of addresses per organisation (ADR 0060): a check that does not fit is refused before it is queued
+used = linkcheck.used_today(None)
+os.environ["PORTAL_LINKCHECK_DAILY_LIMIT"] = str(used + 3)
+queued = store.col("jobs").count_documents({"type": "linkcheck"})
+r = web.post("/portal/api/links/jobs", json={"urls": [f"{BASE}/ok/b{n}" for n in range(5)]})
+check("over the day's budget: a link check refused (linkcheck.budget, with the limit and what is left), not queued",
+      r.status_code == 422 and r.get_json().get("code") == "linkcheck.budget"
+      and r.get_json().get("params") == {"max": used + 3, "left": 3}
+      and store.col("jobs").count_documents({"type": "linkcheck"}) == queued, (r.status_code, r.get_json()))
+r = web.post("/portal/api/links/jobs", json={"urls": [f"{BASE}/ok/b{n}" for n in range(3)]})
+w.run_once()
+check("…what is left can still be checked", r.status_code == 202 and linkcheck.used_today(None) == used + 3,
+      (r.status_code, linkcheck.used_today(None)))
+r = web.post("/portal/api/links/check", json={"urls": [BASE + "/ok/b9"]})
+check("…then a record's own check is refused too", r.status_code == 422 and r.get_json().get("code") == "linkcheck.budget"
+      and r.get_json()["params"]["left"] == 0, r.get_json())
+os.environ["PORTAL_LINKCHECK_DAILY_LIMIT"] = str(used + 10)
+r = web.post("/portal/api/links/check", json={"urls": [BASE + "/ok/b9", BASE + "/ok/b9", BASE + "/missing/b9"]})
+check("…a record's own check counts each address once", r.status_code == 200 and linkcheck.used_today(None) == used + 5,
+      (r.status_code, linkcheck.used_today(None)))
+os.environ.pop("PORTAL_LINKCHECK_DAILY_LIMIT", None)
+
 # ------------------------------------------------------------------ stopping a job (its user's request)
 clear()
 q = jobs.create("linkcheck", "maria", "queued", 3, scope="list", urls=[])

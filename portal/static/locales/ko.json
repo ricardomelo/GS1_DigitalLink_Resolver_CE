@@ -1265,6 +1265,7 @@
  "linkcheck.invalid": "유효하지 않은 주소입니다.",
  "linkcheck.tooMany": "한 번에 점검할 주소가 {max}개를 초과합니다.",
  "linkcheck.busy": "조직의 다른 링크 점검이 이미 진행 중입니다. 끝날 때까지 기다리거나 중지하십시오.",
+ "linkcheck.budget": "조직의 일일 링크 확인 한도에 도달했습니다: 하루 {max}개 주소, 오늘 남은 수 {left}개. 내일 다시 시도하거나 확인할 주소를 줄이십시오.",
  "linkcheck.expired": "점검이 만료되었습니다. 다시 시작하십시오.",
  "records.exportXlsx": "스프레드시트 내보내기(Excel)",
  "records.rules.alert": "2.5.9절 규칙 2 이전에 로트 또는 변형과 함께 등록된 일련번호가 {count}개 있습니다.",

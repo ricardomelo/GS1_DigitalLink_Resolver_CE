@@ -1265,6 +1265,7 @@
  "linkcheck.invalid": "adres geçerli değil.",
  "linkcheck.tooMany": "Aynı anda kontrol edilecek {max} adresten fazlası var.",
  "linkcheck.busy": "Kuruluşunuzun başka bir bağlantı kontrolü zaten sürüyor. Bitmesini bekleyin veya durdurun.",
+ "linkcheck.budget": "Kuruluşunuzun günlük bağlantı denetimi sınırına ulaşıldı: günde {max} adres, bugün {left} kaldı. Yarın yeniden deneyin veya daha az adres denetleyin.",
  "linkcheck.expired": "Kontrolün süresi doldu. Yeniden başlatın.",
  "records.exportXlsx": "Elektronik tabloyu dışa aktar (Excel)",
  "records.rules.alert": "2.5.9 bölümünün 2. kuralından önce partisi veya varyantıyla kaydedilmiş {count} seri numarası.",

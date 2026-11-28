@@ -1265,6 +1265,7 @@
  "linkcheck.invalid": "l'indirizzo non è valido.",
  "linkcheck.tooMany": "Ci sono più di {max} indirizzi da verificare contemporaneamente.",
  "linkcheck.busy": "È già in corso un'altra verifica dei link della sua organizzazione. Attenda che finisca o la interrompa.",
+ "linkcheck.budget": "È stato raggiunto il limite giornaliero di verifica dei link della sua organizzazione: {max} indirizzi al giorno, ne restano {left} oggi. Riprovi domani o verifichi meno indirizzi.",
  "linkcheck.expired": "La verifica è scaduta. Ricominci.",
  "records.exportXlsx": "Esporta foglio di calcolo (Excel)",
  "records.rules.alert": "{count} numero/i di serie registrato/i con il relativo lotto o variante, in violazione della regola 2 della sezione 2.5.9.",

@@ -12,7 +12,7 @@ Connection, from the environment:
   PORTAL_DB_USERNAME, _PASSWORD       the portal's own user, created by db_init.py (the portal-db-init service)
   PORTAL_DB_NAME                      the database, also the user's authentication database
 
-Collections: users, tenants (tenants.py), record_meta, login_failures, linkcheck_cache, settings, jobs
+Collections: users, tenants (tenants.py), record_meta, login_failures, linkcheck_cache, linkcheck_budget, settings, jobs
 and workers (jobs.py), sessions (sessions.py: open sessions of the portal, ADR 0034), tokens (tokens.py: invitation
 and recovery links), api_keys and api_rate (apikeys.py: the tenant
 API's keys and request counters), request_daily and api_requests (requestlog.py: daily counts of the resolver's
@@ -69,6 +69,10 @@ INDEXES = {
         ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
     ],
     "linkcheck_cache": [
+        ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
+    ],
+    # the addresses each organisation had checked a day (linkcheck.reserve(), ADR 0060)
+    "linkcheck_budget": [
         ([("expiresAt", ASCENDING)], {"expireAfterSeconds": 0}),
     ],
     "jobs": [

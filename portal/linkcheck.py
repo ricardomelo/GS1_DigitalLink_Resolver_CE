@@ -13,6 +13,11 @@ address checked, not to the name resolved again (outbound.request()), so that th
 server's own network. At most PER_HOST requests to one host run at once. PORTAL_LINKCHECK_ALLOW_PRIVATE=1 lifts the
 address and HTTPS rules for development tests only.
 
+A daily budget per organisation (Documentation/adr/0060-link-check-budget.md): reserve() counts the addresses each
+check asks for against the organisation's day (the installation's time zone) in the "linkcheck_budget" collection, at
+most PORTAL_LINKCHECK_DAILY_LIMIT (default DAILY_LIMIT; 0 for none), atomically, so that an editor cannot make the
+server send an unbounded number of requests to third parties.
+
 Result: {"url", "ok", "problem" (message code or None), "status", "finalUrl", "params"}
   problem codes: linkcheck.httpError {status}, linkcheck.blocked {status}, linkcheck.unreachable,
   linkcheck.insecureRedirect {location}, linkcheck.insecureAddress, linkcheck.tooManyRedirects,
@@ -26,11 +31,16 @@ from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin, urlparse
 
+import logging
+
 import requests
-from pymongo.errors import PyMongoError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 import outbound
+import requestlog
 import store
+
+log = logging.getLogger(__name__)
 
 TIMEOUT = float(os.environ.get("PORTAL_LINKCHECK_TIMEOUT", "8"))
 MAX_REDIRECTS = 5
@@ -39,6 +49,8 @@ WORKERS = 8
 PER_HOST = 2               # requests to one host at once, whatever the number of its addresses in a check
 ALLOW_PRIVATE = os.environ.get("PORTAL_LINKCHECK_ALLOW_PRIVATE") == "1"
 USER_AGENT = "GS1-Resolver-CE-LinkChecker/1.0"
+DAILY_LIMIT = 20000        # addresses an organisation may have checked a day (ADR 0060): four checks of every record
+BUDGET = "linkcheck_budget"
 
 
 
@@ -75,6 +87,65 @@ def check_url(url: str) -> dict:
     except PyMongoError:
         pass
     return result
+
+
+class OverBudget(Exception):
+    """The addresses asked for do not fit in what is left of the organisation's day (ADR 0060)."""
+
+    def __init__(self, limit: int, left: int):
+        super().__init__(f"{left} of {limit} addresses left today")
+        self.limit, self.left = limit, left
+
+
+def daily_limit() -> int:
+    """PORTAL_LINKCHECK_DAILY_LIMIT, the addresses an organisation may have checked a day; 0 for no limit; DAILY_LIMIT
+    when it is not set or not a whole number."""
+    try:
+        value = int(os.environ.get("PORTAL_LINKCHECK_DAILY_LIMIT", "").strip() or DAILY_LIMIT)
+    except ValueError:
+        log.warning("PORTAL_LINKCHECK_DAILY_LIMIT is not a whole number; %d addresses a day apply", DAILY_LIMIT)
+        value = DAILY_LIMIT
+    return max(0, value)
+
+
+def _budget_id(tenant: str | None, day) -> str:
+    return f"{tenant or '-'}|{day.isoformat()}"
+
+
+def used_today(tenant: str | None) -> int:
+    """The addresses the organisation (None: the operator) has had checked today."""
+    doc = store.col(BUDGET).find_one({"_id": _budget_id(tenant, requestlog.today())}) or {}
+    return int(doc.get("n", 0))
+
+
+def reserve(tenant: str | None, count: int) -> None:
+    """Counts count addresses against the organisation's day (None: the operator's), or raises OverBudget and counts
+    nothing. One conditional update: two checks started at once cannot both pass the limit. Addresses are counted
+    when asked for, cached or not, and are not given back when a check is stopped. When the database cannot be read
+    the check goes ahead (logged): it cannot be queued without the database anyway."""
+    limit = daily_limit()
+    if not limit or count <= 0:
+        return
+    day = requestlog.today()
+    key = _budget_id(tenant, day)
+    collection = store.col(BUDGET)
+    try:
+        if count > limit:
+            raise DuplicateKeyError("more than a day's budget")
+        collection.update_one({"_id": key, "n": {"$lte": limit - count}},
+                              {"$inc": {"n": count},
+                               "$setOnInsert": {"tenant": tenant, "day": day.isoformat(),
+                                                "expiresAt": store.now() + timedelta(days=2)}},
+                              upsert=True)
+    except DuplicateKeyError:
+        # the day's document exists and does not leave room for count addresses
+        try:
+            used = int((collection.find_one({"_id": key}) or {}).get("n", 0))
+        except PyMongoError:
+            used = limit
+        raise OverBudget(limit, max(0, limit - used)) from None
+    except PyMongoError as exc:
+        log.warning("Link check budget not counted (%s); the check goes ahead", exc)
 
 
 def clear_cache() -> None:

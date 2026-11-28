@@ -1265,6 +1265,7 @@
  "linkcheck.invalid": "该地址无效。",
  "linkcheck.tooMany": "一次需要检查的地址超过{max}个。",
  "linkcheck.busy": "您的组织已有另一项链接检查正在进行。请等待其完成或将其停止。",
+ "linkcheck.budget": "您的组织今天的链接检查已达到每日上限：每天 {max} 个地址，今天还剩 {left} 个。请明天再试，或减少要检查的地址。",
  "linkcheck.expired": "检查已过期。请重新开始。",
  "records.exportXlsx": "导出电子表格（Excel）",
  "records.rules.alert": "有{count}个序列号与其批次或变体一起注册，这是在第2.5.9节规则2之前的做法。",

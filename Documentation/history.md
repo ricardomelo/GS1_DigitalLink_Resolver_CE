@@ -1973,3 +1973,8 @@ default), counted with one conditional write when a check is asked for, so that 
 both pass; a check that does not fit is refused with what is left. `test_linkcheck`, `test_jobs` and `test_store`
 gained checks; 10 mutations, all caught. The maintainer chose to finish every residual of the assessment before the
 next release, and set the change of session at 65 % of the context.
+
+Then the second residual of F-011 (`6660e13`; ADR 0060 §5): two link checks of one organisation started at the same
+moment could both be queued, as the test for a check under way and the job's creation were two steps. Both now run
+under one lock per organisation shared by every replica; `test_jobs` proves it with the gap between them widened.
+3 mutations, all caught.

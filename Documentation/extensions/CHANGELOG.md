@@ -2,6 +2,14 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### One link check per organisation, also when two start at once (session 75)
+- **Fixed: two link checks of one organisation started at the same moment could both be queued**
+  ([ADR 0060](../adr/0060-link-check-budget.md) §5, the second residual of finding F-011; code `6660e13`). The test for a
+  check under way and the creation of the new one now run under one lock per organisation shared by every portal
+  replica, so the second start sees the first and says *Another link check of your organisation is already under
+  way*. Nothing changes for one start at a time.
+- **Operators:** `git pull`, then `docker compose up -d --build`. Nothing for `.env`; no stored data changes.
+
 ### A daily budget of link checks per organisation (session 75)
 - **Added: each organisation may have a set number of addresses checked a day** ([ADR 0060](../adr/0060-link-check-budget.md),
   the first residual of finding F-011; code `293c0f6`). Until now an editor could start one check after another without

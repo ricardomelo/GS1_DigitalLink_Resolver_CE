@@ -777,7 +777,8 @@ The link checker asks each address whether it answers, without changing anything
 - **Import preview** — the option in the import dialog, with its own **Stop**: the import itself is still
   possible.
 
-One check of many addresses runs at a time for each organisation: while one is in the queue or running, **Check
+One check of many addresses runs at a time for each organisation — also when two people start one at the same
+moment: while one is in the queue or running, **Check
 links** or the import preview's check by anyone of the same organisation says *Another link check of your
 organisation is already under way. Wait for it to finish or stop it.* The checker never sends more than two
 requests to one site at once, so a check of every record may take longer when most targets are on one site.

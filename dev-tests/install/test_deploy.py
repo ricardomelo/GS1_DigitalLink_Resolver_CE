@@ -1504,6 +1504,61 @@ def example_secrets_checks() -> None:
     shutil.rmtree(portal_env["PORTAL_CONFIG_DIR"], ignore_errors=True)
 
 
+def host_limits_checks() -> None:
+    """scripts/templates/nginx-limits.conf (Documentation/adr/0063-host-nginx-limits.md) through a real nginx: accepted in
+    an http block like Debian's and Ubuntu's (which set keepalive_timeout) with the installer's site, and a client over
+    the rate answered 429."""
+    nginx = shutil.which("nginx") or ("/usr/sbin/nginx" if Path("/usr/sbin/nginx").exists() else "")
+    if not nginx:
+        check(False, "host limits: nginx is needed for the real nginx's checks")
+        return
+    template = (REPO / "scripts" / "templates" / "nginx-limits.conf").read_text()
+    work = Path(tempfile.mkdtemp(prefix="host-limits-"))
+    port = free_port()
+
+    def conf(rate: int, burst: int, site: str) -> Path:
+        limits = template.replace("@DATE@", "now").replace("@CONNECTIONS@", "200").replace("@RATE@", str(rate)) \
+            .replace("@BURST@", str(burst))
+        (work / "limits.conf").write_text(limits)
+        (work / "site.conf").write_text(site)
+        main_conf = work / "nginx.conf"
+        main_conf.write_text(f"pid {work}/nginx.pid;\nerror_log {work}/error.log;\nevents {{}}\nhttp {{\n"
+                             f"    access_log off;\n    keepalive_timeout 65;\n    include {work}/limits.conf;\n"
+                             f"    include {work}/site.conf;\n}}\n")
+        return main_conf
+
+    site = (REPO / "scripts" / "templates" / "nginx-site-http.conf").read_text() \
+        .replace("@FQDN@", "id.example.org").replace("@PROXY_PORT@", "9").replace("@DATE@", "now") \
+        .replace("listen 80;", f"listen 127.0.0.1:{port};").replace("listen [::]:80;", "")
+    tested = subprocess.run([nginx, "-t", "-p", str(work), "-c", str(conf(200, 400, site))], capture_output=True, text=True)
+    check(tested.returncode == 0, "host limits: nginx accepts them beside the installer's site, in an http block that "
+          "sets keepalive_timeout as Debian's and Ubuntu's does (ADR 0063)", tested.stderr[-400:])
+    # a file, not "return": return answers before the phase where nginx applies limits (proxy_pass, as on the host,
+    # comes after it)
+    (work / "ok.txt").write_text("ok")
+    os.chmod(work, 0o755)                              # nginx's workers may run as another user (as root: nobody)
+    os.chmod(work / "ok.txt", 0o644)
+    quiet = f"server {{\n    listen 127.0.0.1:{port};\n    root {work};\n}}\n"
+    started = subprocess.run([nginx, "-p", str(work), "-c", str(conf(1, 2, quiet))], capture_output=True, text=True)
+    statuses = []
+    try:
+        if started.returncode == 0:
+            time.sleep(0.3)
+            for _ in range(8):
+                try:
+                    with urllib.request.urlopen(f"http://127.0.0.1:{port}/ok.txt", timeout=5) as answer:
+                        statuses.append(answer.status)
+                except urllib.error.HTTPError as exc:
+                    statuses.append(exc.code)
+    finally:
+        subprocess.run([nginx, "-p", str(work), "-c", str(work / "nginx.conf"), "-s", "stop"], capture_output=True)
+        time.sleep(0.2)
+        shutil.rmtree(work, ignore_errors=True)
+    check(statuses[:3] == [200, 200, 200] and 429 in statuses[3:],
+          "host limits: one address over the rate (here 1 a second, a burst of 2) answered 429 by the host's nginx",
+          (started.stderr[-300:], statuses))
+
+
 def main() -> int:
     if not COMPOSE or not Path(COMPOSE).exists():
         print("FAIL COMPOSE_BIN is not set to a Docker Compose v2 binary")
@@ -1548,6 +1603,7 @@ def main() -> int:
     shutil.rmtree(portal_tree, ignore_errors=True)
     secret_key_checks()
     example_secrets_checks()
+    host_limits_checks()
     failed = [label for ok, label in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} checks passed")
     return 1 if failed else 0

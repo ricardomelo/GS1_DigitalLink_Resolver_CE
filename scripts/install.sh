@@ -57,6 +57,8 @@ REPLICA_KEYS="WEB_SERVICE_REPLICAS DATA_ENTRY_SERVICE_REPLICAS PORTAL_SERVICE_RE
 LOG_FILE="${INSTALL_LOG_FILE:-/var/log/gs1-resolver-install.log}"
 NGINX_AVAILABLE="${INSTALL_NGINX_AVAILABLE:-/etc/nginx/sites-available}"
 NGINX_ENABLED="${INSTALL_NGINX_ENABLED:-/etc/nginx/sites-enabled}"
+# the host nginx's limits for every site, included in its http block by Debian's and Ubuntu's nginx.conf (ADR 0063)
+NGINX_LIMITS="${INSTALL_NGINX_LIMITS:-/etc/nginx/conf.d/gs1resolver-limits.conf}"
 CRON_FILE="${INSTALL_CRON_FILE:-/etc/cron.d/resolver-backup}"
 BACKUP_KEY_FILE="${INSTALL_BACKUP_KEY_FILE:-/etc/resolver-backup.key}"   # unless .env names another (ADR 0044)
 BACKUP_KEY_SHOWN=""
@@ -492,10 +494,44 @@ site_has_certificate() {
   [[ -f $NGINX_AVAILABLE/$SITE_NAME ]] && grep -q "ssl_certificate" "$NGINX_AVAILABLE/$SITE_NAME"
 }
 
+# whole_number NAME DEFAULT: the setting's value when it is a whole number from 0 to 100000, else the default (warned)
+whole_number() {
+  local value=${!1-}
+  [[ -z $value ]] && { echo "$2"; return; }
+  if [[ $value =~ ^[0-9]+$ ]] && (( value <= 100000 )); then echo $((10#$value)); return; fi
+  warn "$1=$value is not a whole number from 0 to 100000: $2 applies." >&2
+  echo "$2"
+}
+
+# The host nginx's limits per client address for every site it serves (ADR 0063): connections, requests a second (a
+# burst of twice as many) and the time a slow client may take; 0 leaves a limit out. Returns 0 when the file changed.
+write_nginx_limits() {
+  local connections rate drop=() draft
+  preset HOST_NGINX_LIMIT_CONNECTIONS; preset HOST_NGINX_LIMIT_RATE    # the environment, else the existing .env
+  connections=$(whole_number HOST_NGINX_LIMIT_CONNECTIONS 200)
+  rate=$(whole_number HOST_NGINX_LIMIT_RATE 200)
+  (( connections == 0 )) && drop+=(-e '/^limit_conn/d')
+  (( rate == 0 )) && drop+=(-e '/^limit_req/d')
+  draft=$(mktemp)
+  sed -e "s|@DATE@|$(date -Is)|g" -e "s|@CONNECTIONS@|$connections|g" -e "s|@RATE@|$rate|g" \
+      -e "s|@BURST@|$((rate * 2))|g" "${drop[@]}" "$TEMPLATE_DIR/nginx-limits.conf" > "$draft"
+  if [[ -f $NGINX_LIMITS ]] && diff -q <(grep -v '^# Written by' "$NGINX_LIMITS") <(grep -v '^# Written by' "$draft") >/dev/null; then
+    rm -f "$draft"; return 1
+  fi
+  mkdir -p "$(dirname "$NGINX_LIMITS")"
+  install -m 644 "$draft" "$NGINX_LIMITS"; rm -f "$draft"
+  ok "nginx limits per address: $( (( connections )) && echo "$connections connections" || echo "no connection limit"), $( (( rate )) && echo "$rate requests a second" || echo "no request limit") ($NGINX_LIMITS)"
+  return 0
+}
+
 configure_nginx() {
   local site=$NGINX_AVAILABLE/$SITE_NAME template
   if [[ $TLS_MODE == letsencrypt ]] && site_has_certificate && grep -q "server_name $(site_names);" "$site"; then
     ok "nginx site $SITE_NAME already serves $(site_names) with a certificate: kept as it is."
+    if write_nginx_limits; then
+      run nginx -t || die "nginx rejected the configuration; see $LOG_FILE."
+      run systemctl reload nginx
+    fi
     if grep -Eq '^[[:space:]]*(listen[^;#]*[[:space:]]http2|http2[[:space:]]+on)' "$site"; then
       warn "The site serves HTTP/2, where nginx's most serious flaws of November 2026 lie; the installer's sites no longer do."
       warn "To turn it off: sudo sed -i -E 's/(listen[^;]*) http2/\\1/' $site && sudo nginx -t && sudo systemctl reload nginx"
@@ -510,6 +546,7 @@ configure_nginx() {
     cp -p "$site" "$site.bak-$(date +%Y%m%d%H%M%S)"
     info "Previous site kept as $site.bak-…"
   fi
+  write_nginx_limits || true
   template=nginx-site-http.conf
   [[ $TLS_MODE == certificate ]] && template=nginx-site-https.conf
   mkdir -p "$NGINX_AVAILABLE" "$NGINX_ENABLED"

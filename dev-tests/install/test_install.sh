@@ -116,6 +116,7 @@ run_installer() {   # extra environment as arguments; answers (if any) on stdin
   env -i PATH="$SB/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME=/root TERM=dumb \
     INSTALL_LOG_FILE="$SB/state/install.log" INSTALL_NGINX_AVAILABLE="$SB/nginx/sites-available" \
     INSTALL_NGINX_ENABLED="$SB/nginx/sites-enabled" INSTALL_CRON_FILE="$SB/state/cron" \
+    INSTALL_NGINX_LIMITS="$SB/nginx/conf.d/gs1resolver-limits.conf" \
     INSTALL_BACKUP_KEY_FILE="$SB/state/keys/backup.key" \
     INSTALL_GEOIP_CRON_FILE="$SB/state/geoip-cron" INSTALL_DOMAINS_CRON_FILE="$SB/state/domains-cron" \
     INSTALL_OS_CODENAME=noble INSTALL_HEALTH_TIMEOUT=30 INSTALL_PROXY_RESTART_AFTER=5 INSTALL_WORKER_TIMEOUT=5 INSTALL_DOCKER_GROUP_USER= "$@" \
@@ -155,6 +156,9 @@ check "A: certbot called for the domain" "grep -q 'certbot --nginx -d id.example
 check "A: nginx and certbot packages requested" "grep -q 'apt-get install -y.*certbot python3-certbot-nginx' $SB/state/calls"
 check "A: the host's nginx installed or updated even when already there (ADR 0042)" "dpkg -s nginx >/dev/null 2>&1 && grep -q '^apt-get install -y nginx certbot python3-certbot-nginx' $SB/state/calls && grep -q '^apt-get update' $SB/state/calls"
 check "A: a fixed nginx package reported as carrying the November 2026 fixes" "grep -q 'nginx 1.24.0-2ubuntu7.20 carries the security fixes of November 2026' $SB/state/out && ! grep -q 'predates the security fixes' $SB/state/out"
+LIMITS_FILE=$SB/nginx/conf.d/gs1resolver-limits.conf
+check "A: the host nginx's limits for every site written (ADR 0063): 200 connections and 200 requests a second per address, a burst of 400, slow clients' times, 429" "grep -q '^limit_conn gs1resolver_conn 200;' $LIMITS_FILE && grep -q 'zone=gs1resolver_req:10m rate=200r/s;' $LIMITS_FILE && grep -q '^limit_req zone=gs1resolver_req burst=400 nodelay;' $LIMITS_FILE && grep -q '^client_header_timeout 10s;' $LIMITS_FILE && grep -q '^limit_req_status 429;' $LIMITS_FILE && ! grep -q 'keepalive_timeout' $LIMITS_FILE && ! grep -q '@' $LIMITS_FILE"
+check "A: ... written before nginx -t" "grep -q 'nginx limits per address: 200 connections, 200 requests a second' $SB/state/out"
 check "A: the site served over HTTP/1.1 only (no http2)" "! grep -q http2 $SB/nginx/sites-available/gs1resolver"
 check "A: the site keeps no access log (ADR 0043)" "[[ \$(grep -c 'access_log off;' $SB/nginx/sites-available/gs1resolver) == \$(grep -c '^ *server_name ' $SB/nginx/sites-available/gs1resolver) ]] && grep -q 'server_name id.example.org;' $SB/nginx/sites-available/gs1resolver"
 check "A: one replica of each service written to .env" "[[ \$(envval WEB_SERVICE_REPLICAS)\$(envval DATA_ENTRY_SERVICE_REPLICAS)\$(envval PORTAL_SERVICE_REPLICAS)\$(envval PORTAL_WORKER_REPLICAS) == 1111 ]]"
@@ -251,6 +255,7 @@ check "C: an installation from before the portal's database gets its password an
 check "C: an installation from before ADR 0030 gets the services' database passwords, the example one replaced" "[[ \$(envval RESOLVER_DB_PASSWORD) =~ ^[0-9a-f]{48}$ && \$(envval DATA_ENTRY_DB_PASSWORD) =~ ^[0-9a-f]{48}$ ]]"
 check "C: quoted values read correctly" "[[ \$(envval RESOLVER_CONTACT_STREET) == 'Av. Exemplo, 328 - Pinheiros' ]]"
 check "C: existing certificate site kept" "grep -q snakeoil $SB/nginx/sites-available/gs1resolver && ! grep -q '^certbot' $SB/state/calls"
+check "C: ... the host nginx's limits added beside it, then tested and reloaded (ADR 0063)" "[[ -f $SB/nginx/conf.d/gs1resolver-limits.conf ]] && grep -q '^nginx -t' $SB/state/calls && grep -q 'systemctl reload nginx' $SB/state/calls"
 check "C: BACKUP_RECIPIENTS in .env: no backup key made on the server, the recipients kept" "[[ ! -e $SB/state/keys/backup.key ]] && grep -q 'Backups encrypted to BACKUP_RECIPIENTS of .env' $SB/state/out && ! grep -q 'Backup key:' $SB/state/out && [[ \$(envval BACKUP_RECIPIENTS) == age1lggyhqrw2nlhcxprm67z43rta597azn8gknawjehu9d9dl0jq3yqqvfafg ]]"
 check "C: Compose accepts the rewritten .env" "compose_cfg | grep -q 'MONGO_URI: mongodb://resolveradmin:p%40ss'"
 
@@ -405,6 +410,17 @@ done
 new_sandbox
 run_installer FQDN=id.example.org TLS_MODE=external PROXY_BIND_ADDRESS=127.0.0.1 RESOLVER_ORG_NAME=Org PORTAL_ORIGIN=https://portal.example.org; rc=$?
 check "M: TLS elsewhere: both names to forward, the portal checked through the port with its name" "[[ $rc == 0 ]] && grep -q 'forward https://id.example.org and https://portal.example.org to this server' $SB/state/out && grep -q 'curl -fsS --max-time 10 -H Host: portal.example.org http://127.0.0.1:8080/portal/healthz' $SB/state/curl-calls"
+
+# ------------------------------------------------------------------------------ N. the host nginx's limits from .env
+echo "--- N. the host nginx's limits from .env (ADR 0063)"
+new_sandbox
+run_installer "${BASE[@]}" HOST_NGINX_LIMIT_CONNECTIONS=0 HOST_NGINX_LIMIT_RATE=50; rc=$?
+N_LIMITS=$SB/nginx/conf.d/gs1resolver-limits.conf
+check "N: HOST_NGINX_LIMIT_CONNECTIONS=0 leaves the connection limit out; HOST_NGINX_LIMIT_RATE=50 with a burst of 100" "[[ $rc == 0 ]] && ! grep -q '^limit_conn' $N_LIMITS && grep -q 'rate=50r/s;' $N_LIMITS && grep -q 'burst=100 nodelay;' $N_LIMITS && grep -q 'no connection limit, 50 requests a second' $SB/state/out"
+printf 'HOST_NGINX_LIMIT_CONNECTIONS=0\nHOST_NGINX_LIMIT_RATE=lots\n' >> "$SB/repo/.env"
+: > "$SB/state/calls"
+run_installer "${BASE[@]}"; rc=$?
+check "N: the values of .env are read: one that is not a whole number gives the default, with a warning; 0 kept" "[[ $rc == 0 ]] && grep -q 'rate=200r/s;' $N_LIMITS && grep -q 'HOST_NGINX_LIMIT_RATE=lots is not a whole number' $SB/state/out && ! grep -q '^limit_conn' $N_LIMITS"
 
 # ------------------------------------------------------------------------------ L. the host's nginx versions
 echo "--- L. which nginx packages carry the security fixes of November 2026 (ADR 0042)"

@@ -1104,9 +1104,11 @@
     "resolver: no warning with the example on localhost",
     "resolver: no warning with its own password",
     "resolver: connects as its own user, logging the host and never the password",
-    "data entry API: connects as its own user, logging the host and never the password"
+    "data entry API: connects as its own user, logging the host and never the password",
+    "host limits: nginx accepts them beside the installer's site, in an http block that sets keepalive_timeout as Debian's and Ubuntu's does (ADR 0063)",
+    "host limits: one address over the rate (here 1 a second, a burst of 2) answered 429 by the host's nginx"
    ],
-   "count": 204,
+   "count": 206,
    "ciOnly": false
   },
   "dictionary": {
@@ -1149,9 +1151,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (284 features)",
+    "features.md: every table has a Checks column (285 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (671 references)",
+    "…each reference names a program of the inventory (676 references)",
     "every test program is in the inventory (87)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
@@ -1161,8 +1163,8 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (62)",
-    "every relative link of the documents leads to a file (79 documents)"
+    "…and every decision record (63)",
+    "every relative link of the documents leads to a file (80 documents)"
    ],
    "count": 14,
    "ciOnly": false
@@ -2891,6 +2893,8 @@
     "A: nginx and certbot packages requested",
     "A: the host's nginx installed or updated even when already there (ADR 0042)",
     "A: a fixed nginx package reported as carrying the November 2026 fixes",
+    "A: the host nginx's limits for every site written (ADR 0063): 200 connections and 200 requests a second per address, a burst of 400, slow clients' times, 429",
+    "A: ... written before nginx -t",
     "A: the site served over HTTP/1.1 only (no http2)",
     "A: the site keeps no access log (ADR 0043)",
     "A: one replica of each service written to .env",
@@ -2940,6 +2944,7 @@
     "C: an installation from before ADR 0030 gets the services' database passwords, the example one replaced",
     "C: quoted values read correctly",
     "C: existing certificate site kept",
+    "C: ... the host nginx's limits added beside it, then tested and reloaded (ADR 0063)",
     "C: BACKUP_RECIPIENTS in .env: no backup key made on the server, the recipients kept",
     "C: Compose accepts the rewritten .env",
     "D: exit status 0",
@@ -3005,6 +3010,8 @@
     "M: PORTAL_ORIGIN 'portal.example.org' refused with the reason, nothing written",
     "M: PORTAL_ORIGIN 'https://bad_name.example' refused with the reason, nothing written",
     "M: TLS elsewhere: both names to forward, the portal checked through the port with its name",
+    "N: HOST_NGINX_LIMIT_CONNECTIONS=0 leaves the connection limit out; HOST_NGINX_LIMIT_RATE=50 with a burst of 100",
+    "N: the values of .env are read: one that is not a whole number gives the default, with a warning; 0 kept",
     "L: nginx 1.24.0-2ubuntu7.19 on noble: no",
     "L: nginx 1.24.0-2ubuntu7.20 on noble: yes",
     "L: nginx 1.24.0-2ubuntu8 on noble: yes",
@@ -3018,7 +3025,7 @@
     "L: nginx 1.28.3-1~noble on noble: no",
     "L: nginx 1.32.0-1~noble on noble: yes"
    ],
-   "count": 148,
+   "count": 153,
    "ciOnly": false
   },
   "item_page": {

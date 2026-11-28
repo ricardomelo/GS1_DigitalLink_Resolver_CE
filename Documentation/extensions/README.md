@@ -1660,6 +1660,12 @@ runs imports with the same rules).
   `docker compose up -d frontend-proxy-service`; the proxy's log shows the limits in force
   (`docker compose logs frontend-proxy-service | grep 'request limits'`) and each refusal as a line with status 429
   (with `PROXY_ACCESS_LOG=full`, also as a warning, `limiting requests`, naming the client).
+- In front of it, the host's nginx (modes `letsencrypt` and `certificate`) limits each client address for every site it
+  serves ([ADR 0063](../adr/0063-host-nginx-limits.md)): 200 connections at once (`HOST_NGINX_LIMIT_CONNECTIONS`) and
+  200 requests a second, bursts of 400 (`HOST_NGINX_LIMIT_RATE`), 429 beyond them, and the time a slow client may take
+  (10 s for the headers, 15 s between reads of the body, 30 s between writes of the answer). The installer writes
+  `/etc/nginx/conf.d/gs1resolver-limits.conf` on every run: after a change in `.env`, run it again. Addresses exempt
+  at the proxy are not exempt here; for an integrator resolving in bulk raise the rate or set it to `0`.
 - The logs keep no scanner's address ([ADR 0043](../adr/0043-access-logs.md)). The front-end proxy writes one line per
   request with the time, the method, the path's first segment (`/01`, `/portal`; `/...` for anything else, such as a
   compressed link), the status, the size and the time taken: never the client's address, the rest of the path, the

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (20 November 2026) |
+| Status | **Accepted** (20 November 2026); its residual on the host's nginx answered by [ADR 0063](0063-host-nginx-limits.md) (28 November 2026) |
 | Backlog item | 10.1, phase 1 of the security assessment ([ADR 0020](0020-security-assessment.md)); threats T-R3, T-A1, T-A5 and T-A7 and control G-3 of the [threat model](../threat-model.md); hazard H-17 |
 | Decided by | the owner of the branch's standing instruction (take the recommended option and carry on): limits per client address in the installation's own proxy, with defaults generous enough for a shared office address, each setting in `.env`; the calls and sign-ins that anyone can send counted instead of stored one by one |
 

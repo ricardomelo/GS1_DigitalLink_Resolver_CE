@@ -2,6 +2,17 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Scans answered in another language or for another market, on the Requests screen (session 75)
+- **Added: the request log records when the link given did not serve the language or market asked**
+  ([ADR 0028](../adr/0028-language-fallback.md) §6, the third residual of finding F-010; code `70ec691`). Since 3.2.0 such
+  an answer carries `Resolution-Fallback`; now the resolver also stores it in the request's event (field `ns`). The
+  Requests screen's *Outcome* filter has *Language or market not served*, and such a row is marked *not served:
+  language* or *market* beside its outcome; the CSV export has a column `notServed`. An organisation can see which
+  codes are scanned in a language its leaflets do not have (new texts in twelve languages; drafts except pt-BR and
+  en-GB). Requests recorded before this change have no such mark.
+- **Operators:** `git pull`, then `docker compose up -d --build` (the resolver and the portal change together).
+  Nothing for `.env`; no stored data changes.
+
 ### A save that removes links, in one write (session 74)
 - **Changed: a save that adds some targets and removes others is applied whole or not at all**
   ([ADR 0059](../adr/0059-save-in-one-write.md), the second residual of finding F-009; code `4e38aa4`). Until now the

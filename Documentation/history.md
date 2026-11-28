@@ -1954,3 +1954,14 @@ ignored, a link both sent and named or a record left without links refused with 
 not taken for done. A `PUT` that replaces all the record's links and a transaction across the two calls were weighed
 and not taken. `test_data_entry_api`, `test_mock_parity`, `test_record_revision` and `test_journal` gained or changed
 checks; 9 mutations, all caught.
+
+## Session 75 — the language or market not served, in the request log
+
+The third residual of finding F-010, in one code commit (`70ec691`; [ADR 0028](adr/0028-language-fallback.md) §6).
+Checked first in the code: since ADR 0028 a redirect or choice whose links do not serve the language or market asked
+carries `Resolution-Fallback`, but the request log kept no trace of it, so an organisation could not see which codes
+were scanned in a language its leaflets lack. The resolver now stores the same values in the event's `ns`, passed
+where the header is set so the two cannot disagree; the portal's rows and CSV carry `notServed`, and the Requests
+screen has the filter *Language or market not served* and a mark beside the outcome, in twelve languages. A count in
+the daily aggregates and the Overview was weighed and left for later. `test_request_log`, `test_requestlog` and
+`test_requests_e2e` gained checks; 9 mutations, all caught.

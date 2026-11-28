@@ -1251,14 +1251,18 @@ scan is answered within a few seconds (5 by default; [ADR 0052](adr/0052-databas
 **Code** (the identifier and the qualifiers in the scan: a serial number appears only as `/21/*`; `?17` means the QR
 code carried an expiry date, whose value is not kept), the **Outcome** (*Redirected*, *Code not registered*, *No link
 of that type*, *Withheld by the strict mode* (section 14, *Resolution*), *Choice of links*, *Linkset*, *Invalid request*, *Item page* — a view of the item's page reached by a
-scan —, *Click on the item page*…), the **Answer** (the link type asked, the level of the
+scan —, *Click on the item page*…) — with **not served: language** or **market** beside it when the link given is not in
+a language the phone asked for, or not marked for the market the scan named, because the record has none that is
+([ADR 0028](adr/0028-language-fallback.md)) —, the **Answer** (the link type asked, the level of the
 record that answered — the key's or a batch's — and the site the person was sent to), the **Device** class (phone,
 tablet, computer, automated) with the **browser** (Chrome, Safari, Firefox, Edge, Samsung Internet, Opera, *App* for
 scanner apps and the browsers inside apps such as Instagram's) and the site the person came from, the **Language** of
 the phone, the **Approximate location** (city, region — a state or province — and country; the city opens Google Maps
 on that city) and the time
 the resolver took, in milliseconds. Filter by date (**From**, **To**), **Code** (a GTIN, a GS1 Company Prefix or a
-Digital Link path such as `/01/…`), **Outcome** (*Not found (404)* gathers every kind of 404), **Device**,
+Digital Link path such as `/01/…`), **Outcome** (*Not found (404)* gathers every kind of 404; *Language or market not served* lists the scans answered with
+a link in another language or for another market — a leaflet missing in a language your customers use shows here),
+**Device**,
 **Browser** and **Country** (two letters, such as `BR`). **Export CSV** downloads what the filters show, up to 50,000
 requests, for Excel. The list holds people's requests with a GS1 code, valid or not: requests from automated clients
 (crawlers, scripts, command-line tools) and requests without a GS1 code (probes such as `/wp-login.php`) are counted —

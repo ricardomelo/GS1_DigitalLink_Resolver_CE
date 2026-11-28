@@ -6,7 +6,8 @@ Checks, without Docker or MongoDB:
   * docker-compose.yml through "docker compose config", without .env: MongoDB's root credentials (MONGO_URI,
     MONGO_INITDB_ROOT_*) reach only the database and portal-db-init, every other service sees them empty; the
     resolver and the data entry API start after portal-db-init has finished well; the database and the proxy are
-    published on the host's loopback address unless .env names another;
+    published on the host's loopback address unless .env names another; the five Python services' root file system
+    read only with /tmp in memory (ADR 0061);
   * the Dockerfiles of the resolver, the data entry API and the portal: the image runs as a user of its own, not root,
     and its final stage installs no package from Debian's repository (the official images installed nano: an editor
     for whoever gets a shell in the container; finding U-006, ADR 0050);
@@ -95,6 +96,21 @@ def compose_checks() -> None:
           and services["frontend-proxy-service"]["environment"].get("PROXY_BIND_ADDRESS") == "127.0.0.1",
           "compose: without .env the proxy is published on the host's loopback address only (and told so)",
           services["frontend-proxy-service"].get("ports"))
+    # read-only file systems (F-012 residual 2, ADR 0061): only /tmp in memory, with a size, and the declared volumes
+    read_only = {"web-service": "64m", "data-entry-service": "64m", "portal-db-init": "64m",
+                 "portal-service": "256m", "portal-worker": "256m"}
+    for name, size in read_only.items():
+        svc = services[name]
+        check(svc.get("read_only") is True and svc.get("tmpfs") == [f"/tmp:size={size}"],
+              f"compose: {name}'s root file system is read only, /tmp a memory file system of {size}",
+              (svc.get("read_only"), svc.get("tmpfs")))
+        writable = sorted(v.get("target") for v in svc.get("volumes") or [] if not v.get("read_only"))
+        check(writable == (["/app/config"] if name in ("portal-service", "portal-worker") else []),
+              f"compose: {name} writes to " + ("no volume but its configuration's (/app/config)"
+                                               if name in ("portal-service", "portal-worker") else "no volume"), writable)
+    check(not any(services[n].get("read_only") for n in ("database-service", "frontend-proxy-service")),
+          "compose: the database and the proxy are not read only (the ADR's residual: the official image, the "
+          "configuration written at start)")
     config = compose_config(["PROXY_BIND_ADDRESS=0.0.0.0", "DATABASE_BIND_ADDRESS=10.0.0.4"])
     if config is not None:
         services = config["services"]

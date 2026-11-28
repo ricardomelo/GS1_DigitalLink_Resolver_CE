@@ -213,7 +213,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_ffc5083466a…)",
+    "a wrong key is refused (rk_648388c4d3c…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -1149,9 +1149,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (282 features)",
+    "features.md: every table has a Checks column (283 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (664 references)",
+    "…each reference names a program of the inventory (667 references)",
     "every test program is in the inventory (87)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
@@ -1161,8 +1161,8 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (60)",
-    "every relative link of the documents leads to a file (77 documents)"
+    "…and every decision record (61)",
+    "every relative link of the documents leads to a file (78 documents)"
    ],
    "count": 14,
    "ciOnly": false
@@ -3773,6 +3773,17 @@
     "compose: data-entry-service starts after portal-db-init has made its user",
     "compose: without .env MongoDB is published on the host's loopback address only",
     "compose: without .env the proxy is published on the host's loopback address only (and told so)",
+    "compose: web-service's root file system is read only, /tmp a memory file system of 64m",
+    "compose: web-service writes to no volume",
+    "compose: data-entry-service's root file system is read only, /tmp a memory file system of 64m",
+    "compose: data-entry-service writes to no volume",
+    "compose: portal-db-init's root file system is read only, /tmp a memory file system of 64m",
+    "compose: portal-db-init writes to no volume",
+    "compose: portal-service's root file system is read only, /tmp a memory file system of 256m",
+    "compose: portal-service writes to no volume but its configuration's (/app/config)",
+    "compose: portal-worker's root file system is read only, /tmp a memory file system of 256m",
+    "compose: portal-worker writes to no volume but its configuration's (/app/config)",
+    "compose: the database and the proxy are not read only (the ADR's residual: the official image, the configuration written at start)",
     "compose: .env still chooses the addresses (PROXY_BIND_ADDRESS, DATABASE_BIND_ADDRESS)",
     "web_server/Dockerfile: the image runs as a user of its own, not root",
     "web_server/Dockerfile: that user is a system account made in the image",
@@ -3813,7 +3824,7 @@
     "installer: DATA_ENTRY_DB_PASSWORD written to .env, generated when missing or the example",
     "rotation: resolver-db and data-entry-db among the secrets rotated by default"
    ],
-   "count": 47,
+   "count": 58,
    "ciOnly": false
   },
   "legacy": {
@@ -3979,7 +3990,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:46091/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:43451/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",

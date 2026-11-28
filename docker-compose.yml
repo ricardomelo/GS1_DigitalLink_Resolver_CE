@@ -14,6 +14,19 @@ x-logging: &logging
     max-size: ${LOG_MAX_SIZE:-10m}
     max-file: ${LOG_MAX_FILES:-5}
 
+# The Python services' root file system is read only (Documentation/adr/0061-read-only-file-systems.md): code that
+# could be made to write a file can write only to /tmp, a memory file system emptied at every start (gunicorn's worker
+# files, a large spreadsheet's temporary files), and to the volumes below. The proxy, which writes its configuration
+# when it starts, and the database (the official MongoDB image) are not read only.
+x-read-only: &read-only
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m
+x-read-only-portal: &read-only-portal
+  read_only: true
+  tmpfs:
+    - /tmp:size=256m                  # an export of 50,000 rows writes its workbook through temporary files
+
 services:
   database-service:
     logging: *logging
@@ -39,6 +52,7 @@ services:
   # replicate a service with one); the proxy finds every replica through Docker's DNS (nginx.conf).
   data-entry-service:
     logging: *logging
+    <<: *read-only
     build:
       context: './data_entry_server'
       args:
@@ -65,6 +79,7 @@ services:
 
   web-service:
     logging: *logging
+    <<: *read-only
     build:
       context: './web_server'
       additional_contexts:
@@ -98,6 +113,7 @@ services:
 
   portal-db-init:
     logging: *logging
+    <<: *read-only
     # One-shot: creates the MongoDB users of the portal, the resolver and the data entry API, each with the least
     # privileges it needs, or brings their passwords and roles up to date, then exits; the other services start
     # after it. It alone receives the root MONGO_URI (Documentation/adr/0030-least-privilege-services.md).
@@ -121,6 +137,7 @@ services:
 
   portal-service:
     logging: *logging
+    <<: *read-only-portal
     # Link management portal for non-technical users (served at /portal/ by the proxy)
     build:
       context: './portal'
@@ -156,6 +173,7 @@ services:
 
   portal-worker:
     logging: *logging
+    <<: *read-only-portal
     # Runs the portal's background jobs (spreadsheet imports, link checks) from the jobs collection of the
     # portal's database; same image and settings as the portal, another command. It finishes the record in
     # hand, hands its job back to the queue and stops on "docker compose stop" (stop_grace_period). Each

@@ -2,6 +2,19 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### A daily budget of link checks per organisation (session 75)
+- **Added: each organisation may have a set number of addresses checked a day** ([ADR 0060](../adr/0060-link-check-budget.md),
+  the first residual of finding F-011; code `293c0f6`). Until now an editor could start one check after another without
+  end, each sending up to 5,000 requests to other sites. Every check now counts its addresses — every record, the
+  import preview and the editor's check of one record — and one that does not fit in what is left of the day is not
+  started: *Your organisation's daily limit of link checks has been reached* (new text in twelve languages; drafts
+  except pt-BR and en-GB). The operator's codes have a budget of their own.
+- **New setting `PORTAL_LINKCHECK_DAILY_LIMIT`**: the addresses a day, **20,000** when it is empty or absent (four checks
+  of every record at the largest size); 0 switches the budget off.
+- **Operators:** `git pull`, then `docker compose up -d --build`. Nothing needs to be added to `.env` unless another
+  number is wanted (`grep -q '^PORTAL_LINKCHECK_DAILY_LIMIT=' .env || printf 'PORTAL_LINKCHECK_DAILY_LIMIT=50000\n' >> .env`);
+  one new small collection in the portal's database, created by itself.
+
 ### Scans answered in another language or for another market, on the Requests screen (session 75)
 - **Added: the request log records when the link given did not serve the language or market asked**
   ([ADR 0028](../adr/0028-language-fallback.md) §6, the third residual of finding F-010; code `70ec691`). Since 3.2.0 such

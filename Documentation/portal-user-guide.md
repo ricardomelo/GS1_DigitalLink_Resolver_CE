@@ -782,6 +782,12 @@ links** or the import preview's check by anyone of the same organisation says *A
 organisation is already under way. Wait for it to finish or stop it.* The checker never sends more than two
 requests to one site at once, so a check of every record may take longer when most targets are on one site.
 
+Each organisation may have a set number of addresses checked a day — 20,000 unless the operator chose another
+number ([ADR 0060](adr/0060-link-check-budget.md)) — counting every check: every record, the import preview and the
+editor's. A check that does not fit in what is left is not started and says *Your organisation's daily limit of link
+checks has been reached: … addresses a day, … left today*; try again the next day, or check fewer addresses (the
+editor's check of one record needs only its own targets).
+
 Problems reported: an error answer (404, 500…), a site that refuses automatic checks (open the address
 in a browser to confirm), a site that does not answer, a redirect to a page without HTTPS, an address without
 HTTPS (*the address does not use HTTPS and was not checked*: the portal saves HTTPS targets only, but records written

@@ -1965,3 +1965,11 @@ where the header is set so the two cannot disagree; the portal's rows and CSV ca
 screen has the filter *Language or market not served* and a mark beside the outcome, in twelve languages. A count in
 the daily aggregates and the Overview was weighed and left for later. `test_request_log`, `test_requestlog` and
 `test_requests_e2e` gained checks; 9 mutations, all caught.
+
+The same session went on with the first residual of finding F-011, in one code commit (`293c0f6`;
+[ADR 0060](adr/0060-link-check-budget.md)): nothing bounded how many link checks an editor could ask for in a day.
+Each organisation, and the operator, now has a day's budget of addresses (`PORTAL_LINKCHECK_DAILY_LIMIT`, 20,000 by
+default), counted with one conditional write when a check is asked for, so that two checks started at once cannot
+both pass; a check that does not fit is refused with what is left. `test_linkcheck`, `test_jobs` and `test_store`
+gained checks; 10 mutations, all caught. The maintainer chose to finish every residual of the assessment before the
+next release, and set the change of session at 65 % of the context.

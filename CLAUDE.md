@@ -103,5 +103,7 @@ python3 -m pytest dev-tests -k requestlog                                       
   option, say so at the top of the work, and carry on.
 - Before implementing a screen, show mock-ups: drive the real portal with Playwright, inject HTML/CSS and
   deliver PNGs.
-- At the end of each backlog item or step of a large item, or when the conversation has grown long, write an
-  updated handover for the next session.
+- At the end of each backlog item or step of a large item, write an updated handover for the next session.
+- At 65 % of the context (`get_session`: `external_metadata.context_usage`), finish the activity under way (the
+  delivery and its CI), update the handover and start the next session (`create_session`; at the lineage limit, give
+  the maintainer the prompt for it in the last message).

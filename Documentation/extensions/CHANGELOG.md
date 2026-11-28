@@ -2,6 +2,16 @@
 
 ## Unreleased (branch gs1br/develop)
 
+### Read-only file systems for the Python services (session 75)
+- **Changed: the resolver, the data entry API, `portal-db-init`, the portal and its worker run with a read-only root
+  file system** ([ADR 0061](../adr/0061-read-only-file-systems.md), the second residual of finding F-012; code
+  `6f2d2d8`). They can write only to `/tmp`, now a memory file system emptied at every start (64 MB; 256 MB for the
+  portal and the worker, whose spreadsheet exports use temporary files), and the portal to its configuration volume.
+  The proxy and the database are unchanged.
+- **Operators:** `git pull`, then `docker compose up -d --build`. Nothing for `.env`; no stored data changes. Editing
+  a file inside one of these containers (`docker compose exec … sh`) no longer works, as intended. After the update,
+  try a label, an export, an import and a link check in the portal (the test plan lists them).
+
 ### One link check per organisation, also when two start at once (session 75)
 - **Fixed: two link checks of one organisation started at the same moment could both be queued**
   ([ADR 0060](../adr/0060-link-check-budget.md) §5, the second residual of finding F-011; code `6660e13`). The test for a

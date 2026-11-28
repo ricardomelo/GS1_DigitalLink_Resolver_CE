@@ -1978,3 +1978,8 @@ Then the second residual of F-011 (`6660e13`; ADR 0060 §5): two link checks of 
 moment could both be queued, as the test for a check under way and the job's creation were two steps. Both now run
 under one lock per organisation shared by every replica; `test_jobs` proves it with the gap between them widened.
 3 mutations, all caught.
+
+Then the second residual of F-012 (`6f2d2d8`; [ADR 0061](adr/0061-read-only-file-systems.md)): the five Python
+services — resolver, data entry API, `portal-db-init`, portal and worker — now run with a read-only root file system
+and `/tmp` in memory; the proxy and the database stay writable. `test_least_privilege` checks the composition; the
+containers themselves are verified on staging. 3 mutations, all caught.

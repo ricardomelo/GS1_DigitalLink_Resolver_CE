@@ -8,7 +8,9 @@ to change, instead of serving with it. The installer replaces them whenever it f
 
 MongoDB's root password is only warned about: the installer keeps it for a database created with it (it cannot change
 it without the database), so refusing it would stop an upgraded installation; scripts/rotate-secrets.sh mongo changes it.
-Since ADR 0030 only portal-db-init holds it.
+Since ADR 0030 only portal-db-init holds it; since ADR 0062 it records what it found, and the portal's monitoring
+alerts the server administrators while it stays. The first portal user is never created with the example
+PORTAL_ADMIN_PASSWORD (ADR 0062).
 
 Development: FQDN empty, localhost, 127.0.0.1, ::1 or a name under .localhost.
 
@@ -21,7 +23,8 @@ from urllib.parse import urlsplit
 
 # A setting whose whole value is an example; a connection string whose password is
 EXAMPLE_VALUES = {"SESSION_TOKEN": "secret", "PORTAL_DB_PASSWORD": "resolver_portal",
-                  "RESOLVER_DB_PASSWORD": "resolver_web", "DATA_ENTRY_DB_PASSWORD": "resolver_data_entry"}
+                  "RESOLVER_DB_PASSWORD": "resolver_web", "DATA_ENTRY_DB_PASSWORD": "resolver_data_entry",
+                  "PORTAL_ADMIN_PASSWORD": "change-me-please"}
 EXAMPLE_URI_PASSWORDS = {"MONGO_URI": "gs1resolver"}
 DEVELOPMENT_HOSTS = {"", "localhost", "127.0.0.1", "::1", "[::1]"}
 

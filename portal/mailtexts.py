@@ -389,6 +389,18 @@ TEXTS = {
         "pt-BR": ("Resolvido: todas as cadeias da trilha de auditoria estão íntegras",
                   "Olá,\n\nA verificação de {at} encontrou íntegras todas as cadeias da trilha de auditoria do portal de {operator}. Uma cadeia quebrada tinha sido avisada em {since}.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
     },
+    "alert-secrets": {
+        "en-GB": ("Alert: an example password of .env.example is in use",
+                  "Hello,\n\nThe installation of {operator} still uses a password of .env.example, which is public (since {since}):\n\n{names}\n\nAnyone who can reach the service may use it. MONGO_URI: on the server, \"sudo scripts/rotate-secrets.sh mongo\" changes MongoDB's root password. PORTAL_ADMIN_PASSWORD: sign in as that user and change the password in Options. You will be reminded every week while one is in use.\n\nYou receive this message as a server administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Alerta: uma senha de exemplo do .env.example está em uso",
+                  "Olá,\n\nA instalação de {operator} ainda usa uma senha do .env.example, que é público (desde {since}):\n\n{names}\n\nQualquer pessoa que alcance o serviço pode usá-la. MONGO_URI: no servidor, \"sudo scripts/rotate-secrets.sh mongo\" troca a senha do root do MongoDB. PORTAL_ADMIN_PASSWORD: entre como esse usuário e troque a senha em Opções. Você será lembrado toda semana enquanto uma estiver em uso.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
+    },
+    "alert-secrets-ok": {
+        "en-GB": ("Resolved: no example password of .env.example is in use",
+                  "Hello,\n\nThe installation of {operator} no longer uses a password of .env.example. One had been reported on {since}.\n\nYou receive this message as a server administrator; you can switch alerts off in Options → E-mail."),
+        "pt-BR": ("Resolvido: nenhuma senha de exemplo do .env.example está em uso",
+                  "Olá,\n\nA instalação de {operator} não usa mais senhas do .env.example. Uma tinha sido avisada em {since}.\n\nVocê recebe esta mensagem como administrador do servidor; pode desligar os alertas em Opções → E-mail."),
+    },
     "alert-settings-stale": {
         "en-GB": ("Alert: the resolver cannot read the portal's settings",
                   "Hello,\n\nSince {since} the resolver of {operator} has not been able to read the portal's settings from the database for longer than its limit (RESOLVER_SETTINGS_MAX_AGE_S; 15 minutes unless set). Until it reads them again it sends no code to another resolver (prefix rules and the resolver of last resort) and shows the item's pages without the organisations' brands; it keeps the domains, the strict mode and the request log's retention it read last.\n\nAddress checked: {url}\n\nOn the server, \"docker compose logs --tail=100 web-service\" shows which settings and why (lines \"not read\"). You will receive a message when it reads them again, and a reminder every 24 hours meanwhile.\n\nYou receive this message as a server administrator; you can switch alerts off in Options → E-mail."),

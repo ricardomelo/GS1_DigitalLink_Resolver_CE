@@ -98,6 +98,14 @@
     "Resuelto: todas las cadenas de la pista de auditoría están íntegras",
     "Hola:\n\nLa verificación del {at} encontró íntegras todas las cadenas de la pista de auditoría del portal de {operator}. Se había notificado una cadena rota el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
    ],
+   "alert-secrets": [
+    "Alerta: una contraseña de ejemplo de .env.example está en uso",
+    "Hola:\n\nLa instalación de {operator} todavía usa una contraseña de .env.example, que es público (desde el {since}):\n\n{names}\n\nCualquiera que alcance el servicio puede usarla. MONGO_URI: en el servidor, \"sudo scripts/rotate-secrets.sh mongo\" cambia la contraseña del usuario root de MongoDB. PORTAL_ADMIN_PASSWORD: inicie sesión como ese usuario y cambie la contraseña en Opciones. Se lo recordaremos cada semana mientras una esté en uso.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
+   "alert-secrets-ok": [
+    "Resuelto: ninguna contraseña de ejemplo de .env.example está en uso",
+    "Hola:\n\nLa instalación de {operator} ya no usa contraseñas de .env.example. Se había notificado una el {since}.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
+   ],
    "alert-settings-stale": [
     "Alerta: el resolver no puede leer los ajustes del portal",
     "Hola:\n\nDesde el {since}, el resolver de {operator} no ha podido leer los ajustes del portal en la base de datos durante más tiempo que su límite (RESOLVER_SETTINGS_MAX_AGE_S; 15 minutos si no se define). Hasta que vuelva a leerlos, no envía ningún código a otro resolver (reglas por prefijo y resolver de último recurso) y muestra las páginas de los artículos sin las marcas de las organizaciones; conserva los dominios, el modo estricto y la conservación del registro de accesos que leyó por última vez.\n\nDirección comprobada: {url}\n\nEn el servidor, «docker compose logs --tail=100 web-service» muestra qué ajustes y por qué (líneas «not read»). Recibirá un mensaje cuando vuelva a leerlos y, mientras tanto, un recordatorio cada 24 horas.\n\nRecibe este mensaje como administrador del servidor; puede desactivar las alertas en Opciones → Correo electrónico."
@@ -226,6 +234,14 @@
    "alert-journal-ok": [
     "Résolu : toutes les chaînes du journal d’audit sont intactes",
     "Bonjour,\n\nLa vérification du {at} a trouvé intactes toutes les chaînes du journal d’audit du portail de {operator}. Une chaîne rompue avait été signalée le {since}.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-secrets": [
+    "Alerte : un mot de passe d’exemple de .env.example est utilisé",
+    "Bonjour,\n\nL’installation de {operator} utilise encore un mot de passe de .env.example, qui est public (depuis le {since}) :\n\n{names}\n\nToute personne qui atteint le service peut l’utiliser. MONGO_URI : sur le serveur, « sudo scripts/rotate-secrets.sh mongo » change le mot de passe de l’utilisateur root de MongoDB. PORTAL_ADMIN_PASSWORD : connectez-vous avec cet utilisateur et changez le mot de passe dans Options. Un rappel vous sera envoyé chaque semaine tant qu’il est utilisé.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
+   ],
+   "alert-secrets-ok": [
+    "Résolu : aucun mot de passe d’exemple de .env.example n’est utilisé",
+    "Bonjour,\n\nL’installation de {operator} n’utilise plus de mot de passe de .env.example. Un avait été signalé le {since}.\n\nVous recevez ce message en tant qu'administrateur du serveur ; vous pouvez désactiver les alertes dans Options → E-mail."
    ],
    "alert-settings-stale": [
     "Alerte : le résolveur ne peut pas lire les paramètres du portail",
@@ -356,6 +372,14 @@
     "Behoben: alle Ketten des Aktivitätsprotokolls sind unversehrt",
     "Hallo,\n\nDie Prüfung vom {at} hat alle Ketten des Aktivitätsprotokolls des Portals von {operator} unversehrt gefunden. Eine unterbrochene Kette war am {since} gemeldet worden.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
    ],
+   "alert-secrets": [
+    "Warnung: Ein Beispielpasswort aus .env.example wird verwendet",
+    "Hallo,\n\ndie Installation von {operator} verwendet noch ein Passwort aus .env.example, die öffentlich ist (seit {since}):\n\n{names}\n\nJeder, der den Dienst erreicht, kann es verwenden. MONGO_URI: Auf dem Server ändert „sudo scripts/rotate-secrets.sh mongo“ das Passwort des MongoDB-Root-Benutzers. PORTAL_ADMIN_PASSWORD: Melden Sie sich als dieser Benutzer an und ändern Sie das Passwort unter Optionen. Sie werden jede Woche erinnert, solange eines verwendet wird.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
+   "alert-secrets-ok": [
+    "Behoben: Kein Beispielpasswort aus .env.example wird mehr verwendet",
+    "Hallo,\n\ndie Installation von {operator} verwendet keine Passwörter aus .env.example mehr. Eines war am {since} gemeldet worden.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
+   ],
    "alert-settings-stale": [
     "Warnung: Der Resolver kann die Einstellungen des Portals nicht lesen",
     "Guten Tag,\n\nseit {since} konnte der Resolver von {operator} die Einstellungen des Portals länger als seine Grenze (RESOLVER_SETTINGS_MAX_AGE_S; 15 Minuten, wenn nicht gesetzt) nicht aus der Datenbank lesen. Bis er sie wieder liest, sendet er keinen Code an einen anderen Resolver (Regeln nach Präfix und Resolver der letzten Instanz) und zeigt die Artikelseiten ohne die Marken der Organisationen; die zuletzt gelesenen Domains, den strengen Modus und die Aufbewahrung des Zugriffsprotokolls behält er bei.\n\nGeprüfte Adresse: {url}\n\nAuf dem Server zeigt „docker compose logs --tail=100 web-service“, welche Einstellungen und warum (Zeilen „not read“). Sie erhalten eine Nachricht, sobald er sie wieder liest, und bis dahin alle 24 Stunden eine Erinnerung.\n\nSie erhalten diese Nachricht als Serveradministrator; Sie können Warnungen unter Optionen → E-Mail ausschalten."
@@ -484,6 +508,14 @@
    "alert-journal-ok": [
     "Risolto: tutte le catene del registro di audit sono integre",
     "Buongiorno,\n\nLa verifica del {at} ha trovato integre tutte le catene del registro di audit del portale di {operator}. Una catena interrotta era stata segnalata il {since}.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-secrets": [
+    "Avviso: è in uso una password di esempio di .env.example",
+    "Salve,\n\nl’installazione di {operator} usa ancora una password di .env.example, che è pubblico (dal {since}):\n\n{names}\n\nChiunque raggiunga il servizio può usarla. MONGO_URI: sul server, «sudo scripts/rotate-secrets.sh mongo» cambia la password dell’utente root di MongoDB. PORTAL_ADMIN_PASSWORD: acceda con quell’utente e cambi la password in Opzioni. Riceverà un promemoria ogni settimana finché ne resta una in uso.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
+   ],
+   "alert-secrets-ok": [
+    "Risolto: nessuna password di esempio di .env.example è in uso",
+    "Salve,\n\nl’installazione di {operator} non usa più password di .env.example. Ne era stata segnalata una il {since}.\n\nRiceve questo messaggio come amministratore del server; può disattivare gli avvisi in Opzioni → E-mail."
    ],
    "alert-settings-stale": [
     "Avviso: il resolver non riesce a leggere le impostazioni del portale",
@@ -614,6 +646,14 @@
     "Çözüldü: denetim kaydının tüm zincirleri sağlam",
     "Merhaba,\n\n{at} tarihli doğrulama, {operator} portalının denetim kaydındaki tüm zincirleri sağlam buldu. Kırık bir zincir {since} tarihinde bildirilmişti.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
    ],
+   "alert-secrets": [
+    "Uyarı: .env.example dosyasındaki örnek bir parola kullanılıyor",
+    "Merhaba,\n\n{operator} kurulumu hâlâ herkese açık olan .env.example dosyasındaki bir parolayı kullanıyor ({since} tarihinden beri):\n\n{names}\n\nHizmete erişebilen herkes bunu kullanabilir. MONGO_URI: sunucuda \"sudo scripts/rotate-secrets.sh mongo\" MongoDB root kullanıcısının parolasını değiştirir. PORTAL_ADMIN_PASSWORD: bu kullanıcıyla oturum açın ve parolayı Seçenekler'de değiştirin. Biri kullanımda olduğu sürece her hafta hatırlatılacaksınız.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
+   "alert-secrets-ok": [
+    "Çözüldü: .env.example dosyasındaki örnek parolalar artık kullanılmıyor",
+    "Merhaba,\n\n{operator} kurulumu artık .env.example dosyasındaki parolaları kullanmıyor. Biri {since} tarihinde bildirilmişti.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
+   ],
    "alert-settings-stale": [
     "Uyarı: çözümleyici portalın ayarlarını okuyamıyor",
     "Merhaba,\n\n{operator} kuruluşunun çözümleyicisi {since} tarihinden beri portalın ayarlarını veritabanından sınırından (RESOLVER_SETTINGS_MAX_AGE_S; ayarlanmadıysa 15 dakika) daha uzun süredir okuyamıyor. Onları yeniden okuyana kadar hiçbir kodu başka bir çözümleyiciye göndermiyor (öneke göre kurallar ve son çare çözümleyici) ve ürün sayfalarını kuruluşların markaları olmadan gösteriyor; en son okuduğu alan adlarını, katı modu ve erişim kaydının saklama süresini koruyor.\n\nKontrol edilen adres: {url}\n\nSunucuda \"docker compose logs --tail=100 web-service\" hangi ayarların okunamadığını ve nedenini gösterir (\"not read\" satırları). Ayarları yeniden okuduğunda bir ileti, bu arada her 24 saatte bir hatırlatma alacaksınız.\n\nBu iletiyi sunucu yöneticisi olarak alıyorsunuz; uyarıları Seçenekler → E-posta'dan kapatabilirsiniz."
@@ -742,6 +782,14 @@
    "alert-journal-ok": [
     "已解决：审计日志的所有链均完整",
     "您好：\n\n{at} 的验证发现 {operator} 门户审计日志的所有链均完整。此前已于 {since} 报告过一条断开的链。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-secrets": [
+    "警报：正在使用 .env.example 中的示例密码",
+    "您好：\n\n{operator} 的安装仍在使用公开的 .env.example 中的密码（自 {since} 起）：\n\n{names}\n\n任何能访问该服务的人都可以使用它。MONGO_URI：在服务器上运行“sudo scripts/rotate-secrets.sh mongo”可更改 MongoDB root 用户的密码。PORTAL_ADMIN_PASSWORD：以该用户登录，并在“选项”中更改密码。只要仍在使用，每周都会提醒您。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
+   ],
+   "alert-secrets-ok": [
+    "已解决：不再使用 .env.example 中的示例密码",
+    "您好：\n\n{operator} 的安装已不再使用 .env.example 中的密码。此前已于 {since} 通知过一次。\n\n您以服务器管理员身份收到此邮件；可以在“选项 → 电子邮件”中关闭告警。"
    ],
    "alert-settings-stale": [
     "告警：解析器无法读取门户的设置",
@@ -872,6 +920,14 @@
     "解決：監査証跡のすべてのチェーンが完全です",
     "こんにちは。\n\n{at} の検証で、{operator} のポータルの監査証跡のすべてのチェーンが完全であることが確認されました。破損したチェーンは {since} に報告されていました。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
    ],
+   "alert-secrets": [
+    "警告：.env.example のサンプルパスワードが使われています",
+    "こんにちは。\n\n{operator} のインストールは、公開されている .env.example のパスワードをまだ使っています（{since} から）：\n\n{names}\n\nこのサービスに到達できる人なら誰でも使えます。MONGO_URI：サーバーで「sudo scripts/rotate-secrets.sh mongo」を実行すると MongoDB の root ユーザーのパスワードが変わります。PORTAL_ADMIN_PASSWORD：そのユーザーでサインインし、オプションでパスワードを変更してください。使われている間は毎週お知らせします。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
+   "alert-secrets-ok": [
+    "解決：.env.example のサンプルパスワードは使われていません",
+    "こんにちは。\n\n{operator} のインストールは、.env.example のパスワードをもう使っていません。{since} に一度お知らせしていました。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
+   ],
    "alert-settings-stale": [
     "アラート：リゾルバーがポータルの設定を読み込めません",
     "こんにちは。\n\n{since} 以降、{operator} のリゾルバーは、上限（RESOLVER_SETTINGS_MAX_AGE_S。未設定の場合は15分）を超えてデータベースからポータルの設定を読み込めていません。再び読み込むまで、コードを別のリゾルバーに送らず（プレフィックスによるルールと最後の手段のリゾルバー）、アイテムページを組織のブランドなしで表示します。最後に読み込んだドメイン、厳格モード、アクセスログの保存期間は維持します。\n\nチェックしたアドレス：{url}\n\nサーバー上で「docker compose logs --tail=100 web-service」を実行すると、どの設定がなぜ読み込めないかがわかります（「not read」の行）。再び読み込むとメッセージが届きます。それまでの間は24時間ごとにリマインダーが届きます。\n\nこのメッセージはサーバー管理者としてお送りしています。アラートは「オプション → メール」で無効にできます。"
@@ -1000,6 +1056,14 @@
    "alert-journal-ok": [
     "해결됨: 감사 기록의 모든 체인이 온전합니다",
     "안녕하세요.\n\n{at}의 검증에서 {operator} 포털 감사 기록의 모든 체인이 온전한 것으로 확인되었습니다. 손상된 체인은 {since}에 보고되었습니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-secrets": [
+    "경고: .env.example의 예시 비밀번호가 사용 중입니다",
+    "안녕하세요.\n\n{operator}의 설치가 공개된 .env.example의 비밀번호를 아직 사용하고 있습니다({since}부터):\n\n{names}\n\n서비스에 접근할 수 있는 누구나 이를 사용할 수 있습니다. MONGO_URI: 서버에서 \"sudo scripts/rotate-secrets.sh mongo\"를 실행하면 MongoDB root 사용자의 비밀번호가 바뀝니다. PORTAL_ADMIN_PASSWORD: 해당 사용자로 로그인하여 옵션에서 비밀번호를 바꾸십시오. 사용 중인 동안 매주 알려 드립니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
+   ],
+   "alert-secrets-ok": [
+    "해결됨: .env.example의 예시 비밀번호를 더 이상 사용하지 않습니다",
+    "안녕하세요.\n\n{operator}의 설치가 더 이상 .env.example의 비밀번호를 사용하지 않습니다. {since}에 한 번 알려 드렸습니다.\n\n서버 관리자이시므로 이 메시지가 발송되었습니다. 옵션 → 이메일에서 알림을 끌 수 있습니다."
    ],
    "alert-settings-stale": [
     "알림: 리졸버가 포털의 설정을 읽을 수 없습니다",
@@ -1130,6 +1194,14 @@
     "हल हुआ: ऑडिट ट्रेल की सभी श्रृंखलाएँ अखंड हैं",
     "नमस्ते,\n\n{at} के सत्यापन में {operator} के पोर्टल की ऑडिट ट्रेल की सभी श्रृंखलाएँ अखंड मिलीं। एक टूटी हुई श्रृंखला की सूचना {since} को दी गई थी।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
    ],
+   "alert-secrets": [
+    "चेतावनी: .env.example का एक उदाहरण पासवर्ड उपयोग में है",
+    "नमस्ते,\n\n{operator} की स्थापना अब भी .env.example का एक पासवर्ड उपयोग कर रही है, जो सार्वजनिक है ({since} से):\n\n{names}\n\nसेवा तक पहुँच सकने वाला कोई भी इसका उपयोग कर सकता है। MONGO_URI: सर्वर पर \"sudo scripts/rotate-secrets.sh mongo\" MongoDB के root उपयोगकर्ता का पासवर्ड बदलता है। PORTAL_ADMIN_PASSWORD: उस उपयोगकर्ता से साइन इन करें और विकल्प में पासवर्ड बदलें। जब तक कोई उपयोग में है, आपको हर सप्ताह याद दिलाया जाएगा।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
+   "alert-secrets-ok": [
+    "हल हुआ: .env.example का कोई उदाहरण पासवर्ड अब उपयोग में नहीं है",
+    "नमस्ते,\n\n{operator} की स्थापना अब .env.example के पासवर्ड उपयोग नहीं करती। एक की सूचना {since} को दी गई थी।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
+   ],
    "alert-settings-stale": [
     "अलर्ट: रिज़ॉल्वर पोर्टल की सेटिंग पढ़ नहीं पा रहा है",
     "नमस्ते,\n\n{since} से {operator} का रिज़ॉल्वर अपनी सीमा (RESOLVER_SETTINGS_MAX_AGE_S; तय न होने पर 15 मिनट) से अधिक समय से डेटाबेस से पोर्टल की सेटिंग नहीं पढ़ पाया है। जब तक वह इन्हें फिर से नहीं पढ़ता, वह कोई भी कोड किसी दूसरे रिज़ॉल्वर को नहीं भेजता (प्रीफ़िक्स के अनुसार नियम और अंतिम विकल्प रिज़ॉल्वर) और आइटम पेज संगठनों के ब्रांड के बिना दिखाता है; वह अंतिम बार पढ़े गए डोमेन, सख़्त मोड और एक्सेस लॉग की अवधि बनाए रखता है।\n\nजाँचा गया पता: {url}\n\nसर्वर पर, \"docker compose logs --tail=100 web-service\" दिखाता है कि कौन-सी सेटिंग और क्यों (\"not read\" वाली पंक्तियाँ)। जब यह इन्हें फिर से पढ़ेगा तो आपको संदेश मिलेगा, और तब तक हर 24 घंटे में एक रिमाइंडर।\n\nआपको यह संदेश सर्वर व्यवस्थापक के रूप में मिल रहा है; आप विकल्प → ईमेल में अलर्ट बंद कर सकते हैं।"
@@ -1258,6 +1330,14 @@
    "alert-journal-ok": [
     "تم الحل: جميع سلاسل سجل التدقيق سليمة",
     "مرحبًا،\n\nوجد التحقق الذي جرى في {at} جميع سلاسل سجل التدقيق في بوابة {operator} سليمة. وكان قد أُبلغ عن سلسلة مقطوعة في {since}.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-secrets": [
+    "تنبيه: كلمة مرور نموذجية من .env.example قيد الاستخدام",
+    "مرحبًا،\n\nلا تزال منشأة {operator} تستخدم كلمة مرور من .env.example، وهو ملف عام (منذ {since}):\n\n{names}\n\nيمكن لأي شخص يصل إلى الخدمة استخدامها. MONGO_URI: على الخادم، يغيّر الأمر \"sudo scripts/rotate-secrets.sh mongo\" كلمة مرور مستخدم root في MongoDB. PORTAL_ADMIN_PASSWORD: سجّل الدخول بهذا المستخدم وغيّر كلمة المرور في الخيارات. سنذكّرك كل أسبوع ما دامت إحداها قيد الاستخدام.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
+   ],
+   "alert-secrets-ok": [
+    "تم الحل: لم تعد أي كلمة مرور نموذجية من .env.example قيد الاستخدام",
+    "مرحبًا،\n\nلم تعد منشأة {operator} تستخدم كلمات مرور من .env.example. وكان قد أُبلغ عن إحداها في {since}.\n\nتتلقى هذه الرسالة بصفتك مسؤول خادم؛ ويمكنك إيقاف التنبيهات في الخيارات ← البريد الإلكتروني."
    ],
    "alert-settings-stale": [
     "تنبيه: لا يستطيع المحلِّل قراءة إعدادات البوابة",

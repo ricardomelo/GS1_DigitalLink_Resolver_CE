@@ -71,9 +71,14 @@ check("PORTAL_SESSION_HOURS is ignored with a warning", "PORTAL_SESSION_HOURS is
 out, err = run({})
 check("no FQDN and no RESOLVER_PUBLIC_URL → refuses to start", out is None and "FQDN" in err, err[-200:])
 
-admin = {"FQDN": "id.example.org", "PORTAL_ADMIN_USERNAME": "admin", "PORTAL_ADMIN_PASSWORD": "change-me-please"}
+admin = {"FQDN": "id.example.org", "PORTAL_ADMIN_USERNAME": "admin", "PORTAL_ADMIN_PASSWORD": "a-password-of-its-own"}
 out, _ = run(admin)
 check("empty store → first user created", out and out["users"] == ["admin"], out)
+out, err = run({**admin, "PORTAL_ADMIN_PASSWORD": "change-me-please"})
+check("the example PORTAL_ADMIN_PASSWORD of .env.example on a real host → not created, warning (ADR 0062)",
+      out and out["users"] == [] and "example password" in err, err[-300:])
+out, _ = run({**admin, "FQDN": "localhost", "PORTAL_ADMIN_PASSWORD": "change-me-please"})
+check("…on a development machine the example still creates the first user", out and out["users"] == ["admin"], out)
 
 out, _ = run(admin, users={"maria": "pbkdf2:sha256:1$x$y"})
 check("existing users → nothing created or changed", out and out["users"] == ["maria"], out)

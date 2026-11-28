@@ -546,7 +546,7 @@ root = client("root", "root-password-long")
 op = root.get("/portal/api/overview").get_json()["operation"]
 check("overview of a server administrator: every active alert and the state of each check",
       sorted(a["kind"] for a in op["alerts"]) == ["404", "404", "backup", "resolver"]
-      and set(op["checks"]) == {"resolver", "settings", "backup", "certificate", "logspace", "gcptable", "journal"},
+      and set(op["checks"]) == {"resolver", "settings", "backup", "certificate", "logspace", "gcptable", "journal", "secrets"},
       op.get("alerts"))
 # Operation is the server administrators' only (ADR 0013); everyone else's alerts come with record quality
 ana = client("ana", "ana-password-long")
@@ -594,19 +594,58 @@ monitor._run(S + timedelta(minutes=30))
 job = MAIL.find_one({"template": "alert-404-spike", "user": "ana"})
 check("…messages in the recipient's language", job and "códigos sem cadastro" in job["subject"], job and job["subject"])
 templates = [t for t in mailtexts.TEXTS if t.startswith("alert-")]
-check("sixteen alert messages", len(templates) == 16, templates)
+check("eighteen alert messages", len(templates) == 18, templates)
 for template in templates:
     en, pt = mailtexts.TEXTS[template]["en-GB"], mailtexts.TEXTS[template]["pt-BR"]
     same = mailtexts.placeholders(en[0] + en[1]) == mailtexts.placeholders(pt[0] + pt[1])
     check(f"{template}: both languages with the same placeholders", same)
 i18n = open(os.path.join(PORTAL, "static", "i18n.js"), encoding="utf-8").read()
+# ================================================================== example secrets (ADR 0062)
+def secrets_round(hours):
+    return monitor._run(S + timedelta(days=20, hours=hours))
+
+
+os.environ["PORTAL_ADMIN_USERNAME"] = "root"
+store.col("settings").delete_one({"_id": "security.examples"})
+clear()
+check("example secrets: on a development machine, ok whatever is set",
+      monitor.check_secrets() == ("ok", {"names": [], "development": True}), monitor.check_secrets())
+os.environ["FQDN"] = "id.example.org"
+check("…on a real host, before portal-db-init has recorded anything: unknown",
+      monitor.check_secrets() == ("unknown", {"reason": "notRecorded"}), monitor.check_secrets())
+store.col("settings").insert_one({"_id": "security.examples", "value": {"names": ["MONGO_URI"], "at": NOW}})
+found = secrets_round(0)
+check("…MongoDB's example root password recorded by portal-db-init: an alert, a message to the server administrators",
+      found.get("secrets") == "alert" and state("secrets") == "alert" and sent("alert-secrets") == [("root", "alert-secrets")],
+      (found.get("secrets"), sent()))
+job = MAIL.find_one({"template": "alert-secrets"})
+check("…the message names the setting and how to change it, never a password",
+      job and "MONGO_URI" in job["text"] and "rotate-secrets.sh mongo" in job["text"] and "gs1resolver" not in job["text"],
+      job and job["text"][:400])
+check("…checked once an hour: not again within it", "secrets" not in secrets_round(0.5))
+store.col("settings").update_one({"_id": "security.examples"}, {"$set": {"value": {"names": [], "at": NOW}}})
+users.set_password("root", "change-me-please")
+found = secrets_round(1.1)
+check("…the first user's password still PORTAL_ADMIN_PASSWORD's example: the alert stays, naming it",
+      found.get("secrets") is None and state("secrets") == "alert"
+      and ALERTS.find_one({"_id": "secrets"})["detail"]["names"] == ["PORTAL_ADMIN_PASSWORD"],
+      ALERTS.find_one({"_id": "secrets"}))
+users.set_password("root", "root-password-long")
+found = secrets_round(2.2)
+check("…both changed: resolved, with a message", found.get("secrets") == "resolved" and sent()[-1] == ("root", "alert-secrets-ok"),
+      (found.get("secrets"), sent()[-2:]))
+check("…the check is listed among the monitoring's", "secrets" in monitor.CHECKS)
+os.environ["FQDN"] = "localhost"
+os.environ.pop("PORTAL_ADMIN_USERNAME", None)
+
 keys = ["prefs.alerts", "overview.op.alerts", "overview.op.noAlerts", "overview.alertSince", "overview.check.resolver",
         "overview.check.backup", "overview.check.certificate", "overview.check.backupAt", "overview.check.certExpires",
         "overview.state.ok", "overview.state.alert", "overview.state.unknown"] + \
        [f"overview.alert.{k}" for k in ("resolver", "backup", "certificate", "404", "logspace", "gcptable", "journal")] + \
        ["overview.check.logspace", "overview.check.spaceUse", "overview.check.noLimit", "alerts.kind.logspace",
         "overview.check.gcptable", "overview.check.gcpAge", "overview.check.gcpNone", "alerts.kind.gcptable", "gcp.old",
-        "overview.check.journal", "overview.check.journalAt", "overview.check.journalNone", "alerts.kind.journal"]
+        "overview.check.journal", "overview.check.journalAt", "overview.check.journalNone", "alerts.kind.journal",
+        "overview.check.secrets", "overview.alert.secrets", "alerts.kind.secrets"]
 missing = [k for k in keys if i18n.count(f'"{k}"') != 2]
 check("the screen's texts in both languages", not missing, missing)
 

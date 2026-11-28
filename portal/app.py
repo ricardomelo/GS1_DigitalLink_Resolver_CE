@@ -174,6 +174,12 @@ def _bootstrap_admin() -> None:
         log.warning("PORTAL_ADMIN_PASSWORD is shorter than %d characters: first user not created.",
                     users.MIN_PASSWORD_LENGTH)
         return
+    if not example_secrets.development() and example_secrets.in_use(["PORTAL_ADMIN_PASSWORD"]):
+        # the example of .env.example is known to everyone (ADR 0062): the installer writes a password of its own
+        log.warning("PORTAL_ADMIN_PASSWORD holds the example password of .env.example while FQDN is %s: first user not "
+                    "created; set a password of your own in .env (Documentation/adr/0062-example-secrets-watched.md).",
+                    os.environ.get("FQDN", "").strip())
+        return
     try:
         users.set_password(username, password)
         audit.info("user=%s action=bootstrap", username)

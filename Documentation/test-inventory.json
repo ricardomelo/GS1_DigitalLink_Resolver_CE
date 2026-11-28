@@ -213,7 +213,7 @@
     "no key: 401 api.keyMissing with a Bearer challenge",
     "a wrong key is refused (rk_nothing…)",
     "a wrong key is refused (Basic abc…)",
-    "a wrong key is refused (rk_648388c4d3c…)",
+    "a wrong key is refused (rk_3cfd15e287b…)",
     "a wrong key is refused (rk_00000000000…)",
     "who am I: the key, its organisation, the limit",
     "GET /portal/api/v1 (no slash) goes to the same place",
@@ -1149,9 +1149,9 @@
   "docs": {
    "area": "The documents",
    "checks": [
-    "features.md: every table has a Checks column (283 features)",
+    "features.md: every table has a Checks column (284 features)",
     "…every feature cites at least one check",
-    "…each reference names a program of the inventory (667 references)",
+    "…each reference names a program of the inventory (671 references)",
     "every test program is in the inventory (87)",
     "…and the inventory holds no program that no longer exists",
     "…its page lists every program with its count",
@@ -1161,8 +1161,8 @@
     "dev-tests/README.md: a line for every program",
     "the API reference is what portal/openapi.json gives (gen_api_reference.py --check)",
     "the documentation index names every manual",
-    "…and every decision record (61)",
-    "every relative link of the documents leads to a file (78 documents)"
+    "…and every decision record (62)",
+    "every relative link of the documents leads to a file (79 documents)"
    ],
    "count": 14,
    "ciOnly": false
@@ -3814,6 +3814,9 @@
     "db_init: MongoDB's root user refused as a service's user (MONGO_URI)",
     "db_init: the example root password warned about when FQDN is id.example.org",
     "db_init: the example root password not warned about when FQDN is localhost",
+    "db_init: the example secrets found recorded in the portal's settings by name only (ADR 0062)",
+    "db_init: …and cleared at the next start once changed",
+    "db_init: main() records them at every start, none in development",
     "every collection the resolver's code names is found (a literal or a module constant)",
     "the resolver's code uses only the collections its role grants",
     "the scan of the resolver's code finds the collections it is known to use",
@@ -3824,7 +3827,7 @@
     "installer: DATA_ENTRY_DB_PASSWORD written to .env, generated when missing or the example",
     "rotation: resolver-db and data-entry-db among the secrets rotated by default"
    ],
-   "count": 58,
+   "count": 61,
    "ciOnly": false
   },
   "legacy": {
@@ -3990,7 +3993,7 @@
     "internal address refused: https://[::ffff:10.0.0.1]/",
     "internal address refused: https://100.64.0.1/",
     "internal address refused: https://0.0.0.0/",
-    "http:// address reported without a request (insecureAddress): http://127.0.0.1:43451/ok",
+    "http:// address reported without a request (insecureAddress): http://127.0.0.1:33647/ok",
     "http:// address reported without a request (insecureAddress): http://example.org/",
     "an address with user information is invalid, not requested",
     "nothing reached the local server without ALLOW_PRIVATE",
@@ -4827,7 +4830,7 @@
     "the category alerts: optional and on by default",
     "…a user's choice is kept",
     "…messages in the recipient's language",
-    "sixteen alert messages",
+    "eighteen alert messages",
     "alert-resolver-down: both languages with the same placeholders",
     "alert-resolver-up: both languages with the same placeholders",
     "alert-backup-failed: both languages with the same placeholders",
@@ -4841,12 +4844,22 @@
     "alert-gcp-table-ok: both languages with the same placeholders",
     "alert-journal: both languages with the same placeholders",
     "alert-journal-ok: both languages with the same placeholders",
+    "alert-secrets: both languages with the same placeholders",
+    "alert-secrets-ok: both languages with the same placeholders",
     "alert-settings-stale: both languages with the same placeholders",
     "alert-settings-current: both languages with the same placeholders",
     "alert-domain-lapsed: both languages with the same placeholders",
+    "example secrets: on a development machine, ok whatever is set",
+    "…on a real host, before portal-db-init has recorded anything: unknown",
+    "…MongoDB's example root password recorded by portal-db-init: an alert, a message to the server administrators",
+    "…the message names the setting and how to change it, never a password",
+    "…checked once an hour: not again within it",
+    "…the first user's password still PORTAL_ADMIN_PASSWORD's example: the alert stays, naming it",
+    "…both changed: resolved, with a message",
+    "…the check is listed among the monitoring's",
     "the screen's texts in both languages"
    ],
-   "count": 121,
+   "count": 131,
    "ciOnly": false
   },
   "outbound": {
@@ -4982,7 +4995,7 @@
     "the resolver cannot be read: the overview still answers, without records",
     "the log cannot be read: 503 requests.unavailable",
     "signed out: 401",
-    "every overview text in both languages (175 keys)",
+    "every overview text in both languages (176 keys)",
     "the API's description has /stats and the scope stats:read",
     "sign-in opens the overview"
    ],
@@ -5046,10 +5059,12 @@
     "PORTAL_SESSION_HOURS is ignored with a warning",
     "no FQDN and no RESOLVER_PUBLIC_URL → refuses to start",
     "empty store → first user created",
+    "the example PORTAL_ADMIN_PASSWORD of .env.example on a real host → not created, warning (ADR 0062)",
+    "…on a development machine the example still creates the first user",
     "existing users → nothing created or changed",
     "password under 12 characters → not created, warning"
    ],
-   "count": 13,
+   "count": 15,
    "ciOnly": false
   },
   "portal_e2e": {

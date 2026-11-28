@@ -1071,6 +1071,7 @@ The job worker checks the installation every `PORTAL_MONITOR_MINUTES` (5; 0 swit
 | 404 spikes | requests answered "code not registered" in the last hour, for the installation and for each organisation | at least `PORTAL_ALERT_404_MIN` (20) and `PORTAL_ALERT_404_FACTOR` (3) times the usual hour of the 7 days before |
 | Request log space | the log's used pages and indexes (`collStats`) against the most space set on *Requests → Retention* (ADR 0006 §9) | from 80 % of the limit; unknown without a limit |
 | GCP length table | the date GS1 gave the list in use (ADR 0015) | `PORTAL_MONITOR_GCP_DAYS` (90) days old or more; unknown without a list or with the setting at 0 |
+| Example passwords | once an hour: what `portal-db-init` found at its last start (MongoDB's root password) and the first portal user (`PORTAL_ADMIN_USERNAME`) checked against the example password of `.env.example` (ADR 0062) | one of them is still the example while `FQDN` is a real host; reminded weekly; unknown until `portal-db-init` of this version has run |
 
 **Messages** (with e-mail on): one when a check goes into alert, a reminder every 24 hours while it lasts, one when it
 is resolved (spikes simply end). The request log's space has no daily reminder: one message at 80 % and one at each

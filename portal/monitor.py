@@ -23,6 +23,9 @@ The journal's hash chains (Documentation/adr/0026-journal-integrity.md, section 
 verification (the worker's daily one, or an administrator's) found a chain broken.
 The resolver's caches of the portal's settings (finding F-033, Documentation/adr/0053-settings-age.md) are an alert
 while the resolver's heartbeat, through the proxy, says "settings": "stale".
+The example secrets of .env.example (Documentation/adr/0062-example-secrets-watched.md) are an alert, checked once an
+hour and reminded every SECRETS_REMIND_DAYS days, while MongoDB's root password or the first portal user's password is
+still the example outside development.
 Server administrators receive the installation's alerts; an organisation's administrators its spikes of 404.
 
 Settings (section 3.4 of the ADR):
@@ -46,6 +49,7 @@ import requests
 from pymongo.errors import PyMongoError
 
 import gcp
+import example_secrets
 import journal
 import notify
 import requestlog
@@ -67,7 +71,9 @@ TOP_CODES = 5
 DEFAULT_URL = "http://frontend-proxy-service/.well-known/gs1resolver"
 SPACE_ALERT = 80
 SPACE_STEP = 5
-CHECKS = ("resolver", "settings", "backup", "certificate", "logspace", "gcptable", "journal")
+CHECKS = ("resolver", "settings", "backup", "certificate", "logspace", "gcptable", "journal", "secrets")
+SECRETS_EVERY = timedelta(hours=1)    # the first user's password is checked against the example once an hour
+SECRETS_REMIND_DAYS = 7
 GCP_REMIND_DAYS = 7
 HISTORY = "alert_history"
 HISTORY_DAYS = 400
@@ -269,6 +275,27 @@ def check_journal() -> tuple[str, dict]:
     broken = list(found.get("broken") or [])
     detail = {"at": store.iso(found["at"]), "chains": found.get("chains"), "count": len(broken), "broken": broken[:10]}
     return ("alert" if broken else "ok"), detail
+
+
+def check_secrets() -> tuple[str, dict]:
+    """("alert" | "ok" | "unknown", detail) for the example secrets of .env.example still in use outside development
+    (Documentation/adr/0062-example-secrets-watched.md): MongoDB's root password, as portal-db-init found it at its last
+    start (the setting security.examples; unknown before it has run with this version), and the first portal user's
+    password if it is still PORTAL_ADMIN_PASSWORD's example. detail: names (the settings, never a value), at."""
+    if example_secrets.development():
+        return "ok", {"names": [], "development": True}
+    found = store.get_setting("security.examples")
+    names = list((found or {}).get("names") or [])
+    admin = os.environ.get("PORTAL_ADMIN_USERNAME", "").strip()
+    example = example_secrets.EXAMPLE_VALUES["PORTAL_ADMIN_PASSWORD"]
+    if admin and users.verify(admin, example):
+        names.append("PORTAL_ADMIN_PASSWORD")
+    if found is None and not names:
+        return "unknown", {"reason": "notRecorded"}
+    detail = {"names": names}
+    if found and found.get("at"):
+        detail["at"] = store.iso(found["at"])
+    return ("alert" if names else "ok"), detail
 
 
 def _megabytes(n) -> str:
@@ -489,6 +516,13 @@ def _run(now: datetime) -> dict:
                                        "chains": "\n".join(f"  {b['chain']}: {b['kind']}"
                                                            + (f" #{b['seq']}" if b.get("seq") else "")
                                                            for b in detail.get("broken") or []) or "-"})
+    # the example secrets of .env.example (ADR 0062), once an hour: the first user's password is checked by its hash
+    secrets_doc = _col().find_one({"_id": "secrets"}) or {}
+    if not secrets_doc.get("checkedAt") or now - secrets_doc["checkedAt"] >= SECRETS_EVERY:
+        state, detail = check_secrets()
+        found["secrets"] = _update("secrets", state, detail, now, ("alert-secrets", "alert-secrets-ok"),
+                                   params={"names": "\n".join(f"  {n}" for n in detail.get("names") or []) or "-"},
+                                   remind_hours=SECRETS_REMIND_DAYS * 24)
     # spikes of 404 per scope
     tenant_list = tenants.load()
     for scope, entry in spikes(now, tenant_list).items():

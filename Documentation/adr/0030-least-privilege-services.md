@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Accepted** (17 November 2026); its residual on read-only file systems answered for the Python services by [ADR 0061](0061-read-only-file-systems.md) (28 November 2026) |
+| Status | **Accepted** (17 November 2026); its residual on read-only file systems answered for the Python services by [ADR 0061](0061-read-only-file-systems.md), and its residual on the example root and first-user passwords by [ADR 0062](0062-example-secrets-watched.md) (28 November 2026) |
 | Backlog item | 10.1, phase 1 of the security assessment ([ADR 0020](0020-security-assessment.md)); threats T-I1 and T-I2 and controls G-2 and G-11 of the [threat model](../threat-model.md) |
 | Decided by | the owner of the branch's standing instruction (take the recommended option and carry on): a MongoDB user per official service made by portal-db-init, images that do not run as root, the host's loopback address as the default, the example passwords refused |
 

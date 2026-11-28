@@ -43,7 +43,7 @@ TEMPLATES = {
     "alert-backup-ok": "alerts", "alert-certificate": "alerts", "alert-certificate-ok": "alerts",
     "alert-404-spike": "alerts", "alert-log-space": "alerts", "alert-log-space-ok": "alerts",
     "alert-gcp-table": "alerts", "alert-gcp-table-ok": "alerts",
-    "alert-journal": "alerts", "alert-journal-ok": "alerts", "alert-domain-lapsed": "alerts",
+    "alert-journal": "alerts", "alert-journal-ok": "alerts", "alert-secrets": "alerts", "alert-secrets-ok": "alerts", "alert-domain-lapsed": "alerts",
     "alert-settings-stale": "alerts", "alert-settings-current": "alerts",
     "forwarding-on": "alerts", "forwarding-off": "alerts", "forwarding-covered": "alerts",
 }

@@ -234,6 +234,18 @@ def journal_upkeep(store, journal, ids: list) -> None:
               f"the verification reports them (Documentation/adr/0026-journal-integrity.md).")
 
 
+EXAMPLES_SETTING = "security.examples"
+
+
+def record_examples(database, names: list[str]) -> None:
+    """Keeps in the portal's settings which of the secrets only this service sees still hold the example of
+    .env.example ({_id: EXAMPLES_SETTING, value: {names, at}}; none in development): the portal's monitoring alerts the
+    server administrators while one does (Documentation/adr/0062-example-secrets-watched.md). Never the value."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    database["settings"].update_one({"_id": EXAMPLES_SETTING},
+                                    {"$set": {"value": {"names": list(names), "at": now}, "updatedAt": now}}, upsert=True)
+
+
 def main() -> int:
     root_uri = os.environ.get("MONGO_URI", "").strip()
     name = os.environ.get("PORTAL_DB_NAME", "").strip() or "resolver_portal"
@@ -245,7 +257,8 @@ def main() -> int:
     if not password:
         print("portal-db-init: PORTAL_DB_PASSWORD is not set.", file=sys.stderr)
         return 1
-    if not example_secrets.development() and example_secrets.in_use(["MONGO_URI"]):
+    examples = [] if example_secrets.development() else example_secrets.in_use(["MONGO_URI"])
+    if examples:
         print("portal-db-init: WARNING: MONGO_URI holds the example root password of .env.example, known to everyone; "
               "change it with scripts/rotate-secrets.sh mongo (Documentation/adr/0030-least-privilege-services.md).")
     if name in RESERVED:
@@ -263,6 +276,7 @@ def main() -> int:
             store, journal = connect_store(root_uri)
             unsealed = move_journal(client, name)
             database = client[name]
+            record_examples(database, examples)
             if ensure_user(database, username, password, roles) == "created":
                 print(f"portal-db-init: user {username} created for database {name}.")
             else:

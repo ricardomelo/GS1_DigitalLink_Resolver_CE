@@ -326,6 +326,23 @@ def db_init_checks() -> None:
               f"db_init: the example root password {'warned about' if warned else 'not warned about'} when FQDN is "
               f"{fqdn}", run.stdout[-300:])
 
+    # what it found, kept for the portal's monitoring (ADR 0062): the settings' names, never a value
+    import inspect
+    import mongomock
+    portal_database = mongomock.MongoClient()[portal_db]
+    db_init.record_examples(portal_database, ["MONGO_URI"])
+    doc = portal_database["settings"].find_one({"_id": db_init.EXAMPLES_SETTING}) or {}
+    check(doc.get("value", {}).get("names") == ["MONGO_URI"] and doc["value"].get("at") is not None
+          and "gs1resolver" not in json.dumps(doc, default=str),
+          "db_init: the example secrets found recorded in the portal's settings by name only (ADR 0062)", doc)
+    db_init.record_examples(portal_database, [])
+    check(portal_database["settings"].find_one({"_id": db_init.EXAMPLES_SETTING})["value"]["names"] == [],
+          "db_init: …and cleared at the next start once changed")
+    source = inspect.getsource(db_init.main)
+    check("record_examples(database, examples)" in source
+          and "examples = [] if example_secrets.development() else" in source,
+          "db_init: main() records them at every start, none in development")
+
 
 # --------------------------------------------------------------------------- the resolver's collections
 def collections_checks() -> None:
